@@ -771,7 +771,7 @@ static int test_monitor_bookmark_capture_no_memory_write(void)
     CaptureScreen screen;
     BookmarkTestBackend backend;
     char status[39];
-    const int keys[] = { 'J', 'D', 'e', KEY_CTRL_B, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', 'e', KEY_CTRL_B, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 8);
 
     reset_bookmark_test_state();
@@ -807,7 +807,7 @@ static int test_monitor_bookmark_set_preserves_label(void)
     reset_bookmark_test_state();
     seed_bookmark_full(3, 0xC000, MONITOR_BOOKMARK_VIEW_HEX, 7, 2, false, 1, "OLDLBL");
 
-    const int keys[] = { 'J', 'D', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1022,7 +1022,7 @@ static int test_monitor_bookmark_popup_set_preserves_label(void)
     reset_bookmark_test_state();
     seed_bookmark_full(2, 0x0801, MONITOR_BOOKMARK_VIEW_ASM, 7, 2, false, 1, "BASIC");
 
-    const int keys[] = { 'J', 'D', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 8);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1154,7 +1154,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         if (expect(monitor.poll(0) == 0, "Hex edit entry before bookmark jump failed.")) return 1;
         if (expect(monitor.poll(0) == 0, "CBM+1 bookmark jump should work in edit mode.")) return 1;
         get_monitor_header(screen, header);
-        if (expect(strstr(header, "MONITOR ASM $C000") == header && strstr(header, "EDIT") != NULL,
+        if (expect(strstr(header, "MONITOR ASM $C000") == header && strstr(header, "Edit") != NULL,
                    "Bookmark jumps must stay enabled in edit mode and preserve edit state.")) return 1;
         monitor.deinit();
     }

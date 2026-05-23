@@ -564,6 +564,78 @@ Default slots are aimed at common C64 locations:
 +--------------------------------------+
 ```
 
+## Debug Mode
+
+Debug is a modal state layered on the Assembly view. Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `O` for Out, `G` for Go) is pressed while Debug is active.
+
+| Key | Outside Debug | Inside Debug |
+| --- | --- | --- |
+| `D` | Enter Debug, no execution | Over |
+| `T` | Transfer memory | Trace |
+| `O` | CPU bank cycle | Out |
+| `G` | Go / execute | Go |
+| `R` | Range mode | Toggle breakpoint |
+| `C=+R` | (unassigned) | Breakpoint list |
+| `ESC` | Normal monitor close | Exit Debug |
+| `C=+D` | (unassigned) | Exit Debug |
+| `RETURN` | Assembly follow / return | Assembly follow / return |
+
+`RETURN` is non-executing subroutine navigation. `O` is executing step-out: do not confuse it with `RETURN`.
+
+`B` keeps Binary view and `C=+B` keeps the bookmark overview. Neither is repurposed for breakpoints.
+
+### Status flag
+
+Debug shows a compact `Dbg` indicator in the same flag area as `Undoc`, `Frz`, `Poll`, and `Edit`:
+
+```text
+Undoc Frz Poll Dbg Edit
+```
+
+Both `Dbg` and `Edit` are shown when Debug + Edit are active. When space is tight the layout abbreviates `Undoc` to `Undc` and `Poll` to `Pll`; `Edit` is never abbreviated.
+
+### CPU footer
+
+The bottom two rows of the monitor are reserved for a fixed-position CPU state table while Debug is active:
+
+```text
+PC   SP AC XR YR NV-BDIZC IRQ  NMI
+C003 F7 01 00 FF 00100100 C123 EA31
+```
+
+| Field | Meaning |
+| --- | --- |
+| `PC` | Program counter from the captured debug context |
+| `SP` | Stack pointer |
+| `AC` / `XR` / `YR` | Accumulator and index registers |
+| `NV-BDIZC` | Status register bits 7..0 as an 8-character binary string |
+| `IRQ` | RAM IRQ vector at `$0314/$0315`, when valid |
+| `NMI` | RAM NMI vector at `$0318/$0319`, when valid |
+
+Unknown values render as blank spaces in their reserved fixed-width columns; they never appear as zeros, `?`, or placeholder text. Field positions stay put when values become known.
+
+### Breakpoints
+
+There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; `C=+R` opens the breakpoint list. The popup controls are:
+
+| Key | Action |
+| --- | --- |
+| `Up` / `Down` | Select slot |
+| `Return` | Jump to the selected slot |
+| `0`-`9` | Jump directly to a slot |
+| `S` | Store the current address into the selected slot |
+| `E` | Toggle slot enable / disable |
+| `DEL` | Reset the selected slot |
+| `ESC` | Close the popup |
+
+### Help screen
+
+`F3` or `?` shows the Debug help screen while Debug is active. The help screen distinguishes `RETURN` (non-executing) from `O` (executing step-out) explicitly.
+
+### Patch safety
+
+Every BRK patch, vector hook, and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
+
 ## Additional Notes
 
 Use **UI Freeze** mode when the monitor output must be captured in the video stream.

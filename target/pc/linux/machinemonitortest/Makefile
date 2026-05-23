@@ -1,4 +1,4 @@
-SUITES := machinemonitortest machinemonitorbookmarkstest
+SUITES := machinemonitortest machinemonitorbookmarkstest machinemonitordebugtest
 
 ifeq ($(SUITE),)
 
@@ -40,6 +40,9 @@ COMMON_SRCS_CC = small_printf.cc \
 			screen.cc \
 			ui_elements.cc \
 			monitor_bookmarks.cc \
+			monitor_breakpoints.cc \
+			monitor_debug.cc \
+			debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \
@@ -54,6 +57,10 @@ SRCS_CC  = $(COMMON_SRCS_CC) \
 			keyboard_c64.cc \
 			machine_monitor_bookmarks_test.cc
 OPTIONS  = -g -ffunction-sections -O0 -DNO_FILE_ACCESS -Wno-format -Wno-format-extra-args
+else ifeq ($(SUITE),machinemonitordebugtest)
+SRCS_CC  = $(COMMON_SRCS_CC) \
+			machine_monitor_debug_test.cc
+OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args
 else
 $(error Unknown SUITE '$(SUITE)')
 endif

@@ -39,6 +39,13 @@ public:
 #define KEY_CTRL_O 0x0F
 #define KEY_CTRL_V 0x16
 
+// C=+R has no natural single-byte mapping on the C64 keyboard matrix because
+// the historical PETSCII control encoding (0x12) collides with KEY_DOWN.
+// Assign a distinct code in the non-conflicting 0xBA..0xBF range so the
+// machine code monitor can wire `C=+R` to the breakpoint list without
+// hijacking cursor-down.
+#define KEY_CTRL_R 0xBA
+
 #define KEY_CTRL_0  0xB0
 #define KEY_CTRL_1  0xB1
 #define KEY_CTRL_2  0xB2

@@ -1,4 +1,5 @@
 #include "u64_memory_backend.h"
+#include "monitor_debug_u64.h"
 #include "u64_machine.h"
 #include "u64.h"
 #include "filemanager.h"
@@ -234,4 +235,9 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
 uint8_t U64MemoryBackend :: monitor_poll_hz(void) const
 {
     return (C64_VIDEOFORMAT & VIDEO_FMT_60_HZ) ? 60 : 50;
+}
+
+DebugSession *U64MemoryBackend :: create_debug_session(void)
+{
+    return create_u64_debug_session(this);
 }

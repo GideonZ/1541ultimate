@@ -3,6 +3,8 @@
 
 #include "integer.h"
 
+class DebugSession;
+
 class MemoryBackend
 {
     uint8_t monitor_cpu_port;
@@ -35,6 +37,12 @@ public:
     virtual bool supports_vic_bank(void) const { return true; }
     virtual bool supports_go(void) const { return true; }
     virtual uint8_t monitor_poll_hz(void) const { return 50; }
+
+    // Stepping / breakpoint / re-entry support. Backends that cannot
+    // resume-and-trap the live CPU return NULL; Debug-mode key handling then
+    // surfaces a clear refusal instead of silently faking results. The
+    // returned object is owned by the caller.
+    virtual DebugSession *create_debug_session(void) { return 0; }
 
     virtual void set_monitor_cpu_port(uint8_t value)
     {
