@@ -165,6 +165,23 @@ void U64MemoryBackend :: set_frozen(bool on)
     }
 }
 
+bool U64MemoryBackend :: reset_machine(void)
+{
+    if (!machine) {
+        return false;
+    }
+    if (stopped_machine_for_session) {
+        machine->end_stopped_session(stopped_machine_for_session);
+        stopped_machine_for_session = false;
+    }
+    if (machine->is_accessible()) {
+        machine->unfreeze();
+    }
+    machine->reset();
+    load_monitor_rom_cache(machine);
+    return true;
+}
+
 uint8_t U64MemoryBackend :: read(uint16_t address)
 {
     if (!machine) {

@@ -179,12 +179,15 @@ struct TrackingDebugBackend : public FakeMemoryBackend
     StubDebugSession *last_session;
     int session_creations;
     bool refuse_session;
+    int reset_calls;
+    bool allow_reset;
     DebugContext canned_snapshot;
     bool canned_snapshot_set;
     DebugSession::Result snapshot_result;
 
     TrackingDebugBackend() : last_session(NULL), session_creations(0),
-                             refuse_session(false), canned_snapshot_set(false),
+                             refuse_session(false), reset_calls(0),
+                             allow_reset(true), canned_snapshot_set(false),
                              snapshot_result(DebugSession::DBG_OK)
     {
         debug_context_reset(&canned_snapshot);
@@ -201,6 +204,16 @@ struct TrackingDebugBackend : public FakeMemoryBackend
         }
         last_session->snapshot_result = snapshot_result;
         return last_session;
+    }
+
+    virtual bool supports_reset(void) const { return allow_reset; }
+
+    virtual bool reset_machine(void) {
+        if (!allow_reset) {
+            return false;
+        }
+        reset_calls++;
+        return true;
     }
 };
 
@@ -777,6 +790,106 @@ static int test_runstop_leaves_edit_before_debug()
     return 0;
 }
 
+static int test_step_from_memory_view_recenters_asm_on_debug_pc()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xC100;
+    backend.canned_snapshot.sp = 0xF7;
+    backend.canned_snapshot.a = 0x01;
+    backend.canned_snapshot.x = 0x00;
+    backend.canned_snapshot.y = 0xFF;
+    backend.canned_snapshot.sr = 0x24;
+    backend.canned_snapshot.irq_valid = true;
+    backend.canned_snapshot.irq_vec = 0xC123;
+    backend.canned_snapshot.nmi_valid = true;
+    backend.canned_snapshot.nmi_vec = 0xEA31;
+
+    const int keys[] = { 'A', 'D', 'M', KEY_RIGHT, 'D', 'A', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Switch to memory view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Move away from debug address ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug step from memory view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Return to ASM view ok")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $C100") != NULL,
+               "Returning to ASM in Debug must snap back to the current debug PC")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_ctrl_x_resets_and_keeps_debug_open()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x0801, 0xEA);
+
+    const int keys[] = { 'A', 'D', KEY_CTRL_X, 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "CTRL+X reset ok")) return 1;
+    if (expect(backend.reset_calls == 1,
+               "CTRL+X must issue one backend reset while the monitor stays open")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL,
+               "CTRL+X in Debug must keep Debug mode active")) return 1;
+    char values[40];
+    char row[40];
+    int label_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "PC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
+            label_y = y;
+            break;
+        }
+    }
+    if (expect(label_y >= 0, "Debug footer label row must remain visible after reset")) return 1;
+    screen.get_slice(1, label_y + 1, 38, values);
+    bool values_blank = true;
+    for (int i = 0; i < 35; i++) {
+        if (values[i] != ' ') {
+            values_blank = false;
+            break;
+        }
+    }
+    if (expect(values_blank,
+               "CTRL+X reset in Debug must clear the stale register footer")) return 1;
+    if (expect(monitor.poll(0) == 0, "Stepping after reset should still work")) return 1;
+    if (expect(backend.session_creations == 2,
+               "Stepping after reset must recreate the debug session")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_breakpoint_toggle_via_r()
 {
     TestUserInterface ui;
@@ -899,6 +1012,7 @@ static int test_breakpoint_row_indicator_and_color()
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0xA000, 0xEA);
 
     const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
@@ -1209,6 +1323,7 @@ static int test_help_screen_shows_debug_commands()
     bool has_load_save = false;
     bool has_bookmarks = false;
     bool has_rstop = false;
+    bool has_reset = false;
     bool has_esc = false;
     for (int i = 0; i < n; i++) {
         if (strstr(lines[i], "Over")) has_over = true;
@@ -1220,14 +1335,15 @@ static int test_help_screen_shows_debug_commands()
         if (strstr(lines[i], "L Load") && strstr(lines[i], "S Save")) has_load_save = true;
         if (strstr(lines[i], "C=+B")) has_bookmarks = true;
         if (strstr(lines[i], "RSTOP")) has_rstop = true;
+        if (strstr(lines[i], "C=+X")) has_reset = true;
         if (strstr(lines[i], "ESC")) has_esc = true;
     }
     if (expect(has_over && has_trace && has_out && has_go && has_brk,
                "Debug help must mention Over, Trace, Out, Go, Breakpoint")) return 1;
     if (expect(has_memory && has_load_save && has_bookmarks,
                "Debug help must preserve the normal monitor help entries")) return 1;
-    if (expect(has_rstop && !has_esc,
-               "Help must show RSTOP rather than ESC")) return 1;
+    if (expect(has_rstop && has_reset && !has_esc,
+               "Help must show RSTOP and C=+X rather than ESC")) return 1;
     char row[40];
     screen.get_slice(1, 7, 38, row);
     const char *over = strstr(row, "D Debug/Over");
@@ -1259,6 +1375,9 @@ static int test_help_screen_shows_debug_commands()
     const char *rstop = strstr(row, "RSTOP Exit Debug");
     if (expect(rstop != NULL && screen.colors[18][1 + (rstop - row)] == 1,
                "RSTOP help entry must use the shared UI accent colour")) return 1;
+    const char *reset = strstr(row, "C=+X Reset");
+    if (expect(reset != NULL && screen.colors[18][1 + (reset - row)] == 1,
+               "C=+X Reset must use the shared UI accent colour in debug help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: RUN/STOP should leave Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "help test: final RUN/STOP should exit")) return 1;
@@ -1320,6 +1439,8 @@ int main()
     RUN(test_ctrl_d_leaves_debug_but_keeps_edit);
     RUN(test_escape_leaves_edit_before_debug);
     RUN(test_runstop_leaves_edit_before_debug);
+    RUN(test_step_from_memory_view_recenters_asm_on_debug_pc);
+    RUN(test_ctrl_x_resets_and_keeps_debug_open);
     RUN(test_breakpoint_toggle_via_r);
     RUN(test_breakpoint_popup_store_reuses_selected_slot);
     RUN(test_breakpoint_popup_digit_jumps_to_slot);

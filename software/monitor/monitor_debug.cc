@@ -169,7 +169,7 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
         "RETURN Subroutine View",
         "Bookmarks:  C=+B List   C=+0-9 Jump",
         "Debug: C=+R Brkpts  C=+D Exit",
-        "RSTOP Exit Debug",
+        "RSTOP Exit Debug  C=+X Reset",
         "",
         "Open monitor:  C=+O",
         "Close monitor: C=+O/RSTOP",

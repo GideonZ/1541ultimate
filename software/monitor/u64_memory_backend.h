@@ -29,6 +29,8 @@ public:
     virtual bool freeze_available(void) const;
     virtual bool is_frozen(void) const { return stopped_machine_for_session; }
     virtual void set_frozen(bool on);
+    virtual bool supports_reset(void) const { return true; }
+    virtual bool reset_machine(void);
     virtual DebugSession *create_debug_session(void);
 };
 

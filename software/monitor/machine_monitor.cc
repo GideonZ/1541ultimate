@@ -46,7 +46,7 @@ static const char *const monitor_help_lines[] = {
     "Close monitor: C=+O/RSTOP",
     "Leave edit:    C=+E/RSTOP",
     "Copy/Paste:    C=+C / C=+V",
-    "Follow/Return: RETURN",
+    "Reset/Follow:  C=+X / RETURN",
     NULL
 };
 
@@ -2474,7 +2474,11 @@ void MachineMonitor :: set_view(MachineMonitorView view)
 {
     state.view = view;
     if (view == MONITOR_VIEW_ASM) {
-        ensure_disasm_visible();
+        if (debug.is_active() && debug.has_context()) {
+            debug_sync_cursor_to_context();
+        } else {
+            ensure_disasm_visible();
+        }
     } else {
         ensure_current_visible();
     }
@@ -3669,7 +3673,7 @@ void MachineMonitor :: draw_help()
             { 11, 0, 22 }, // RETURN Subroutine View
             { 13, 7, 10 }, // C=+R Brkpts
             { 13, 20, 9 }, // C=+D Exit
-            { 14, 0, 16 }, // RSTOP Exit Debug
+            { 14, 0, 28 }, // RSTOP Exit Debug  C=+X Reset
         };
         window->set_color(MONITOR_UI_ACCENT_COLOR);
         for (unsigned i = 0; i < sizeof(highlights) / sizeof(highlights[0]); i++) {
@@ -4927,6 +4931,7 @@ void MachineMonitor :: debug_enter()
     DebugContext captured;
     if (debug_capture_context(&captured)) {
         debug.set_context(captured);
+        debug_sync_cursor_to_context();
     }
 }
 
@@ -4949,6 +4954,14 @@ void MachineMonitor :: debug_leave()
     if (debug_session) {
         debug_session->cleanup();
     }
+}
+
+void MachineMonitor :: debug_sync_cursor_to_context(void)
+{
+    if (!debug.is_active() || !debug.has_context()) {
+        return;
+    }
+    apply_go_local(debug.context().pc);
 }
 
 DebugSession *MachineMonitor :: ensure_debug_session()
@@ -4989,6 +5002,40 @@ bool MachineMonitor :: debug_capture_context(DebugContext *out)
     return r == DebugSession::DBG_OK;
 }
 
+bool MachineMonitor :: debug_handle_terminal_result(DebugSession::Result result)
+{
+    if (result != DebugSession::DBG_RESET) {
+        return false;
+    }
+    debug.invalidate_context();
+    debug_cleanup_session();
+    return true;
+}
+
+bool MachineMonitor :: handle_reset_shortcut(void)
+{
+    help_visible = false;
+    hunt_picker_active = false;
+    opcode_picker_active = false;
+    number_picker_active = false;
+    bookmark_popup_active = false;
+    breakpoint_popup_active = false;
+    if (debug.is_active()) {
+        debug.invalidate_context();
+    }
+    debug_cleanup_session();
+    if (!backend || !backend->supports_reset() || !backend->reset_machine()) {
+        get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return true;
+    }
+    pending_hex_nibble = -1;
+    asm_edit_pending = 0;
+    edit_cursor_visible = true;
+    draw();
+    return true;
+}
+
 namespace {
 static const char *const monitor_debug_session_refused = "DEBUG NOT SUPPORTED";
 static const char *const monitor_debug_session_unsafe = "UNSAFE TARGET";
@@ -5002,6 +5049,7 @@ const char *monitor_debug_result_message(int result)
         case DebugSession::DBG_REFUSED:       return monitor_debug_session_unsafe;
         case DebugSession::DBG_TIMEOUT:       return monitor_debug_session_timeout;
         case DebugSession::DBG_CANCELLED:     return "DEBUG CANCELLED";
+        case DebugSession::DBG_RESET:         return NULL;
         case DebugSession::DBG_PATCH_FAILED:  return monitor_debug_session_patch;
         default: return NULL;
     }
@@ -5045,7 +5093,11 @@ void MachineMonitor :: debug_request_over()
                                           : session->over_at(start_pc, pred, &next);
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
+        debug_sync_cursor_to_context();
     } else {
+        if (debug_handle_terminal_result(r)) {
+            return;
+        }
         const char *msg = monitor_debug_result_message(r);
         if (msg) {
             get_ui()->popup(msg, BUTTON_OK);
@@ -5090,7 +5142,11 @@ void MachineMonitor :: debug_request_trace()
                                           : session->trace_at(start_pc, pred, &next);
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
+        debug_sync_cursor_to_context();
     } else {
+        if (debug_handle_terminal_result(r)) {
+            return;
+        }
         const char *msg = monitor_debug_result_message(r);
         if (msg) {
             get_ui()->popup(msg, BUTTON_OK);
@@ -5124,7 +5180,11 @@ void MachineMonitor :: debug_request_out()
     DebugSession::Result r = session->step_out(from, &next);
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
+        debug_sync_cursor_to_context();
     } else {
+        if (debug_handle_terminal_result(r)) {
+            return;
+        }
         const char *msg = monitor_debug_result_message(r);
         if (msg) {
             get_ui()->popup(msg, BUTTON_OK);
@@ -5171,8 +5231,12 @@ void MachineMonitor :: debug_request_go()
         if (session->snapshot(&captured) == DebugSession::DBG_OK &&
             captured.valid) {
             debug.set_context(captured);
+            debug_sync_cursor_to_context();
         }
     } else {
+        if (debug_handle_terminal_result(r)) {
+            return;
+        }
         const char *msg = monitor_debug_result_message(r);
         if (msg) {
             get_ui()->popup(msg, BUTTON_OK);
@@ -5484,6 +5548,11 @@ int MachineMonitor :: handle_key(int key)
     uint8_t byte_value, needle[MONITOR_HUNT_NEEDLE_MAX];
     int needle_len;
     MonitorError error;
+
+    if (key == KEY_CTRL_X) {
+        handle_reset_shortcut();
+        return 0;
+    }
 
     if (hunt_picker_active) {
         return hunt_picker_handle_key(key);

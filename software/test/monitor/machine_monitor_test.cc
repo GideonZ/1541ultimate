@@ -1287,7 +1287,7 @@ static int test_monitor_interaction(void)
         "Close monitor: C=+O/RSTOP",
         "Leave edit:    C=+E/RSTOP",
         "Copy/Paste:    C=+C / C=+V",
-        "Follow/Return: RETURN",
+        "Reset/Follow:  C=+X / RETURN",
         NULL
     };
     monitor_reset_saved_state();

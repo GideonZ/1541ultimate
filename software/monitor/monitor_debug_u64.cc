@@ -327,6 +327,17 @@ class U64DebugSession : public DebugSession
                     key == KEY_CTRL_D || key == KEY_CTRL_O) {
                     return DBG_CANCELLED;
                 }
+                if (key == KEY_CTRL_X) {
+                    restore_patches();
+                    uninstall_handler();
+                    cpu_parked_in_spin = false;
+                    has_last_context = false;
+                    debug_context_reset(&last_context);
+                    if (backend) {
+                        backend->reset_machine();
+                    }
+                    return DBG_RESET;
+                }
                 if (key >= 0) {
                     cancel_keyboard->push_head(key);
                 }

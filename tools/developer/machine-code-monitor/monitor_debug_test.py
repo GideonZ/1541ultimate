@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 # Reuse the existing telnet session helpers so both suites stay in lockstep.
@@ -85,6 +86,26 @@ def _send_ctrl_d(session: "mt.MonitorSession") -> None:
     session.sock.sendall(b"\x04")
 
 
+def _send_ctrl_x(session: "mt.MonitorSession") -> None:
+    session.last_command = "CTRL_X"
+    session.sock.sendall(b"\x18")
+
+
+def _wait_for_blank_debug_context(session: "mt.MonitorSession",
+                                  timeout: float = 4.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        header = _header_line(session)
+        if "Dbg" not in header:
+            time.sleep(0.1)
+            continue
+        parsed = _parse_footer_values(_footer_value_line(session))
+        if not any(parsed[field] for field in ("pc", "sp", "ac", "xr", "yr", "sr", "irq", "nmi")):
+            return
+        time.sleep(0.1)
+    raise mt.Failure(f"Debug footer did not clear after reset:\n{session.capture().text()}")
+
+
 def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     # Park the cursor at a known address so the screen is deterministic.
     with mt.check("Debug: setup at $C000"):
@@ -137,7 +158,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
                       "C=+B List", "D Debug/Over", "T Trace", "O Out",
-                      "C=+R", "C=+D", "RSTOP"):
+                      "C=+R", "C=+D", "C=+X", "RSTOP"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")
         if "ESC" in joined:
@@ -283,6 +304,38 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if "Edit" in header:
             raise mt.Failure(f"ESC after C=+D must clear the remaining Edit flag: {header!r}")
         session.send_char("D")
+
+    with mt.check("Debug: returning to ASM after stepping elsewhere follows the current debug PC"):
+        _ensure_no_debug(session)
+        mt.write_rest_memory(rest_host, 0xC060, bytes([0xA9, 0x22, 0xEA, 0xEA]))
+        session.goto("C060")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C062")
+        session.send_char("M")
+        session.goto("C180")
+        session.send_char("D")
+        _wait_for_pc(session, "C063")
+        session.send_char("A")
+        header = _header_line(session)
+        if "MONITOR ASM $C063" not in header:
+            raise mt.Failure(f"ASM view must snap back to the current debug PC: {header!r}")
+        lines = _capture_lines(session)
+        row = next((line for line in lines if line.startswith("|C063 ")), "")
+        if not row:
+            raise mt.Failure(f"Disassembly cursor did not return to $C063:\n{session.capture().text()}")
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: C=+X resets the machine and keeps Debug open with blank context"):
+        mt.write_rest_memory(rest_host, 0xC070, bytes([0xA9, 0x11, 0xEA]))
+        session.goto("C070")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C072")
+        _send_ctrl_x(session)
+        _wait_for_blank_debug_context(session)
 
     with mt.check("Debug: C=+B opens bookmarks in Debug mode"):
         session.last_command = "CBM_B"

@@ -27,7 +27,7 @@ The monitor screen has three fixed regions:
 ### Header
 
 - Shows the current view, cursor address, and active modes.
-- Mode indicators may include `Undoc`, `Frz`, `Poll`, or `EDIT`.
+- Mode indicators may include `Undc`, `Frz`, `Pl`, `Dbg`, or `Edit`.
 
 ### Body
 
@@ -46,7 +46,7 @@ Example layout:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011  Undoc Frz Poll EDIT|
+|MONITOR ASM $E011  Undc Frz Pl Dbg Edit|
 |...                                   |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
@@ -576,23 +576,26 @@ Debug is a modal state layered on the Assembly view. Entering Debug does not exe
 | `G` | Go / execute | Go |
 | `R` | Range mode | Toggle breakpoint |
 | `C=+R` | (unassigned) | Breakpoint list |
-| `RUN/STOP` | Normal monitor close | Exit Debug |
+| `RUN/STOP` | Normal monitor close | Leave Edit first, then Debug |
 | `C=+D` | (unassigned) | Exit Debug |
+| `C=+X` | Reset / break the machine | Reset / break the machine |
 | `RETURN` | Assembly follow / return | Assembly follow / return |
 
 `RETURN` is non-executing subroutine navigation. `O` is executing step-out: do not confuse it with `RETURN`.
+
+In Debug + Edit, `RUN/STOP` / `ESC` unwind one mode at a time: the first press leaves `Edit` and keeps `Dbg`, the second leaves `Dbg`.
 
 `B` keeps Binary view and `C=+B` keeps the bookmark overview. Neither is repurposed for breakpoints.
 
 ### Status flag
 
-Debug shows a compact `Dbg` indicator in the same flag area as `Undoc`, `Frz`, `Poll`, and `Edit`:
+Debug shows a compact `Dbg` indicator in the same flag area as `Undc`, `Frz`, `Pl`, and `Edit`:
 
 ```text
-Undoc Frz Poll Dbg Edit
+Undc Frz Pl Dbg Edit
 ```
 
-Both `Dbg` and `Edit` are shown when Debug + Edit are active. When space is tight the layout abbreviates `Undoc` to `Undc` and `Poll` to `Pll`; `Edit` is never abbreviated.
+Both `Dbg` and `Edit` are shown when Debug + Edit are active. The flag area uses the fixed 20-character layout `Undc Frz Pl Dbg Edit`.
 
 ### CPU footer
 
@@ -630,7 +633,7 @@ There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the cu
 
 ### Help screen
 
-`F3` or `?` shows the Debug help screen while Debug is active. The help screen distinguishes `RETURN` (non-executing) from `O` (executing step-out) explicitly.
+`F3` or `?` shows the Debug help screen while Debug is active. The help screen distinguishes `RETURN` (non-executing) from `O` (executing step-out) explicitly and shows `C=+X Reset` as the emergency reset / break shortcut.
 
 ### Patch safety
 

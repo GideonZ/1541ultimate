@@ -22,6 +22,7 @@ public:
         DBG_REFUSED,            // Unsafe target (BRK, unsupported insn, ...).
         DBG_TIMEOUT,            // Trap did not fire within the wait window.
         DBG_CANCELLED,          // User pressed RUN/STOP / Telnet ESC during wait.
+        DBG_RESET,              // User forced a machine reset; context is no longer truthful.
         DBG_PATCH_FAILED        // Could not safely install or restore a patch.
     };
 

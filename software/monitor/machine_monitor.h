@@ -8,6 +8,7 @@
 #include "monitor_bookmarks.h"
 #include "monitor_breakpoints.h"
 #include "monitor_debug.h"
+#include "monitor_debug_session.h"
 
 enum MonitorError {
     MONITOR_OK = 0,
@@ -322,6 +323,8 @@ class MachineMonitor : public UIObject
     int  debug_handle_key(int key);
     void debug_enter(void);
     void debug_leave(void);
+    void debug_sync_cursor_to_context(void);
+    bool debug_handle_terminal_result(DebugSession::Result result);
     void debug_request_over(void);
     void debug_request_trace(void);
     void debug_request_out(void);
@@ -334,6 +337,7 @@ class MachineMonitor : public UIObject
     void debug_cleanup_session(void);
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);
+    bool handle_reset_shortcut(void);
     void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
