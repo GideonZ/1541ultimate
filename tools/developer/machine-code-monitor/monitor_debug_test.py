@@ -22,6 +22,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import monitor_test as mt  # type: ignore  # noqa: E402
 
+FLAG_BIT_INDEX = {
+    "N": 0,
+    "V": 1,
+    "B": 3,
+    "D": 4,
+    "I": 5,
+    "Z": 6,
+    "C": 7,
+}
+
 
 def _capture_lines(session: "mt.MonitorSession") -> list[str]:
     snap = session.capture()
@@ -89,6 +99,21 @@ def _send_ctrl_d(session: "mt.MonitorSession") -> None:
 def _send_ctrl_x(session: "mt.MonitorSession") -> None:
     session.last_command = "CTRL_X"
     session.sock.sendall(b"\x18")
+
+
+def _wait_for_screen_text(session: "mt.MonitorSession", needle: str,
+                          timeout: float = 2.0) -> mt.Snapshot:
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        snap = session.capture()
+        last = snap
+        if needle in snap.text():
+            return snap
+        time.sleep(0.1)
+    raise mt.Failure(
+        f"Timed out waiting for {needle!r} after {session.last_command}\n"
+        f"{last.text() if last is not None else '<no snapshot>'}")
 
 
 def _wait_for_blank_debug_context(session: "mt.MonitorSession",
@@ -436,6 +461,218 @@ def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
     raise mt.Failure(f"PC did not reach {expected_pc}; last footer={last!r} ({values!r})")
 
 
+def _assert_flag_bits(label: str, parsed: dict, **expected: str) -> None:
+    sr = parsed["sr"]
+    if len(sr) != 8 or any(bit not in "01" for bit in sr):
+        raise mt.Failure(f"{label}: SR must be 8 binary digits, got {parsed!r}")
+    for flag, value in expected.items():
+        actual = sr[FLAG_BIT_INDEX[flag]]
+        if actual != value:
+            raise mt.Failure(
+                f"{label}: expected {flag}={value}, got SR={sr} footer={parsed!r}")
+
+
+def run_flag_control_flow_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Exercise flag capture and taken/not-taken control flow without duplication."""
+
+    # $C200: 18          CLC
+    # $C201: A9 00       LDA #$00
+    # $C203: D0 02       BNE $C207     ; must fall through
+    # $C205: A9 80       LDA #$80
+    # $C207: 10 02       BPL $C20B     ; must fall through
+    # $C209: 38          SEC
+    # $C20A: 69 7F       ADC #$7F
+    # $C20C: 30 02       BMI $C210     ; must fall through
+    # $C20E: B0 04       BCS $C214     ; must branch
+    # $C210: A9 EE       LDA #$EE      ; skipped when branch predictor is right
+    # $C212: EA          NOP
+    # $C213: EA          NOP
+    # $C214: EA          NOP
+    program = bytes([
+        0x18,
+        0xA9, 0x00,
+        0xD0, 0x02,
+        0xA9, 0x80,
+        0x10, 0x02,
+        0x38,
+        0x69, 0x7F,
+        0x30, 0x02,
+        0xB0, 0x04,
+        0xA9, 0xEE,
+        0xEA,
+        0xEA,
+        0xEA,
+    ])
+
+    _reopen_monitor(session)
+
+    with mt.check("Debug: flag/control-flow program loads at $C200"):
+        mt.write_rest_memory(rest_host, 0xC200, program)
+        readback = mt.read_rest_memory(rest_host, 0xC200, len(program))
+        if readback != program:
+            raise mt.Failure(f"Flag/control-flow program readback mismatch: {readback.hex()}")
+
+    with mt.check("Debug: flag capture and branch fall-through stay truthful across steps"):
+        session.goto("C200")
+        session.send_char("A")
+        session.send_char("D")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C201")
+        _assert_flag_bits("CLC", parsed, C="0")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C203")
+        _assert_flag_bits("LDA #$00", parsed, Z="1", N="0")
+
+        session.send_char("D")
+        _wait_for_pc(session, "C205")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C207")
+        _assert_flag_bits("LDA #$80", parsed, Z="0", N="1")
+
+        session.send_char("D")
+        _wait_for_pc(session, "C209")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C20A")
+        _assert_flag_bits("SEC", parsed, C="1")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C20C")
+        if parsed["ac"] != "00":
+            raise mt.Failure(f"ADC #$7F should wrap AC to $00, got {parsed!r}")
+        _assert_flag_bits("ADC #$7F", parsed, N="0", V="0", Z="1", C="1")
+
+        session.send_char("D")
+        _wait_for_pc(session, "C20E")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C214")
+        if parsed["ac"] != "00":
+            raise mt.Failure(f"Taken BCS must skip LDA #$EE, got {parsed!r}")
+        _ensure_no_debug(session)
+
+
+def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Cover unsafe targets, undocumented-opcode gating, RTS, and RTI handoff."""
+
+    unsafe_program = bytes([0x00, 0x60, 0x40, 0x1A, 0xEA])
+    rts_caller = bytes([0x20, 0x70, 0xC2, 0xEA, 0x4C, 0x64, 0xC2])
+    rts_subroutine = bytes([0x60])
+    rti_setup = bytes([
+        0xA9, 0xC2,
+        0x48,
+        0xA9, 0x90,
+        0x48,
+        0xA9, 0xA1,
+        0x48,
+        0x40,
+    ])
+    rti_target = bytes([0xEA, 0x4C, 0x90, 0xC2])
+
+    _reopen_monitor(session)
+
+    with mt.check("Debug: unsafe-target/refusal fixtures load at $C240/$C260/$C280"):
+        mt.write_rest_memory(rest_host, 0xC240, unsafe_program)
+        mt.write_rest_memory(rest_host, 0xC260, rts_caller)
+        mt.write_rest_memory(rest_host, 0xC270, rts_subroutine)
+        mt.write_rest_memory(rest_host, 0xC280, rti_setup)
+        mt.write_rest_memory(rest_host, 0xC290, rti_target)
+
+    with mt.check("Debug: BRK, RTS, and RTI refuse no-context Over without fabricating state"):
+        session.goto("C240")
+        session.send_char("A")
+        session.send_char("D")
+        for address in ("C240", "C241", "C242"):
+            session.goto(address)
+            session.send_char("D")
+            _wait_for_screen_text(session, "UNSAFE TARGET")
+            session.send_key("ENTER")
+            _wait_for_blank_debug_context(session)
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: undocumented NOP is gated by Undc and steps once enabled"):
+        session.goto("C243")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_screen_text(session, "UNSAFE TARGET")
+        session.send_key("ENTER")
+        _wait_for_blank_debug_context(session)
+        session.send_char("U")
+        header = _header_line(session)
+        if "Undc" not in header:
+            raise mt.Failure(f"Undc flag must appear after U: {header!r}")
+        session.send_char("D")
+        _wait_for_pc(session, "C244")
+        session.send_char("U")
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: traced RTS lands on the caller continuation address"):
+        _reopen_monitor(session)
+        session.goto("C260")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("T")
+        _wait_for_pc(session, "C270")
+        session.send_char("D")
+        _wait_for_pc(session, "C263")
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: RTI restores the stacked target PC and flags truthfully"):
+        _reopen_monitor(session)
+        session.goto("C280")
+        session.send_char("A")
+        session.send_char("D")
+        for expected_pc in ("C282", "C283", "C285", "C286", "C288", "C289"):
+            session.send_char("D")
+            _wait_for_pc(session, expected_pc)
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C290")
+        _assert_flag_bits("RTI", parsed, N="1", Z="0", C="1")
+        _ensure_no_debug(session)
+
+
+def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Ensure repeated Go from the current breakpoint re-arms cleanly."""
+
+    # $C300: EE 90 C1    INC $C190
+    # $C303: 4C 00 C3    JMP $C300
+    program = bytes([
+        0xEE, 0x90, 0xC1,
+        0x4C, 0x00, 0xC3,
+    ])
+
+    _reopen_monitor(session)
+
+    with mt.check("Debug: breakpoint re-entry loop loads at $C300"):
+        mt.write_rest_memory(rest_host, 0xC300, program)
+        mt.write_rest_memory(rest_host, 0xC190, bytes([0x00]))
+
+    with mt.check("Debug: repeated G from the current breakpoint skips once and re-arms cleanly"):
+        session.goto("C300")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("R")
+        session.send_key("ENTER")
+
+        session.send_char("G")
+        _wait_for_pc(session, "C300")
+        if mt.read_rest_memory(rest_host, 0xC190, 1)[0] != 0x00:
+            raise mt.Failure("Initial breakpoint hit must stop before INC $C190 executes")
+
+        session.send_char("G")
+        _wait_for_pc(session, "C300")
+        if mt.read_rest_memory(rest_host, 0xC190, 1)[0] != 0x01:
+            raise mt.Failure("Second G from the active breakpoint must execute INC exactly once")
+
+        _ensure_no_debug(session)
+        if mt.read_rest_memory(rest_host, 0xC300, 1)[0] != 0xEE:
+            raise mt.Failure("Breakpoint cleanup did not restore INC opcode at $C300")
+
+
 def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     """Drive the live BRK trampoline through Over / Trace / Out / Go."""
 
@@ -652,8 +889,11 @@ def main() -> int:
     try:
         session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
         run_debug_tests(rest_host, session)
+        run_flag_control_flow_tests(rest_host, session)
+        run_refusal_and_return_edge_tests(rest_host, session)
         run_brk_orchestrator_tests(rest_host, session)
         run_side_effect_step_tests(rest_host, session)
+        run_breakpoint_reentry_tests(rest_host, session)
     except mt.Failure as exc:
         print(exc, file=sys.stderr)
         if session is not None:
