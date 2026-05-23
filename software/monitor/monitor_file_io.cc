@@ -8,7 +8,6 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "browsable_root.h"
-#include "monitor_save_browsable.h"
 #include "user_file_interaction.h"
 #include "filemanager.h"
 #include "file.h"
@@ -42,8 +41,6 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
                            char *name_out, int name_max,
                            bool save_mode)
 {
-    (void)title;
-
     if (path_out && path_max > 0) path_out[0] = 0;
     if (name_out && name_max > 0) name_out[0] = 0;
 
@@ -51,11 +48,14 @@ bool monitor_io::pick_file(UserInterface *ui, const char *title,
         return false;
     }
 
-    Browsable *root = save_mode ? static_cast<Browsable *>(new MonitorSaveBrowsableRoot())
-                                : static_cast<Browsable *>(new BrowsableRoot());
+    // Browsable *root = save_mode ? static_cast<Browsable *>(new MonitorSaveBrowsableRoot())
+    //                             : static_cast<Browsable *>(new BrowsableRoot());
+    Browsable *root = new BrowsableRoot();
     TreeBrowser *browser = new TreeBrowser(ui, root);
     browser->allow_exit = true;
+    browser->has_border = true;
     browser->use_ui_focus_stack = false;
+    browser->title = title;
     browser->pick_mode = save_mode ? TreeBrowser::PICK_SAVE : TreeBrowser::PICK_LOAD;
     browser->init();
     if (s_monitor_browse_path.length() > 1) {

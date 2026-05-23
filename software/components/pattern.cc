@@ -476,6 +476,28 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
     }
 }
 
+int read_line(const char *buffer, int index, char *out, int outlen)
+{
+    int i = 0;
+    // trim leading spaces and tabs
+    while ((buffer[index] == 0x20) || (buffer[index] == 0x09)) {
+        index ++;
+    }
+    while ((buffer[index] != 0x0A) && (buffer[index] != 0x00)) {
+        if (buffer[index] != 0x0D) {
+            if (i < (outlen-1)) {
+                out[i++] = buffer[index];
+            }
+        }
+        index++;
+    }
+    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
+        index++;
+    }
+    out[i] = 0;
+    return index;
+}
+
 void url_encode(const char *src, mstring &dest)
 {
     int len = strlen(src);

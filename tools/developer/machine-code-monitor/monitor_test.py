@@ -398,10 +398,10 @@ class MonitorSession:
         end = time.time() + timeout
         last_data = time.time()
         while time.time() < end:
-            wait = min(0.2, max(0.0, end - time.time()))
+            wait = min(0.5, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
             if not ready:
-                if time.time() - last_data >= 0.2:
+                if time.time() - last_data >= 0.5:
                     return
                 continue
             chunk = self.sock.recv(65536)

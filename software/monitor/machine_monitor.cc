@@ -4839,8 +4839,6 @@ void MachineMonitor :: deinit(void)
 
 int MachineMonitor :: handle_key(int key)
 {
-    char buffer[96];
-    char output[4096];
     uint16_t start, end, dest, address, value16;
     uint8_t byte_value, needle[MONITOR_HUNT_NEEDLE_MAX];
     int needle_len;
@@ -5388,9 +5386,11 @@ int MachineMonitor :: handle_key(int key)
             break;
         }
         case 'h': case 'H':
-            strcpy(buffer, "0000-FFFF, ");
-            if (prompt_hunt_command("Hunt AAAA-BBBB,...", buffer, sizeof(buffer) - 1)) {
-                error = monitor_parse_hunt(buffer, &start, &end, needle, &needle_len);
+        {
+            char hunt_buffer[36];
+            strcpy(hunt_buffer, "0000-FFFF, ");
+            if (prompt_hunt_command("Hunt AAAA-BBBB,...", hunt_buffer, sizeof(hunt_buffer) - 1)) {
+                error = monitor_parse_hunt(hunt_buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
                     int found = monitor_hunt_collect(backend, start, end, needle, needle_len,
                                                     hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
@@ -5404,6 +5404,7 @@ int MachineMonitor :: handle_key(int key)
                 }
             }
             break;
+        }
         case 'g': case 'G':
             if (handle_go_command()) {
                 return 1;
@@ -5472,7 +5473,7 @@ void MachineMonitor::handle_load_command()
 {
     char path_buf[256] = "";
     char name_buf[64] = "";
-    if (!monitor_io::pick_file(get_ui(), "LOAD: select file", path_buf, sizeof(path_buf),
+    if (!monitor_io::pick_file(get_ui(), "MONITOR LOAD: Select File", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), false)) {
         redraw_full();
         return;
@@ -5486,7 +5487,7 @@ void MachineMonitor::handle_load_command()
     // standard PRG load. Last-used values are remembered if the user
     // overrode anything in a previous invocation. Empty / partial entries
     // fall back to defaults inside monitor_parse_load_params.
-    char buffer[40];
+    char buffer[36];
     if (last_load_use_prg) {
         strcpy(buffer, "PRG,");
     } else {
@@ -5501,7 +5502,7 @@ void MachineMonitor::handle_load_command()
         sprintf(tail, "%X", (unsigned)last_load_length);
         strcat(buffer, tail);
     }
-    if (!prompt_command("Load [PRG|AAAA],[Off],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command("Load [PRG|AAAA],[Offs],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
         redraw_full();
         return;
     }
@@ -5564,8 +5565,8 @@ void MachineMonitor::handle_save_command()
     last_save_end = end;
 
     char path_buf[256] = "";
-    char name_buf[64] = "";
-    if (!monitor_io::pick_file(get_ui(), "SAVE: pick file/dir", path_buf, sizeof(path_buf),
+    char name_buf[36] = "";
+    if (!monitor_io::pick_file(get_ui(), "MONITOR SAVE: Pick File/Dir", path_buf, sizeof(path_buf),
                                name_buf, sizeof(name_buf), true)) {
         redraw_full();
         return;

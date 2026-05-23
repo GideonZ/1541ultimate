@@ -520,6 +520,22 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     return -1;
 }
 
+int UserInterface :: uiobject_modal(UIObject *obj)
+{
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = obj->poll(0);
+    }
+    if (obj->needCleanup()) {
+        obj->deinit();
+        delete obj;
+    }
+    if (!host->exists()) {
+        ret = MENU_CLOSE;
+    }
+    return ret;
+}
+
 bool UserInterface :: has_focus(UIObject *obj)
 {
     return (ui_objects[focus] == obj);
@@ -607,10 +623,13 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
     return ret;
 }
 
-int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
+int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars)
 {
     UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
-    edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
+    if (max_chars <= 0) {
+        max_chars = w->get_size_x()-x;
+    }
+    edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
     int ret = 0;
     while(!ret && host->exists()) {

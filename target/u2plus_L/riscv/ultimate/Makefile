@@ -9,6 +9,7 @@ MABI  ?= ilp32
 include ../../../common/environment.mk
 
 PRJ      =  ultimate
+
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
@@ -37,7 +38,7 @@ SRCS_C   =	itu.c \
 			middleware.c \
 			multipart.c \
 			cmd_buffer.c \
-			url.c \
+			url.c
 
 SRCS_CC	 =  u2pl_init.cc \
 			usb_hwinit.cc \
@@ -94,7 +95,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			userinterface.cc \
 			run_machine_monitor.cc \
 			ui_elements.cc \
-			path_picker.cc \
+			form.cc \
 			user_file_interaction.cc \
 			editor.cc \
 			hex_editor.cc \
@@ -171,7 +172,9 @@ SRCS_CC	 =  u2pl_init.cc \
 			http_target.cc \
 			assembly_search.cc \
 			assembly.cc \
+			ftp_client.cc \
 			filesystem_a64.cc \
+			filesystem_ftp.cc \
 			dma_uart.cc \
 			esp32.cc \
 			wifi_cmd.cc \
