@@ -299,6 +299,9 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
 
 SubsysResultCode_e UserFileInteraction::S_copyTo(SubsysCommand *cmd)
 {
+    mstring hmm;
+    pick_path(cmd->user_interface, hmm);
+    printf("The path selected = %s\n", hmm.c_str());
     return SSRET_NOT_IMPLEMENTED;
 
     char dest_path[64];

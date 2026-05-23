@@ -53,12 +53,9 @@ int ContextMenu :: get_items(void)
     if(contextable) {
         contextable->fetch_context_items(actions);
         if (state && state->browser && state->browser->pick_mode != TreeBrowser::PICK_NONE &&
-            state->browser->can_pick(contextable) && !contextable->pickAsCurrentPath()) {
+            state->browser->can_pick(contextable)) {
             pickAction = new Action("Select", (actionFunction_t)NULL, 0);
-            actions.append(pickAction);
-            for (int i = actions.get_elements() - 1; i > 0; i--) {
-                actions.swap(i, i - 1);
-            }
+            actions.prepend(pickAction);
         }
     }
     return actions.get_elements();
