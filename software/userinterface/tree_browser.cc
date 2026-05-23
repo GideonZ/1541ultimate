@@ -41,6 +41,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 	screen = NULL;
 	window = NULL;
     keyb = NULL;
+    title = NULL;
     contextMenu = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
@@ -368,7 +369,7 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                if (state->under_cursor->pickAsCurrentPath()) {
+                if (state->under_cursor->getSortOrder() == ET_PICKER) {
                     return pick_current();
                 }
                 context(0);
@@ -378,7 +379,7 @@ int TreeBrowser :: handle_key(int c)
                 if (!state || !state->under_cursor) {
                     return 0;
                 }
-                if (state->under_cursor->pickAsCurrentPath()) {
+                if (state->under_cursor->getSortOrder() == ET_PICKER) {
                     return pick_current();
                 }
                 state->into2();
@@ -681,6 +682,27 @@ void TreeBrowser :: cd(const char *dst)
     observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
 }
 
+void TreeBrowser :: prepend_headers()
+{
+    switch(pick_mode) {
+    case PICK_SAVE:
+        if (fm->is_path_writable(path)) {
+            state->children->prepend(new BrowsablePicker("<< Create New File >>", ET_PICKER));
+        }
+        break;
+    case PICK_PATH:
+        if (fm->is_path_writable(path)) {
+            state->children->prepend(new BrowsablePicker("<< Select Current Dir >>", ET_PICKER));
+        }
+        break;
+    default:
+        break;
+    }
+    if (title) {
+        state->children->prepend(new BrowsableStatic(title));
+    }
+}
+
 void TreeBrowser :: pick_result(const char *path, const char *name, bool dir_only)
 {
     (void)dir_only;
@@ -694,10 +716,14 @@ bool TreeBrowser :: can_pick(Browsable *entry)
     if (!entry || pick_mode == PICK_NONE) {
         return false;
     }
-    if (entry->pickAsCurrentPath()) {
+    if (entry->getSortOrder() == ET_PICKER) {
         return true;
     }
-    FileInfo *info = entry->getFileInfo();
+    if (!entry->isSelectable()) {
+        return false;
+    }
+    // TODO: Is this always allowed?
+    FileInfo *info = ((BrowsableDirEntry *)entry)->getFileInfo();
     return info && !(info->attrib & (AM_DIR | AM_VOL));
 }
 
@@ -706,7 +732,7 @@ int TreeBrowser :: pick_current(void)
     if (!state || !state->under_cursor || !can_pick(state->under_cursor)) {
         return 0;
     }
-    if (state->under_cursor->pickAsCurrentPath()) {
+    if (state->under_cursor->getSortOrder() == ET_PICKER) {
         pick_result(getPath(), "", true);
         return MENU_CLOSE;
     }
@@ -746,4 +772,36 @@ const char *TreeBrowser :: getPath() {
 int swap_joystick()
 {
     return 0;
+}
+
+int pick_path(UserInterface *ui, mstring& path_out)
+{
+    if (!ui) {
+        return false;
+    }
+
+    Browsable *root = new BrowsableRoot();
+    TreeBrowser *browser = new TreeBrowser(ui, root);
+    browser->allow_exit = true;
+    browser->has_border = true;
+    browser->use_ui_focus_stack = false;
+    browser->title = "Select Path";
+    browser->pick_mode = TreeBrowser::PICK_PATH;
+    browser->init();
+
+    int ret = 0;
+    GenericHost *h = ui->host;
+    while (!ret && (!h || h->exists())) {
+        ret = browser->poll(0);
+    }
+
+    bool picked = browser->picked;
+    if (picked) {
+        path_out = browser->picked_path.c_str();
+    }
+
+    browser->deinit();
+    delete browser;
+    delete root;
+    return picked;
 }

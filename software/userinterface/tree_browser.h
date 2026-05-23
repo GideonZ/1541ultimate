@@ -47,13 +47,38 @@ public:
 	}
 };
 
+class BrowsablePicker : public Browsable
+{
+    const char *message;
+    int entry_type;
+public:
+    BrowsablePicker(const char *display_string, int et) : Browsable(true), message(display_string), entry_type(et)
+    {
+    }
+    virtual ~BrowsablePicker() { }
+
+    const char *getName() { return message; }
+    void getDisplayString(char *buffer, int width) {
+        int len = strlen(message);
+        if (len > width) {
+            len = width;
+        }
+        int offs = 0;
+        sprintf(buffer, "%#s%#s", offs, "", len, message);
+    }
+    // Abuse of the sort order function for header items. I could have used another function,
+    // but hey, it's an embedded system, and it does somehow work; negative values could be always on top.
+    int  getSortOrder(void) { return entry_type; }
+#define ET_PICKER -2
+};
+
 class TreeBrowser : public UIObject
 {
 	void tasklist(void);
     void seek_char(int c);
     void cd_impl(const char *path);
 public:
-    enum PickMode { PICK_NONE = 0, PICK_LOAD = 1, PICK_SAVE = 2 };
+    enum PickMode { PICK_NONE = 0, PICK_LOAD = 1, PICK_SAVE = 2, PICK_PATH = 3 };
 
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
@@ -65,7 +90,8 @@ public:
     bool     picked;
     mstring  picked_path;
     mstring  picked_name;
-    
+    const char *title;
+
     FileManager *fm;
     UserInterface *user_interface;
     ObserverQueue *observerQueue;
@@ -106,6 +132,8 @@ public:
     void delete_selected(void);
     void paste(void);
     void cd(const char *path);
+    
+    void prepend_headers();
     bool can_pick(Browsable *entry);
     int  pick_current(void);
     void pick_result(const char *path, const char *name, bool dir_only);
@@ -113,4 +141,6 @@ public:
     void invalidate(const void *obj);
     const char *getPath();
 };
+
+int pick_path(UserInterface *intf, mstring& path);
 #endif
