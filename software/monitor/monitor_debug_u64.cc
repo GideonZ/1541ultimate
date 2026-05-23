@@ -547,12 +547,14 @@ class U64DebugSession : public DebugSession
                 if (pred.has_target) addrs[n++] = pred.branch_target;
                 break;
             case DBG_PREDICT_JMP_IND: {
-                // Resolve via memory: JMP ($XXXX) reads target from the
-                // operand word in the current CPU-visible context.
+                // Resolve via memory using the 6502 indirect-JMP page-wrap
+                // quirk: JMP ($xxFF) fetches the high byte from $xx00, not
+                // from the next page.
                 uint16_t op = (uint16_t)(machine->peek_cpu((uint16_t)(start_pc + 1), cpu_port) |
                                          (machine->peek_cpu((uint16_t)(start_pc + 2), cpu_port) << 8));
+                uint16_t op_hi = (uint16_t)((op & 0xFF00) | ((op + 1) & 0x00FF));
                 uint16_t target = (uint16_t)(machine->peek_cpu(op, cpu_port) |
-                                             (machine->peek_cpu((uint16_t)(op + 1), cpu_port) << 8));
+                                             (machine->peek_cpu(op_hi, cpu_port) << 8));
                 addrs[n++] = target;
                 break;
             }

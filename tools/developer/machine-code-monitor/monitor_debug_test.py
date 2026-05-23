@@ -635,6 +635,137 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         _ensure_no_debug(session)
 
 
+def run_page_cross_and_indirect_jump_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Cover page-crossing branches and the 6502 indirect-JMP wrap quirk."""
+
+    branch_taken = bytes([
+        0xA9, 0x00,       # $C1FC: LDA #$00
+        0xF0, 0x02,       # $C1FE: BEQ $C202 (taken across page)
+        0xA9, 0xEE,       # $C200: LDA #$EE (must be skipped)
+        0xEA,             # $C202: NOP
+    ])
+    branch_fallthrough = bytes([
+        0xA9, 0x01,       # $C2FC: LDA #$01
+        0xF0, 0x02,       # $C2FE: BEQ $C302 (not taken across page)
+        0xA9, 0x44,       # $C300: LDA #$44 (must execute)
+        0xEA,             # $C302: NOP
+    ])
+    indirect_jmp = bytes([0x6C, 0xFF, 0xC4])  # JMP ($C4FF)
+
+    _reopen_monitor(session)
+
+    with mt.check("Debug: page-cross branch and indirect-JMP fixtures load"):
+        mt.write_rest_memory(rest_host, 0xC1FC, branch_taken)
+        mt.write_rest_memory(rest_host, 0xC2FC, branch_fallthrough)
+        mt.write_rest_memory(rest_host, 0xC320, indirect_jmp)
+        mt.write_rest_memory(rest_host, 0xC440, bytes([0x4C, 0x40, 0xC4]))  # JMP $C440
+        mt.write_rest_memory(rest_host, 0xC4FF, bytes([0x40]))
+        mt.write_rest_memory(rest_host, 0xC400, bytes([0xC4]))
+        mt.write_rest_memory(rest_host, 0xC500, bytes([0xC5]))
+
+    with mt.check("Debug: taken branch across a page stops at the real target"):
+        session.goto("C1FC")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C1FE")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C202")
+        if parsed["ac"] != "00":
+            raise mt.Failure(f"Taken page-cross branch must skip LDA #$EE, got {parsed!r}")
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: not-taken branch across a page falls through correctly"):
+        _reopen_monitor(session)
+        session.goto("C2FC")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C2FE")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C300")
+        if parsed["ac"] != "01":
+            raise mt.Failure(f"Not-taken page-cross branch must preserve A=$01, got {parsed!r}")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C302")
+        if parsed["ac"] != "44":
+            raise mt.Failure(f"Fall-through LDA #$44 did not execute after page-cross branch: {parsed!r}")
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: Over on JMP ($xxFF) follows the real 6502 page-wrap target"):
+        _reopen_monitor(session)
+        session.goto("C320")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C440")
+        _ensure_no_debug(session)
+
+
+def run_nested_out_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Prove Out unwinds the current stack frame, not just a trivial single-level call."""
+
+    main_program = bytes([
+        0xA9, 0x11,             # $C360: LDA #$11
+        0x20, 0x80, 0xC3,       # $C362: JSR $C380
+        0x8D, 0x91, 0xC1,       # $C365: STA $C191
+        0x4C, 0x68, 0xC3,       # $C368: JMP $C368
+    ])
+    outer_subroutine = bytes([
+        0x48,                   # $C380: PHA
+        0xA9, 0x22,             # $C381: LDA #$22
+        0x8D, 0x92, 0xC1,       # $C383: STA $C192
+        0x20, 0xC0, 0xC3,       # $C386: JSR $C3C0
+        0x68,                   # $C389: PLA
+        0x60,                   # $C38A: RTS
+    ])
+    inner_subroutine = bytes([
+        0xA9, 0x33,             # $C3C0: LDA #$33
+        0x8D, 0x93, 0xC1,       # $C3C2: STA $C193
+        0x60,                   # $C3C5: RTS
+    ])
+
+    _reopen_monitor(session)
+
+    with mt.check("Debug: nested Out fixtures load with stack-changing outer frame"):
+        mt.write_rest_memory(rest_host, 0xC360, main_program)
+        mt.write_rest_memory(rest_host, 0xC380, outer_subroutine)
+        mt.write_rest_memory(rest_host, 0xC3C0, inner_subroutine)
+        mt.write_rest_memory(rest_host, 0xC191, bytes([0x00, 0x00, 0x00]))
+
+    with mt.check("Debug: nested Out unwinds inner then outer caller frames truthfully"):
+        session.goto("C360")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("D")
+        _wait_for_pc(session, "C362")
+        session.send_char("T")
+        _wait_for_pc(session, "C380")
+        session.send_char("D")
+        _wait_for_pc(session, "C381")
+        session.send_char("D")
+        _wait_for_pc(session, "C383")
+        session.send_char("D")
+        _wait_for_pc(session, "C386")
+        if mt.read_rest_memory(rest_host, 0xC192, 1)[0] != 0x22:
+            raise mt.Failure("Outer-frame side effect did not execute before entering the inner call")
+        session.send_char("T")
+        _wait_for_pc(session, "C3C0")
+        session.send_char("O")
+        parsed = _wait_for_pc(session, "C389")
+        if mt.read_rest_memory(rest_host, 0xC193, 1)[0] != 0x33:
+            raise mt.Failure(f"Inner Out did not execute the inner side effect: {parsed!r}")
+        if mt.read_rest_memory(rest_host, 0xC191, 1)[0] != 0x00:
+            raise mt.Failure("Inner Out must not run the caller-side store yet")
+        session.send_char("O")
+        parsed = _wait_for_pc(session, "C365")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C368")
+        if mt.read_rest_memory(rest_host, 0xC191, 1)[0] != 0x11:
+            raise mt.Failure(f"Outer Out did not restore A for the caller-side store: {parsed!r}")
+        _ensure_no_debug(session)
+
+
 def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     """Ensure repeated Go from the current breakpoint re-arms cleanly."""
 
@@ -891,6 +1022,8 @@ def main() -> int:
         run_debug_tests(rest_host, session)
         run_flag_control_flow_tests(rest_host, session)
         run_refusal_and_return_edge_tests(rest_host, session)
+        run_page_cross_and_indirect_jump_tests(rest_host, session)
+        run_nested_out_tests(rest_host, session)
         run_brk_orchestrator_tests(rest_host, session)
         run_side_effect_step_tests(rest_host, session)
         run_breakpoint_reentry_tests(rest_host, session)
