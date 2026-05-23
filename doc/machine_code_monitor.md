@@ -586,9 +586,9 @@ Entering Debug does not execute CPU instructions by itself; execution only happe
 
 | Key | Outside Debug | Inside Debug |
 | --- | --- | --- |
-| `D` | Enter Debug, no execution | Over |
-| `T` | Transfer memory | Trace |
-| `O` | CPU bank cycle | Out |
+| `D` | Enter Debug, no execution | Debug (aka Step Over) |
+| `T` | Transfer memory | Trace (aka Step Into) |
+| `O` | CPU bank cycle | Step Out |
 | `G` | Go / execute | Go |
 | `R` | Range mode | Toggle breakpoint |
 | `C=+R` | (unassigned) | Breakpoint list |
