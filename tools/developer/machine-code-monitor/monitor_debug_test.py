@@ -191,18 +191,15 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_key("ESC")
 
     with mt.check("Debug: R toggles a breakpoint (set + clear)"):
-        # First R should pop up a SET status, second R a CLR status. Both
-        # popups dismiss themselves on ENTER.
+        before = session.capture().text()
         session.send_char("R")
-        snap = session.capture()
-        if not any("SET" in snap.line(y) and "BRK" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("R did not surface a BRK SET status")
-        session.send_key("ENTER")
+        after_set = session.capture().text()
+        if "BRK" in after_set and "SET" in after_set and after_set != before:
+            raise mt.Failure("R must not show a redundant BRK SET popup")
         session.send_char("R")
-        snap = session.capture()
-        if not any("CLR" in snap.line(y) and "BRK" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("Second R did not surface a BRK CLR status")
-        session.send_key("ENTER")
+        after_clear = session.capture().text()
+        if "BRK" in after_clear and "CLR" in after_clear and after_clear != after_set:
+            raise mt.Failure("Second R must not show a redundant BRK CLR popup")
 
     with mt.check("Debug: C=+R opens the breakpoint list popup"):
         # Over telnet, C=+R is sent as ESC+R (same pattern as ESC+B used
@@ -227,7 +224,6 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if "Dbg" not in _header_line(session):
             session.send_char("D")
         session.send_char("R")
-        session.send_key("ENTER")
         lines = _capture_lines(session)
         row = next((line for line in lines if line.startswith("|C050 ")), "")
         if "[BRK0][RAM]" not in row:
@@ -459,6 +455,42 @@ def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
             return parsed
         _time.sleep(0.1)
     raise mt.Failure(f"PC did not reach {expected_pc}; last footer={last!r} ({values!r})")
+
+
+def _wait_for_pc_not(session: "mt.MonitorSession", previous_pc: str,
+                     timeout: float = 6.0) -> dict:
+    import time as _time
+    deadline = _time.time() + timeout
+    last = None
+    while _time.time() < deadline:
+        values = _footer_value_line(session)
+        parsed = _parse_footer_values(values)
+        last = parsed
+        if parsed["pc"] and parsed["pc"].upper() != previous_pc.upper():
+            return parsed
+        _time.sleep(0.1)
+    raise mt.Failure(f"PC did not advance from {previous_pc}; last footer={last!r}")
+
+
+def _address_row_context(session: "mt.MonitorSession", pc: int, context: str) -> None:
+    snap = session.capture()
+    address_rows: list[tuple[int, str]] = []
+    wanted = f"|{pc:04X} "
+    wanted_index = -1
+    for y in range(mt.HEIGHT):
+        line = snap.line(y)
+        if len(line) >= 6 and line[0] == "|" and all(c in "0123456789ABCDEFabcdef" for c in line[1:5]) and line[5] == " ":
+            if line.startswith(wanted):
+                wanted_index = len(address_rows)
+            address_rows.append((y, line))
+    if wanted_index < 0:
+        raise mt.Failure(f"{context}: current PC row {pc:04X} not visible:\n{snap.text()}")
+    before = wanted_index
+    after = len(address_rows) - wanted_index - 1
+    if before < 3:
+        raise mt.Failure(f"{context}: expected at least 3 instruction rows above PC {pc:04X}, got {before}\n{snap.text()}")
+    if after < 3:
+        raise mt.Failure(f"{context}: expected at least 3 instruction rows below PC {pc:04X}, got {after}\n{snap.text()}")
 
 
 def _assert_flag_bits(label: str, parsed: dict, **expected: str) -> None:
@@ -787,7 +819,6 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
         session.send_char("A")
         session.send_char("D")
         session.send_char("R")
-        session.send_key("ENTER")
 
         session.send_char("G")
         _wait_for_pc(session, "C300")
@@ -802,6 +833,70 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
         _ensure_no_debug(session)
         if mt.read_rest_memory(rest_host, 0xC300, 1)[0] != 0xEE:
             raise mt.Failure("Breakpoint cleanup did not restore INC opcode at $C300")
+
+
+def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Prove BASIC/KERNAL ROM breakpoints patch, hit, clear, step, and restore."""
+
+    bootstrap_addr = 0xC540
+    cases = (
+        ("BASIC", 0xA000, "BAS"),
+        ("KERNAL", 0xE000, "KRN"),
+    )
+
+    for name, target, marker in cases:
+        with mt.check(f"Debug: {name} ROM breakpoint set/hit/remove/step", u2=False,
+                      u2_reason="U64 volatile ROM-image patching is required"):
+            _reopen_monitor(session)
+            mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+            original = mt.read_rest_memory(rest_host, target, 1)[0]
+            if original == 0x00:
+                raise mt.Failure(f"{name} test address ${target:04X} already contains BRK")
+            bootstrap = bytes([
+                0xA9, 0x37, 0x8D, 0x01, 0x00,       # keep BASIC/KERNAL visible
+                0x4C, target & 0xFF, target >> 8,   # jump into the ROM target
+            ])
+            mt.write_rest_memory(rest_host, bootstrap_addr, bootstrap)
+
+            session.goto(f"{target:04X}")
+            session.send_char("A")
+            session.send_char("D")
+            lines = _capture_lines(session)
+            row = next((line for line in lines if line.startswith(f"|{target:04X} ")), "")
+            if f"[{marker}]" not in row:
+                raise mt.Failure(f"{name} row did not show ROM source marker [{marker}]: {row!r}")
+
+            session.send_char("R")
+            session.goto(f"{bootstrap_addr:04X}")
+            session.send_char("G")
+            parsed = _wait_for_pc(session, f"{target:04X}")
+            if parsed["pc"].upper() != f"{target:04X}":
+                raise mt.Failure(f"{name} ROM breakpoint did not hit target: {parsed!r}")
+            _address_row_context(session, target, f"{name} ROM breakpoint hit")
+
+            session.send_char("R")
+            session.last_command = f"CBM_R_CLEAR_{name}"
+            session.sock.sendall(b"\x1bR")
+            text = session.capture().text()
+            if f"${target:04X}" in text:
+                raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
+            session.send_key("ESC")
+
+            session.send_char("D")
+            stepped = _wait_for_pc_not(session, f"{target:04X}")
+            stepped_pc = int(stepped["pc"], 16)
+            if name == "BASIC" and not (0xA000 <= stepped_pc <= 0xBFFF):
+                raise mt.Failure(f"BASIC ROM step left BASIC unexpectedly: {stepped!r}")
+            if name == "KERNAL" and not (0xE000 <= stepped_pc <= 0xFFFF):
+                raise mt.Failure(f"KERNAL ROM step left KERNAL unexpectedly: {stepped!r}")
+            _address_row_context(session, stepped_pc, f"{name} ROM step")
+
+            _ensure_no_debug(session)
+            restored = mt.read_rest_memory(rest_host, target, 1)[0]
+            if restored != original:
+                raise mt.Failure(
+                    f"{name} ROM byte was not restored at ${target:04X}: "
+                    f"expected ${original:02X}, got ${restored:02X}")
 
 
 def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> None:
@@ -849,7 +944,6 @@ def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> 
         session.send_char("J")
         session.send_text("C006\r", "J C006")
         session.send_char("R")
-        session.send_key("ENTER")  # dismiss SET popup
         # Bring cursor back to $C000 so G's start_pc fallback runs from there.
         session.send_char("J")
         session.send_text("C000\r", "J C000")
@@ -1046,6 +1140,7 @@ def main() -> int:
         run_refusal_and_return_edge_tests(rest_host, session)
         run_page_cross_and_indirect_jump_tests(rest_host, session)
         run_nested_out_tests(rest_host, session)
+        run_rom_breakpoint_tests(rest_host, session)
         run_brk_orchestrator_tests(rest_host, session)
         run_side_effect_step_tests(rest_host, session)
         run_breakpoint_reentry_tests(rest_host, session)

@@ -252,6 +252,19 @@ static int expect_help_token_accented(CaptureScreen &screen, const char *needle,
     return expect(false, message);
 }
 
+static int find_row_with_address(CaptureScreen &screen, const char *address)
+{
+    char row[40];
+
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strncmp(row, address, 4) == 0) {
+            return y;
+        }
+    }
+    return -1;
+}
+
 static int test_predictor_classifies_control_flow()
 {
     DebugPredictResult p;
@@ -923,12 +936,9 @@ static int test_breakpoint_toggle_via_r()
     if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
     int popups_before = ui.popup_count;
     if (expect(monitor.poll(0) == 0, "R toggles breakpoint and stays in monitor")) return 1;
-    if (expect(ui.popup_count > popups_before, "Toggle-on must surface BRK status")) return 1;
-    if (expect(strstr(ui.last_popup, "BRK") != NULL && strstr(ui.last_popup, "SET") != NULL,
-               "First R should emit a SET status")) return 1;
+    if (expect(ui.popup_count == popups_before, "Toggle-on must not show a success popup")) return 1;
     if (expect(monitor.poll(0) == 0, "Second R clears the same address")) return 1;
-    if (expect(strstr(ui.last_popup, "CLR") != NULL,
-               "Second R must emit a CLR status")) return 1;
+    if (expect(ui.popup_count == popups_before, "Toggle-off must not show a success popup")) return 1;
     if (expect(monitor.poll(0) == 0, "First RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits the monitor")) return 1;
     monitor.deinit();
@@ -1132,6 +1142,99 @@ static int test_ctrl_r_opens_breakpoint_popup()
     if (expect(monitor.poll(0) == 0, "ESC closes the popup")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug first")) return 1;
     if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_popup_navigation_redraws_only_popup()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = {
+        'A', 'D', KEY_CTRL_R, KEY_DOWN, KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 7);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 3; i++) {
+        if (expect(monitor.poll(0) == 0, "Setup should open breakpoint popup")) return 1;
+    }
+
+    int left = 0, top = 0, right = 0, bottom = 0;
+    if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Breakpoint popup rect should be discoverable")) return 1;
+
+    screen.reset_write_counts();
+    if (expect(monitor.poll(0) == 0, "DOWN should navigate inside breakpoint popup")) return 1;
+    if (expect(screen.count_writes_outside_rect(left, top, right, bottom) == 0,
+               "Breakpoint popup navigation must not redraw monitor content or frame")) return 1;
+
+    screen.reset_write_counts();
+    if (expect(monitor.poll(0) == 0, "ESC should close breakpoint popup")) return 1;
+    char row[42];
+    bool title_found = false;
+    for (int y = 0; y < 25 && !title_found; y++) {
+        screen.get_slice(0, y, 40, row);
+        if (strstr(row, "BREAKPOINTS") != NULL) title_found = true;
+    }
+    if (expect(!title_found, "Closing breakpoint popup must remove its title")) return 1;
+    if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
+               "Closing breakpoint popup must not leave stale popup border corners")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug first")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_debug_pc_viewport_keeps_context_margin()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    for (int i = 0; i < 32; i++) {
+        backend.write((uint16_t)(0xC000 + i), 0xEA);
+    }
+    backend.canned_snapshot_set = true;
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xC003;
+    backend.canned_snapshot.sp = 0xF7;
+    backend.canned_snapshot.sr = 0x24;
+
+    const int keys[] = { 'J', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("C000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Goto viewport program")) return 1;
+    if (expect(monitor.poll(0) == 0, "Switch to ASM")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug and sync to PC")) return 1;
+
+    int row_c003 = find_row_with_address(screen, "C003");
+    int row_c000 = find_row_with_address(screen, "C000");
+    if (expect(row_c003 > row_c000, "Current PC must not be pinned to the first ASM row")) return 1;
+    if (expect(row_c003 - row_c000 >= 3,
+               "Current PC should preserve three instruction rows above where possible")) return 1;
+
+    if (expect(backend.last_session != NULL, "Debug session should exist before stepping")) return 1;
+    backend.last_session->next_ctx.pc = 0xC004;
+    if (expect(monitor.poll(0) == 0, "Over should step to next current PC")) return 1;
+    int row_c004 = find_row_with_address(screen, "C004");
+    if (expect(row_c004 == row_c003 + 1,
+               "Linear stepping should move the highlighted PC down naturally")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -1449,6 +1552,8 @@ int main()
     RUN(test_breakpoint_row_indicator_and_color);
     RUN(test_source_indicators_are_three_chars);
     RUN(test_ctrl_r_opens_breakpoint_popup);
+    RUN(test_breakpoint_popup_navigation_redraws_only_popup);
+    RUN(test_debug_pc_viewport_keeps_context_margin);
     RUN(test_breakpoint_popup_blocks_debug_execution_keys);
     RUN(test_unsupported_session_emits_refusal);
     RUN(test_b_keeps_binary_view_in_debug);

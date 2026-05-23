@@ -334,6 +334,7 @@ class MachineMonitor : public UIObject
     int  debug_breakpoint_popup_handle_key(int key);
     void debug_close_breakpoint_popup(void);
     void debug_render_breakpoint_popup(void);
+    void ensure_debug_pc_visible(void);
     void debug_cleanup_session(void);
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);

@@ -3882,6 +3882,9 @@ void MachineMonitor :: refresh_popup_overlay()
         if (number_picker_active) {
             draw_number_picker();
         }
+        if (breakpoint_popup_active) {
+            debug_render_breakpoint_popup();
+        }
     }
     screen->sync();
 }
@@ -4963,7 +4966,12 @@ void MachineMonitor :: debug_sync_cursor_to_context(void)
     if (!debug.is_active() || !debug.has_context()) {
         return;
     }
-    apply_go_local(debug.context().pc);
+    state.current_addr = debug.context().pc;
+    if (state.view == MONITOR_VIEW_ASM) {
+        ensure_debug_pc_visible();
+    } else {
+        ensure_current_visible();
+    }
 }
 
 DebugSession *MachineMonitor :: ensure_debug_session()
@@ -5250,16 +5258,10 @@ void MachineMonitor :: debug_request_go()
 
 void MachineMonitor :: debug_toggle_breakpoint()
 {
-    char msg[32];
     uint16_t target = state.current_addr;
     int existing = breakpoints.find_at(target);
     if (existing >= 0) {
         breakpoints.clear_slot(existing);
-        // The Debug footer is reserved for CPU state, so breakpoint feedback
-        // goes through the popup channel instead of the bookmark status row.
-        sprintf(msg, "BRK %d CLR $%04X", existing, (unsigned)target);
-        get_ui()->popup(msg, BUTTON_OK);
-        redraw_full();
         return;
     }
     int slot = breakpoints.allocate(target, (uint8_t)(state.cpu_port & 0x07));
@@ -5268,9 +5270,6 @@ void MachineMonitor :: debug_toggle_breakpoint()
         redraw_full();
         return;
     }
-    sprintf(msg, "BRK %d SET $%04X", slot, (unsigned)target);
-    get_ui()->popup(msg, BUTTON_OK);
-    redraw_full();
 }
 
 void MachineMonitor :: debug_open_breakpoint_popup()
@@ -5290,7 +5289,7 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 {
     if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_R) {
         debug_close_breakpoint_popup();
-        draw();
+        redraw_full();
         return 0;
     }
     if (key == KEY_CTRL_O) {
@@ -5299,12 +5298,12 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
     }
     if (key == KEY_UP) {
         if (breakpoint_selected > 0) breakpoint_selected--;
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_DOWN) {
         if (breakpoint_selected + 1 < (uint8_t)breakpoints.slot_count()) breakpoint_selected++;
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key >= '0' && key <= '9') {
@@ -5315,7 +5314,7 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             apply_go_local(bp->address);
             debug_close_breakpoint_popup();
         }
-        draw();
+        redraw_full();
         return 0;
     }
     if (key == KEY_RETURN) {
@@ -5325,13 +5324,13 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             apply_go_local(bp->address);
         }
         debug_close_breakpoint_popup();
-        draw();
+        redraw_full();
         return 0;
     }
     if (key == 's' || key == 'S') {
         breakpoints.store_slot(breakpoint_selected, state.current_addr,
                                (uint8_t)(state.cpu_port & 0x07));
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == 'e' || key == 'E') {
@@ -5339,12 +5338,12 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
         if (bp && bp->used) {
             breakpoints.set_enabled(breakpoint_selected, !bp->enabled);
         }
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     if (key == KEY_DELETE || key == KEY_BACK) {
         breakpoints.clear_slot(breakpoint_selected);
-        draw();
+        refresh_popup_overlay();
         return 0;
     }
     return 0;
@@ -5405,6 +5404,43 @@ void MachineMonitor :: debug_render_breakpoint_popup()
         popup.repeat(' ', BRK_POPUP_INNER_WIDTH - len);
         popup.set_color(get_ui()->color_fg);
     }
+}
+
+void MachineMonitor :: ensure_debug_pc_visible(void)
+{
+    enum { DEBUG_PC_MARGIN = 3 };
+    int rows = content_height;
+    int margin = DEBUG_PC_MARGIN;
+
+    if (state.view != MONITOR_VIEW_ASM) {
+        return;
+    }
+    if (rows <= 1) {
+        state.base_addr = state.current_addr;
+        return;
+    }
+    if (margin * 2 >= rows) {
+        margin = (rows - 1) / 2;
+    }
+
+    int row = disasm_visible_row(state.current_addr);
+    if (row >= 0 && row < rows) {
+        int lower_limit = rows - 1 - margin;
+        if (row < margin) {
+            state.base_addr = disasm_rewind_rows(state.base_addr, margin - row);
+            ensure_disasm_visible();
+            return;
+        }
+        if (row > lower_limit) {
+            state.base_addr = disasm_advance_rows(state.base_addr, row - lower_limit);
+            ensure_disasm_visible();
+            return;
+        }
+        return;
+    }
+
+    state.base_addr = disasm_rewind_rows(state.current_addr, margin);
+    ensure_disasm_visible();
 }
 
 int MachineMonitor :: debug_handle_key(int key)

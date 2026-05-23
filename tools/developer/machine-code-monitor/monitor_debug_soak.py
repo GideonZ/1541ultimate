@@ -7,10 +7,9 @@ repeatedly seeds controlled CPU state, enters selected BASIC/KERNAL routines,
 single-steps instructions, and compares the Debug footer against a small local
 6510 model for every supported instruction.
 
-Full ROM stepping requires copying BASIC and KERNAL into the RAM underneath
-their ROM windows and forcing the live 6510 port to all-RAM mode. That is
-destructive to the C64-side machine state, so it is opt-in and requires an
-explicit confirmation flag or interactive confirmation.
+The soak runs against the normal ROM mapping. It deliberately does not copy
+BASIC/KERNAL into underlying RAM; ROM breakpoints must use the debugger's
+backend-specific writable execution/shadow representation.
 """
 
 from __future__ import annotations
@@ -499,28 +498,13 @@ def set_cpu(session: "mt.MonitorSession", cpu: int) -> None:
     raise mt.Failure(f"Could not switch monitor CPU bank to CPU{cpu}")
 
 
-def destructive_confirmation(args: argparse.Namespace) -> None:
-    if not args.copy_roms_to_ram:
-        return
-    if args.yes_copy_roms:
-        return
-    prompt = "Type COPY ROMS TO RAM to overwrite the RAM under BASIC/KERNAL: "
-    if not sys.stdin.isatty():
-        raise mt.Failure("--copy-roms-to-ram requires --yes-copy-roms in non-interactive runs")
-    if input(prompt) != "COPY ROMS TO RAM":
-        raise mt.Failure("ROM shadow copy was not confirmed")
-
-
-def copy_roms_to_ram(rest_host: str) -> None:
+def verify_rom_mapping(rest_host: str) -> None:
     basic = mt.read_rest_memory(rest_host, 0xA000, 0x2000)
     kernal = mt.read_rest_memory(rest_host, 0xE000, 0x2000)
     if basic[0:2] != b"\x94\xE3":
         raise mt.Failure(f"BASIC ROM signature mismatch at $A000: {basic[0:2].hex().upper()}")
     if kernal[-6:] == b"\x00" * 6:
-        raise mt.Failure("KERNAL vector area read as all zeroes; refusing ROM shadow copy")
-    for base, data in ((0xA000, basic), (0xE000, kernal)):
-        for offset in range(0, len(data), 128):
-            mt.write_rest_memory(rest_host, base + offset, data[offset:offset + 128])
+        raise mt.Failure("KERNAL vector area read as all zeroes; ROM mapping is not usable")
 
 
 def write_bootstrap(rest_host: str, target: int, seed: int) -> CpuState:
@@ -528,7 +512,7 @@ def write_bootstrap(rest_host: str, target: int, seed: int) -> CpuState:
     xr = (0x40 + seed * 29) & 0xFF
     yr = (0x01 + seed * 7) & 0x7F
     program = bytes([
-        0xA9, 0x30, 0x8D, 0x01, 0x00,       # force live $0001 to all-RAM
+        0xA9, 0x37, 0x8D, 0x01, 0x00,       # force live $0001 to BASIC/KERNAL ROM
         0xD8, 0x18, 0x78, 0xB8,             # CLD / CLC / SEI / CLV
         0xA2, 0xF8, 0x9A,                   # deterministic SP for footer checks
         0xA9, ac, 0xA2, xr, 0xA0, yr,       # known registers
@@ -544,12 +528,11 @@ def enter_routine(session: "mt.MonitorSession", rest_host: str, routine: Routine
                   seed: int) -> CpuState:
     expected = write_bootstrap(rest_host, routine.address, seed)
     dbg._reopen_monitor(session)
-    set_cpu(session, 0)
+    set_cpu(session, 7)
     session.goto(f"{routine.address:04X}")
     session.send_char("A")
     session.send_char("D")
     session.send_char("R")
-    session.send_key("ENTER")
     session.goto(f"{BOOTSTRAP_ADDR:04X}")
     session.send_char("G")
     dbg._wait_for_pc(session, f"{routine.address:04X}")
@@ -584,14 +567,10 @@ def exercise_debug_ux(session: "mt.MonitorSession", current: CpuState, iteration
 
 
 def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSession") -> None:
-    destructive_confirmation(args)
     original_port = mt.read_rest_memory(rest_host, 0x0001, 1)[0]
 
-    if args.copy_roms_to_ram:
-        with mt.check("Debug soak: copy BASIC/KERNAL ROMs into RAM below"):
-            copy_roms_to_ram(rest_host)
-    else:
-        raise mt.Failure("Full ROM debug soak requires --copy-roms-to-ram --yes-copy-roms")
+    with mt.check("Debug soak: verify BASIC/KERNAL ROM mapping"):
+        verify_rom_mapping(rest_host)
 
     rng = random.Random(args.seed)
     deadline = time.time() + args.duration
@@ -666,8 +645,6 @@ def main() -> int:
     parser.add_argument("--max-steps-per-entry", type=int, default=24)
     parser.add_argument("--min-validated-steps", type=int, default=50)
     parser.add_argument("--progress-every", type=int, default=100)
-    parser.add_argument("--copy-roms-to-ram", action="store_true")
-    parser.add_argument("--yes-copy-roms", action="store_true")
     args = parser.parse_args()
 
     rest_host = args.rest_host or args.host

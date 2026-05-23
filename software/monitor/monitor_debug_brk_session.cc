@@ -218,6 +218,10 @@ bool BrkDebugSession :: install_brk_at(uint16_t addr, uint8_t cpu_port)
         return false;
     }
     write_patch_byte(addr, 0x00, cpu_port);
+    if (read_patch_byte(addr, cpu_port) != 0x00) {
+        end_stopped_session(stopped_it);
+        return false;
+    }
     end_stopped_session(stopped_it);
     patches[slot].used = true;
     patches[slot].address = addr;
