@@ -653,12 +653,6 @@ It keeps the normal help layout, replaces the keys Debug owns with Debug actions
 
 `RETURN` remains non-executing follow / return navigation; `O` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
 
-### Patch safety
-
-Every BRK patch, including temporary U64 ROM-image patches, plus every vector hook and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. 
-
-U64 ROM-image patches are volatile only; rebooting or reloading ROMs restores the configured BASIC/KERNAL image even if a debug session is interrupted before cleanup. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
-
 ### Hardware support
 
 | Capability                              | U64 (Elite) | U2 / U2+ cartridge |
@@ -671,11 +665,7 @@ U64 ROM-image patches are volatile only; rebooting or reloading ROMs restores th
 | Monitor-side CPU bank selection (`O`)    | Yes         | Not available - status line shows `CPU BANK N/A` |
 | Monitor-side VIC bank selection (`SH+O`) | Yes         | Not available - status line shows `VIC N/A` |
 | Freeze toggle (`Z`)                      | Yes         | Not available |
-| REST `/v1/machine` memory API            | Yes         | Yes (`route_machine.cc` is linked into all target builds) |
-
-The Debug stepping engine itself is shared between U64 and U2: both back-ends sit on the same BRK trampoline plus IRQ/NMI vector hook (`software/monitor/monitor_debug_brk_session.cc`).
-
-Only the platform-specific hooks (stopped-session bracketing, ROM-image patching, NMI pulse, reset) differ.
+| REST `/v1/machine` memory API            | Yes         | Yes |
 
 ## Additional Notes
 
