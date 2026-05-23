@@ -40,7 +40,7 @@ static const char *const monitor_help_lines[] = {
     "Z Freeze     O CPU Bank   SH+O VIC",
     "L Load       S Save",
     "",
-    "Bookmarks:  C=+B List   C=+0-9 Jump",
+    "Bookmarks:   C=+B List    C=+0-9 Jump",
     "",
     "Monitor:        C=+O Open/Close",
     "Leave edit:     C=+E/RSTOP",
@@ -5326,8 +5326,9 @@ void MachineMonitor :: debug_render_breakpoint_popup()
 {
     enum {
         BRK_POPUP_INNER_WIDTH = 38,
-        BRK_POPUP_INNER_HEIGHT = 3,
-        BRK_POPUP_SLOT_ROW = 2
+        BRK_POPUP_INNER_HEIGHT = 14,
+        BRK_POPUP_SLOT_FIRST_ROW = 2,
+        BRK_POPUP_HELP_ROW = 13
     };
     if (!window || !screen) {
         return;
@@ -5335,10 +5336,14 @@ void MachineMonitor :: debug_render_breakpoint_popup()
     char popup_lines[BRK_POPUP_INNER_HEIGHT][BRK_POPUP_INNER_WIDTH + 1];
     memset(popup_lines, 0, sizeof(popup_lines));
     strcpy(popup_lines[0], "BREAKPOINTS");
-    MonitorBreakpoints::format_popup_row(popup_lines[BRK_POPUP_SLOT_ROW],
-                                         sizeof(popup_lines[BRK_POPUP_SLOT_ROW]),
-                                         (int)breakpoint_selected,
-                                         breakpoints.get(breakpoint_selected));
+    for (int i = 0; i < breakpoints.slot_count(); i++) {
+        MonitorBreakpoints::format_popup_row(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i],
+                                             sizeof(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i]),
+                                             i,
+                                             breakpoints.get(i));
+    }
+    strcpy(popup_lines[BRK_POPUP_HELP_ROW],
+           "U/D Sel 0-9/RET Jmp S Set DEL Rst");
     int screen_x, screen_y;
     window->getOffsets(screen_x, screen_y);
     int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
@@ -5352,20 +5357,25 @@ void MachineMonitor :: debug_render_breakpoint_popup()
                  BRK_POPUP_INNER_WIDTH + 2, BRK_POPUP_INNER_HEIGHT + 2);
     popup.set_color(get_ui()->color_fg);
     popup.draw_border();
-    for (int i = 0; i < BRK_POPUP_INNER_HEIGHT; i++) {
+    popup.set_color(get_ui()->color_fg);
+    for (int row = 0; row < BRK_POPUP_INNER_HEIGHT; row++) {
         char line[BRK_POPUP_INNER_WIDTH + 1];
-        int len = (int)strlen(popup_lines[i]);
+        int len = (int)strlen(popup_lines[row]);
+        int slot_row = row - BRK_POPUP_SLOT_FIRST_ROW;
+        bool selected = (slot_row >= 0 && slot_row < breakpoints.slot_count() &&
+                         slot_row == (int)breakpoint_selected);
+
         if (len > BRK_POPUP_INNER_WIDTH) len = BRK_POPUP_INNER_WIDTH;
         memset(line, ' ', BRK_POPUP_INNER_WIDTH);
         if (len > 0) {
-            memcpy(line, popup_lines[i], (size_t)len);
+            memcpy(line, popup_lines[row], (size_t)len);
         }
         line[BRK_POPUP_INNER_WIDTH] = 0;
-        if (i == BRK_POPUP_SLOT_ROW) {
-            draw_with_highlight(&popup, i, line, BRK_POPUP_INNER_WIDTH,
+        if (selected) {
+            draw_with_highlight(&popup, row, line, BRK_POPUP_INNER_WIDTH,
                                 0, BRK_POPUP_INNER_WIDTH);
         } else {
-            popup.move_cursor(0, i);
+            popup.move_cursor(0, row);
             popup.output_length(line, BRK_POPUP_INNER_WIDTH);
         }
     }

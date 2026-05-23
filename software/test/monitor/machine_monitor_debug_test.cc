@@ -745,6 +745,7 @@ static int test_ctrl_d_leaves_debug_but_keeps_edit()
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
+    ui.color_fg = 12;
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
@@ -1151,13 +1152,23 @@ static int test_ctrl_r_opens_breakpoint_popup()
                "Breakpoint popup must draw a complete border")) return 1;
     if (expect(right - left - 1 == 38,
                "Breakpoint popup must have 38 inner columns")) return 1;
-    if (expect(bottom == top + 4,
-               "Breakpoint popup bottom border must sit below the selected slot row")) return 1;
+    if (expect(bottom == top + 15,
+               "Breakpoint popup must match the Bookmark popup height")) return 1;
     if (expect(screen.colors[top + 1][left + 1] == ui.color_fg,
                "Breakpoint popup title must use the normal popup foreground color")) return 1;
     get_popup_line(screen, 2, row, sizeof(row));
     if (expect(strncmp(row, "0 EMPTY", strlen("0 EMPTY")) == 0,
-               "Breakpoint popup must show selected slot 0")) return 1;
+               "Breakpoint popup must show slot 0")) return 1;
+    get_popup_line(screen, 11, row, sizeof(row));
+    if (expect(strncmp(row, "9 EMPTY", strlen("9 EMPTY")) == 0,
+               "Breakpoint popup must show slot 9 without scrolling")) return 1;
+    get_popup_line(screen, 12, row, sizeof(row));
+    if (expect(strspn(row, " ") == strlen(row),
+               "Breakpoint popup must separate slots from the help row")) return 1;
+    get_popup_line(screen, 13, row, sizeof(row));
+    if (expect(strncmp(row, "U/D Sel 0-9/RET Jmp S Set DEL Rst",
+                       strlen("U/D Sel 0-9/RET Jmp S Set DEL Rst")) == 0,
+               "Breakpoint popup help row must match the built-in command summary")) return 1;
     int slot_y = top + 1 + 2;
     for (int x = left + 1; x < right; x++) {
         if (expect(screen.colors[slot_y][x] == ui.color_fg,
