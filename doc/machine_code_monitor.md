@@ -15,6 +15,8 @@ To open the monitor, use one of the following:
 
 Open the built-in help with `F3` or `?`.
 
+While the monitor is open, `C=+X` resets / breaks the U64 from any monitor mode, including Help, Edit, Debug, and popups.
+
 To close the monitor:
 
 - Press `C=+O` again.
@@ -619,7 +621,7 @@ Unknown values render as blank spaces in their reserved fixed-width columns; the
 
 ### Breakpoints
 
-There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. `C=+R` opens the breakpoint list. The popup controls are:
+There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. On U64, breakpoints in BASIC, KERNAL, and character ROM use temporary patches in the volatile U64 ROM image, so ROM code remains step-capable without copying ROMs into C64 RAM or writing flash. `C=+R` opens the breakpoint list. The popup controls are:
 
 | Key | Action |
 | --- | --- |
@@ -637,7 +639,23 @@ There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the cu
 
 ### Patch safety
 
-Every BRK patch, vector hook, and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
+Every BRK patch, including temporary U64 ROM-image patches, plus every vector hook and trampoline is saved and restored on normal completion, breakpoint clear, timeout, cancel, debug-off, and monitor close. U64 ROM-image patches are volatile only; rebooting or reloading ROMs restores the configured BASIC/KERNAL image even if a debug session is interrupted before cleanup. Unsafe targets are refused rather than corrupting memory or fabricating CPU state.
+
+### Hardware support
+
+| Capability                              | U64 (Elite) | U2 / U2+ cartridge |
+| --------------------------------------- | ----------- | ------------------ |
+| Memory view, edit, fill, compare        | Yes         | Yes                |
+| `G` jump to address                     | Yes         | Yes                |
+| BRK-based step / over / trace / out     | Yes         | Yes                |
+| Breakpoints in C64 RAM                  | Yes         | Yes                |
+| Breakpoints in BASIC / KERNAL / CHAR ROM | Yes (volatile U64 ROM-image patch) | Not available - C64 ROM is read-only from the cartridge |
+| Monitor-side CPU bank selection (`O`)    | Yes         | Not available - status line shows `CPU BANK N/A` |
+| Monitor-side VIC bank selection (`SH+O`) | Yes         | Not available - status line shows `VIC N/A` |
+| Freeze toggle (`Z`)                      | Yes         | Not available |
+| REST `/v1/machine` memory API            | Yes         | Yes (`route_machine.cc` is linked into all target builds) |
+
+The Debug stepping engine itself is shared between U64 and U2: both back-ends sit on the same BRK trampoline plus IRQ/NMI vector hook (`software/monitor/monitor_debug_brk_session.cc`). Only the platform-specific hooks (stopped-session bracketing, ROM-image patching, NMI pulse, reset) differ.
 
 ## Additional Notes
 

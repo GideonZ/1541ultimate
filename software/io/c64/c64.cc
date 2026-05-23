@@ -674,6 +674,22 @@ void C64::poke(uint16_t address, uint8_t value)
     }
 }
 
+bool C64::begin_stopped_session(void)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(false);
+    }
+    return !wasStopped;
+}
+
+void C64::end_stopped_session(bool stopped_it)
+{
+    if (stopped_it) {
+        resume();
+    }
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)

@@ -63,6 +63,7 @@ SRCS_CC	 =  u2p_init.cc \
 			c64_crt.cc \
 			u64_machine.cc \
 			u64_memory_backend.cc \
+			monitor_debug_brk_session.cc \
 			monitor_debug_u64.cc \
 			c64_subsys.cc \
 			screen.cc \

@@ -178,22 +178,6 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     }
 }
 
-bool U64Machine :: begin_stopped_session()
-{
-    bool wasStopped = is_stopped();
-    if (!wasStopped) {
-        stop(false);
-    }
-    return !wasStopped;
-}
-
-void U64Machine :: end_stopped_session(bool stopped_it)
-{
-    if (stopped_it) {
-        resume();
-    }
-}
-
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
     // Match the REST C64_DMA_RAW_READ path: stop the machine and read the visible C64 aperture directly.

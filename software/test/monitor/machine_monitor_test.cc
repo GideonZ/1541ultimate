@@ -1287,7 +1287,7 @@ static int test_monitor_interaction(void)
         "Close monitor: C=+O/RSTOP",
         "Leave edit:    C=+E/RSTOP",
         "Copy/Paste:    C=+C / C=+V",
-        "Reset/Follow:  C=+X / RETURN",
+        "Reset/Follow:  C=+X Reset / RETURN",
         NULL
     };
     monitor_reset_saved_state();
@@ -5947,6 +5947,57 @@ static int test_restricted_backend_guards_platform_features(void)
     return 0;
 }
 
+struct ResetShortcutBackend : public FakeMemoryBackend
+{
+    int reset_calls;
+
+    ResetShortcutBackend() : reset_calls(0) { }
+    virtual bool supports_reset(void) const { return true; }
+    virtual bool reset_machine(void) { reset_calls++; return true; }
+};
+
+static int test_reset_shortcut_is_global(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    ResetShortcutBackend backend;
+    const int keys[] = {
+        KEY_HELP,
+        KEY_CTRL_X,
+        'E',
+        KEY_CTRL_X,
+        KEY_CTRL_X,
+        KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+
+    if (expect(mon.poll(0) == 0, "F3 should show help before reset shortcut test.")) return 1;
+    if (expect(mon.poll(0) == 0, "CTRL+X from help should reset without exiting monitor.")) return 1;
+    if (expect(backend.reset_calls == 1,
+               "CTRL+X must reset even while help is visible.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "E should enter edit mode before reset shortcut test.")) return 1;
+    if (expect(mon.poll(0) == 0, "CTRL+X from edit should reset without exiting monitor.")) return 1;
+    if (expect(backend.reset_calls == 2,
+               "CTRL+X must reset even while edit mode is active.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "CTRL+X from view mode should reset without exiting monitor.")) return 1;
+    if (expect(backend.reset_calls == 3,
+               "CTRL+X must reset from normal monitor view mode.")) return 1;
+
+    if (expect(mon.poll(0) == 1, "RUN/STOP should still close monitor after reset shortcut test.")) return 1;
+    mon.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -6022,6 +6073,7 @@ int main()
     if (test_warning_popups_preserve_status_row()) return 1;
     if (test_asm_follow_and_return_navigation()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;
+    if (test_reset_shortcut_is_global()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

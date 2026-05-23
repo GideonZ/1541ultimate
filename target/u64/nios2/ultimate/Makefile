@@ -111,6 +111,7 @@ SRCS_CC	 =  u2p_init.cc \
 			monitor_bookmarks.cc \
 			monitor_breakpoints.cc \
 			monitor_debug.cc \
+			monitor_debug_brk_session.cc \
 			monitor_debug_u64.cc \
 			monitor_debug_predictor.cc \
 			machine_monitor.cc \

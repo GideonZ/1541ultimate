@@ -17,7 +17,10 @@ public:
     virtual bool supports_cpu_banking(void) const { return false; }
     virtual bool supports_vic_bank(void) const { return false; }
     virtual bool supports_go(void) const { return true; }
+    virtual bool supports_reset(void) const { return true; }
+    virtual bool reset_machine(void);
     virtual const char *source_name(uint16_t address) const;
+    virtual DebugSession *create_debug_session(void);
 };
 
 #endif

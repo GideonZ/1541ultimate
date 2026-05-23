@@ -46,7 +46,7 @@ static const char *const monitor_help_lines[] = {
     "Close monitor: C=+O/RSTOP",
     "Leave edit:    C=+E/RSTOP",
     "Copy/Paste:    C=+C / C=+V",
-    "Reset/Follow:  C=+X / RETURN",
+    "Reset/Follow:  C=+X Reset / RETURN",
     NULL
 };
 
@@ -5022,6 +5022,7 @@ bool MachineMonitor :: handle_reset_shortcut(void)
     number_picker_active = false;
     bookmark_popup_active = false;
     breakpoint_popup_active = false;
+    exit_edit_mode();
     if (debug.is_active()) {
         debug.invalidate_context();
     }

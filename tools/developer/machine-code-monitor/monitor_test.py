@@ -23,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
 STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+# U2 cartridge backend has no monitor-side CPU banking or VIC bank selection,
+# so the status line collapses to a fixed "no banking" label.
+U2_STATUS_LINE_RE = re.compile(r"CPU VIEW\s+CPU BANK N/A\s+VIC N/A")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 CHECK_COUNT = 0
@@ -74,17 +77,113 @@ class Failure(RuntimeError):
     pass
 
 
-@contextmanager
-def check(label: str):
+class SkipCheck(Exception):
+    pass
+
+
+# Test configuration. Set by main() before run_tests() so the check() helper and
+# individual tests can branch on the target hardware (u64 vs u2) and on whether
+# the run should accumulate failures rather than aborting on the first one.
+class TestConfig:
+    target: str = "u64"
+    keep_going: bool = False
+    session: Optional["MonitorSession"] = None
+    failures: List[Tuple[int, str, str]] = []
+    skipped: List[Tuple[int, str, str]] = []
+
+
+def is_u2() -> bool:
+    return TestConfig.target == "u2"
+
+
+def is_u64() -> bool:
+    return TestConfig.target == "u64"
+
+
+class _SkipCheckCtx:
+    """No-op context that suppresses every exception raised in the body.
+
+    Used when a check is gated by ``u2=False`` and the active target is u2.
+    Python provides no zero-cost mechanism to suppress a `with` block from
+    its context manager, so the body still runs; suppressing all exceptions
+    keeps state changes intentional while preventing the run from aborting.
+    The skip is announced before the body executes.
+    """
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        return True
+
+
+class _ActiveCheckCtx:
+    def __init__(self, label: str, check_index: int):
+        self.label = label
+        self.check_index = check_index
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            print("OK", flush=True)
+            return False
+        if exc_type is SkipCheck:
+            print(f"SKIP  ({exc})", flush=True)
+            TestConfig.skipped.append((self.check_index, self.label, str(exc)))
+            return True
+        print("FAIL", flush=True)
+        diag = _diagnostic_block(self.label, exc)
+        print(diag, flush=True)
+        TestConfig.failures.append((self.check_index, self.label, diag))
+        return bool(TestConfig.keep_going)
+
+
+def check(label: str, *, u2: bool = True, u2_reason: str = ""):
+    """Return a context manager for a single check.
+
+    Setting ``u2=False`` marks the check as U64-only; in U2 mode the check is
+    skipped with a clear reason printed to the console. When
+    ``TestConfig.keep_going`` is true, exceptions raised inside the check are
+    captured with full screen context and logged verbosely, but the run
+    continues so a remote operator can collect all failure evidence in a
+    single console capture.
+    """
     global CHECK_COUNT
     CHECK_COUNT += 1
     print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
+    if is_u2() and not u2:
+        reason = u2_reason or "U64-only feature (CPU banking / VIC bank / ROM patch / REST API)"
+        print(f"SKIP  ({reason})", flush=True)
+        TestConfig.skipped.append((CHECK_COUNT, label, reason))
+        return _SkipCheckCtx()
+    return _ActiveCheckCtx(label, CHECK_COUNT)
+
+
+def _diagnostic_block(label: str, exc: BaseException) -> str:
+    """Render a verbose, LLM-friendly diagnostic block for a failed check.
+
+    The block always includes the failing check label, the exception type, the
+    full exception message, the last command sent to the device, and the final
+    terminal snapshot (if any). The intent is that a remote operator can copy
+    the entire console output and an LLM can reason about each failure in
+    isolation without needing additional context.
+    """
+    lines: List[str] = []
+    lines.append("    ---- FAILURE CONTEXT BEGIN ----")
+    lines.append(f"    check     : {label}")
+    lines.append(f"    target    : {TestConfig.target}")
+    lines.append(f"    exception : {type(exc).__name__}: {format_exception(exc)}")
+    session = TestConfig.session
+    if session is not None:
+        last_cmd = getattr(session, "last_command", "<unknown>")
+        lines.append(f"    last_cmd  : {last_cmd!r}")
+        try:
+            snap = session.capture()
+            lines.append("    screen    :")
+            for row in snap.text().splitlines():
+                lines.append(f"      | {row}")
+        except Exception as cap_exc:  # noqa: BLE001
+            lines.append(f"    screen    : <capture failed: {cap_exc!r}>")
+    lines.append("    ---- FAILURE CONTEXT END ----")
+    return "\n".join(lines)
 
 
 def format_exception(exc: BaseException) -> str:
@@ -158,7 +257,7 @@ class Snapshot:
 
     def find_status_line(self) -> int:
         for index, line in enumerate(self.lines):
-            if STATUS_LINE_RE.search(line):
+            if STATUS_LINE_RE.search(line) or U2_STATUS_LINE_RE.search(line):
                 return index
         raise Failure(
             f"Snapshot mismatch after {self.last_command}: no CPU/VIC status line found\n{self.text()}"
@@ -516,7 +615,44 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
     return rows
 
 
+_REST_UNAVAILABLE: Dict[str, bool] = {}
+
+
+def rest_available(host: str, timeout: float = 1.0) -> bool:
+    """Probe whether the REST API is reachable for `host`.
+
+    Used by U2 (and other non-U64) targets to short-circuit dozens of
+    write_rest_memory / read_rest_memory calls into a single SkipCheck so the
+    test report shows one clear "REST not available" SKIP entry rather than
+    a wall of identical connection errors.
+    """
+    cached = _REST_UNAVAILABLE.get(host)
+    if cached is not None:
+        return not cached
+    url = f"http://{host}/v1/machine:readmem?address=0000&length=1"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            _REST_UNAVAILABLE[host] = False
+            return True
+    except Exception:  # noqa: BLE001 - any failure means unreachable
+        _REST_UNAVAILABLE[host] = True
+        return False
+
+
+def require_rest(host: str) -> None:
+    """Raise SkipCheck when REST is unavailable, so the current check is
+    cleanly skipped instead of producing a connection-error traceback.
+    """
+    if not rest_available(host):
+        raise SkipCheck(f"REST API not reachable on {host}")
+
+
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
+    # Both U64 and U2/U2+ ship the REST `v1/machine` API (route_machine.cc
+    # is linked into all three target builds). Only fall back to SkipCheck
+    # when the API is actually unreachable, regardless of target type.
+    if not rest_available(host):
+        raise SkipCheck(f"REST API not reachable on {host}")
     url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
     deadline = time.time() + 15.0
     last_error: Optional[BaseException] = None
@@ -537,6 +673,9 @@ def read_rest_memory(host: str, address: int, length: int) -> bytes:
 def write_rest_memory(host: str, address: int, data: bytes) -> None:
     if not data:
         raise Failure("write_rest_memory requires at least one byte")
+
+    if not rest_available(host):
+        raise SkipCheck(f"REST API not reachable on {host}")
 
     url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
     request = urllib.request.Request(url, data=b"", method="PUT")
@@ -1060,13 +1199,21 @@ def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
-    with check("initial CPU7/KERNAL monitor status"):
+    with check("initial CPU7/KERNAL monitor status", u2=False,
+               u2_reason="U2 reports 'CPU VIEW CPU BANK N/A VIC N/A' instead of CPU#/$A:.../VIC#"):
         ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
+
+    with check("initial monitor status line is present"):
+        ensure_view(session, "HEX ")
+        snap = session.capture()
+        snap.find_status_line()
 
     with check("telnet blocks poll mode"):
         run_telnet_poll_guard_test(session)
 
-    with check("KERNAL $E000 hex view and REST match"):
+    with check("KERNAL $E000 hex view and REST match", u2=False,
+               u2_reason="U2 monitor does not snapshot KERNAL ROM into its own view, "
+                         "so the expected text fragments differ from U64"):
         ensure_hex_width(session, 8)
         screen = session.goto("E000")
         for row, expected in snapshots["kernal_hex_e000"]["contains"].items():
@@ -1074,12 +1221,24 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_rest_matches_row(screen, 4, 0xE000, rest_host)
 
     with check("paging away and back keeps memory view stable"):
-        initial_snapshot = screen.text()
+        ensure_view(session, "HEX ")
+        # Use a target address that is meaningful for both U64 (KERNAL view
+        # already at $E000) and U2 (no ROM snapshot, but RAM at $C000 is
+        # stable). Move there explicitly so the test does not depend on prior
+        # state set by KERNAL-specific tests that may have been skipped.
+        ref_addr = "E000" if is_u64() else "C000"
+        ref = session.goto(ref_addr)
+        initial_snapshot = ref.text()
         session.send_key("PGDN")
         back = session.send_key("PGUP")
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
-    with check("KERNAL disassembly formatting"):
+    with check("KERNAL disassembly formatting", u2=False,
+               u2_reason="U2 does not snapshot KERNAL ROM into the monitor view"):
+        # Reposition explicitly so this test does not depend on prior cursor
+        # state. Previously this relied on the immediately-preceding check
+        # leaving the view at $E000.
+        screen = session.goto("E000")
         screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
@@ -1089,12 +1248,14 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
-    with check("KERNAL $E010 REST match"):
+    with check("KERNAL $E010 REST match", u2=False,
+               u2_reason="U2 monitor does not snapshot KERNAL ROM, so monitor row text differs"):
         screen = ensure_view(session, "HEX ")
         screen = session.goto("E010")
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
-    with check("CPU6 RAM under BASIC write/read"):
+    with check("CPU6 RAM under BASIC write/read", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         screen = ensure_view(session, "HEX ")
         session.goto("A000")
         screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
@@ -1102,11 +1263,13 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         screen = session.goto("A000")
         assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
-    with check("CPU5 RAM under KERNAL status"):
+    with check("CPU5 RAM under KERNAL status", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         session.goto("E000")
         screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
-    with check("ASCII view width and scrolling"):
+    with check("ASCII view width and scrolling", u2=False,
+               u2_reason="Reference snapshot keys reference U64-specific CPU bank status"):
         session.goto("C000")
         for row_index in range(19):
             start = 0xC000 + row_index * 0x20
@@ -1136,7 +1299,8 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
         assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
 
-    with check("ASCII and Screen mapping semantics"):
+    with check("ASCII and Screen mapping semantics", u2=False,
+               u2_reason="Helper writes via REST and asserts CPU/VIC status"):
         run_character_mapping_test(session, rest_host)
 
     with check("HEX edit writes both nibbles"):
@@ -1151,7 +1315,8 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_contains(screen, 4, snapshots["hex_second_nibble"]["contains"]["4"])
         session.send_key("ESC")
 
-    with check("CPU bank cycling reaches CHAR and RAM mappings"):
+    with check("CPU bank cycling reaches CHAR and RAM mappings", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         session.goto("A000")
         screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
         assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
@@ -1170,6 +1335,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_contains(screen, 4, "C101")
 
     with check("G executes finite loop and returns to monitor"):
+        # REST is available on U2 firmware too (route_machine.cc is linked
+        # into all three target builds); read_rest_memory/write_rest_memory
+        # will raise SkipCheck if the REST endpoint is genuinely unreachable.
         write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
         write_rest_memory(rest_host, 0x0400, bytes([0x20]))
         session.goto("1000")
@@ -1200,25 +1368,46 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over the standard telnet service")
+    parser = argparse.ArgumentParser(description="Validate the machine monitor over the standard telnet service")
     parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
     parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))
+    parser.add_argument("--target", choices=("u64", "u2"),
+                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
+                        help="Target hardware. 'u2' skips U64-only features (CPU banking, VIC bank, ROM patching, REST API).")
+    parser.add_argument("--keep-going", action="store_true",
+                        default=os.environ.get("U64_MONITOR_KEEP_GOING", "").lower() in ("1", "true", "yes"),
+                        help="Continue running after a check fails, logging verbose context for each failure.")
     args = parser.parse_args()
 
+    TestConfig.target = args.target
+    # U2 hardware does not expose the REST API, and dozens of tests are
+    # REST-dependent. Default to keep-going so a remote operator captures
+    # every failure in a single console run instead of stopping at the first.
+    TestConfig.keep_going = args.keep_going or args.target == "u2"
+    TestConfig.failures = []
+    TestConfig.skipped = []
     rest_host = args.rest_host or args.host
+    if args.target == "u2":
+        if not rest_available(rest_host):
+            print(f"[info] target=u2 and REST unreachable on {rest_host}; "
+                  f"REST-dependent checks will SKIP", flush=True)
+        else:
+            print(f"[info] target=u2 with REST reachable on {rest_host}; "
+                  f"U64-only checks (CPU/VIC banking, KERNAL snapshot) still SKIP", flush=True)
 
     redeployed = False
     while True:
         session = None
         try:
             session = MonitorSession(args.host, args.port, args.password, args.timeout)
+            TestConfig.session = session
             run_tests(session, rest_host)
             break
         except Failure as exc:
-            if (not redeployed) and device_unavailable(exc):
+            if (not redeployed) and is_u64() and device_unavailable(exc):
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
@@ -1231,9 +1420,9 @@ def main() -> int:
                 snapshot = session.capture()
                 print("\nFinal screen:", file=sys.stderr)
                 print(snapshot.text(), file=sys.stderr)
-            return 1
+            break
         except (OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as exc:
-            if (not redeployed) and device_unavailable(exc):
+            if (not redeployed) and is_u64() and device_unavailable(exc):
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
@@ -1242,13 +1431,42 @@ def main() -> int:
                 redeployed = True
                 continue
             print(f"Connection failure: {format_exception(exc)}", file=sys.stderr)
-            return 1
+            break
         finally:
             if session is not None:
                 session.close()
+            TestConfig.session = None
 
-    print(f"monitor_test: OK ({CHECK_COUNT} checks)")
+    _print_summary()
+    if TestConfig.failures:
+        return 1
+    print(f"monitor_test: OK ({CHECK_COUNT} checks, "
+          f"{len(TestConfig.skipped)} skipped)")
     return 0
+
+
+def _print_summary() -> None:
+    """End-of-run summary. Always prints skip+failure counts; lists every
+    failure in compact form so the operator can scan the console capture
+    quickly and an LLM can attach each diagnostic block to a fix plan.
+    """
+    passed = CHECK_COUNT - len(TestConfig.failures) - len(TestConfig.skipped)
+    print("")
+    print("==== monitor_test summary ====")
+    print(f"  target  : {TestConfig.target}")
+    print(f"  passed  : {passed}")
+    print(f"  skipped : {len(TestConfig.skipped)}")
+    print(f"  failed  : {len(TestConfig.failures)}")
+    if TestConfig.skipped:
+        print("")
+        print("Skipped checks:")
+        for idx, label, reason in TestConfig.skipped:
+            print(f"  [{idx:02d}] {label}  ({reason})")
+    if TestConfig.failures:
+        print("")
+        print("Failed checks:")
+        for idx, label, _diag in TestConfig.failures:
+            print(f"  [{idx:02d}] {label}")
 
 
 if __name__ == "__main__":

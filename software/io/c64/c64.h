@@ -399,6 +399,12 @@ public:
     virtual uint8_t peek(uint16_t address);
     virtual void poke(uint16_t address, uint8_t value);
 
+    // Atomic stopped-region helpers. Used by the machine code monitor to
+    // bracket multi-byte vector / trampoline installs so the live C64 sees a
+    // single consistent transition. Default forwards to stop()/resume().
+    virtual bool begin_stopped_session(void);
+    virtual void end_stopped_session(bool stopped_it);
+
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;
         def->length = 0;

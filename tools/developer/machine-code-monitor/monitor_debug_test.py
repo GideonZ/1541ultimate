@@ -1007,18 +1007,40 @@ def run_side_effect_step_tests(rest_host: str, session: "mt.MonitorSession") -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate Machine Code Monitor Debug mode over the standard U64 telnet service")
+        description="Validate Machine Code Monitor Debug mode over the standard telnet service")
     parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
     parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))
+    parser.add_argument("--target", choices=("u64", "u2"),
+                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
+                        help="Target hardware. 'u2' skips U64-only features (REST API, "
+                             "BASIC/KERNAL ROM stepping, CPU bank cycling, VIC bank).")
+    parser.add_argument("--keep-going", action="store_true",
+                        default=os.environ.get("U64_MONITOR_KEEP_GOING", "").lower() in ("1", "true", "yes"),
+                        help="Continue after a check fails, logging verbose context per failure.")
     args = parser.parse_args()
 
+    mt.TestConfig.target = args.target
+    # In U2 mode the REST API is typically unreachable; default to keep-going
+    # so all failures land in the same console capture rather than stopping
+    # at the first connection error.
+    mt.TestConfig.keep_going = args.keep_going or args.target == "u2"
+    mt.TestConfig.failures = []
+    mt.TestConfig.skipped = []
+
     rest_host = args.rest_host or args.host
+    if args.target == "u2":
+        if not mt.rest_available(rest_host):
+            print(f"[info] target=u2 and REST unreachable on {rest_host}; "
+                  f"REST-dependent checks will SKIP", flush=True)
+        else:
+            print(f"[info] target=u2 with REST reachable on {rest_host}", flush=True)
     session = None
     try:
         session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
+        mt.TestConfig.session = session
         run_debug_tests(rest_host, session)
         run_flag_control_flow_tests(rest_host, session)
         run_refusal_and_return_edge_tests(rest_host, session)
@@ -1032,16 +1054,41 @@ def main() -> int:
         if session is not None:
             print("\nFinal screen:", file=sys.stderr)
             print(session.capture().text(), file=sys.stderr)
-        return 1
+        # Fall through to summary so any prior keep-going state is still printed.
     except Exception as exc:  # noqa: BLE001
         print(f"E2E debug test failed: {exc}", file=sys.stderr)
-        return 1
+        # Fall through to summary so prior keep-going state is still printed.
     finally:
         if session is not None:
             session.close()
+        mt.TestConfig.session = None
 
-    print(f"debug_e2e_test: OK ({mt.CHECK_COUNT} checks)")
+    _print_debug_summary()
+    if mt.TestConfig.failures:
+        return 1
+    print(f"debug_e2e_test: OK ({mt.CHECK_COUNT} checks, "
+          f"{len(mt.TestConfig.skipped)} skipped)")
     return 0
+
+
+def _print_debug_summary() -> None:
+    passed = mt.CHECK_COUNT - len(mt.TestConfig.failures) - len(mt.TestConfig.skipped)
+    print("")
+    print("==== debug_e2e_test summary ====")
+    print(f"  target  : {mt.TestConfig.target}")
+    print(f"  passed  : {passed}")
+    print(f"  skipped : {len(mt.TestConfig.skipped)}")
+    print(f"  failed  : {len(mt.TestConfig.failures)}")
+    if mt.TestConfig.skipped:
+        print("")
+        print("Skipped checks:")
+        for idx, label, reason in mt.TestConfig.skipped:
+            print(f"  [{idx:02d}] {label}  ({reason})")
+    if mt.TestConfig.failures:
+        print("")
+        print("Failed checks:")
+        for idx, label, _diag in mt.TestConfig.failures:
+            print(f"  [{idx:02d}] {label}")
 
 
 if __name__ == "__main__":
