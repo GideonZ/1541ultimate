@@ -8,7 +8,6 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "browsable_root.h"
-#include "monitor_save_browsable.h"
 #include "user_file_interaction.h"
 #include "filemanager.h"
 #include "file.h"
