@@ -112,7 +112,7 @@ SRCS_CC	 =  u2p_init.cc \
 			monitor_breakpoints.cc \
 			monitor_debug.cc \
 			monitor_debug_u64.cc \
-			debug_predictor.cc \
+			monitor_debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \

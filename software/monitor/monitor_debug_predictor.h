@@ -1,5 +1,5 @@
-#ifndef DEBUG_PREDICTOR_H
-#define DEBUG_PREDICTOR_H
+#ifndef MONITOR_DEBUG_PREDICTOR_H
+#define MONITOR_DEBUG_PREDICTOR_H
 
 #include "integer.h"
 

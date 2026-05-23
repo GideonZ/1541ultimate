@@ -16,7 +16,7 @@
 #include "monitor_debug.h"
 #include "monitor_debug_session.h"
 #include "monitor_file_io.h"
-#include "debug_predictor.h"
+#include "monitor_debug_predictor.h"
 #include "machine_monitor_test_support.h"
 
 // Host stubs for monitor_io. The Debug-mode tests do not exercise file IO

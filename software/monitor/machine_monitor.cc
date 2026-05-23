@@ -2,7 +2,7 @@
 
 #include "assembler_6502.h"
 #include "disassembler_6502.h"
-#include "debug_predictor.h"
+#include "monitor_debug_predictor.h"
 #include "monitor_debug_session.h"
 #include "editor.h"
 #include "userinterface.h"
