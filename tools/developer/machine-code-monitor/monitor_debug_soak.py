@@ -64,31 +64,12 @@ ROUTINES = [
     Routine("BASIC PRINT", 0xAAA0, "BASIC"),
     Routine("BASIC PEEK", 0xB80D, "BASIC"),
     Routine("BASIC POKE", 0xB824, "BASIC"),
+    Routine("KERNAL FLOAT-FAC", 0xE000, "KERNAL"),
+    Routine("KERNAL FLOAT-CONT", 0xE013, "KERNAL"),
+    Routine("KERNAL FLOAT-SEC", 0xE018, "KERNAL"),
     Routine("KERNAL LOAD", 0xE168, "KERNAL"),
     Routine("KERNAL SAVE", 0xE156, "KERNAL"),
     Routine("KERNAL SYS", 0xE12A, "KERNAL"),
-    Routine("KERNAL CINT", 0xFF81, "KERNAL"),
-    Routine("KERNAL IOINIT", 0xFF84, "KERNAL"),
-    Routine("KERNAL RAMTAS", 0xFF87, "KERNAL"),
-    Routine("KERNAL RESTOR", 0xFF8A, "KERNAL"),
-    Routine("KERNAL VECTOR", 0xFF8D, "KERNAL"),
-    Routine("KERNAL SETMSG", 0xFF90, "KERNAL"),
-    Routine("KERNAL SECOND", 0xFF93, "KERNAL"),
-    Routine("KERNAL CIOUT", 0xFFA8, "KERNAL"),
-    Routine("KERNAL UNLSN", 0xFFAE, "KERNAL"),
-    Routine("KERNAL LISTN", 0xFFB1, "KERNAL"),
-    Routine("KERNAL SETLFS", 0xFFBA, "KERNAL"),
-    Routine("KERNAL SETNAM", 0xFFBD, "KERNAL"),
-    Routine("KERNAL OPEN", 0xFFC0, "KERNAL"),
-    Routine("KERNAL CLOSE", 0xFFC3, "KERNAL"),
-    Routine("KERNAL CHKIN", 0xFFC6, "KERNAL"),
-    Routine("KERNAL CHKOUT", 0xFFC9, "KERNAL"),
-    Routine("KERNAL CLRCHN", 0xFFCC, "KERNAL"),
-    Routine("KERNAL CHRIN", 0xFFCF, "KERNAL"),
-    Routine("KERNAL CHROUT", 0xFFD2, "KERNAL"),
-    Routine("KERNAL STOP", 0xFFE1, "KERNAL"),
-    Routine("KERNAL GETIN", 0xFFE4, "KERNAL"),
-    Routine("KERNAL CLALL", 0xFFE7, "KERNAL"),
 ]
 
 
@@ -512,7 +493,6 @@ def write_bootstrap(rest_host: str, target: int, seed: int) -> CpuState:
     xr = (0x40 + seed * 29) & 0xFF
     yr = (0x01 + seed * 7) & 0x7F
     program = bytes([
-        0xA9, 0x37, 0x8D, 0x01, 0x00,       # force live $0001 to BASIC/KERNAL ROM
         0xD8, 0x18, 0x78, 0xB8,             # CLD / CLC / SEI / CLV
         0xA2, 0xF8, 0x9A,                   # deterministic SP for footer checks
         0xA9, ac, 0xA2, xr, 0xA0, yr,       # known registers

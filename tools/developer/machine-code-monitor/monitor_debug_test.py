@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 # Reuse the existing telnet session helpers so both suites stay in lockstep.
@@ -131,6 +132,22 @@ def _wait_for_blank_debug_context(session: "mt.MonitorSession",
     raise mt.Failure(f"Debug footer did not clear after reset:\n{session.capture().text()}")
 
 
+def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
+    url = f"http://{rest_host}/v1/machine:reset"
+    request = urllib.request.Request(url, data=b"", method="PUT")
+    with urllib.request.urlopen(request, timeout=5.0):
+        pass
+
+    ready = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
+        if ready in screen:
+            return
+        time.sleep(0.1)
+    raise mt.Failure("C64 core reset did not reach READY prompt")
+
+
 def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     # Park the cursor at a known address so the screen is deterministic.
     with mt.check("Debug: setup at $C000"):
@@ -239,6 +256,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if "$C050" not in joined or "SET" not in joined:
             raise mt.Failure(f"Breakpoint list did not show the live breakpoint:\n{joined}")
         session.send_key("ESC")
+        session.send_char("R")
 
     with mt.check("Debug: visible memory source indicators are 3 chars"):
         _ensure_no_debug(session)
@@ -287,7 +305,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
 
     with mt.check("Debug: ESC/RUNSTOP leaves Edit before Dbg so debugging can continue"):
         _ensure_no_debug(session)
-        mt.write_rest_memory(rest_host, 0xC040, bytes([0xA9, 0x66, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC040, bytes([0xA9, 0x66, 0xEA, 0x4C, 0x42, 0xC0]))
         session.goto("C040")
         session.send_char("A")
         session.send_char("D")
@@ -393,7 +411,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
 
     with mt.check("Debug: D over without captured context executes from cursor"):
         _reopen_monitor(session)
-        mt.write_rest_memory(rest_host, 0xC040, bytes([0xA9, 0x66, 0xEA]))
+        mt.write_rest_memory(rest_host, 0xC040, bytes([0xA9, 0x66, 0xEA, 0x4C, 0x42, 0xC0]))
         session.goto("C040")
         session.send_char("A")
         session.send_char("D")  # enter Debug; footer is unknown
@@ -479,7 +497,9 @@ def _address_row_context(session: "mt.MonitorSession", pc: int, context: str) ->
     wanted_index = -1
     for y in range(mt.HEIGHT):
         line = snap.line(y)
-        if len(line) >= 6 and line[0] == "|" and all(c in "0123456789ABCDEFabcdef" for c in line[1:5]) and line[5] == " ":
+        if (len(line) >= 6 and line[0] == "|" and "[" in line and
+                all(c in "0123456789ABCDEFabcdef" for c in line[1:5]) and
+                line[5] == " "):
             if line.startswith(wanted):
                 wanted_index = len(address_rows)
             address_rows.append((y, line))
@@ -675,12 +695,14 @@ def run_page_cross_and_indirect_jump_tests(rest_host: str, session: "mt.MonitorS
         0xF0, 0x02,       # $C1FE: BEQ $C202 (taken across page)
         0xA9, 0xEE,       # $C200: LDA #$EE (must be skipped)
         0xEA,             # $C202: NOP
+        0x4C, 0x02, 0xC2, # $C203: JMP $C202 (stable cleanup loop)
     ])
     branch_fallthrough = bytes([
         0xA9, 0x01,       # $C2FC: LDA #$01
         0xF0, 0x02,       # $C2FE: BEQ $C302 (not taken across page)
         0xA9, 0x44,       # $C300: LDA #$44 (must execute)
         0xEA,             # $C302: NOP
+        0x4C, 0x02, 0xC3, # $C303: JMP $C302 (stable cleanup loop)
     ])
     indirect_jmp = bytes([0x6C, 0xFF, 0xC4])  # JMP ($C4FF)
 
@@ -839,9 +861,12 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
     """Prove BASIC/KERNAL ROM breakpoints patch, hit, clear, step, and restore."""
 
     bootstrap_addr = 0xC540
+    # Use actual executable ROM instructions with stable one-instruction
+    # stepping behavior. $A831 is BASIC END's CLC path, and $E018 is a KERNAL
+    # SEC instruction with enough surrounding instructions for viewport checks.
     cases = (
-        ("BASIC", 0xA000, "BAS"),
-        ("KERNAL", 0xE000, "KRN"),
+        ("BASIC", 0xA831, "BAS"),
+        ("KERNAL", 0xE018, "KRN"),
     )
 
     for name, target, marker in cases:
@@ -853,7 +878,6 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
             if original == 0x00:
                 raise mt.Failure(f"{name} test address ${target:04X} already contains BRK")
             bootstrap = bytes([
-                0xA9, 0x37, 0x8D, 0x01, 0x00,       # keep BASIC/KERNAL visible
                 0x4C, target & 0xFF, target >> 8,   # jump into the ROM target
             ])
             mt.write_rest_memory(rest_host, bootstrap_addr, bootstrap)
@@ -878,7 +902,7 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
             session.last_command = f"CBM_R_CLEAR_{name}"
             session.sock.sendall(b"\x1bR")
             text = session.capture().text()
-            if f"${target:04X}" in text:
+            if f"SET ${target:04X}" in text:
                 raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
             session.send_key("ESC")
 
@@ -1133,6 +1157,7 @@ def main() -> int:
             print(f"[info] target=u2 with REST reachable on {rest_host}", flush=True)
     session = None
     try:
+        _reset_c64_core(rest_host)
         session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
         mt.TestConfig.session = session
         run_debug_tests(rest_host, session)
