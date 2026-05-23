@@ -42,6 +42,7 @@ public:
 
     // VT100 specific
     void restore_terminal(void);
+	bool prefers_full_refresh(void) { return true; }
 };
 
 #endif /* IO_STREAM_SCREEN_VT100_H_ */

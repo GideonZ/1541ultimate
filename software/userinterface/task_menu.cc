@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include "task_menu.h"
 #include <string.h>
+#include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "filemanager.h"
-bool TaskMenu :: actionsCreated = false;
 
 TaskMenu :: TaskMenu(UserInterface *ui, TreeBrowserState *state, Path *p) : ContextMenu(ui, state, 0, 0)
 {
@@ -31,38 +31,12 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     screen = pwin->getScreen();
     keyb = key;
 
-    IndexedList<ObjectWithMenu*> *objects = ObjectWithMenu :: getObjectsWithMenu();
-
-    // We do this only once
-    if (!actionsCreated) {
-        for(int i=0;i<objects->get_elements();i++) {
-            (*objects)[i]->create_task_items();
-        }
-        TasksCollection::sort();
-        actionsCreated = true;
-
-        // Set all actions that we collect here to persistent, so that they won't get cleaned up
-        IndexedList<TaskCategory *> *categories = TasksCollection::getCategories();
-        for (int i=0; i < categories->get_elements(); i++) {
-            TaskCategory *cat = (*categories)[i];
-            IndexedList<Action *> *catActions = cat->getActions();
-            for (int j=0; j < catActions->get_elements(); j++) {
-                Action *a = (*catActions)[j];
-                a->setPersistent();
-            }
-        }
-    }
-
     int len, max_len;
     int rows, size_y;
 
     bool writablePath = path ? FileManager :: getFileManager() -> is_path_writable(path) : false;
+    ensure_task_actions_created(writablePath);
     if(context_state == e_new) {
-
-        for(int i=0;i<objects->get_elements();i++) {
-        	(*objects)[i]->update_task_items(writablePath); // This should actually update them, according to the current state of each object
-        }
-
         IndexedList<TaskCategory *> *categories = TasksCollection::getCategories();
         for (int i=0; i < categories->get_elements(); i++) {
             TaskCategory *cat = (*categories)[i];
@@ -140,7 +114,9 @@ int TaskMenu :: select_item(void)
     }
     subContext = new TaskSubMenu(user_interface, state, cat, first_selectable_sub_item, item_index);
     subContext->init(window, keyb);
-    user_interface->activate_uiobject(subContext);
+    if (!state || !state->browser || state->browser->use_ui_focus_stack) {
+        user_interface->activate_uiobject(subContext);
+    }
     return 0;
 }
 

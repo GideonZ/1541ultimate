@@ -14,6 +14,8 @@
 #include "indexed_list.h"
 #include "action.h"
 
+class FileInfo;
+
 class Browsable
 {
 	bool selected;

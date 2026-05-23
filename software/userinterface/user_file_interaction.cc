@@ -38,6 +38,16 @@ int UserFileInteraction::fetch_context_items(BrowsableDirEntry *br, IndexedList<
         list.append(new Action("Hex View", UserFileInteraction::S_hex_view, 0));
         count += 2;
     }
+#ifndef RECOVERYAPP
+    if (!(info->attrib & AM_VOL)) {
+        list.append(new Action("Copy to...", UserFileInteraction::S_copyTo, 0));
+        count++;
+        if (info->is_writable()) {
+            list.append(new Action("Move to...", UserFileInteraction::S_moveTo, 0));
+            count++;
+        }
+    }
+#endif
     if (info->is_writable() && !(info->attrib & AM_VOL)) {
         list.append(new Action("Rename", UserFileInteraction::S_rename, 0));
         list.append(new Action("Delete", UserFileInteraction::S_delete, 0));
@@ -186,7 +196,7 @@ SubsysResultCode_e UserFileInteraction::S_createDir(SubsysCommand *cmd)
     Path *path = fm->get_new_path("createDir");
     path->cd(cmd->path.c_str());
 
-    int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 22);
+    int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 32);
     if ((res > 0) && (*buffer)) {
         FRESULT fres = fm->create_dir(path, buffer);
         if (fres != FR_OK) {
@@ -284,6 +294,79 @@ SubsysResultCode_e UserFileInteraction::S_runApp(SubsysCommand *cmd)
         return SSRET_DISK_ERROR;
     }
 #endif
+    return SSRET_OK;
+}
+
+SubsysResultCode_e UserFileInteraction::S_copyTo(SubsysCommand *cmd)
+{
+    mstring hmm;
+    int ret = pick_path(cmd->user_interface, hmm);
+    if (!ret) {
+        return SSRET_ABORTED_BY_USER;
+    }
+
+    FileManager *fm = FileManager::getFileManager();
+    char buffer[80];
+    FRESULT fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), hmm.c_str(), cmd->filename.c_str(), false);
+    if (fres == FR_EXIST) {
+        if (cmd->user_interface->popup("File exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), hmm.c_str(), cmd->filename.c_str(), true);
+        } else {
+            return SSRET_OK;
+        }
+    }
+    if (fres != FR_OK) {
+        sprintf(buffer, "Copy error: %s", FileSystem::get_error_string(fres));
+        cmd->user_interface->popup(buffer, BUTTON_OK);
+        return SSRET_DISK_ERROR;
+    }
+    cmd->user_interface->popup("Copy complete.", BUTTON_OK);
+    return SSRET_OK;
+}
+
+SubsysResultCode_e UserFileInteraction::S_moveTo(SubsysCommand *cmd)
+{
+    mstring hmm;
+    int ret = pick_path(cmd->user_interface, hmm);
+    if (!ret) {
+        return SSRET_ABORTED_BY_USER;
+    }
+
+    FileManager *fm = FileManager::getFileManager();
+    char buffer[80];
+
+    // Try rename first (same filesystem = instant move)
+    Path *src = fm->get_new_path("move_src");
+    src->cd(cmd->path.c_str());
+    Path *dst = fm->get_new_path("move_dst");
+    dst->cd(hmm.c_str());
+    FRESULT fres = fm->rename(src, cmd->filename.c_str(), dst, cmd->filename.c_str());
+
+    if (fres == FR_INVALID_DRIVE) {
+        // Cross-filesystem: copy + delete
+        fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), hmm.c_str(), cmd->filename.c_str(), false);
+        if (fres == FR_EXIST) {
+            if (cmd->user_interface->popup("File exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+                fres = fm->fcopy(cmd->path.c_str(), cmd->filename.c_str(), hmm.c_str(), cmd->filename.c_str(), true);
+            }
+        }
+        if (fres == FR_OK) {
+            Path *del_path = fm->get_new_path("move_del");
+            del_path->cd(cmd->path.c_str());
+            fres = fm->delete_recursive(del_path, cmd->filename.c_str());
+            fm->release_path(del_path);
+        }
+    }
+
+    fm->release_path(src);
+    fm->release_path(dst);
+
+    if (fres != FR_OK) {
+        sprintf(buffer, "Move error: %s", FileSystem::get_error_string(fres));
+        cmd->user_interface->popup(buffer, BUTTON_OK);
+        return SSRET_DISK_ERROR;
+    }
+    cmd->user_interface->popup("Move complete.", BUTTON_OK);
     return SSRET_OK;
 }
 

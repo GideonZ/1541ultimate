@@ -33,6 +33,22 @@ volatile int active_user_interface_count = 0;
 
 }
 
+int swap_interface_type(UserInterface *ui)
+{
+    if (!ui || !ui->cfg) {
+        return MENU_NOP;
+    }
+
+    ConfigItem *item = ui->cfg->find_item(CFG_USERIF_ITYPE);
+    if (!item) {
+        return MENU_NOP;
+    }
+
+    item->setValue(1 - item->getValue());
+    ui->cfg->write();
+    return MENU_HIDE;
+}
+
 extern "C" void u64_dispatch_usb_hid_status_refresh(void) __attribute__((weak));
 
 /* Help */
@@ -504,6 +520,22 @@ int UserInterface :: activate_uiobject(UIObject *obj)
     return -1;
 }
 
+int UserInterface :: uiobject_modal(UIObject *obj)
+{
+    int ret = 0;
+    while(!ret && host->exists()) {
+        ret = obj->poll(0);
+    }
+    if (obj->needCleanup()) {
+        obj->deinit();
+        delete obj;
+    }
+    if (!host->exists()) {
+        ret = MENU_CLOSE;
+    }
+    return ret;
+}
+
 bool UserInterface :: has_focus(UIObject *obj)
 {
     return (ui_objects[focus] == obj);
@@ -542,6 +574,9 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
         ret = pop->poll(0);
     }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }
@@ -555,13 +590,27 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
         ret = pop->poll(0);
     }
     pop->deinit();
+    if ((ret > 0) && keyboard) {
+        keyboard->wait_free();
+    }
     delete pop;
     return ret;
 }
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
-    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen);
+    return string_box(msg, buffer, maxlen, false);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode)
+{
+    return string_box(msg, buffer, maxlen, template_mode, false);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase)
+{
+    UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen, template_mode);
+    box->set_uppercase(uppercase);
     box->init();
     screen->cursor_visible(1);
     int ret = 0;
@@ -574,10 +623,13 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
     return ret;
 }
 
-int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y)
+int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars)
 {
     UIStringEdit *edit = new UIStringEdit(buffer, maxlen);
-    edit->init(w, keyboard, x, y, maxlen); // maybe the max len should be limited by the window!
+    if (max_chars <= 0) {
+        max_chars = w->get_size_x()-x;
+    }
+    edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
     int ret = 0;
     while(!ret && host->exists()) {
@@ -674,7 +726,7 @@ mstring *UserInterface :: getMessage(void)
 
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
-    if (navmode == 1) { // WASD cursors enabled
+    if ((navmode == 1) && (map != e_keymap_monitor)) { // WASD cursors enabled
         if (c >= 'A' && c <= 'Z') {
             c |= 0x20; // make uppercase lowercase
         } else {
