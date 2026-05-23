@@ -13,9 +13,9 @@ class U64MemoryBackend : public MemoryBackend
 
     void load_monitor_char_rom_cache(C64 *machine);
     void load_monitor_rom_cache(C64 *machine);
+    bool read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const;
 public:
     explicit U64MemoryBackend(U64Machine *machine) : machine(machine), stopped_machine_for_session(false) { }
-    bool read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const;
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);

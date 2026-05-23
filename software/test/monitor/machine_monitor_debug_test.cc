@@ -238,14 +238,21 @@ static int trim_end(const char *s)
     return n;
 }
 
-static int expect_help_token_accented(CaptureScreen &screen, const char *needle,
-                                      const char *message)
+static int expect_help_token_not_accented(CaptureScreen &screen, const char *needle,
+                                          const char *message)
 {
     char row[40];
     for (int y = 0; y < 25; y++) {
         screen.get_slice(1, y, 38, row);
         const char *at = strstr(row, needle);
-        if (at && screen.colors[y][1 + (at - row)] == 1) {
+        if (at) {
+            int x = 1 + (int)(at - row);
+            int n = (int)strlen(needle);
+            for (int i = 0; i < n; i++) {
+                if (screen.colors[y][x + i] == 1) {
+                    return expect(false, message);
+                }
+            }
             return 0;
         }
     }
@@ -1139,6 +1146,27 @@ static int test_ctrl_r_opens_breakpoint_popup()
         if (strstr(row, "BREAKPOINTS") != NULL) { found = true; }
     }
     if (expect(found, "C=+R must open the breakpoint list popup")) return 1;
+    int left = 0, top = 0, right = 0, bottom = 0;
+    if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Breakpoint popup must draw a complete border")) return 1;
+    if (expect(right - left - 1 == 38,
+               "Breakpoint popup must have 38 inner columns")) return 1;
+    if (expect(bottom == top + 4,
+               "Breakpoint popup bottom border must sit below the selected slot row")) return 1;
+    if (expect(screen.colors[top + 1][left + 1] == ui.color_fg,
+               "Breakpoint popup title must use the normal popup foreground color")) return 1;
+    get_popup_line(screen, 2, row, sizeof(row));
+    if (expect(strncmp(row, "0 EMPTY", strlen("0 EMPTY")) == 0,
+               "Breakpoint popup must show selected slot 0")) return 1;
+    int slot_y = top + 1 + 2;
+    for (int x = left + 1; x < right; x++) {
+        if (expect(screen.colors[slot_y][x] == ui.color_fg,
+                   "Breakpoint popup selected row must use normal popup foreground color")) return 1;
+        if (expect(screen.colors[slot_y][x] != 1,
+                   "Breakpoint popup selected row must not use white accent color")) return 1;
+        if (expect(screen.reverse_chars[slot_y][x],
+                   "Breakpoint popup selected row must use reverse highlight")) return 1;
+    }
     if (expect(monitor.poll(0) == 0, "ESC closes the popup")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug first")) return 1;
     if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
@@ -1360,6 +1388,11 @@ static int test_ctrl_b_keeps_bookmark_popup_in_debug()
         if (strstr(row, "BOOKMARKS") != NULL) { found = true; }
     }
     if (expect(found, "C=+B must open the bookmark popup while Debug is active")) return 1;
+    int left = 0, top = 0, right = 0, bottom = 0;
+    if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
+               "Bookmark popup border must remain intact above the Debug footer")) return 1;
+    if (expect(right - left - 1 == 38,
+               "Bookmark popup must keep its 38-column body in Debug mode")) return 1;
     if (expect(backend.last_session == NULL ||
                (backend.last_session->over_calls == 0 &&
                 backend.last_session->trace_calls == 0 &&
@@ -1431,58 +1464,67 @@ static int test_help_screen_shows_debug_commands()
 
     const char *lines[20];
     int n = MonitorDebug::format_help_lines(lines, 20);
-    bool has_over = false;
-    bool has_trace = false;
-    bool has_out = false;
-    bool has_go = false;
-    bool has_brk = false;
-    bool has_memory = false;
-    bool has_load_save = false;
-    bool has_bookmarks = false;
-    bool has_rstop = false;
-    bool has_reset = false;
-    bool has_esc = false;
+    static const char *expected_lines[] = {
+        "",
+        "D Step Over  T Step Into  O Step Out",
+        "G Continue   R Breakpt    C=+R Brkpts",
+        "C=+X Reset   RETURN Follow",
+        "",
+        "M Memory     I ASCII      V Screen",
+        "A Assembly   B Binary     U Undoc/Case",
+        "J Jump       P Poll       N Number",
+        "E Edit       F Fill       W Width",
+        "C Compare    H Hunt       Z Freeze",
+        "L Load       S Save",
+        "",
+        "Bookmarks:     C=+B List  C=+0-9 Jump",
+        "Monitor:       C=+O Open/Close",
+        "Leave debug:   C=+D/RSTOP",
+        "Leave edit:    C=+E/RSTOP",
+        "Copy/Paste:    C=+C / C=+V",
+    };
+    if (expect(n == (int)(sizeof(expected_lines) / sizeof(expected_lines[0])),
+               "Debug help line count must match the requested layout")) return 1;
     for (int i = 0; i < n; i++) {
-        if (strstr(lines[i], "Over")) has_over = true;
-        if (strstr(lines[i], "Trace")) has_trace = true;
-        if (strstr(lines[i], "Out")) has_out = true;
-        if (strstr(lines[i], "Go")) has_go = true;
-        if (strstr(lines[i], "Breakpt") || strstr(lines[i], "Brkpts")) has_brk = true;
-        if (strstr(lines[i], "M Memory")) has_memory = true;
-        if (strstr(lines[i], "L Load") && strstr(lines[i], "S Save")) has_load_save = true;
-        if (strstr(lines[i], "C=+B")) has_bookmarks = true;
-        if (strstr(lines[i], "RSTOP")) has_rstop = true;
-        if (strstr(lines[i], "C=+X")) has_reset = true;
-        if (strstr(lines[i], "ESC")) has_esc = true;
+        if (expect(strcmp(lines[i], expected_lines[i]) == 0,
+                   "Debug help text did not match the requested layout")) return 1;
+        if (expect((int)strlen(lines[i]) <= 38,
+                   "Debug help line must fit within 38 columns")) return 1;
+        if (expect(strstr(lines[i], "SH+O") == NULL,
+                   "Debug help must not show SH+O")) return 1;
+        if (expect(strstr(lines[i], "ESC") == NULL,
+                   "Debug help must show RSTOP rather than ESC")) return 1;
     }
-    if (expect(has_over && has_trace && has_out && has_go && has_brk,
-               "Debug help must mention Over, Trace, Out, Go, Breakpoint")) return 1;
-    if (expect(has_memory && has_load_save && has_bookmarks,
-               "Debug help must preserve the normal monitor help entries")) return 1;
-    if (expect(has_rstop && has_reset && !has_esc,
-               "Help must show RSTOP and C=+X rather than ESC")) return 1;
-    if (expect_help_token_accented(screen, "D Debug/Over",
-        "D Debug/Over must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "G Go",
-        "G Go must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "T Trace",
-        "T Trace must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "R Breakpt",
-        "R Breakpt must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "O Out",
-        "O Out must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "SH+O Out",
-        "SH+O Out must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "C=+R Brkpts",
-        "C=+R Brkpts must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "C=+D Exit",
-        "C=+D Exit must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "C=+D/RSTOP",
-        "C=+D/RSTOP must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "C=+X Reset",
-        "C=+X Reset must use the shared UI accent colour in debug help")) return 1;
-    if (expect_help_token_accented(screen, "RETURN",
-        "RETURN must use the shared UI accent colour in debug help")) return 1;
+    char row[40];
+    screen.get_slice(1, 3, 38, row);
+    if (expect(strstr(row, "HELP ASM DEBUG") == row,
+               "Debug help header must identify the ASM debug help screen")) return 1;
+    for (int i = 0; i < n; i++) {
+        screen.get_slice(1, 4 + i, 38, row);
+        if (expect(strncmp(row, expected_lines[i], strlen(expected_lines[i])) == 0,
+                   "Rendered debug help text did not match the requested layout")) return 1;
+    }
+    screen.get_slice(1, 22, 38, row);
+    if (expect(strstr(row, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == row,
+               "Debug help must show the requested paging footer")) return 1;
+    if (expect_help_token_not_accented(screen, "D Step Over",
+        "D Step Over must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "T Step Into",
+        "T Step Into must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "O Step Out",
+        "O Step Out must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "G Continue",
+        "G Continue must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "R Breakpt",
+        "R Breakpt must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "C=+R Brkpts",
+        "C=+R Brkpts must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "C=+X Reset",
+        "C=+X Reset must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "RETURN Follow",
+        "RETURN Follow must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "C=+D/RSTOP",
+        "C=+D/RSTOP must not use a distinct debug help colour")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: RUN/STOP should leave Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "help test: final RUN/STOP should exit")) return 1;

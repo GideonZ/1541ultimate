@@ -29,13 +29,6 @@ protected:
     virtual bool free_run_no_breakpoint(uint16_t address);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
     virtual void write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port);
-    virtual bool prepare_run_with_patches(uint8_t cpu_port);
-    virtual void finish_run_with_patches(bool prepared);
-    virtual void after_restore_patches(void);
-    virtual uint8_t debug_run_cpu_ddr(uint8_t cpu_port);
-    virtual uint8_t debug_run_cpu_port(uint8_t cpu_port);
-    virtual uint8_t debug_restore_cpu_ddr(uint8_t cpu_port);
-    virtual uint8_t debug_restore_cpu_port(uint8_t cpu_port);
 
 public:
     BrkDebugSession();
@@ -75,8 +68,8 @@ private:
     Patch patches[MAX_PATCHES];
     bool handler_installed;
     bool cpu_parked_in_spin;
-    uint8_t saved_handler_bytes[160];
-    uint8_t saved_nmi_trampoline_bytes[32];
+    uint8_t saved_handler_bytes[100];
+    uint8_t saved_nmi_trampoline_bytes[16];
     bool nmi_trampoline_installed;
     uint8_t saved_nmi_vector[2];
     uint8_t saved_brk_vector[2];
@@ -97,7 +90,6 @@ private:
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void release_to_run(const DebugContext *from);
     void reset_spin_target(void);
-    void set_debug_run_ports(uint8_t cpu_port);
     void nmi_redirect_to(uint16_t target);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);

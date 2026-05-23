@@ -30,27 +30,27 @@ static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 
 static const char *const monitor_help_lines[] = {
     "",
-    "M Memory    I ASCII     V Screen",
-    "A Assembly  B Binary    U Undoc/Case",
-    "J Jump      G Go",
+    "M Memory     I ASCII      V Screen",
+    "A Assembly   B Binary     U Undoc/Case",
+    "J Jump       G Go         D Debug",
     "",
-    "E Edit      F Fill      T Transfer",
-    "C Compare   H Hunt      N Number",
-    "W Width     R Range     P Poll",
-    "Z Freeze    O CPU Bank  SH+O VIC",
-    "L Load      S Save",
+    "E Edit       F Fill       T Transfer",
+    "C Compare    H Hunt       N Number",
+    "W Width      R Range      P Poll",
+    "Z Freeze     O CPU Bank   SH+O VIC",
+    "L Load       S Save",
     "",
     "Bookmarks:  C=+B List   C=+0-9 Jump",
     "",
-    "Open monitor:  C=+O",
-    "Close monitor: C=+O/RSTOP",
-    "Leave edit:    C=+E/RSTOP",
-    "Copy/Paste:    C=+C / C=+V",
-    "Reset/Follow:  C=+X Reset / RETURN",
+    "Monitor:        C=+O Open/Close",
+    "Leave edit:     C=+E/RSTOP",
+    "Copy/Paste:     C=+C / C=+V",
+    "Reset/Follow:   C=+X Reset / RETURN",
     NULL
 };
 
-static const char monitor_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
+static const char monitor_help_paging_line[] = "Page Up/Down:   F1/SH+SPACE / F7/SPACE";
+static const char monitor_debug_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -3480,7 +3480,7 @@ void MachineMonitor :: draw_header()
     }
 
     if (help_visible) {
-        strcpy(line, "HELP");
+        strcpy(line, debug.is_active() ? "HELP ASM DEBUG" : "HELP");
     } else if (hunt_picker_active) {
         sprintf(line, "%s  %d/%d", hunt_picker_label ? hunt_picker_label : "RESULTS",
                 hunt_count ? (hunt_selected + 1) : 0, hunt_count);
@@ -3601,8 +3601,10 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        draw_padded(window, window->get_size_y() - 1, monitor_help_paging_line,
-                    (int)strlen(monitor_help_paging_line));
+        const char *paging_line = debug.is_active() ?
+            monitor_debug_help_paging_line : monitor_help_paging_line;
+        draw_padded(window, window->get_size_y() - 1, paging_line,
+                    (int)strlen(paging_line));
         return;
     }
 
@@ -3659,34 +3661,6 @@ void MachineMonitor :: draw_help()
                             (int)strlen(dbg_lines[line_idx]));
             }
         }
-        static const char *const highlights[] = {
-            "D Debug/Over",
-            "G Go",
-            "T Trace",
-            "R Breakpt",
-            "O Out",
-            "SH+O Out",
-            "C=+R Brkpts",
-            "C=+D Exit",
-            "C=+D/RSTOP",
-            "C=+X Reset",
-            "RETURN",
-        };
-        window->set_color(MONITOR_UI_ACCENT_COLOR);
-        for (int line_idx = 0; line_idx < help_rows && line_idx < n; line_idx++) {
-            const char *line = dbg_lines[line_idx];
-            for (unsigned i = 0; i < sizeof(highlights) / sizeof(highlights[0]); i++) {
-                int token_len = (int)strlen(highlights[i]);
-                const char *at = line;
-                while ((at = strstr(at, highlights[i])) != NULL) {
-                    int x = (int)(at - line);
-                    window->move_cursor(x, line_idx + 1);
-                    window->output_length(at, token_len);
-                    at += token_len;
-                }
-            }
-        }
-        window->set_color(get_ui()->color_fg);
         return;
     }
     for (int line_idx = 0; line_idx < help_rows; line_idx++) {
@@ -3698,6 +3672,22 @@ void MachineMonitor :: draw_help()
             break;
         }
         draw_padded(window, line_idx + 1, text, strlen(text));
+    }
+}
+
+void MachineMonitor :: draw_popup_overlays()
+{
+    if (opcode_picker_active) {
+        draw_opcode_picker();
+    }
+    if (number_picker_active) {
+        draw_number_picker();
+    }
+    if (bookmark_popup_active) {
+        draw_bookmark_popup();
+    }
+    if (breakpoint_popup_active) {
+        debug_render_breakpoint_popup();
     }
 }
 
@@ -3752,6 +3742,7 @@ void MachineMonitor :: draw_bookmark_popup()
                  MONITOR_BOOKMARK_POPUP_INNER_HEIGHT + 2);
     popup.set_color(get_ui()->color_fg);
     popup.draw_border();
+    popup.set_color(get_ui()->color_fg);
 
     for (int row = 0; row < MONITOR_BOOKMARK_POPUP_INNER_HEIGHT; row++) {
         char line[MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 1];
@@ -3873,18 +3864,7 @@ void MachineMonitor :: refresh_popup_overlay()
         return;
     }
     if (!help_visible && !hunt_picker_active) {
-        if (bookmark_popup_active) {
-            draw_bookmark_popup();
-        }
-        if (opcode_picker_active) {
-            draw_opcode_picker();
-        }
-        if (number_picker_active) {
-            draw_number_picker();
-        }
-        if (breakpoint_popup_active) {
-            debug_render_breakpoint_popup();
-        }
+        draw_popup_overlays();
     }
     screen->sync();
 }
@@ -4493,6 +4473,8 @@ int MachineMonitor :: hunt_picker_handle_key(int key)
 
 void MachineMonitor :: draw()
 {
+    bool draw_overlays = !help_visible && !hunt_picker_active;
+
     draw_header();
     if (help_visible) {
         draw_help();
@@ -4516,23 +4498,14 @@ void MachineMonitor :: draw()
                 draw_hex();
                 break;
         }
-        if (opcode_picker_active) {
-            draw_opcode_picker();
-        }
-        if (number_picker_active) {
-            draw_number_picker();
-        }
-        if (bookmark_popup_active) {
-            draw_bookmark_popup();
-        }
-        if (breakpoint_popup_active) {
-            debug_render_breakpoint_popup();
-        }
     }
     if (debug.is_active() && !help_visible) {
         draw_debug_footer();
     }
     draw_status();
+    if (draw_overlays) {
+        draw_popup_overlays();
+    }
     if (screen) {
         screen->sync();
     }
@@ -5351,13 +5324,10 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 
 void MachineMonitor :: debug_render_breakpoint_popup()
 {
-    // Reuse the bookmark popup window geometry: visually consistent with the
-    // bookmark list and avoids re-deriving popup placement logic.
     enum {
         BRK_POPUP_INNER_WIDTH = 38,
-        BRK_POPUP_INNER_HEIGHT = 14,
-        BRK_POPUP_SLOT_FIRST_ROW = 2,
-        BRK_POPUP_HELP_ROW = 13
+        BRK_POPUP_INNER_HEIGHT = 3,
+        BRK_POPUP_SLOT_ROW = 2
     };
     if (!window || !screen) {
         return;
@@ -5365,14 +5335,10 @@ void MachineMonitor :: debug_render_breakpoint_popup()
     char popup_lines[BRK_POPUP_INNER_HEIGHT][BRK_POPUP_INNER_WIDTH + 1];
     memset(popup_lines, 0, sizeof(popup_lines));
     strcpy(popup_lines[0], "BREAKPOINTS");
-    for (int i = 0; i < breakpoints.slot_count(); i++) {
-        MonitorBreakpoints::format_popup_row(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i],
-                                             sizeof(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i]),
-                                             i,
-                                             breakpoints.get(i));
-    }
-    strcpy(popup_lines[BRK_POPUP_HELP_ROW],
-           "U/D Sel 0-9/RET Jmp S Set DEL Rst");
+    MonitorBreakpoints::format_popup_row(popup_lines[BRK_POPUP_SLOT_ROW],
+                                         sizeof(popup_lines[BRK_POPUP_SLOT_ROW]),
+                                         (int)breakpoint_selected,
+                                         breakpoints.get(breakpoint_selected));
     int screen_x, screen_y;
     window->getOffsets(screen_x, screen_y);
     int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
@@ -5384,25 +5350,24 @@ void MachineMonitor :: debug_render_breakpoint_popup()
     if (popup_y < screen_y) popup_y = screen_y;
     Window popup(screen, popup_x, popup_y,
                  BRK_POPUP_INNER_WIDTH + 2, BRK_POPUP_INNER_HEIGHT + 2);
-    popup.draw_border();
     popup.set_color(get_ui()->color_fg);
+    popup.draw_border();
     for (int i = 0; i < BRK_POPUP_INNER_HEIGHT; i++) {
-        popup.move_cursor(0, i);
+        char line[BRK_POPUP_INNER_WIDTH + 1];
         int len = (int)strlen(popup_lines[i]);
         if (len > BRK_POPUP_INNER_WIDTH) len = BRK_POPUP_INNER_WIDTH;
-        if (len > 0) popup.output_length(popup_lines[i], len);
-        popup.repeat(' ', BRK_POPUP_INNER_WIDTH - len);
-    }
-    // Highlight selected row.
-    int sel_row = BRK_POPUP_SLOT_FIRST_ROW + (int)breakpoint_selected;
-    if (sel_row < BRK_POPUP_INNER_HEIGHT) {
-        popup.move_cursor(0, sel_row);
-        popup.set_color(MONITOR_UI_ACCENT_COLOR);
-        int len = (int)strlen(popup_lines[sel_row]);
-        if (len > BRK_POPUP_INNER_WIDTH) len = BRK_POPUP_INNER_WIDTH;
-        if (len > 0) popup.output_length(popup_lines[sel_row], len);
-        popup.repeat(' ', BRK_POPUP_INNER_WIDTH - len);
-        popup.set_color(get_ui()->color_fg);
+        memset(line, ' ', BRK_POPUP_INNER_WIDTH);
+        if (len > 0) {
+            memcpy(line, popup_lines[i], (size_t)len);
+        }
+        line[BRK_POPUP_INNER_WIDTH] = 0;
+        if (i == BRK_POPUP_SLOT_ROW) {
+            draw_with_highlight(&popup, i, line, BRK_POPUP_INNER_WIDTH,
+                                0, BRK_POPUP_INNER_WIDTH);
+        } else {
+            popup.move_cursor(0, i);
+            popup.output_length(line, BRK_POPUP_INNER_WIDTH);
+        }
     }
 }
 

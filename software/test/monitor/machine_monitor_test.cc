@@ -1271,23 +1271,22 @@ static int test_monitor_interaction(void)
     char status[39];
     static const char *expected_help_lines[] = {
         "",
-        "M Memory    I ASCII     V Screen",
-        "A Assembly  B Binary    U Undoc/Case",
-        "J Jump      G Go",
+        "M Memory     I ASCII      V Screen",
+        "A Assembly   B Binary     U Undoc/Case",
+        "J Jump       G Go         D Debug",
         "",
-        "E Edit      F Fill      T Transfer",
-        "C Compare   H Hunt      N Number",
-        "W Width     R Range     P Poll",
-        "Z Freeze    O CPU Bank  SH+O VIC",
-        "L Load      S Save",
+        "E Edit       F Fill       T Transfer",
+        "C Compare    H Hunt       N Number",
+        "W Width      R Range      P Poll",
+        "Z Freeze     O CPU Bank   SH+O VIC",
+        "L Load       S Save",
         "",
-        "Bookmarks:  C=+B List   C=+0-9 Jump",
+        "Bookmarks:   C=+B List    C=+0-9 Jump",
         "",
-        "Open monitor:  C=+O",
-        "Close monitor: C=+O/RSTOP",
-        "Leave edit:    C=+E/RSTOP",
-        "Copy/Paste:    C=+C / C=+V",
-        "Reset/Follow:  C=+X Reset / RETURN",
+        "Monitor:        C=+O Open/Close",
+        "Leave edit:     C=+E/RSTOP",
+        "Copy/Paste:     C=+C / C=+V",
+        "Reset/Follow:   C=+X Reset / RETURN",
         NULL
     };
     monitor_reset_saved_state();
@@ -1341,7 +1340,7 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 3, 38, status);
     if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
+    if (expect(strstr(status, "Page Up/Down:   F1/SH+SPACE / F7/SPACE") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
     {
         for (int i = 0; expected_help_lines[i]; i++) {
@@ -1368,7 +1367,7 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
+        if (expect(strstr(status, "Page Up/Down:   F1/SH+SPACE / F7/SPACE") == status,
                     "Help must show the paging shortcuts before ESC closes it.")) return 1;
         for (int i = 0; expected_help_lines[i]; i++) {
             screen.get_slice(1, 4 + i, 38, line);

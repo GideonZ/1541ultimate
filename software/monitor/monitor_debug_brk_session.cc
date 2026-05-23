@@ -16,16 +16,11 @@ static const uint16_t STORE_PCLO      = 0x03F4;
 static const uint16_t STORE_PCHI      = 0x03F5;
 static const uint16_t STORE_SP        = 0x03F6;
 static const uint16_t SENTINEL_ADDR   = 0x03F7;
-static const uint16_t STORE_RUN_DDR   = 0x03F8;
-static const uint16_t STORE_RUN_PORT  = 0x03F9;
-static const uint16_t STORE_RESTORE_DDR  = 0x03FA;
-static const uint16_t STORE_RESTORE_PORT = 0x03FB;
-static const uint16_t RESTORE_PORT_STUB = 0x037A;
-static const uint16_t SPIN_JMP        = 0x0389;
-static const uint16_t SPIN_OPERAND_LO = 0x038A;
-static const uint16_t SPIN_OPERAND_HI = 0x038B;
-static const uint16_t TRAMPOLINE_ADDR = 0x0390;
-static const uint16_t NMI_TRAMPOLINE_ADDR = 0x03C0;
+static const uint16_t SPIN_JMP        = 0x0377;
+static const uint16_t SPIN_OPERAND_LO = 0x0378;
+static const uint16_t SPIN_OPERAND_HI = 0x0379;
+static const uint16_t TRAMPOLINE_ADDR = 0x0380;
+static const uint16_t NMI_TRAMPOLINE_ADDR = 0x03A0;
 static const uint16_t BRK_VECTOR_LO   = 0x0316;
 static const uint16_t BRK_VECTOR_HI   = 0x0317;
 static const uint16_t IRQ_VECTOR_LO   = 0x0314;
@@ -52,18 +47,12 @@ static const uint8_t HANDLER_BYTES[] = {
     0x69, 0x06,
     0x8D, 0xF6, 0x03,
     0xA9, 0x77,
-    0x8D, 0x8A, 0x03,
+    0x8D, 0x78, 0x03,
     0xA9, 0x03,
-    0x8D, 0x8B, 0x03,
+    0x8D, 0x79, 0x03,
     0xA9, 0xFF,
     0x8D, 0xF7, 0x03,
-    0x4C, 0x7A, 0x03,
-    0xAD, 0xFA, 0x03,
-    0x8D, 0x00, 0x00,
-    0xAD, 0xFB, 0x03,
-    0x8D, 0x01, 0x00,
-    0x4C, 0x89, 0x03,
-    0x4C, 0x89, 0x03
+    0x4C, 0x77, 0x03
 };
 
 static const uint8_t TRAMPOLINE_BYTES[] = {
@@ -79,10 +68,6 @@ static const uint8_t TRAMPOLINE_BYTES[] = {
     0x9D, 0x03, 0x01,
     0xAE, 0xF1, 0x03,
     0xAC, 0xF0, 0x03,
-    0xAD, 0xF8, 0x03,
-    0x8D, 0x00, 0x00,
-    0xAD, 0xF9, 0x03,
-    0x8D, 0x01, 0x00,
     0xAD, 0xF2, 0x03,
     0x40
 };
@@ -123,44 +108,6 @@ uint8_t BrkDebugSession :: read_patch_byte(uint16_t address, uint8_t cpu_port)
 void BrkDebugSession :: write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port)
 {
     poke_cpu(address, byte, cpu_port);
-}
-
-bool BrkDebugSession :: prepare_run_with_patches(uint8_t cpu_port)
-{
-    (void)cpu_port;
-    return false;
-}
-
-void BrkDebugSession :: finish_run_with_patches(bool prepared)
-{
-    (void)prepared;
-}
-
-void BrkDebugSession :: after_restore_patches(void)
-{
-}
-
-uint8_t BrkDebugSession :: debug_run_cpu_ddr(uint8_t cpu_port)
-{
-    (void)cpu_port;
-    return (uint8_t)((peek_visible(0x0000) & 0xF8) | 0x07);
-}
-
-uint8_t BrkDebugSession :: debug_run_cpu_port(uint8_t cpu_port)
-{
-    return (uint8_t)((peek_visible(0x0001) & 0xF8) | (cpu_port & 0x07));
-}
-
-uint8_t BrkDebugSession :: debug_restore_cpu_ddr(uint8_t cpu_port)
-{
-    (void)cpu_port;
-    return peek_visible(0x0000);
-}
-
-uint8_t BrkDebugSession :: debug_restore_cpu_port(uint8_t cpu_port)
-{
-    (void)cpu_port;
-    return peek_visible(0x0001);
 }
 
 void BrkDebugSession :: set_cancel_keyboard(Keyboard *keyboard)
@@ -299,7 +246,6 @@ void BrkDebugSession :: restore_patches(void)
             patches[i].used = false;
         }
     }
-    after_restore_patches();
     end_stopped_session(stopped_it);
 }
 
@@ -429,16 +375,6 @@ void BrkDebugSession :: reset_spin_target(void)
     end_stopped_session(stopped_it);
 }
 
-void BrkDebugSession :: set_debug_run_ports(uint8_t cpu_port)
-{
-    bool stopped_it = begin_stopped_session();
-    poke_visible(STORE_RUN_DDR, debug_run_cpu_ddr(cpu_port));
-    poke_visible(STORE_RUN_PORT, debug_run_cpu_port(cpu_port));
-    poke_visible(STORE_RESTORE_DDR, debug_restore_cpu_ddr(cpu_port));
-    poke_visible(STORE_RESTORE_PORT, debug_restore_cpu_port(cpu_port));
-    end_stopped_session(stopped_it);
-}
-
 void BrkDebugSession :: nmi_redirect_to(uint16_t target)
 {
     bool stopped_it = begin_stopped_session();
@@ -449,10 +385,6 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target)
         0x8D, (uint8_t)(NMI_VECTOR_LO & 0xFF), (uint8_t)(NMI_VECTOR_LO >> 8),
         0xA9, old_nmi_hi,
         0x8D, (uint8_t)(NMI_VECTOR_HI & 0xFF), (uint8_t)(NMI_VECTOR_HI >> 8),
-        0xAD, (uint8_t)(STORE_RUN_DDR & 0xFF), (uint8_t)(STORE_RUN_DDR >> 8),
-        0x8D, 0x00, 0x00,
-        0xAD, (uint8_t)(STORE_RUN_PORT & 0xFF), (uint8_t)(STORE_RUN_PORT >> 8),
-        0x8D, 0x01, 0x00,
         0x4C, (uint8_t)(target & 0xFF), (uint8_t)(target >> 8)
     };
     if (!nmi_trampoline_installed) {
@@ -484,8 +416,6 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
 {
     unfreeze_if_accessible();
     save_and_install_handler();
-    bool prepared = prepare_run_with_patches(cpu_port);
-    set_debug_run_ports(cpu_port);
     if (cpu_parked_in_spin && from && from->valid) {
         release_to_run(from);
     } else if (from && from->valid) {
@@ -497,13 +427,11 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
     }
     Result waited = wait_for_sentinel(5000);
     if (waited != DBG_OK) {
-        finish_run_with_patches(prepared);
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
         return waited;
     }
-    finish_run_with_patches(prepared);
     read_captured_context(out, cpu_port);
     restore_patches();
     reset_spin_target();
@@ -700,8 +628,6 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     }
 
     save_and_install_handler();
-    bool prepared = prepare_run_with_patches(cpu_port);
-    set_debug_run_ports(cpu_port);
     if (resume_from->valid && cpu_parked_in_spin) {
         release_to_run(resume_from);
     } else if (resume_from->valid) {
@@ -716,13 +642,11 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 
     Result waited = wait_for_sentinel(5000);
     if (waited != DBG_OK) {
-        finish_run_with_patches(prepared);
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
         return waited;
     }
-    finish_run_with_patches(prepared);
     DebugContext captured;
     read_captured_context(&captured, cpu_port);
     restore_patches();

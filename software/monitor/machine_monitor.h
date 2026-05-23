@@ -256,6 +256,7 @@ class MachineMonitor : public UIObject
     void draw_header();
     void draw_status();
     void draw_help();
+    void draw_popup_overlays();
     void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();

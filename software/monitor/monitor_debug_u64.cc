@@ -4,7 +4,7 @@
 // capture engine, the cassette-buffer trampoline layout, breakpoint patch
 // tracking, and the sentinel polling loop. U64 only supplies hardware hooks
 // (stopped-session bracketing, peek/poke, reset, NMI pulse) and the
-// temporary RAM-shadow patch path for BASIC/KERNAL stepping.
+// volatile-ROM patch override for BASIC/KERNAL/CHAR stepping.
 
 #include "monitor_debug_u64.h"
 
@@ -24,107 +24,26 @@ class U64DebugSession : public BrkDebugSession
 {
     U64MemoryBackend *backend;
     U64Machine *machine;
-    bool basic_shadow_active;
-    bool kernal_shadow_active;
-    bool port_shadow_active;
-    uint8_t saved_ddr;
-    uint8_t saved_port;
-    uint8_t saved_basic_ram[8192];
-    uint8_t saved_kernal_ram[8192];
 
-    enum RomShadow {
-        SHADOW_NONE,
-        SHADOW_BASIC,
-        SHADOW_KERNAL
-    };
-
-    enum {
-        SHADOW_CPU_PORT = 0x05
-    };
-
-    // Identify ROM-visible regions from the monitor CPU-port view. The
-    // physical ROM is not writable; U64 Debug patches temporary RAM shadows.
-    RomShadow rom_shadow_kind(uint16_t addr, uint8_t cpu_port)
+    // U64 BASIC/KERNAL/CHAR ROMs are served from volatile image buffers in
+    // U64_BASIC_BASE/U64_KERNAL_BASE/U64_CHARROM_BASE. Patch those buffers
+    // directly instead of copying ROMs into C64 RAM. No flash/config/file
+    // storage is touched, so a device reboot or ROM reload always restores
+    // the configured images even if a debug session dies before cleanup.
+    volatile uint8_t *rom_patch_ptr(uint16_t addr, uint8_t cpu_port)
     {
         cpu_port &= 0x07;
         if (addr >= 0xA000 && addr <= 0xBFFF && ((cpu_port & 0x03) == 0x03)) {
-            return SHADOW_BASIC;
+            return (volatile uint8_t *)(U64_BASIC_BASE + (addr - 0xA000));
+        }
+        if (addr >= 0xD000 && addr <= 0xDFFF &&
+                ((cpu_port & 0x03) != 0x00) && ((cpu_port & 0x04) == 0x00)) {
+            return (volatile uint8_t *)(U64_CHARROM_BASE + (addr - 0xD000));
         }
         if (addr >= 0xE000 && (cpu_port & 0x02)) {
-            return SHADOW_KERNAL;
+            return (volatile uint8_t *)(U64_KERNAL_BASE + (addr - 0xE000));
         }
-        return SHADOW_NONE;
-    }
-
-    uint8_t read_rom_source_byte(uint16_t addr, uint8_t cpu_port)
-    {
-        uint8_t value = 0;
-
-        if (backend && backend->read_monitor_rom_byte(addr, cpu_port, &value)) {
-            return value;
-        }
-        return machine->peek_cpu(addr, cpu_port);
-    }
-
-    void ensure_kernal_shadow(uint8_t cpu_port)
-    {
-        if (kernal_shadow_active) {
-            return;
-        }
-        for (int i = 0; i < 8192; i++) {
-            uint16_t addr = (uint16_t)(0xE000 + i);
-            saved_kernal_ram[i] = machine->peek_cpu(addr, SHADOW_CPU_PORT);
-            machine->poke_cpu(addr, read_rom_source_byte(addr, cpu_port), SHADOW_CPU_PORT);
-        }
-        kernal_shadow_active = true;
-    }
-
-    void ensure_basic_shadow(uint8_t cpu_port)
-    {
-        if (!basic_shadow_active) {
-            for (int i = 0; i < 8192; i++) {
-                uint16_t addr = (uint16_t)(0xA000 + i);
-                saved_basic_ram[i] = machine->peek_cpu(addr, SHADOW_CPU_PORT);
-                machine->poke_cpu(addr, read_rom_source_byte(addr, cpu_port), SHADOW_CPU_PORT);
-            }
-            basic_shadow_active = true;
-        }
-        // The CPU's BRK vector lives in KERNAL space. If BASIC is shadowed,
-        // KERNAL must be shadowed too so the BRK path still reaches the
-        // monitor's soft-vector handler while HIRAM is off.
-        ensure_kernal_shadow(cpu_port);
-    }
-
-    void ensure_shadow_for(uint16_t addr, uint8_t cpu_port)
-    {
-        switch (rom_shadow_kind(addr, cpu_port)) {
-            case SHADOW_BASIC:
-                ensure_basic_shadow(cpu_port);
-                break;
-            case SHADOW_KERNAL:
-                ensure_kernal_shadow(cpu_port);
-                break;
-            default:
-                break;
-        }
-    }
-
-    void restore_shadows(void)
-    {
-        if (basic_shadow_active) {
-            for (int i = 0; i < 8192; i++) {
-                machine->poke_cpu((uint16_t)(0xA000 + i), saved_basic_ram[i],
-                                  SHADOW_CPU_PORT);
-            }
-            basic_shadow_active = false;
-        }
-        if (kernal_shadow_active) {
-            for (int i = 0; i < 8192; i++) {
-                machine->poke_cpu((uint16_t)(0xE000 + i), saved_kernal_ram[i],
-                                  SHADOW_CPU_PORT);
-            }
-            kernal_shadow_active = false;
-        }
+        return 0;
     }
 
 protected:
@@ -181,82 +100,23 @@ protected:
         monitor_io::jump_to(address);
         return true;
     }
-    virtual bool prepare_run_with_patches(uint8_t cpu_port)
-    {
-        (void)cpu_port;
-        if (!basic_shadow_active && !kernal_shadow_active) {
-            return false;
-        }
-        saved_ddr = machine->peek_visible(0x0000);
-        saved_port = machine->peek_visible(0x0001);
-        port_shadow_active = true;
-        return true;
-    }
-    virtual void finish_run_with_patches(bool prepared)
-    {
-        if (!prepared || !port_shadow_active) {
-            return;
-        }
-        machine->poke_cpu(0x0000, saved_ddr, SHADOW_CPU_PORT);
-        machine->poke_cpu(0x0001, saved_port, SHADOW_CPU_PORT);
-        machine->peek_cpu(0x0001, SHADOW_CPU_PORT);
-        machine->peek_cpu(0x0001, SHADOW_CPU_PORT);
-        port_shadow_active = false;
-    }
-    virtual uint8_t debug_run_cpu_ddr(uint8_t cpu_port)
-    {
-        if (port_shadow_active) {
-            return (uint8_t)((saved_ddr & 0xF8) | 0x07);
-        }
-        return BrkDebugSession::debug_run_cpu_ddr(cpu_port);
-    }
-    virtual uint8_t debug_run_cpu_port(uint8_t cpu_port)
-    {
-        if (port_shadow_active) {
-            return (uint8_t)((saved_port & 0xF8) | SHADOW_CPU_PORT);
-        }
-        return BrkDebugSession::debug_run_cpu_port(cpu_port);
-    }
-    virtual uint8_t debug_restore_cpu_ddr(uint8_t cpu_port)
-    {
-        if (port_shadow_active) {
-            return saved_ddr;
-        }
-        return BrkDebugSession::debug_restore_cpu_ddr(cpu_port);
-    }
-    virtual uint8_t debug_restore_cpu_port(uint8_t cpu_port)
-    {
-        if (port_shadow_active) {
-            return saved_port;
-        }
-        return BrkDebugSession::debug_restore_cpu_port(cpu_port);
-    }
-    virtual void after_restore_patches(void)
-    {
-        restore_shadows();
-    }
 
-    // U64 internal BASIC/KERNAL ROM is not writable at runtime. For BRK
-    // patches, execute a temporary RAM shadow containing the same ROM bytes,
-    // then restore the user's hidden RAM and CPU port as soon as the CPU stops.
+    // U64 ROM-image patching: route patch reads/writes through the volatile
+    // ROM image buffers for BASIC/KERNAL/CHAR ranges so we can step KERNAL
+    // code without copying ROMs into C64 RAM.
     virtual uint8_t read_patch_byte(uint16_t addr, uint8_t cpu_port)
     {
-        RomShadow shadow = rom_shadow_kind(addr, cpu_port);
-        if (shadow == SHADOW_BASIC) {
-            return basic_shadow_active ? machine->peek_cpu(addr, SHADOW_CPU_PORT) :
-                                         read_rom_source_byte(addr, cpu_port);
-        }
-        if (shadow == SHADOW_KERNAL) {
-            return kernal_shadow_active ? machine->peek_cpu(addr, SHADOW_CPU_PORT) :
-                                          read_rom_source_byte(addr, cpu_port);
+        volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
+        if (rom) {
+            return *rom;
         }
         return machine->peek_cpu(addr, cpu_port);
     }
     virtual void write_patch_byte(uint16_t addr, uint8_t byte, uint8_t cpu_port)
     {
-        if (rom_shadow_kind(addr, cpu_port) != SHADOW_NONE) {
-            ensure_shadow_for(addr, cpu_port);
-            machine->poke_cpu(addr, byte, SHADOW_CPU_PORT);
+        volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
+        if (rom) {
+            *rom = byte;
             return;
         }
         machine->poke_cpu(addr, byte, cpu_port);
@@ -264,9 +124,7 @@ protected:
 
 public:
     explicit U64DebugSession(U64MemoryBackend *b)
-        : BrkDebugSession(), backend(b), machine(0),
-          basic_shadow_active(false), kernal_shadow_active(false),
-          port_shadow_active(false), saved_ddr(0), saved_port(0)
+        : BrkDebugSession(), backend(b), machine(0)
     {
         machine = (U64Machine *)C64::getMachine();
     }
