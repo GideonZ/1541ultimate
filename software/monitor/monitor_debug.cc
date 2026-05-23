@@ -155,26 +155,23 @@ void MonitorDebug :: format_footer_values(const DebugContext &ctx,
 int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
 {
     static const char *const text[] = {
-        "",
         "M Memory    I ASCII     V Screen",
         "A Assembly  B Binary    U Undoc/Case",
-        "J Jump      D Debug/Over",
+        "J Jump      D Debug/Over  G Go",
         "",
         "E Edit      F Fill      T Trace",
         "C Compare   H Hunt      N Number",
         "W Width     R Breakpt   P Poll",
-        "Z Freeze    O Out       G Go",
+        "Z Freeze    O Out       SH+O Out",
         "L Load      S Save",
         "",
-        "RETURN Subroutine View",
         "Bookmarks:  C=+B List   C=+0-9 Jump",
-        "Debug: C=+R Brkpts  C=+D Exit",
-        "RSTOP Exit Debug  C=+X Reset",
-        "",
+        "Debug: C=+R Brkpts C=+D Exit",
         "Open monitor:  C=+O",
-        "Close monitor: C=+O/RSTOP",
+        "Debug exit:    C=+D/RSTOP",
         "Leave edit:    C=+E/RSTOP",
-        "Copy/Paste:    C=+C / C=+V"
+        "Copy/Paste:    C=+C / C=+V",
+        "Reset/Follow:  C=+X Reset / RETURN"
     };
     int n = (int)(sizeof(text) / sizeof(text[0]));
     if (n > max_lines) {

@@ -238,6 +238,20 @@ static int trim_end(const char *s)
     return n;
 }
 
+static int expect_help_token_accented(CaptureScreen &screen, const char *needle,
+                                      const char *message)
+{
+    char row[40];
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        const char *at = strstr(row, needle);
+        if (at && screen.colors[y][1 + (at - row)] == 1) {
+            return 0;
+        }
+    }
+    return expect(false, message);
+}
+
 static int test_predictor_classifies_control_flow()
 {
     DebugPredictResult p;
@@ -325,7 +339,7 @@ static int test_footer_layout_blanks_unknown_fields()
         if (expect(values[i] == ' ', "Unknown footer value must be a blank")) return 1;
     }
     if (expect(strchr(values, '?') == NULL, "Unknown footer must not show '?'")) return 1;
-    if (expect(strstr(values, "??") == NULL, "Unknown footer must not show '??'")) return 1;
+    if (expect(strstr(values, "??") == NULL, "Unknown footer must not show question marks")) return 1;
 
     ctx.valid = true;
     ctx.pc = 0xC003;
@@ -1344,40 +1358,28 @@ static int test_help_screen_shows_debug_commands()
                "Debug help must preserve the normal monitor help entries")) return 1;
     if (expect(has_rstop && has_reset && !has_esc,
                "Help must show RSTOP and C=+X rather than ESC")) return 1;
-    char row[40];
-    screen.get_slice(1, 7, 38, row);
-    const char *over = strstr(row, "D Debug/Over");
-    if (expect(over != NULL && screen.colors[7][1 + (over - row)] == 1,
-               "D Debug/Over must use the shared UI accent colour in debug help")) return 1;
-    screen.get_slice(1, 9, 38, row);
-    const char *trace = strstr(row, "T Trace");
-    if (expect(trace != NULL && screen.colors[9][1 + (trace - row)] == 1,
-               "T Trace must use the shared UI accent colour in debug help")) return 1;
-    screen.get_slice(1, 12, 38, row);
-    const char *out = strstr(row, "O Out");
-    const char *go = strstr(row, "G Go");
-    if (expect(out != NULL && go != NULL &&
-               screen.colors[12][1 + (out - row)] == 1 &&
-               screen.colors[12][1 + (go - row)] == 1,
-               "O Out and G Go must use the shared UI accent colour in debug help")) return 1;
-    screen.get_slice(1, 15, 38, row);
-    const char *subroutine = strstr(row, "RETURN Subroutine View");
-    if (expect(subroutine != NULL && screen.colors[15][1 + (subroutine - row)] == 1,
-               "RETURN Subroutine View must use the shared UI accent colour in debug help")) return 1;
-    screen.get_slice(1, 17, 38, row);
-    const char *ctrl_r = strstr(row, "C=+R Brkpts");
-    const char *ctrl_d = strstr(row, "C=+D Exit");
-    if (expect(ctrl_r != NULL && ctrl_d != NULL &&
-               screen.colors[17][1 + (ctrl_r - row)] == 1 &&
-               screen.colors[17][1 + (ctrl_d - row)] == 1,
-               "C=+R and C=+D help entries must use the shared UI accent colour")) return 1;
-    screen.get_slice(1, 18, 38, row);
-    const char *rstop = strstr(row, "RSTOP Exit Debug");
-    if (expect(rstop != NULL && screen.colors[18][1 + (rstop - row)] == 1,
-               "RSTOP help entry must use the shared UI accent colour")) return 1;
-    const char *reset = strstr(row, "C=+X Reset");
-    if (expect(reset != NULL && screen.colors[18][1 + (reset - row)] == 1,
-               "C=+X Reset must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "D Debug/Over",
+        "D Debug/Over must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "G Go",
+        "G Go must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "T Trace",
+        "T Trace must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "R Breakpt",
+        "R Breakpt must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "O Out",
+        "O Out must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "SH+O Out",
+        "SH+O Out must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "C=+R Brkpts",
+        "C=+R Brkpts must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "C=+D Exit",
+        "C=+D Exit must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "C=+D/RSTOP",
+        "C=+D/RSTOP must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "C=+X Reset",
+        "C=+X Reset must use the shared UI accent colour in debug help")) return 1;
+    if (expect_help_token_accented(screen, "RETURN",
+        "RETURN must use the shared UI accent colour in debug help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: RUN/STOP should leave Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "help test: final RUN/STOP should exit")) return 1;

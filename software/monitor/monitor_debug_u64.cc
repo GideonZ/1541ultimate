@@ -310,6 +310,32 @@ class U64DebugSession : public DebugSession
         ctx->nmi_valid = true;
     }
 
+    bool find_stack_return_target(const DebugContext &from, uint8_t cpu_port,
+                                  uint16_t *target)
+    {
+        if (!target) {
+            return false;
+        }
+        for (int off = 1; off < 0xFF; off++) {
+            uint16_t sp_lo = (uint16_t)(0x0100 + ((from.sp + off) & 0xFF));
+            uint16_t sp_hi = (uint16_t)(0x0100 + ((from.sp + off + 1) & 0xFF));
+            uint16_t ret = (uint16_t)(machine->peek_cpu(sp_lo, cpu_port) |
+                                      (machine->peek_cpu(sp_hi, cpu_port) << 8));
+            uint16_t call = (uint16_t)(ret - 2);
+            if (machine->peek_cpu(call, cpu_port) != 0x20) {
+                continue;
+            }
+            uint16_t jsr_target = (uint16_t)(
+                machine->peek_cpu((uint16_t)(call + 1), cpu_port) |
+                (machine->peek_cpu((uint16_t)(call + 2), cpu_port) << 8));
+            if (jsr_target <= from.pc) {
+                *target = (uint16_t)(ret + 1);
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Poll the sentinel byte while the CPU is running. Returns true on capture
     // within the timeout window. The poll cadence is generous (vTaskDelay 5ms)
     // so we do not heat up the bus stopping the CPU thousands of times per
@@ -676,11 +702,10 @@ public:
         // Out reads the return address from the stack. If SP looks degenerate
         // (no caller frame to inspect) refuse rather than chase ghosts.
         uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
-        uint16_t sp1 = (uint16_t)(0x0100 + ((from.sp + 1) & 0xFF));
-        uint16_t sp2 = (uint16_t)(0x0100 + ((from.sp + 2) & 0xFF));
-        uint16_t ret = (uint16_t)(machine->peek_cpu(sp1, cpu_port) |
-                                  (machine->peek_cpu(sp2, cpu_port) << 8));
-        uint16_t target = (uint16_t)(ret + 1);
+        uint16_t target;
+        if (!find_stack_return_target(from, cpu_port, &target)) {
+            return DBG_REFUSED;
+        }
         if (!install_brk_at(target, cpu_port)) {
             return DBG_PATCH_FAILED;
         }

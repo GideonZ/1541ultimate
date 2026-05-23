@@ -3643,11 +3643,6 @@ void MachineMonitor :: draw_debug_footer()
 
 void MachineMonitor :: draw_help()
 {
-    struct HelpHighlight {
-        int row;
-        int x;
-        int len;
-    };
     int help_rows = window ? window->get_size_y() - 2 : content_height;
     if (help_rows < 1) help_rows = 1;
     if (debug.is_active()) {
@@ -3664,25 +3659,32 @@ void MachineMonitor :: draw_help()
                             (int)strlen(dbg_lines[line_idx]));
             }
         }
-        static const HelpHighlight highlights[] = {
-            { 3, 12, 12 }, // D Debug/Over
-            { 5, 24, 7  }, // T Trace
-            { 7, 12, 10 }, // R Breakpt
-            { 8, 12, 5  }, // O Out
-            { 8, 24, 4  }, // G Go
-            { 11, 0, 22 }, // RETURN Subroutine View
-            { 13, 7, 10 }, // C=+R Brkpts
-            { 13, 20, 9 }, // C=+D Exit
-            { 14, 0, 28 }, // RSTOP Exit Debug  C=+X Reset
+        static const char *const highlights[] = {
+            "D Debug/Over",
+            "G Go",
+            "T Trace",
+            "R Breakpt",
+            "O Out",
+            "SH+O Out",
+            "C=+R Brkpts",
+            "C=+D Exit",
+            "C=+D/RSTOP",
+            "C=+X Reset",
+            "RETURN",
         };
         window->set_color(MONITOR_UI_ACCENT_COLOR);
-        for (unsigned i = 0; i < sizeof(highlights) / sizeof(highlights[0]); i++) {
-            if (highlights[i].row >= help_rows || highlights[i].row >= n) {
-                continue;
+        for (int line_idx = 0; line_idx < help_rows && line_idx < n; line_idx++) {
+            const char *line = dbg_lines[line_idx];
+            for (unsigned i = 0; i < sizeof(highlights) / sizeof(highlights[0]); i++) {
+                int token_len = (int)strlen(highlights[i]);
+                const char *at = line;
+                while ((at = strstr(at, highlights[i])) != NULL) {
+                    int x = (int)(at - line);
+                    window->move_cursor(x, line_idx + 1);
+                    window->output_length(at, token_len);
+                    at += token_len;
+                }
             }
-            window->move_cursor(highlights[i].x, highlights[i].row + 1);
-            window->output_length(dbg_lines[highlights[i].row] + highlights[i].x,
-                                  highlights[i].len);
         }
         window->set_color(get_ui()->color_fg);
         return;

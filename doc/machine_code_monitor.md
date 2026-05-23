@@ -633,7 +633,7 @@ There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the cu
 
 ### Help screen
 
-`F3` or `?` shows the Debug help screen while Debug is active. The help screen distinguishes `RETURN` (non-executing) from `O` (executing step-out) explicitly and shows `C=+X Reset` as the emergency reset / break shortcut.
+`F3` or `?` shows the Debug help screen while Debug is active. It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags. `RETURN` remains non-executing follow / return navigation; `O` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
 
 ### Patch safety
 
