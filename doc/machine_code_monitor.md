@@ -1,6 +1,6 @@
 # Machine Code Monitor
 
-The Machine Code Monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory. 
+The Machine Code Monitor is a keyboard-driven tool for inspecting and editing live or frozen C64 memory.
 
 It supports hexadecimal, ASCII, screen-code, binary, and assembly views, plus inline editing, bulk memory operations, file load/save, and execution from a selected address.
 
@@ -66,13 +66,13 @@ Example layout:
 
 The monitor provides five primary views:
 
-| Key | View     | ID  | Purpose                         |
-| --- | -------- | --- | ------------------------------- |
-| `M` | Memory   | HEX | Hexadecimal byte view           |
-| `A` | Assembly | ASM | Disassembly and inline assembly |
-| `B` | Binary   | BIN | Bit-level byte view             |
-| `I` | ASCII    | ASC | ASCII byte view                 |
-| `V` | Screen   | SCR | Screen code view                |
+| Key | View     | ID  | Purpose                       |
+| --- | -------- | --- | ----------------------------- |
+| `M` | Memory   | HEX | Hexadecimal byte view         |
+| `A` | Assembly | ASM | (Dis)assembly with debug mode |
+| `B` | Binary   | BIN | Bit-level byte view           |
+| `I` | ASCII    | ASC | ASCII byte view               |
+| `V` | Screen   | SCR | Screen code view              |
 
 ### Memory / Hex View
 
@@ -108,6 +108,10 @@ Example:
 ### Assembly View
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
+
+It also allows you to assemble instructions inline (in `E`dit mode) as well as debug code (in `D`ebug mode).
+
+Please see the **Edit Mode** respectively **Debug Mode** chapters below for more information.
 
 Example:
 
@@ -353,7 +357,7 @@ In the normal no-cartridge configuration, the footer fields have these possible 
 
 Cartridges can further affect the CPU-visible memory map through the expansion-port `GAME` and `EXROM` lines.
 
-## Editing
+## Edit Mode
 
 All views support editing:
 
@@ -576,7 +580,7 @@ Default slots are aimed at common C64 locations:
 
 ## Debug Mode
 
-Debug is a modal state layered on the Assembly view. 
+Debug is a modal state layered on the Assembly view.
 
 Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `O` for Out, `G` for Go) is pressed while Debug is active.
 
