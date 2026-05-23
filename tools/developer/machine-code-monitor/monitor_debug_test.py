@@ -306,7 +306,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("D")
 
     with mt.check("Debug: returning to ASM after stepping elsewhere follows the current debug PC"):
-        _ensure_no_debug(session)
+        _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC060, bytes([0xA9, 0x22, 0xEA, 0xEA]))
         session.goto("C060")
         session.send_char("A")
@@ -328,6 +328,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         _ensure_no_debug(session)
 
     with mt.check("Debug: C=+X resets the machine and keeps Debug open with blank context"):
+        _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC070, bytes([0xA9, 0x11, 0xEA]))
         session.goto("C070")
         session.send_char("A")
