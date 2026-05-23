@@ -43,8 +43,8 @@ static const char *const monitor_help_lines[] = {
     "Bookmarks:  C=+B List   C=+0-9 Jump",
     "",
     "Open monitor:  C=+O",
-    "Close monitor: C=+O/ESC",
-    "Leave edit:    C=+E/ESC",
+    "Close monitor: C=+O/RSTOP",
+    "Leave edit:    C=+E/RSTOP",
     "Copy/Paste:    C=+C / C=+V",
     "Follow/Return: RETURN",
     NULL
@@ -733,6 +733,29 @@ static void monitor_format_text_row_impl(uint16_t address, const uint8_t *bytes,
             monitor_ascii_display_byte(bytes[i]);
     }
     out[MONITOR_TEXT_ROW_CHARS] = 0;
+}
+
+static const char *monitor_source_indicator(const char *source)
+{
+    if (!source) {
+        return "RAM";
+    }
+    if (!strcmp(source, "BASIC") || !strcmp(source, "BAS")) {
+        return "BAS";
+    }
+    if (!strcmp(source, "KERNAL") || !strcmp(source, "KRN")) {
+        return "KRN";
+    }
+    if (!strcmp(source, "CHAR") || !strcmp(source, "CHR")) {
+        return "CHR";
+    }
+    if (!strcmp(source, "I/O") || !strcmp(source, "IO")) {
+        return "I/O";
+    }
+    if (!strcmp(source, "RAM")) {
+        return "RAM";
+    }
+    return source;
 }
 
 static void draw_padded(Window *window, int y, const char *text, int len)
@@ -3480,9 +3503,12 @@ void MachineMonitor :: draw_header()
 
     const char *right = NULL;
     if (!help_visible) {
-        if (hunt_picker_active) right = "ENTER jumps  ESC exits";
+        if (hunt_picker_active) right = "ENTER jumps RSTOP exits";
         else if (edit_mode) right = "Edit";
     }
+    bool show_dbg = debug.is_active();
+    int dbg_slot = width - 8;
+    int edit_slot = width - 4;
     if (right && (help_visible || hunt_picker_active)) {
         int rlen = strlen(right);
         int cur = strlen(line);
@@ -3500,41 +3526,13 @@ void MachineMonitor :: draw_header()
     } else if (!help_visible && !hunt_picker_active) {
         char fixed[64];
         int first_slot = width;
-        bool show_dbg = debug.is_active();
-        // Without Dbg, keep the historical flag layout so every existing
-        // test that checks Range/Frz/Poll positions still holds.
-        // When Dbg is active we re-pack into a tight layout that uses the
-        // abbreviated `Undc`, `Pll` forms permitted by the spec.
-        int flag_slot;
-        int freeze_slot;
-        int poll_slot;
-        int dbg_slot;
-        int edit_slot;
-        const char *undoc_label;
-        int undoc_label_len;
-        const char *poll_label;
-        int poll_label_len;
-        if (show_dbg) {
-            flag_slot = width - 23;
-            freeze_slot = width - 17;
-            poll_slot = width - 13;
-            dbg_slot = width - 8;
-            edit_slot = width - 4;
-            undoc_label = "Undc";
-            undoc_label_len = 4;
-            poll_label = "Pll";
-            poll_label_len = 3;
-        } else {
-            flag_slot = width - 19;
-            freeze_slot = width - 13;
-            poll_slot = width - 9;
-            dbg_slot = width;
-            edit_slot = width - 4;
-            undoc_label = "Undoc";
-            undoc_label_len = 5;
-            poll_label = "Poll";
-            poll_label_len = 4;
-        }
+        int flag_slot = width - 20;
+        int freeze_slot = width - 15;
+        int poll_slot = width - 11;
+        const char *undoc_label = "Undc";
+        int undoc_label_len = 4;
+        const char *poll_label = "Pl";
+        int poll_label_len = 2;
         bool show_undoc = state.illegal_enabled && state.view == MONITOR_VIEW_ASM;
         if (flag_slot < 0) flag_slot = width;
         if (freeze_slot < 0) freeze_slot = width;
@@ -3576,7 +3574,6 @@ void MachineMonitor :: draw_header()
     draw_padded(window, 0, line, strlen(line));
     if (!help_visible && !hunt_picker_active) {
         if (debug.is_active()) {
-            int dbg_slot = width - 8;
             if (dbg_slot < 0) dbg_slot = 0;
             window->move_cursor(dbg_slot, 0);
             window->set_color(MONITOR_UI_ACCENT_COLOR);
@@ -3584,7 +3581,6 @@ void MachineMonitor :: draw_header()
             window->set_color(get_ui()->color_fg);
         }
         if (edit_mode) {
-            int edit_slot = width - 4;
             if (edit_slot < 0) {
                 edit_slot = 0;
             }
@@ -3606,18 +3602,7 @@ void MachineMonitor :: draw_status()
         return;
     }
 
-    if (debug.is_active()) {
-        // In Debug mode the bottom row is a fixed-position CPU value row.
-        // Bookmark status pop-ins would shift the visible values, so they
-        // are suppressed; they continue to update in the background and
-        // return when Debug mode leaves.
-        char value_row[40];
-        MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
-        draw_padded(window, window->get_size_y() - 1, value_row, (int)strlen(value_row));
-        return;
-    }
-
-    if (bookmark_status_visible) {
+    if (!debug.is_active() && bookmark_status_visible) {
         window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
         draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
                     (int)strlen(bookmark_status_text));
@@ -3641,23 +3626,33 @@ void MachineMonitor :: draw_status()
 void MachineMonitor :: draw_debug_footer()
 {
     char header_row[40];
+    char value_row[40];
 
     if (!window) {
         return;
     }
     MonitorDebug::format_footer_header(header_row, sizeof(header_row));
-    draw_padded(window, window->get_size_y() - 2, header_row, (int)strlen(header_row));
+    MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
+    draw_padded(window, window->get_size_y() - 3, header_row, (int)strlen(header_row));
+    draw_padded(window, window->get_size_y() - 2, value_row, (int)strlen(value_row));
 }
 
 void MachineMonitor :: draw_help()
 {
+    struct HelpHighlight {
+        int row;
+        int x;
+        int len;
+    };
+    int help_rows = window ? window->get_size_y() - 2 : content_height;
+    if (help_rows < 1) help_rows = 1;
     if (debug.is_active()) {
         // Debug help takes precedence in Debug mode (DBG-HELP-001). Defer the
         // text definition to MonitorDebug so the help reflects the actual
         // debug command model in one place.
-        const char *dbg_lines[16];
-        int n = MonitorDebug::format_help_lines(dbg_lines, 16);
-        for (int line_idx = 0; line_idx < content_height; line_idx++) {
+        const char *dbg_lines[20];
+        int n = MonitorDebug::format_help_lines(dbg_lines, 20);
+        for (int line_idx = 0; line_idx < help_rows; line_idx++) {
             if (line_idx >= n) {
                 draw_padded(window, line_idx + 1, "", 0);
             } else {
@@ -3665,12 +3660,33 @@ void MachineMonitor :: draw_help()
                             (int)strlen(dbg_lines[line_idx]));
             }
         }
+        static const HelpHighlight highlights[] = {
+            { 3, 12, 12 }, // D Debug/Over
+            { 5, 24, 7  }, // T Trace
+            { 7, 12, 10 }, // R Breakpt
+            { 8, 12, 5  }, // O Out
+            { 8, 24, 4  }, // G Go
+            { 11, 0, 22 }, // RETURN Subroutine View
+            { 13, 7, 10 }, // C=+R Brkpts
+            { 13, 20, 9 }, // C=+D Exit
+            { 14, 0, 16 }, // RSTOP Exit Debug
+        };
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        for (unsigned i = 0; i < sizeof(highlights) / sizeof(highlights[0]); i++) {
+            if (highlights[i].row >= help_rows || highlights[i].row >= n) {
+                continue;
+            }
+            window->move_cursor(highlights[i].x, highlights[i].row + 1);
+            window->output_length(dbg_lines[highlights[i].row] + highlights[i].x,
+                                  highlights[i].len);
+        }
+        window->set_color(get_ui()->color_fg);
         return;
     }
-    for (int line_idx = 0; line_idx < content_height; line_idx++) {
+    for (int line_idx = 0; line_idx < help_rows; line_idx++) {
         const char *text = monitor_help_lines[line_idx];
         if (!text) {
-            for (int blank = line_idx; blank < content_height; blank++) {
+            for (int blank = line_idx; blank < help_rows; blank++) {
                 draw_padded(window, blank + 1, "", 0);
             }
             break;
@@ -4128,6 +4144,9 @@ void MachineMonitor :: draw_disassembly()
         const char *source;
         int source_len;
         int source_pos;
+        int bp_slot;
+        int indicator_start;
+        int brk_pos = -1;
 
         read_row(addr, row_bytes, 3);
         memset(line, ' ', sizeof(line));
@@ -4146,19 +4165,39 @@ void MachineMonitor :: draw_disassembly()
         line[13] = ' ';
         line[14] = ' ';
 
-        text_limit = MONITOR_DISASM_SOURCE_COL - 1 - MONITOR_DISASM_TEXT_COL;
+        bp_slot = breakpoints.find_at(addr);
+        source = monitor_source_indicator(backend->source_name(addr));
+        source_len = (int)strlen(source);
+        if (source_len > 3) {
+            source_len = 3;
+        }
+        source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
+        if (bp_slot >= 0) {
+            brk_pos = source_pos - 6;
+            if (brk_pos < MONITOR_DISASM_TEXT_COL) {
+                brk_pos = MONITOR_DISASM_TEXT_COL;
+            }
+            indicator_start = brk_pos;
+        } else {
+            indicator_start = source_pos;
+        }
+
+        text_limit = indicator_start - 1 - MONITOR_DISASM_TEXT_COL;
+        if (text_limit < 0) {
+            text_limit = 0;
+        }
         text_len = (int)strlen(decoded.text);
         if (text_len > text_limit) {
             text_len = text_limit;
         }
         memcpy(line + MONITOR_DISASM_TEXT_COL, decoded.text, text_len);
 
-        source = backend->source_name(addr);
-        source_len = (int)strlen(source);
-        if (source_len > MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2) {
-            source_len = MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2;
+        if (bp_slot >= 0) {
+            line[brk_pos] = '[';
+            memcpy(line + brk_pos + 1, "BRK", 3);
+            line[brk_pos + 4] = (char)('0' + bp_slot);
+            line[brk_pos + 5] = ']';
         }
-        source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
         line[source_pos] = '[';
         memcpy(line + source_pos + 1, source, source_len);
         line[source_pos + 1 + source_len] = ']';
@@ -4225,7 +4264,13 @@ void MachineMonitor :: draw_disassembly()
                 }
             }
         }
+        if (bp_slot >= 0) {
+            window->set_color(MONITOR_UI_ACCENT_COLOR);
+        }
         draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
+        if (bp_slot >= 0) {
+            window->set_color(get_ui()->color_fg);
+        }
         addr = (uint16_t)(addr + decoded.length);
     }
 }
@@ -4475,7 +4520,7 @@ void MachineMonitor :: draw()
             debug_render_breakpoint_popup();
         }
     }
-    if (debug.is_active()) {
+    if (debug.is_active() && !help_visible) {
         draw_debug_footer();
     }
     draw_status();
@@ -4870,10 +4915,10 @@ void MachineMonitor :: debug_enter()
     }
     help_visible = false;
     debug.enter();
-    // Debug mode reserves the bottom two rows for the CPU footer, displacing
-    // one content row. Recompute so all view drawers shrink uniformly.
+    // Debug mode reserves two rows above the normal status footer for the CPU
+    // table. Recompute so all view drawers shrink uniformly.
     if (window) {
-        content_height = window->get_size_y() - 3;
+        content_height = window->get_size_y() - 4;
         if (content_height < 1) content_height = 1;
     }
     // Best-effort capture: ask the backend for an immediate snapshot if it
@@ -4915,6 +4960,9 @@ DebugSession *MachineMonitor :: ensure_debug_session()
         return NULL;
     }
     debug_session = backend->create_debug_session();
+    if (debug_session) {
+        debug_session->set_cancel_keyboard(keyboard);
+    }
     return debug_session;
 }
 
@@ -4969,32 +5017,32 @@ void MachineMonitor :: debug_request_over()
         return;
     }
     DebugContext from = debug.context();
-    if (!from.valid) {
+    bool have_context = from.valid;
+    uint16_t start_pc = have_context ? from.pc : state.current_addr;
+    if (!have_context) {
         DebugContext snap;
         if (debug_capture_context(&snap)) {
             debug.set_context(snap);
             from = snap;
+            have_context = true;
+            start_pc = from.pc;
         }
-    }
-    if (!from.valid) {
-        get_ui()->popup("NO CONTEXT", BUTTON_OK);
-        redraw_full();
-        return;
     }
     // Decode the current instruction so the session knows what to patch.
     uint8_t bytes[3] = { 0, 0, 0 };
     if (backend) {
-        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(from.pc + i));
+        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(start_pc + i));
     }
     DebugPredictResult pred;
-    debug_predict(from.pc, bytes, state.illegal_enabled, &pred);
+    debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
         get_ui()->popup(monitor_debug_session_unsafe, BUTTON_OK);
         redraw_full();
         return;
     }
     DebugContext next;
-    DebugSession::Result r = session->over(from, pred, &next);
+    DebugSession::Result r = have_context ? session->over(from, pred, &next)
+                                          : session->over_at(start_pc, pred, &next);
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
     } else {
@@ -5015,31 +5063,31 @@ void MachineMonitor :: debug_request_trace()
         return;
     }
     DebugContext from = debug.context();
-    if (!from.valid) {
+    bool have_context = from.valid;
+    uint16_t start_pc = have_context ? from.pc : state.current_addr;
+    if (!have_context) {
         DebugContext snap;
         if (debug_capture_context(&snap)) {
             debug.set_context(snap);
             from = snap;
+            have_context = true;
+            start_pc = from.pc;
         }
-    }
-    if (!from.valid) {
-        get_ui()->popup("NO CONTEXT", BUTTON_OK);
-        redraw_full();
-        return;
     }
     uint8_t bytes[3] = { 0, 0, 0 };
     if (backend) {
-        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(from.pc + i));
+        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(start_pc + i));
     }
     DebugPredictResult pred;
-    debug_predict(from.pc, bytes, state.illegal_enabled, &pred);
+    debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
         get_ui()->popup(monitor_debug_session_unsafe, BUTTON_OK);
         redraw_full();
         return;
     }
     DebugContext next;
-    DebugSession::Result r = session->trace(from, pred, &next);
+    DebugSession::Result r = have_context ? session->trace(from, pred, &next)
+                                          : session->trace_at(start_pc, pred, &next);
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
     } else {
@@ -5194,6 +5242,12 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
     }
     if (key >= '0' && key <= '9') {
         breakpoint_selected = (uint8_t)(key - '0');
+        const MonitorBreakpointSlot *bp = breakpoints.get(breakpoint_selected);
+        if (bp && bp->used) {
+            state.current_addr = bp->address;
+            apply_go_local(bp->address);
+            debug_close_breakpoint_popup();
+        }
         draw();
         return 0;
     }
@@ -5208,12 +5262,8 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
         return 0;
     }
     if (key == 's' || key == 'S') {
-        int slot = breakpoints.allocate(state.current_addr, (uint8_t)(state.cpu_port & 0x07));
-        if (slot >= 0) {
-            breakpoint_selected = (uint8_t)slot;
-            // Re-arm the chosen slot to the new address by clearing/reusing.
-            breakpoints.set_enabled(slot, true);
-        }
+        breakpoints.store_slot(breakpoint_selected, state.current_addr,
+                               (uint8_t)(state.cpu_port & 0x07));
         draw();
         return 0;
     }
@@ -5256,7 +5306,7 @@ void MachineMonitor :: debug_render_breakpoint_popup()
                                              breakpoints.get(i));
     }
     strcpy(popup_lines[BRK_POPUP_HELP_ROW],
-           "0-9/RET Jmp S Set E On/Off DEL Reset");
+           "U/D Sel 0-9/RET Jmp S Set DEL Rst");
     int screen_x, screen_y;
     window->getOffsets(screen_x, screen_y);
     int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
@@ -5295,8 +5345,8 @@ int MachineMonitor :: debug_handle_key(int key)
     if (breakpoint_popup_active) {
         return debug_breakpoint_popup_handle_key(key);
     }
-    // Exit Debug shortcuts. ESC drops Debug; ESC inside Edit+Debug is handled
-    // earlier in handle_key (it drops Edit first then we revisit Debug).
+    // Exit Debug shortcuts. ESC / RUN/STOP drop Debug only once Edit has
+    // already been left by the outer edit-mode handler.
     if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_D) {
         debug_leave();
         draw();
@@ -5564,6 +5614,16 @@ int MachineMonitor :: handle_key(int key)
     if (edit_mode) {
         if (key == KEY_CTRL_O) {
             return 1;
+        }
+        if (debug.is_active() && key == KEY_CTRL_D) {
+            debug_leave();
+            draw();
+            return 0;
+        }
+        if (debug.is_active() && (key == KEY_BREAK || key == KEY_ESCAPE)) {
+            exit_edit_mode();
+            draw();
+            return 0;
         }
         if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();

@@ -21,11 +21,16 @@ public:
         DBG_NOT_SUPPORTED,      // Backend cannot perform this operation.
         DBG_REFUSED,            // Unsafe target (BRK, unsupported insn, ...).
         DBG_TIMEOUT,            // Trap did not fire within the wait window.
-        DBG_CANCELLED,          // User pressed STOP/ESC during wait.
+        DBG_CANCELLED,          // User pressed RUN/STOP / Telnet ESC during wait.
         DBG_PATCH_FAILED        // Could not safely install or restore a patch.
     };
 
     virtual ~DebugSession() { }
+
+    // Optional non-owning cancel source for implementations that block while
+    // waiting for a trap. Default keeps host tests and unsupported backends
+    // independent of UI/input plumbing.
+    virtual void set_cancel_keyboard(class Keyboard *) { }
 
     // Best-effort initial context. May return DBG_NOT_SUPPORTED on backends
     // that cannot snapshot CPU state without first performing a step. The
@@ -38,12 +43,24 @@ public:
     virtual Result over(const DebugContext &from,
                         const struct DebugPredictResult &pred,
                         DebugContext *ctx) = 0;
+    virtual Result over_at(uint16_t start_pc,
+                           const struct DebugPredictResult &pred,
+                           DebugContext *ctx) {
+        (void)start_pc; (void)pred; (void)ctx;
+        return DBG_NOT_SUPPORTED;
+    }
 
     // Step into: BRK at the predicted next PC. For JSR this enters the
     // subroutine. For RTS / RTI the session must read the stack itself.
     virtual Result trace(const DebugContext &from,
                          const struct DebugPredictResult &pred,
                          DebugContext *ctx) = 0;
+    virtual Result trace_at(uint16_t start_pc,
+                            const struct DebugPredictResult &pred,
+                            DebugContext *ctx) {
+        (void)start_pc; (void)pred; (void)ctx;
+        return DBG_NOT_SUPPORTED;
+    }
 
     // Step out: install BRK at the caller-side resume point inferred from
     // the captured SP. Returns DBG_REFUSED when stack context is unsafe.

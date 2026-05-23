@@ -46,6 +46,17 @@ int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port)
     return -1;
 }
 
+void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_port)
+{
+    if (slot < 0 || slot >= MONITOR_BREAKPOINT_SLOT_COUNT) {
+        return;
+    }
+    slots[slot].used = true;
+    slots[slot].enabled = true;
+    slots[slot].address = address;
+    slots[slot].cpu_port = (uint8_t)(cpu_port & 0x07);
+}
+
 void MonitorBreakpoints :: clear_slot(int slot)
 {
     if (slot < 0 || slot >= MONITOR_BREAKPOINT_SLOT_COUNT) {

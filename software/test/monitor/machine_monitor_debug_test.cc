@@ -42,11 +42,14 @@ namespace {
 struct StubDebugSession : public DebugSession
 {
     int over_calls;
+    int over_at_calls;
     int trace_calls;
+    int trace_at_calls;
     int out_calls;
     int go_calls;
     int cleanup_calls;
     int snapshot_calls;
+    uint16_t last_start_pc;
     DebugContext next_ctx;
     Result over_result;
     Result trace_result;
@@ -55,8 +58,9 @@ struct StubDebugSession : public DebugSession
     Result snapshot_result;
 
     StubDebugSession()
-        : over_calls(0), trace_calls(0), out_calls(0), go_calls(0),
-          cleanup_calls(0), snapshot_calls(0),
+        : over_calls(0), over_at_calls(0), trace_calls(0), trace_at_calls(0),
+          out_calls(0), go_calls(0), cleanup_calls(0), snapshot_calls(0),
+          last_start_pc(0),
           over_result(DBG_OK), trace_result(DBG_OK),
           out_result(DBG_OK), go_result(DBG_OK), snapshot_result(DBG_OK)
     {
@@ -88,8 +92,24 @@ struct StubDebugSession : public DebugSession
         }
         return over_result;
     }
+    virtual Result over_at(uint16_t start_pc, const DebugPredictResult &, DebugContext *ctx) {
+        over_at_calls++;
+        last_start_pc = start_pc;
+        if (over_result == DBG_OK && ctx) {
+            *ctx = next_ctx;
+        }
+        return over_result;
+    }
     virtual Result trace(const DebugContext &, const DebugPredictResult &, DebugContext *ctx) {
         trace_calls++;
+        if (trace_result == DBG_OK && ctx) {
+            *ctx = next_ctx;
+        }
+        return trace_result;
+    }
+    virtual Result trace_at(uint16_t start_pc, const DebugPredictResult &, DebugContext *ctx) {
+        trace_at_calls++;
+        last_start_pc = start_pc;
         if (trace_result == DBG_OK && ctx) {
             *ctx = next_ctx;
         }
@@ -161,9 +181,11 @@ struct TrackingDebugBackend : public FakeMemoryBackend
     bool refuse_session;
     DebugContext canned_snapshot;
     bool canned_snapshot_set;
+    DebugSession::Result snapshot_result;
 
     TrackingDebugBackend() : last_session(NULL), session_creations(0),
-                             refuse_session(false), canned_snapshot_set(false)
+                             refuse_session(false), canned_snapshot_set(false),
+                             snapshot_result(DebugSession::DBG_OK)
     {
         debug_context_reset(&canned_snapshot);
     }
@@ -177,7 +199,22 @@ struct TrackingDebugBackend : public FakeMemoryBackend
         if (canned_snapshot_set) {
             last_session->next_ctx = canned_snapshot;
         }
+        last_session->snapshot_result = snapshot_result;
         return last_session;
+    }
+};
+
+struct SourceLabelDebugBackend : public TrackingDebugBackend
+{
+    virtual const char *source_name(uint16_t address) const {
+        switch (address) {
+            case 0x1000: return "RAM";
+            case 0x1001: return "BASIC";
+            case 0x1002: return "KERNAL";
+            case 0x1003: return "CHAR";
+            case 0x1004: return "IO";
+            default: return "RAM";
+        }
     }
 };
 
@@ -306,6 +343,58 @@ static int test_footer_layout_blanks_unknown_fields()
     return 0;
 }
 
+static int test_debug_footer_sits_above_normal_status()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Switch ASM ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+
+    char values[40];
+    char row[40];
+    int label_y = -1;
+    int status_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "PC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
+            label_y = y;
+        }
+        if (strstr(row, "CPU") != NULL && strstr(row, "VIC") != NULL) {
+            status_y = y;
+        }
+    }
+    if (expect(label_y >= 0, "Debug label row must be visible")) return 1;
+    if (expect(status_y >= 0, "Normal CPU/VIC status footer must remain visible in Debug mode")) return 1;
+    if (expect(status_y == label_y + 2,
+               "Debug labels/values must occupy the two rows immediately above normal status")) return 1;
+    screen.get_slice(1, label_y + 1, 38, values);
+    bool values_blank = true;
+    for (int i = 0; i < 35; i++) {
+        if (values[i] != ' ') {
+            values_blank = false;
+            break;
+        }
+    }
+    if (expect(values_blank, "Unknown Debug value row must be directly above normal status")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_d_enters_debug_without_executing()
 {
     TestUserInterface ui;
@@ -379,6 +468,47 @@ static int test_d_inside_debug_performs_over()
     return 0;
 }
 
+static int test_d_inside_debug_without_context_overs_from_cursor()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x1000, 0xA9);
+    backend.write(0x1001, 0x77);
+    backend.write(0x1002, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("1000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 6; i++) {
+        int r = monitor.poll(0);
+        if (i < 5) {
+            if (expect(r == 0, "No-context Over setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->over_calls == 0,
+               "No-context D must not call context-based Over")) return 1;
+    if (expect(backend.last_session->over_at_calls == 1,
+               "No-context D in Debug must execute Over from the cursor")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0x1000,
+               "No-context Over must start at the Assembly cursor address")) return 1;
+    if (expect(ui.popup_count == 0 || strstr(ui.last_popup, "NO CONTEXT") == NULL,
+               "No-context Over must not show NO CONTEXT")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_t_traces_and_o_outs_inside_debug()
 {
     TestUserInterface ui;
@@ -412,6 +542,45 @@ static int test_t_traces_and_o_outs_inside_debug()
     return 0;
 }
 
+static int test_t_inside_debug_without_context_traces_from_cursor()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x2000, 0x20);
+    backend.write(0x2001, 0x00);
+    backend.write(0x2002, 0x30);
+
+    const int keys[] = { 'J', 'A', 'D', 'T', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("2000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 6; i++) {
+        int r = monitor.poll(0);
+        if (i < 5) {
+            if (expect(r == 0, "No-context Trace setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->trace_calls == 0,
+               "No-context T must not call context-based Trace")) return 1;
+    if (expect(backend.last_session->trace_at_calls == 1,
+               "No-context T in Debug must execute Trace from the cursor")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0x2000,
+               "No-context Trace must start at the Assembly cursor address")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_g_invalidates_context()
 {
     TestUserInterface ui;
@@ -432,7 +601,17 @@ static int test_g_invalidates_context()
     if (expect(backend.last_session != NULL && backend.last_session->go_calls == 1,
                "G should call go() exactly once")) return 1;
     char values[40];
-    screen.get_slice(1, 22, 38, values);
+    char row[40];
+    int label_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "PC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
+            label_y = y;
+            break;
+        }
+    }
+    if (expect(label_y >= 0, "G invalidation test must find Debug footer labels")) return 1;
+    screen.get_slice(1, label_y + 1, 38, values);
     // After G the captured context is invalidated: values row should be blanks.
     bool all_blank = true;
     for (int i = 0; i < 35; i++) if (values[i] != ' ') { all_blank = false; break; }
@@ -508,6 +687,96 @@ static int test_ctrl_d_leaves_debug_only()
     return 0;
 }
 
+static int test_ctrl_d_leaves_debug_but_keeps_edit()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A', 'D', 'E', KEY_CTRL_D, KEY_ESCAPE, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Edit ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "C=+D should leave Debug only")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") == NULL && strstr(header, "Edit") != NULL,
+               "C=+D in Debug+Edit must clear Dbg and keep Edit")) return 1;
+    if (expect(monitor.poll(0) == 0, "ESC leaves remaining Edit")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_escape_leaves_edit_before_debug()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A', 'D', 'E', KEY_ESCAPE, KEY_ESCAPE, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Edit ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "First ESC should leave Edit only")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") == NULL,
+               "ESC in Debug+Edit must leave Dbg active while clearing Edit")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second ESC should leave Debug")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") == NULL && strstr(header, "Edit") == NULL,
+               "Second ESC must clear the remaining Dbg flag")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_runstop_leaves_edit_before_debug()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A', 'D', 'E', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Edit ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "First RUN/STOP should leave Edit only")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") == NULL,
+               "RUN/STOP in Debug+Edit must leave Dbg active while clearing Edit")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second RUN/STOP should leave Debug")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") == NULL && strstr(header, "Edit") == NULL,
+               "Second RUN/STOP must clear the remaining Dbg flag")) return 1;
+    if (expect(monitor.poll(0) == 1, "Third RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_breakpoint_toggle_via_r()
 {
     TestUserInterface ui;
@@ -535,6 +804,173 @@ static int test_breakpoint_toggle_via_r()
                "Second R must emit a CLR status")) return 1;
     if (expect(monitor.poll(0) == 0, "First RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_popup_store_reuses_selected_slot()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0x1000, 0xEA);
+    backend.write(0x1100, 0xEA);
+
+    const int keys[] = {
+        'J', 'A', 'D', 'R',
+        'J', KEY_CTRL_R, 'S', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 10);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.push_prompt("1000", 1);
+    ui.push_prompt("1100", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 7; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint store setup should stay in monitor")) return 1;
+    }
+
+    char row[42];
+    bool found = false;
+    for (int y = 0; y < 25 && !found; y++) {
+        screen.get_slice(0, y, 40, row);
+        if (strstr(row, "0 SET $1100") != NULL) {
+            found = true;
+        }
+    }
+    if (expect(found, "S must store the current address into the selected slot")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "ESC closes the breakpoint popup")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_popup_digit_jumps_to_slot()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0x1000, 0xEA);
+    backend.write(0x1100, 0xEA);
+    backend.write(0x1200, 0xEA);
+
+    const int keys[] = {
+        'J', 'A', 'D', 'R',
+        'J', 'R',
+        'J', KEY_CTRL_R, '1',
+        KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 11);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.push_prompt("1000", 1);
+    ui.push_prompt("1100", 1);
+    ui.push_prompt("1200", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 9; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint digit-jump setup should stay in monitor")) return 1;
+    }
+
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "$1100") != NULL,
+               "Digit shortcut in breakpoint popup must jump directly to that slot")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_row_indicator_and_color()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0xA000, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 4; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint visual setup should stay in monitor")) return 1;
+    }
+
+    char row[40];
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strstr(row, "A000") != NULL, "Breakpoint row should show the target address")) return 1;
+    if (expect(strstr(row, "[BRK0][BAS]") != NULL,
+               "Breakpoint row must show [BRKx] before normalized source")) return 1;
+    if (expect(strstr(row, "BASIC") == NULL,
+               "Assembly source indicator must use the 3-character BAS label")) return 1;
+
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    const char *dbg = strstr(header, "Dbg");
+    if (expect(dbg != NULL, "Header must still show Dbg")) return 1;
+    uint8_t accent = screen.colors[3][1 + (dbg - header)];
+    for (int x = 1; x <= 38; x++) {
+        if (expect(screen.colors[4][x] == accent,
+                   "Every character on a breakpoint opcode line must use the Dbg/Edit accent color")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_source_indicators_are_three_chars()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    SourceLabelDebugBackend backend;
+    monitor_reset_saved_state();
+
+    for (int i = 0; i < 5; i++) {
+        backend.write((uint16_t)(0x1000 + i), 0xEA);
+    }
+
+    const int keys[] = { 'J', 'A', KEY_BREAK };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("1000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Goto source label area")) return 1;
+    if (expect(monitor.poll(0) == 0, "Switch to ASM view")) return 1;
+
+    const char *expected[] = { "[RAM]", "[BAS]", "[KRN]", "[CHR]", "[I/O]" };
+    for (int y = 0; y < 5; y++) {
+        char row[40];
+        screen.get_slice(1, 4 + y, 38, row);
+        if (expect(strstr(row, expected[y]) != NULL,
+                   "Assembly row must normalize memory source indicators")) return 1;
+        if (expect(strstr(row, "BASIC") == NULL && strstr(row, "KERNAL") == NULL &&
+                   strstr(row, "CHAR ") == NULL && strstr(row, "[IO]") == NULL,
+                   "Assembly row must not show legacy long source labels")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -568,6 +1004,41 @@ static int test_ctrl_r_opens_breakpoint_popup()
     if (expect(monitor.poll(0) == 0, "ESC closes the popup")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug first")) return 1;
     if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_popup_blocks_debug_execution_keys()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = {
+        'A', 'D', KEY_CTRL_R, 'D', 'T', 'O', 'G', 'R',
+        KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 11);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 11; i++) {
+        int r = monitor.poll(0);
+        if (i < 10) {
+            if (expect(r == 0, "Breakpoint popup/modal polls should stay in monitor")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits the monitor")) return 1;
+        }
+    }
+    StubDebugSession *sess = backend.last_session;
+    if (expect(sess != NULL, "Entering Debug should create a session")) return 1;
+    if (expect(sess->over_calls == 0 && sess->trace_calls == 0 &&
+               sess->over_at_calls == 0 && sess->trace_at_calls == 0 &&
+               sess->out_calls == 0 && sess->go_calls == 0,
+               "Breakpoint popup must block Debug execution commands")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -623,9 +1094,52 @@ static int test_b_keeps_binary_view_in_debug()
         } else {
             if (expect(r == 1, "Final RUN/STOP exits")) return 1;
         }
+        if (i == 2) {
+            char header[40];
+            screen.get_slice(1, 3, 38, header);
+            if (expect(strstr(header, "MONITOR BIN") != NULL,
+                       "B must switch to Binary view while Debug is active")) return 1;
+        }
     }
-    // B must still switch to Binary view even while Debug is active.
-    if (expect(true, "Debug mode does not steal B for breakpoints")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_ctrl_b_keeps_bookmark_popup_in_debug()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A', 'D', KEY_CTRL_B, KEY_ESCAPE, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 3; i++) {
+        if (expect(monitor.poll(0) == 0, "Setup polls should return 0")) return 1;
+    }
+    char row[42];
+    bool found = false;
+    for (int y = 0; y < 25 && !found; y++) {
+        screen.get_slice(0, y, 40, row);
+        if (strstr(row, "BOOKMARKS") != NULL) { found = true; }
+    }
+    if (expect(found, "C=+B must open the bookmark popup while Debug is active")) return 1;
+    if (expect(backend.last_session == NULL ||
+               (backend.last_session->over_calls == 0 &&
+                backend.last_session->trace_calls == 0 &&
+                backend.last_session->over_at_calls == 0 &&
+                backend.last_session->trace_at_calls == 0 &&
+                backend.last_session->out_calls == 0 &&
+                backend.last_session->go_calls == 0),
+               "C=+B must not be treated as a Debug execution command")) return 1;
+    if (expect(monitor.poll(0) == 0, "ESC closes the bookmark popup")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -680,37 +1194,74 @@ static int test_help_screen_shows_debug_commands()
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    for (int i = 0; i < 6; i++) {
-        int r = monitor.poll(0);
-        char msg[64];
-        sprintf(msg, "help test: poll %d should return %s", i, i < 5 ? "0" : "1");
-        if (i < 5) {
-            if (expect(r == 0, msg)) return 1;
-        } else {
-            if (expect(r == 1, msg)) return 1;
-        }
-    }
-    // Help should have appeared transiently; the body had "Debug / Over",
-    // "Trace", "Out", "Go", and breakpoint hints. We snapshot the screen at
-    // the moment help was open (which on the prior poll() call drew help).
-    // The post-ESC screen no longer shows help, so this test mostly checks
-    // that the help formatter produces sensible Debug-mode text.
-    const char *lines[16];
-    int n = MonitorDebug::format_help_lines(lines, 16);
+    if (expect(monitor.poll(0) == 0, "help test: ASM switch should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "help test: Debug entry should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "help test: opening help should return 0")) return 1;
+
+    const char *lines[20];
+    int n = MonitorDebug::format_help_lines(lines, 20);
     bool has_over = false;
     bool has_trace = false;
     bool has_out = false;
     bool has_go = false;
     bool has_brk = false;
+    bool has_memory = false;
+    bool has_load_save = false;
+    bool has_bookmarks = false;
+    bool has_rstop = false;
+    bool has_esc = false;
     for (int i = 0; i < n; i++) {
         if (strstr(lines[i], "Over")) has_over = true;
         if (strstr(lines[i], "Trace")) has_trace = true;
         if (strstr(lines[i], "Out")) has_out = true;
         if (strstr(lines[i], "Go")) has_go = true;
-        if (strstr(lines[i], "Breakpoint")) has_brk = true;
+        if (strstr(lines[i], "Breakpt") || strstr(lines[i], "Brkpts")) has_brk = true;
+        if (strstr(lines[i], "M Memory")) has_memory = true;
+        if (strstr(lines[i], "L Load") && strstr(lines[i], "S Save")) has_load_save = true;
+        if (strstr(lines[i], "C=+B")) has_bookmarks = true;
+        if (strstr(lines[i], "RSTOP")) has_rstop = true;
+        if (strstr(lines[i], "ESC")) has_esc = true;
     }
     if (expect(has_over && has_trace && has_out && has_go && has_brk,
                "Debug help must mention Over, Trace, Out, Go, Breakpoint")) return 1;
+    if (expect(has_memory && has_load_save && has_bookmarks,
+               "Debug help must preserve the normal monitor help entries")) return 1;
+    if (expect(has_rstop && !has_esc,
+               "Help must show RSTOP rather than ESC")) return 1;
+    char row[40];
+    screen.get_slice(1, 7, 38, row);
+    const char *over = strstr(row, "D Debug/Over");
+    if (expect(over != NULL && screen.colors[7][1 + (over - row)] == 1,
+               "D Debug/Over must use the shared UI accent colour in debug help")) return 1;
+    screen.get_slice(1, 9, 38, row);
+    const char *trace = strstr(row, "T Trace");
+    if (expect(trace != NULL && screen.colors[9][1 + (trace - row)] == 1,
+               "T Trace must use the shared UI accent colour in debug help")) return 1;
+    screen.get_slice(1, 12, 38, row);
+    const char *out = strstr(row, "O Out");
+    const char *go = strstr(row, "G Go");
+    if (expect(out != NULL && go != NULL &&
+               screen.colors[12][1 + (out - row)] == 1 &&
+               screen.colors[12][1 + (go - row)] == 1,
+               "O Out and G Go must use the shared UI accent colour in debug help")) return 1;
+    screen.get_slice(1, 15, 38, row);
+    const char *subroutine = strstr(row, "RETURN Subroutine View");
+    if (expect(subroutine != NULL && screen.colors[15][1 + (subroutine - row)] == 1,
+               "RETURN Subroutine View must use the shared UI accent colour in debug help")) return 1;
+    screen.get_slice(1, 17, 38, row);
+    const char *ctrl_r = strstr(row, "C=+R Brkpts");
+    const char *ctrl_d = strstr(row, "C=+D Exit");
+    if (expect(ctrl_r != NULL && ctrl_d != NULL &&
+               screen.colors[17][1 + (ctrl_r - row)] == 1 &&
+               screen.colors[17][1 + (ctrl_d - row)] == 1,
+               "C=+R and C=+D help entries must use the shared UI accent colour")) return 1;
+    screen.get_slice(1, 18, 38, row);
+    const char *rstop = strstr(row, "RSTOP Exit Debug");
+    if (expect(rstop != NULL && screen.colors[18][1 + (rstop - row)] == 1,
+               "RSTOP help entry must use the shared UI accent colour")) return 1;
+    if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
+    if (expect(monitor.poll(0) == 0, "help test: RUN/STOP should leave Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "help test: final RUN/STOP should exit")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -724,7 +1275,7 @@ static int test_edit_and_debug_compose_in_header()
 
     // Use ASCII view because hex edit needs nibble input the keymap doesn't
     // intercept here. Sequence: switch to ASM, enter Debug, then E for edit.
-    const int keys[] = { 'A', 'D', 'E', KEY_ESCAPE, KEY_ESCAPE, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'E', KEY_CTRL_E, KEY_ESCAPE, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -738,7 +1289,10 @@ static int test_edit_and_debug_compose_in_header()
     screen.get_slice(1, 3, 38, header);
     if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") != NULL,
                "Header must show both Dbg and Edit when both modes are active")) return 1;
-    if (expect(monitor.poll(0) == 0, "ESC drops Edit first")) return 1;
+    if (expect(monitor.poll(0) == 0, "C=+E drops Edit first")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") == NULL,
+               "C=+E in Debug+Edit must keep Dbg and clear Edit")) return 1;
     if (expect(monitor.poll(0) == 0, "ESC drops Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Final RUN/STOP exits")) return 1;
     monitor.deinit();
@@ -754,16 +1308,28 @@ int main()
     RUN(test_predictor_classifies_control_flow);
     RUN(test_breakpoint_slots_allocate_clear_and_format);
     RUN(test_footer_layout_blanks_unknown_fields);
+    RUN(test_debug_footer_sits_above_normal_status);
     RUN(test_d_enters_debug_without_executing);
     RUN(test_d_inside_debug_performs_over);
+    RUN(test_d_inside_debug_without_context_overs_from_cursor);
     RUN(test_t_traces_and_o_outs_inside_debug);
+    RUN(test_t_inside_debug_without_context_traces_from_cursor);
     RUN(test_g_invalidates_context);
     RUN(test_return_remains_non_executing_navigation);
     RUN(test_ctrl_d_leaves_debug_only);
+    RUN(test_ctrl_d_leaves_debug_but_keeps_edit);
+    RUN(test_escape_leaves_edit_before_debug);
+    RUN(test_runstop_leaves_edit_before_debug);
     RUN(test_breakpoint_toggle_via_r);
+    RUN(test_breakpoint_popup_store_reuses_selected_slot);
+    RUN(test_breakpoint_popup_digit_jumps_to_slot);
+    RUN(test_breakpoint_row_indicator_and_color);
+    RUN(test_source_indicators_are_three_chars);
     RUN(test_ctrl_r_opens_breakpoint_popup);
+    RUN(test_breakpoint_popup_blocks_debug_execution_keys);
     RUN(test_unsupported_session_emits_refusal);
     RUN(test_b_keeps_binary_view_in_debug);
+    RUN(test_ctrl_b_keeps_bookmark_popup_in_debug);
     RUN(test_cleanup_runs_on_deinit);
     RUN(test_help_screen_shows_debug_commands);
     RUN(test_edit_and_debug_compose_in_header);

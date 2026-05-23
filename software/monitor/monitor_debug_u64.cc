@@ -30,6 +30,7 @@
 
 #include "u64_memory_backend.h"
 #include "u64_machine.h"
+#include "keyboard.h"
 #include "monitor_debug_predictor.h"
 #include "monitor_breakpoints.h"
 #include "monitor_file_io.h"
@@ -62,6 +63,7 @@ static const uint16_t BRK_VECTOR_HI   = 0x0317;
 static const uint16_t IRQ_VECTOR_LO   = 0x0314;
 static const uint16_t NMI_VECTOR_LO   = 0x0318;
 static const uint16_t NMI_VECTOR_HI   = 0x0319;
+static const uint16_t DEBUG_AREA_END  = 0x03FB;
 
 // Capture handler. KERNAL's `$FF48` BRK preamble has already pushed A, X, Y
 // when this stub runs, so we recover them via stack-relative loads. After
@@ -132,6 +134,7 @@ class U64DebugSession : public DebugSession
 {
     U64MemoryBackend *backend;
     U64Machine *machine;
+    Keyboard *cancel_keyboard;
 
     struct Patch {
         bool used;
@@ -151,9 +154,18 @@ class U64DebugSession : public DebugSession
     uint8_t saved_handler_bytes[HANDLER_BYTES_LEN + TRAMPOLINE_BYTES_LEN];
     uint8_t saved_nmi_trampoline_bytes[16];
     bool nmi_trampoline_installed;
+    uint8_t saved_nmi_vector[2];
     uint8_t saved_brk_vector[2];
     bool has_last_context;
     DebugContext last_context;
+
+    bool reserved_patch_address(uint16_t addr) const
+    {
+        if (addr >= IRQ_VECTOR_LO && addr <= NMI_VECTOR_HI) {
+            return true;
+        }
+        return addr >= HANDLER_ADDR && addr <= DEBUG_AREA_END;
+    }
 
     void save_and_install_handler(void)
     {
@@ -206,6 +218,8 @@ class U64DebugSession : public DebugSession
                                   saved_handler_bytes[HANDLER_BYTES_LEN + i]);
         }
         if (nmi_trampoline_installed) {
+            machine->poke_visible(NMI_VECTOR_LO, saved_nmi_vector[0]);
+            machine->poke_visible(NMI_VECTOR_HI, saved_nmi_vector[1]);
             for (int i = 0; i < (int)sizeof(saved_nmi_trampoline_bytes); i++) {
                 machine->poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i),
                                       saved_nmi_trampoline_bytes[i]);
@@ -234,6 +248,9 @@ class U64DebugSession : public DebugSession
 
     bool install_brk_at(uint16_t addr, uint8_t cpu_port)
     {
+        if (reserved_patch_address(addr)) {
+            return false;
+        }
         if (already_patched(addr)) {
             return true;
         }
@@ -297,17 +314,27 @@ class U64DebugSession : public DebugSession
     // within the timeout window. The poll cadence is generous (vTaskDelay 5ms)
     // so we do not heat up the bus stopping the CPU thousands of times per
     // second; capture latency is at most a single frame.
-    bool wait_for_sentinel(int timeout_ms)
+    Result wait_for_sentinel(int timeout_ms)
     {
         int waited = 0;
         while (waited < timeout_ms) {
             if (machine->peek_visible(SENTINEL_ADDR) != 0x00) {
-                return true;
+                return DBG_OK;
+            }
+            if (cancel_keyboard) {
+                int key = cancel_keyboard->getch();
+                if (key == KEY_ESCAPE || key == KEY_BREAK ||
+                    key == KEY_CTRL_D || key == KEY_CTRL_O) {
+                    return DBG_CANCELLED;
+                }
+                if (key >= 0) {
+                    cancel_keyboard->push_head(key);
+                }
             }
             vTaskDelay(5 / portTICK_PERIOD_MS);
             waited += 5;
         }
-        return false;
+        return DBG_TIMEOUT;
     }
 
     // Read the captured register file and assemble a DebugContext. The
@@ -366,6 +393,9 @@ class U64DebugSession : public DebugSession
         // Clear sentinel before resume so we observe a fresh capture only.
         machine->poke_visible(SENTINEL_ADDR, 0x00);
         machine->end_stopped_session(stopped_it);
+        if (from && from->valid) {
+            cpu_parked_in_spin = false;
+        }
 
         if (from && from->valid) {
             // The spin JMP target was rewritten while stopped; the CPU now
@@ -412,6 +442,8 @@ class U64DebugSession : public DebugSession
                   (uint8_t)(target >> 8)              // JMP target
         };
         if (!nmi_trampoline_installed) {
+            saved_nmi_vector[0] = old_nmi_lo;
+            saved_nmi_vector[1] = old_nmi_hi;
             for (unsigned i = 0; i < sizeof(bytes); i++) {
                 saved_nmi_trampoline_bytes[i] =
                     machine->peek_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i));
@@ -431,8 +463,12 @@ class U64DebugSession : public DebugSession
         cpu_parked_in_spin = false;
     }
 
-    Result perform_run(const DebugContext *from, DebugContext *out, uint8_t cpu_port)
+    Result perform_run(const DebugContext *from, uint16_t start_pc,
+                       bool use_start_pc, DebugContext *out, uint8_t cpu_port)
     {
+        if (machine->is_accessible()) {
+            machine->unfreeze();
+        }
         save_and_install_handler();
         if (cpu_parked_in_spin && from && from->valid) {
             release_to_run(from);
@@ -440,16 +476,20 @@ class U64DebugSession : public DebugSession
             // CPU left the spin loop (we previously cleaned up). Re-launch
             // it at the saved PC via the NMI trampoline.
             nmi_redirect_to(from->pc);
+        } else if (use_start_pc) {
+            nmi_redirect_to(start_pc);
         } else {
             release_to_run(0);
         }
         // 5 second ceiling: the user can always cancel by closing the
         // monitor. Long-running programs without breakpoints should rely on
         // the user-set BPs hitting; a stall here means no BRK ever fired.
-        if (!wait_for_sentinel(5000)) {
+        Result waited = wait_for_sentinel(5000);
+        if (waited != DBG_OK) {
             restore_patches();
-            reset_spin_target();
-            return DBG_TIMEOUT;
+            uninstall_handler();
+            cpu_parked_in_spin = false;
+            return waited;
         }
         read_captured_context(out, cpu_port);
         restore_patches();
@@ -463,7 +503,7 @@ class U64DebugSession : public DebugSession
     // For Trace / Over: install BRKs on every reachable next-PC and run.
     // Returns the patches installed so the caller can refuse cleanly if
     // none of the candidate addresses can be patched.
-    Result step_with_predict(const DebugContext &from,
+    Result step_with_predict(const DebugContext *from, uint16_t start_pc,
                              const DebugPredictResult &pred,
                              bool prefer_jsr_target,
                              DebugContext *out, uint8_t cpu_port)
@@ -498,26 +538,32 @@ class U64DebugSession : public DebugSession
             case DBG_PREDICT_JMP_IND: {
                 // Resolve via memory: JMP ($XXXX) reads target from the
                 // operand word in the current CPU-visible context.
-                uint16_t op = (uint16_t)(machine->peek_cpu((uint16_t)(from.pc + 1), cpu_port) |
-                                         (machine->peek_cpu((uint16_t)(from.pc + 2), cpu_port) << 8));
+                uint16_t op = (uint16_t)(machine->peek_cpu((uint16_t)(start_pc + 1), cpu_port) |
+                                         (machine->peek_cpu((uint16_t)(start_pc + 2), cpu_port) << 8));
                 uint16_t target = (uint16_t)(machine->peek_cpu(op, cpu_port) |
                                              (machine->peek_cpu((uint16_t)(op + 1), cpu_port) << 8));
                 addrs[n++] = target;
                 break;
             }
             case DBG_PREDICT_RTS: {
+                if (!from || !from->valid) {
+                    return DBG_REFUSED;
+                }
                 // Post-RTS PC = (stack[SP+1] | stack[SP+2] << 8) + 1
-                uint16_t sp1 = (uint16_t)(0x0100 + ((from.sp + 1) & 0xFF));
-                uint16_t sp2 = (uint16_t)(0x0100 + ((from.sp + 2) & 0xFF));
+                uint16_t sp1 = (uint16_t)(0x0100 + ((from->sp + 1) & 0xFF));
+                uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
                 uint16_t target = (uint16_t)(machine->peek_cpu(sp1, cpu_port) |
                                              (machine->peek_cpu(sp2, cpu_port) << 8));
                 addrs[n++] = (uint16_t)(target + 1);
                 break;
             }
             case DBG_PREDICT_RTI: {
+                if (!from || !from->valid) {
+                    return DBG_REFUSED;
+                }
                 // Post-RTI PC = stack[SP+2] | stack[SP+3] << 8 (RTI does not +1)
-                uint16_t sp2 = (uint16_t)(0x0100 + ((from.sp + 2) & 0xFF));
-                uint16_t sp3 = (uint16_t)(0x0100 + ((from.sp + 3) & 0xFF));
+                uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
+                uint16_t sp3 = (uint16_t)(0x0100 + ((from->sp + 3) & 0xFF));
                 uint16_t target = (uint16_t)(machine->peek_cpu(sp2, cpu_port) |
                                              (machine->peek_cpu(sp3, cpu_port) << 8));
                 addrs[n++] = target;
@@ -535,18 +581,19 @@ class U64DebugSession : public DebugSession
                 return DBG_PATCH_FAILED;
             }
         }
-        return perform_run(&from, out, cpu_port);
+        return perform_run(from, start_pc, (!from || !from->valid), out, cpu_port);
     }
 
 public:
     explicit U64DebugSession(U64MemoryBackend *b)
-        : backend(b), machine(0), handler_installed(false),
+        : backend(b), machine(0), cancel_keyboard(0), handler_installed(false),
           cpu_parked_in_spin(false), nmi_trampoline_installed(false),
           has_last_context(false)
     {
         memset(patches, 0, sizeof(patches));
         memset(saved_handler_bytes, 0, sizeof(saved_handler_bytes));
         memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
+        memset(saved_nmi_vector, 0, sizeof(saved_nmi_vector));
         memset(saved_brk_vector, 0, sizeof(saved_brk_vector));
         debug_context_reset(&last_context);
         machine = (U64Machine *)C64::getMachine();
@@ -555,6 +602,11 @@ public:
     virtual ~U64DebugSession()
     {
         cleanup();
+    }
+
+    virtual void set_cancel_keyboard(Keyboard *keyboard)
+    {
+        cancel_keyboard = keyboard;
     }
 
     virtual Result snapshot(DebugContext *ctx)
@@ -576,7 +628,15 @@ public:
         if (!machine || !ctx) return DBG_REFUSED;
         if (!from.valid) return DBG_REFUSED;
         uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
-        return step_with_predict(from, pred, /*prefer_jsr_target*/false, ctx, cpu_port);
+        return step_with_predict(&from, from.pc, pred, /*prefer_jsr_target*/false, ctx, cpu_port);
+    }
+
+    virtual Result over_at(uint16_t start_pc, const DebugPredictResult &pred,
+                           DebugContext *ctx)
+    {
+        if (!machine || !ctx) return DBG_REFUSED;
+        uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
+        return step_with_predict(0, start_pc, pred, /*prefer_jsr_target*/false, ctx, cpu_port);
     }
 
     virtual Result trace(const DebugContext &from, const DebugPredictResult &pred,
@@ -585,7 +645,15 @@ public:
         if (!machine || !ctx) return DBG_REFUSED;
         if (!from.valid) return DBG_REFUSED;
         uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
-        return step_with_predict(from, pred, /*prefer_jsr_target*/true, ctx, cpu_port);
+        return step_with_predict(&from, from.pc, pred, /*prefer_jsr_target*/true, ctx, cpu_port);
+    }
+
+    virtual Result trace_at(uint16_t start_pc, const DebugPredictResult &pred,
+                            DebugContext *ctx)
+    {
+        if (!machine || !ctx) return DBG_REFUSED;
+        uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
+        return step_with_predict(0, start_pc, pred, /*prefer_jsr_target*/true, ctx, cpu_port);
     }
 
     virtual Result step_out(const DebugContext &from, DebugContext *ctx)
@@ -603,7 +671,7 @@ public:
         if (!install_brk_at(target, cpu_port)) {
             return DBG_PATCH_FAILED;
         }
-        return perform_run(&from, ctx, cpu_port);
+        return perform_run(&from, from.pc, false, ctx, cpu_port);
     }
 
     virtual Result go(const DebugContext &from, const MonitorBreakpoints *bps,
@@ -635,7 +703,8 @@ public:
             }
             DebugPredictResult pred;
             debug_predict(from.pc, bytes, /*illegal_enabled*/false, &pred);
-            Result skip = step_with_predict(from, pred, /*prefer_jsr_target*/false,
+            Result skip = step_with_predict(&from, from.pc, pred,
+                                            /*prefer_jsr_target*/false,
                                             &step_ctx, cpu_port);
             if (skip != DBG_OK) {
                 return skip;
@@ -702,10 +771,12 @@ public:
             release_to_run(0);
         }
 
-        if (!wait_for_sentinel(5000)) {
+        Result waited = wait_for_sentinel(5000);
+        if (waited != DBG_OK) {
             restore_patches();
-            reset_spin_target();
-            return DBG_TIMEOUT;
+            uninstall_handler();
+            cpu_parked_in_spin = false;
+            return waited;
         }
         DebugContext captured;
         read_captured_context(&captured, cpu_port);

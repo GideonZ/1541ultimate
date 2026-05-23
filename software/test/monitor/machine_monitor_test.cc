@@ -696,13 +696,13 @@ static int test_kernal_disassembly_mapping(void)
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Visible KERNAL bytes at E000 are incorrect.")) return 1;
     if (expect(strstr(line, "STA $56") != NULL, "Visible KERNAL disassembly at E000 is incorrect.")) return 1;
-    if (expect(strstr(line, "[KERNAL]") != NULL, "Visible KERNAL source annotation missing.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "Visible KERNAL source annotation missing.")) return 1;
     if (expect(screen.reverse_chars[4][1], "Disassembly view did not highlight the selected instruction.")) return 1;
 
     screen.get_slice(1, 5, 38, line);
     if (expect(strstr(line, "E002 20 0F BC") == line, "Visible KERNAL bytes at E002 are incorrect.")) return 1;
     if (expect(strstr(line, "JSR $BC0F") != NULL, "Visible KERNAL disassembly at E002 is incorrect.")) return 1;
-    if (expect(strstr(line, "[KERNAL]") != NULL, "E002 KERNAL source annotation missing.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "E002 KERNAL source annotation missing.")) return 1;
 
     screen.get_slice(1, 6, 38, line);
     if (expect(strstr(line, "E005 A5 61") == line, "Visible KERNAL bytes at E005 are incorrect.")) return 1;
@@ -1284,8 +1284,8 @@ static int test_monitor_interaction(void)
         "Bookmarks:  C=+B List   C=+0-9 Jump",
         "",
         "Open monitor:  C=+O",
-        "Close monitor: C=+O/ESC",
-        "Leave edit:    C=+E/ESC",
+        "Close monitor: C=+O/RSTOP",
+        "Leave edit:    C=+E/RSTOP",
         "Copy/Paste:    C=+C / C=+V",
         "Follow/Return: RETURN",
         NULL
@@ -2218,7 +2218,7 @@ static int test_screen_charset_toggle_and_header(void)
         if (expect(mon.poll(0) == 0, "ASM U test: ASM view switch failed.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM U test: undocumented toggle failed.")) return 1;
         screen.get_slice(1, 3, 38, header);
-        if (expect(strstr(header, "Undoc") != NULL,
+        if (expect(strstr(header, "Undc") != NULL,
                    "ASM U must keep toggling undocumented opcodes.")) return 1;
         if (expect(mon.poll(0) == 1, "ASM U test: exit failed.")) return 1;
         mon.deinit();
@@ -4180,8 +4180,8 @@ static int test_illegal_mode_header_label(void)
                "Visible monitor UI must no longer show the old IllOp label.")) return 1;
     if (expect(mon.poll(0) == 0, "Illegal mode label test: U toggle failed.")) return 1;
     screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "Undoc") != NULL,
-               "Enabled undocumented-opcode mode must show the compact Undoc label in the header.")) return 1;
+    if (expect(strstr(line, "Undc") != NULL,
+               "Enabled undocumented-opcode mode must show the compact Undc label in the header.")) return 1;
     if (expect(strstr(line, "Illegal:ON") == NULL,
                "Illegal opcode mode must no longer show the old long header text.")) return 1;
     if (expect(mon.poll(0) == 1, "Illegal mode label test: exit failed.")) return 1;
@@ -5164,9 +5164,9 @@ static int test_header_invariants_and_parity(void)
         if (expect(screen.colors[3][35] == 1 && screen.colors[3][36] == 1 &&
                    screen.colors[3][37] == 1 && screen.colors[3][38] == 1,
                    "Edit must use the shared UI accent colour used for the help/title text.")) return 1;
-        if (expect(strncmp(header + 19, "Range", 5) == 0,
+        if (expect(strncmp(header + 18, "Range", 5) == 0,
                    "Range indicator must use its fixed slot.")) return 1;
-        if (expect(strncmp(header + 25, "Frz", 3) == 0,
+        if (expect(strncmp(header + 23, "Frz", 3) == 0,
                    "Freeze indicator must use its compact fixed slot.")) return 1;
         if (expect(strstr(header, "W=") == NULL,
                    "Header must not display binary width.")) return 1;
@@ -5245,7 +5245,7 @@ static int test_poll_mode_refreshes_visible_ram(void)
     if (expect(mon.poll(0) == 0, "Poll mode test: P toggle failed.")) return 1;
 
     screen.get_slice(1, 3, 38, header);
-    if (expect(strncmp(header + 29, "Poll", 4) == 0,
+    if (expect(strncmp(header + 27, "Pl", 2) == 0,
                "Poll indicator must appear in the top-right flag area.")) return 1;
 
     screen.get_slice(1, 4, 8, line);
@@ -5375,14 +5375,14 @@ static int test_edit_indicator_layout_across_views(void)
             if (expect(mon.poll(0) == 0, "Edit indicator layout test: ASM/freeze sequence failed.")) return 1;
         }
         screen.get_slice(1, 3, 38, header);
-        if (expect(strncmp(header + 19, "Undoc", 5) == 0,
-                   "Undoc must remain visible to the left of Poll and Edit.")) return 1;
-        if (expect(strncmp(header + 25, "Frz", 3) == 0,
-                   "Frz must remain visible to the left of Poll and Edit.")) return 1;
-        if (expect(strncmp(header + 29, "Poll", 4) == 0,
-                   "Poll must appear immediately to the left of Edit.")) return 1;
+        if (expect(strncmp(header + 18, "Undc", 4) == 0,
+                   "Undc must remain visible to the left of Frz, Pl, and Edit.")) return 1;
+        if (expect(strncmp(header + 23, "Frz", 3) == 0,
+                   "Frz must remain visible to the left of Pl and Edit.")) return 1;
+        if (expect(strncmp(header + 27, "Pl", 2) == 0,
+                   "Pl must appear immediately to the left of Dbg/Edit.")) return 1;
         if (expect(strncmp(header + 34, "Edit", 4) == 0,
-                   "Edit must remain fixed at the far right when Undoc, Freeze, and Poll are active.")) return 1;
+                   "Edit must remain fixed at the far right when Undc, Frz, and Pl are active.")) return 1;
         mon.deinit();
     }
 
@@ -5414,7 +5414,7 @@ static int test_poll_mode_disabled_on_full_refresh_screen(void)
     if (expect(strstr(ui.last_popup, "TELNET") != NULL,
                "Poll mode warning must mention the telnet restriction.")) return 1;
     screen.get_slice(1, 3, 38, header);
-    if (expect(strncmp(header + 29, "Poll", 4) != 0,
+    if (expect(strncmp(header + 27, "Pl", 2) != 0,
                "Poll indicator must stay disabled on full-refresh screens.")) return 1;
     if (expect(mon.poll(0) == 1, "Telnet poll-mode guard: exit failed.")) return 1;
     mon.deinit();

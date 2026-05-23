@@ -18,7 +18,7 @@ Open the built-in help with `F3` or `?`.
 To close the monitor:
 
 - Press `C=+O` again.
-- Press `ESC` when no edit operation or popup is active.
+- Press `RUN/STOP` when no edit operation or popup is active.
 
 ## Screen Layout
 
@@ -104,24 +104,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF9 FF           ???             [IO]|
-|DFFA 00           BRK             [IO]|
-|DFFB 00           BRK             [IO]|
-|DFFC FF           ???             [IO]|
-|DFFD 00           BRK             [IO]|
-|DFFE 00           BRK             [IO]|
-|DFFF 00           BRK             [IO]|
-|E000 85 56        STA $56     [KERNAL]|
-|E002 20 0F BC     JSR $BC0F   [KERNAL]|
-|E005 A5 61        LDA $61     [KERNAL]|
-|E007 C9 88        CMP #$88    [KERNAL]|
-|E009 90 03        BCC $E00E   [KERNAL]|
-|E00B 20 D4 BA     JSR $BAD4   [KERNAL]|
-|E00E 20 CC BC     JSR $BCCC   [KERNAL]|
-|E011 A5 07        LDA $07     [KERNAL]|
-|E013 18           CLC         [KERNAL]|
-|E014 69 81        ADC #$81    [KERNAL]|
-|E016 F0 F3        BEQ $E00B   [KERNAL]|
+|DFF9 FF           ???            [I/O]|
+|DFFA 00           BRK            [I/O]|
+|DFFB 00           BRK            [I/O]|
+|DFFC FF           ???            [I/O]|
+|DFFD 00           BRK            [I/O]|
+|DFFE 00           BRK            [I/O]|
+|DFFF 00           BRK            [I/O]|
+|E000 85 56        STA $56        [KRN]|
+|E002 20 0F BC     JSR $BC0F      [KRN]|
+|E005 A5 61        LDA $61        [KRN]|
+|E007 C9 88        CMP #$88       [KRN]|
+|E009 90 03        BCC $E00E      [KRN]|
+|E00B 20 D4 BA     JSR $BAD4      [KRN]|
+|E00E 20 CC BC     JSR $BCCC      [KRN]|
+|E011 A5 07        LDA $07        [KRN]|
+|E013 18           CLC            [KRN]|
+|E014 69 81        ADC #$81       [KRN]|
+|E016 F0 F3        BEQ $E00B      [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -348,7 +348,7 @@ Cartridges can further affect the CPU-visible memory map through the expansion-p
 All views support editing:
 
 - `E`: enter edit mode.
-- `C=+E` or `ESC`: leave edit mode.
+- `C=+E` or `RUN/STOP`: leave edit mode.
 
 Edit behavior is view-specific:
 
@@ -406,7 +406,7 @@ The ASCII and Screen rows in the number tool use the same mappings as the ASCII 
 
 In the Number popup, press `+`, `-`, `*`, or `/` to open the calculator. The expression is initialized with the current value and the selected operator.
 
-Press `Return` or `=` to evaluate the expression. Press `ESC` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
+Press `Return` or `=` to evaluate the expression. Press `RUN/STOP` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
 
 Expressions may contain one or more values separated by `+`, `-`, `*`, or `/`.  * and / are evaluated before + and -. Division is unsigned integer division and truncates toward zero.
 
@@ -447,7 +447,7 @@ The monitor includes direct bulk memory commands:
 `Hunt` opens a result picker:
 
 - `Return`: jump to the selected match.
-- `ESC`: close the picker.
+- `RUN/STOP`: close the picker.
 
 ## File I/O
 
@@ -576,7 +576,7 @@ Debug is a modal state layered on the Assembly view. Entering Debug does not exe
 | `G` | Go / execute | Go |
 | `R` | Range mode | Toggle breakpoint |
 | `C=+R` | (unassigned) | Breakpoint list |
-| `ESC` | Normal monitor close | Exit Debug |
+| `RUN/STOP` | Normal monitor close | Exit Debug |
 | `C=+D` | (unassigned) | Exit Debug |
 | `RETURN` | Assembly follow / return | Assembly follow / return |
 
@@ -616,7 +616,7 @@ Unknown values render as blank spaces in their reserved fixed-width columns; the
 
 ### Breakpoints
 
-There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; `C=+R` opens the breakpoint list. The popup controls are:
+There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the current Assembly address; opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. `C=+R` opens the breakpoint list. The popup controls are:
 
 | Key | Action |
 | --- | --- |
@@ -626,7 +626,7 @@ There are 10 non-persistent breakpoint slots. `R` toggles a breakpoint at the cu
 | `S` | Store the current address into the selected slot |
 | `E` | Toggle slot enable / disable |
 | `DEL` | Reset the selected slot |
-| `ESC` | Close the popup |
+| `RUN/STOP` | Close the popup |
 
 ### Help screen
 

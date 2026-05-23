@@ -156,12 +156,25 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
 {
     static const char *const text[] = {
         "",
-        "D Debug / Over    T Trace",
-        "O Out             G Go",
-        "R Breakpoint      C=+R Breakpoints",
-        "ESC Exit Debug    C=+D Exit Debug",
+        "M Memory    I ASCII     V Screen",
+        "A Assembly  B Binary    U Undoc/Case",
+        "J Jump      D Debug/Over",
+        "",
+        "E Edit      F Fill      T Trace",
+        "C Compare   H Hunt      N Number",
+        "W Width     R Breakpt   P Poll",
+        "Z Freeze    O Out       G Go",
+        "L Load      S Save",
+        "",
         "RETURN Subroutine View",
-        "B Binary View     C=+B Bookmarks"
+        "Bookmarks:  C=+B List   C=+0-9 Jump",
+        "Debug: C=+R Brkpts  C=+D Exit",
+        "RSTOP Exit Debug",
+        "",
+        "Open monitor:  C=+O",
+        "Close monitor: C=+O/RSTOP",
+        "Leave edit:    C=+E/RSTOP",
+        "Copy/Paste:    C=+C / C=+V"
     };
     int n = (int)(sizeof(text) / sizeof(text[0]));
     if (n > max_lines) {

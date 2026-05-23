@@ -35,6 +35,7 @@ public:
     // is returned and not reallocated.
     int allocate(uint16_t address, uint8_t cpu_port);
 
+    void store_slot(int slot, uint16_t address, uint8_t cpu_port);
     void clear_slot(int slot);
     void set_enabled(int slot, bool enabled);
 
