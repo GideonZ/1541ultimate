@@ -50,6 +50,9 @@ int Keyboard_VT100 :: getch()
 		} else if (charin == 'b' || charin == 'B') {
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
+		} else if (charin == 'r' || charin == 'R') {
+			escape_state = e_esc_idle;
+			ret = KEY_CTRL_R;
 		} else {
 			if (charin != '\e')
 				escape_state = e_esc_idle;

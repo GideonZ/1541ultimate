@@ -51,9 +51,14 @@ public:
                             DebugContext *ctx) = 0;
 
     // Resume execution honouring active breakpoints. Invalidates the context
-    // on the calling side.
+    // on the calling side. When `from.valid` is false (no prior capture),
+    // `start_pc` provides the address the CPU should jump to in order to
+    // start hitting breakpoints. Backends that can perform the start may
+    // honour it; a zero `start_pc` means "do not redirect" (the CPU keeps
+    // running wherever it is).
     virtual Result go(const DebugContext &from,
-                      const MonitorBreakpoints *breakpoints) = 0;
+                      const MonitorBreakpoints *breakpoints,
+                      uint16_t start_pc) = 0;
 
     // Restore every patched byte / vector / trampoline state. MUST be safe
     // to call at any time (success, failure, mode change, destructor) and

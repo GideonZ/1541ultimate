@@ -102,8 +102,16 @@ struct StubDebugSession : public DebugSession
         }
         return out_result;
     }
-    virtual Result go(const DebugContext &, const MonitorBreakpoints *) {
+    virtual Result go(const DebugContext &, const MonitorBreakpoints *, uint16_t) {
         go_calls++;
+        // Model the real session's semantic: Go invalidates the previous
+        // capture. If a stop happens during this Go, a real session would
+        // refresh `next_ctx`; the stub simulates "no stop happened" by
+        // marking snapshot unavailable until the next over/trace/out call
+        // explicitly captures something.
+        if (snapshot_result == DBG_OK) {
+            snapshot_result = DBG_NOT_SUPPORTED;
+        }
         return go_result;
     }
     virtual void cleanup(void) {

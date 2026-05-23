@@ -5107,10 +5107,23 @@ void MachineMonitor :: debug_request_go()
             from = snap;
         }
     }
-    DebugSession::Result r = session->go(from, &breakpoints);
+    // Start PC for a fresh Go is the Assembly view cursor: this is what the
+    // user is looking at and where they expect execution to begin. If a
+    // captured context is already in hand, the session prefers `from.pc`
+    // and ignores this fallback.
+    uint16_t start_pc = state.current_addr;
+    // Invalidate up-front; G discards the captured context per the spec.
+    debug.invalidate_context();
+    DebugSession::Result r = session->go(from, &breakpoints, start_pc);
     if (r == DebugSession::DBG_OK) {
-        // G invalidates the context until the next stop/capture.
-        debug.invalidate_context();
+        // If the session captured a fresh context (BRK fired during this
+        // Go), `snapshot` now returns it. Pull it back so the footer shows
+        // the real post-stop state on the next draw.
+        DebugContext captured;
+        if (session->snapshot(&captured) == DebugSession::DBG_OK &&
+            captured.valid) {
+            debug.set_context(captured);
+        }
     } else {
         const char *msg = monitor_debug_result_message(r);
         if (msg) {

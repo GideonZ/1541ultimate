@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-WIDTH = 40
+WIDTH = 60
 HEIGHT = 24
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -1080,12 +1080,12 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
-        screen = session.send_char("D")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
         screen = session.goto("E013")
-        screen = session.send_char("D")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 

@@ -53,10 +53,15 @@ static const uint16_t SPIN_JMP        = 0x0377; // JMP opcode in handler
 static const uint16_t SPIN_OPERAND_LO = 0x0378;
 static const uint16_t SPIN_OPERAND_HI = 0x0379;
 static const uint16_t TRAMPOLINE_ADDR = 0x0380;
+// NMI trampoline used to redirect a running CPU to a chosen PC at the start
+// of a `Go` when no captured context exists yet. Lives between the resume
+// trampoline ($0395) and the storage region ($03F0).
+static const uint16_t NMI_TRAMPOLINE_ADDR = 0x03A0;
 static const uint16_t BRK_VECTOR_LO   = 0x0316;
 static const uint16_t BRK_VECTOR_HI   = 0x0317;
 static const uint16_t IRQ_VECTOR_LO   = 0x0314;
 static const uint16_t NMI_VECTOR_LO   = 0x0318;
+static const uint16_t NMI_VECTOR_HI   = 0x0319;
 
 // Capture handler. KERNAL's `$FF48` BRK preamble has already pushed A, X, Y
 // when this stub runs, so we recover them via stack-relative loads. After
@@ -91,19 +96,31 @@ static const uint8_t HANDLER_BYTES[] = {
 };
 static const int HANDLER_BYTES_LEN = (int)sizeof(HANDLER_BYTES);
 
-// Resume trampoline. Restores the saved register file and RTIs back to the
-// stored PC. The CPU is redirected here by overwriting the spin JMP target.
+// Resume trampoline. Pops the three KERNAL preamble bytes (A, X, Y) off the
+// stack so the user's stack pointer returns to its pre-BRK value, then
+// overwrites the SR / PC the hardware pushed with the values we want (so the
+// RTI lands on the original instruction byte, which we have already
+// restored), restores the register file, and RTIs.
+//
+// Without the three opening PLAs every BRK round-trip would leak six bytes
+// of stack (HW pushes 3, KERNAL pushes 3; our previous design only
+// shadow-pushed three of its own so net leak was three KERNAL pushes per
+// cycle). See WORKLOG for the bug write-up.
 static const uint8_t TRAMPOLINE_BYTES[] = {
-    /* $0380 */ 0xAD, 0xF5, 0x03,   // LDA STORE_PCHI
-    /* $0383 */ 0x48,               // PHA
-    /* $0384 */ 0xAD, 0xF4, 0x03,   // LDA STORE_PCLO
-    /* $0387 */ 0x48,               // PHA
-    /* $0388 */ 0xAD, 0xF3, 0x03,   // LDA STORE_SR
-    /* $038B */ 0x48,               // PHA
-    /* $038C */ 0xAE, 0xF1, 0x03,   // LDX STORE_X
-    /* $038F */ 0xAC, 0xF0, 0x03,   // LDY STORE_Y
-    /* $0392 */ 0xAD, 0xF2, 0x03,   // LDA STORE_A
-    /* $0395 */ 0x40                // RTI
+    /* $0380 */ 0x68,                   // PLA               ; pop Y
+    /* $0381 */ 0x68,                   // PLA               ; pop X
+    /* $0382 */ 0x68,                   // PLA               ; pop A
+    /* $0383 */ 0xBA,                   // TSX
+    /* $0384 */ 0xAD, 0xF3, 0x03,       // LDA STORE_SR
+    /* $0387 */ 0x9D, 0x01, 0x01,       // STA $0101,X       ; overwrite SR
+    /* $038A */ 0xAD, 0xF4, 0x03,       // LDA STORE_PCLO
+    /* $038D */ 0x9D, 0x02, 0x01,       // STA $0102,X       ; overwrite PC-lo
+    /* $0390 */ 0xAD, 0xF5, 0x03,       // LDA STORE_PCHI
+    /* $0393 */ 0x9D, 0x03, 0x01,       // STA $0103,X       ; overwrite PC-hi
+    /* $0396 */ 0xAE, 0xF1, 0x03,       // LDX STORE_X
+    /* $0399 */ 0xAC, 0xF0, 0x03,       // LDY STORE_Y
+    /* $039C */ 0xAD, 0xF2, 0x03,       // LDA STORE_A
+    /* $039F */ 0x40                    // RTI
 };
 static const int TRAMPOLINE_BYTES_LEN = (int)sizeof(TRAMPOLINE_BYTES);
 
@@ -125,7 +142,15 @@ class U64DebugSession : public DebugSession
     Patch patches[MAX_PATCHES];
 
     bool handler_installed;
+    // The CPU is parked in our spin loop after a successful capture. The
+    // resume trampoline relies on that fact, so we MUST know whether the
+    // CPU is currently there before deciding how to relaunch it.
+    bool cpu_parked_in_spin;
+    // We also save the cassette-buffer slot occupied by the optional NMI
+    // trampoline; cleanup restores those bytes too.
     uint8_t saved_handler_bytes[HANDLER_BYTES_LEN + TRAMPOLINE_BYTES_LEN];
+    uint8_t saved_nmi_trampoline_bytes[16];
+    bool nmi_trampoline_installed;
     uint8_t saved_brk_vector[2];
     bool has_last_context;
     DebugContext last_context;
@@ -179,6 +204,13 @@ class U64DebugSession : public DebugSession
         for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
             machine->poke_visible((uint16_t)(TRAMPOLINE_ADDR + i),
                                   saved_handler_bytes[HANDLER_BYTES_LEN + i]);
+        }
+        if (nmi_trampoline_installed) {
+            for (int i = 0; i < (int)sizeof(saved_nmi_trampoline_bytes); i++) {
+                machine->poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i),
+                                      saved_nmi_trampoline_bytes[i]);
+            }
+            nmi_trampoline_installed = false;
         }
         machine->end_stopped_session(stopped_it);
         handler_installed = false;
@@ -356,10 +388,61 @@ class U64DebugSession : public DebugSession
         machine->end_stopped_session(stopped_it);
     }
 
+    // NMI-redirect the running CPU to `target`. We compose a tiny trampoline
+    // at NMI_TRAMPOLINE_ADDR that restores the original NMI vector and then
+    // JMPs to `target`. Pulsing C64_MODE_NMI drives the CPU into the
+    // trampoline. Unlike the existing monitor_io::jump_to path this does
+    // NOT release machine ownership, because we want to stay inside the
+    // monitor and poll the BRK sentinel afterwards.
+    void nmi_redirect_to(uint16_t target)
+    {
+        bool stopped_it = machine->begin_stopped_session();
+
+        uint8_t old_nmi_lo = machine->peek_visible(NMI_VECTOR_LO);
+        uint8_t old_nmi_hi = machine->peek_visible(NMI_VECTOR_HI);
+
+        const uint8_t bytes[] = {
+            0xA9, old_nmi_lo,                         // LDA #saved_nmi_lo
+            0x8D, (uint8_t)(NMI_VECTOR_LO & 0xFF),
+                  (uint8_t)(NMI_VECTOR_LO >> 8),      // STA $0318
+            0xA9, old_nmi_hi,                         // LDA #saved_nmi_hi
+            0x8D, (uint8_t)(NMI_VECTOR_HI & 0xFF),
+                  (uint8_t)(NMI_VECTOR_HI >> 8),      // STA $0319
+            0x4C, (uint8_t)(target & 0xFF),
+                  (uint8_t)(target >> 8)              // JMP target
+        };
+        if (!nmi_trampoline_installed) {
+            for (unsigned i = 0; i < sizeof(bytes); i++) {
+                saved_nmi_trampoline_bytes[i] =
+                    machine->peek_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i));
+            }
+            nmi_trampoline_installed = true;
+        }
+        for (unsigned i = 0; i < sizeof(bytes); i++) {
+            machine->poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i), bytes[i]);
+        }
+        machine->poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
+        machine->poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
+
+        C64_MODE = C64_MODE_NMI;
+        machine->end_stopped_session(stopped_it);
+        C64_MODE = MODE_NORMAL;
+        // The CPU has been pulled out of our spin loop (if it was in one).
+        cpu_parked_in_spin = false;
+    }
+
     Result perform_run(const DebugContext *from, DebugContext *out, uint8_t cpu_port)
     {
         save_and_install_handler();
-        release_to_run(from);
+        if (cpu_parked_in_spin && from && from->valid) {
+            release_to_run(from);
+        } else if (from && from->valid) {
+            // CPU left the spin loop (we previously cleaned up). Re-launch
+            // it at the saved PC via the NMI trampoline.
+            nmi_redirect_to(from->pc);
+        } else {
+            release_to_run(0);
+        }
         // 5 second ceiling: the user can always cancel by closing the
         // monitor. Long-running programs without breakpoints should rely on
         // the user-set BPs hitting; a stall here means no BRK ever fired.
@@ -371,6 +454,7 @@ class U64DebugSession : public DebugSession
         read_captured_context(out, cpu_port);
         restore_patches();
         reset_spin_target();
+        cpu_parked_in_spin = true;
         has_last_context = true;
         last_context = *out;
         return DBG_OK;
@@ -457,10 +541,12 @@ class U64DebugSession : public DebugSession
 public:
     explicit U64DebugSession(U64MemoryBackend *b)
         : backend(b), machine(0), handler_installed(false),
+          cpu_parked_in_spin(false), nmi_trampoline_installed(false),
           has_last_context(false)
     {
         memset(patches, 0, sizeof(patches));
         memset(saved_handler_bytes, 0, sizeof(saved_handler_bytes));
+        memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
         memset(saved_brk_vector, 0, sizeof(saved_brk_vector));
         debug_context_reset(&last_context);
         machine = (U64Machine *)C64::getMachine();
@@ -520,7 +606,8 @@ public:
         return perform_run(&from, ctx, cpu_port);
     }
 
-    virtual Result go(const DebugContext &from, const MonitorBreakpoints *bps)
+    virtual Result go(const DebugContext &from, const MonitorBreakpoints *bps,
+                      uint16_t start_pc)
     {
         if (!machine) return DBG_REFUSED;
         uint8_t cpu_port = backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
@@ -568,35 +655,81 @@ public:
             }
         }
 
-        // If no breakpoints exist this Go simply resumes execution until the
-        // user re-enters the monitor; the spec accepts that as "equivalent
-        // monitor re-entry condition". Use the existing live-machine handoff.
         bool any_bp = false;
         for (int i = 0; i < MAX_PATCHES; i++) {
             if (patches[i].used) { any_bp = true; break; }
         }
+
+        // If no breakpoints exist this Go has no in-monitor return path. We
+        // hand off to the existing release+jump trampoline so the user can
+        // RUN/STOP back into the monitor, exactly like the non-debug `G`.
         if (!any_bp) {
-            uint16_t go_pc = resume_from->valid ? resume_from->pc : (uint16_t)0;
+            uint16_t go_pc = resume_from->valid ? resume_from->pc : start_pc;
             uninstall_handler();
-            // Defer to the existing release+jump trampoline.
+            // The CPU is about to run free with no BRK trap installed. Any
+            // captured context we held becomes stale - the next D-entry
+            // must show blanks instead of resurrecting old register values.
+            has_last_context = false;
+            debug_context_reset(&last_context);
             monitor_io::jump_to(go_pc);
             return DBG_OK;
         }
 
-        DebugContext captured;
-        Result r = perform_run(resume_from->valid ? resume_from : 0, &captured, cpu_port);
-        if (r == DBG_OK) {
-            last_context = captured;
-            has_last_context = true;
+        // With breakpoints set we keep the monitor alive and wait for a BRK
+        // to fire. Ensure the handler is installed before we redirect the
+        // CPU so any immediate BRK lands in our capture stub.
+        save_and_install_handler();
+        if (resume_from->valid && cpu_parked_in_spin) {
+            // CPU is still parked in the spin loop from a previous capture:
+            // restore registers via the resume trampoline and RTI back to
+            // the user code.
+            release_to_run(resume_from);
+        } else if (resume_from->valid) {
+            // CPU left the spin loop (we previously cleaned up). Re-launch
+            // it at the captured PC via the NMI trampoline.
+            machine->poke_visible(SENTINEL_ADDR, 0x00);
+            nmi_redirect_to(resume_from->pc);
+        } else if (start_pc != 0) {
+            // No captured context: NMI-jump the running CPU to start_pc so
+            // user code reaches the BRK we just installed. Registers are
+            // whatever the CPU happened to hold; we are NOT fabricating any
+            // state - the captured context after the BRK will be truthful.
+            machine->poke_visible(SENTINEL_ADDR, 0x00);
+            nmi_redirect_to(start_pc);
+        } else {
+            // No start address: rely on the user's program already running
+            // through the BRK address.
+            release_to_run(0);
         }
-        return r;
+
+        if (!wait_for_sentinel(5000)) {
+            restore_patches();
+            reset_spin_target();
+            return DBG_TIMEOUT;
+        }
+        DebugContext captured;
+        read_captured_context(&captured, cpu_port);
+        restore_patches();
+        reset_spin_target();
+        cpu_parked_in_spin = true;
+        last_context = captured;
+        has_last_context = true;
+        return DBG_OK;
     }
 
     virtual void cleanup(void)
     {
         if (!machine) return;
         restore_patches();
+        if (cpu_parked_in_spin && has_last_context) {
+            // Pull the CPU out of our spin loop before we wipe the cassette
+            // buffer. NMI-redirecting to the captured PC restores user
+            // control; uninstall_handler then restores the original
+            // cassette-buffer bytes once the CPU is safely elsewhere.
+            nmi_redirect_to(last_context.pc);
+        }
         uninstall_handler();
+        cpu_parked_in_spin = false;
     }
 };
 
