@@ -86,7 +86,7 @@ public:
     virtual int do_cmd_response(uint8_t *data, int len) { return 0; }
     virtual int do_set_position(int chan, uint32_t pos, int recnr, int recoffset) { return 0; }
     virtual int do_pwd_command() { return 0; }
-    virtual int do_get_partition_info(int part);
+    virtual int do_get_partition_info(int part) { return 0; }
 };
 
 class IecParser

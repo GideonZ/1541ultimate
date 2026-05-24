@@ -6,6 +6,7 @@
 #include <string.h>
 
 typedef enum {
+    MENU_DONE = 1,  // Modal window operation is complete and user "OK'ed"
     MENU_NOP = 0,
     MENU_HIDE = -1,
     MENU_EXIT = -2,

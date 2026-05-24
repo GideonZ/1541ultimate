@@ -133,3 +133,9 @@ int IecCommandExecuterStubs::do_pwd_command()
     printf("PWD command\n");
     return 0;
 }
+
+int IecCommandExecuterStubs :: do_get_partition_info(int part)
+{
+    printf("Partition Info command\n");
+    return 0;
+}

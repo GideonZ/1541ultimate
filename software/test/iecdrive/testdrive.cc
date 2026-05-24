@@ -12,6 +12,15 @@ FileDevice *ramdisk_node;
 
 char last_status[128];
 
+void show_partitions(UserInterface *ui, IecFileSystem *fs)
+{
+
+}
+
+void form_new_partition(UserInterface*, JSON_Object*)
+{
+}
+
 void init_ram_disk()
 {
     const int sz = 512;
@@ -29,6 +38,27 @@ void init_ram_disk()
         delete ramdisk_prt;
     }
     ramdisk_node = new FileDevice(ramdisk_blk, "Temp", "RAM Disk");
+    ramdisk_node->attach_disk(sz);
+    FileManager :: getFileManager()->add_root_entry(ramdisk_node);
+}
+
+void init_flash_disk()
+{
+    const int sz = 512;
+    const int size = 1024 * 1024;
+    const int sectors = size / sz;
+    uint8_t *ramdisk_mem = new uint8_t[size]; // 1 MB only
+    ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
+    {
+        FileSystem *ramdisk_fs;
+        Partition *ramdisk_prt;
+        ramdisk_prt = new Partition(ramdisk_blk, 0, 0, 0);
+        ramdisk_fs  = new FileSystemFAT(ramdisk_prt);
+        ramdisk_fs->format("FlashDisk");
+        delete ramdisk_fs;
+        delete ramdisk_prt;
+    }
+    ramdisk_node = new FileDevice(ramdisk_blk, "Flash", "Internal Flash");
     ramdisk_node->attach_disk(sz);
     FileManager :: getFileManager()->add_root_entry(ramdisk_node);
 }
@@ -173,8 +203,8 @@ int execute_suite1(FileManager *fm, IecDrive *dr)
     uint32_t tr;
 
     fm->create_dir("/Temp/Partition2");
-    dr->add_partition(1, "/Temp");
-    dr->add_partition(2, "/Temp/Partition2");
+    dr->add_partition(1, "/Temp", "RAMDISK");
+    dr->add_partition(2, "/Temp/Partition2", "PART2");
 
     status = send_command(dr, "CP1");
     if(status != "02,PARTITION SELECTED,01,00\r") error++;
@@ -241,6 +271,8 @@ int execute_suite1(FileManager *fm, IecDrive *dr)
 
     status = send_command(dr, "RENAME2:DOOM=1:DOOM");
     if(status != "00, OK,00,00\r") error++;
+
+    printf("\n\nError until now: %d\n\n", error);
 
     // send_command(dr, "CP3");
     read_directory(dr, "$1");
