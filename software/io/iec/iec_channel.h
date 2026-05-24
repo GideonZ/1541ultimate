@@ -32,12 +32,14 @@ class IecPartition {
     int partitionNumber;
     mstring root;
     mstring full_path;
+    mstring name;
 public:
-    IecPartition(IecFileSystem *vfs, int nr, const char *rt)
+    IecPartition(IecFileSystem *vfs, int nr, const char *rt, const char *name)
     {
         fm = FileManager::getFileManager();
-        this->vfs = vfs;
         partitionNumber = nr;
+        this->vfs = vfs;
+        this->name = name;
         path = fm->get_new_path("IEC Partition");
         SetRoot(rt);
     }
@@ -55,6 +57,11 @@ public:
             root += "/";
             full_path += "/";
         }
+    }
+
+    void SetName(const char *name)
+    {
+        this->name = name;
     }
 
     int GetPartitionNumber(void)
@@ -134,6 +141,11 @@ public:
         return root.c_str();
     }
 
+    const char *GetName()
+    {
+        return name.c_str();
+    }
+
 };
 
 class IecFileSystem {
@@ -161,12 +173,12 @@ public:
         }
     }
 
-    void add_partition(int p, const char *path)
+    void add_partition(int p, const char *path, const char *name)
     {
         if (partitions[p]) {
             delete partitions[p];
         }
-        partitions[p] = new IecPartition(this, p, path);
+        partitions[p] = new IecPartition(this, p, path, name);
     }
 
     const char *GetPartitionPath(int index, bool root)
@@ -202,36 +214,7 @@ public:
         }
     }
 
-    FRESULT SavePartitions(const char *path, const char *filename)
-    {
-        File *fo;
-        uint32_t tr;
-        char num[8];
-        FRESULT fres = fm->fopen(path, filename, FA_CREATE_ALWAYS | FA_WRITE, &fo);
-        if (fres == FR_OK) {
-            for(int i=1; i<MAX_PARTITIONS; i++) {
-                if (partitions[i]) {
-                    const char *pp = partitions[i]->GetRootPath();
-                    int len = sprintf(num, "%3d;", i);    
-                    fres = fo->write(num, len, &tr);
-                    if (fres != FR_OK) {
-                        return fres;
-                    }
-                    fres = fo->write(pp, strlen(pp), &tr);
-                    if (fres != FR_OK) {
-                        return fres;
-                    }
-                    fres = fo->write("\n", 1, &tr);
-                    if (fres != FR_OK) {
-                        return fres;
-                    }
-                }
-            }
-            fm->fclose(fo);
-        }
-        return fres;
-    }
-
+    FRESULT SavePartitions(const char *path, const char *filename);
     void LoadPartitions(const char *path, const char *name);
     void LoadPartitions(File *fi);
 };

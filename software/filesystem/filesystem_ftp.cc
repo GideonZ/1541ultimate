@@ -534,24 +534,6 @@ FRESULT FTPRootNode :: save_servers()
     return fres;
 }
 
-static const char *json_string_or(JSON_Object *obj, const char *key, const char *fallback)
-{
-    JSON *value = obj ? obj->get(key) : NULL;
-    if (value && (value->type() == eString)) {
-        return ((JSON_String *)value)->get_string();
-    }
-    return fallback;
-}
-
-static int json_int_or(JSON_Object *obj, const char *key, int fallback)
-{
-    JSON *value = obj ? obj->get(key) : NULL;
-    if (value && (value->type() == eInteger)) {
-        return ((JSON_Integer *)value)->get_value();
-    }
-    return fallback;
-}
-
 void FTPRootNode :: load_servers_impl(File *f)
 {
     uint32_t size = f->get_size();
@@ -565,7 +547,7 @@ void FTPRootNode :: load_servers_impl(File *f)
     buffer[transferred] = 0;
 
     JSON *root_json = NULL;
-    int tokens = convert_text_to_json_objects(buffer, transferred, 512, &root_json);
+    int tokens = convert_text_to_json_objects(buffer, transferred, 1024, &root_json);
     if ((tokens > 0) && root_json && (root_json->type() == eObject)) {
         JSON *servers_json = ((JSON_Object *)root_json)->get("servers");
         if (servers_json && (servers_json->type() == eList)) {
@@ -577,19 +559,19 @@ void FTPRootNode :: load_servers_impl(File *f)
                 }
 
                 JSON_Object *entry = (JSON_Object *)entry_json;
-                const char *alias = json_string_or(entry, "alias", "");
-                const char *host = json_string_or(entry, "host", "");
+                const char *alias = entry->string_or("alias", "");
+                const char *host = entry->string_or("host", "");
                 if (!alias[0] || !host[0]) {
                     continue;
                 }
 
-                int port = json_int_or(entry, "port", 21);
+                int port = entry->int_or("port", 21);
                 char portstr[8];
                 sprintf(portstr, "%d", port);
 
-                const char *user = json_string_or(entry, "user", "anonymous");
-                const char *encoded_password = json_string_or(entry, "password", "");
-                const char *folder = json_string_or(entry, "folder", "/");
+                const char *user = entry->string_or("user", "anonymous");
+                const char *encoded_password = entry->string_or("password", "");
+                const char *folder = entry->string_or("folder", "/");
                 char *password = new char[1 + strlen(encoded_password)];
                 strcpy(password, encoded_password);
                 url_decode(password, password, 0);

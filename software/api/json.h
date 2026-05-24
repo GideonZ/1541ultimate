@@ -45,6 +45,7 @@ public:
     }
     JsonType_t type() { return eString; }
     const char *get_string() { return str.c_str(); }
+    void set_string(const char *val) { str = val; }
     const char *render() {
         renderspace = "\"";
         renderspace += str;
@@ -70,6 +71,7 @@ public:
     }
     void render(StreamRamFile *s) { s->format("%d", value); }
     int get_value() { return value; }
+    void set_value(int val) { value = val; }
 };
 
 class JSON_Bool : public JSON
@@ -85,6 +87,7 @@ public:
         s->format(value ? "true" : "false");
     }
     bool get_value() { return value; }
+    void set_value(bool val) { value = val; }
 };
 
 class JSON_Object : public JSON
@@ -260,6 +263,22 @@ public:
         return NULL;
     }
 
+    const char *string_or(const char *key, const char *alt) {
+        JSON *val = get(key);
+        if (!val || val->type() != eString) {
+            return alt;
+        }
+        return ((JSON_String *)val)->get_string();
+    }
+
+    int int_or(const char *key, const int alt) {
+        JSON *val = get(key);
+        if (!val || val->type() != eInteger) {
+            return alt;
+        }
+        return ((JSON_Integer *)val)->get_value();
+    }
+
     IndexedList<const char *> *get_keys() {
         return &keys;
     }
@@ -349,7 +368,6 @@ public:
         }
         s->format(" ]");
     }
-
 };
 
 int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens, JSON **out);

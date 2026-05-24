@@ -17,6 +17,7 @@ class IecCommandChannel;
 class IecFileSystem;
 class FileManager;
 class IecDrive;
+class JSON_Object;
 
 class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
 {
@@ -46,7 +47,11 @@ class IecDrive : public IecSlave, SubSystem, ObjectWithMenu, ConfigurableObject
     	Action *reset;
         Action *set_dir;
         Action *save_part;
+        Action *show_parts;
     } myActions;
+
+    JSON_Object *form_fields;
+    SubsysResultCode_e form_new_partition(UserInterface *ui);
 public:
     IecDrive();
     virtual ~IecDrive();
@@ -88,7 +93,7 @@ public:
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);
     const char *get_partition_dir(int p);
-    void add_partition(int p, const char *path);
+    void add_partition(int p, const char *path, const char *name);
     void load_partitions(const char *p, const char *f);
 
     friend class IecChannel;

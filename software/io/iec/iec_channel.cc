@@ -1480,6 +1480,41 @@ void IecFileSystem :: LoadPartitions(const char *path, const char *file)
     }
 }
 
+FRESULT IecFileSystem :: SavePartitions(const char *path, const char *filename)
+{
+    File *fo;
+    uint32_t tr;
+
+    JSON_Object *root = JSON::Obj();
+    JSON_List *json_parts = JSON::List();
+    root->add("version", 1);
+    root->add("partitions", json_parts);
+
+    for(int i=1; i<MAX_PARTITIONS; i++) {
+        if (partitions[i]) {
+            json_parts->add(JSON::Obj()
+                ->add("number", i)
+                ->add("path", partitions[i]->GetRootPath())
+                ->add("name", partitions[i]->GetName())
+            );
+        }
+    }
+
+    FRESULT fres = fm->fopen(path, filename, FA_CREATE_ALWAYS | FA_WRITE, &fo);
+    if (fres == FR_OK) {
+        const char *text = root->render();
+        int len = strlen(text);
+        uint32_t transferred = 0;
+        fres = fo->write(text, len, &transferred);
+        if ((fres == FR_OK) && (transferred != (uint32_t)len)) {
+            fres = FR_DISK_ERR;
+        }
+        fm->fclose(fo);
+    }
+    delete root;
+    return fres;
+}
+
 void IecFileSystem :: LoadPartitions(File *f)
 {
     uint32_t size = f->get_size();
@@ -1487,38 +1522,38 @@ void IecFileSystem :: LoadPartitions(File *f)
         return;
     }
     char *buffer = new char[size+1];
-    char *linebuf = new char[256];
-    char *name;
-
     uint32_t transferred;
     f->read(buffer, size, &transferred);
     buffer[transferred] = 0;
 
-    uint32_t offset;
+    JSON *root_json = NULL;
+    int tokens = convert_text_to_json_objects(buffer, transferred, 2048, &root_json);
+    if ((tokens > 0) && root_json && (root_json->type() == eObject)) {
+        JSON *servers_json = ((JSON_Object *)root_json)->get("partitions");
+        if (servers_json && (servers_json->type() == eList)) {
+            JSON_List *servers = (JSON_List *)servers_json;
+            for (int i=0; i < servers->get_num_elements(); i++) {
+                JSON *entry_json = (*servers)[i];
+                if (!entry_json || (entry_json->type() != eObject)) {
+                    continue;
+                }
 
-    uint32_t index = 0;
-
-    while(index < size) {
-        index = read_line(buffer, index, linebuf, 256);
-        if (strlen(linebuf) > 0) {
-            char *rest;
-            uint32_t part = strtol(linebuf, &rest, 0);
-            while (*rest && (*rest != ';')) {
-                rest++;
-            }
-            if (*rest) {
-                // skip ;
-                rest++;
-            }
-            if ((part >= 1) && (part < MAX_PARTITIONS)) {
+                JSON_Object *entry = (JSON_Object *)entry_json;
+                const char *name = entry->string_or("name", "PARTITION");
+                const char *path = entry->string_or("path", "");
+                const int part = entry->int_or("number", -1);
+                if (!path[0] || part == -1) {
+                    continue;
+                }
                 if (partitions[part]) {
-                    partitions[part]->SetRoot(rest);
+                    partitions[part]->SetRoot(path);
+                    partitions[part]->SetName(name);
                 } else {
-                    add_partition(part, rest);
+                    add_partition(part, path, name);
                 }
             }
         }
     }
-    delete linebuf;
-    delete buffer;
+    delete root_json;
+    delete[] buffer;
 }
