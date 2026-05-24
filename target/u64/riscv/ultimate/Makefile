@@ -22,7 +22,7 @@ SRCS_C   =	itu.c \
 			tasks.c \
 			timers.c \
 			port.c \
-			heap_3.c \
+			heap_4.c \
 			ff.c \
 			ffsystem.c \
 			ffunicode.c \
@@ -40,7 +40,7 @@ SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
 			stream.cc \
 			stream_uart.cc \
-			memory.cc \
+			memory_wrap.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \
@@ -204,7 +204,7 @@ CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermis
 LINK 	 = linker.x
 LIBS    = ../riscv32_unknown_elf_lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
-LFLAGS   = --gc-sections
+LFLAGS   = --gc-sections --wrap=malloc --wrap=_malloc_r --wrap=free --wrap=_free_r --wrap=realloc --wrap=_realloc_r
 LINKMETHOD = ld
 
 include ../../../common/rules.mk

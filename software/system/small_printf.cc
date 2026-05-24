@@ -13,7 +13,7 @@ static const char hexchar[] = "0123456789ABCDEF";
 static int
 _cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width, bool signd)
 {
-    char temp[80];
+    char temp[16];
     char *cp = temp;
     int length = 0;
 
@@ -82,7 +82,7 @@ _bin(int val, char *buf, int len)
 extern "C" int
 _my_vnprintf(void (*putc)(char c, void **param), void **param, size_t maxlen, const char *fmt, va_list ap)
 {
-    char buf[128];
+    char buf[32];
     char c;
     const char *cp=buf;
     long long val = 0;
