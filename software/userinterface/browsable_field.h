@@ -68,7 +68,6 @@ public:
         value = s;
         if (!target)
             return;
-        printf("Before: %s %s\n", s, target->render());
         if (target->type() == eString) {
             ((JSON_String *)target)->set_string(s);
         } else if (target->type() == eInteger) {
@@ -81,7 +80,6 @@ public:
                 ((JSON_Integer *)target)->set_value(val);
             }
         }
-        printf("After: %s %s\n", s, target->render());
     }
 
     bool isDropDown(void)
@@ -91,11 +89,9 @@ public:
 
     void updown(int offset)
     {
-        printf("Updown %d\n", offset);
         if (!target) {
             return;
         }
-        printf("Type = %d\n", target->type());
         if (target->type() == eList) { // preset
             JSON_List *presets = (JSON_List *)target;
 
@@ -107,14 +103,12 @@ public:
             }
             setPreset();
         } else if(target->type() == eInteger) {
-            printf("Before: %s\n", target->render());
             JSON_Integer *val = (JSON_Integer *)target;
             val->set_value(val->get_value() + offset);
             // Update Display string
             char temp[12];
             sprintf(temp, "%d", val->get_value());
             value = temp;
-            printf("After: %s %s\n", target->render(), value.c_str());
         }
     }
 
