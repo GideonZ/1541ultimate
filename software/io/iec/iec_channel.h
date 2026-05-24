@@ -25,6 +25,13 @@ class IecCommandChannel;
 
 class IecFileSystem;
 
+struct set_part_t
+{
+    int partition;
+    const char *path;
+    const char *name;
+};
+
 class IecPartition {
     Path *path;
     FileManager *fm;
@@ -176,9 +183,19 @@ public:
     void add_partition(int p, const char *path, const char *name)
     {
         if (partitions[p]) {
-            delete partitions[p];
+            partitions[p]->SetName(name);
+            partitions[p]->SetRoot(path);
+            return;
         }
         partitions[p] = new IecPartition(this, p, path, name);
+    }
+
+    void RemovePartition(int p)
+    {
+        if (partitions[p]) {
+            delete partitions[p];
+            partitions[p] = NULL;
+        }
     }
 
     const char *GetPartitionPath(int index, bool root)
@@ -212,6 +229,15 @@ public:
         if (pn) { // zero is not allowed
             currentPartition = pn;
         }
+    }
+
+    int GetUnusedPartition(void) {
+        for(int i=1;i<MAX_PARTITIONS; i++) {
+            if (!partitions[i]) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     FRESULT SavePartitions(const char *path, const char *filename);

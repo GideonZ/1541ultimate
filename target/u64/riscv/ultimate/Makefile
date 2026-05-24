@@ -142,6 +142,7 @@ SRCS_CC	 =  u2p_init.cc \
 			iec.cc \
 			iec_channel.cc \
 			iec_printer.cc \
+			iec_ui.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
 			mps_printer_epson.cc \

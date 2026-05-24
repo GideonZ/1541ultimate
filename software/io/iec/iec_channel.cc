@@ -676,6 +676,7 @@ int IecChannel :: setup_directory_read()
     }
 
     //const char *fullname = part->GetRelativePath();
+    pp = partition->GetName(); // new feature!
     int pos = 8;
     int len = strlen(pp);
     if (len > 16) {

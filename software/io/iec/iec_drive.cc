@@ -6,7 +6,7 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
-#include "form.h"
+#include "iec_ui.h"
 
 #ifndef FS_ROOT
 #define FS_ROOT "/USB0/"
@@ -27,13 +27,6 @@ static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
-};
-
-struct set_part_t
-{
-    int partition;
-    const char *path;
-    const char *name;
 };
 
 // this global will cause us to run!
@@ -240,47 +233,10 @@ void IecDrive :: update_task_items(bool writablePath)
 }
 
 // called from GUI task
-SubsysResultCode_e IecDrive :: form_new_partition(UserInterface *ui)
-{ 
-    FormUI *form = new FormUI(ui, 38, 9, "Enter New IEC Partition", form_fields);
-    form->init(ui->screen, ui->keyboard);
-
-    do {
-        int ret = ui->uiobject_modal(form);
-
-        if (ret == MENU_DONE) {
-            printf("Result: %d %s\n", ret, form_fields->render());
-            const char *name = form_fields->string_or("Name", "");
-            const char *path = form_fields->string_or("Path", "");
-            const int part = form_fields->int_or("Number", 1);
-            if (!*path) {
-                ui->popup("Path cannot be empty", BUTTON_OK);
-                continue;
-            }
-            if ((part < 1)||(part >= MAX_PARTITIONS)) {
-                ui->popup("Part. # should be between 1-255", BUTTON_OK);
-                continue;
-            }
-            // OK!
-
-            break;
-        } else { // some other code
-            break;
-        } 
-    } while(1);
-    // Cleanup
-    form->deinit();
-    delete form;
-    return SSRET_OK;
-}
-
-// called from GUI task
 SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 {
     const char *path;
     char *pathcopy;
-    struct set_part_t data;
-    iec_closure_t cb;
     int res, part;
     char temp[32];
     cmd_path->cd(cmd->path.c_str());
@@ -304,15 +260,10 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
                 break;
 
             form_fields->set("Path", cmd->path.c_str());
-            form_new_partition(cmd->user_interface);
-
-            data = {
-                form_fields->int_or("Number", 1),
-                strdup(form_fields->string_or("Path", "/")),  // duplicate here, because frun_from_iec frees them
-                strdup(form_fields->string_or("Name", "NO NAME"))
-            };
-            cb = { this, set_iec_dir, &data };
-            intf->run_from_iec(&cb);
+            form_fields->set("Number", vfs->GetUnusedPartition());
+            if (form_new_partition(cmd->user_interface, form_fields) == MENU_DONE) {
+                vfs->add_partition(form_fields->int_or("Number", 99), form_fields->string_or("Path", "/"), form_fields->string_or("Name", "NO NAME"));
+            }
     	    break;
         case MENU_IEC_SAVE_PAR:
             if (!cmd->user_interface)
@@ -328,6 +279,8 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             }
             break;
         case MENU_IEC_SHOW_PARTS:
+            show_partitions(cmd->user_interface, vfs);
+            // We lose focus here
             break;
 		default:
 			break;
@@ -416,6 +369,7 @@ void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
     }
     delete[] pd->path;
     delete[] pd->name;
+    delete pd;
 }
 
 // called from critical section

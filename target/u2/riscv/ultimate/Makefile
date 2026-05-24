@@ -174,6 +174,7 @@ SRCS_CC	 =	small_printf.cc \
 SRCS_CC +=  iec_interface.cc \
 			iec_drive.cc \
 			iec_channel.cc \
+			iec_ui.cc \
 			iec_ulticopy.cc \
 			cbmdos_parser.cc \
 			softiec_target.cc

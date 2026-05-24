@@ -177,6 +177,7 @@ SRCS_CC +=  iec_interface.cc \
 			iec_drive.cc \
 			iec_channel.cc \
 			iec_printer.cc \
+			iec_ui.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
 			mps_printer_epson.cc \
