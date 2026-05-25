@@ -144,34 +144,33 @@ public:
 		printf("Extension  : %s\n", extension);
 	}
 
-	void generate_fat_name(char *buffer, int maxlen)
-	{
-	    if (name_format & NAME_FORMAT_CBM) {
-	        petscii_to_fat(lfname, buffer, maxlen);
-	        add_extension(buffer, extension, maxlen);
-	    } else {
-	        buffer[maxlen-1] = 0;
-	        strncpy(buffer, lfname, maxlen-1);
-	    }
-	}
+    char *generate_fat_name(char *buffer, int max_len)
+    {
+        if (name_format & NAME_FORMAT_CBM) {
+            petscii_to_fat(lfname, buffer, max_len);
+            add_extension(buffer, extension, max_len);
+            return buffer;
+        }
+        return lfname;
+    }
 
-	bool match_to_pattern(CbmFileName &cbm)
-	{
-        bool match_name = pattern_match_escaped(cbm.getName(), lfname);
-        bool match_ext  = !cbm.hadExtension() || pattern_match(cbm.getExtension(), extension);
-        return match_name && match_ext;
-	}
+    // bool match_to_pattern(CbmFileName &cbm)
+    // {
+    //     bool match_name = pattern_match_escaped(cbm.getName(), lfname);
+    //     bool match_ext  = !cbm.hadExtension() || pattern_match(cbm.getExtension(), extension);
+    //     return match_name && match_ext;
+    // }
 
-	bool match_to_pattern(const char *pattern, CbmFileName &cbm)
-	{
-	    if (name_format & NAME_FORMAT_CBM) {
-	        if (!cbm.isInitialized()) { // optimization, such that init is only done once for a whole bunch of files
-	            cbm.init(pattern);
-	        }
-	        return match_to_pattern(cbm);
-	    }
-	    return pattern_match(pattern, lfname, false); // no escaping! Be aware!
-	}
+    // bool match_to_pattern(const char *pattern, CbmFileName &cbm)
+    // {
+    //     if (name_format & NAME_FORMAT_CBM) {
+    //         if (!cbm.isInitialized()) { // optimization, such that init is only done once for a whole bunch of files
+    //             cbm.init(pattern);
+    //         }
+    //         return match_to_pattern(cbm);
+    //     }
+    //     return pattern_match(pattern, lfname, false); // no escaping! Be aware!
+    // }
 
 	static int compare(IndexedList<FileInfo *> *list, int a, int b)
 	{

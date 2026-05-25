@@ -116,6 +116,7 @@ FRESULT FileSystemFAT :: format(const char *name)
 
     uint8_t *buffer = new uint8_t[4096];
     FRESULT fres = f_mkfs(prefix, &param, buffer, 4096);
+    delete[] buffer;
     return fres;
 #else
     return FR_NOT_ENABLED;

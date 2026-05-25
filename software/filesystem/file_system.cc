@@ -88,29 +88,27 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	pathInfo.enterFileSystem(this);
 
 	FileInfo info(128);
-	char fatbuf[128];
+	char fatbuf[64];
+    char *unified_name;
 	Directory *dir;
 	FileInfo *ninf;
-    CbmFileName cbm; // in case we need to compare against a CBM name, we reserve some storage for it
 
 	while(pathInfo.hasMore()) {
 		fres = dir_open(pathInfo.getPathFromLastFS(), &dir);
 		if (fres == FR_OK) {
-	        cbm.reset();
             while(1) {
 				fres = dir->get_entry(info);
 				if (fres == FR_OK) {
 				    // printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
 					if (info.attrib & AM_VOL)
 						continue;
-					if (info.match_to_pattern(pathInfo.workPath.getElement(pathInfo.index), cbm)) {
+                    // Different approach: If NAME_FORMAT_CBM is set, simply convert to FAT and then do a pattern compare
+                    unified_name = info.generate_fat_name(fatbuf, 64);
+
+                    if (pattern_match(pathInfo.workPath.getElement(pathInfo.index), unified_name, false)) {
 					    delete dir; // close directory
-					    if (info.name_format & NAME_FORMAT_CBM) {
-					        info.generate_fat_name(fatbuf, 128);
-					        pathInfo.replace(fatbuf);
-					    } else {
-					        pathInfo.replace(info.lfname);
-					    }
+                        pathInfo.replace(unified_name);
+
                         pathInfo.index++;
 						ninf = pathInfo.getNewInfoPointer();
 						ninf->copyfrom(&info);

@@ -933,7 +933,7 @@ IecCommandChannel::IecCommandChannel(IecDrive *dr, int ch) :
 
 IecCommandChannel::~IecCommandChannel()
 {
-
+    delete parser;
 }
 
 void IecCommandChannel::reset(void)
@@ -1020,7 +1020,7 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     const char *ext = types[(int)ftype];
     if ((acc == e_read) || (ftype != e_any)) { // for reads, .??? is allowed, but for writes it is not
 //        set_extension(fatname, ext, 48);
-        strncat(fatname, ext, 52);
+        strcat(fatname, ext);
     }
 
     Path workpath;

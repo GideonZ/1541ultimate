@@ -364,11 +364,11 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 {
     // Easy peasy, for single directories. When we need subdirectories,
     // we simply parse the path using the Path object and search the each element.
-
+    char fatbuf[64], *unified_name;
+    
     if (filename[0] == '/') {
         filename++;
     }
-    CbmFileName cbm(filename);
 
     dir->open(); // Just root
     FRESULT res = FR_NOT_READY;
@@ -380,7 +380,9 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
         if(info->attrib & AM_VOL) {
             continue;
         }
-        if (info->match_to_pattern(cbm)) {
+        unified_name = info->generate_fat_name(fatbuf, 64);
+        printf("%s matches %s?\n", filename, unified_name);
+        if (pattern_match(filename, unified_name, false)) {
             //printf("Found '%s' -> '%s'!\n", filename, info->lfname);
             break;
         }
@@ -392,7 +394,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 
 FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **file)
 {
-    FileInfo info(24);
+    FileInfo info(56);
     DirInCBM *dd;
     mstring fn;
     bool create = false;
@@ -491,7 +493,7 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     const char *filename = pi.getFileName();
 
     DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
-    FileInfo info(20);
+    FileInfo info(56);
     FRESULT res = find_file(filename, dd, &info);
 
 /*
@@ -601,7 +603,7 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     const char *filename = pi.getFileName();
 
     DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
-    FileInfo info(20);
+    FileInfo info(56);
     FRESULT res = find_file(filename, dd, &info);
 
     if (res != FR_OK) {
