@@ -63,6 +63,56 @@ void init_flash_disk()
     FileManager :: getFileManager()->add_root_entry(ramdisk_node);
 }
 
+FRESULT copy_from(const char *from, const char *to)
+{
+    printf("Copying %s to %s.\n", from, to);
+    File *fi = NULL;
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(from, FA_READ, &fi);
+    uint8_t buffer[1024];
+    if (fres == FR_OK) {
+        FILE *fo = fopen(to, "wb");
+        uint32_t tr;
+        do {
+            fres = fi->read(buffer, 1024, &tr);
+            //printf("%d\n", tr);
+            fwrite(buffer, 1, tr, fo);
+        } while(tr);
+        fclose(fo);
+        fm->fclose(fi);
+    } else {
+        printf("File '%s' not found. (%s)\n", from, FileSystem::get_error_string(fres));
+    }
+    return fres;
+}
+
+FRESULT copy_to(const char *from, const char *to)
+{
+    printf("Copying %s to %s.\n", from, to);
+    File *fo;
+    FileManager *fm = FileManager :: getFileManager();
+    uint8_t buffer[1024];
+
+    FILE *fi = fopen(from, "rb");
+    if (!fi) {
+        return FR_NO_FILE;
+    }
+
+    FRESULT fres = fm->fopen(to, FA_WRITE | FA_CREATE_ALWAYS, &fo);
+    if (fres == FR_OK) {
+        uint32_t tr;
+        do {
+            tr = fread(buffer, 1, 1024, fi);
+            fres = fo->write(buffer, tr, &tr);
+        } while(tr);
+        fclose(fi);
+        fm->fclose(fo);
+    } else {
+        printf("File '%s' could not be opened for writing. (%s)\n", to, FileSystem::get_error_string(fres));
+    }
+    return fres;
+}
+
 void get_status(IecDrive *dr)
 {
     uint8_t *data;
@@ -117,6 +167,34 @@ void open_file(IecDrive *dr, const char *fn)
     dr->push_ctrl(SLAVE_CMD_EOI);
 }
 
+int read_file(IecDrive *dr, uint8_t *out, int len)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60);
+    dr->talk();
+    int ret;
+    uint8_t *data;
+    int data_size;
+    int total_read = 0;
+    while(len > 0) {
+        ret = dr->prefetch_more(256, data, data_size);
+        printf("Ret: %d Count = %d\n", ret, data_size);
+        if (ret != 0) {
+            break;
+        }
+        dump_hex_relative(data, data_size);
+        int reading = (data_size > len) ? len : data_size;
+        if(out) {
+            memcpy(out, data, reading);
+            out += reading;
+        }
+        len -= reading;
+        total_read += reading;
+        dr->pop_more(reading);
+    }
+    return total_read;
+}
+
 void write_file(IecDrive *dr, uint8_t chan, const char *fn, const char *msg)
 {
     dr->push_ctrl(SLAVE_CMD_ATN);
@@ -132,6 +210,14 @@ void write_file(IecDrive *dr, uint8_t chan, const char *fn, const char *msg)
     dr->push_ctrl(SLAVE_CMD_ATN);
     dr->push_ctrl(0xE0 | chan);
     dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
+void close_read_file(IecDrive *dr)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0xE0); // close
+
+    get_status(dr);
 }
 
 void read_directory(IecDrive *dr, const char *file)
@@ -316,6 +402,24 @@ int execute_suite2(FileManager *fm, IecDrive *dr)
     return error;
 }
 
+int execute_suite3(FileManager *fm, IecDrive *dr)
+{
+    const char *diskname = "_261763_8_gc.d64";
+    copy_to(diskname, "/Temp/gc.d64");
+    dr->add_partition(1, "/Temp", "RAMDISK");
+    dr->add_partition(3, "/Temp/gc.d64", "D64");
+    read_directory(dr, "$1");
+    read_directory(dr, "$3");
+    open_file(dr, "3:\x51\x2E\xC6\xC3\xC4\xC3\xC6\xC3\xC4\xC3\xC6\xC3\xC4\xC3\xC6\xC3");
+    read_file(dr, NULL, 64);
+    close_read_file(dr);
+    
+    open_file(dr, "3:\x51\x2E\xC6\xC3\xC4\xC3\xC6\xC3\xC4\xC3\xC6\xC3\xC4\xC3\xC6\xC3.PRG");
+    read_file(dr, NULL, 64);
+    close_read_file(dr);
+    return 0;
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -330,12 +434,12 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    //create_test_files(fm);
+    create_test_files(fm);
     //error += execute_suite1(fm, dr);
-    error += execute_suite2(fm, dr);
+    //error += execute_suite2(fm, dr);
+    error += execute_suite3(fm, dr);
 
     printf("Errors: %d\n", error);
-    return 0;
 
     delete dr;
     delete ui;

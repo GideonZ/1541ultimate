@@ -46,6 +46,7 @@ SRCS_CC	 =  small_printf.cc \
 			filesystem_root.cc \
 			filesystem_iso9660.cc \
 			filemanager.cc \
+			embedded_d64.cc \
 			size_str.cc \
 			config.cc \
 			iec_drive.cc \

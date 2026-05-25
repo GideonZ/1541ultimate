@@ -687,6 +687,12 @@ int IecChannel :: setup_directory_read()
     return 0;
 }
 
+void print_file(filename_t& file)
+{
+    printf("P=%d, Path='%s', Filename='%s', Wildcard: %s\n",
+        file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
+}
+
 int IecChannel :: setup_file_access()
 {
     drive->set_error(0, 0, 0);
@@ -1001,12 +1007,6 @@ t_channel_retval IecCommandChannel::push_data(uint8_t b)
     return IEC_BYTE_LOST;
 }
 
-void print_file(filename_t& file)
-{
-    printf("P=%d, Path='%s', Filename='%s', Wildcard: %s\n",
-        file.partition, file.path.c_str(), file.filename.c_str(), file.has_wildcard?"true":"false" );
-}
-
 const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetype_t ftype, fileaccess_t acc)
 {
     const char *types[] = { ".???", ".prg", ".seq", ".usr", ".rel", "" };
@@ -1014,12 +1014,13 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     GETPARTITION(name.partition, partition, NULL);
     // first get names in more usable format
     iec_path_to_fs_path(name.path);
-    char fatname[48];
-    petscii_to_fat(name.filename.c_str(), fatname, 48);
-
+    char fatname[52];
+    petscii_to_fat(name.filename.c_str(), fatname, 52);
+    printf("After petscii_to_fat: '%s'\n", fatname);
     const char *ext = types[(int)ftype];
     if ((acc == e_read) || (ftype != e_any)) { // for reads, .??? is allowed, but for writes it is not
-        set_extension(fatname, ext, 48);
+//        set_extension(fatname, ext, 48);
+        strncat(fatname, ext, 52);
     }
 
     Path workpath;
