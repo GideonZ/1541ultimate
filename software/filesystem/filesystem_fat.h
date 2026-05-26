@@ -53,10 +53,13 @@ public:
     	inf.lfsize = out.lfsize;
     #endif
     	FRESULT res = f_readdir(fatdir, &inf);
-    	if (fatdir->sect == 0)
+    	if (res != FR_OK) {
+    		return res;
+    	}
+    	if (inf.fname[0] == 0)
     		return FR_NO_FILE;
     	copy_info(&inf, &out);
-    	return res;
+    	return FR_OK;
     }
 };
 
