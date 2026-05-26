@@ -47,7 +47,7 @@ class UserInterface
 public:
     UserInterface(const char *title)
     {
-        printf("Welcome to the User Interface '%s'. This is a dummy!\n", title);
+        // printf("Welcome to the User Interface '%s'. This is a dummy!\n", title);
     };
     virtual ~UserInterface() { }
 

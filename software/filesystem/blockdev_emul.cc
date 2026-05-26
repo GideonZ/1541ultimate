@@ -16,7 +16,7 @@ BlockDevice_Emulated::BlockDevice_Emulated(const char *name, int sec_size)
         file_size = lseek(fd, 0, SEEK_END);
         lseek(fd, 0, SEEK_SET);
         set_state(e_device_ready);
-		printf("Construct block device, opening file %s of size %ld (%d).\n", name, file_size, fd);
+		printf("Construct block device, opening file %s of size %d (%d).\n", name, file_size, fd);
     } else {
         set_state(e_device_no_media);
 		printf("Construct block device, (file could not be opened: %s, errno = %d)\n", name, errno);

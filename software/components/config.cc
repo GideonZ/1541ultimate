@@ -427,7 +427,7 @@ void ConfigPage :: read_from_file(File *f)
 {
     uint32_t tr;
     f->read(mem_block, (uint32_t)block_size, &tr);
-    printf("%d bytes read from config file\n", tr);
+    // printf("%d bytes read from config file\n", tr);
 }
 
 void ConfigPage :: read(bool ignoreData)

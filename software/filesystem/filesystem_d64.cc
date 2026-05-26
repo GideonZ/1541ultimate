@@ -381,7 +381,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
             continue;
         }
         unified_name = info->generate_fat_name(fatbuf, 64);
-        printf("%s matches %s?\n", filename, unified_name);
+        // printf("%s matches %s?\n", filename, unified_name);
         if (pattern_match(filename, unified_name, false)) {
             //printf("Found '%s' -> '%s'!\n", filename, info->lfname);
             break;

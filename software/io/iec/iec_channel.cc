@@ -710,6 +710,10 @@ int IecChannel :: setup_file_access()
         }
     }
 
+    DBGIECV("Name to open: Type %d. Access: %b\n", name_to_open.filetype, name_to_open.access);
+#if IECDEBUG > 0
+    print_file(name_to_open.file);
+#endif
     mstring work;
     const char *full_path = ConstructPath(work, name_to_open.file, name_to_open.filetype, name_to_open.access );
     if (!full_path) {
@@ -804,7 +808,7 @@ int IecChannel::setup_buffer_access(void)
 int IecChannel::open_file(void)  // name should be in buffer
 {
     buffer[pointer] = 0; // string terminator
-    printf("Open file. Raw Filename = '%s'\n", buffer);
+    DBGIECV("Open file. Raw Filename = '%s'\n", buffer);
     parse_open((const char *)buffer, name_to_open);
 
     IecPartition *partition = drive->vfs->GetPartition(name_to_open.file.partition);
@@ -820,7 +824,7 @@ int IecChannel::open_file(void)  // name should be in buffer
     case e_stream_file:
         return setup_file_access();
     default: // file
-        printf("Unknown stream mode\n");
+        DBGIECV("Unknown stream mode\n");
     }
     return -1;
 }
@@ -1016,11 +1020,10 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     iec_path_to_fs_path(name.path);
     char fatname[52];
     petscii_to_fat(name.filename.c_str(), fatname, 52);
-    printf("After petscii_to_fat: '%s'\n", fatname);
+    // printf("After petscii_to_fat: '%s'\n", fatname);
     const char *ext = types[(int)ftype];
     if ((acc == e_read) || (ftype != e_any)) { // for reads, .??? is allowed, but for writes it is not
-//        set_extension(fatname, ext, 48);
-        strcat(fatname, ext);
+        add_extension(fatname, ext, 48);
     }
 
     Path workpath;
@@ -1223,7 +1226,7 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
         if (fres != FR_OK)
             break;
     }
-    delete databuf;
+    delete[] databuf;
     fm->fclose(fo);
     return 0;
 }
