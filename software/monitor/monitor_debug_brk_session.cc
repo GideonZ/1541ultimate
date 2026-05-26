@@ -79,6 +79,8 @@ static const int TRAMPOLINE_BYTES_LEN = (int)sizeof(TRAMPOLINE_BYTES);
 
 BrkDebugSession :: BrkDebugSession()
     : cancel_keyboard(0), handler_installed(false), cpu_parked_in_spin(false),
+      run_window_depth(0), run_window_refreeze_enabled(true),
+      run_window_unfroze(false), screen_was_clobbered(false),
       nmi_trampoline_installed(false), has_last_context(false)
 {
     memset(patches, 0, sizeof(patches));
@@ -91,7 +93,12 @@ BrkDebugSession :: BrkDebugSession()
 
 BrkDebugSession :: ~BrkDebugSession()
 {
-    cleanup();
+    // Do NOT call cleanup() here: by the time the abstract base destructor
+    // runs, the concrete subclass (and its hardware hooks) are already gone, so
+    // a virtual cleanup() would dispatch to pure-virtual hooks and abort. The
+    // monitor always calls cleanup() explicitly before deleting the session,
+    // and each concrete leaf calls cleanup() from its own destructor while its
+    // vtable is still valid.
 }
 
 bool BrkDebugSession :: free_run_no_breakpoint(uint16_t address)
@@ -115,12 +122,52 @@ void BrkDebugSession :: set_cancel_keyboard(Keyboard *keyboard)
     cancel_keyboard = keyboard;
 }
 
+void BrkDebugSession :: set_run_window_refreeze_enabled(bool enabled)
+{
+    run_window_refreeze_enabled = enabled;
+}
+
 bool BrkDebugSession :: reserved_patch_address(uint16_t addr) const
 {
     if (addr >= IRQ_VECTOR_LO && addr <= NMI_VECTOR_HI) {
         return true;
     }
     return addr >= HANDLER_ADDR && addr <= DEBUG_AREA_END;
+}
+
+void BrkDebugSession :: begin_run_window(void)
+{
+    // Outermost entry unfreezes only if this run window really started from
+    // freeze mode. Nested entries (e.g. go() -> step_with_predict -> perform_run)
+    // share the single unfreeze/refreeze pair.
+    if (run_window_depth++ == 0) {
+        screen_was_clobbered = false;
+        run_window_unfroze = run_window_refreeze_enabled && machine_is_frozen();
+        if (run_window_unfroze) {
+            unfreeze_if_accessible();
+        }
+    }
+}
+
+void BrkDebugSession :: end_run_window(void)
+{
+    if (run_window_depth <= 0) {
+        return;
+    }
+    if (--run_window_depth == 0) {
+        // Re-freeze only if this window unfroze a frozen machine. This restores
+        // the freezer VIC/charset environment so the monitor renders into the
+        // firmware menu screen rather than the live C64 screen RAM. Overlay
+        // mode never unfreezes, so this is a no-op there.
+        if (run_window_unfroze) {
+            refreeze_machine();
+            // Signal that the firmware chrome rows (UI title, border lines)
+            // were overwritten by the live BASIC screen during the unfreeze and
+            // must be redrawn by the caller before the user sees the result.
+            screen_was_clobbered = true;
+        }
+        run_window_unfroze = false;
+    }
 }
 
 void BrkDebugSession :: save_and_install_handler(void)
@@ -414,7 +461,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     DebugContext *out,
                                                     uint8_t cpu_port)
 {
-    unfreeze_if_accessible();
+    begin_run_window();
     save_and_install_handler();
     if (cpu_parked_in_spin && from && from->valid) {
         release_to_run(from);
@@ -430,6 +477,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
+        end_run_window();
         return waited;
     }
     read_captured_context(out, cpu_port);
@@ -438,6 +486,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
     cpu_parked_in_spin = true;
     has_last_context = true;
     last_context = *out;
+    end_run_window();
     return DBG_OK;
 }
 
@@ -627,6 +676,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         return DBG_OK;
     }
 
+    begin_run_window();
     save_and_install_handler();
     if (resume_from->valid && cpu_parked_in_spin) {
         release_to_run(resume_from);
@@ -645,6 +695,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
+        end_run_window();
         return waited;
     }
     DebugContext captured;
@@ -654,6 +705,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     cpu_parked_in_spin = true;
     last_context = captured;
     has_last_context = true;
+    end_run_window();
     return DBG_OK;
 }
 
@@ -666,4 +718,13 @@ void BrkDebugSession :: cleanup(void)
     }
     uninstall_handler();
     cpu_parked_in_spin = false;
+}
+
+void BrkDebugSession :: forget_context(void)
+{
+    // Drop the cached CPU context so the next snapshot() reports "no context".
+    // The next execution command then starts from the monitor cursor rather
+    // than the previous session's PC. Patch/handler teardown is cleanup()'s job.
+    has_last_context = false;
+    debug_context_reset(&last_context);
 }

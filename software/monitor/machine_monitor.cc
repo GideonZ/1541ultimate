@@ -1643,6 +1643,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     vic_bank_override = false;
     bookmarks = new MonitorBookmarks();
     debug_session = NULL;
+    debug_run_window_refreeze_enabled = true;
     breakpoint_popup_active = false;
     breakpoint_selected = 0;
     bookmark_popup_active = false;
@@ -1658,6 +1659,14 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 #else
     edit_blink_ms = 0;
 #endif
+}
+
+void MachineMonitor :: set_debug_run_window_refreeze_enabled(bool enabled)
+{
+    debug_run_window_refreeze_enabled = enabled;
+    if (debug_session) {
+        debug_session->set_run_window_refreeze_enabled(enabled);
+    }
 }
 
 uint8_t MachineMonitor :: memory_byte_stride(void) const
@@ -3577,6 +3586,21 @@ void MachineMonitor :: draw_header()
     }
     draw_padded(window, 0, line, strlen(line));
     if (!help_visible && !hunt_picker_active) {
+        // The view-mode token and the current address render in the secondary
+        // highlight (light grey), distinct from the white primary accent used
+        // for the Dbg/Edit badges and from the plain header text.
+        if (strncmp(line, "MONITOR ", 8) == 0) {
+            window->set_color(secondary_highlight_color());
+            window->move_cursor(8, 0);
+            window->output_length(line + 8, 3);
+            const char *dollar = strchr(line, '$');
+            if (dollar) {
+                int ax = (int)(dollar - line);
+                window->move_cursor(ax, 0);
+                window->output_length(dollar, 5); // "$" + 4 hex digits
+            }
+            window->set_color(get_ui()->color_fg);
+        }
         if (debug.is_active()) {
             if (dbg_slot < 0) dbg_slot = 0;
             window->move_cursor(dbg_slot, 0);
@@ -3629,6 +3653,30 @@ void MachineMonitor :: draw_status()
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
+int MachineMonitor :: secondary_highlight_color(void)
+{
+    // Theme foreground: the same colour that bookmark popup body text uses
+    // (popup.set_color(get_ui()->color_fg)). Distinct from the white primary
+    // accent (MONITOR_UI_ACCENT_COLOR) used for the Dbg/Edit badges.
+    return get_ui()->color_fg;
+}
+
+void MachineMonitor :: debug_full_restore_screen(void)
+{
+    // After a freeze-mode debug step, the firmware chrome rows (UI title and
+    // border lines) are overwritten by the live BASIC screen during the
+    // temporary C64 unfreeze. Re-establish the chrome and redraw the monitor
+    // window so the user sees a correct display. No-op in overlay mode because
+    // overlay sessions disable freeze/refreeze run windows.
+    if (!debug_session || !debug_session->screen_render_target_invalidated()) {
+        return;
+    }
+    if (screen) {
+        get_ui()->set_screen_title();
+    }
+    redraw_full();
+}
+
 void MachineMonitor :: draw_debug_footer()
 {
     char header_row[40];
@@ -3639,8 +3687,13 @@ void MachineMonitor :: draw_debug_footer()
     }
     MonitorDebug::format_footer_header(header_row, sizeof(header_row));
     MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
+    // Debug CPU footer labels (PC/SP/AC/XR/YR/NV-BDIZC/IRQ/NMI) and their
+    // values render in the secondary highlight colour - the theme foreground,
+    // which is light grey in the dark theme - never the white primary accent.
+    window->set_color(secondary_highlight_color());
     draw_padded(window, window->get_size_y() - 3, header_row, (int)strlen(header_row));
     draw_padded(window, window->get_size_y() - 2, value_row, (int)strlen(value_row));
+    window->set_color(get_ui()->color_fg);
 }
 
 void MachineMonitor :: draw_help()
@@ -4254,7 +4307,9 @@ void MachineMonitor :: draw_disassembly()
             }
         }
         if (bp_slot >= 0) {
-            window->set_color(MONITOR_UI_ACCENT_COLOR);
+            // Breakpoint opcode rows use the secondary highlight (light grey),
+            // not the white primary accent.
+            window->set_color(secondary_highlight_color());
         }
         draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
         if (bp_slot >= 0) {
@@ -4919,8 +4974,6 @@ void MachineMonitor :: debug_leave()
         return;
     }
     debug.leave();
-    // Leaving Debug must not invalidate the captured context (so re-entering
-    // shows the same numbers), but breakpoints/popup state are dismissed.
     breakpoint_popup_active = false;
     if (window) {
         content_height = window->get_size_y() - 2;
@@ -4931,7 +4984,15 @@ void MachineMonitor :: debug_leave()
     // deinit() takes care of final teardown.
     if (debug_session) {
         debug_session->cleanup();
+        // Forget the cached PC so re-entering Debug starts from the monitor
+        // cursor (where the user navigated) instead of resuming the previous
+        // session's program counter.
+        debug_session->forget_context();
     }
+    // Drop the displayed register context too; re-entry recaptures only if the
+    // backend can snapshot afresh, otherwise the cursor position drives the
+    // first step.
+    debug.invalidate_context();
 }
 
 void MachineMonitor :: debug_sync_cursor_to_context(void)
@@ -4958,6 +5019,7 @@ DebugSession *MachineMonitor :: ensure_debug_session()
     debug_session = backend->create_debug_session();
     if (debug_session) {
         debug_session->set_cancel_keyboard(keyboard);
+        debug_session->set_run_window_refreeze_enabled(debug_run_window_refreeze_enabled);
     }
     return debug_session;
 }
@@ -5075,6 +5137,7 @@ void MachineMonitor :: debug_request_over()
     DebugContext next;
     DebugSession::Result r = have_context ? session->over(from, pred, &next)
                                           : session->over_at(start_pc, pred, &next);
+    debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
         debug_sync_cursor_to_context();
@@ -5124,6 +5187,7 @@ void MachineMonitor :: debug_request_trace()
     DebugContext next;
     DebugSession::Result r = have_context ? session->trace(from, pred, &next)
                                           : session->trace_at(start_pc, pred, &next);
+    debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
         debug_sync_cursor_to_context();
@@ -5162,6 +5226,7 @@ void MachineMonitor :: debug_request_out()
     }
     DebugContext next;
     DebugSession::Result r = session->step_out(from, &next);
+    debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
         debug.set_context(next);
         debug_sync_cursor_to_context();
@@ -5207,6 +5272,7 @@ void MachineMonitor :: debug_request_go()
     // Invalidate up-front; G discards the captured context per the spec.
     debug.invalidate_context();
     DebugSession::Result r = session->go(from, &breakpoints, start_pc);
+    debug_full_restore_screen();
     if (r == DebugSession::DBG_OK) {
         // If the session captured a fresh context (BRK fired during this
         // Go), `snapshot` now returns it. Pull it back so the footer shows

@@ -199,7 +199,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
-                      "C=+B List", "D Debug/Over", "T Trace", "O Out",
+                      "C=+B List", "D Step Over", "T Step Into", "O Step Out",
                       "C=+R", "C=+D", "C=+X", "RSTOP"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")

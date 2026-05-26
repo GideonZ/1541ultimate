@@ -72,8 +72,18 @@ protected:
     }
     virtual void unfreeze_if_accessible(void)
     {
-        if (machine->is_accessible()) {
+        if (machine && machine->is_accessible()) {
             machine->unfreeze();
+        }
+    }
+    virtual bool machine_is_frozen(void) const
+    {
+        return machine ? machine->is_accessible() : false;
+    }
+    virtual void refreeze_machine(void)
+    {
+        if (machine) {
+            machine->refreeze();
         }
     }
     virtual bool reset_machine(void)
@@ -128,6 +138,11 @@ public:
     {
         machine = (U64Machine *)C64::getMachine();
     }
+
+    // Restore patches/handler while this subclass' hooks are still live. The
+    // abstract base destructor must not call cleanup() (its hooks are pure by
+    // then), so the leaf owns the final safety-net cleanup.
+    virtual ~U64DebugSession() { cleanup(); }
 };
 
 }

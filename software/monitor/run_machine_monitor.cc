@@ -1,7 +1,7 @@
 #include "userinterface.h"
 #include "machine_monitor.h"
 #include "monitor_file_io.h"
-#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+#if !defined(RUNS_ON_PC)
 #include "c64.h"
 #endif
 
@@ -9,6 +9,14 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     MachineMonitor *monitor = new MachineMonitor(this, backend);
     uint16_t go_address = 0;
+#if !defined(RUNS_ON_PC)
+    C64 *debug_render_machine = C64::getMachine();
+    monitor->set_debug_run_window_refreeze_enabled(
+        debug_render_machine && host == debug_render_machine &&
+        debug_render_machine->is_accessible());
+#else
+    monitor->set_debug_run_window_refreeze_enabled(false);
+#endif
     monitor->init(screen, keyboard);
     int ret = 0;
     while(!ret && host->exists()) {

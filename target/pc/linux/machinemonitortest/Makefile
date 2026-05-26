@@ -59,6 +59,7 @@ SRCS_CC  = $(COMMON_SRCS_CC) \
 OPTIONS  = -g -ffunction-sections -O0 -DNO_FILE_ACCESS -Wno-format -Wno-format-extra-args
 else ifeq ($(SUITE),machinemonitordebugtest)
 SRCS_CC  = $(COMMON_SRCS_CC) \
+			monitor_debug_brk_session.cc \
 			machine_monitor_debug_test.cc
 OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args
 else

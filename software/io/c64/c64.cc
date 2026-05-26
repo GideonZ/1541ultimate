@@ -943,6 +943,12 @@ void C64::unfreeze()
     isFrozen = false;
 }
 
+void C64::refreeze(void)
+{
+    if (!isFrozen)
+        freeze();
+}
+
 void C64 :: start_cartridge(void *vdef)
 {
     cart_def *def = (cart_def *) vdef;

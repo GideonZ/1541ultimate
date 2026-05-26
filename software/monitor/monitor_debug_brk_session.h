@@ -18,6 +18,13 @@ protected:
     virtual uint8_t peek_visible(uint16_t address) = 0;
     virtual void poke_visible(uint16_t address, uint8_t byte) = 0;
     virtual void unfreeze_if_accessible(void) = 0;
+    // Freeze-mode render-target preservation. A debug step must temporarily
+    // unfreeze the C64 to run the live CPU; if the machine was frozen, it must
+    // be re-frozen before control returns to the monitor so the monitor keeps
+    // rendering into the firmware/menu screen instead of the live C64 screen.
+    // Default no-op keeps backends without a freeze concept unaffected.
+    virtual bool machine_is_frozen(void) const { return false; }
+    virtual void refreeze_machine(void) { }
     virtual bool reset_machine(void) = 0;
     // Pulse NMI on the live CPU and release the stopped session. The pulse
     // MUST occur while the CPU is still stopped so the request bit is
@@ -35,6 +42,7 @@ public:
     virtual ~BrkDebugSession();
 
     virtual void set_cancel_keyboard(Keyboard *keyboard);
+    virtual void set_run_window_refreeze_enabled(bool enabled);
     virtual Result snapshot(DebugContext *ctx);
     virtual Result over(const DebugContext &from,
                         const DebugPredictResult &pred,
@@ -53,6 +61,8 @@ public:
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc);
     virtual void cleanup(void);
+    virtual void forget_context(void);
+    virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
 
 private:
     struct Patch {
@@ -68,6 +78,16 @@ private:
     Patch patches[MAX_PATCHES];
     bool handler_installed;
     bool cpu_parked_in_spin;
+    // Nesting-safe CPU-run window. When enabled, begin_run_window() unfreezes a
+    // frozen machine once; end_run_window() re-freezes it on the outermost exit
+    // so a frozen monitor's render target survives the step.
+    int run_window_depth;
+    bool run_window_refreeze_enabled;
+    bool run_window_unfroze;
+    // Set by end_run_window() when it actually refreezes the machine. Callers
+    // can read this via screen_render_target_invalidated() to know whether the
+    // firmware chrome rows need restoring before the next visible redraw.
+    bool screen_was_clobbered;
     uint8_t saved_handler_bytes[100];
     uint8_t saved_nmi_trampoline_bytes[16];
     bool nmi_trampoline_installed;
@@ -77,6 +97,8 @@ private:
     DebugContext last_context;
 
     bool reserved_patch_address(uint16_t addr) const;
+    void begin_run_window(void);
+    void end_run_window(void);
     void save_and_install_handler(void);
     void uninstall_handler(void);
     int find_free_patch(void);

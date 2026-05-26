@@ -15,6 +15,7 @@
 #include "monitor_breakpoints.h"
 #include "monitor_debug.h"
 #include "monitor_debug_session.h"
+#include "monitor_debug_brk_session.h"
 #include "monitor_file_io.h"
 #include "monitor_debug_predictor.h"
 #include "machine_monitor_test_support.h"
@@ -230,6 +231,123 @@ struct SourceLabelDebugBackend : public TrackingDebugBackend
         }
     }
 };
+
+// Direct render-target regression harness for the BRK debug engine.
+//
+// FakeFreezeMachine implements the BrkDebugSession hardware hooks over a flat
+// 64K RAM array plus a `frozen` flag that mirrors C64::isFrozen. It models the
+// freeze-mode invariant the production fix enforces: a debug step temporarily
+// unfreezes the machine to run the live CPU, then MUST re-freeze before control
+// returns so the monitor keeps rendering into the firmware/menu screen instead
+// of the live C64 screen RAM. The reserved sentinel byte is set on the first
+// delay() call to simulate the BRK trampoline firing.
+namespace {
+
+static const uint16_t FAKE_SENTINEL_ADDR = 0x03F7; // mirrors SENTINEL_ADDR
+static const uint16_t FAKE_SCREEN_BASE   = 0x0400; // C64 screen RAM aperture
+
+class FakeFreezeMachine : public BrkDebugSession
+{
+public:
+    uint8_t ram[65536];
+    bool frozen;
+    bool accessible_when_unfrozen;
+    bool break_on_unfrozen_unfreeze_attempt;
+    int unfreeze_attempts;
+    int unfreeze_calls;
+    int refreeze_calls;
+    int reset_calls;
+    // When false, delay_ms() does NOT raise the sentinel, so wait_for_sentinel
+    // runs to its full timeout. Lets a test force the DBG_TIMEOUT path and then
+    // re-arm to prove the run-window state (depth, freeze bracketing) recovered.
+    bool sentinel_armed;
+
+    FakeFreezeMachine(bool start_frozen)
+        : frozen(start_frozen), accessible_when_unfrozen(false),
+          break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
+          unfreeze_calls(0), refreeze_calls(0), reset_calls(0),
+          sentinel_armed(true)
+    {
+        memset(ram, 0, sizeof(ram));
+    }
+
+    // Leaf cleanup while the fake hooks are still live (the abstract base
+    // destructor intentionally does not call cleanup()).
+    virtual ~FakeFreezeMachine() { cleanup(); }
+
+    // Stamp a recognizable BASIC-like pattern into the C64 screen RAM so a test
+    // can prove monitor redraws never reach it.
+    void stamp_screen_sentinel(uint8_t value, int len)
+    {
+        for (int i = 0; i < len; i++) {
+            ram[FAKE_SCREEN_BASE + i] = value;
+        }
+    }
+    bool screen_sentinel_intact(uint8_t value, int len) const
+    {
+        for (int i = 0; i < len; i++) {
+            if (ram[FAKE_SCREEN_BASE + i] != value) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+protected:
+    virtual bool backend_ready(void) const { return true; }
+    virtual uint8_t current_cpu_port(void) const { return 0x07; }
+    virtual bool begin_stopped_session(void) { return false; }
+    virtual void end_stopped_session(bool) { }
+    virtual uint8_t peek_cpu(uint16_t a, uint8_t) { return ram[a]; }
+    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t) { ram[a] = b; }
+    virtual uint8_t peek_visible(uint16_t a) { return ram[a]; }
+    virtual void poke_visible(uint16_t a, uint8_t b) { ram[a] = b; }
+    virtual void unfreeze_if_accessible(void)
+    {
+        bool accessible = frozen || accessible_when_unfrozen;
+        if (!accessible) {
+            return;
+        }
+        unfreeze_attempts++;
+        if (frozen) {
+            frozen = false;
+            unfreeze_calls++;
+        } else if (break_on_unfrozen_unfreeze_attempt) {
+            sentinel_armed = false;
+        }
+    }
+    virtual bool machine_is_frozen(void) const { return frozen; }
+    virtual void refreeze_machine(void)
+    {
+        if (!frozen) {
+            frozen = true;
+            refreeze_calls++;
+        }
+    }
+    virtual bool reset_machine(void) { reset_calls++; return true; }
+    virtual void pulse_nmi_and_release(bool) { }
+    virtual void delay_ms(int)
+    {
+        // Model the BRK trampoline reaching the spin loop: the sentinel becomes
+        // non-zero so the next wait_for_sentinel poll returns DBG_OK. When the
+        // test disarms the sentinel, leave it clear so the engine runs to its
+        // DBG_TIMEOUT.
+        if (sentinel_armed) {
+            ram[FAKE_SENTINEL_ADDR] = 0xFF;
+        }
+    }
+};
+
+// Build a one-byte NOP "program" at addr so the predictor classifies it as a
+// linear step and install_brk_at has a non-zero byte to overwrite.
+static void fake_seed_nop_run(FakeFreezeMachine &m, uint16_t addr)
+{
+    m.ram[addr] = 0xEA;     // NOP at PC
+    m.ram[addr + 1] = 0xEA; // fall-through target (BRK lands here; must be != 0)
+    m.ram[addr + 2] = 0xEA;
+}
+
+} // namespace
 
 static int trim_end(const char *s)
 {
@@ -1067,14 +1185,9 @@ static int test_breakpoint_row_indicator_and_color()
     if (expect(strstr(row, "BASIC") == NULL,
                "Assembly source indicator must use the 3-character BAS label")) return 1;
 
-    char header[40];
-    screen.get_slice(1, 3, 38, header);
-    const char *dbg = strstr(header, "Dbg");
-    if (expect(dbg != NULL, "Header must still show Dbg")) return 1;
-    uint8_t accent = screen.colors[3][1 + (dbg - header)];
     for (int x = 1; x <= 38; x++) {
-        if (expect(screen.colors[4][x] == accent,
-                   "Every character on a breakpoint opcode line must use the Dbg/Edit accent color")) return 1;
+        if (expect(screen.colors[4][x] == ui.color_fg,
+                   "Every character on a breakpoint opcode line must use color_fg (secondary highlight)")) return 1;
     }
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
@@ -1576,6 +1689,552 @@ static int test_edit_and_debug_compose_in_header()
     return 0;
 }
 
+// --- Freeze-mode render-target regression (temporary-BRK step-over et al.) ---
+//
+// These tests drive the real BrkDebugSession engine through FakeFreezeMachine.
+// The invariant under test: after any debug run that temporarily unfroze the
+// machine, the engine must re-freeze it before returning, so the monitor's
+// render target (the firmware/menu screen) is preserved instead of leaking into
+// the live C64 screen RAM. Before the fix the engine unfroze and never
+// re-froze, so `frozen` would be false here and the C64 screen sentinel would
+// later be overwritten by monitor redraws.
+
+static int test_freeze_step_over_refreezes_and_preserves_screen()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.stamp_screen_sentinel(0x55, 40); // BASIC-like content in $0400
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0x2000, pred, &ctx);
+
+    if (expect(r == DebugSession::DBG_OK, "freeze step-over must complete")) return 1;
+    if (expect(m.frozen,
+               "freeze step-over must re-freeze the C64 before returning to the monitor")) return 1;
+    if (expect(m.unfreeze_calls == 1,
+               "freeze step-over must unfreeze exactly once to run the step")) return 1;
+    if (expect(m.refreeze_calls == 1,
+               "freeze step-over must re-freeze exactly once after the step")) return 1;
+    if (expect(m.screen_sentinel_intact(0x55, 40),
+               "freeze step-over must not write monitor UI into C64 screen RAM")) return 1;
+    if (expect(m.screen_render_target_invalidated(),
+               "freeze step-over must set screen_render_target_invalidated so caller can restore chrome")) return 1;
+    return 0;
+}
+
+static int test_freeze_step_over_with_context_refreezes()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.stamp_screen_sentinel(0x41, 40);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xFF;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over(from, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "freeze step-over (with context) must complete")) return 1;
+    if (expect(m.frozen, "freeze step-over (with context) must re-freeze")) return 1;
+    if (expect(m.screen_sentinel_intact(0x41, 40),
+               "freeze step-over (with context) must not touch C64 screen RAM")) return 1;
+    return 0;
+}
+
+static int test_freeze_step_into_refreezes()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.stamp_screen_sentinel(0x42, 40);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "freeze step-into must complete")) return 1;
+    if (expect(m.frozen, "freeze step-into must re-freeze")) return 1;
+    if (expect(m.unfreeze_attempts == 1, "freeze step-into must call the unfreeze hook once")) return 1;
+    if (expect(m.refreeze_calls == 1, "freeze step-into must re-freeze once")) return 1;
+    if (expect(m.screen_sentinel_intact(0x42, 40),
+               "freeze step-into must not touch C64 screen RAM")) return 1;
+    if (expect(m.screen_render_target_invalidated(),
+               "freeze step-into must set render-target invalidation after refreeze")) return 1;
+    return 0;
+}
+
+static int test_freeze_step_out_refreezes()
+{
+    FakeFreezeMachine m(true);
+    m.stamp_screen_sentinel(0x43, 40);
+
+    // Build a stack frame so find_stack_return_target succeeds: a JSR at
+    // $2001 (target $3000) pushed return address $2003; from.pc is $3000 so
+    // the inferred return target is $2004.
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x3000;
+    from.sp = 0xFB;
+    m.ram[0x01FC] = 0x03; // return low  (sp+1)
+    m.ram[0x01FD] = 0x20; // return high (sp+2) -> ret = $2003
+    m.ram[0x2001] = 0x20; // JSR opcode at ret-2
+    m.ram[0x2002] = 0x00; // target low
+    m.ram[0x2003] = 0x30; // target high -> $3000 (<= from.pc)
+    m.ram[0x2004] = 0xEA; // BRK target byte (must be non-zero)
+
+    DebugContext ctx;
+    DebugSession::Result r = m.step_out(from, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "freeze step-out must complete")) return 1;
+    if (expect(m.frozen, "freeze step-out must re-freeze")) return 1;
+    if (expect(m.unfreeze_attempts == 1, "freeze step-out must call the unfreeze hook once")) return 1;
+    if (expect(m.refreeze_calls == 1, "freeze step-out must re-freeze once")) return 1;
+    if (expect(m.screen_sentinel_intact(0x43, 40),
+               "freeze step-out must not touch C64 screen RAM")) return 1;
+    if (expect(m.screen_render_target_invalidated(),
+               "freeze step-out must set render-target invalidation after refreeze")) return 1;
+    return 0;
+}
+
+static int test_freeze_go_breakpoint_refreezes()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.ram[0x2005] = 0xEA; // breakpoint target byte (non-zero)
+    m.stamp_screen_sentinel(0x44, 40);
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2005, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xFF;
+
+    DebugSession::Result r = m.go(from, &bps, 0x2000);
+    if (expect(r == DebugSession::DBG_OK, "freeze Go-to-breakpoint must complete")) return 1;
+    if (expect(m.frozen,
+               "freeze Go/continue to breakpoint must re-freeze before returning")) return 1;
+    if (expect(m.unfreeze_attempts == 1, "freeze Go must call the unfreeze hook once")) return 1;
+    if (expect(m.refreeze_calls == 1, "freeze Go must re-freeze once")) return 1;
+    if (expect(m.screen_sentinel_intact(0x44, 40),
+               "freeze Go must not touch C64 screen RAM")) return 1;
+    if (expect(m.screen_render_target_invalidated(),
+               "freeze Go must set render-target invalidation after refreeze")) return 1;
+    return 0;
+}
+
+static int test_overlay_step_over_never_freezes()
+{
+    // Overlay-mode non-regression: the machine is never frozen, so the engine
+    // must neither unfreeze nor re-freeze, and must still complete the step.
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "overlay step-over must complete")) return 1;
+    if (expect(!m.frozen, "overlay step-over must leave the machine unfrozen")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay step-over must not call the unfreeze hook")) return 1;
+    if (expect(m.unfreeze_calls == 0, "overlay step-over must not unfreeze")) return 1;
+    if (expect(m.refreeze_calls == 0, "overlay step-over must not re-freeze")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay step-over must not set screen_render_target_invalidated")) return 1;
+    return 0;
+}
+
+static int test_overlay_accessible_unfrozen_step_over_does_not_unfreeze()
+{
+    // Hardware overlay access is not the same as freeze ownership. Even if a
+    // backend reports that an unfreeze operation would be "accessible", the
+    // run-window must not invoke it unless machine_is_frozen() was true.
+    FakeFreezeMachine m(false);
+    m.accessible_when_unfrozen = true;
+    m.break_on_unfrozen_unfreeze_attempt = true;
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "overlay step-over must complete even if the unfreeze hook would be accessible")) return 1;
+    if (expect(m.unfreeze_attempts == 0,
+               "overlay run-window must not call unfreeze_if_accessible when not frozen")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay accessible/unfrozen step must not change freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay accessible/unfrozen step must not invalidate the render target")) return 1;
+    return 0;
+}
+
+static int test_overlay_render_target_disables_stale_frozen_unfreeze()
+{
+    // The overlay UI is not the C64 freezer render target. If C64 accessibility
+    // state is stale/true for any reason, the overlay run-window policy must
+    // still prevent freeze ownership calls.
+    FakeFreezeMachine m(true);
+    m.set_run_window_refreeze_enabled(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "overlay render-target policy must still allow the BRK run")) return 1;
+    if (expect(m.frozen,
+               "overlay render-target policy must not change stale frozen state")) return 1;
+    if (expect(m.unfreeze_attempts == 0,
+               "overlay render-target policy must not call unfreeze even if machine_is_frozen is true")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay render-target policy must not touch freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay render-target policy must not invalidate the screen")) return 1;
+    return 0;
+}
+
+static int test_overlay_step_into_never_freezes()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext c1;
+    if (expect(m.trace_at(0x2000, pred, &c1) == DebugSession::DBG_OK,
+               "overlay step-into must complete")) return 1;
+    DebugContext c2;
+    if (expect(m.trace_at(0x2000, pred, &c2) == DebugSession::DBG_OK,
+               "overlay repeated step-into must complete")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay step-into must not call the unfreeze hook")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay step-into must never touch freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay step-into must not invalidate the render target")) return 1;
+    return 0;
+}
+
+static int test_overlay_step_out_never_freezes()
+{
+    FakeFreezeMachine m(false);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x3000;
+    from.sp = 0xFB;
+    m.ram[0x01FC] = 0x03;
+    m.ram[0x01FD] = 0x20;
+    m.ram[0x2001] = 0x20;
+    m.ram[0x2002] = 0x00;
+    m.ram[0x2003] = 0x30;
+    m.ram[0x2004] = 0xEA;
+
+    DebugContext ctx;
+    DebugSession::Result r = m.step_out(from, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "overlay step-out must complete for a valid JSR frame")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay step-out must not call the unfreeze hook")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay step-out must never touch freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay step-out must not invalidate the render target")) return 1;
+    return 0;
+}
+
+static int test_overlay_go_breakpoint_never_freezes()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2001, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+
+    DebugSession::Result r = m.go(from, &bps, 0x2000);
+    if (expect(r == DebugSession::DBG_OK, "overlay Go-to-breakpoint must complete")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay Go must not call the unfreeze hook")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay Go must never touch freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay Go must not invalidate the render target")) return 1;
+    return 0;
+}
+
+// Two consecutive overlay steps must each complete and must never touch the
+// freeze bracketing. A leaked run-window depth or a stale run_window_unfroze
+// from step 1 would change step 2's behaviour (or, in freeze mode, skip the
+// unfreeze); proving both steps run with zero unfreeze/refreeze and a clean
+// invalidated flag is the strongest overlay non-regression we can model.
+static int test_overlay_two_consecutive_steps_never_freeze()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext c1;
+    if (expect(m.over_at(0x2000, pred, &c1) == DebugSession::DBG_OK,
+               "overlay step 1 must complete")) return 1;
+    DebugContext c2;
+    if (expect(m.over_at(0x2000, pred, &c2) == DebugSession::DBG_OK,
+               "overlay step 2 must complete (run-window depth recovered)")) return 1;
+    if (expect(!m.frozen, "overlay steps must leave the machine unfrozen")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay steps must never call the unfreeze hook")) return 1;
+    if (expect(m.unfreeze_calls == 0, "overlay steps must never unfreeze")) return 1;
+    if (expect(m.refreeze_calls == 0, "overlay steps must never re-freeze")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay steps must not invalidate the render target")) return 1;
+    return 0;
+}
+
+// Two consecutive freeze steps must each unfreeze-then-refreeze exactly once.
+// If step 1 leaked the run-window depth, step 2's outermost begin_run_window
+// would not fire (depth != 0) and the second unfreeze/refreeze would be lost,
+// dropping the counts below two. This pins the balance across steps.
+static int test_freeze_two_consecutive_steps_rebalance()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.stamp_screen_sentinel(0x55, 40);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext c1;
+    if (expect(m.over_at(0x2000, pred, &c1) == DebugSession::DBG_OK,
+               "freeze step 1 must complete")) return 1;
+    if (expect(m.frozen, "freeze step 1 must leave the machine re-frozen")) return 1;
+    DebugContext c2;
+    if (expect(m.over_at(0x2000, pred, &c2) == DebugSession::DBG_OK,
+               "freeze step 2 must complete")) return 1;
+    if (expect(m.frozen, "freeze step 2 must leave the machine re-frozen")) return 1;
+    if (expect(m.unfreeze_calls == 2, "two freeze steps must unfreeze twice")) return 1;
+    if (expect(m.refreeze_calls == 2, "two freeze steps must re-freeze twice")) return 1;
+    if (expect(m.screen_sentinel_intact(0x55, 40),
+               "freeze steps must never write into C64 screen RAM")) return 1;
+    return 0;
+}
+
+// A timed-out overlay step must release control (DBG_TIMEOUT, not a hang) and
+// leave the run-window depth at zero so a later step still works. It must also
+// never freeze the machine on the failure path.
+static int test_overlay_step_timeout_then_recovers()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    m.sentinel_armed = false; // force the wait loop to its timeout
+    DebugContext c1;
+    if (expect(m.over_at(0x2000, pred, &c1) == DebugSession::DBG_TIMEOUT,
+               "overlay step must return DBG_TIMEOUT, never hang")) return 1;
+    if (expect(!m.frozen, "overlay timeout must not freeze the machine")) return 1;
+    if (expect(m.unfreeze_attempts == 0, "overlay timeout must not call the unfreeze hook")) return 1;
+    if (expect(m.refreeze_calls == 0, "overlay timeout must not re-freeze")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay timeout must not invalidate the render target")) return 1;
+
+    m.sentinel_armed = true; // engine recovers; depth must be back at zero
+    DebugContext c2;
+    if (expect(m.over_at(0x2000, pred, &c2) == DebugSession::DBG_OK,
+               "overlay step after timeout must complete (depth recovered)")) return 1;
+    if (expect(m.unfreeze_calls == 0 && m.refreeze_calls == 0,
+               "overlay timeout+recovery must never touch freeze state")) return 1;
+    if (expect(!m.screen_render_target_invalidated(),
+               "overlay timeout+recovery must leave render-target invalidation clear")) return 1;
+    return 0;
+}
+
+// A timed-out freeze step must still re-freeze on the failure path (so the
+// monitor render target is preserved) and recover its run-window depth so the
+// next step unfreezes/refreezes again.
+static int test_freeze_step_timeout_refreezes_and_recovers()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2000);
+    m.stamp_screen_sentinel(0x66, 40);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    m.sentinel_armed = false; // force timeout
+    DebugContext c1;
+    if (expect(m.over_at(0x2000, pred, &c1) == DebugSession::DBG_TIMEOUT,
+               "freeze step must return DBG_TIMEOUT, never hang")) return 1;
+    if (expect(m.frozen,
+               "freeze timeout must re-freeze before returning to the monitor")) return 1;
+    if (expect(m.unfreeze_attempts == 1 && m.unfreeze_calls == 1 && m.refreeze_calls == 1,
+               "freeze timeout must balance its unfreeze with a re-freeze")) return 1;
+    if (expect(m.screen_render_target_invalidated(),
+               "freeze timeout must invalidate the render target after refreeze")) return 1;
+
+    m.sentinel_armed = true;
+    DebugContext c2;
+    if (expect(m.over_at(0x2000, pred, &c2) == DebugSession::DBG_OK,
+               "freeze step after timeout must complete (depth recovered)")) return 1;
+    if (expect(m.frozen, "freeze step after timeout must re-freeze")) return 1;
+    if (expect(m.unfreeze_calls == 2 && m.refreeze_calls == 2,
+               "freeze timeout+recovery must rebalance to two unfreeze/refreeze")) return 1;
+    if (expect(m.screen_sentinel_intact(0x66, 40),
+               "freeze timeout must never write into C64 screen RAM")) return 1;
+    return 0;
+}
+
+// --- Secondary highlight colour for Debug header / footer ------------------
+// secondary_highlight_color() returns color_fg (the same colour that bookmark
+// popup body text uses). These tests verify footer and header text use color_fg
+// and do not accidentally adopt the white primary accent.
+
+static int test_debug_footer_uses_secondary_highlight()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    // Set a sentinel foreground (12) distinct from the primary accent so the
+    // assertions are meaningful. secondary_highlight_color() returns color_fg.
+    ui.color_fg = 12;
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+
+    // The Dbg badge colour is the white primary accent; sample it so the
+    // assertions do not hard-code the accent constant.
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    const char *dbg = strstr(header, "Dbg");
+    if (expect(dbg != NULL, "Header must show the Dbg badge")) return 1;
+    uint8_t accent = screen.colors[3][1 + (dbg - header)];
+
+    // Locate the footer label row (contains PC/SP/AC labels).
+    int label_y = -1;
+    for (int y = 0; y < 25; y++) {
+        char row[40];
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "PC") != NULL && strstr(row, "SP") != NULL &&
+            strstr(row, "AC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
+            label_y = y;
+            break;
+        }
+    }
+    if (expect(label_y >= 0, "Debug footer label row must be visible")) return 1;
+
+    // Every non-blank glyph on the label row and the value row below it must
+    // use color_fg (the secondary highlight == bookmark popup text colour),
+    // never the white primary accent.
+    for (int y = label_y; y <= label_y + 1; y++) {
+        for (int x = 1; x <= 38; x++) {
+            if (screen.chars[y][x] == ' ') continue;
+            if (expect(screen.colors[y][x] == ui.color_fg,
+                       "Debug footer text must use color_fg (secondary highlight colour)")) return 1;
+            if (expect(screen.colors[y][x] != accent,
+                       "Debug footer text must not use the white primary accent")) return 1;
+        }
+    }
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_debug_header_mode_and_address_use_secondary_highlight()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    // Set a sentinel foreground (12) distinct from the primary accent (1).
+    // secondary_highlight_color() returns color_fg so the header tokens use 12.
+    ui.color_fg = 12;
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    // The Dbg badge uses the white primary accent; sample it as the reference.
+    const char *dbg = strstr(header, "Dbg");
+    if (expect(dbg != NULL, "Header must still show the Dbg badge")) return 1;
+    uint8_t accent = screen.colors[3][1 + (dbg - header)];
+    if (expect(accent != ui.color_fg,
+               "Primary accent and secondary highlight (color_fg) must be distinct")) return 1;
+
+    // The view-mode token and the current-address token in the header use
+    // color_fg (secondary highlight == bookmark popup text colour); only the
+    // Dbg badge uses the white primary accent.
+    const char *mode = strstr(header, "ASM");
+    if (expect(mode != NULL, "Header must show the ASM mode token")) return 1;
+    const char *addr = strstr(header, "$");
+    if (expect(addr != NULL, "Header must show the current address")) return 1;
+
+    int mode_x = 1 + (int)(mode - header);
+    for (int i = 0; i < 3; i++) {
+        if (expect(screen.colors[3][mode_x + i] == ui.color_fg,
+                   "Header mode text must use color_fg (secondary highlight)")) return 1;
+        if (expect(screen.colors[3][mode_x + i] != accent,
+                   "Header mode text must not use the white primary accent")) return 1;
+    }
+    int addr_x = 1 + (int)(addr - header);
+    for (int i = 0; i < 5; i++) {
+        if (expect(screen.colors[3][addr_x + i] == ui.color_fg,
+                   "Header address text must use color_fg (secondary highlight)")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 } // namespace
 
 #define RUN(name) do { fprintf(stderr, "RUN " #name "\n"); if (name()) { fprintf(stderr, "FAIL " #name "\n"); return 1; } } while(0)
@@ -1614,6 +2273,23 @@ int main()
     RUN(test_cleanup_runs_on_deinit);
     RUN(test_help_screen_shows_debug_commands);
     RUN(test_edit_and_debug_compose_in_header);
+    RUN(test_freeze_step_over_refreezes_and_preserves_screen);
+    RUN(test_freeze_step_over_with_context_refreezes);
+    RUN(test_freeze_step_into_refreezes);
+    RUN(test_freeze_step_out_refreezes);
+    RUN(test_freeze_go_breakpoint_refreezes);
+    RUN(test_overlay_step_over_never_freezes);
+    RUN(test_overlay_accessible_unfrozen_step_over_does_not_unfreeze);
+    RUN(test_overlay_render_target_disables_stale_frozen_unfreeze);
+    RUN(test_overlay_step_into_never_freezes);
+    RUN(test_overlay_step_out_never_freezes);
+    RUN(test_overlay_go_breakpoint_never_freezes);
+    RUN(test_overlay_two_consecutive_steps_never_freeze);
+    RUN(test_freeze_two_consecutive_steps_rebalance);
+    RUN(test_overlay_step_timeout_then_recovers);
+    RUN(test_freeze_step_timeout_refreezes_and_recovers);
+    RUN(test_debug_footer_uses_secondary_highlight);
+    RUN(test_debug_header_mode_and_address_use_secondary_highlight);
 
     puts("machine_monitor_debug_test: OK");
     return 0;

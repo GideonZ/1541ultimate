@@ -33,6 +33,11 @@ public:
     // independent of UI/input plumbing.
     virtual void set_cancel_keyboard(class Keyboard *) { }
 
+    // True only when the active monitor UI renders through the C64 freezer
+    // screen. Overlay and remote monitor sessions must leave this disabled so
+    // stepping cannot enter the C64 freeze/refreeze ownership path.
+    virtual void set_run_window_refreeze_enabled(bool) { }
+
     // Best-effort initial context. May return DBG_NOT_SUPPORTED on backends
     // that cannot snapshot CPU state without first performing a step. The
     // context is also responsible for filling irq_valid / nmi_valid honestly:
@@ -82,6 +87,22 @@ public:
     // to call at any time (success, failure, mode change, destructor) and
     // must be idempotent.
     virtual void cleanup(void) = 0;
+
+    // Forget any cached CPU context so the next snapshot() reports "no context".
+    // Called when the user leaves Debug mode so re-entering starts the debugger
+    // from the current cursor position instead of the previous session's PC.
+    // Does not patch or run the machine; cleanup() still owns patch teardown.
+    virtual void forget_context(void) { }
+
+    // Returns true when the most recent CPU-run window temporarily unfroze a
+    // frozen machine and subsequently refroze it. The firmware chrome rows (UI
+    // title and border lines) are overwritten by the live BASIC screen during
+    // the temporary unfreeze; callers that need a correct display must restore
+    // the chrome (e.g. via UserInterface::set_screen_title()) and redraw the
+    // monitor window before the user sees the result.
+    // Cleared at the start of the next CPU-run window. Always false in overlay
+    // mode because overlay sessions disable freeze/refreeze run windows.
+    virtual bool screen_render_target_invalidated(void) const { return false; }
 };
 
 #endif

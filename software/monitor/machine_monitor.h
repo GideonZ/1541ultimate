@@ -215,6 +215,7 @@ class MachineMonitor : public UIObject
     MonitorDebug debug;
     MonitorBreakpoints breakpoints;
     class DebugSession *debug_session;
+    bool debug_run_window_refreeze_enabled;
     bool breakpoint_popup_active;
     uint8_t breakpoint_selected;
     bool bookmark_popup_active;
@@ -340,6 +341,19 @@ class MachineMonitor : public UIObject
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);
     bool handle_reset_shortcut(void);
+    // Colour for Debug status text (header mode/address token and the CPU
+    // footer). Returns the theme foreground (color_fg) - the same colour that
+    // bookmark popup body text uses - distinct from the white primary accent
+    // (MONITOR_UI_ACCENT_COLOR) used for the Dbg/Edit badges.
+    int secondary_highlight_color(void);
+    // After a freeze-mode debug step the firmware chrome rows (UI title and
+    // border lines) are overwritten by the live BASIC screen. Call this after
+    // any step that may have been in freeze mode: it re-establishes the chrome
+    // via set_screen_title() and redraws the monitor window via redraw_full()
+    // when the active debug session indicates the render target was invalidated.
+    // No-op in overlay mode because overlay sessions disable freeze/refreeze
+    // run windows.
+    void debug_full_restore_screen(void);
     void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
@@ -407,6 +421,7 @@ class MachineMonitor : public UIObject
 
 public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
+    void set_debug_run_window_refreeze_enabled(bool enabled);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);

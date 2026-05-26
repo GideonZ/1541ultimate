@@ -389,6 +389,7 @@ public:
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
+    void refreeze(void);
     void start_cartridge(void *def);
     void enable_kernal(uint8_t *rom);
     void set_rom_config(uint8_t idx, const char *fname);
