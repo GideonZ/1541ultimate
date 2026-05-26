@@ -144,6 +144,8 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
+    bool go_pending_has_context;
+    DebugContext go_pending_context;
     uint8_t memory_bytes_per_row;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
@@ -216,6 +218,8 @@ class MachineMonitor : public UIObject
     MonitorBreakpoints breakpoints;
     class DebugSession *debug_session;
     bool debug_run_window_refreeze_enabled;
+    bool reset_exits_monitor;
+    bool reset_exit_pending;
     bool breakpoint_popup_active;
     uint8_t breakpoint_selected;
     bool bookmark_popup_active;
@@ -331,6 +335,7 @@ class MachineMonitor : public UIObject
     void debug_request_trace(void);
     void debug_request_out(void);
     void debug_request_go(void);
+    bool debug_has_enabled_breakpoint(void) const;
     void debug_toggle_breakpoint(void);
     void debug_open_breakpoint_popup(void);
     int  debug_breakpoint_popup_handle_key(int key);
@@ -340,7 +345,7 @@ class MachineMonitor : public UIObject
     void debug_cleanup_session(void);
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);
-    bool handle_reset_shortcut(void);
+    int  handle_reset_shortcut(void);
     // Colour for Debug status text (header mode/address token and the CPU
     // footer). Returns the theme foreground (color_fg) - the same colour that
     // bookmark popup body text uses - distinct from the white primary accent
@@ -422,10 +427,12 @@ class MachineMonitor : public UIObject
 public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
     void set_debug_run_window_refreeze_enabled(bool enabled);
+    void set_reset_exits_monitor(bool enabled);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);
-    bool consume_pending_go(uint16_t *address);
+    bool consume_pending_go(uint16_t *address, DebugContext *context = 0,
+                            bool *has_context = 0);
 };
 
 #endif

@@ -9,22 +9,33 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     MachineMonitor *monitor = new MachineMonitor(this, backend);
     uint16_t go_address = 0;
+    DebugContext go_context;
+    bool go_has_context = false;
 #if !defined(RUNS_ON_PC)
     C64 *debug_render_machine = C64::getMachine();
-    monitor->set_debug_run_window_refreeze_enabled(
-        debug_render_machine && host == debug_render_machine &&
-        debug_render_machine->is_accessible());
+    bool c64_render_target = debug_render_machine && host == debug_render_machine &&
+        debug_render_machine->is_accessible();
+    monitor->set_debug_run_window_refreeze_enabled(c64_render_target);
+    monitor->set_reset_exits_monitor(
+        debug_render_machine &&
+        (host == debug_render_machine || (host && host->is_permanent())));
 #else
     monitor->set_debug_run_window_refreeze_enabled(false);
+    monitor->set_reset_exits_monitor(false);
 #endif
     monitor->init(screen, keyboard);
     int ret = 0;
     while(!ret && host->exists()) {
         ret = monitor->poll(0);
     }
-    bool do_go = monitor->consume_pending_go(&go_address);
+    bool exit_ui = ret == MENU_EXIT;
+    bool do_go = monitor->consume_pending_go(&go_address, &go_context,
+                                             &go_has_context);
     monitor->deinit();
     delete monitor;
+    if (exit_ui) {
+        menu_response_to_action = MENU_EXIT;
+    }
     if (do_go) {
 #if defined(U64) && (U64) && !defined(RUNS_ON_PC)
         C64 *machine = C64::getMachine();
@@ -33,6 +44,10 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             machine->release_ownership();
         }
 #endif
-        monitor_io::jump_to(go_address);
+        if (go_has_context) {
+            monitor_io::resume_to_context(go_context);
+        } else {
+            monitor_io::jump_to(go_address);
+        }
     }
 }

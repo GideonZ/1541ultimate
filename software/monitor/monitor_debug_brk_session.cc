@@ -414,6 +414,32 @@ void BrkDebugSession :: release_to_run(const DebugContext *from)
     }
 }
 
+void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
+{
+    bool stopped_it = begin_stopped_session();
+    const uint8_t bytes[] = {
+        0xA2, from.sp,
+        0x9A,
+        0xA9, from.sr,
+        0x48,
+        0xA9, (uint8_t)(from.pc & 0xFF),
+        0x48,
+        0xA9, (uint8_t)(from.pc >> 8),
+        0x48,
+        0xA0, from.y,
+        0xA2, from.x,
+        0xA9, from.a,
+        0x40
+    };
+    for (unsigned i = 0; i < sizeof(bytes); i++) {
+        poke_visible((uint16_t)(HANDLER_ADDR + i), bytes[i]);
+    }
+    poke_visible(SPIN_JMP, 0x4C);
+    poke_visible(SPIN_OPERAND_LO, (uint8_t)(HANDLER_ADDR & 0xFF));
+    poke_visible(SPIN_OPERAND_HI, (uint8_t)(HANDLER_ADDR >> 8));
+    end_stopped_session(stopped_it);
+}
+
 void BrkDebugSession :: reset_spin_target(void)
 {
     bool stopped_it = begin_stopped_session();
@@ -712,11 +738,12 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 void BrkDebugSession :: cleanup(void)
 {
     if (!backend_ready()) return;
+    bool resume_pending = cpu_parked_in_spin && has_last_context;
     restore_patches();
-    if (cpu_parked_in_spin && has_last_context) {
-        nmi_redirect_to(last_context.pc);
-    }
     uninstall_handler();
+    if (resume_pending) {
+        resume_from_parked_context(last_context);
+    }
     cpu_parked_in_spin = false;
 }
 

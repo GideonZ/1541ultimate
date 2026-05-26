@@ -1585,6 +1585,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_go_addr = monitor_last_go_addr;
     go_pending = false;
     go_pending_addr = 0;
+    go_pending_has_context = false;
+    debug_context_reset(&go_pending_context);
     memory_bytes_per_row = monitor_memory_bytes_per_row;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
     clipboard.data = NULL;
@@ -1643,7 +1645,9 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     vic_bank_override = false;
     bookmarks = new MonitorBookmarks();
     debug_session = NULL;
-    debug_run_window_refreeze_enabled = true;
+    debug_run_window_refreeze_enabled = false;
+    reset_exits_monitor = false;
+    reset_exit_pending = false;
     breakpoint_popup_active = false;
     breakpoint_selected = 0;
     bookmark_popup_active = false;
@@ -1667,6 +1671,11 @@ void MachineMonitor :: set_debug_run_window_refreeze_enabled(bool enabled)
     if (debug_session) {
         debug_session->set_run_window_refreeze_enabled(enabled);
     }
+}
+
+void MachineMonitor :: set_reset_exits_monitor(bool enabled)
+{
+    reset_exits_monitor = enabled;
 }
 
 uint8_t MachineMonitor :: memory_byte_stride(void) const
@@ -5054,10 +5063,13 @@ bool MachineMonitor :: debug_handle_terminal_result(DebugSession::Result result)
     }
     debug.invalidate_context();
     debug_cleanup_session();
+    if (reset_exits_monitor) {
+        reset_exit_pending = true;
+    }
     return true;
 }
 
-bool MachineMonitor :: handle_reset_shortcut(void)
+int MachineMonitor :: handle_reset_shortcut(void)
 {
     help_visible = false;
     hunt_picker_active = false;
@@ -5073,13 +5085,17 @@ bool MachineMonitor :: handle_reset_shortcut(void)
     if (!backend || !backend->supports_reset() || !backend->reset_machine()) {
         get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
         redraw_full();
-        return true;
+        return 0;
+    }
+    if (reset_exits_monitor) {
+        reset_exit_pending = true;
+        return MENU_EXIT;
     }
     pending_hex_nibble = -1;
     asm_edit_pending = 0;
     edit_cursor_visible = true;
     draw();
-    return true;
+    return 0;
 }
 
 namespace {
@@ -5244,18 +5260,6 @@ void MachineMonitor :: debug_request_out()
 
 void MachineMonitor :: debug_request_go()
 {
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        // Backend has no native debug session - fall back to the existing
-        // non-debug `G` semantics (release/jump) so users with a non-stepping
-        // backend can still resume from the captured / cursor address.
-        last_go_addr = debug.has_context() ? debug.context().pc : state.current_addr;
-        last_go_valid = true;
-        go_pending = true;
-        go_pending_addr = last_go_addr;
-        debug.invalidate_context();
-        return;
-    }
     DebugContext from = debug.context();
     if (!from.valid) {
         DebugContext snap;
@@ -5264,11 +5268,43 @@ void MachineMonitor :: debug_request_go()
             from = snap;
         }
     }
+    DebugSession *session = ensure_debug_session();
+    if (!session) {
+        // Backend has no native debug session - fall back to the existing
+        // non-debug `G` semantics (release/jump) so users with a non-stepping
+        // backend can still resume from the captured / cursor address.
+        last_go_addr = from.valid ? from.pc : state.current_addr;
+        last_go_valid = true;
+        go_pending = true;
+        go_pending_addr = last_go_addr;
+        go_pending_has_context = false;
+        debug.invalidate_context();
+        return;
+    }
     // Start PC for a fresh Go is the Assembly view cursor: this is what the
     // user is looking at and where they expect execution to begin. If a
     // captured context is already in hand, the session prefers `from.pc`
     // and ignores this fallback.
     uint16_t start_pc = state.current_addr;
+    if (debug_run_window_refreeze_enabled && !debug_has_enabled_breakpoint()) {
+        // Freeze-mode no-breakpoint Go must unwind through run_machine_monitor()
+        // so the C64 freezer ownership is released before execution starts.
+        last_go_addr = from.valid ? from.pc : start_pc;
+        last_go_valid = true;
+        go_pending = true;
+        go_pending_addr = last_go_addr;
+        go_pending_has_context = from.valid;
+        if (from.valid) {
+            go_pending_context = from;
+        } else {
+            debug_context_reset(&go_pending_context);
+        }
+        if (debug_session) {
+            debug_session->forget_context();
+        }
+        debug.invalidate_context();
+        return;
+    }
     // Invalidate up-front; G discards the captured context per the spec.
     debug.invalidate_context();
     DebugSession::Result r = session->go(from, &breakpoints, start_pc);
@@ -5293,6 +5329,17 @@ void MachineMonitor :: debug_request_go()
             redraw_full();
         }
     }
+}
+
+bool MachineMonitor :: debug_has_enabled_breakpoint(void) const
+{
+    for (int i = 0; i < breakpoints.slot_count(); i++) {
+        const MonitorBreakpointSlot *bp = breakpoints.get(i);
+        if (bp && bp->used && bp->enabled) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void MachineMonitor :: debug_toggle_breakpoint()
@@ -5521,21 +5568,33 @@ int MachineMonitor :: debug_handle_key(int key)
     }
     if (key == 'd' || key == 'D') {
         debug_request_over();
+        if (reset_exit_pending) {
+            return MENU_EXIT;
+        }
         draw();
         return 0;
     }
     if (key == 't' || key == 'T') {
         debug_request_trace();
+        if (reset_exit_pending) {
+            return MENU_EXIT;
+        }
         draw();
         return 0;
     }
     if (key == 'o' || key == 'O') {
         debug_request_out();
+        if (reset_exit_pending) {
+            return MENU_EXIT;
+        }
         draw();
         return 0;
     }
     if (key == 'g' || key == 'G') {
         debug_request_go();
+        if (reset_exit_pending) {
+            return MENU_EXIT;
+        }
         if (go_pending) {
             return 1;
         }
@@ -5630,8 +5689,7 @@ int MachineMonitor :: handle_key(int key)
     MonitorError error;
 
     if (key == KEY_CTRL_X) {
-        handle_reset_shortcut();
-        return 0;
+        return handle_reset_shortcut();
     }
 
     if (hunt_picker_active) {
@@ -6477,7 +6535,8 @@ void MachineMonitor::handle_width_command()
     draw();
 }
 
-bool MachineMonitor :: consume_pending_go(uint16_t *address)
+bool MachineMonitor :: consume_pending_go(uint16_t *address, DebugContext *context,
+                                          bool *has_context)
 {
     if (!go_pending) {
         return false;
@@ -6485,7 +6544,15 @@ bool MachineMonitor :: consume_pending_go(uint16_t *address)
     if (address) {
         *address = go_pending_addr;
     }
+    if (context) {
+        *context = go_pending_context;
+    }
+    if (has_context) {
+        *has_context = go_pending_has_context;
+    }
     go_pending = false;
+    go_pending_has_context = false;
+    debug_context_reset(&go_pending_context);
     return true;
 }
 

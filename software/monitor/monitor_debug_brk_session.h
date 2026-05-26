@@ -111,6 +111,7 @@ private:
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void release_to_run(const DebugContext *from);
+    void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
     void nmi_redirect_to(uint16_t target);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
