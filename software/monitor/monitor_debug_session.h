@@ -88,6 +88,23 @@ public:
     // must be idempotent.
     virtual void cleanup(void) = 0;
 
+    // True only when the backend can patch bytes in currently visible ROM
+    // windows (e.g. U64 volatile BASIC/KERNAL/CHAR images). Backends that
+    // cannot must leave this false so the shared BRK engine refuses visible
+    // ROM breakpoints before scribbling into the RAM underneath the ROM.
+    virtual bool supports_visible_rom_patching(void) const { return false; }
+
+    // Fetch instruction bytes for step prediction from the live execution
+    // domain the debug session controls. This lets ROM-capable backends decode
+    // BASIC/KERNAL/CHAR instructions without changing the monitor's normal
+    // memory-view semantics. Returns false when the backend has no special
+    // source and the caller should fall back to regular backend reads.
+    virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
+    {
+        (void)address; (void)dst; (void)len;
+        return false;
+    }
+
     // Forget any cached CPU context so the next snapshot() reports "no context".
     // Called when the user leaves Debug mode so re-entering starts the debugger
     // from the current cursor position instead of the previous session's PC.

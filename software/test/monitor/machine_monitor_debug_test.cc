@@ -53,6 +53,8 @@ struct StubDebugSession : public DebugSession
     int snapshot_calls;
     uint16_t last_start_pc;
     DebugContext next_ctx;
+    bool predict_bytes_valid;
+    uint8_t predict_bytes[3];
     Result over_result;
     Result trace_result;
     Result out_result;
@@ -61,8 +63,10 @@ struct StubDebugSession : public DebugSession
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0), trace_calls(0), trace_at_calls(0),
-          out_calls(0), go_calls(0), cleanup_calls(0), snapshot_calls(0),
+          out_calls(0), go_calls(0), cleanup_calls(0),
+          snapshot_calls(0),
           last_start_pc(0),
+          predict_bytes_valid(false),
           over_result(DBG_OK), trace_result(DBG_OK),
           out_result(DBG_OK), go_result(DBG_OK), snapshot_result(DBG_OK)
     {
@@ -78,6 +82,9 @@ struct StubDebugSession : public DebugSession
         next_ctx.irq_vec = 0xC123;
         next_ctx.nmi_valid = true;
         next_ctx.nmi_vec = 0xEA31;
+        predict_bytes[0] = 0;
+        predict_bytes[1] = 0;
+        predict_bytes[2] = 0;
     }
 
     virtual Result snapshot(DebugContext *ctx) {
@@ -138,6 +145,15 @@ struct StubDebugSession : public DebugSession
     }
     virtual void cleanup(void) {
         cleanup_calls++;
+    }
+    virtual bool read_step_bytes(uint16_t, uint8_t *dst, uint8_t len) {
+        if (!predict_bytes_valid || !dst || len == 0) {
+            return false;
+        }
+        for (uint8_t i = 0; i < len && i < 3; i++) {
+            dst[i] = predict_bytes[i];
+        }
+        return true;
     }
 };
 
@@ -349,6 +365,89 @@ protected:
     }
 };
 
+class FakeVisibleRomMachine : public FakeFreezeMachine
+{
+public:
+    uint8_t basic_rom[8192];
+    uint8_t kernal_rom[8192];
+    uint8_t char_rom[4096];
+    uint8_t cpu_port;
+    bool allow_visible_rom_patching;
+    int rom_patch_writes;
+
+    FakeVisibleRomMachine(bool start_frozen)
+        : FakeFreezeMachine(start_frozen), cpu_port(0x07),
+          allow_visible_rom_patching(false), rom_patch_writes(0)
+    {
+        memset(basic_rom, 0, sizeof(basic_rom));
+        memset(kernal_rom, 0, sizeof(kernal_rom));
+        memset(char_rom, 0, sizeof(char_rom));
+    }
+
+protected:
+    volatile uint8_t *rom_patch_ptr(uint16_t addr, uint8_t patch_cpu_port)
+    {
+        patch_cpu_port &= 0x07;
+        if (addr >= 0xA000 && addr <= 0xBFFF &&
+                ((patch_cpu_port & 0x03) == 0x03)) {
+            return &basic_rom[addr - 0xA000];
+        }
+        if (addr >= 0xD000 && addr <= 0xDFFF &&
+                ((patch_cpu_port & 0x03) != 0x00) &&
+                ((patch_cpu_port & 0x04) == 0x00)) {
+            return &char_rom[addr - 0xD000];
+        }
+        if (addr >= 0xE000 && (patch_cpu_port & 0x02)) {
+            return &kernal_rom[addr - 0xE000];
+        }
+        return 0;
+    }
+
+    virtual uint8_t current_cpu_port(void) const { return cpu_port; }
+    virtual bool supports_visible_rom_patching(void) const
+    {
+        return allow_visible_rom_patching;
+    }
+    virtual uint8_t peek_cpu(uint16_t a, uint8_t patch_cpu_port)
+    {
+        patch_cpu_port &= 0x07;
+        if (a >= 0xA000 && a <= 0xBFFF && ((patch_cpu_port & 0x03) == 0x03)) {
+            return basic_rom[a - 0xA000];
+        }
+        if (a >= 0xD000 && a <= 0xDFFF &&
+                ((patch_cpu_port & 0x03) != 0x00) &&
+                ((patch_cpu_port & 0x04) == 0x00)) {
+            return char_rom[a - 0xD000];
+        }
+        if (a >= 0xE000 && (patch_cpu_port & 0x02)) {
+            return kernal_rom[a - 0xE000];
+        }
+        return ram[a];
+    }
+    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
+    {
+        ram[a] = b;
+    }
+    virtual uint8_t read_patch_byte(uint16_t a, uint8_t patch_cpu_port)
+    {
+        volatile uint8_t *rom = rom_patch_ptr(a, patch_cpu_port);
+        if (rom && allow_visible_rom_patching) {
+            return *rom;
+        }
+        return peek_cpu(a, patch_cpu_port);
+    }
+    virtual void write_patch_byte(uint16_t a, uint8_t b, uint8_t patch_cpu_port)
+    {
+        volatile uint8_t *rom = rom_patch_ptr(a, patch_cpu_port);
+        if (rom && allow_visible_rom_patching) {
+            *rom = b;
+            rom_patch_writes++;
+            return;
+        }
+        poke_cpu(a, b, patch_cpu_port);
+    }
+};
+
 // Build a one-byte NOP "program" at addr so the predictor classifies it as a
 // linear step and install_brk_at has a non-zero byte to overwrite.
 static void fake_seed_nop_run(FakeFreezeMachine &m, uint16_t addr)
@@ -356,6 +455,21 @@ static void fake_seed_nop_run(FakeFreezeMachine &m, uint16_t addr)
     m.ram[addr] = 0xEA;     // NOP at PC
     m.ram[addr + 1] = 0xEA; // fall-through target (BRK lands here; must be != 0)
     m.ram[addr + 2] = 0xEA;
+}
+
+static void fake_seed_rom_nop_run(FakeVisibleRomMachine &m, uint16_t addr)
+{
+    if (addr >= 0xA000 && addr <= 0xBFFF) {
+        m.basic_rom[addr - 0xA000] = 0xEA;
+        m.basic_rom[addr - 0xA000 + 1] = 0xEA;
+        m.basic_rom[addr - 0xA000 + 2] = 0xEA;
+        return;
+    }
+    if (addr >= 0xE000) {
+        m.kernal_rom[addr - 0xE000] = 0xEA;
+        m.kernal_rom[addr - 0xE000 + 1] = 0xEA;
+        m.kernal_rom[addr - 0xE000 + 2] = 0xEA;
+    }
 }
 
 static void fake_seed_captured_context(FakeFreezeMachine &m, uint16_t pc,
@@ -694,6 +808,46 @@ static int test_d_inside_debug_without_context_overs_from_cursor()
                "No-context Over must start at the Assembly cursor address")) return 1;
     if (expect(ui.popup_count == 0 || strstr(ui.last_popup, "NO CONTEXT") == NULL,
                "No-context Over must not show NO CONTEXT")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_debug_predictor_uses_session_bytes_over_backend_reads()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0xA000, 0x00);
+    backend.write(0xA001, 0x00);
+    backend.write(0xA002, 0x00);
+
+    const int keys[] = { 'J', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Goto A000 should stay in monitor")) return 1;
+    if (expect(monitor.poll(0) == 0, "Switch to ASM should stay in monitor")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug should stay in monitor")) return 1;
+
+    if (expect(backend.last_session != NULL, "Debug session must exist before stepping")) return 1;
+    backend.last_session->predict_bytes_valid = true;
+    backend.last_session->predict_bytes[0] = 0xEA;
+    backend.last_session->predict_bytes[1] = 0xEA;
+    backend.last_session->predict_bytes[2] = 0xEA;
+
+    if (expect(monitor.poll(0) == 0,
+               "Debug over at A000 should use session bytes instead of unsafe backend BRK bytes")) return 1;
+    if (expect((backend.last_session->over_calls + backend.last_session->over_at_calls) == 1,
+               "Debug over should dispatch through the session when session bytes decode safely")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -1239,7 +1393,7 @@ static int test_breakpoint_row_indicator_and_color()
 
     for (int x = 1; x <= 38; x++) {
         if (expect(screen.colors[4][x] == ui.color_fg,
-                   "Every character on a breakpoint opcode line must use color_fg (secondary highlight)")) return 1;
+                   "Every character on a breakpoint opcode line must use color_fg")) return 1;
     }
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
@@ -1620,6 +1774,49 @@ static int test_cleanup_runs_on_deinit()
     return 0;
 }
 
+static int test_ctrl_o_after_debug_step_closes_without_go_handoff()
+{
+    // CTRL+O closing the monitor after a debug step must NOT schedule a deferred
+    // go-handoff. The session's cleanup() (driven by debug_leave) hands the
+    // parked CPU back to the interrupted program directly, so run_machine_monitor
+    // must not also release ownership and NMI-redirect into a torn-down spin
+    // loop - that double path is what left the C64 frozen on hardware.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0xC003, 0xA9);
+    backend.write(0xC004, 0x00);
+    backend.write(0xC005, 0xEA);
+    const int keys[] = { 'A', 'D', 'D', KEY_CTRL_O };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM switch should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug step should return 0")) return 1;
+
+    StubDebugSession *sess = backend.last_session;
+    if (expect(sess != NULL, "Session must have been created")) return 1;
+
+    if (expect(monitor.poll(0) == 1,
+               "CTRL+O after a debug step should close the monitor")) return 1;
+    if (expect(sess->cleanup_calls >= 1,
+               "CTRL+O close must run session cleanup to resume the parked CPU")) return 1;
+
+    DebugContext go_ctx;
+    bool has_ctx = true;
+    uint16_t go_addr = 0;
+    if (expect(!monitor.consume_pending_go(&go_addr, &go_ctx, &has_ctx),
+               "CTRL+O close must NOT schedule a deferred go-handoff")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_help_screen_shows_debug_commands()
 {
     TestUserInterface ui;
@@ -1885,6 +2082,54 @@ static int test_freeze_go_breakpoint_refreezes()
                "freeze Go must not touch C64 screen RAM")) return 1;
     if (expect(m.screen_render_target_invalidated(),
                "freeze Go must set render-target invalidation after refreeze")) return 1;
+    return 0;
+}
+
+static int test_visible_basic_step_uses_rom_patch_support()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xA000);
+    m.allow_visible_rom_patching = true;
+    m.ram[0xA001] = 0x5A;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xA000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0xA000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible BASIC step must succeed when ROM patching is supported")) return 1;
+    if (expect(m.basic_rom[1] == 0xEA,
+               "Visible BASIC patch byte must be restored after the step")) return 1;
+    if (expect(m.ram[0xA001] == 0x5A,
+               "Visible BASIC patching must not scribble into underlying RAM")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible BASIC step must patch and restore the ROM image exactly once")) return 1;
+    return 0;
+}
+
+static int test_visible_kernal_step_without_rom_patch_support_refuses_cleanly()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = false;
+    m.ram[0xE001] = 0x6C;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_NOT_SUPPORTED,
+               "Visible KERNAL step must report not-supported when ROM patching is unavailable")) return 1;
+    if (expect(m.kernal_rom[1] == 0xEA,
+               "Visible KERNAL step must leave the ROM byte untouched on refusal")) return 1;
+    if (expect(m.ram[0xE001] == 0x6C,
+               "Visible KERNAL refusal must not write into underlying RAM")) return 1;
+    if (expect(m.rom_patch_writes == 0,
+               "Visible KERNAL refusal must not attempt ROM patch writes")) return 1;
     return 0;
 }
 
@@ -2315,12 +2560,11 @@ static int test_freeze_go_with_breakpoint_still_uses_session_go()
     return 0;
 }
 
-// --- Secondary highlight colour for Debug header / footer ------------------
-// secondary_highlight_color() returns color_fg (the same colour that bookmark
-// popup body text uses). These tests verify footer and header text use color_fg
-// and do not accidentally adopt the white primary accent.
+// --- Debug header/footer foreground colour ----------------------------------
+// Header mode/address tokens, footer text, and breakpoint rows use color_fg.
+// The white primary accent remains reserved for the Dbg/Edit badges.
 
-static int test_debug_footer_uses_secondary_highlight()
+static int test_debug_footer_uses_foreground_color()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -2328,7 +2572,7 @@ static int test_debug_footer_uses_secondary_highlight()
     monitor_reset_saved_state();
 
     // Set a sentinel foreground (12) distinct from the primary accent so the
-    // assertions are meaningful. secondary_highlight_color() returns color_fg.
+    // assertions are meaningful.
     ui.color_fg = 12;
 
     const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
@@ -2363,13 +2607,12 @@ static int test_debug_footer_uses_secondary_highlight()
     if (expect(label_y >= 0, "Debug footer label row must be visible")) return 1;
 
     // Every non-blank glyph on the label row and the value row below it must
-    // use color_fg (the secondary highlight == bookmark popup text colour),
-    // never the white primary accent.
+    // use color_fg, never the white primary accent.
     for (int y = label_y; y <= label_y + 1; y++) {
         for (int x = 1; x <= 38; x++) {
             if (screen.chars[y][x] == ' ') continue;
             if (expect(screen.colors[y][x] == ui.color_fg,
-                       "Debug footer text must use color_fg (secondary highlight colour)")) return 1;
+                       "Debug footer text must use color_fg")) return 1;
             if (expect(screen.colors[y][x] != accent,
                        "Debug footer text must not use the white primary accent")) return 1;
         }
@@ -2381,7 +2624,7 @@ static int test_debug_footer_uses_secondary_highlight()
     return 0;
 }
 
-static int test_debug_header_mode_and_address_use_secondary_highlight()
+static int test_debug_header_mode_and_address_use_foreground_color()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -2389,7 +2632,6 @@ static int test_debug_header_mode_and_address_use_secondary_highlight()
     monitor_reset_saved_state();
 
     // Set a sentinel foreground (12) distinct from the primary accent (1).
-    // secondary_highlight_color() returns color_fg so the header tokens use 12.
     ui.color_fg = 12;
 
     const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
@@ -2409,11 +2651,10 @@ static int test_debug_header_mode_and_address_use_secondary_highlight()
     if (expect(dbg != NULL, "Header must still show the Dbg badge")) return 1;
     uint8_t accent = screen.colors[3][1 + (dbg - header)];
     if (expect(accent != ui.color_fg,
-               "Primary accent and secondary highlight (color_fg) must be distinct")) return 1;
+               "Primary accent and color_fg must be distinct")) return 1;
 
     // The view-mode token and the current-address token in the header use
-    // color_fg (secondary highlight == bookmark popup text colour); only the
-    // Dbg badge uses the white primary accent.
+    // color_fg; only the Dbg badge uses the white primary accent.
     const char *mode = strstr(header, "ASM");
     if (expect(mode != NULL, "Header must show the ASM mode token")) return 1;
     const char *addr = strstr(header, "$");
@@ -2422,14 +2663,14 @@ static int test_debug_header_mode_and_address_use_secondary_highlight()
     int mode_x = 1 + (int)(mode - header);
     for (int i = 0; i < 3; i++) {
         if (expect(screen.colors[3][mode_x + i] == ui.color_fg,
-                   "Header mode text must use color_fg (secondary highlight)")) return 1;
+                   "Header mode text must use color_fg")) return 1;
         if (expect(screen.colors[3][mode_x + i] != accent,
                    "Header mode text must not use the white primary accent")) return 1;
     }
     int addr_x = 1 + (int)(addr - header);
     for (int i = 0; i < 5; i++) {
         if (expect(screen.colors[3][addr_x + i] == ui.color_fg,
-                   "Header address text must use color_fg (secondary highlight)")) return 1;
+                   "Header address text must use color_fg")) return 1;
     }
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
@@ -2451,6 +2692,7 @@ int main()
     RUN(test_d_enters_debug_without_executing);
     RUN(test_d_inside_debug_performs_over);
     RUN(test_d_inside_debug_without_context_overs_from_cursor);
+    RUN(test_debug_predictor_uses_session_bytes_over_backend_reads);
     RUN(test_t_traces_and_o_outs_inside_debug);
     RUN(test_t_inside_debug_without_context_traces_from_cursor);
     RUN(test_g_invalidates_context);
@@ -2475,6 +2717,7 @@ int main()
     RUN(test_b_keeps_binary_view_in_debug);
     RUN(test_ctrl_b_keeps_bookmark_popup_in_debug);
     RUN(test_cleanup_runs_on_deinit);
+    RUN(test_ctrl_o_after_debug_step_closes_without_go_handoff);
     RUN(test_help_screen_shows_debug_commands);
     RUN(test_edit_and_debug_compose_in_header);
     RUN(test_freeze_step_over_refreezes_and_preserves_screen);
@@ -2482,6 +2725,8 @@ int main()
     RUN(test_freeze_step_into_refreezes);
     RUN(test_freeze_step_out_refreezes);
     RUN(test_freeze_go_breakpoint_refreezes);
+    RUN(test_visible_basic_step_uses_rom_patch_support);
+    RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
     RUN(test_overlay_step_over_never_freezes);
     RUN(test_overlay_accessible_unfrozen_step_over_does_not_unfreeze);
     RUN(test_overlay_render_target_disables_stale_frozen_unfreeze);
@@ -2496,8 +2741,8 @@ int main()
     RUN(test_freeze_cleanup_after_step_allows_later_step);
     RUN(test_freeze_go_without_breakpoint_schedules_context_handoff);
     RUN(test_freeze_go_with_breakpoint_still_uses_session_go);
-    RUN(test_debug_footer_uses_secondary_highlight);
-    RUN(test_debug_header_mode_and_address_use_secondary_highlight);
+    RUN(test_debug_footer_uses_foreground_color);
+    RUN(test_debug_header_mode_and_address_use_foreground_color);
 
     puts("machine_monitor_debug_test: OK");
     return 0;

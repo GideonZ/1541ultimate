@@ -346,11 +346,6 @@ class MachineMonitor : public UIObject
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);
     int  handle_reset_shortcut(void);
-    // Colour for Debug status text (header mode/address token and the CPU
-    // footer). Returns the theme foreground (color_fg) - the same colour that
-    // bookmark popup body text uses - distinct from the white primary accent
-    // (MONITOR_UI_ACCENT_COLOR) used for the Dbg/Edit badges.
-    int secondary_highlight_color(void);
     // After a freeze-mode debug step the firmware chrome rows (UI title and
     // border lines) are overwritten by the live BASIC screen. Call this after
     // any step that may have been in freeze mode: it re-establishes the chrome

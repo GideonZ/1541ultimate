@@ -114,6 +114,7 @@ protected:
     // U64 ROM-image patching: route patch reads/writes through the volatile
     // ROM image buffers for BASIC/KERNAL/CHAR ranges so we can step KERNAL
     // code without copying ROMs into C64 RAM.
+    virtual bool supports_visible_rom_patching(void) const { return true; }
     virtual uint8_t read_patch_byte(uint16_t addr, uint8_t cpu_port)
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);

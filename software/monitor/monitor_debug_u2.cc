@@ -9,9 +9,9 @@
 //   - peek/poke use C64::peek / C64::poke (DMA into C64 RAM)
 //   - reset uses C64::reset
 //   - NMI pulse uses the cartridge C64_MODE_NMI register
-// U2 does NOT support volatile ROM-image patching, so BASIC/KERNAL stepping
-// is only available when the user has loaded code into RAM or has KERNAL
-// banked out by the CPU port.
+// U2 does NOT support visible ROM patching, so BASIC/KERNAL stepping is only
+// available when the code is actually executing from writable RAM (for
+// example after an explicit RAM shadow copy or with the ROM banked out).
 
 #include "monitor_debug_u2.h"
 

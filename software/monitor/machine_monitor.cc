@@ -3595,11 +3595,8 @@ void MachineMonitor :: draw_header()
     }
     draw_padded(window, 0, line, strlen(line));
     if (!help_visible && !hunt_picker_active) {
-        // The view-mode token and the current address render in the secondary
-        // highlight (light grey), distinct from the white primary accent used
-        // for the Dbg/Edit badges and from the plain header text.
         if (strncmp(line, "MONITOR ", 8) == 0) {
-            window->set_color(secondary_highlight_color());
+            window->set_color(get_ui()->color_fg);
             window->move_cursor(8, 0);
             window->output_length(line + 8, 3);
             const char *dollar = strchr(line, '$');
@@ -3662,14 +3659,6 @@ void MachineMonitor :: draw_status()
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
-int MachineMonitor :: secondary_highlight_color(void)
-{
-    // Theme foreground: the same colour that bookmark popup body text uses
-    // (popup.set_color(get_ui()->color_fg)). Distinct from the white primary
-    // accent (MONITOR_UI_ACCENT_COLOR) used for the Dbg/Edit badges.
-    return get_ui()->color_fg;
-}
-
 void MachineMonitor :: debug_full_restore_screen(void)
 {
     // After a freeze-mode debug step, the firmware chrome rows (UI title and
@@ -3696,10 +3685,7 @@ void MachineMonitor :: draw_debug_footer()
     }
     MonitorDebug::format_footer_header(header_row, sizeof(header_row));
     MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
-    // Debug CPU footer labels (PC/SP/AC/XR/YR/NV-BDIZC/IRQ/NMI) and their
-    // values render in the secondary highlight colour - the theme foreground,
-    // which is light grey in the dark theme - never the white primary accent.
-    window->set_color(secondary_highlight_color());
+    window->set_color(get_ui()->color_fg);
     draw_padded(window, window->get_size_y() - 3, header_row, (int)strlen(header_row));
     draw_padded(window, window->get_size_y() - 2, value_row, (int)strlen(value_row));
     window->set_color(get_ui()->color_fg);
@@ -4316,9 +4302,7 @@ void MachineMonitor :: draw_disassembly()
             }
         }
         if (bp_slot >= 0) {
-            // Breakpoint opcode rows use the secondary highlight (light grey),
-            // not the white primary accent.
-            window->set_color(secondary_highlight_color());
+            window->set_color(get_ui()->color_fg);
         }
         draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
         if (bp_slot >= 0) {
@@ -5104,6 +5088,25 @@ static const char *const monitor_debug_session_unsafe = "UNSAFE TARGET";
 static const char *const monitor_debug_session_timeout = "DEBUG TIMEOUT";
 static const char *const monitor_debug_session_patch = "PATCH FAILED";
 
+static void monitor_read_predict_bytes(DebugSession *session, MemoryBackend *backend,
+                                       uint16_t start_pc, uint8_t *bytes)
+{
+    if (!bytes) {
+        return;
+    }
+    bytes[0] = 0;
+    bytes[1] = 0;
+    bytes[2] = 0;
+    if (session && session->read_step_bytes(start_pc, bytes, 3)) {
+        return;
+    }
+    if (backend) {
+        for (int i = 0; i < 3; i++) {
+            bytes[i] = backend->read((uint16_t)(start_pc + i));
+        }
+    }
+}
+
 const char *monitor_debug_result_message(int result)
 {
     switch (result) {
@@ -5140,9 +5143,7 @@ void MachineMonitor :: debug_request_over()
     }
     // Decode the current instruction so the session knows what to patch.
     uint8_t bytes[3] = { 0, 0, 0 };
-    if (backend) {
-        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(start_pc + i));
-    }
+    monitor_read_predict_bytes(session, backend, start_pc, bytes);
     DebugPredictResult pred;
     debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
@@ -5190,9 +5191,7 @@ void MachineMonitor :: debug_request_trace()
         }
     }
     uint8_t bytes[3] = { 0, 0, 0 };
-    if (backend) {
-        for (int i = 0; i < 3; i++) bytes[i] = backend->read((uint16_t)(start_pc + i));
-    }
+    monitor_read_predict_bytes(session, backend, start_pc, bytes);
     DebugPredictResult pred;
     debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
@@ -5544,6 +5543,10 @@ int MachineMonitor :: debug_handle_key(int key)
         return 0;
     }
     if (key == KEY_CTRL_O) {
+        // Leaving the monitor. debug_leave() -> session cleanup() hands the
+        // parked CPU back to the interrupted program (overlay: resumed live;
+        // freeze: staged for when the freezer menu unfreezes). No deferred
+        // go-handoff is scheduled, so the C64 is never left spinning.
         debug_leave();
         return 1;
     }

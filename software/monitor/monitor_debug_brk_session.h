@@ -61,10 +61,17 @@ public:
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc);
     virtual void cleanup(void);
+    virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len);
     virtual void forget_context(void);
     virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
 
 private:
+    enum PatchInstallResult {
+        PATCH_INSTALL_OK = 0,
+        PATCH_INSTALL_NOT_SUPPORTED,
+        PATCH_INSTALL_FAILED
+    };
+
     struct Patch {
         bool used;
         uint16_t address;
@@ -103,7 +110,7 @@ private:
     void uninstall_handler(void);
     int find_free_patch(void);
     bool already_patched(uint16_t addr);
-    bool install_brk_at(uint16_t addr, uint8_t cpu_port);
+    PatchInstallResult install_brk_at(uint16_t addr, uint8_t cpu_port);
     void restore_patches(void);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
     bool find_stack_return_target(const DebugContext &from, uint8_t cpu_port,

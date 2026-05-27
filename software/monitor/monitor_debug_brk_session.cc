@@ -75,6 +75,21 @@ static const uint8_t TRAMPOLINE_BYTES[] = {
 static const int HANDLER_BYTES_LEN = (int)sizeof(HANDLER_BYTES);
 static const int TRAMPOLINE_BYTES_LEN = (int)sizeof(TRAMPOLINE_BYTES);
 
+static bool patch_requires_visible_rom(uint16_t addr, uint8_t cpu_port)
+{
+    cpu_port &= 0x07;
+    if (addr >= 0xA000 && addr <= 0xBFFF) {
+        return (cpu_port & 0x03) == 0x03;
+    }
+    if (addr >= 0xD000 && addr <= 0xDFFF) {
+        return ((cpu_port & 0x03) != 0x00) && ((cpu_port & 0x04) == 0x00);
+    }
+    if (addr >= 0xE000) {
+        return (cpu_port & 0x02) != 0;
+    }
+    return false;
+}
+
 }
 
 BrkDebugSession :: BrkDebugSession()
@@ -246,35 +261,40 @@ bool BrkDebugSession :: already_patched(uint16_t addr)
     return false;
 }
 
-bool BrkDebugSession :: install_brk_at(uint16_t addr, uint8_t cpu_port)
+BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
+    uint16_t addr, uint8_t cpu_port)
 {
     if (reserved_patch_address(addr)) {
-        return false;
+        return PATCH_INSTALL_FAILED;
     }
     if (already_patched(addr)) {
-        return true;
+        return PATCH_INSTALL_OK;
     }
     int slot = find_free_patch();
     if (slot < 0) {
-        return false;
+        return PATCH_INSTALL_FAILED;
+    }
+    if (patch_requires_visible_rom(addr, cpu_port) &&
+            !supports_visible_rom_patching()) {
+        return PATCH_INSTALL_NOT_SUPPORTED;
     }
     bool stopped_it = begin_stopped_session();
     uint8_t original = read_patch_byte(addr, cpu_port);
     if (original == 0x00) {
         end_stopped_session(stopped_it);
-        return false;
+        return PATCH_INSTALL_FAILED;
     }
     write_patch_byte(addr, 0x00, cpu_port);
     if (read_patch_byte(addr, cpu_port) != 0x00) {
         end_stopped_session(stopped_it);
-        return false;
+        return PATCH_INSTALL_FAILED;
     }
     end_stopped_session(stopped_it);
     patches[slot].used = true;
     patches[slot].address = addr;
     patches[slot].original = original;
     patches[slot].cpu_port = cpu_port;
-    return true;
+    return PATCH_INSTALL_OK;
 }
 
 void BrkDebugSession :: restore_patches(void)
@@ -437,6 +457,27 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     poke_visible(SPIN_JMP, 0x4C);
     poke_visible(SPIN_OPERAND_LO, (uint8_t)(HANDLER_ADDR & 0xFF));
     poke_visible(SPIN_OPERAND_HI, (uint8_t)(HANDLER_ADDR >> 8));
+    // Restore the soft vectors the interrupted program needs once it resumes,
+    // inside this same stopped session so a live (overlay-mode) CPU sees them
+    // before it leaves the spin loop. The handler/trampoline scratch bytes in
+    // the cassette buffer are deliberately left in place: the CPU is about to
+    // execute the restore stub that lives there. Clearing handler_installed
+    // makes any later uninstall_handler() a no-op so it can never overwrite the
+    // stub the CPU may still be running.
+    if (handler_installed) {
+        poke_visible(BRK_VECTOR_LO, saved_brk_vector[0]);
+        poke_visible(BRK_VECTOR_HI, saved_brk_vector[1]);
+        handler_installed = false;
+    }
+    if (nmi_trampoline_installed) {
+        poke_visible(NMI_VECTOR_LO, saved_nmi_vector[0]);
+        poke_visible(NMI_VECTOR_HI, saved_nmi_vector[1]);
+        for (int i = 0; i < (int)sizeof(saved_nmi_trampoline_bytes); i++) {
+            poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i),
+                         saved_nmi_trampoline_bytes[i]);
+        }
+        nmi_trampoline_installed = false;
+    }
     end_stopped_session(stopped_it);
 }
 
@@ -576,9 +617,11 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
         return DBG_REFUSED;
     }
     for (int i = 0; i < n; i++) {
-        if (!install_brk_at(addrs[i], cpu_port)) {
+        PatchInstallResult patched = install_brk_at(addrs[i], cpu_port);
+        if (patched != PATCH_INSTALL_OK) {
             restore_patches();
-            return DBG_PATCH_FAILED;
+            return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+                DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
         }
     }
     return perform_run(from, start_pc, (!from || !from->valid), out, cpu_port);
@@ -639,8 +682,10 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     if (!find_stack_return_target(from, cpu_port, &target)) {
         return DBG_REFUSED;
     }
-    if (!install_brk_at(target, cpu_port)) {
-        return DBG_PATCH_FAILED;
+    PatchInstallResult patched = install_brk_at(target, cpu_port);
+    if (patched != PATCH_INSTALL_OK) {
+        return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
     return perform_run(&from, from.pc, false, ctx, cpu_port);
 }
@@ -682,9 +727,11 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         for (int i = 0; i < bps->slot_count(); i++) {
             const MonitorBreakpointSlot *bp = bps->get(i);
             if (!bp || !bp->used || !bp->enabled) continue;
-            if (!install_brk_at(bp->address, bp->cpu_port)) {
+            PatchInstallResult patched = install_brk_at(bp->address, bp->cpu_port);
+            if (patched != PATCH_INSTALL_OK) {
                 restore_patches();
-                return DBG_PATCH_FAILED;
+                return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+                    DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
             }
         }
     }
@@ -740,11 +787,31 @@ void BrkDebugSession :: cleanup(void)
     if (!backend_ready()) return;
     bool resume_pending = cpu_parked_in_spin && has_last_context;
     restore_patches();
-    uninstall_handler();
     if (resume_pending) {
+        // The CPU is parked in the spin loop: live and looping at SPIN_JMP in
+        // overlay mode, halted there in freeze mode. Hand it back to the
+        // interrupted program by redirecting the spin loop into the
+        // register-restore stub (and restoring the soft vectors) in a single
+        // stopped session. We must NOT run uninstall_handler() first: it would
+        // restore the original bytes under the spin loop and, in overlay mode,
+        // drop the live CPU straight into them before the resume stub is staged.
         resume_from_parked_context(last_context);
+    } else {
+        uninstall_handler();
     }
     cpu_parked_in_spin = false;
+}
+
+bool BrkDebugSession :: read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
+{
+    if (!backend_ready() || !dst) {
+        return false;
+    }
+    uint8_t cpu_port = current_cpu_port();
+    for (uint8_t i = 0; i < len; i++) {
+        dst[i] = read_patch_byte((uint16_t)(address + i), cpu_port);
+    }
+    return true;
 }
 
 void BrkDebugSession :: forget_context(void)
