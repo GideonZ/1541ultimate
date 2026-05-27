@@ -845,6 +845,8 @@ static int test_debug_predictor_uses_session_bytes_over_backend_reads()
                "Debug over at A000 should use session bytes instead of unsafe backend BRK bytes")) return 1;
     if (expect((backend.last_session->over_calls + backend.last_session->over_at_calls) == 1,
                "Debug over should dispatch through the session when session bytes decode safely")) return 1;
+    if (expect(ui.popup_count == 0 || strstr(ui.last_popup, "UNSAFE TARGET") == NULL,
+               "Valid ROM step bytes must not surface UNSAFE TARGET")) return 1;
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
@@ -2109,6 +2111,57 @@ static int test_visible_basic_step_uses_rom_patch_support()
     return 0;
 }
 
+static int test_visible_kernal_step_into_uses_rom_patch_support()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = true;
+    m.ram[0xE001] = 0x6C;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible KERNAL Step Into must succeed when ROM patching is supported")) return 1;
+    if (expect(m.kernal_rom[1] == 0xEA,
+               "Visible KERNAL Step Into patch byte must be restored")) return 1;
+    if (expect(m.ram[0xE001] == 0x6C,
+               "Visible KERNAL Step Into must not patch RAM under ROM")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible KERNAL Step Into must patch and restore the ROM image")) return 1;
+    return 0;
+}
+
+static int test_visible_kernal_step_over_jsr_patches_fallthrough_rom()
+{
+    FakeVisibleRomMachine m(false);
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0] = 0x20;
+    m.kernal_rom[1] = 0x0F;
+    m.kernal_rom[2] = 0xBC;
+    m.kernal_rom[3] = 0xEA;
+    m.ram[0xE003] = 0x7B;
+
+    uint8_t bytes[3] = { 0x20, 0x0F, 0xBC };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible KERNAL Step Over JSR must patch the ROM fall-through target")) return 1;
+    if (expect(m.kernal_rom[3] == 0xEA,
+               "Visible KERNAL Step Over JSR must restore fall-through ROM byte")) return 1;
+    if (expect(m.ram[0xE003] == 0x7B,
+               "Visible KERNAL Step Over JSR must not patch RAM under ROM")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible KERNAL Step Over JSR must patch and restore ROM exactly once")) return 1;
+    return 0;
+}
+
 static int test_visible_kernal_step_without_rom_patch_support_refuses_cleanly()
 {
     FakeVisibleRomMachine m(false);
@@ -2130,6 +2183,56 @@ static int test_visible_kernal_step_without_rom_patch_support_refuses_cleanly()
                "Visible KERNAL refusal must not write into underlying RAM")) return 1;
     if (expect(m.rom_patch_writes == 0,
                "Visible KERNAL refusal must not attempt ROM patch writes")) return 1;
+    return 0;
+}
+
+static int test_visible_rom_breakpoint_go_uses_same_capability_gate()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = false;
+    m.ram[0xE001] = 0x6C;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE001, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC000);
+    if (expect(r == DebugSession::DBG_NOT_SUPPORTED,
+               "Visible ROM breakpoint Go must refuse before execution when ROM patching is unavailable")) return 1;
+    if (expect(m.kernal_rom[1] == 0xEA,
+               "Unsupported visible ROM breakpoint must leave ROM untouched")) return 1;
+    if (expect(m.ram[0xE001] == 0x6C,
+               "Unsupported visible ROM breakpoint must not patch RAM under ROM")) return 1;
+    if (expect(m.rom_patch_writes == 0,
+               "Unsupported visible ROM breakpoint must not attempt ROM writes")) return 1;
+    if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
+               "Unsupported visible ROM breakpoint must refuse before starting execution")) return 1;
+    return 0;
+}
+
+static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = true;
+    m.ram[0xE001] = 0x6C;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE001, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC000);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible ROM breakpoint Go must run when ROM patching is supported")) return 1;
+    if (expect(m.kernal_rom[1] == 0xEA,
+               "Visible ROM breakpoint Go must restore the ROM byte")) return 1;
+    if (expect(m.ram[0xE001] == 0x6C,
+               "Visible ROM breakpoint Go must not use RAM under ROM as proof")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible ROM breakpoint Go must patch and restore the ROM image")) return 1;
     return 0;
 }
 
@@ -2726,7 +2829,11 @@ int main()
     RUN(test_freeze_step_out_refreezes);
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_visible_basic_step_uses_rom_patch_support);
+    RUN(test_visible_kernal_step_into_uses_rom_patch_support);
+    RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
+    RUN(test_visible_rom_breakpoint_go_uses_same_capability_gate);
+    RUN(test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram);
     RUN(test_overlay_step_over_never_freezes);
     RUN(test_overlay_accessible_unfrozen_step_over_does_not_unfreeze);
     RUN(test_overlay_render_target_disables_stale_frozen_unfreeze);

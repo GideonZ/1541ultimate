@@ -526,7 +526,7 @@ def exercise_debug_ux(session: "mt.MonitorSession", current: CpuState, iteration
     if iteration % 11 == 0:
         session.send_key("F3")
         text = session.capture().text()
-        for token in ("D Debug/Over", "T Trace", "O Out", "C=+X Reset", "RSTOP"):
+        for token in ("D Step Over", "T Step Into", "O Step Out", "C=+X Reset", "RSTOP"):
             if token not in text:
                 raise mt.Failure(f"Debug help missing {token!r} during soak:\n{text}")
         session.send_key("ESC")
@@ -546,6 +546,29 @@ def exercise_debug_ux(session: "mt.MonitorSession", current: CpuState, iteration
         session.send_key("ESC")
 
 
+def rom_step_cycle(rest_host: str, session: "mt.MonitorSession", label: str) -> int:
+    """Run a bare ROM Step Into cycle that must move PC and show ROM mapping."""
+    validations = 0
+
+    snap = dbg._enter_rom_debug_at(session, 0xE000, "KRN",
+                                   f"{label}: KERNAL ROM Step Into", "$E:KRN")
+    row = dbg._disassembly_row(snap, 0xE000)
+    expected_pc = 0xE002 if "85 56" in row else 0xE000 + dbg._instruction_length_from_row(row)
+    dbg._step_and_assert_pc(session, "T", expected_pc, f"{label}: KERNAL ROM Step Into")
+    validations += 1
+    dbg._leave_debug_and_reset(rest_host, session)
+
+    snap = dbg._enter_rom_debug_at(session, 0xA831, "BAS",
+                                   f"{label}: BASIC ROM Step Into", "$A:BAS")
+    row = dbg._disassembly_row(snap, 0xA831)
+    expected_pc = 0xA832 if "18" in row else 0xA831 + dbg._instruction_length_from_row(row)
+    dbg._step_and_assert_pc(session, "T", expected_pc, f"{label}: BASIC ROM Step Into")
+    validations += 1
+    dbg._leave_debug_and_reset(rest_host, session)
+
+    return validations
+
+
 def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSession") -> None:
     original_port = mt.read_rest_memory(rest_host, 0x0001, 1)[0]
 
@@ -556,11 +579,18 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     deadline = time.time() + args.duration
     iteration = 0
     validated_steps = 0
+    rom_validations = 0
     restarts = 0
     mem = Memory(rest_host)
 
     try:
+        with mt.check("Debug soak: bare BASIC/KERNAL ROM Step Into cycle"):
+            rom_validations += rom_step_cycle(rest_host, session, "initial ROM cycle")
+
         while time.time() < deadline:
+            if restarts > 0 and restarts % 6 == 0:
+                rom_validations += rom_step_cycle(
+                    rest_host, session, f"periodic ROM cycle after {restarts} entries")
             routine = rng.choice(ROUTINES)
             restarts += 1
             state = enter_routine(session, rest_host, routine, restarts)
@@ -610,7 +640,11 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     if validated_steps < args.min_validated_steps:
         raise mt.Failure(
             f"Soak only validated {validated_steps} steps; expected at least {args.min_validated_steps}")
-    print(f"debug_soak_test: OK ({validated_steps} validated steps across {restarts} entries)")
+    if rom_validations < 2:
+        raise mt.Failure(
+            f"Soak only validated {rom_validations} ROM debug steps; expected at least 2")
+    print(f"debug_soak_test: OK ({validated_steps} validated steps, "
+          f"{rom_validations} ROM debug steps across {restarts} entries)")
 
 
 def main() -> int:
