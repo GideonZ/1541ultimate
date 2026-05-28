@@ -29,6 +29,24 @@ U2_STATUS_LINE_RE = re.compile(r"CPU VIEW\s+CPU BANK N/A\s+VIC N/A")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 CHECK_COUNT = 0
+ASM_CANONICAL_BYTES = bytes((
+    0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+    0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+    0xBC, 0xA5, 0x07, 0x18, 0x69, 0x81, 0xF0, 0xF3,
+    0x38, 0xE9, 0x01, 0x48, 0xA2, 0x05, 0xB5, 0x69,
+    0xB4, 0x61,
+))
+ASM_KERNAL_ROWS: Tuple[Tuple[str, str], ...] = (
+    ("E000 85 56", "STA $56"),
+    ("E002 20 0F BC", "JSR $BC0F"),
+    ("E005 A5 61", "LDA $61"),
+    ("E007 C9 88", "CMP #$88"),
+    ("E009 90 03", "BCC $E00E"),
+    ("E00B 20 D4 BA", "JSR $BAD4"),
+    ("E00E 20 CC BC", "JSR $BCCC"),
+    ("E011 A5 07", "LDA $07"),
+    ("E013 18", "CLC"),
+)
 
 ALT_CHARSET_MAP = {
     "l": "+",
@@ -301,6 +319,10 @@ class VT100Screen:
                     reverse_cells.append((x, y))
         return Snapshot(["".join(row) for row in self.lines], reverse_cells, last_command)
 
+    def signature(self) -> Tuple[Tuple[str, ...], Tuple[Tuple[bool, ...], ...]]:
+        return (tuple("".join(row) for row in self.lines),
+                tuple(tuple(row) for row in self.reverse))
+
     def saw_password_prompt(self) -> bool:
         return self._password_seen
 
@@ -442,13 +464,22 @@ class MonitorSession:
         raise TimeoutError(f"Timed out connecting to {host}:{port}")
 
     def capture(self) -> Snapshot:
-        self._drain_until_idle(timeout=self.timeout)
+        try:
+            self._drain_until_idle(timeout=self.timeout)
+        except TimeoutError:
+            pass
         return self.screen.snapshot(self.last_command)
 
     def send_key(self, key: str) -> Snapshot:
         payload = KEYS[key]
         self.last_command = key
         self.sock.sendall(payload)
+        return self.capture()
+
+    def send_key_repeat(self, key: str, count: int) -> Snapshot:
+        payload = KEYS[key]
+        self.last_command = f"{key} x{count}"
+        self.sock.sendall(payload * count)
         return self.capture()
 
     def send_char(self, ch: str) -> Snapshot:
@@ -500,19 +531,27 @@ class MonitorSession:
     def _drain_until_idle(self, timeout: float) -> None:
         end = time.time() + timeout
         last_data = time.time()
+        last_change = last_data
+        signature = self.screen.signature()
         while time.time() < end:
             wait = min(0.2, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
             if not ready:
                 if time.time() - last_data >= 0.2:
                     return
+                if time.time() - last_change >= 0.2:
+                    return
                 continue
             chunk = self.sock.recv(65536)
             if not chunk:
                 return
             self.screen.feed(chunk)
+            new_signature = self.screen.signature()
+            if new_signature != signature:
+                signature = new_signature
+                last_change = time.time()
             last_data = time.time()
-        raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
+        self.screen.snapshot(self.last_command).find_status_line()
 
 
 def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeout: float) -> None:
@@ -1200,6 +1239,182 @@ def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     screen.find_line_containing("MONITOR ASM $3370")
 
 
+def highlighted_line(snapshot: Snapshot) -> str:
+    if not snapshot.reverse_cells:
+        raise Failure(f"No highlighted cells after {snapshot.last_command}\n{snapshot.text()}")
+    row = snapshot.reverse_cells[0][1]
+    return snapshot.line(row)
+
+
+def highlighted_row_count(snapshot: Snapshot) -> int:
+    return len({row for _, row in snapshot.reverse_cells})
+
+
+def assert_highlighted_line_contains(snapshot: Snapshot, values: Tuple[str, ...]) -> None:
+    count = highlighted_row_count(snapshot)
+    if count != 1:
+        raise Failure(
+            f"Expected exactly one highlighted row after {snapshot.last_command}, got {count}\n"
+            f"{snapshot.text()}"
+        )
+    line = highlighted_line(snapshot)
+    if not all(value in line for value in values):
+        raise Failure(
+            f"Highlighted line after {snapshot.last_command} did not contain {values!r}\n"
+            f"line: {line!r}\n{snapshot.text()}"
+        )
+
+
+def assert_canonical_kernal_lane(snapshot: Snapshot, highlighted_values: Tuple[str, ...]) -> None:
+    top_row = snapshot.find_line_containing(ASM_KERNAL_ROWS[0][0])
+    for offset, (address_bytes, disasm_text) in enumerate(ASM_KERNAL_ROWS):
+        row_index = top_row + offset
+        if row_index >= len(snapshot.lines):
+            raise Failure(f"KERNAL lane row {address_bytes} is below the captured screen\n{snapshot.text()}")
+        line = snapshot.line(row_index)
+        if address_bytes not in line or disasm_text not in line:
+            raise Failure(
+                f"KERNAL lane row mismatch after {snapshot.last_command}: expected {address_bytes!r} / {disasm_text!r} "
+                f"on line {row_index}\nactual: {line!r}\n{snapshot.text()}"
+            )
+    assert_line_lacks(snapshot, "E001 56 20")
+    assert_line_lacks(snapshot, "E010 BC A5 07")
+    assert_highlighted_line_contains(snapshot, highlighted_values)
+
+
+def run_asm_kernal_root_stability_test(session: MonitorSession) -> None:
+    ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = session.goto("E000")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $E000")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+    screen = session.fill("DFFD-DFFD,4C")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+    screen = session.fill("DFFE-DFFE,00")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+    screen = session.fill("DFFF-DFFF,E0")
+    screen.find_line_containing("MONITOR ASM $E000")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+    screen = session.fill("DFFD-DFFD,20")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+
+def run_asm_decode_offset_test(session: MonitorSession, rest_host: str) -> None:
+    address = 0x3400 if is_u2() else 0xE000
+    if is_u2():
+        write_rest_memory(rest_host, address, ASM_CANONICAL_BYTES)
+
+    screen = session.goto(f"{address:04X}")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, (f"{address:04X} 85 56", "STA $56"))
+    top_row = screen.find_line_containing(f"{address:04X} 85 56")
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 1:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 1:04X}",))
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 2:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 2:04X} 20 0F BC", "JSR $BC0F"))
+    screen = session.send_key("LEFT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 1:04X}")
+    screen = session.send_key("LEFT")
+    screen.find_line_containing(f"MONITOR ASM ${address:04X}")
+    screen = session.send_key("DOWN")
+    screen.find_line_containing(f"MONITOR ASM ${address + 2:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 2:04X} 20 0F BC", "JSR $BC0F"))
+    if f"{address:04X} 85 56" not in screen.line(top_row):
+        raise Failure(f"ASM Down to +2 moved the viewport top\n{screen.text()}")
+
+    down_rows = (
+        (0x0005, "A5 61", "LDA $61"),
+        (0x0007, "C9 88", "CMP #$88"),
+        (0x0009, "90 03", "BCC"),
+        (0x000B, "20 D4 BA", "JSR $BAD4"),
+        (0x000E, "20 CC BC", "JSR $BCCC"),
+        (0x0011, "A5 07", "LDA $07"),
+        (0x0013, "18", "CLC"),
+    )
+    for offset, byte_text, disasm_text in down_rows:
+        screen = session.send_key("DOWN")
+        screen.find_line_containing(f"MONITOR ASM ${address + offset:04X}")
+        assert_highlighted_line_contains(screen, (f"{address + offset:04X} {byte_text}", disasm_text))
+        if f"{address:04X} 85 56" not in screen.line(top_row):
+            raise Failure(f"ASM Down to +{offset:04X} moved the viewport top\n{screen.text()}")
+        assert_line_lacks(screen, f"{address + 1:04X} 56 20")
+
+    screen = session.send_key("UP")
+    screen.find_line_containing(f"MONITOR ASM ${address + 0x0011:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 0x0011:04X} A5 07", "LDA $07"))
+    assert_line_lacks(screen, f"{address + 0x0010:04X} BC A5 07")
+
+    sliding_start = 0x3600
+    sliding_steps = 300
+    write_rest_memory(rest_host, 0x3400, bytes((0xEA,)) * 0x400)
+    screen = session.goto(f"{sliding_start:04X}")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, (f"{sliding_start:04X} EA", "NOP"))
+    screen = session.send_key_repeat("UP", sliding_steps)
+    assert_highlighted_line_contains(screen, (f"{sliding_start - sliding_steps:04X} EA", "NOP"))
+    screen = session.send_key_repeat("DOWN", sliding_steps)
+    assert_highlighted_line_contains(screen, (f"{sliding_start:04X} EA", "NOP"))
+
+
+def run_asm_edit_navigation_test(session: MonitorSession, rest_host: str) -> None:
+    write_rest_memory(rest_host, 0x3410, bytes((0xA9, 0x12, 0xEA, 0xEA)))
+    screen = session.goto("3410")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("LDA #$12")
+    screen = session.send_char("e")
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing("MONITOR ASM $3410")
+    assert_highlighted_line_contains(screen, ("3410 A9 12", "LDA #$12"))
+    screen = session.send_key("LEFT")
+    screen.find_line_containing("MONITOR ASM $3410")
+    assert_highlighted_line_contains(screen, ("3410 A9 12", "LDA #$12"))
+    screen = session.send_key("DOWN")
+    screen.find_line_containing("MONITOR ASM $3412")
+    screen = session.send_key("UP")
+    screen.find_line_containing("MONITOR ASM $3410")
+    screen = session.send_key("ESC")
+    screen.find_line_containing("MONITOR ASM $3410")
+
+
+def run_asm_cpu0_continuous_ram_test(session: MonitorSession) -> None:
+    ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = session.send_char("o")
+    assert_status_contains(screen, "CPU0 $A:RAM $D:RAM $E:RAM VIC")
+    session.fill("DFFE-DFFE,20")
+    session.fill("DFFF-DFFF,00")
+    session.fill("E000-E000,E0")
+    screen = session.goto("DFFE")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, ("DFFE 20 00 E0", "JSR $E000"))
+    for _ in range(7):
+        screen = session.send_char("o")
+    assert_status_contains(screen, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+
+
+def run_asm_self_modification_test(session: MonitorSession, rest_host: str) -> None:
+    write_rest_memory(rest_host, 0x3502, bytes((0xA9, 0x00, 0xEA, 0xA5, 0x61, 0xEA, 0xEA)))
+    screen = session.goto("3505")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, ("3505 A5 61", "LDA $61"))
+
+    session.fill("3502-3502,20")
+    session.fill("3503-3503,05")
+    screen = session.fill("3504-3504,35")
+    screen.find_line_containing("MONITOR ASM $3505")
+    assert_highlighted_line_contains(screen, ("3505 A5 61", "LDA $61"))
+
+    session.fill("3505-3505,A9")
+    screen = session.fill("3506-3506,42")
+    assert_highlighted_line_contains(screen, ("3505 A9 42", "LDA #$42"))
+    screen = session.fill("3507-3507,60")
+    screen.find_line_containing("3507 60")
+    screen.find_line_containing("RTS")
+
+
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
@@ -1251,6 +1466,23 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
+
+    with check("ASM root stable across volatile pre-root IO", u2=False,
+               u2_reason="U2 backend does not expose U64 CPU7 I/O/KERNAL banking"):
+        run_asm_kernal_root_stability_test(session)
+
+    with check("ASM decode offset and instruction navigation"):
+        run_asm_decode_offset_test(session, rest_host)
+
+    with check("ASM edit navigation keeps root stable"):
+        run_asm_edit_navigation_test(session, rest_host)
+
+    with check("ASM CPU0 continuous RAM can cross DFFF/E000", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
+        run_asm_cpu0_continuous_ram_test(session)
+
+    with check("ASM self-modification root rules"):
+        run_asm_self_modification_test(session, rest_host)
 
     with check("KERNAL $E010 REST match", u2=False,
                u2_reason="U2 monitor does not snapshot KERNAL ROM, so monitor row text differs"):

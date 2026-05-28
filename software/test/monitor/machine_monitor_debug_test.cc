@@ -46,9 +46,12 @@ struct StubDebugSession : public DebugSession
 {
     int over_calls;
     int over_at_calls;
+    int over_breakpoint_calls;
+    int over_at_breakpoint_calls;
     int trace_calls;
     int trace_at_calls;
     int out_calls;
+    int out_breakpoint_calls;
     int go_calls;
     int cleanup_calls;
     int cleanup_to_context_calls;
@@ -65,8 +68,11 @@ struct StubDebugSession : public DebugSession
     Result snapshot_result;
 
     StubDebugSession()
-        : over_calls(0), over_at_calls(0), trace_calls(0), trace_at_calls(0),
-          out_calls(0), go_calls(0), cleanup_calls(0),
+        : over_calls(0), over_at_calls(0),
+          over_breakpoint_calls(0), over_at_breakpoint_calls(0),
+          trace_calls(0), trace_at_calls(0),
+          out_calls(0), out_breakpoint_calls(0),
+          go_calls(0), cleanup_calls(0),
           cleanup_to_context_calls(0),
           snapshot_calls(0),
           last_start_pc(0),
@@ -106,6 +112,11 @@ struct StubDebugSession : public DebugSession
         }
         return over_result;
     }
+    virtual Result over(const DebugContext &from, const DebugPredictResult &pred,
+                        const MonitorBreakpoints *, DebugContext *ctx) {
+        over_breakpoint_calls++;
+        return over(from, pred, ctx);
+    }
     virtual Result over_at(uint16_t start_pc, const DebugPredictResult &, DebugContext *ctx) {
         over_at_calls++;
         last_start_pc = start_pc;
@@ -113,6 +124,11 @@ struct StubDebugSession : public DebugSession
             *ctx = next_ctx;
         }
         return over_result;
+    }
+    virtual Result over_at(uint16_t start_pc, const DebugPredictResult &pred,
+                           const MonitorBreakpoints *, DebugContext *ctx) {
+        over_at_breakpoint_calls++;
+        return over_at(start_pc, pred, ctx);
     }
     virtual Result trace(const DebugContext &, const DebugPredictResult &, DebugContext *ctx) {
         trace_calls++;
@@ -135,6 +151,11 @@ struct StubDebugSession : public DebugSession
             *ctx = next_ctx;
         }
         return out_result;
+    }
+    virtual Result step_out(const DebugContext &from,
+                            const MonitorBreakpoints *, DebugContext *ctx) {
+        out_breakpoint_calls++;
+        return step_out(from, ctx);
     }
     virtual Result go(const DebugContext &, const MonitorBreakpoints *, uint16_t) {
         go_calls++;
@@ -291,6 +312,8 @@ static const uint16_t FAKE_RESUME_TRAMP  = 0x033C;
 class FakeFreezeMachine : public BrkDebugSession
 {
 public:
+    enum { MAX_RECORDED_BRK_PATCHES = 32 };
+
     uint8_t ram[65536];
     bool frozen;
     bool accessible_when_unfrozen;
@@ -302,6 +325,7 @@ public:
     int nmi_pulses;
     int brk_patch_writes;
     uint16_t last_brk_patch_addr;
+    uint16_t brk_patch_addrs[MAX_RECORDED_BRK_PATCHES];
     // When false, delay_ms() does NOT raise the sentinel, so wait_for_sentinel
     // runs to its full timeout. Lets a test force the DBG_TIMEOUT path and then
     // re-arm to prove the run-window state (depth, freeze bracketing) recovered.
@@ -327,6 +351,7 @@ public:
           capture_override_sr(0)
     {
         memset(ram, 0, sizeof(ram));
+        memset(brk_patch_addrs, 0, sizeof(brk_patch_addrs));
     }
 
     // Leaf cleanup while the fake hooks are still live (the abstract base
@@ -372,6 +397,9 @@ protected:
     virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
         if (b == 0x00) {
+            if (brk_patch_writes < MAX_RECORDED_BRK_PATCHES) {
+                brk_patch_addrs[brk_patch_writes] = a;
+            }
             brk_patch_writes++;
             last_brk_patch_addr = a;
         }
@@ -576,6 +604,20 @@ static void fake_seed_captured_context(FakeFreezeMachine &m, uint16_t pc,
     m.ram[FAKE_STORE_PCLO] = (uint8_t)((pc + 2) & 0xFF);
     m.ram[FAKE_STORE_PCHI] = (uint8_t)((pc + 2) >> 8);
     m.ram[FAKE_STORE_SP] = sp;
+}
+
+static bool fake_recorded_brk_patch(const FakeFreezeMachine &m, uint16_t addr)
+{
+    int n = m.brk_patch_writes;
+    if (n > FakeFreezeMachine::MAX_RECORDED_BRK_PATCHES) {
+        n = FakeFreezeMachine::MAX_RECORDED_BRK_PATCHES;
+    }
+    for (int i = 0; i < n; i++) {
+        if (m.brk_patch_addrs[i] == addr) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -866,6 +908,8 @@ static int test_d_inside_debug_performs_over()
     }
     if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
     if (expect(backend.last_session->over_calls >= 1, "D inside Debug should call Over")) return 1;
+    if (expect(backend.last_session->over_breakpoint_calls >= 1,
+               "D inside Debug must pass active breakpoints to Over")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -903,6 +947,8 @@ static int test_d_inside_debug_without_context_overs_from_cursor()
                "No-context D must not call context-based Over")) return 1;
     if (expect(backend.last_session->over_at_calls == 1,
                "No-context D in Debug must execute Over from the cursor")) return 1;
+    if (expect(backend.last_session->over_at_breakpoint_calls == 1,
+               "No-context D must pass active breakpoints to cursor Over")) return 1;
     if (expect(backend.last_session->last_start_pc == 0x1000,
                "No-context Over must start at the Assembly cursor address")) return 1;
     if (expect(ui.popup_count == 0 || strstr(ui.last_popup, "NO CONTEXT") == NULL,
@@ -2964,6 +3010,74 @@ static int test_freeze_go_breakpoint_refreezes()
     return 0;
 }
 
+static int test_go_from_current_breakpoint_stops_at_callee_breakpoint()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0x20; // JSR $3000
+    m.ram[0x2001] = 0x00;
+    m.ram[0x2002] = 0x30;
+    m.ram[0x2003] = 0xEA;
+    m.ram[0x3000] = 0xEA;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2000, 0x07);
+    bps.allocate(0x3000, 0x07);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2000;
+    from.sp = 0xFF;
+
+    m.arm_capture_context(0x3000, 0xFD, 0, 0, 0, 0x24);
+    DebugSession::Result r = m.go(from, &bps, 0x2000);
+    if (expect(r == DebugSession::DBG_OK,
+               "G from a breakpoint must stop at an enabled breakpoint in the callee")) return 1;
+
+    DebugContext stopped;
+    if (expect(m.snapshot(&stopped) == DebugSession::DBG_OK,
+               "G callee breakpoint must leave a captured context")) return 1;
+    if (expect(stopped.valid && stopped.pc == 0x3000,
+               "G callee breakpoint must be the captured stop PC")) return 1;
+    if (expect(m.brk_patch_writes == 2,
+               "G must not continue after the skip step hits a callee breakpoint")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0x3000),
+               "G must arm the callee breakpoint during the current-breakpoint skip")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0x2003),
+               "G current-breakpoint skip must still patch the JSR fall-through")) return 1;
+    return 0;
+}
+
+static int test_step_over_stops_at_callee_breakpoint()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0x20; // JSR $3000
+    m.ram[0x2001] = 0x00;
+    m.ram[0x2002] = 0x30;
+    m.ram[0x2003] = 0xEA;
+    m.ram[0x3000] = 0xEA;
+
+    uint8_t jsr[3] = { 0x20, 0x00, 0x30 };
+    DebugPredictResult pred;
+    debug_predict(0x2000, jsr, false, &pred);
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x3000, 0x07);
+
+    m.arm_capture_context(0x3000, 0xFD, 0, 0, 0, 0x24);
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0x2000, pred, &bps, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Step Over must stop at an enabled breakpoint in the callee")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0x3000,
+               "Step Over callee breakpoint must be the captured stop PC")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0x3000),
+               "Step Over must arm active breakpoints before running")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0x2003),
+               "Step Over must still patch the JSR fall-through")) return 1;
+    return 0;
+}
+
 static int test_visible_basic_step_uses_rom_patch_support()
 {
     FakeVisibleRomMachine m(false);
@@ -3844,6 +3958,8 @@ int main()
     RUN(test_over_rts_refuses_non_jsr_stack_target);
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
+    RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);
+    RUN(test_step_over_stops_at_callee_breakpoint);
     RUN(test_visible_basic_step_uses_rom_patch_support);
     RUN(test_visible_rom_step_bytes_use_cpu_visible_mapping);
     RUN(test_u64_debug_cpu_port_uses_monitor_bank);

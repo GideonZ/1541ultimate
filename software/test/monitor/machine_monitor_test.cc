@@ -699,6 +699,140 @@ static int test_frozen_banked_backend(void)
     return 0;
 }
 
+static const uint8_t asm_kernal_stability_bytes[] = {
+    0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+    0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+    0xBC, 0xA5, 0x07, 0x18, 0x69, 0x81, 0xF0, 0xF3,
+    0x38, 0xE9, 0x01, 0x48, 0xA2, 0x05, 0xB5, 0x69,
+    0xB4, 0x61
+};
+
+static const struct {
+    const char *prefix;
+    const char *text;
+} asm_kernal_stability_rows[] = {
+    { "E000 85 56", "STA $56" },
+    { "E002 20 0F BC", "JSR $BC0F" },
+    { "E005 A5 61", "LDA $61" },
+    { "E007 C9 88", "CMP #$88" },
+    { "E009 90 03", "BCC $E00E" },
+    { "E00B 20 D4 BA", "JSR $BAD4" },
+    { "E00E 20 CC BC", "JSR $BCCC" },
+    { "E011 A5 07", "LDA $07" },
+    { "E013 18", "CLC" },
+};
+
+static void install_kernal_stability_bytes(FakeBankedMemoryBackend *backend)
+{
+    memcpy(backend->kernal, asm_kernal_stability_bytes, sizeof(asm_kernal_stability_bytes));
+    memcpy(backend->ram + 0xE000, asm_kernal_stability_bytes, sizeof(asm_kernal_stability_bytes));
+}
+
+static int expect_line_contains(const CaptureScreen &screen, int y,
+                                const char *prefix, const char *needle,
+                                const char *message)
+{
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+
+    screen.get_slice(1, y, MONITOR_DISASM_ROW_CHARS, line);
+    if (prefix && expect(strstr(line, prefix) == line, message)) return 1;
+    if (needle && expect(strstr(line, needle) != NULL, message)) return 1;
+    return 0;
+}
+
+static int expect_visible_disasm(const CaptureScreen &screen,
+                                 const char *prefix, const char *needle,
+                                 const char *message)
+{
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+
+    for (int y = 4; y <= 22; y++) {
+        screen.get_slice(1, y, MONITOR_DISASM_ROW_CHARS, line);
+        if ((!prefix || strstr(line, prefix) == line) &&
+            (!needle || strstr(line, needle) != NULL)) {
+            return 0;
+        }
+    }
+    return fail(message);
+}
+
+static int visible_disasm_exists(const CaptureScreen &screen,
+                                 const char *prefix, const char *needle)
+{
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+
+    for (int y = 4; y <= 22; y++) {
+        screen.get_slice(1, y, MONITOR_DISASM_ROW_CHARS, line);
+        if ((!prefix || strstr(line, prefix) == line) &&
+            (!needle || strstr(line, needle) != NULL)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int highlighted_disasm_row_count(const CaptureScreen &screen)
+{
+    int count = 0;
+
+    for (int y = 4; y <= 22; y++) {
+        bool row_highlighted = false;
+        for (int x = 0; x < 40; x++) {
+            if (screen.reverse_chars[y][x]) {
+                row_highlighted = true;
+                break;
+            }
+        }
+        if (row_highlighted) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int expect_highlighted_disasm(const CaptureScreen &screen,
+                                     const char *prefix, const char *needle,
+                                     const char *message)
+{
+    int row = -1;
+
+    if (expect(find_highlighted_cell(screen, NULL, &row), message)) return 1;
+    if (expect(highlighted_disasm_row_count(screen) == 1,
+               "ASM view must have exactly one highlighted instruction row.")) return 1;
+    return expect_line_contains(screen, row, prefix, needle, message);
+}
+
+static int copy_highlighted_disasm_line(const CaptureScreen &screen, char *out, const char *message)
+{
+    int row = -1;
+
+    if (expect(find_highlighted_cell(screen, NULL, &row), message)) return 1;
+    if (expect(highlighted_disasm_row_count(screen) == 1,
+               "ASM view must have exactly one highlighted instruction row.")) return 1;
+    screen.get_slice(1, row, MONITOR_DISASM_ROW_CHARS, out);
+    return 0;
+}
+
+static int expect_canonical_kernal_lane(const CaptureScreen &screen,
+                                        const char *highlight_prefix,
+                                        const char *highlight_text,
+                                        const char *message)
+{
+    char line[MONITOR_DISASM_ROW_CHARS + 1];
+
+    for (unsigned i = 0; i < sizeof(asm_kernal_stability_rows) / sizeof(asm_kernal_stability_rows[0]); i++) {
+        screen.get_slice(1, 4 + (int)i, MONITOR_DISASM_ROW_CHARS, line);
+        if (expect(strstr(line, asm_kernal_stability_rows[i].prefix) == line, message)) return 1;
+        if (expect(strstr(line, asm_kernal_stability_rows[i].text) != NULL, message)) return 1;
+    }
+    if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+               "Canonical KERNAL lane must not re-phase to E001 after IO-prefix changes.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E010 ", NULL),
+               "Canonical KERNAL lane must not show the overlapping E010 candidate.")) return 1;
+    if (expect_highlighted_disasm(screen, highlight_prefix, highlight_text, message)) return 1;
+    return 0;
+}
+
 static int test_kernal_disassembly_mapping(void)
 {
     TestUserInterface ui;
@@ -782,23 +916,452 @@ static int test_kernal_disassembly_mapping(void)
     return 0;
 }
 
+static int test_asm_root_stable_with_cpu7_io_context(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'P' };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    monitor_reset_saved_state();
+
+    install_kernal_stability_bytes(&backend);
+    backend.io[0x0FFD] = 0xA9;
+    backend.io[0x0FFE] = 0x00;
+    backend.io[0x0FFF] = 0xEA;
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "CPU7 IO stability test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU7 IO stability test: ASM view failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU7 IO stability test: poll mode failed.")) return 1;
+
+    if (expect_canonical_kernal_lane(screen, "E000 85 56", "STA $56",
+                                     "CPU7 IO stability test: initial canonical KERNAL lane missing.")) return 1;
+
+    backend.io[0x0FFD] = 0x4C;
+    backend.io[0x0FFE] = 0x00;
+    backend.io[0x0FFF] = 0xE0;
+    advance_fake_ms_timer(1000);
+    if (expect(monitor.poll(0) == 0, "CPU7 IO stability test: redraw after IO JMP mutation failed.")) return 1;
+    if (expect_canonical_kernal_lane(screen, "E000 85 56", "STA $56",
+                                     "CPU7 IO JMP-to-E000 prefix must not re-phase the canonical KERNAL lane.")) return 1;
+
+    backend.io[0x0FFD] = 0x20;
+    backend.io[0x0FFE] = 0x00;
+    backend.io[0x0FFF] = 0xE0;
+    advance_fake_ms_timer(1000);
+    if (expect(monitor.poll(0) == 0, "CPU7 IO stability test: redraw after IO JSR mutation failed.")) return 1;
+    if (expect_canonical_kernal_lane(screen, "E000 85 56", "STA $56",
+                                     "CPU7 IO JSR-prefix mutation must not move or re-phase the E000 root.")) return 1;
+
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_root_stable_with_continuous_ram_context(void)
+{
+    for (uint8_t bank = 0; bank <= 4; bank += 4) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        int keys[12];
+        int n = 0;
+        monitor_reset_saved_state();
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        for (uint8_t i = 0; i <= bank; i++) {
+            keys[n++] = 'o';
+        }
+        keys[n++] = 'P';
+        FakeKeyboard keyboard(keys, n);
+
+        install_kernal_stability_bytes(&backend);
+        backend.ram[0xDFFE] = 0xA9;
+        backend.ram[0xDFFF] = 0x00;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("E000", 1);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+
+        if (expect(monitor.poll(0) == 0, "CPU0/4 RAM stability test: goto failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "CPU0/4 RAM stability test: ASM view failed.")) return 1;
+        for (uint8_t i = 0; i <= bank; i++) {
+            if (expect(monitor.poll(0) == 0, "CPU0/4 RAM stability test: CPU bank cycle failed.")) return 1;
+        }
+        if (expect(monitor.poll(0) == 0, "CPU0/4 RAM stability test: poll mode failed.")) return 1;
+        if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                      "CPU0/4 RAM stability test: E000 root row incorrect.")) return 1;
+
+        backend.ram[0xDFFE] = 0x20;
+        backend.ram[0xDFFF] = 0x00;
+        advance_fake_ms_timer(1000);
+        if (expect(monitor.poll(0) == 0, "CPU0/4 RAM stability test: redraw after RAM mutation failed.")) return 1;
+        if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                      "CPU0/4 RAM mutation must not re-phase an explicit E000 root.")) return 1;
+        monitor.deinit();
+    }
+    return 0;
+}
+
+static int test_asm_explicit_root_can_cross_continuous_ram_boundary(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    monitor_reset_saved_state();
+
+    backend.ram[0xDFFE] = 0x20;
+    backend.ram[0xDFFF] = 0x00;
+    backend.ram[0xE000] = 0xE0;
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("DFFE", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Explicit RAM-crossing test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Explicit RAM-crossing test: ASM view failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Explicit RAM-crossing test: CPU0 bank cycle failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "DFFE 20 00 E0", "JSR $E000",
+                                  "Explicit DFFE root must be allowed to decode across DFFF/E000 in CPU0 RAM.")) return 1;
+    if (expect(monitor.poll(0) == 1, "Explicit RAM-crossing test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_left_right_decode_root_control(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char header[39];
+    const int keys[] = { 'J', 'A', KEY_RIGHT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    monitor_reset_saved_state();
+
+    install_kernal_stability_bytes(&backend);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Left/right root test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Left/right root test: ASM view failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                  "Left/right root test: initial root incorrect.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Left/right root test: first right failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $E001") == header,
+               "Right must move ASM root by one byte to E001.")) return 1;
+    if (expect_highlighted_disasm(screen, "E001 56 20", NULL,
+                                  "Right to E001 must intentionally re-phase from E001.")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Left/right root test: second right failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E002 20 0F BC", "JSR $BC0F",
+                                  "Second Right must move ASM root to E002.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Left/right root test: first left failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E001 56 20", NULL,
+                                  "Left must move ASM root back to E001.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Left/right root test: repeated right failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E002 20 0F BC", "JSR $BC0F",
+                                  "Repeated Right must be deterministic.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Left/right root test: repeated left failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E001 56 20", NULL,
+                                  "Repeated Left must be deterministic.")) return 1;
+    if (expect(monitor.poll(0) == 1, "Left/right root test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_ambiguous_predecessor_is_stable(void)
+{
+    for (int pass = 0; pass < 2; pass++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'A', KEY_UP, KEY_BREAK };
+        FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+        monitor_reset_saved_state();
+
+        backend.write(0xC000, 0x20);
+        backend.write(0xC001, 0xA9);
+        backend.write(0xC002, 0x00);
+        backend.write(0xC003, 0xEA);
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("C003", 1);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+        if (expect(monitor.poll(0) == 0, "Ambiguous predecessor test: goto failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "Ambiguous predecessor test: ASM view failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "Ambiguous predecessor test: Up failed.")) return 1;
+        if (expect_highlighted_disasm(screen, "C000 20 A9 00", "JSR $00A9",
+                                      "Ambiguous predecessor must use the deterministic longest fallback.")) return 1;
+        if (expect(monitor.poll(0) == 1, "Ambiguous predecessor test: exit failed.")) return 1;
+        monitor.deinit();
+    }
+    return 0;
+}
+
+static int test_asm_edit_left_right_does_not_rephase_root(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char header[39];
+    const int keys[] = { 'J', 'A', 'E', KEY_RIGHT, KEY_LEFT, KEY_LEFT, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    monitor_reset_saved_state();
+
+    backend.write(0xBFFE, 0xEA);
+    backend.write(0xBFFF, 0xEA);
+    backend.write(0xC000, 0xA9);
+    backend.write(0xC001, 0x12);
+    backend.write(0xC002, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("C000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: ASM view failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: edit entry failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: right failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $C000") == header,
+               "ASM edit Right must not change the root address within the row.")) return 1;
+    if (expect_highlighted_disasm(screen, "C000 A9 12", "LDA #$12",
+                                  "ASM edit Right must not re-phase the current row.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: left within row failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $C000") == header,
+               "ASM edit Left within the row must not change the root address.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: left boundary failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $BFFF") == header,
+               "ASM edit Left at the first editable part must be the only inter-row movement.")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM edit isolation test: leave edit failed.")) return 1;
+    if (expect(monitor.poll(0) == 1, "ASM edit isolation test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_self_modification_root_rules(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'J', 'A', 'P' };
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
+    monitor_reset_saved_state();
+
+    backend.write(0xE002, 0xA9);
+    backend.write(0xE003, 0x00);
+    backend.write(0xE004, 0xEA);
+    backend.write(0xE005, 0xA5);
+    backend.write(0xE006, 0x61);
+    backend.write(0xE007, 0xEA);
+    backend.write(0xE008, 0xEA);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E005", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: ASM view failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: poll mode failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E005 A5 61", "LDA $61",
+                                  "Self-mod root test: initial E005 root incorrect.")) return 1;
+
+    backend.write(0xE002, 0x20);
+    backend.write(0xE003, 0x05);
+    backend.write(0xE004, 0xE0);
+    advance_fake_ms_timer(1000);
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: redraw after pre-root mutation failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E005 A5 61", "LDA $61",
+                                  "Self-modification before root must not re-phase E005.")) return 1;
+
+    backend.write(0xE005, 0xA9);
+    backend.write(0xE006, 0x42);
+    advance_fake_ms_timer(1000);
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: redraw after root mutation failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E005 A9 42", "LDA #$42",
+                                  "Self-modification at root must re-decode the current row.")) return 1;
+
+    backend.write(0xE007, 0x60);
+    advance_fake_ms_timer(1000);
+    if (expect(monitor.poll(0) == 0, "Self-mod root test: redraw after later mutation failed.")) return 1;
+    if (expect_visible_disasm(screen, "E007 60", "RTS",
+                              "Self-modification after root must re-decode the affected later row.")) return 1;
+
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_cpu_bank_invalidation_for_root(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    int keys[16];
+    int n = 0;
+    monitor_reset_saved_state();
+
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    keys[n++] = 'o';
+    for (int i = 0; i < 7; i++) {
+        keys[n++] = 'o';
+    }
+    keys[n++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, n);
+
+    install_kernal_stability_bytes(&backend);
+    backend.ram[0xE000] = 0x00;
+    backend.ram[0xE001] = 0xEA;
+    backend.ram[0xE002] = 0xEA;
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "CPU-bank invalidation test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU-bank invalidation test: ASM view failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                  "CPU-bank invalidation test: CPU7 KERNAL row missing.")) return 1;
+    if (expect(monitor.poll(0) == 0, "CPU-bank invalidation test: switch to CPU0 failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "E000 00", "BRK",
+                                  "Switching to CPU0 must re-read RAM instead of reusing CPU7 KERNAL rows.")) return 1;
+    for (int i = 0; i < 7; i++) {
+        if (expect(monitor.poll(0) == 0, "CPU-bank invalidation test: switch back to CPU7 failed.")) return 1;
+    }
+    if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                  "Switching back to CPU7 must restore the KERNAL decode.")) return 1;
+    if (expect(monitor.poll(0) == 1, "CPU-bank invalidation test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_asm_all_cpu_banks_keep_explicit_root(void)
+{
+    for (uint8_t bank = 0; bank < 8; bank++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        int keys[16];
+        int n = 0;
+        monitor_reset_saved_state();
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        for (uint8_t i = 0; i <= bank && bank != 7; i++) {
+            keys[n++] = 'o';
+        }
+        keys[n++] = 'P';
+        FakeKeyboard keyboard(keys, n);
+
+        backend.ram[0xE000] = 0xA9;
+        backend.ram[0xE001] = bank;
+        backend.kernal[0] = 0xEA;
+        backend.ram[0xDFFE] = 0x20;
+        backend.ram[0xDFFF] = 0x00;
+        backend.io[0x0FFE] = 0x20;
+        backend.io[0x0FFF] = 0x00;
+        backend.charrom[0x0FFE] = 0x20;
+        backend.charrom[0x0FFF] = 0x00;
+
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("E000", 1);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+        if (expect(monitor.poll(0) == 0, "All-bank root test: goto failed.")) return 1;
+        if (expect(monitor.poll(0) == 0, "All-bank root test: ASM view failed.")) return 1;
+        for (uint8_t i = 0; i <= bank && bank != 7; i++) {
+            if (expect(monitor.poll(0) == 0, "All-bank root test: CPU bank cycle failed.")) return 1;
+        }
+        if (expect(monitor.poll(0) == 0, "All-bank root test: poll mode failed.")) return 1;
+
+        if (bank & 0x02) {
+            if (expect_highlighted_disasm(screen, "E000 EA", "NOP",
+                                          "All-bank root test: KERNAL-visible bank must decode KERNAL at E000.")) return 1;
+        } else {
+            if (expect_highlighted_disasm(screen, "E000 A9", NULL,
+                                          "All-bank root test: RAM-visible bank must decode RAM at E000.")) return 1;
+        }
+        advance_fake_ms_timer(1000);
+        if (expect(monitor.poll(0) == 0, "All-bank root test: redraw failed.")) return 1;
+        if (bank & 0x02) {
+            if (expect_highlighted_disasm(screen, "E000 EA", "NOP",
+                                          "All-bank root test: redraw must preserve KERNAL root phase.")) return 1;
+        } else {
+            if (expect_highlighted_disasm(screen, "E000 A9", NULL,
+                                          "All-bank root test: redraw must preserve RAM root phase.")) return 1;
+        }
+        monitor.deinit();
+    }
+    return 0;
+}
+
 static int test_disassembly_instruction_stepping(void)
 {
     TestUserInterface ui;
     CaptureScreen screen;
     FakeBankedMemoryBackend backend;
     char line[39];
+    char header[39];
+    static const struct {
+        const char *header;
+        const char *row;
+        const char *text;
+    } down_steps[] = {
+        { "MONITOR ASM $E002", "E002 20 0F BC", "JSR $BC0F" },
+        { "MONITOR ASM $E005", "E005 A5 61", "LDA $61" },
+        { "MONITOR ASM $E007", "E007 C9 88", "CMP #$88" },
+        { "MONITOR ASM $E009", "E009 90 03", "BCC $E00E" },
+        { "MONITOR ASM $E00B", "E00B 20 D4 BA", "JSR $BAD4" },
+        { "MONITOR ASM $E00E", "E00E 20 CC BC", "JSR $BCCC" },
+        { "MONITOR ASM $E011", "E011 A5 07", "LDA $07" },
+        { "MONITOR ASM $E013", "E013 18", "CLC" },
+    };
     monitor_reset_saved_state();
 
-    const uint8_t kernal_bytes[] = {
-        0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
-        0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
-        0xBC, 0xA5, 0x07
+    const int keys[] = {
+        'J', 'A',
+        KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN,
+        KEY_DOWN, KEY_DOWN, KEY_DOWN, KEY_DOWN,
+        KEY_UP, KEY_UP, KEY_BREAK
     };
-    const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 7);
+    FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
 
-    memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
+    install_kernal_stability_bytes(&backend);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("E000", 1);
@@ -813,30 +1376,219 @@ static int test_disassembly_instruction_stepping(void)
     if (expect(strstr(line, "MONITOR ASM $E000") == line, "Disassembly view must start at the goto address.")) return 1;
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Initial disassembly row mismatch at E000.")) return 1;
+    if (expect_highlighted_disasm(screen, "E000 85 56", "STA $56",
+                                  "Initial highlighted ASM row must be E000.")) return 1;
 
-    if (expect(monitor.poll(0) == 0, "First disassembly down-step failed.")) return 1;
-    screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "MONITOR ASM $E002") == line, "Disassembly header must follow the active cursor after one down-step.")) return 1;
-    screen.get_slice(1, 4, 38, line);
-    if (expect(strstr(line, "E000 85 56") == line, "First disassembly down-step must keep the previous row visible.")) return 1;
-    screen.get_slice(1, 5, 38, line);
-    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly down-step landed on the wrong instruction.")) return 1;
+    backend.io[0x0FFD] = 0x4C;
+    backend.io[0x0FFE] = 0x00;
+    backend.io[0x0FFF] = 0xE0;
 
-    if (expect(monitor.poll(0) == 0, "Second disassembly down-step failed.")) return 1;
-    screen.get_slice(1, 3, 38, line);
-    if (expect(strstr(line, "MONITOR ASM $E005") == line, "Disassembly header must follow the active cursor after two down-steps.")) return 1;
-    screen.get_slice(1, 6, 38, line);
-    if (expect(strstr(line, "E005 A5 61") == line, "Second disassembly down-step landed on the wrong instruction.")) return 1;
+    for (unsigned i = 0; i < sizeof(down_steps) / sizeof(down_steps[0]); i++) {
+        if (expect(monitor.poll(0) == 0, "Disassembly down-step failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, down_steps[i].header) == header,
+                   "Disassembly header must follow the selected canonical instruction.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "E000 85 56") == line,
+                   "Ordinary ASM Down must keep the E000 viewport top while the selected row is visible.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+                   "Ordinary ASM Down must not re-phase the KERNAL lane to E001.")) return 1;
+        if (expect_highlighted_disasm(screen, down_steps[i].row, down_steps[i].text,
+                                      "ASM Down must select the next row in the established KERNAL lane.")) return 1;
+    }
 
-    if (expect(monitor.poll(0) == 0, "First disassembly up-step failed.")) return 1;
-    screen.get_slice(1, 5, 38, line);
-    if (expect(strstr(line, "E002 20 0F BC") == line, "First disassembly up-step landed on the wrong instruction.")) return 1;
+    if (expect(monitor.poll(0) == 0, "First disassembly up-step from E013 failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $E011") == header,
+               "ASM Up from E013 must select the cached E011 predecessor, not E010.")) return 1;
+    if (expect_highlighted_disasm(screen, "E011 A5 07", "LDA $07",
+                                  "ASM Up from E013 highlighted the wrong predecessor.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E010 ", NULL),
+               "The canonical E000 lane must not show the overlapping E010 candidate.")) return 1;
 
-    if (expect(monitor.poll(0) == 0, "Second disassembly up-step failed.")) return 1;
-    screen.get_slice(1, 4, 38, line);
-    if (expect(strstr(line, "E000 85 56") == line, "Second disassembly up-step landed on the wrong instruction.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Second disassembly up-step from E011 failed.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $E00E") == header,
+               "ASM Up from E011 must select E00E.")) return 1;
+    if (expect_highlighted_disasm(screen, "E00E 20 CC BC", "JSR $BCCC",
+                                  "ASM Up from E011 highlighted the wrong predecessor.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E010 ", NULL),
+               "The screen must not contain the stale overlapping E010 row after moving up to E00E.")) return 1;
 
     if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after disassembly stepping test.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disassembly_reverse_navigation_reuses_cached_lane(void)
+{
+    enum { STEPS = 24 };
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    char expected[STEPS + 1][MONITOR_DISASM_ROW_CHARS + 1];
+    char actual[MONITOR_DISASM_ROW_CHARS + 1];
+    int keys[64];
+    int key_count = 0;
+
+    monitor_reset_saved_state();
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < STEPS; i++) keys[key_count++] = KEY_DOWN;
+    for (int i = 0; i < STEPS + 1; i++) keys[key_count++] = KEY_UP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, key_count);
+
+    install_kernal_stability_bytes(&backend);
+    for (uint16_t addr = 0xE000 + sizeof(asm_kernal_stability_bytes); addr < 0xE080; addr++) {
+        backend.kernal[addr - 0xE000] = 0xEA;
+        backend.ram[addr] = 0xEA;
+    }
+    backend.io[0x0FFD] = 0x4C;
+    backend.io[0x0FFE] = 0x00;
+    backend.io[0x0FFF] = 0xE0;
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Reverse lane test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Reverse lane test: ASM view failed.")) return 1;
+    if (copy_highlighted_disasm_line(screen, expected[0],
+                                     "Reverse lane test: initial highlighted row missing.")) return 1;
+
+    for (int i = 1; i <= STEPS; i++) {
+        if (expect(monitor.poll(0) == 0, "Reverse lane test: down navigation failed.")) return 1;
+        if (copy_highlighted_disasm_line(screen, expected[i],
+                                         "Reverse lane test: highlighted row missing while moving down.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+                   "Reverse lane test: down navigation must not expose E001 rephase.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E003 ", NULL),
+                   "Reverse lane test: down navigation must not expose E003 rephase.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E010 ", NULL),
+                   "Reverse lane test: down navigation must not expose E010 overlap.")) return 1;
+    }
+
+    for (int i = STEPS - 1; i >= 0; i--) {
+        if (expect(monitor.poll(0) == 0, "Reverse lane test: up navigation failed.")) return 1;
+        if (copy_highlighted_disasm_line(screen, actual,
+                                         "Reverse lane test: highlighted row missing while moving up.")) return 1;
+        if (expect(strcmp(actual, expected[i]) == 0,
+                   "Reverse lane test: upward navigation must highlight the exact row seen during downward navigation.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+                   "Reverse lane test: up navigation must not expose E001 rephase.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E003 ", NULL),
+                   "Reverse lane test: up navigation must not expose E003 rephase.")) return 1;
+        if (expect(!visible_disasm_exists(screen, "E010 ", NULL),
+                   "Reverse lane test: up navigation must not expose E010 overlap.")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 0, "Reverse lane test: up beyond E000 failed.")) return 1;
+    if (expect_highlighted_disasm(screen, "DFFD 4C 00 E0", "JMP $E000",
+                                  "Reverse lane test: up beyond E000 must prepend the IO prefix row without redecoding E000.")) return 1;
+    if (expect_visible_disasm(screen, "E000 85 56", "STA $56",
+                              "Reverse lane test: E000 row must remain canonical after prepending context.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+               "Reverse lane test: up beyond E000 must not re-phase to E001.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E003 ", NULL),
+               "Reverse lane test: up beyond E000 must not re-phase to E003.")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "Reverse lane test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disassembly_reverse_navigation_refuses_overlapping_predecessor(void)
+{
+    enum { STEPS = 8 };
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    int keys[32];
+    int key_count = 0;
+
+    monitor_reset_saved_state();
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < STEPS; i++) keys[key_count++] = KEY_DOWN;
+    for (int i = 0; i < STEPS + 1; i++) keys[key_count++] = KEY_UP;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, key_count);
+
+    install_kernal_stability_bytes(&backend);
+    backend.io[0x0FFD] = 0xEA;
+    backend.io[0x0FFE] = 0xEA;
+    backend.io[0x0FFF] = 0x8D;
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Reverse overlap test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Reverse overlap test: ASM view failed.")) return 1;
+    for (int i = 0; i < STEPS; i++) {
+        if (expect(monitor.poll(0) == 0, "Reverse overlap test: down navigation failed.")) return 1;
+    }
+    for (int i = 0; i < STEPS + 1; i++) {
+        if (expect(monitor.poll(0) == 0, "Reverse overlap test: up navigation failed.")) return 1;
+    }
+
+    if (expect_highlighted_disasm(screen, "DFFF 8D", "???",
+                                  "Reverse overlap test: ambiguous predecessor must use a one-byte boundary row.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "DFFF 8D 85 56", NULL),
+               "Reverse overlap test: invalid DFFF predecessor must not be prepended.")) return 1;
+    if (expect_visible_disasm(screen, "E000 85 56", "STA $56",
+                              "Reverse overlap test: E000 row must remain canonical below the boundary row.")) return 1;
+    if (expect(!visible_disasm_exists(screen, "E001 ", NULL),
+               "Reverse overlap test: invalid predecessor must not re-phase to E001.")) return 1;
+    if (expect(monitor.poll(0) == 1, "Reverse overlap test: exit failed.")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disassembly_sliding_lane_scrolls_beyond_cache(void)
+{
+    enum { STEPS = 300 };
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    int keys[STEPS * 2 + 4];
+    int key_count = 0;
+
+    monitor_reset_saved_state();
+    keys[key_count++] = 'J';
+    keys[key_count++] = 'A';
+    for (int i = 0; i < STEPS; i++) keys[key_count++] = KEY_UP;
+    for (int i = 0; i < STEPS; i++) keys[key_count++] = KEY_DOWN;
+    keys[key_count++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, key_count);
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("C300", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(monitor.poll(0) == 0, "Sliding lane test: goto failed.")) return 1;
+    if (expect(monitor.poll(0) == 0, "Sliding lane test: ASM view failed.")) return 1;
+    for (int i = 0; i < STEPS; i++) {
+        if (expect(monitor.poll(0) == 0, "Sliding lane test: upward navigation failed.")) return 1;
+    }
+    if (expect_highlighted_disasm(screen, "C1D4 ", NULL,
+                                  "Sliding lane test: upward scrolling must continue beyond the cache window.")) return 1;
+    for (int i = 0; i < STEPS; i++) {
+        if (expect(monitor.poll(0) == 0, "Sliding lane test: downward navigation failed.")) return 1;
+    }
+    if (expect_highlighted_disasm(screen, "C300 ", NULL,
+                                  "Sliding lane test: downward scrolling must rebuild rows after tail eviction.")) return 1;
+    if (expect(monitor.poll(0) == 1, "Sliding lane test: exit failed.")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -6128,7 +6880,19 @@ int main()
     if (test_banked_backend()) return 1;
     if (test_frozen_banked_backend()) return 1;
     if (test_kernal_disassembly_mapping()) return 1;
+    if (test_asm_root_stable_with_cpu7_io_context()) return 1;
+    if (test_asm_root_stable_with_continuous_ram_context()) return 1;
+    if (test_asm_explicit_root_can_cross_continuous_ram_boundary()) return 1;
+    if (test_asm_left_right_decode_root_control()) return 1;
+    if (test_asm_ambiguous_predecessor_is_stable()) return 1;
+    if (test_asm_edit_left_right_does_not_rephase_root()) return 1;
+    if (test_asm_self_modification_root_rules()) return 1;
+    if (test_asm_cpu_bank_invalidation_for_root()) return 1;
+    if (test_asm_all_cpu_banks_keep_explicit_root()) return 1;
     if (test_disassembly_instruction_stepping()) return 1;
+    if (test_disassembly_reverse_navigation_reuses_cached_lane()) return 1;
+    if (test_disassembly_reverse_navigation_refuses_overlapping_predecessor()) return 1;
+    if (test_disassembly_sliding_lane_scrolls_beyond_cache()) return 1;
     if (test_disassembly_boundary_cutover()) return 1;
     if (test_disassembly_reverse_cutover_keeps_ffff_at_bottom()) return 1;
     if (test_hex_reverse_wrap_keeps_tail_row_at_bottom()) return 1;

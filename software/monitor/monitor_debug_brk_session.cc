@@ -300,6 +300,50 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     return PATCH_INSTALL_OK;
 }
 
+BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
+    const MonitorBreakpoints *bps, uint16_t skip_address, bool skip_address_valid)
+{
+    if (!bps) {
+        return PATCH_INSTALL_OK;
+    }
+    for (int i = 0; i < bps->slot_count(); i++) {
+        const MonitorBreakpointSlot *bp = bps->get(i);
+        if (!bp || !bp->used || !bp->enabled) {
+            continue;
+        }
+        if (skip_address_valid && bp->address == skip_address) {
+            continue;
+        }
+        PatchInstallResult patched = install_brk_at(bp->address, bp->cpu_port);
+        if (patched != PATCH_INSTALL_OK) {
+            return patched;
+        }
+    }
+    return PATCH_INSTALL_OK;
+}
+
+bool BrkDebugSession :: context_at_breakpoint(
+    const DebugContext &ctx, const MonitorBreakpoints *bps,
+    uint16_t skip_address, bool skip_address_valid) const
+{
+    if (!ctx.valid || !bps) {
+        return false;
+    }
+    for (int i = 0; i < bps->slot_count(); i++) {
+        const MonitorBreakpointSlot *bp = bps->get(i);
+        if (!bp || !bp->used || !bp->enabled) {
+            continue;
+        }
+        if (skip_address_valid && bp->address == skip_address) {
+            continue;
+        }
+        if (bp->address == ctx.pc) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void BrkDebugSession :: restore_patches(void)
 {
     bool any = false;
@@ -573,7 +617,10 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
 DebugSession::Result BrkDebugSession :: step_with_predict(
     const DebugContext *from, uint16_t start_pc,
     const DebugPredictResult &pred, bool prefer_jsr_target,
-    DebugContext *out, uint8_t cpu_port)
+    DebugContext *out, uint8_t cpu_port,
+    const MonitorBreakpoints *bps,
+    uint16_t skip_breakpoint_address,
+    bool skip_breakpoint_address_valid)
 {
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
         return DBG_REFUSED;
@@ -636,6 +683,13 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
     if (n <= 0) {
         return DBG_REFUSED;
     }
+    PatchInstallResult bp_patched = install_breakpoints(
+        bps, skip_breakpoint_address, skip_breakpoint_address_valid);
+    if (bp_patched != PATCH_INSTALL_OK) {
+        restore_patches();
+        return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+    }
     for (int i = 0; i < n; i++) {
         PatchInstallResult patched = install_brk_at(addrs[i], cpu_port);
         if (patched != PATCH_INSTALL_OK) {
@@ -670,18 +724,36 @@ DebugSession::Result BrkDebugSession :: over(const DebugContext &from,
                                              const DebugPredictResult &pred,
                                              DebugContext *ctx)
 {
+    return over(from, pred, 0, ctx);
+}
+
+DebugSession::Result BrkDebugSession :: over(const DebugContext &from,
+                                             const DebugPredictResult &pred,
+                                             const MonitorBreakpoints *bps,
+                                             DebugContext *ctx)
+{
     if (!backend_ready() || !ctx || !from.valid) return DBG_REFUSED;
     uint8_t cpu_port = current_cpu_port();
-    return step_with_predict(&from, from.pc, pred, false, ctx, cpu_port);
+    return step_with_predict(&from, from.pc, pred, false, ctx, cpu_port,
+                             bps, from.pc, true);
 }
 
 DebugSession::Result BrkDebugSession :: over_at(uint16_t start_pc,
                                                 const DebugPredictResult &pred,
                                                 DebugContext *ctx)
 {
+    return over_at(start_pc, pred, 0, ctx);
+}
+
+DebugSession::Result BrkDebugSession :: over_at(uint16_t start_pc,
+                                                const DebugPredictResult &pred,
+                                                const MonitorBreakpoints *bps,
+                                                DebugContext *ctx)
+{
     if (!backend_ready() || !ctx) return DBG_REFUSED;
     uint8_t cpu_port = current_cpu_port();
-    return step_with_predict(0, start_pc, pred, false, ctx, cpu_port);
+    return step_with_predict(0, start_pc, pred, false, ctx, cpu_port,
+                             bps, start_pc, true);
 }
 
 DebugSession::Result BrkDebugSession :: trace(const DebugContext &from,
@@ -705,23 +777,41 @@ DebugSession::Result BrkDebugSession :: trace_at(uint16_t start_pc,
 DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
                                                  DebugContext *ctx)
 {
+    return step_out(from, 0, ctx);
+}
+
+DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
+                                                 const MonitorBreakpoints *bps,
+                                                 DebugContext *ctx)
+{
     if (!backend_ready() || !ctx || !from.valid) return DBG_REFUSED;
     uint8_t cpu_port = current_cpu_port();
     uint16_t target;
     if (!peek_return_target(&target)) {
         return DBG_NOT_IN_SUBROUTINE;
     }
+    PatchInstallResult bp_patched = install_breakpoints(bps, from.pc, true);
+    if (bp_patched != PATCH_INSTALL_OK) {
+        restore_patches();
+        return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+    }
     PatchInstallResult patched = install_brk_at(target, cpu_port);
     if (patched != PATCH_INSTALL_OK) {
+        restore_patches();
         return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
             DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
     Result result = perform_run(&from, from.pc, false, ctx, cpu_port);
-    if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
-        return DBG_RETURN_NOT_REACHED;
-    }
     if (result == DBG_OK && ctx->valid && ctx->pc == target) {
         pop_return_target(target);
+    }
+    if (result == DBG_OK && ctx->valid &&
+            context_at_breakpoint(*ctx, bps, from.pc, true)) {
+        return DBG_OK;
+    }
+    if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
+        return DBG_RETURN_NOT_REACHED;
     }
     return result;
 }
@@ -752,24 +842,22 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         }
         DebugPredictResult pred;
         debug_predict(from.pc, bytes, false, &pred);
-        Result skip = step_with_predict(&from, from.pc, pred, false, &step_ctx, cpu_port);
+        Result skip = step_with_predict(&from, from.pc, pred, false, &step_ctx, cpu_port,
+                                        bps, from.pc, true);
         if (skip != DBG_OK) {
             return skip;
+        }
+        if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
+            return DBG_OK;
         }
         resume_from = &step_ctx;
     }
 
-    if (bps) {
-        for (int i = 0; i < bps->slot_count(); i++) {
-            const MonitorBreakpointSlot *bp = bps->get(i);
-            if (!bp || !bp->used || !bp->enabled) continue;
-            PatchInstallResult patched = install_brk_at(bp->address, bp->cpu_port);
-            if (patched != PATCH_INSTALL_OK) {
-                restore_patches();
-                return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
-                    DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
-            }
-        }
+    PatchInstallResult bp_patched = install_breakpoints(bps, 0, false);
+    if (bp_patched != PATCH_INSTALL_OK) {
+        restore_patches();
+        return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
 
     bool any_bp = false;

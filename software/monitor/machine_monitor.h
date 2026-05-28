@@ -193,6 +193,16 @@ class MachineMonitor : public UIObject
     const char *hunt_picker_label;
     uint8_t asm_edit_part;
     uint8_t asm_edit_pending;
+    enum { ASM_LANE_MAX_ROWS = 256 };
+    mutable bool asm_lane_valid;
+    mutable uint8_t asm_lane_cpu_port;
+    mutable bool asm_lane_illegal_enabled;
+    mutable uint16_t asm_lane_rows[ASM_LANE_MAX_ROWS];
+    mutable uint8_t asm_lane_lengths[ASM_LANE_MAX_ROWS];
+    mutable uint8_t asm_lane_forced_bytes[ASM_LANE_MAX_ROWS];
+    mutable int asm_lane_count;
+    mutable int asm_lane_top;
+    mutable int asm_lane_selected;
     // Per-instruction undo trail used by DEL in ASM edit mode. Each slot
     // captures the byte we are about to overwrite so DEL can restore it.
     enum { ASM_EDIT_HISTORY_MAX = 16 };
@@ -417,15 +427,27 @@ class MachineMonitor : public UIObject
     uint16_t next_poll_interval_ms(void);
     void reset_poll_deadline(void);
     uint8_t disasm_length(uint16_t address) const;
-    int disasm_root_row(void) const;
-    void disasm_visible_addresses(uint16_t *rows, int count) const;
+    void disasm_lane_invalidate(void);
+    void disasm_lane_reset(uint16_t address);
+    void disasm_lane_ensure(void) const;
+    void disasm_lane_extend_forward_to(int index) const;
+    void disasm_lane_sync_state(void);
+    uint8_t disasm_lane_length_at(int index) const;
+    uint16_t disasm_lane_next_addr_at(int index) const;
+    void disasm_lane_append(uint16_t address, uint8_t forced_length) const;
+    void disasm_lane_prepend(uint16_t address, uint8_t forced_length);
+    bool disasm_lane_prepend_previous(void);
+    void disasm_lane_rebuild_suffix_from_current(void);
+    void disasm_visible_addresses(uint16_t *rows, uint8_t *lengths, int count) const;
     bool disasm_same_source(uint16_t a, uint16_t b) const;
     bool disasm_crosses_source_boundary(uint16_t start, uint16_t end) const;
     bool disasm_is_io_source(uint16_t address) const;
+    bool disasm_find_prev_addr(uint16_t address, uint16_t *previous) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
-    uint16_t disasm_next_addr(uint16_t address);
-    uint16_t disasm_prev_addr(uint16_t address);
+    void disasm_position_current_at_row(int row);
+    uint16_t disasm_next_addr(uint16_t address) const;
+    uint16_t disasm_prev_addr(uint16_t address) const;
     uint16_t disasm_prev_visible_addr(uint16_t address);
     int disasm_visible_row(uint16_t address) const;
     uint16_t disasm_advance_rows(uint16_t address, int rows);

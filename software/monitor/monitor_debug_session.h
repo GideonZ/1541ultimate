@@ -48,15 +48,30 @@ public:
     virtual Result snapshot(DebugContext *ctx) = 0;
 
     // Step over: install BRK at fall_through, resume, wait, restore. JSR is
-    // handled identically (BRK at PC + 3).
+    // handled identically (BRK at PC + 3). Backends that support active
+    // breakpoints during the run may override the breakpoint-table overload.
     virtual Result over(const DebugContext &from,
                         const struct DebugPredictResult &pred,
                         DebugContext *ctx) = 0;
+    virtual Result over(const DebugContext &from,
+                        const struct DebugPredictResult &pred,
+                        const MonitorBreakpoints *breakpoints,
+                        DebugContext *ctx) {
+        (void)breakpoints;
+        return over(from, pred, ctx);
+    }
     virtual Result over_at(uint16_t start_pc,
                            const struct DebugPredictResult &pred,
                            DebugContext *ctx) {
         (void)start_pc; (void)pred; (void)ctx;
         return DBG_NOT_SUPPORTED;
+    }
+    virtual Result over_at(uint16_t start_pc,
+                           const struct DebugPredictResult &pred,
+                           const MonitorBreakpoints *breakpoints,
+                           DebugContext *ctx) {
+        (void)breakpoints;
+        return over_at(start_pc, pred, ctx);
     }
 
     // Step into: BRK at the predicted next PC. For JSR this enters the
@@ -75,6 +90,12 @@ public:
     // the captured SP. Returns DBG_REFUSED when stack context is unsafe.
     virtual Result step_out(const DebugContext &from,
                             DebugContext *ctx) = 0;
+    virtual Result step_out(const DebugContext &from,
+                            const MonitorBreakpoints *breakpoints,
+                            DebugContext *ctx) {
+        (void)breakpoints;
+        return step_out(from, ctx);
+    }
 
     // Resume execution honouring active breakpoints. Invalidates the context
     // on the calling side. When `from.valid` is false (no prior capture),

@@ -109,6 +109,8 @@ Example:
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
 
+The highlighted address is the disassembly root: rows below it are decoded forward from that address, while rows above it are context only. Changing bytes before the highlighted address can refresh the context rows, but it will not silently change the instruction phase at the highlighted address. To inspect a different phase deliberately, move the root with the cursor keys or jump to the desired address.
+
 It also allows you to assemble instructions inline (in `E`dit mode) as well as debug code (in `D`ebug mode).
 
 Please see the **Edit Mode** respectively **Debug Mode** chapters below for more information.
@@ -310,6 +312,7 @@ Binary width details:
 - `G`: exit the monitor and execute from an address.
 - `F1` or `Shift+Space`: page up.
 - `F7` or `Space`: page down.
+- Assembly view, non-edit mode: `Up` / `Down` move to the previous / next instruction root; `Left` / `Right` move the decode root by one byte (`-1` / `+1`).
 - `Enter`: in Assembly view, follow the target of a jumpable instruction, or return to the most recent saved source location when the current instruction is not jumpable and the follow stack is non-empty.
 - `O`: cycle CPU port banking, `CPU0`..`CPU7`.
 - `Shift+O`: cycle the VIC bank override.
@@ -375,6 +378,8 @@ Edit behavior is view-specific:
 | Assembly | Edit instructions inline with mnemonic completion and direct operand typing |
 
 In edit mode, `Space` remains view-specific data entry and does not page.
+
+In Assembly edit mode, `Left` / `Right` move between editable parts of the current instruction. They do not change the disassembly root unless the cursor is already at the first or last editable part, where the existing row-to-row edit navigation applies. `Up` / `Down` move to the previous / next instruction row.
 
 `DEL` is logical delete, not raw backspace:
 

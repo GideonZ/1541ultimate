@@ -47,8 +47,16 @@ public:
     virtual Result over(const DebugContext &from,
                         const DebugPredictResult &pred,
                         DebugContext *ctx);
+    virtual Result over(const DebugContext &from,
+                        const DebugPredictResult &pred,
+                        const MonitorBreakpoints *breakpoints,
+                        DebugContext *ctx);
     virtual Result over_at(uint16_t start_pc,
                            const DebugPredictResult &pred,
+                           DebugContext *ctx);
+    virtual Result over_at(uint16_t start_pc,
+                           const DebugPredictResult &pred,
+                           const MonitorBreakpoints *breakpoints,
                            DebugContext *ctx);
     virtual Result trace(const DebugContext &from,
                          const DebugPredictResult &pred,
@@ -57,6 +65,9 @@ public:
                             const DebugPredictResult &pred,
                             DebugContext *ctx);
     virtual Result step_out(const DebugContext &from, DebugContext *ctx);
+    virtual Result step_out(const DebugContext &from,
+                            const MonitorBreakpoints *breakpoints,
+                            DebugContext *ctx);
     virtual Result go(const DebugContext &from,
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc);
@@ -117,6 +128,13 @@ private:
     int find_free_patch(void);
     bool already_patched(uint16_t addr);
     PatchInstallResult install_brk_at(uint16_t addr, uint8_t cpu_port);
+    PatchInstallResult install_breakpoints(const MonitorBreakpoints *breakpoints,
+                                           uint16_t skip_address,
+                                           bool skip_address_valid);
+    bool context_at_breakpoint(const DebugContext &ctx,
+                               const MonitorBreakpoints *breakpoints,
+                               uint16_t skip_address,
+                               bool skip_address_valid) const;
     void restore_patches(void);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
     void clear_return_targets(void);
@@ -134,7 +152,10 @@ private:
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,
                              const DebugPredictResult &pred,
                              bool prefer_jsr_target,
-                             DebugContext *out, uint8_t cpu_port);
+                             DebugContext *out, uint8_t cpu_port,
+                             const MonitorBreakpoints *breakpoints = 0,
+                             uint16_t skip_breakpoint_address = 0,
+                             bool skip_breakpoint_address_valid = false);
 };
 
 #endif
