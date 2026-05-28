@@ -89,6 +89,9 @@ MonitorError monitor_parse_expression(const char *text, uint16_t *value);
 MonitorError monitor_parse_byte_value(const char *text, uint8_t *value);
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value);
 MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
+MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
+                                             uint16_t *dest, bool *relocate,
+                                             uint16_t *reloc_start, uint16_t *reloc_end);
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end, uint8_t *needle, int *needle_len);
 
@@ -99,6 +102,8 @@ uint8_t monitor_screen_code_for_char(char c,
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value);
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest);
+void monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
+                                      uint16_t dest, uint16_t reloc_start, uint16_t reloc_end);
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len);
 int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, char *out, int out_len);
 int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, uint16_t *out_addrs, int max_addrs);
@@ -217,9 +222,14 @@ class MachineMonitor : public UIObject
     MonitorDebug debug;
     MonitorBreakpoints breakpoints;
     class DebugSession *debug_session;
+    bool debug_cursor_override;
+    bool debug_entry_context_valid;
+    DebugContext debug_entry_context;
     bool debug_run_window_refreeze_enabled;
     bool reset_exits_monitor;
     bool reset_exit_pending;
+    bool reopen_after_reset;
+    bool restore_debug_after_reset;
     bool breakpoint_popup_active;
     uint8_t breakpoint_selected;
     bool bookmark_popup_active;
@@ -338,14 +348,17 @@ class MachineMonitor : public UIObject
     bool debug_has_enabled_breakpoint(void) const;
     void debug_toggle_breakpoint(void);
     void debug_open_breakpoint_popup(void);
+    void edit_breakpoint_label(uint8_t slot);
     int  debug_breakpoint_popup_handle_key(int key);
     void debug_close_breakpoint_popup(void);
     void debug_render_breakpoint_popup(void);
     void ensure_debug_pc_visible(void);
     void debug_cleanup_session(void);
+    void restore_debug_mode_after_reset(void);
     DebugSession *ensure_debug_session(void);
     bool debug_capture_context(DebugContext *out);
     int  handle_reset_shortcut(void);
+    void clear_pending_go(void);
     // After a freeze-mode debug step the firmware chrome rows (UI title and
     // border lines) are overwritten by the live BASIC screen. Call this after
     // any step that may have been in freeze mode: it re-establishes the chrome
@@ -423,6 +436,8 @@ public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
     void set_debug_run_window_refreeze_enabled(bool enabled);
     void set_reset_exits_monitor(bool enabled);
+    void request_reopen_after_reset(void);
+    bool consume_reopen_after_reset(void);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);

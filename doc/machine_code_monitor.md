@@ -454,11 +454,17 @@ The monitor includes direct bulk memory commands:
 | Key | Command  | Syntax                                   | Result                                                                |
 | --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest`                         | Copy a range to a destination                                         |
+| `T` | Transfer | `start-end,dest[,program-start-program-end]` | Copy a range; optional program range amends absolute operands that point into the moved range |
 | `C` | Compare  | `start-end,dest`                         | Compare a range against another location and list differing addresses |
 | `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
 
 `Hunt` opens a result picker:
+
+`Transfer` normally copies bytes only. When the optional program range is
+supplied, the monitor treats that range as 6502 code and amends every 16-bit
+absolute operand whose value points into the moved source range so it points at
+the destination copy. This applies to all absolute operands, not just `JMP` and
+`JSR`.
 
 - `Return`: jump to the selected match.
 - `RUN/STOP`: close the picker.

@@ -304,11 +304,11 @@ void monitor_io::resume_to_context(const DebugContext &context)
     const uint8_t body[] = {
         0xA2, context.sp,
         0x9A,
-        0xA9, context.sr,
+        0xA9, (uint8_t)(context.pc >> 8),
         0x48,
         0xA9, (uint8_t)(context.pc & 0xFF),
         0x48,
-        0xA9, (uint8_t)(context.pc >> 8),
+        0xA9, context.sr,
         0x48,
         0xA0, context.y,
         0xA2, context.x,

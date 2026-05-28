@@ -1,6 +1,11 @@
 #include "userinterface.h"
 #include <stdio.h>
 
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+#include "c64.h"
+#include "subsys.h"
+#endif
+
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -143,6 +148,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     host = NULL;
     keyboard = NULL;
     screen = NULL;
+    active_machine_monitor = NULL;
     doBreak = false;
     available = false;
     color_sel_bg = 0;
@@ -307,6 +313,7 @@ void UserInterface :: run_once(void)
     }
 
     host->take_ownership(this);
+    menu_response_to_action = MENU_NOP;
     if (!host->is_permanent()) {
         appear();
     }
@@ -402,6 +409,17 @@ void UserInterface :: send_keystroke(int key)
     if (obj) {
         obj->send_keystroke(key);
     }
+}
+
+bool UserInterface :: handle_global_reset_shortcut(void)
+{
+    menu_response_to_action = MENU_EXIT;
+    doBreak = true;
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    SubsysCommand *cmd = new SubsysCommand(this, SUBSYSID_C64, MENU_C64_RESET, 0, NULL, 0);
+    cmd->execute();
+#endif
+    return true;
 }
 
 int UserInterface :: pollInactive(void)
@@ -707,6 +725,9 @@ mstring *UserInterface :: getMessage(void)
 
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
+    if ((map != e_keymap_monitor) && (c == KEY_CTRL_X) && handle_global_reset_shortcut()) {
+        return -2;
+    }
     if ((navmode == 1) && (map != e_keymap_monitor)) { // WASD cursors enabled
         if (c >= 'A' && c <= 'Z') {
             c |= 0x20; // make uppercase lowercase

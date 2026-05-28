@@ -24,6 +24,13 @@ class U64DebugSession : public BrkDebugSession
 {
     U64MemoryBackend *backend;
     U64Machine *machine;
+    struct RomPatchShadow {
+        bool used;
+        uint16_t address;
+        uint8_t cpu_port;
+        uint8_t byte;
+    };
+    RomPatchShadow rom_patch_shadow[16];
 
     // U64 BASIC/KERNAL/CHAR ROMs are served from volatile image buffers in
     // U64_BASIC_BASE/U64_KERNAL_BASE/U64_CHARROM_BASE. Patch those buffers
@@ -46,11 +53,44 @@ class U64DebugSession : public BrkDebugSession
         return 0;
     }
 
+    int find_rom_patch_shadow(uint16_t addr, uint8_t cpu_port) const
+    {
+        cpu_port &= 0x07;
+        for (int i = 0; i < (int)(sizeof(rom_patch_shadow) / sizeof(rom_patch_shadow[0])); i++) {
+            if (rom_patch_shadow[i].used &&
+                    rom_patch_shadow[i].address == addr &&
+                    rom_patch_shadow[i].cpu_port == cpu_port) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    void remember_rom_patch_shadow(uint16_t addr, uint8_t byte, uint8_t cpu_port)
+    {
+        cpu_port &= 0x07;
+        int slot = find_rom_patch_shadow(addr, cpu_port);
+        if (slot < 0) {
+            for (int i = 0; i < (int)(sizeof(rom_patch_shadow) / sizeof(rom_patch_shadow[0])); i++) {
+                if (!rom_patch_shadow[i].used) {
+                    slot = i;
+                    break;
+                }
+            }
+        }
+        if (slot >= 0) {
+            rom_patch_shadow[slot].used = true;
+            rom_patch_shadow[slot].address = addr;
+            rom_patch_shadow[slot].cpu_port = cpu_port;
+            rom_patch_shadow[slot].byte = byte;
+        }
+    }
+
 protected:
     virtual bool backend_ready(void) const { return machine != 0; }
     virtual uint8_t current_cpu_port(void) const
     {
-        return backend ? backend->get_monitor_cpu_port() : (uint8_t)0x07;
+        return u64_debug_step_cpu_port(backend);
     }
     virtual bool begin_stopped_session(void) { return machine->begin_stopped_session(); }
     virtual void end_stopped_session(bool stopped_it) { machine->end_stopped_session(stopped_it); }
@@ -119,15 +159,30 @@ protected:
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
-            return *rom;
+            int shadow = find_rom_patch_shadow(addr, cpu_port);
+            if (shadow >= 0) {
+                return rom_patch_shadow[shadow].byte;
+            }
+            return backend ? backend->read(addr) : machine->peek_cpu(addr, cpu_port);
         }
         return machine->peek_cpu(addr, cpu_port);
+    }
+    virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
+    {
+        if (!backend || !dst) {
+            return false;
+        }
+        for (uint8_t i = 0; i < len; i++) {
+            dst[i] = backend->read((uint16_t)(address + i));
+        }
+        return true;
     }
     virtual void write_patch_byte(uint16_t addr, uint8_t byte, uint8_t cpu_port)
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
             *rom = byte;
+            remember_rom_patch_shadow(addr, byte, cpu_port);
             return;
         }
         machine->poke_cpu(addr, byte, cpu_port);
@@ -138,6 +193,12 @@ public:
         : BrkDebugSession(), backend(b), machine(0)
     {
         machine = (U64Machine *)C64::getMachine();
+        for (int i = 0; i < (int)(sizeof(rom_patch_shadow) / sizeof(rom_patch_shadow[0])); i++) {
+            rom_patch_shadow[i].used = false;
+            rom_patch_shadow[i].address = 0;
+            rom_patch_shadow[i].cpu_port = 0;
+            rom_patch_shadow[i].byte = 0;
+        }
     }
 
     // Restore patches/handler while this subclass' hooks are still live. The

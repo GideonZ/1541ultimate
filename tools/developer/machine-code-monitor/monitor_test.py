@@ -473,6 +473,10 @@ class MonitorSession:
         self.send_char("C")
         return self.send_text(expr + "\r", f"C {expr}")
 
+    def transfer(self, expr: str) -> Snapshot:
+        self.send_char("T")
+        return self.send_text(expr + "\r", f"T {expr}")
+
     def goto_run(self, address: str) -> Snapshot:
         self.send_char("G")
         return self.send_text(address + "\r", f"G {address}")
@@ -1333,6 +1337,18 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         session.fill("C203-C203,93")
         screen = session.compare("C100-C103,C200")
         assert_contains(screen, 4, "C101")
+        session.send_key("ENTER")
+
+    with check("TRANSFER relocates absolute operands", u2=False,
+               u2_reason="Helper writes via REST and asserts U64 RAM content"):
+        write_rest_memory(rest_host, 0xC400, bytes.fromhex("AD08C48D20D04C00C460"))
+        write_rest_memory(rest_host, 0xC410, bytes.fromhex("AE08C4"))
+        write_rest_memory(rest_host, 0xC500, bytes([0x00] * 0x13))
+        session.transfer("C400-C40A,C500,C400-C413")
+        copied = read_rest_memory(rest_host, 0xC500, 0x0A)
+        outside = read_rest_memory(rest_host, 0xC410, 0x03)
+        assert_equal("Relocated copied code", "AD08C58D20D04C00C560", copied.hex().upper(), "T relocate copied")
+        assert_equal("Relocated external operand", "AE08C5", outside.hex().upper(), "T relocate external")
 
     with check("G executes finite loop and returns to monitor"):
         # REST is available on U2 firmware too (route_machine.cc is linked

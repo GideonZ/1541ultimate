@@ -29,7 +29,9 @@ int Keyboard_VT100 :: getch()
         } else {
 		    charin = stream->get_char();
         }
-		if (charin == '\e')
+		if (charin == 0x12) // Ctrl+R
+			ret = KEY_CTRL_R;
+		else if (charin == '\e')
 			escape_state = e_esc_escape;
 		else  // -1 is also else
 			ret = charin;

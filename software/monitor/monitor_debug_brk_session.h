@@ -61,6 +61,7 @@ public:
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc);
     virtual void cleanup(void);
+    virtual void cleanup_to_context(const DebugContext *ctx);
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len);
     virtual void forget_context(void);
     virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
@@ -79,7 +80,10 @@ private:
         uint8_t cpu_port;
     };
 
-    enum { MAX_PATCHES = 16 };
+    enum {
+        MAX_PATCHES = 16,
+        MAX_RETURN_TARGETS = 8
+    };
 
     Keyboard *cancel_keyboard;
     Patch patches[MAX_PATCHES];
@@ -102,6 +106,8 @@ private:
     uint8_t saved_brk_vector[2];
     bool has_last_context;
     DebugContext last_context;
+    uint16_t return_targets[MAX_RETURN_TARGETS];
+    uint8_t return_target_count;
 
     bool reserved_patch_address(uint16_t addr) const;
     void begin_run_window(void);
@@ -113,8 +119,10 @@ private:
     PatchInstallResult install_brk_at(uint16_t addr, uint8_t cpu_port);
     void restore_patches(void);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
-    bool find_stack_return_target(const DebugContext &from, uint8_t cpu_port,
-                                  uint16_t *target);
+    void clear_return_targets(void);
+    void push_return_target(uint16_t target);
+    bool peek_return_target(uint16_t *target) const;
+    void pop_return_target(uint16_t target);
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void release_to_run(const DebugContext *from);

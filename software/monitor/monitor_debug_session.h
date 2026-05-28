@@ -20,6 +20,9 @@ public:
         DBG_OK = 0,             // Stopped cleanly, *ctx populated.
         DBG_NOT_SUPPORTED,      // Backend cannot perform this operation.
         DBG_REFUSED,            // Unsafe target (BRK, unsupported insn, ...).
+        DBG_UNSUPPORTED_OPCODE, // Opcode can be decoded but not debug-stepped.
+        DBG_NOT_IN_SUBROUTINE,  // Step Out requested without a traced JSR frame.
+        DBG_RETURN_NOT_REACHED, // Step Out ran but did not trap at its return target.
         DBG_TIMEOUT,            // Trap did not fire within the wait window.
         DBG_CANCELLED,          // User pressed RUN/STOP / Telnet ESC during wait.
         DBG_RESET,              // User forced a machine reset; context is no longer truthful.
@@ -87,6 +90,15 @@ public:
     // to call at any time (success, failure, mode change, destructor) and
     // must be idempotent.
     virtual void cleanup(void) = 0;
+
+    // Stop Debugging without continuing the debug target. Backends with a
+    // parked CPU may use the supplied pre-debug context as the live resume
+    // context instead of resuming the most recent target debug PC.
+    virtual void cleanup_to_context(const DebugContext *ctx)
+    {
+        (void)ctx;
+        cleanup();
+    }
 
     // True only when the backend can patch bytes in currently visible ROM
     // windows (e.g. U64 volatile BASIC/KERNAL/CHAR images). Backends that

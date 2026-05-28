@@ -213,6 +213,7 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             break;
         case MENU_C64_RESET:
             if (c64->client) { // we can't execute this yet
+                c64->client->request_reset_reentry_after_c64_reset();
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }

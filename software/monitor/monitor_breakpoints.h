@@ -8,6 +8,8 @@
 // to bookmark storage, both because breakpoints have very different semantics
 // and because the spec calls out "Prefer non-persistent breakpoint state".
 #define MONITOR_BREAKPOINT_SLOT_COUNT 10
+#define MONITOR_BREAKPOINT_LABEL_MAX 4
+#define MONITOR_BREAKPOINT_LABEL_STORAGE (MONITOR_BREAKPOINT_LABEL_MAX + 1)
 
 struct MonitorBreakpointSlot {
     bool used;
@@ -17,6 +19,7 @@ struct MonitorBreakpointSlot {
     // where the BP lives even after the user changes CPU banks. Stepping code
     // consults this when patching/restoring BRK bytes.
     uint8_t cpu_port;
+    char label[MONITOR_BREAKPOINT_LABEL_STORAGE];
 };
 
 class MonitorBreakpoints
@@ -38,9 +41,11 @@ public:
     void store_slot(int slot, uint16_t address, uint8_t cpu_port);
     void clear_slot(int slot);
     void set_enabled(int slot, bool enabled);
+    void set_label(int slot, const char *label);
 
     int slot_count(void) const { return MONITOR_BREAKPOINT_SLOT_COUNT; }
     const MonitorBreakpointSlot *get(int slot) const;
+    static void normalize_label(char *out, int out_len, const char *input);
 
     // Format a single slot row for the popup. `out` must hold at least 24
     // characters. Format: "0 SET   $C000 CPU7" or "0 EMPTY".

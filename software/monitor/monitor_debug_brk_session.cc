@@ -96,9 +96,11 @@ BrkDebugSession :: BrkDebugSession()
     : cancel_keyboard(0), handler_installed(false), cpu_parked_in_spin(false),
       run_window_depth(0), run_window_refreeze_enabled(true),
       run_window_unfroze(false), screen_was_clobbered(false),
-      nmi_trampoline_installed(false), has_last_context(false)
+      nmi_trampoline_installed(false), has_last_context(false),
+      return_target_count(0)
 {
     memset(patches, 0, sizeof(patches));
+    memset(return_targets, 0, sizeof(return_targets));
     memset(saved_handler_bytes, 0, sizeof(saved_handler_bytes));
     memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
     memset(saved_nmi_vector, 0, sizeof(saved_nmi_vector));
@@ -329,31 +331,37 @@ void BrkDebugSession :: fill_vectors(DebugContext *ctx, uint8_t cpu_port)
     ctx->nmi_valid = true;
 }
 
-bool BrkDebugSession :: find_stack_return_target(const DebugContext &from,
-                                                 uint8_t cpu_port,
-                                                 uint16_t *target)
+void BrkDebugSession :: clear_return_targets(void)
 {
-    if (!target) {
+    return_target_count = 0;
+}
+
+void BrkDebugSession :: push_return_target(uint16_t target)
+{
+    if (return_target_count >= MAX_RETURN_TARGETS) {
+        for (int i = 1; i < MAX_RETURN_TARGETS; i++) {
+            return_targets[i - 1] = return_targets[i];
+        }
+        return_target_count = MAX_RETURN_TARGETS - 1;
+    }
+    return_targets[return_target_count++] = target;
+}
+
+bool BrkDebugSession :: peek_return_target(uint16_t *target) const
+{
+    if (!target || return_target_count == 0) {
         return false;
     }
-    for (int off = 1; off < 0xFF; off++) {
-        uint16_t sp_lo = (uint16_t)(0x0100 + ((from.sp + off) & 0xFF));
-        uint16_t sp_hi = (uint16_t)(0x0100 + ((from.sp + off + 1) & 0xFF));
-        uint16_t ret = (uint16_t)(peek_cpu(sp_lo, cpu_port) |
-                                  (peek_cpu(sp_hi, cpu_port) << 8));
-        uint16_t call = (uint16_t)(ret - 2);
-        if (peek_cpu(call, cpu_port) != 0x20) {
-            continue;
-        }
-        uint16_t jsr_target = (uint16_t)(
-            peek_cpu((uint16_t)(call + 1), cpu_port) |
-            (peek_cpu((uint16_t)(call + 2), cpu_port) << 8));
-        if (jsr_target <= from.pc) {
-            *target = (uint16_t)(ret + 1);
-            return true;
-        }
+    *target = return_targets[return_target_count - 1];
+    return true;
+}
+
+void BrkDebugSession :: pop_return_target(uint16_t target)
+{
+    if (return_target_count > 0 &&
+            return_targets[return_target_count - 1] == target) {
+        return_target_count--;
     }
-    return false;
 }
 
 DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
@@ -440,11 +448,11 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     const uint8_t bytes[] = {
         0xA2, from.sp,
         0x9A,
-        0xA9, from.sr,
+        0xA9, (uint8_t)(from.pc >> 8),
         0x48,
         0xA9, (uint8_t)(from.pc & 0xFF),
         0x48,
-        0xA9, (uint8_t)(from.pc >> 8),
+        0xA9, from.sr,
         0x48,
         0xA0, from.y,
         0xA2, from.x,
@@ -532,6 +540,10 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
     save_and_install_handler();
     if (cpu_parked_in_spin && from && from->valid) {
         release_to_run(from);
+    } else if (cpu_parked_in_spin && use_start_pc && has_last_context) {
+        DebugContext start_context = last_context;
+        start_context.pc = start_pc;
+        release_to_run(&start_context);
     } else if (from && from->valid) {
         nmi_redirect_to(from->pc);
     } else if (use_start_pc) {
@@ -624,7 +636,16 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
                 DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
         }
     }
-    return perform_run(from, start_pc, (!from || !from->valid), out, cpu_port);
+    Result result = perform_run(from, start_pc, (!from || !from->valid), out, cpu_port);
+    if (result == DBG_OK && out && out->valid) {
+        if (pred.kind == DBG_PREDICT_JSR && prefer_jsr_target &&
+                pred.has_target && out->pc == pred.branch_target) {
+            push_return_target(pred.fall_through);
+        } else if ((pred.kind == DBG_PREDICT_RTS || pred.kind == DBG_PREDICT_RTI)) {
+            pop_return_target(out->pc);
+        }
+    }
+    return result;
 }
 
 DebugSession::Result BrkDebugSession :: snapshot(DebugContext *ctx)
@@ -679,15 +700,22 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     if (!backend_ready() || !ctx || !from.valid) return DBG_REFUSED;
     uint8_t cpu_port = current_cpu_port();
     uint16_t target;
-    if (!find_stack_return_target(from, cpu_port, &target)) {
-        return DBG_REFUSED;
+    if (!peek_return_target(&target)) {
+        return DBG_NOT_IN_SUBROUTINE;
     }
     PatchInstallResult patched = install_brk_at(target, cpu_port);
     if (patched != PATCH_INSTALL_OK) {
         return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
             DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
     }
-    return perform_run(&from, from.pc, false, ctx, cpu_port);
+    Result result = perform_run(&from, from.pc, false, ctx, cpu_port);
+    if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
+        return DBG_RETURN_NOT_REACHED;
+    }
+    if (result == DBG_OK && ctx->valid && ctx->pc == target) {
+        pop_return_target(target);
+    }
+    return result;
 }
 
 DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
@@ -753,6 +781,10 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     save_and_install_handler();
     if (resume_from->valid && cpu_parked_in_spin) {
         release_to_run(resume_from);
+    } else if (cpu_parked_in_spin && has_last_context) {
+        DebugContext start_context = last_context;
+        start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
+        release_to_run(&start_context);
     } else if (resume_from->valid) {
         poke_visible(SENTINEL_ADDR, 0x00);
         nmi_redirect_to(resume_from->pc);
@@ -785,6 +817,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 void BrkDebugSession :: cleanup(void)
 {
     if (!backend_ready()) return;
+    clear_return_targets();
     bool resume_pending = cpu_parked_in_spin && has_last_context;
     restore_patches();
     if (resume_pending) {
@@ -795,6 +828,22 @@ void BrkDebugSession :: cleanup(void)
         // stopped session. We must NOT run uninstall_handler() first: it would
         // restore the original bytes under the spin loop and, in overlay mode,
         // drop the live CPU straight into them before the resume stub is staged.
+        resume_from_parked_context(last_context);
+    } else {
+        uninstall_handler();
+    }
+    cpu_parked_in_spin = false;
+}
+
+void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
+{
+    if (!backend_ready()) return;
+    clear_return_targets();
+    bool resume_pending = cpu_parked_in_spin && has_last_context;
+    restore_patches();
+    if (resume_pending && ctx && ctx->valid) {
+        resume_from_parked_context(*ctx);
+    } else if (resume_pending) {
         resume_from_parked_context(last_context);
     } else {
         uninstall_handler();
@@ -821,4 +870,5 @@ void BrkDebugSession :: forget_context(void)
     // than the previous session's PC. Patch/handler teardown is cleanup()'s job.
     has_last_context = false;
     debug_context_reset(&last_context);
+    clear_return_targets();
 }

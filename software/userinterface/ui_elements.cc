@@ -132,8 +132,8 @@ int UIPopup :: poll(int dummy)
 
     if (c == -1) // nothing pressed
     	return 0;
-    if (c == -2) // error
-    	return -1;
+    if (c == -2) // global accelerator consumed
+        return MENU_EXIT;
 
     int i;
     int selected_button = -1;

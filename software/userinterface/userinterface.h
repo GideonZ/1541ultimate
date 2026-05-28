@@ -56,6 +56,8 @@ typedef enum {
 class Editor;
 class HexEditor;
 class MemoryBackend;
+class MachineMonitor;
+extern "C" bool machine_monitor_request_reset_reentry(void *) __attribute__((weak));
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -68,6 +70,7 @@ private:
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
+    MachineMonitor *active_machine_monitor;
     
     void set_available(bool enable);
     int  pollFocussed(void);
@@ -96,6 +99,11 @@ public:
 
     // from HostClient
     virtual void release_host();
+    virtual bool request_reset_reentry_after_c64_reset()
+    {
+        return machine_monitor_request_reset_reentry ?
+            machine_monitor_request_reset_reentry(active_machine_monitor) : false;
+    }
 
     virtual bool is_available(void);
     virtual void run();
@@ -130,6 +138,7 @@ public:
     void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
+    bool handle_global_reset_shortcut(void);
     static bool anyMenuActive(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }

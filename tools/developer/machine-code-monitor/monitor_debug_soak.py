@@ -132,6 +132,10 @@ def _set_nz(sr: int, value: int) -> int:
     return sr
 
 
+class UnsupportedEmulation(Exception):
+    pass
+
+
 class Memory:
     def __init__(self, rest_host: str) -> None:
         self.rest_host = rest_host
@@ -139,6 +143,10 @@ class Memory:
 
     def read(self, address: int) -> int:
         address = _u16(address)
+        # $0000/$0001 are 6510 CPU port registers. The REST raw-memory API is
+        # not an instruction-fetch/read oracle for those locations.
+        if address in (0x0000, 0x0001):
+            raise UnsupportedEmulation
         if address not in self.cache:
             self.cache[address] = mt.read_rest_memory(self.rest_host, address, 1)[0]
         return self.cache[address]
@@ -538,8 +546,8 @@ def exercise_debug_ux(session: "mt.MonitorSession", current: CpuState, iteration
         if f"${current.pc:04X}" not in header:
             raise mt.Failure(f"ASM did not return to debug PC {current.pc:04X}: {header!r}")
     if iteration % 23 == 0:
-        session.last_command = "CBM_R"
-        session.sock.sendall(b"\x1bR")
+        session.last_command = "CTRL_R"
+        session.sock.sendall(b"\x12")
         text = session.capture().text()
         if "BREAKPOINTS" not in text:
             raise mt.Failure(f"Breakpoint popup missing during soak:\n{text}")
@@ -580,17 +588,39 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     iteration = 0
     validated_steps = 0
     rom_validations = 0
+    step_out_validations = 0
+    cleanup_validations = 0
     restarts = 0
     mem = Memory(rest_host)
 
     try:
         with mt.check("Debug soak: bare BASIC/KERNAL ROM Step Into cycle"):
             rom_validations += rom_step_cycle(rest_host, session, "initial ROM cycle")
+            mem.cache.clear()
+
+        with mt.check("Debug soak: Step Out active-JSR target proof"):
+            dbg.prove_step_out_breaks_after_active_jsr(
+                rest_host, session, "initial soak Step Out active-JSR proof")
+            step_out_validations += 1
+
+        with mt.check("Debug soak: RAM cleanup resume after monitor exit"):
+            dbg.prove_stop_debug_exit_resumes_current_context(
+                rest_host, session, "initial soak RAM cleanup resume proof")
+            cleanup_validations += 1
+            mem.cache.clear()
 
         while time.time() < deadline:
             if restarts > 0 and restarts % 6 == 0:
                 rom_validations += rom_step_cycle(
                     rest_host, session, f"periodic ROM cycle after {restarts} entries")
+                mem.cache.clear()
+                dbg.prove_step_out_breaks_after_active_jsr(
+                    rest_host, session, f"periodic soak Step Out proof after {restarts} entries")
+                step_out_validations += 1
+                dbg.prove_stop_debug_exit_resumes_current_context(
+                    rest_host, session, f"periodic soak cleanup proof after {restarts} entries")
+                cleanup_validations += 1
+                mem.cache.clear()
             routine = rng.choice(ROUTINES)
             restarts += 1
             state = enter_routine(session, rest_host, routine, restarts)
@@ -601,7 +631,10 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
                     break
                 iteration += 1
                 exercise_debug_ux(session, state, iteration)
-                plan = emulate(mem, state)
+                try:
+                    plan = emulate(mem, state)
+                except UnsupportedEmulation:
+                    plan = None
                 if plan is None:
                     break
                 session.send_char(plan.key)
@@ -643,8 +676,16 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     if rom_validations < 2:
         raise mt.Failure(
             f"Soak only validated {rom_validations} ROM debug steps; expected at least 2")
+    if step_out_validations < 1:
+        raise mt.Failure(
+            f"Soak only validated {step_out_validations} active-JSR Step Out cycles; expected at least 1")
+    if cleanup_validations < 1:
+        raise mt.Failure(
+            f"Soak only validated {cleanup_validations} RAM cleanup cycles; expected at least 1")
     print(f"debug_soak_test: OK ({validated_steps} validated steps, "
-          f"{rom_validations} ROM debug steps across {restarts} entries)")
+          f"{rom_validations} ROM debug steps, "
+          f"{step_out_validations} active-JSR Step Out cycles, "
+          f"{cleanup_validations} cleanup cycles across {restarts} entries)")
 
 
 def main() -> int:

@@ -297,6 +297,31 @@ static int test_memory_helpers(void)
         if (expect(backend.read((uint16_t)(0xC101 + value)) == (uint8_t)value, "Transfer overlap-safe copy failed.")) return 1;
     }
 
+    // $C400 LDA $C408; $C403 STA $D020; $C406 JMP $C400
+    // $C410 LDX $C408 (outside the moved block but inside the amend range)
+    backend.write(0xC400, 0xAD);
+    backend.write(0xC401, 0x08);
+    backend.write(0xC402, 0xC4);
+    backend.write(0xC403, 0x8D);
+    backend.write(0xC404, 0x20);
+    backend.write(0xC405, 0xD0);
+    backend.write(0xC406, 0x4C);
+    backend.write(0xC407, 0x00);
+    backend.write(0xC408, 0xC4);
+    backend.write(0xC409, 0x60);
+    backend.write(0xC410, 0xAE);
+    backend.write(0xC411, 0x08);
+    backend.write(0xC412, 0xC4);
+    monitor_transfer_memory_relocate(&backend, 0xC400, 0xC40A, 0xC500, 0xC400, 0xC413);
+    if (expect(backend.read(0xC501) == 0x08 && backend.read(0xC502) == 0xC5,
+               "Relocating transfer must amend copied absolute loads into the moved block.")) return 1;
+    if (expect(backend.read(0xC504) == 0x20 && backend.read(0xC505) == 0xD0,
+               "Relocating transfer must not amend absolute operands outside the moved block.")) return 1;
+    if (expect(backend.read(0xC507) == 0x00 && backend.read(0xC508) == 0xC5,
+               "Relocating transfer must amend copied JMP operands.")) return 1;
+    if (expect(backend.read(0xC411) == 0x08 && backend.read(0xC412) == 0xC5,
+               "Relocating transfer must amend absolute references in the full program range.")) return 1;
+
     backend.write(0xC200, 0x01);
     backend.write(0xC201, 0x02);
     backend.write(0xC300, 0x01);
@@ -359,6 +384,24 @@ static int test_parsers_and_formatters(void)
                "Hunt quoted ASCII must preserve mixed-case bytes.")) return 1;
     if (expect(monitor_parse_transfer("C000-C010,C100", &start, &end, &dest) == MONITOR_OK, "Transfer parser failed.")) return 1;
     if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100, "Transfer parser values failed.")) return 1;
+    {
+        bool relocate = false;
+        uint16_t reloc_start = 0;
+        uint16_t reloc_end = 0;
+        if (expect(monitor_parse_transfer_relocate("C000-C010,C100,C000-C080",
+                                                   &start, &end, &dest,
+                                                   &relocate, &reloc_start, &reloc_end) == MONITOR_OK,
+                   "Relocating transfer parser failed.")) return 1;
+        if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100 &&
+                   relocate && reloc_start == 0xC000 && reloc_end == 0xC080,
+                   "Relocating transfer parser values failed.")) return 1;
+        if (expect(monitor_parse_transfer("C000-C010,C100,C000-C080", &start, &end, &dest) == MONITOR_SYNTAX,
+                   "Non-relocating transfer parser must reject the optional amend range.")) return 1;
+        if (expect(monitor_parse_transfer_relocate("C000-C010,C100,C080-C000",
+                                                   &start, &end, &dest,
+                                                   &relocate, &reloc_start, &reloc_end) == MONITOR_RANGE,
+                   "Relocating transfer parser must reject inverted amend ranges.")) return 1;
+    }
     if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
                "Transfer parser should reject zero-length ranges.")) return 1;
     if (expect(monitor_parse_compare("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
@@ -3068,6 +3111,84 @@ static int test_asm_edit_branch_two_parts(void)
     return 0;
 }
 
+static int test_asm_edit_ram_2000_program_readback(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    char line[MONITOR_MEMORY_ROW_16_CHARS + 1];
+    const int keys[] = {
+        'J', 'A', 'E',
+        'L', 'D', 'A', '#', '$', '0', '1', KEY_RETURN,
+        'S', 'T', 'A', '$', 'D', '0', '2', '0', KEY_RETURN,
+        'I', 'N', 'C', '$', 'D', '0', '2', '0', KEY_RETURN,
+        'J', 'M', 'P', '$', '2', '0', '0', '5', KEY_RETURN,
+        KEY_BREAK,
+        'M',
+        KEY_BREAK
+    };
+    static const uint8_t expected[] = {
+        0xA9, 0x01,
+        0x8D, 0x20, 0xD0,
+        0xEE, 0x20, 0xD0,
+        0x4C, 0x05, 0x20,
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    for (uint16_t addr = 0x2000; addr < 0x2010; addr++) {
+        backend.write(addr, 0xFF);
+    }
+    if (expect(strcmp(backend.source_name(0x2000), "RAM") == 0,
+               "$2000 must be classified as RAM.")) return 1;
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("2000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 38; i++) {
+        if (expect(mon.poll(0) == 0, "ASM $2000 edit program setup failed.")) return 1;
+    }
+
+    for (unsigned int i = 0; i < sizeof(expected); i++) {
+        if (expect(backend.read((uint16_t)(0x2000 + i)) == expected[i],
+                   "ASM $2000 edit did not write expected RAM bytes.")) return 1;
+        if (expect(backend.read((uint16_t)(0x2000 + i)) != 0xFF,
+                   "ASM $2000 edit left an edited byte at $FF.")) return 1;
+    }
+
+    screen.get_slice(1, 4, MONITOR_DISASM_ROW_CHARS, line);
+    if (expect(strstr(line, "2000 A9 01     LDA #$01") == line &&
+               strstr(line, "[RAM]") != NULL,
+               "ASM $2000 readback must disassemble LDA #$01 as RAM.")) return 1;
+    screen.get_slice(1, 5, MONITOR_DISASM_ROW_CHARS, line);
+    if (expect(strstr(line, "2002 8D 20 D0  STA $D020") == line &&
+               strstr(line, "[RAM]") != NULL,
+               "ASM $2000 readback must disassemble STA $D020 as RAM.")) return 1;
+    screen.get_slice(1, 6, MONITOR_DISASM_ROW_CHARS, line);
+    if (expect(strstr(line, "2005 EE 20 D0  INC $D020") == line &&
+               strstr(line, "[RAM]") != NULL,
+               "ASM $2000 readback must disassemble INC $D020 as RAM.")) return 1;
+    screen.get_slice(1, 7, MONITOR_DISASM_ROW_CHARS, line);
+    if (expect(strstr(line, "2008 4C 05 20  JMP $2005") == line &&
+               strstr(line, "[RAM]") != NULL,
+               "ASM $2000 readback must disassemble JMP $2005 as RAM.")) return 1;
+
+    if (expect(mon.poll(0) == 0, "ASM $2000 edit test: RUN/STOP should leave edit mode.")) return 1;
+    if (expect(mon.poll(0) == 0, "ASM $2000 edit test: Hex view switch failed.")) return 1;
+    screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "2000 A9 01 8D 20 D0 EE 20 D0") == line,
+               "Hex $2000 readback must show the first eight edited bytes.")) return 1;
+    screen.get_slice(1, 5, MONITOR_HEX_ROW_CHARS, line);
+    if (expect(strstr(line, "2008 4C 05 20") == line,
+               "Hex $2008 readback must show the final edited JMP bytes.")) return 1;
+    if (expect(mon.poll(0) == 1, "ASM $2000 edit test: monitor exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
 static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
 {
     TestUserInterface ui;
@@ -4886,7 +5007,7 @@ static int test_fixed_prompt_widths(void)
         int maxlen;
     } cases[] = {
         { 'F', "Fill AAAA-BBBB,DD", 13 },
-        { 'T', "Transfer AAAA-BBBB,CCCC", 15 },
+        { 'T', "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", 25 },
         { 'C', "Compare AAAA-BBBB,CCCC", 15 },
     };
 
@@ -6036,6 +6157,7 @@ int main()
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_asm_edit_ram_2000_program_readback()) return 1;
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
     if (test_space_shortcuts_match_existing_paging()) return 1;
