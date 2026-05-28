@@ -67,6 +67,12 @@ static bool monitor_reset_reopen_state_valid = false;
 static MachineMonitorState monitor_reset_reopen_state;
 static bool monitor_reset_reopen_debug_active = false;
 
+// Process-lifetime breakpoint storage. Survives monitor close/reopen, the
+// C=+X reset reentry path, and Stop-Debugging cleanup, but is volatile RAM
+// so power-off clears it. The MachineMonitor constructor copies from this
+// into its local table; deinit() copies the local table back out.
+static MonitorBreakpoints monitor_saved_breakpoints;
+
 static const char *monitor_debug_result_name(DebugSession::Result result);
 static const char *monitor_view_name(MachineMonitorView view);
 static void monitor_log(const char *action);
@@ -1015,6 +1021,8 @@ void monitor_reset_saved_state(void)
 
     monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
     monitor_binary_bytes_per_row = 1;
+
+    monitor_saved_breakpoints.clear_all();
 }
 
 void monitor_invalidate_saved_state(void)
@@ -1783,6 +1791,10 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     reset_exits_monitor = false;
     reset_exit_pending = false;
     reopen_after_reset = false;
+    // Restore breakpoints from process-lifetime storage so they survive a
+    // C=+X reset reentry and an ordinary monitor close/reopen. Power-off
+    // clears `monitor_saved_breakpoints` because it lives in volatile RAM.
+    breakpoints = monitor_saved_breakpoints;
     breakpoint_popup_active = false;
     breakpoint_selected = 0;
     bookmark_popup_active = false;
@@ -4375,6 +4387,7 @@ void MachineMonitor :: draw_disassembly()
         int source_len;
         int source_pos;
         int bp_slot;
+        bool bp_enabled = false;
         int bp_len = 0;
         const char *bp_label = NULL;
         int indicator_start;
@@ -4406,6 +4419,7 @@ void MachineMonitor :: draw_disassembly()
         source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
         if (bp_slot >= 0) {
             const MonitorBreakpointSlot *bp = breakpoints.get(bp_slot);
+            bp_enabled = bp && bp->enabled;
             if (bp && bp->label[0]) {
                 bp_label = bp->label;
                 bp_len = (int)strlen(bp_label);
@@ -4510,11 +4524,17 @@ void MachineMonitor :: draw_disassembly()
                 }
             }
         }
-        if (bp_slot >= 0) {
-            window->set_color(get_ui()->color_fg);
+        // Enabled breakpoints render in the same accent color as the Dbg /
+        // Edit header flags - but only while Debug mode is active. Disabled
+        // breakpoints, and any breakpoint shown when Debug is off, stay in
+        // the regular foreground color so the row reads as "armed and live"
+        // vs "remembered but quiet".
+        bool bp_accent = bp_slot >= 0 && bp_enabled && debug.is_active();
+        if (bp_accent) {
+            window->set_color(MONITOR_UI_ACCENT_COLOR);
         }
         draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
-        if (bp_slot >= 0) {
+        if (bp_accent) {
             window->set_color(get_ui()->color_fg);
         }
         addr = (uint16_t)(addr + decoded.length);
@@ -5871,7 +5891,7 @@ void MachineMonitor :: debug_render_breakpoint_popup()
                                              breakpoints.get(i));
     }
     strcpy(popup_lines[BRK_POPUP_HELP_ROW],
-           "0-9/RET Jmp  S Set  L Label  DEL Reset");
+           "0-9/RET Jmp  S Sto  L Lab E En DEL Res");
     int screen_x, screen_y;
     window->getOffsets(screen_x, screen_y);
     int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
@@ -6080,6 +6100,10 @@ void MachineMonitor :: deinit(void)
     monitor_last_go_addr = last_go_addr;
     monitor_memory_bytes_per_row = memory_bytes_per_row;
     monitor_binary_bytes_per_row = binary_bytes_per_row;
+    // Persist breakpoints to process-lifetime storage so the next monitor
+    // open (including the C=+X reset reentry) recovers the same table.
+    // Power-off discards this because the storage is volatile RAM.
+    monitor_saved_breakpoints = breakpoints;
     // Restore every patched byte / vector / trampoline before the backend
     // session ends. Cleanup is idempotent so this is safe even if the user
     // never used Debug mode.

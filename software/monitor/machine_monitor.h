@@ -417,6 +417,11 @@ class MachineMonitor : public UIObject
     uint16_t next_poll_interval_ms(void);
     void reset_poll_deadline(void);
     uint8_t disasm_length(uint16_t address) const;
+    int disasm_root_row(void) const;
+    void disasm_visible_addresses(uint16_t *rows, int count) const;
+    bool disasm_same_source(uint16_t a, uint16_t b) const;
+    bool disasm_crosses_source_boundary(uint16_t start, uint16_t end) const;
+    bool disasm_is_io_source(uint16_t address) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
     uint16_t disasm_next_addr(uint16_t address);

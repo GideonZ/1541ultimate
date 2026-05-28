@@ -616,44 +616,49 @@ Notes:
 The bottom two rows of the monitor are reserved for a fixed-position CPU state table while Debug is active:
 
 ```text
-PC   SP AC XR YR NV-BDIZC IRQ  NMI
-C003 F7 01 00 FF 00100100 C123 EA31
+PC   AC XR YR SP NV-BDIZC IRQ  NMI
+C003 01 00 FF F7 00100100 C123 EA31
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `PC` | Program counter from the captured debug context |
-| `SP` | Stack pointer |
 | `AC` / `XR` / `YR` | Accumulator and index registers |
+| `SP` | Stack pointer |
 | `NV-BDIZC` | Status register bits 7..0 as an 8-character binary string |
 | `IRQ` | RAM IRQ vector at `$0314/$0315`, when valid |
 | `NMI` | RAM NMI vector at `$0318/$0319`, when valid |
 
-Unknown values render as blank spaces in their reserved fixed-width columns; they never appear as zeros, `?`, or placeholder text. Field positions stay put when values become known.
+Notes:
+
+- The values between program counter and status register (inclusive) are highlighted in the same color as the `Dbg` or `Edit` header flags to improve visibility.
+- Unknown values render as blank spaces in their reserved fixed-width columns; they never appear as zeros, `?`, or placeholder text. Field positions stay put when values become known.
 
 ### Breakpoints
 
-There are 10 non-persistent breakpoint slots:
+There are 10 breakpoint slots:
 
 - `R` toggles a breakpoint at the current Assembly address.
-- Opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`.
+- Opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. When Debug mode is active and the slot is enabled, the whole row is drawn in the same accent color as the `Dbg` / `Edit` header flags so live breakpoints are immediately visible. Disabled slots and rows shown while Debug mode is off use the regular foreground color.
+- Breakpoints are kept in volatile RAM. They survive a `C=+X` reset and an ordinary monitor close/reopen, but power-cycling the device clears them.
 - On U64, breakpoints in BASIC, KERNAL, and character ROM use temporary patches in the volatile U64 ROM image, so ROM code remains step-capable without copying ROMs into C64 RAM or writing flash.
 
-`C=+R` opens the breakpoint list which offers these shortcuts:
+`C=+R` opens the breakpoint list which offers these shortcuts (the popup help row uses abbreviated forms in parentheses to fit the line):
 
 | Key | Action |
 | --- | --- |
 | `Up` / `Down` | Select slot |
 | `Return` | Jump to the selected slot |
-| `0`-`9` | Jump directly to a slot |
-| `S` | Store the current address into the selected slot |
-| `E` | Toggle slot enable / disable |
-| `DEL` | Reset the selected slot |
+| `0`-`9` | Jump directly to a slot (`Jmp`) |
+| `S` | Store the current address into the selected slot (`Sto`) |
+| `L` | Change the label, up to 4 chars (`Lab`) |
+| `E` | Toggle slot enable / disable (`En`) |
+| `DEL` | Reset the selected slot (`Res`) |
 | `RUN/STOP` | Close the popup |
 
 ### Help screen
 
-`F3` or `?` shows the Debug help screen while Debug is active. 
+`F3` or `?` shows the Debug help screen while Debug is active.
 
 It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags.
 

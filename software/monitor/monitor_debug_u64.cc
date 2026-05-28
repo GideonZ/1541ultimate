@@ -31,6 +31,7 @@ class U64DebugSession : public BrkDebugSession
         uint8_t byte;
     };
     RomPatchShadow rom_patch_shadow[16];
+    uint8_t rom_patch_shadow_next;
 
     // U64 BASIC/KERNAL/CHAR ROMs are served from volatile image buffers in
     // U64_BASIC_BASE/U64_KERNAL_BASE/U64_CHARROM_BASE. Patch those buffers
@@ -78,12 +79,15 @@ class U64DebugSession : public BrkDebugSession
                 }
             }
         }
-        if (slot >= 0) {
-            rom_patch_shadow[slot].used = true;
-            rom_patch_shadow[slot].address = addr;
-            rom_patch_shadow[slot].cpu_port = cpu_port;
-            rom_patch_shadow[slot].byte = byte;
+        if (slot < 0) {
+            slot = rom_patch_shadow_next;
+            rom_patch_shadow_next = (uint8_t)((rom_patch_shadow_next + 1) %
+                (sizeof(rom_patch_shadow) / sizeof(rom_patch_shadow[0])));
         }
+        rom_patch_shadow[slot].used = true;
+        rom_patch_shadow[slot].address = addr;
+        rom_patch_shadow[slot].cpu_port = cpu_port;
+        rom_patch_shadow[slot].byte = byte;
     }
 
 protected:
@@ -193,6 +197,7 @@ public:
         : BrkDebugSession(), backend(b), machine(0)
     {
         machine = (U64Machine *)C64::getMachine();
+        rom_patch_shadow_next = 0;
         for (int i = 0; i < (int)(sizeof(rom_patch_shadow) / sizeof(rom_patch_shadow[0])); i++) {
             rom_patch_shadow[i].used = false;
             rom_patch_shadow[i].address = 0;

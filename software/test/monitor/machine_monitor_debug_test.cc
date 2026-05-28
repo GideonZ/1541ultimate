@@ -1549,6 +1549,160 @@ static int test_ctrl_x_reenters_monitor_without_debug_when_not_debugging()
     return 0;
 }
 
+static int test_breakpoints_survive_ctrl_x_reset_reentry()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xA000, 0xEA);
+
+    // J $A000 -> A (asm) -> D (debug on) -> R (BP at A000) -> C=+X (reset).
+    const int keys[] = { 'J', 'A', 'D', 'R', KEY_CTRL_X };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_reset_exits_monitor(true);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 4; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint setup before reset")) return 1;
+    }
+    if (expect(monitor.poll(0) == MENU_EXIT,
+               "C=+X must exit the current monitor instance so it can re-enter")) return 1;
+    if (expect(monitor.consume_reopen_after_reset(),
+               "C=+X must request a monitor re-entry")) return 1;
+    monitor.deinit();
+
+    // Re-enter the monitor. The reset-reentry path constructs a fresh
+    // MachineMonitor; breakpoints must come back from process-lifetime storage.
+    const int reentry_keys[] = { 'A', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard reentry_keyboard(reentry_keys, 3);
+    ui.keyboard = &reentry_keyboard;
+    BackendMachineMonitor reentered(&ui, &backend);
+    reentered.set_reset_exits_monitor(true);
+    reentered.init(&screen, &reentry_keyboard);
+    if (expect(reentered.poll(0) == 0, "Switch back to Assembly view after reset")) return 1;
+
+    char row[40];
+    int target_row = find_row_with_address(screen, "A000");
+    if (expect(target_row >= 0, "Re-entered monitor must show $A000 row")) return 1;
+    screen.get_slice(1, target_row, 38, row);
+    if (expect(strstr(row, "[BRK0]") != NULL,
+               "Breakpoint stored before C=+X must reappear after reset reentry")) return 1;
+
+    if (expect(reentered.poll(0) == 0, "RUN/STOP leaves restored Debug")) return 1;
+    if (expect(reentered.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    reentered.deinit();
+    return 0;
+}
+
+static int test_breakpoints_survive_normal_close_reopen()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xA000, 0xEA);
+
+    // J $A000 -> A -> D -> R -> BREAK (leave Debug) -> BREAK (exit monitor).
+    const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 5; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint setup before close")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP closes the monitor")) return 1;
+    monitor.deinit();
+
+    // Reopen later with no reset in between. The persisted table must come
+    // back so the user does not have to re-create their breakpoints.
+    const int reopen_keys[] = { KEY_BREAK };
+    FakeKeyboard reopen_keyboard(reopen_keys, 1);
+    ui.keyboard = &reopen_keyboard;
+    BackendMachineMonitor reopened(&ui, &backend);
+    reopened.init(&screen, &reopen_keyboard);
+
+    char row[40];
+    int target_row = find_row_with_address(screen, "A000");
+    if (expect(target_row >= 0, "Reopened monitor must show $A000 row")) return 1;
+    screen.get_slice(1, target_row, 38, row);
+    if (expect(strstr(row, "[BRK0]") != NULL,
+               "Breakpoint must survive a normal close+reopen")) return 1;
+    if (expect(reopened.poll(0) == 1, "RUN/STOP exits the reopened monitor")) return 1;
+    reopened.deinit();
+    return 0;
+}
+
+static int test_monitor_reset_saved_state_clears_breakpoints()
+{
+    // Seed the persisted table with a breakpoint by opening + closing once.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        TrackingDebugBackend backend;
+        monitor_reset_saved_state();
+        backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+        backend.write(0xA000, 0xEA);
+
+        const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard keyboard(keys, 6);
+        ui.screen = &screen;
+        ui.keyboard = &keyboard;
+        ui.set_prompt("A000", 1);
+
+        BackendMachineMonitor monitor(&ui, &backend);
+        monitor.init(&screen, &keyboard);
+        for (int i = 0; i < 5; i++) {
+            if (expect(monitor.poll(0) == 0, "Seed monitor setup")) return 1;
+        }
+        if (expect(monitor.poll(0) == 1, "Seed monitor exit")) return 1;
+        monitor.deinit();
+    }
+
+    // monitor_reset_saved_state() simulates a fresh process boot in tests; the
+    // persisted breakpoint table must be empty after it runs.
+    monitor_reset_saved_state();
+
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xA000, 0xEA);
+
+    const int keys[] = { 'J', 'A', KEY_BREAK };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Jump to A000")) return 1;
+    if (expect(monitor.poll(0) == 0, "Switch to Assembly")) return 1;
+
+    char row[40];
+    int target_row = find_row_with_address(screen, "A000");
+    if (expect(target_row >= 0, "Fresh-process monitor must show $A000 row")) return 1;
+    screen.get_slice(1, target_row, 38, row);
+    if (expect(strstr(row, "[BRK") == NULL,
+               "monitor_reset_saved_state must clear the persisted breakpoint table")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the fresh monitor")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_breakpoint_toggle_via_r()
 {
     TestUserInterface ui;
@@ -1691,9 +1845,62 @@ static int test_breakpoint_row_indicator_and_color()
     if (expect(strstr(row, "BASIC") == NULL,
                "Assembly source indicator must use the 3-character BAS label")) return 1;
 
+    // Enabled breakpoint + Debug active: opcode row renders in the accent
+    // color used for the Dbg / Edit flags (MONITOR_UI_ACCENT_COLOR == 1).
+    for (int x = 1; x <= 38; x++) {
+        if (expect(screen.colors[4][x] == 1,
+                   "Enabled breakpoint row must render in the Dbg/Edit accent color")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strstr(row, "[BRK0][BAS]") != NULL,
+               "Row still shows the stored breakpoint after Debug exits")) return 1;
+    // Debug off: every breakpoint row reverts to the regular foreground color.
     for (int x = 1; x <= 38; x++) {
         if (expect(screen.colors[4][x] == ui.color_fg,
-                   "Every character on a breakpoint opcode line must use color_fg")) return 1;
+                   "Breakpoint row must use color_fg once Debug mode is off")) return 1;
+    }
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_disabled_breakpoint_row_uses_regular_color()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xA000, 0xEA);
+
+    // J A000 -> A (asm) -> D (debug on) -> R (toggle BP on) -> C=+R (open popup)
+    // -> E (disable selected slot) -> ESC (close popup) -> BREAK -> BREAK
+    const int keys[] = {
+        'J', 'A', 'D', 'R', KEY_CTRL_R, 'E', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 9);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("A000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 7; i++) {
+        if (expect(monitor.poll(0) == 0, "Disabled-BP setup should stay in monitor")) return 1;
+    }
+
+    char row[40];
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strstr(row, "[BRK0][BAS]") != NULL,
+               "Disabled breakpoint still shows [BRKx] on the opcode row")) return 1;
+    // Disabled breakpoint, even while Debug mode is still active, must stay
+    // in the regular foreground color so the user sees it as quiet.
+    for (int x = 1; x <= 38; x++) {
+        if (expect(screen.colors[4][x] == ui.color_fg,
+                   "Disabled breakpoint row must render in color_fg, not accent")) return 1;
     }
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
@@ -1829,9 +2036,9 @@ static int test_ctrl_r_opens_breakpoint_popup()
     if (expect(strspn(row, " ") == strlen(row),
                "Breakpoint popup must separate slots from the help row")) return 1;
     get_popup_line(screen, 13, row, sizeof(row));
-    if (expect(strncmp(row, "0-9/RET Jmp  S Set  L Label  DEL Reset",
-                       strlen("0-9/RET Jmp  S Set  L Label  DEL Reset")) == 0,
-               "Breakpoint popup help row must match the bookmark command summary")) return 1;
+    if (expect(strncmp(row, "0-9/RET Jmp  S Sto  L Lab E En DEL Res",
+                       strlen("0-9/RET Jmp  S Sto  L Lab E En DEL Res")) == 0,
+               "Breakpoint popup help row must list jump/store/label/enable/reset")) return 1;
     int slot_y = top + 1 + 2;
     for (int x = left + 1; x < right; x++) {
         if (expect(screen.colors[slot_y][x] == ui.color_fg,
@@ -2656,6 +2863,39 @@ static int test_step_out_refuses_stale_far_stack_frame()
                "Refused Step Out must not install a temporary BRK")) return 1;
     if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
                "Refused Step Out must not start execution")) return 1;
+    return 0;
+}
+
+static int test_over_rts_refuses_non_jsr_stack_target()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0xE042] = 0x60;   // RTS at cursor
+    m.ram[0xE043] = 0xEA;
+    m.ram[0xE044] = 0xEA;
+
+    // Forge an RTS return target whose recorded caller is not a JSR.
+    // RTS pops 0x21FF and jumps to 0x2200.
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xE042;
+    from.sp = 0xFC;
+    m.ram[0x01FD] = 0xFF;
+    m.ram[0x01FE] = 0x21;
+    m.ram[0x21FD] = 0xEA;   // caller opcode at ret-2 (not JSR)
+
+    uint8_t rts[3] = { 0x60, 0x00, 0x00 };
+    DebugPredictResult pred;
+    debug_predict(0xE042, rts, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over(from, pred, &ctx);
+    if (expect(r == DebugSession::DBG_NOT_IN_SUBROUTINE,
+               "Over on RTS with a non-JSR stack target must report not-in-subroutine")) return 1;
+    if (expect(m.brk_patch_writes == 0,
+               "Refused RTS Over must not install a temporary BRK")) return 1;
+    if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
+               "Refused RTS Over must not start execution")) return 1;
     return 0;
 }
 
@@ -3570,10 +3810,14 @@ int main()
     RUN(test_ctrl_x_resets_and_keeps_debug_open);
     RUN(test_ctrl_x_local_reset_exits_monitor);
     RUN(test_ctrl_x_reenters_monitor_without_debug_when_not_debugging);
+    RUN(test_breakpoints_survive_ctrl_x_reset_reentry);
+    RUN(test_breakpoints_survive_normal_close_reopen);
+    RUN(test_monitor_reset_saved_state_clears_breakpoints);
     RUN(test_breakpoint_toggle_via_r);
     RUN(test_breakpoint_popup_store_reuses_selected_slot);
     RUN(test_breakpoint_popup_digit_jumps_to_slot);
     RUN(test_breakpoint_row_indicator_and_color);
+    RUN(test_disabled_breakpoint_row_uses_regular_color);
     RUN(test_breakpoint_label_replaces_row_indicator);
     RUN(test_source_indicators_are_three_chars);
     RUN(test_ctrl_r_opens_breakpoint_popup);
@@ -3597,6 +3841,7 @@ int main()
     RUN(test_step_out_uses_traced_jsr_target_even_when_target_is_above_pc);
     RUN(test_step_out_ignores_nearby_rts_and_patches_after_traced_jsr);
     RUN(test_step_out_refuses_stale_far_stack_frame);
+    RUN(test_over_rts_refuses_non_jsr_stack_target);
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
     RUN(test_visible_basic_step_uses_rom_patch_support);

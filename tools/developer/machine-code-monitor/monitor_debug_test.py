@@ -384,8 +384,8 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"C=+R did not open breakpoint list:\n{joined}")
         if "$C050" not in joined or "SET" not in joined:
             raise mt.Failure(f"Breakpoint list did not show the live breakpoint:\n{joined}")
-        if "0-9/RET Jmp  S Set  L Label  DEL Reset" not in joined:
-            raise mt.Failure(f"Breakpoint list help row did not match bookmark help:\n{joined}")
+        if "0-9/RET Jmp  S Sto  L Lab E En DEL Res" not in joined:
+            raise mt.Failure(f"Breakpoint list help row did not list jump/store/label/enable/reset:\n{joined}")
         session.send_char("L")
         session.send_text("read\r", "BP label READ")
         snap = _wait_for_screen_text(session, "READ")
@@ -876,6 +876,16 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         0x40,
     ])
     rti_target = bytes([0xEA, 0x4C, 0x90, 0xC2])
+    rts_non_jsr_stack = bytes([
+        0xA2, 0xFC,       # $C2B0: LDX #$FC
+        0x9A,             # $C2B2: TXS
+        0xA9, 0xFF,       # $C2B3: LDA #$FF
+        0x8D, 0xFD, 0x01, # $C2B5: STA $01FD
+        0xA9, 0x21,       # $C2B8: LDA #$21
+        0x8D, 0xFE, 0x01, # $C2BA: STA $01FE
+        0x60,             # $C2BD: RTS
+        0xEA,             # $C2BE: NOP
+    ])
 
     _reopen_monitor(session)
 
@@ -886,6 +896,8 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         mt.write_rest_memory(rest_host, 0xC270, rts_subroutine)
         mt.write_rest_memory(rest_host, 0xC280, rti_setup)
         mt.write_rest_memory(rest_host, 0xC290, rti_target)
+        mt.write_rest_memory(rest_host, 0xC2B0, rts_non_jsr_stack)
+        mt.write_rest_memory(rest_host, 0x21FD, bytes([0xEA]))
 
     with mt.check("Debug: BRK, RTS, and RTI refuse no-context Over without fabricating state"):
         session.goto("C240")
@@ -911,6 +923,22 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
             raise mt.Failure(f"Invalid Step Out must not say UNSAFE TARGET:\n{text}")
         session.send_key("ENTER")
         _wait_for_blank_debug_context(session)
+        _ensure_no_debug(session)
+
+    with mt.check("Debug: Over on RTS without active JSR frame says NOT IN SUBROUTINE (not PATCH FAILED)"):
+        _reopen_monitor(session)
+        session.goto("C2B0")
+        session.send_char("A")
+        session.send_char("D")
+        for expected_pc in ("C2B2", "C2B3", "C2B5", "C2B8", "C2BA", "C2BD"):
+            session.send_char("D")
+            _wait_for_pc(session, expected_pc)
+        session.send_char("D")
+        snap = _wait_for_screen_text(session, "NOT IN SUBROUTINE")
+        text = snap.text()
+        if "PATCH FAILED" in text:
+            raise mt.Failure(f"RTS Over without active JSR must not say PATCH FAILED:\n{text}")
+        session.send_key("ENTER")
         _ensure_no_debug(session)
 
     with mt.check("Debug: undocumented NOP is decoded by Undc but not debug-stepped"):

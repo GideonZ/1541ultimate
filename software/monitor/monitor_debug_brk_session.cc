@@ -266,6 +266,7 @@ bool BrkDebugSession :: already_patched(uint16_t addr)
 BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     uint16_t addr, uint8_t cpu_port)
 {
+    cpu_port &= 0x07;
     if (reserved_patch_address(addr)) {
         return PATCH_INSTALL_FAILED;
     }
@@ -282,11 +283,11 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
     }
     bool stopped_it = begin_stopped_session();
     uint8_t original = read_patch_byte(addr, cpu_port);
-    if (original == 0x00) {
-        end_stopped_session(stopped_it);
-        return PATCH_INSTALL_FAILED;
+    // A target may already contain BRK. Treat that as a valid trap location
+    // instead of failing the step command.
+    if (original != 0x00) {
+        write_patch_byte(addr, 0x00, cpu_port);
     }
-    write_patch_byte(addr, 0x00, cpu_port);
     if (read_patch_byte(addr, cpu_port) != 0x00) {
         end_stopped_session(stopped_it);
         return PATCH_INSTALL_FAILED;
@@ -609,6 +610,13 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
             uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
             uint16_t ret = (uint16_t)(peek_cpu(sp1, cpu_port) |
                                       (peek_cpu(sp2, cpu_port) << 8));
+            // RTS is only meaningful for an active subroutine frame. Reject
+            // stale/forged stack targets early so Over/Trace report a clear
+            // "not in subroutine" outcome instead of a generic patch failure.
+            uint16_t caller = (uint16_t)(ret - 2);
+            if (peek_cpu(caller, cpu_port) != 0x20) {
+                return DBG_NOT_IN_SUBROUTINE;
+            }
             addrs[n++] = (uint16_t)(ret + 1);
             break;
         }

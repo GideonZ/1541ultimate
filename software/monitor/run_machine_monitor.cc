@@ -16,6 +16,22 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         reopen_after_reset = false;
 #if !defined(RUNS_ON_PC)
         C64 *debug_render_machine = C64::getMachine();
+        // After a C=+X reset the C64 is running again, so the firmware
+        // overlay it was rendering into has lost ownership of screen RAM:
+        // the live BASIC start-up writes are clobbering everything the new
+        // monitor draws. Re-take ownership before init() so the firmware
+        // gets the screen back, then redraw the chrome (title bar + border
+        // separators) so the new monitor sees a clean canvas. The first-ever
+        // monitor entry from the freezer menu already has is_accessible()
+        // true, so this is a no-op there; non-C64-hosted UIs (telnet) skip
+        // it because host != machine.
+        if (debug_render_machine && host == debug_render_machine &&
+                !debug_render_machine->is_accessible()) {
+            debug_render_machine->take_ownership(this);
+            if (screen) {
+                set_screen_title();
+            }
+        }
         bool c64_render_target = debug_render_machine && host == debug_render_machine &&
             debug_render_machine->is_accessible();
         monitor->set_debug_run_window_refreeze_enabled(c64_render_target);
