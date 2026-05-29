@@ -4336,6 +4336,8 @@ static int test_debug_ownership_blocks_second_stakeholder_until_remote_expires()
 {
     FakeFreezeMachine telnet_owner(false);
     FakeFreezeMachine local_owner(false);
+    FakeFreezeMachine leaked_local_owner(false);
+    FakeFreezeMachine reclaiming_telnet_owner(false);
 
     set_fake_ms_timer(100);
     if (expect(telnet_owner.claim_debug_ownership(true),
@@ -4348,6 +4350,15 @@ static int test_debug_ownership_blocks_second_stakeholder_until_remote_expires()
                "A stale remote owner must expire so a new stakeholder can claim Debug")) return 1;
     local_owner.release_debug_ownership();
     telnet_owner.release_debug_ownership();
+
+    set_fake_ms_timer(1000);
+    if (expect(leaked_local_owner.claim_debug_ownership(false),
+               "Initial local stakeholder must claim debug ownership")) return 1;
+    advance_fake_ms_timer(3501);
+    if (expect(reclaiming_telnet_owner.claim_debug_ownership(true),
+               "A stale local owner must expire so a later telnet session can claim Debug")) return 1;
+    reclaiming_telnet_owner.release_debug_ownership();
+    leaked_local_owner.release_debug_ownership();
     return 0;
 }
 

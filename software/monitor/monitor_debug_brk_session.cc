@@ -163,9 +163,9 @@ bool BrkDebugSession :: claim_debug_ownership(bool remote)
         return true;
     }
     if (debug_owner.owner) {
-        bool stale_remote = debug_owner.remote &&
+        bool owner_is_stale =
             (uint16_t)(now - debug_owner.last_seen_ms) >= DEBUG_OWNER_STALE_REMOTE_MS;
-        if (!stale_remote) {
+        if (!owner_is_stale) {
             return false;
         }
         BrkDebugSession *stale_owner = debug_owner.owner;
