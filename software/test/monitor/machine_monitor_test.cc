@@ -277,6 +277,136 @@ static int test_disassembler(void)
     return 0;
 }
 
+// Full-coverage check of all 256 opcodes against the c64ref 6502 description
+// (https://github.com/mist64/c64ref). For each opcode the disassembler's
+// rendered text and instruction length must match the reference addressing
+// mode. This is the regression net for the "BIT mis-rendered as a relative
+// branch" bug and the $8B/$CB/$F4 addressing-mode fixes. Mode codes:
+//   '-' implied   'A' accumulator   'i' #immediate
+//   'z' zp   'x' zp,X   'y' zp,Y   'I' (zp,X)   'J' (zp),Y
+//   'a' abs  'X' abs,X  'Y' abs,Y   'P' (abs)   'r' relative
+// Illegal mnemonics use this codebase's established names (ALR/AXS/AHX/TAS),
+// which alias the c64ref ASR/SBX/SHA/SHS for the same opcodes.
+static int test_disassembler_all_opcodes_match_c64ref(void)
+{
+    struct OpRef { const char *mnem; char mode; };
+    static const OpRef table[256] = {
+    {"BRK",'-'}, {"ORA",'I'}, {"JAM",'-'}, {"SLO",'I'},
+    {"NOP",'z'}, {"ORA",'z'}, {"ASL",'z'}, {"SLO",'z'},
+    {"PHP",'-'}, {"ORA",'i'}, {"ASL",'A'}, {"ANC",'i'},
+    {"NOP",'a'}, {"ORA",'a'}, {"ASL",'a'}, {"SLO",'a'},
+    {"BPL",'r'}, {"ORA",'J'}, {"JAM",'-'}, {"SLO",'J'},
+    {"NOP",'x'}, {"ORA",'x'}, {"ASL",'x'}, {"SLO",'x'},
+    {"CLC",'-'}, {"ORA",'Y'}, {"NOP",'-'}, {"SLO",'Y'},
+    {"NOP",'X'}, {"ORA",'X'}, {"ASL",'X'}, {"SLO",'X'},
+    {"JSR",'a'}, {"AND",'I'}, {"JAM",'-'}, {"RLA",'I'},
+    {"BIT",'z'}, {"AND",'z'}, {"ROL",'z'}, {"RLA",'z'},
+    {"PLP",'-'}, {"AND",'i'}, {"ROL",'A'}, {"ANC",'i'},
+    {"BIT",'a'}, {"AND",'a'}, {"ROL",'a'}, {"RLA",'a'},
+    {"BMI",'r'}, {"AND",'J'}, {"JAM",'-'}, {"RLA",'J'},
+    {"NOP",'x'}, {"AND",'x'}, {"ROL",'x'}, {"RLA",'x'},
+    {"SEC",'-'}, {"AND",'Y'}, {"NOP",'-'}, {"RLA",'Y'},
+    {"NOP",'X'}, {"AND",'X'}, {"ROL",'X'}, {"RLA",'X'},
+    {"RTI",'-'}, {"EOR",'I'}, {"JAM",'-'}, {"SRE",'I'},
+    {"NOP",'z'}, {"EOR",'z'}, {"LSR",'z'}, {"SRE",'z'},
+    {"PHA",'-'}, {"EOR",'i'}, {"LSR",'A'}, {"ALR",'i'},
+    {"JMP",'a'}, {"EOR",'a'}, {"LSR",'a'}, {"SRE",'a'},
+    {"BVC",'r'}, {"EOR",'J'}, {"JAM",'-'}, {"SRE",'J'},
+    {"NOP",'x'}, {"EOR",'x'}, {"LSR",'x'}, {"SRE",'x'},
+    {"CLI",'-'}, {"EOR",'Y'}, {"NOP",'-'}, {"SRE",'Y'},
+    {"NOP",'X'}, {"EOR",'X'}, {"LSR",'X'}, {"SRE",'X'},
+    {"RTS",'-'}, {"ADC",'I'}, {"JAM",'-'}, {"RRA",'I'},
+    {"NOP",'z'}, {"ADC",'z'}, {"ROR",'z'}, {"RRA",'z'},
+    {"PLA",'-'}, {"ADC",'i'}, {"ROR",'A'}, {"ARR",'i'},
+    {"JMP",'P'}, {"ADC",'a'}, {"ROR",'a'}, {"RRA",'a'},
+    {"BVS",'r'}, {"ADC",'J'}, {"JAM",'-'}, {"RRA",'J'},
+    {"NOP",'x'}, {"ADC",'x'}, {"ROR",'x'}, {"RRA",'x'},
+    {"SEI",'-'}, {"ADC",'Y'}, {"NOP",'-'}, {"RRA",'Y'},
+    {"NOP",'X'}, {"ADC",'X'}, {"ROR",'X'}, {"RRA",'X'},
+    {"NOP",'i'}, {"STA",'I'}, {"NOP",'i'}, {"SAX",'I'},
+    {"STY",'z'}, {"STA",'z'}, {"STX",'z'}, {"SAX",'z'},
+    {"DEY",'-'}, {"NOP",'i'}, {"TXA",'-'}, {"XAA",'i'},
+    {"STY",'a'}, {"STA",'a'}, {"STX",'a'}, {"SAX",'a'},
+    {"BCC",'r'}, {"STA",'J'}, {"JAM",'-'}, {"AHX",'J'},
+    {"STY",'x'}, {"STA",'x'}, {"STX",'y'}, {"SAX",'y'},
+    {"TYA",'-'}, {"STA",'Y'}, {"TXS",'-'}, {"TAS",'Y'},
+    {"SHY",'X'}, {"STA",'X'}, {"SHX",'Y'}, {"AHX",'Y'},
+    {"LDY",'i'}, {"LDA",'I'}, {"LDX",'i'}, {"LAX",'I'},
+    {"LDY",'z'}, {"LDA",'z'}, {"LDX",'z'}, {"LAX",'z'},
+    {"TAY",'-'}, {"LDA",'i'}, {"TAX",'-'}, {"LAX",'i'},
+    {"LDY",'a'}, {"LDA",'a'}, {"LDX",'a'}, {"LAX",'a'},
+    {"BCS",'r'}, {"LDA",'J'}, {"JAM",'-'}, {"LAX",'J'},
+    {"LDY",'x'}, {"LDA",'x'}, {"LDX",'y'}, {"LAX",'y'},
+    {"CLV",'-'}, {"LDA",'Y'}, {"TSX",'-'}, {"LAS",'Y'},
+    {"LDY",'X'}, {"LDA",'X'}, {"LDX",'Y'}, {"LAX",'Y'},
+    {"CPY",'i'}, {"CMP",'I'}, {"NOP",'i'}, {"DCP",'I'},
+    {"CPY",'z'}, {"CMP",'z'}, {"DEC",'z'}, {"DCP",'z'},
+    {"INY",'-'}, {"CMP",'i'}, {"DEX",'-'}, {"AXS",'i'},
+    {"CPY",'a'}, {"CMP",'a'}, {"DEC",'a'}, {"DCP",'a'},
+    {"BNE",'r'}, {"CMP",'J'}, {"JAM",'-'}, {"DCP",'J'},
+    {"NOP",'x'}, {"CMP",'x'}, {"DEC",'x'}, {"DCP",'x'},
+    {"CLD",'-'}, {"CMP",'Y'}, {"NOP",'-'}, {"DCP",'Y'},
+    {"NOP",'X'}, {"CMP",'X'}, {"DEC",'X'}, {"DCP",'X'},
+    {"CPX",'i'}, {"SBC",'I'}, {"NOP",'i'}, {"ISC",'I'},
+    {"CPX",'z'}, {"SBC",'z'}, {"INC",'z'}, {"ISC",'z'},
+    {"INX",'-'}, {"SBC",'i'}, {"NOP",'-'}, {"SBC",'i'},
+    {"CPX",'a'}, {"SBC",'a'}, {"INC",'a'}, {"ISC",'a'},
+    {"BEQ",'r'}, {"SBC",'J'}, {"JAM",'-'}, {"ISC",'J'},
+    {"NOP",'x'}, {"SBC",'x'}, {"INC",'x'}, {"ISC",'x'},
+    {"SED",'-'}, {"SBC",'Y'}, {"NOP",'-'}, {"ISC",'Y'},
+    {"NOP",'X'}, {"SBC",'X'}, {"INC",'X'}, {"ISC",'X'},
+    };
+
+    const uint8_t b1 = 0x66, b2 = 0xBD;
+    for (int op = 0; op < 256; op++) {
+        const uint8_t bytes[3] = { (uint8_t)op, b1, b2 };
+        Disassembled6502 d;
+        disassemble_6502(0x1000, bytes, true, &d);
+
+        char mode = table[op].mode;
+        uint8_t exp_len = (mode == '-' || mode == 'A') ? 1 :
+                          (mode == 'a' || mode == 'X' || mode == 'Y' || mode == 'P') ? 3 : 2;
+        char exp[24];
+        switch (mode) {
+            case '-': sprintf(exp, "%s", table[op].mnem); break;
+            case 'A': sprintf(exp, "%s A", table[op].mnem); break;
+            case 'i': sprintf(exp, "%s #$%02X", table[op].mnem, b1); break;
+            case 'z': sprintf(exp, "%s $%02X", table[op].mnem, b1); break;
+            case 'x': sprintf(exp, "%s $%02X,X", table[op].mnem, b1); break;
+            case 'y': sprintf(exp, "%s $%02X,Y", table[op].mnem, b1); break;
+            case 'I': sprintf(exp, "%s ($%02X,X)", table[op].mnem, b1); break;
+            case 'J': sprintf(exp, "%s ($%02X),Y", table[op].mnem, b1); break;
+            case 'a': sprintf(exp, "%s $%02X%02X", table[op].mnem, b2, b1); break;
+            case 'X': sprintf(exp, "%s $%02X%02X,X", table[op].mnem, b2, b1); break;
+            case 'Y': sprintf(exp, "%s $%02X%02X,Y", table[op].mnem, b2, b1); break;
+            case 'P': sprintf(exp, "%s ($%02X%02X)", table[op].mnem, b2, b1); break;
+            case 'r': sprintf(exp, "%s $%04X", table[op].mnem,
+                              (uint16_t)(0x1000 + 2 + (int8_t)b1)); break;
+            default:  exp[0] = 0; break;
+        }
+        if (d.length != exp_len) {
+            printf("opcode %02X: length %u != expected %u (%s)\n",
+                   op, (unsigned)d.length, (unsigned)exp_len, exp);
+            return 1;
+        }
+        if (strcmp(d.text, exp) != 0) {
+            printf("opcode %02X: text '%s' != expected '%s'\n", op, d.text, exp);
+            return 1;
+        }
+    }
+
+    // Direct guard for the reported bug: BIT zeropage ($24 $66) must render as
+    // a zero-page operand, never as a PC-relative branch target.
+    {
+        const uint8_t bit_zp[] = { 0x24, 0x66, 0x00 };
+        Disassembled6502 d;
+        disassemble_6502(0xBCA2, bit_zp, false, &d);
+        if (expect(d.length == 2 && strcmp(d.text, "BIT $66") == 0,
+                   "BIT zeropage must render as BIT $66, not a relative branch")) return 1;
+    }
+    return 0;
+}
+
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
@@ -6873,6 +7003,7 @@ static int test_reset_shortcut_is_global(void)
 int main()
 {
     if (test_disassembler()) return 1;
+    if (test_disassembler_all_opcodes_match_c64ref()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
     if (test_hunt_prompt_typed_input()) return 1;

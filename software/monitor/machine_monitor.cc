@@ -1902,6 +1902,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     debug_cursor_override = false;
     debug_entry_context_valid = false;
     debug_context_reset(&debug_entry_context);
+    debug_entry_addr = state.current_addr;
     debug_run_window_refreeze_enabled = false;
     reset_exits_monitor = false;
     reset_exit_pending = false;
@@ -4904,6 +4905,34 @@ void MachineMonitor :: draw_disassembly()
         if (!row_len) {
             row_len = decoded.length ? decoded.length : 1;
         }
+        // The next-to-execute instruction (the captured debug PC) is decorated
+        // independently of the movable cursor, so the user can scroll/move the
+        // cursor while still seeing what will run next.
+        bool debug_next_row = debug.is_active() && debug.has_context() &&
+                              debug.context().valid && row_len != 0 &&
+                              addr == debug.context().pc;
+        // For an RTS on the debug PC row, render the return address inferred
+        // from the stack as "$XXXX" so it can be highlighted just like a
+        // JMP/JSR/branch target. rts_target_col is the column of the '$' within
+        // decoded.text, or -1 when this row is not such an RTS.
+        int rts_target_col = -1;
+        if (debug_next_row && decoded.valid && row_bytes[0] == 0x60 &&
+                decoded.length == 1 && strcmp(decoded.text, "RTS") == 0) {
+            uint8_t sp = debug.context().sp;
+            char tgt[8];
+            if (sp == 0xFF) {
+                // Stack empty: no return address to infer.
+                strcpy(tgt, "$????");
+            } else {
+                uint16_t lo = (uint16_t)(0x0100 + ((sp + 1) & 0xFF));
+                uint16_t hi = (uint16_t)(0x0100 + ((sp + 2) & 0xFF));
+                uint16_t ret = (uint16_t)(backend->read(lo) | (backend->read(hi) << 8));
+                // RTS pulls the return address and resumes at address + 1.
+                sprintf(tgt, "$%04x", (uint16_t)(ret + 1));
+            }
+            rts_target_col = 4; // strlen("RTS ")
+            sprintf(decoded.text, "RTS %s", tgt);
+        }
         dump_hex_word(line, 0, addr);
         line[4] = ' ';
         dump_hex_byte(line, 5, row_bytes[0]);
@@ -5045,32 +5074,50 @@ void MachineMonitor :: draw_disassembly()
                 reverse_mask[i] = true;
             }
         }
-        if (debug.is_active() && debug.has_context() &&
-                debug.context().valid && addr == debug.context().pc &&
-                line_idx == state.disasm_offset) {
-            DebugPredictResult pred;
-            debug_predict(addr, row_bytes, state.illegal_enabled, &pred);
-            bool target_highlight = false;
-            if (pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) {
-                target_highlight = pred.has_target;
-            } else if (pred.kind == DBG_PREDICT_BRANCH && pred.has_target) {
-                target_highlight = monitor_debug_branch_taken(row_bytes[0], debug.context().sr);
+        if (debug_next_row) {
+            int target_start = -1;
+            int target_len = 0;
+            if (rts_target_col >= 0) {
+                // RTS: highlight the inferred "$XXXX"/"$????" we appended above.
+                target_start = rts_target_col;
+                target_len = 5;
+            } else {
+                DebugPredictResult pred;
+                debug_predict(addr, row_bytes, state.illegal_enabled, &pred);
+                bool target_highlight = false;
+                if (pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) {
+                    target_highlight = pred.has_target;
+                } else if (pred.kind == DBG_PREDICT_BRANCH && pred.has_target) {
+                    target_highlight = monitor_debug_branch_taken(row_bytes[0], debug.context().sr);
+                }
+                if (target_highlight) {
+                    monitor_find_target_span(decoded.text, text_len, &target_start, &target_len);
+                }
             }
-            if (target_highlight) {
-                int target_start = -1;
-                int target_len = 0;
-                if (monitor_find_target_span(decoded.text, text_len, &target_start, &target_len)) {
-                    int accent_start = MONITOR_DISASM_TEXT_COL + target_start;
-                    int accent_end = accent_start + target_len;
-                    if (accent_start < MONITOR_DISASM_ROW_CHARS) {
-                        if (accent_end > MONITOR_DISASM_ROW_CHARS) {
-                            accent_end = MONITOR_DISASM_ROW_CHARS;
-                        }
-                        for (int i = accent_start; i < accent_end; i++) {
-                            accent_mask[i] = true;
-                        }
+            if (target_start >= 0 && target_len > 0 && target_start < text_len) {
+                if (target_start + target_len > text_len) {
+                    target_len = text_len - target_start;
+                }
+                int accent_start = MONITOR_DISASM_TEXT_COL + target_start;
+                int accent_end = accent_start + target_len;
+                if (accent_start < MONITOR_DISASM_ROW_CHARS) {
+                    if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                        accent_end = MONITOR_DISASM_ROW_CHARS;
+                    }
+                    for (int i = accent_start; i < accent_end; i++) {
+                        accent_mask[i] = true;
                     }
                 }
+            }
+            // Bracket the next-to-execute instruction with > ... < placed in the
+            // whitespace immediately before the mnemonic and after the operand.
+            if (MONITOR_DISASM_TEXT_COL >= 1 &&
+                    line[MONITOR_DISASM_TEXT_COL - 1] == ' ') {
+                line[MONITOR_DISASM_TEXT_COL - 1] = '>';
+            }
+            int close_col = MONITOR_DISASM_TEXT_COL + text_len;
+            if (close_col < MONITOR_DISASM_ROW_CHARS && line[close_col] == ' ') {
+                line[close_col] = '<';
             }
         }
         // Enabled breakpoints render in the same accent color as the Dbg /
@@ -5731,6 +5778,7 @@ bool MachineMonitor :: debug_enter()
     }
     monitor_log_address("debug enter", state.current_addr);
     help_visible = false;
+    debug_entry_addr = state.current_addr;
     DebugSession *session = ensure_debug_session();
     if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
         get_ui()->popup("DEBUG IN USE", BUTTON_OK);
@@ -5872,6 +5920,7 @@ void MachineMonitor :: restore_debug_mode_after_reset(void)
     }
     monitor_log_address("debug restore-after-reset", state.current_addr);
     help_visible = false;
+    debug_entry_addr = state.current_addr;
     DebugSession *session = ensure_debug_session();
     if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
         restore_debug_after_reset = false;
@@ -6343,7 +6392,7 @@ void MachineMonitor :: debug_request_cursor()
         redraw_full();
         return;
     }
-    uint16_t start_pc = from.valid ? from.pc : state.current_addr;
+    uint16_t start_pc = from.valid ? from.pc : debug_entry_addr;
     DebugContext next;
     DebugSession::Result r = session->run_to(from, state.current_addr, &breakpoints,
                                              start_pc, &next);

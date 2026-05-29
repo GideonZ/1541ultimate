@@ -622,6 +622,15 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target)
     uint8_t old_nmi_lo = peek_visible(NMI_VECTOR_LO);
     uint8_t old_nmi_hi = peek_visible(NMI_VECTOR_HI);
     const uint8_t bytes[] = {
+        // Taking the NMI pushes a 3-byte frame (PCH, PCL, SR) onto the stack.
+        // We resume with a JMP (not an RTI), so without discarding that frame
+        // the program's stack pointer would be left 3 bytes low for the rest of
+        // the run - every later push (e.g. a JSR return address) would then land
+        // 3 bytes below where an undebugged run puts it. Stepping stays
+        // self-consistent (a matching RTS still works) but the stack contents no
+        // longer match real execution. Pull the 3 frame bytes back off first so
+        // SP is exactly what it was before the NMI, then redirect to the target.
+        0x68, 0x68, 0x68,
         0xA9, old_nmi_lo,
         0x8D, (uint8_t)(NMI_VECTOR_LO & 0xFF), (uint8_t)(NMI_VECTOR_LO >> 8),
         0xA9, old_nmi_hi,
@@ -642,6 +651,18 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target)
     }
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
     poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
+    // Clear the sentinel as the last act before releasing the CPU, while it is
+    // still stopped and therefore cannot set it. In freeze mode the run window
+    // unfreezes the whole machine, so between that unfreeze and this stopped
+    // session the live CPU free-runs from its frozen PC and - in a hot loop
+    // such as the BASIC FAC multiply at $B9A6 - can reach the BRK we already
+    // installed at the step target, fire the handler, and leave the sentinel
+    // set. Launching the controlled NMI run without clearing it first lets
+    // wait_for_sentinel() observe that stale $FF and return immediately with a
+    // context the engine never controlled, desyncing cpu_parked_in_spin from
+    // the real CPU state and producing the sporadic runaway-stepping loop.
+    // Clearing here guarantees the next sentinel comes only from this run.
+    poke_visible(SENTINEL_ADDR, 0x00);
     // The NMI request must be raised while the CPU is still stopped, then
     // released during resume so the CPU observes the pending edge. The
     // backend hook handles request+release+clear in one atomic operation.
@@ -972,10 +993,8 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
         release_to_run(&start_context);
     } else if (resume_from->valid) {
-        poke_visible(SENTINEL_ADDR, 0x00);
         nmi_redirect_to(resume_from->pc);
     } else if (start_pc != 0) {
-        poke_visible(SENTINEL_ADDR, 0x00);
         nmi_redirect_to(start_pc);
     } else {
         release_to_run(0);

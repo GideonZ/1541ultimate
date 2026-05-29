@@ -51,10 +51,10 @@ static const char *const opcode_templates[256] = {
 
     "NOP*#        ", "STA ($nn,X)  ", "NOP*#        ", "SAX*($nn,X)  ",
     "STY $nn      ", "STA $nn      ", "STX $nn      ", "SAX*$nn      ",
-    "DEY          ", "NOP*#        ", "TXA          ", "XAA*         ",
+    "DEY          ", "NOP*#        ", "TXA          ", "XAA*#        ",
     "STY $nnnn    ", "STA $nnnn    ", "STX $nnnn    ", "SAX*$nnnn    ",
 
-    "BCC          ", "STA ($nn),Y  ", "HLT*         ", "AHX*($nn),Y  ",
+    "BCC rel      ", "STA ($nn),Y  ", "HLT*         ", "AHX*($nn),Y  ",
     "STY $nn,X    ", "STA $nn,X    ", "STX $nn,Y    ", "SAX*$nn,Y    ",
     "TYA          ", "STA $nnnn,Y  ", "TXS          ", "TAS*$nnnn,Y  ",
     "SHY*$nnnn,X  ", "STA $nnnn,X  ", "SHX*$nnnn,Y  ", "AHX*$nnnn,Y  ",
@@ -64,17 +64,17 @@ static const char *const opcode_templates[256] = {
     "TAY          ", "LDA #        ", "TAX          ", "LAX*#        ",
     "LDY $nnnn    ", "LDA $nnnn    ", "LDX $nnnn    ", "LAX*$nnnn    ",
 
-    "BCS          ", "LDA ($nn),Y  ", "HLT*         ", "LAX*($nn),Y  ",
+    "BCS rel      ", "LDA ($nn),Y  ", "HLT*         ", "LAX*($nn),Y  ",
     "LDY $nn,X    ", "LDA $nn,X    ", "LDX $nn,Y    ", "LAX*$nn,Y    ",
     "CLV          ", "LDA $nnnn,Y  ", "TSX          ", "LAS*$nnnn,Y  ",
     "LDY $nnnn,X  ", "LDA $nnnn,X  ", "LDX $nnnn,Y  ", "LAX*$nnnn,Y  ",
 
     "CPY #        ", "CMP ($nn,X)  ", "NOP*#        ", "DCM*($nn,X)  ",
     "CPY $nn      ", "CMP $nn      ", "DEC $nn      ", "DCM*$nn      ",
-    "INY          ", "CMP #        ", "DEX          ", "AXS*# (used!)",
+    "INY          ", "CMP #        ", "DEX          ", "AXS*#        ",
     "CPY $nnnn    ", "CMP $nnnn    ", "DEC $nnnn    ", "DCM*$nnnn    ",
 
-    "BNE          ", "CMP ($nn),Y  ", "HLT*         ", "DCM*($nn),Y  ",
+    "BNE rel      ", "CMP ($nn),Y  ", "HLT*         ", "DCM*($nn),Y  ",
     "NOP*$nn,X    ", "CMP $nn,X    ", "DEC $nn,X    ", "DCM*$nn,X    ",
     "CLD          ", "CMP $nnnn,Y  ", "NOP*         ", "DCM*$nnnn,Y  ",
     "NOP*$nnnn,X  ", "CMP $nnnn,X  ", "DEC $nnnn,X  ", "DCM*$nnnn,X  ",
@@ -84,8 +84,8 @@ static const char *const opcode_templates[256] = {
     "INX          ", "SBC #        ", "NOP          ", "SBC*#        ",
     "CPX $nnnn    ", "SBC $nnnn    ", "INC $nnnn    ", "INS*$nnnn    ",
 
-    "BEQ          ", "SBC ($nn),Y  ", "HLT*         ", "INS*($nn),Y  ",
-    "NOP*$nn,S    ", "SBC $nn,X    ", "INC $nn,X    ", "INS*$nn,X    ",
+    "BEQ rel      ", "SBC ($nn),Y  ", "HLT*         ", "INS*($nn),Y  ",
+    "NOP*$nn,X    ", "SBC $nn,X    ", "INC $nn,X    ", "INS*$nn,X    ",
     "SED          ", "SBC $nnnn,Y  ", "NOP*         ", "INS*$nnnn,Y  ",
     "NOP*$nnnn,X  ", "SBC $nnnn,X  ", "INC $nnnn,X  ", "INS*$nnnn,X  "
 };
@@ -137,9 +137,6 @@ uint8_t operand_length(const char *templ)
 {
     const char *spec = operand_spec(templ);
 
-    if ((templ[0] == 'B') && (templ[1] != 'R')) {
-        return 1;
-    }
     if (*spec == 0 || !strncmp(spec, "A", 1)) {
         return 0;
     }
@@ -153,8 +150,7 @@ uint8_t operand_length(const char *templ)
     }
     if (!strncmp(spec, "($nn,X)", 7) || !strncmp(spec, "($nn),Y", 7) ||
         !strncmp(spec, "$nn,Y", 5) || !strncmp(spec, "$nn,X", 5) ||
-        !strncmp(spec, "$nn,S", 5) || !strncmp(spec, "$nn", 3) ||
-        !strncmp(spec, "#", 1)) {
+        !strncmp(spec, "$nn", 3) || !strncmp(spec, "#", 1)) {
         return 1;
     }
     return 0;
@@ -183,12 +179,6 @@ void format_operand(uint8_t opcode, uint16_t pc, const uint8_t *bytes, uint8_t l
 
     while (*spec == ' ') {
         spec++;
-    }
-    if (templ[0] == 'B' && templ[1] != 'R') {
-        *has_target = true;
-        *target = (uint16_t)(pc + 2 + (int8_t)bytes[1]);
-        sprintf(operand, "$%04x", *target);
-        return;
     }
     if (*spec == 0) {
         return;
@@ -243,10 +233,6 @@ void format_operand(uint8_t opcode, uint16_t pc, const uint8_t *bytes, uint8_t l
     }
     if (!strncmp(spec, "$nn,X", 5)) {
         sprintf(operand, "$%02x,X", bytes[1]);
-        return;
-    }
-    if (!strncmp(spec, "$nn,S", 5)) {
-        sprintf(operand, "$%02x,S", bytes[1]);
         return;
     }
     if (!strncmp(spec, "$nn", 3)) {

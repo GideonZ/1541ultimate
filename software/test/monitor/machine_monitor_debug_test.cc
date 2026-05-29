@@ -350,6 +350,8 @@ static const uint16_t FAKE_STORE_SP      = 0x03F6;
 static const uint16_t FAKE_SPIN_LO       = 0x0378;
 static const uint16_t FAKE_SPIN_HI       = 0x0379;
 static const uint16_t FAKE_RESUME_TRAMP  = 0x033C;
+static const uint16_t FAKE_NMI_VECTOR_HI = 0x0319; // mirrors NMI_VECTOR_HI
+static const uint16_t FAKE_NMI_TRAMP     = 0x03A0; // mirrors NMI_TRAMPOLINE_ADDR
 
 class FakeFreezeMachine : public BrkDebugSession
 {
@@ -372,6 +374,12 @@ public:
     // runs to its full timeout. Lets a test force the DBG_TIMEOUT path and then
     // re-arm to prove the run-window state (depth, freeze bracketing) recovered.
     bool sentinel_armed;
+    // Test hook: model the freeze-mode "gap free-run" race. When set, the live
+    // CPU is treated as having reached the already-installed step BRK while the
+    // controlled NMI launch is still being set up, so the sentinel goes high
+    // mid-setup (as the NMI vector high byte is written). A correct launch must
+    // clear that stale sentinel before releasing the CPU.
+    bool stale_sentinel_during_nmi_setup;
     bool nmi_from_spin_times_out;
     bool capture_override_armed;
     uint16_t capture_override_pc;
@@ -386,7 +394,8 @@ public:
           break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
           unfreeze_calls(0), refreeze_calls(0), reset_calls(0), nmi_pulses(0),
           brk_patch_writes(0), last_brk_patch_addr(0),
-          sentinel_armed(true), nmi_from_spin_times_out(false),
+          sentinel_armed(true), stale_sentinel_during_nmi_setup(false),
+          nmi_from_spin_times_out(false),
           capture_override_armed(false),
           capture_override_pc(0), capture_override_sp(0),
           capture_override_a(0), capture_override_x(0), capture_override_y(0),
@@ -448,7 +457,16 @@ protected:
         ram[a] = b;
     }
     virtual uint8_t peek_visible(uint16_t a) { return ram[a]; }
-    virtual void poke_visible(uint16_t a, uint8_t b) { ram[a] = b; }
+    virtual void poke_visible(uint16_t a, uint8_t b)
+    {
+        ram[a] = b;
+        // nmi_redirect_to() writes the NMI vector while the CPU is stopped, just
+        // before releasing it. Fire the modelled gap free-run BRK hit here so a
+        // correct launch must still clear the sentinel afterwards.
+        if (stale_sentinel_during_nmi_setup && a == FAKE_NMI_VECTOR_HI) {
+            ram[FAKE_SENTINEL_ADDR] = 0xFF;
+        }
+    }
     virtual void unfreeze_if_accessible(void)
     {
         bool accessible = frozen || accessible_when_unfrozen;
@@ -2723,8 +2741,8 @@ static int test_help_screen_shows_debug_commands()
         "O Step Out must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "G Continue",
         "G Continue must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "K Cursor",
-        "K Cursor must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "K Cont Crsr",
+        "K Cont Crsr must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "R Breakpt",
         "R Breakpt must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "C=+R Brkpts",
@@ -2771,6 +2789,48 @@ static int test_k_runs_to_cursor()
                "K Cursor must continue from the captured debug PC")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_k_without_context_runs_from_debug_entry_to_cursor()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xE000, 0x85);
+    backend.write(0xE001, 0x56);
+    backend.write(0xE002, 0x20);
+    backend.write(0xE003, 0x0F);
+    backend.write(0xE004, 0xBC);
+
+    const int keys[] = { 'J', 'A', 'D', 'J', 'K', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+    ui.push_prompt("E002", 3);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 7; i++) {
+        int r = monitor.poll(0);
+        if (i < 6) {
+            if (expect(r == 0, "No-context K setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->run_to_calls == 1,
+               "No-context K must use run-to-cursor")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0xE000,
+               "No-context K must continue from the debug entry address, not the moved cursor")) return 1;
+    if (expect(backend.last_session->last_run_to_target == 0xE002,
+               "No-context K must target the current cursor address")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -2895,6 +2955,51 @@ static int test_freeze_step_over_refreezes_and_preserves_screen()
                "freeze step-over must not write monitor UI into C64 screen RAM")) return 1;
     if (expect(m.screen_render_target_invalidated(),
                "freeze step-over must set screen_render_target_invalidated so caller can restore chrome")) return 1;
+    return 0;
+}
+
+// Regression for the sporadic freeze-mode runaway-stepping loop seen around the
+// BASIC FAC multiply loop at $B9A6. The freeze-mode run window unfreezes the
+// whole machine, so the live CPU free-runs from its frozen PC before the
+// controlled NMI single-step is set up. In a hot tight loop it can reach the
+// step BRK we already installed during that gap, fire the handler, and leave
+// the sentinel set with a context the engine never controlled (a "$4Cxx"-style
+// junk PC was observed). nmi_redirect_to() must clear the sentinel as the last
+// act of the controlled launch so wait_for_sentinel() only ever observes the
+// result of THIS run. Without the clear, the engine returns the stale context
+// and desyncs cpu_parked_in_spin from the real CPU, which is what produced the
+// runaway loop.
+static int test_freeze_nmi_step_ignores_stale_sentinel()
+{
+    FakeVisibleRomMachine m(true); // freeze mode, BASIC ROM range like $B9A6
+    m.allow_visible_rom_patching = true;
+    m.cpu_port = 0x07;
+    m.basic_rom[0xB9A6 - 0xA000] = 0xEA; // NOP at $B9A6
+    m.basic_rom[0xB9A7 - 0xA000] = 0xEA; // fall-through / step BRK target
+    m.basic_rom[0xB9A8 - 0xA000] = 0xEA;
+
+    // Model the gap free-run hitting the installed BRK while the NMI launch is
+    // being set up: the sentinel goes high mid-setup, with STORE_* holding a
+    // stale junk PC the engine never asked to stop at ($4C27 was observed).
+    m.stale_sentinel_during_nmi_setup = true;
+    m.ram[FAKE_STORE_PCLO] = (uint8_t)((0x4C27 + 2) & 0xFF);
+    m.ram[FAKE_STORE_PCHI] = (uint8_t)((0x4C27 + 2) >> 8);
+    // The controlled run captures the real next PC on the next delay_ms tick.
+    m.arm_capture_context(0xB9A7, 0xFF, 0, 0, 0, 0);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA }; // NOP at $B9A6, fall-through $B9A7
+    DebugPredictResult pred;
+    debug_predict(0xB9A6, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xB9A6, pred, &ctx); // first step -> NMI launch
+    if (expect(r == DebugSession::DBG_OK, "freeze NMI step must complete")) return 1;
+    if (expect(m.nmi_pulses == 1,
+               "freeze first step must launch via exactly one NMI redirect")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0xB9A7,
+               "freeze NMI step must report the controlled run's PC, not the stale gap hit")) return 1;
+    if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
+               "freeze NMI step must leave the sentinel cleared")) return 1;
     return 0;
 }
 
@@ -3979,6 +4084,40 @@ static int test_cleanup_resume_trampoline_restores_full_context()
     return 0;
 }
 
+// Regression for the step-mode stack side effect: the NMI used to launch a run
+// pushes a 3-byte frame (PCH/PCL/SR). Because we resume with a JMP, that frame
+// must be pulled back off inside the trampoline so the program's SP - and hence
+// every subsequent push such as a JSR return address - is exactly what an
+// undebugged run would have. The trampoline must therefore begin with PLA x3
+// and end with a JMP to the launch target.
+static int test_nmi_launch_trampoline_balances_stack()
+{
+    FakeFreezeMachine m(true); // freeze: first step launches via NMI
+    fake_seed_nop_run(m, 0x2000); // NOP at 0x2000, fall-through 0x2001
+    m.arm_capture_context(0x2001, 0xF7, 0, 0, 0, 0);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK, "NMI-launched step must complete")) return 1;
+    if (expect(m.nmi_pulses == 1, "First step must launch via exactly one NMI")) return 1;
+
+    // PLA x3 up front discards the NMI frame so SP is left balanced.
+    if (expect(m.ram[FAKE_NMI_TRAMP + 0] == 0x68 &&
+               m.ram[FAKE_NMI_TRAMP + 1] == 0x68 &&
+               m.ram[FAKE_NMI_TRAMP + 2] == 0x68,
+               "NMI trampoline must pull its 3-byte frame to keep SP balanced")) return 1;
+    // The trampoline must still redirect to the launch target (JMP $2000).
+    if (expect(m.ram[FAKE_NMI_TRAMP + 13] == 0x4C &&
+               m.ram[FAKE_NMI_TRAMP + 14] == 0x00 &&
+               m.ram[FAKE_NMI_TRAMP + 15] == 0x20,
+               "NMI trampoline must JMP to the launch target after balancing SP")) return 1;
+    return 0;
+}
+
 static int test_freeze_cleanup_after_step_allows_later_step()
 {
     FakeFreezeMachine m(true);
@@ -4314,6 +4453,169 @@ static int test_cursor_row_highlights_taken_branch_target_only_when_taken()
     return 0;
 }
 
+// On the debug PC row, an RTS must show the return address inferred from the
+// stack ($XXXX) and highlight it like any other jump/branch target.
+static int test_debug_rts_shows_inferred_target()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+    ui.color_fg = 12;
+
+    backend.write(0x2000, 0x60); // RTS
+    backend.write(0x2001, 0xEA);
+    // Return frame on the stack: SP=0xFB, so RTS pulls $01FC/$01FD = $3322 and
+    // resumes at $3322 + 1 = $3323.
+    backend.write(0x01FC, 0x22);
+    backend.write(0x01FD, 0x33);
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0x2000;
+    backend.canned_snapshot.sp = 0xFB;
+    backend.canned_snapshot.sr = 0x20;
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
+
+    char row[40];
+    int row_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strncmp(row, "2000", 4) == 0) { row_y = y; break; }
+    }
+    if (expect(row_y >= 0, "RTS row must be visible")) return 1;
+    if (expect(strstr(row, "RTS $3323") != NULL,
+               "RTS must show the inferred return target")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    const char *dbg = strstr(header, "Dbg");
+    if (expect(dbg != NULL, "Header must show the Dbg badge")) return 1;
+    uint8_t accent = screen.colors[3][1 + (int)(dbg - header)];
+    const char *target = strstr(row, "$3323");
+    int x = 1 + (int)(target - row);
+    for (int i = 0; i < 5; i++) {
+        if (expect(screen.colors[row_y][x + i] == accent,
+                   "RTS inferred target must use the accent colour")) return 1;
+    }
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+// With an empty stack (SP=0xFF) there is no return address to infer, so RTS
+// shows $???? instead.
+static int test_debug_rts_empty_stack_shows_unknown()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+    ui.color_fg = 12;
+
+    backend.write(0x2000, 0x60); // RTS
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0x2000;
+    backend.canned_snapshot.sp = 0xFF; // empty stack
+    backend.canned_snapshot.sr = 0x20;
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
+
+    char row[40];
+    int row_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strncmp(row, "2000", 4) == 0) { row_y = y; break; }
+    }
+    if (expect(row_y >= 0, "RTS row must be visible")) return 1;
+    if (expect(strstr(row, "RTS $????") != NULL,
+               "RTS with empty stack must show $????")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+// The next-to-execute instruction (debug PC) is bracketed with > ... <, the
+// marker follows the PC (not the movable cursor), and it is removed when Debug
+// is left.
+static int test_debug_next_opcode_bracket_markers()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+    ui.color_fg = 12;
+
+    backend.write(0x2000, 0x84); // STY $70
+    backend.write(0x2001, 0x70);
+    backend.write(0x2002, 0xEA); // NOP (next row, where the cursor will move)
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0x2000;
+    backend.canned_snapshot.sp = 0xF7;
+    backend.canned_snapshot.sr = 0x20;
+
+    const int keys[] = { 'A', 'D', KEY_DOWN, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
+
+    char row[40];
+
+    if (expect(find_row_with_address(screen, "2000") >= 0, "PC row must be visible")) return 1;
+    screen.get_slice(1, find_row_with_address(screen, "2000"), 38, row);
+    if (expect(strstr(row, ">STY $70<") != NULL,
+               "Debug PC row must bracket the next opcode with > and <")) return 1;
+
+    // Move the cursor down; the marker must stay on the PC row, not follow it.
+    if (expect(monitor.poll(0) == 0, "Cursor down should return 0")) return 1;
+    if (expect(find_row_with_address(screen, "2000") >= 0, "PC row must still be visible")) return 1;
+    screen.get_slice(1, find_row_with_address(screen, "2000"), 38, row);
+    if (expect(strstr(row, ">STY $70<") != NULL,
+               "Marker must stay on the PC row after the cursor moves")) return 1;
+    if (expect(find_row_with_address(screen, "2002") >= 0, "Cursor row must be visible")) return 1;
+    screen.get_slice(1, find_row_with_address(screen, "2002"), 38, row);
+    if (expect(strchr(row, '>') == NULL && strchr(row, '<') == NULL,
+               "The moved cursor row must not be bracketed")) return 1;
+
+    // Leaving Debug removes the markup.
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
+    if (expect(find_row_with_address(screen, "2000") >= 0, "PC row must be visible after leaving Debug")) return 1;
+    screen.get_slice(1, find_row_with_address(screen, "2000"), 38, row);
+    if (expect(strchr(row, '>') == NULL && strchr(row, '<') == NULL,
+               "Bracket markup must be removed when Debug is left")) return 1;
+
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 // --- Debug header/footer colour ---------------------------------------------
 // Header mode/address tokens and breakpoint rows use color_fg.
 // In Debug footer labels, PC/A/X/Y/SP and active flag letters use the primary
@@ -4558,10 +4860,12 @@ int main()
     RUN(test_stop_debugging_resumes_current_debug_context);
     RUN(test_help_screen_shows_debug_commands);
     RUN(test_k_runs_to_cursor);
+    RUN(test_k_without_context_runs_from_debug_entry_to_cursor);
     RUN(test_ctrl_i_swaps_interface_in_monitor);
     RUN(test_jump_rejects_non_hex_input_and_uppercases);
     RUN(test_edit_and_debug_compose_in_header);
     RUN(test_freeze_step_over_refreezes_and_preserves_screen);
+    RUN(test_freeze_nmi_step_ignores_stale_sentinel);
     RUN(test_freeze_step_over_with_context_refreezes);
     RUN(test_cleanup_to_context_without_entry_context_never_resets);
     RUN(test_freeze_step_into_refreezes);
@@ -4597,6 +4901,7 @@ int main()
     RUN(test_overlay_step_timeout_then_recovers);
     RUN(test_freeze_step_timeout_refreezes_and_recovers);
     RUN(test_cleanup_resume_trampoline_restores_full_context);
+    RUN(test_nmi_launch_trampoline_balances_stack);
     RUN(test_freeze_cleanup_after_step_allows_later_step);
     RUN(test_freeze_go_without_breakpoint_schedules_context_handoff);
     RUN(test_freeze_go_with_breakpoint_still_uses_session_go);
@@ -4605,6 +4910,9 @@ int main()
     RUN(test_monitor_refuses_debug_when_owner_is_busy);
     RUN(test_cursor_row_highlights_jsr_target);
     RUN(test_cursor_row_highlights_taken_branch_target_only_when_taken);
+    RUN(test_debug_rts_shows_inferred_target);
+    RUN(test_debug_rts_empty_stack_shows_unknown);
+    RUN(test_debug_next_opcode_bracket_markers);
     RUN(test_debug_footer_value_highlight_policy);
     RUN(test_debug_header_mode_and_address_use_foreground_color);
 

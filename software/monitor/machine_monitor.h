@@ -235,6 +235,7 @@ class MachineMonitor : public UIObject
     bool debug_cursor_override;
     bool debug_entry_context_valid;
     DebugContext debug_entry_context;
+    uint16_t debug_entry_addr;
     bool debug_run_window_refreeze_enabled;
     bool reset_exits_monitor;
     bool reset_exit_pending;

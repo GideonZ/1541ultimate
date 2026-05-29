@@ -119,7 +119,7 @@ private:
     // firmware chrome rows need restoring before the next visible redraw.
     bool screen_was_clobbered;
     uint8_t saved_handler_bytes[100];
-    uint8_t saved_nmi_trampoline_bytes[16];
+    uint8_t saved_nmi_trampoline_bytes[24];
     bool nmi_trampoline_installed;
     uint8_t saved_nmi_vector[2];
     uint8_t saved_brk_vector[2];
