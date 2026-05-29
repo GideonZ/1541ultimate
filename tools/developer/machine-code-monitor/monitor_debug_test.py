@@ -275,7 +275,7 @@ def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
 
-    session.send_key("DOWN")
+    session.send_key_repeat("UP", 9)
     for slot in range(10):
         snap = session.capture()
         line = next((snap.line(y) for y in range(mt.HEIGHT)
@@ -1629,8 +1629,7 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: "mt.MonitorSessio
         session.goto("BC0F")
         session.send_char("A")
         session.send_char("D")
-        for stale in (0xBC0F, 0xE005, 0xBC9B, 0xBCF2):
-            _clear_breakpoint_at(session, stale, f"${stale:04X} stale breakpoint clear")
+        _clear_all_breakpoints(session, "deep trace setup breakpoint cleanup")
         session.goto("BC0F")
         row = _disassembly_row(session.capture(), 0xBC0F)
         if "[BAS]" not in row:
@@ -1925,6 +1924,41 @@ def run_side_effect_step_tests(rest_host: str, session: "mt.MonitorSession") -> 
         _ensure_no_debug(session)
 
 
+TEST_GROUPS = (
+    ("ram-edit", run_ram_edit_regression_tests),
+    ("debug", run_debug_tests),
+    ("flags", run_flag_control_flow_tests),
+    ("refusal", run_refusal_and_return_edge_tests),
+    ("page-cross", run_page_cross_and_indirect_jump_tests),
+    ("nested-out", run_nested_out_tests),
+    ("step-out-target", run_step_out_target_proof_tests),
+    ("rom-single-step", run_rom_single_step_tests),
+    ("rom-breakpoints", run_rom_breakpoint_tests),
+    ("kernal-basic-breakpoint", run_kernal_basic_breakpoint_regression),
+    ("deep-trace", run_deep_kernal_basic_trace_tests),
+    ("brk-orchestrator", run_brk_orchestrator_tests),
+    ("side-effect-step", run_side_effect_step_tests),
+    ("cleanup-exit", run_cleanup_exit_tests),
+    ("breakpoint-reentry", run_breakpoint_reentry_tests),
+)
+
+
+def _parse_selected_tests(parser: argparse.ArgumentParser,
+                          selected: list[str] | None) -> set[str] | None:
+    if not selected:
+        return None
+    names = []
+    for raw in selected:
+        names.extend(name.strip() for name in raw.split(",") if name.strip())
+    valid = {name for name, _runner in TEST_GROUPS}
+    unknown = sorted(set(names) - valid)
+    if unknown:
+        parser.error(
+            "unknown --test value(s): "
+            f"{', '.join(unknown)}; choose from {', '.join(sorted(valid))}")
+    return set(names)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate Machine Code Monitor Debug mode over the standard telnet service")
@@ -1940,7 +1974,17 @@ def main() -> int:
     parser.add_argument("--keep-going", action="store_true",
                         default=os.environ.get("U64_MONITOR_KEEP_GOING", "").lower() in ("1", "true", "yes"),
                         help="Continue after a check fails, logging verbose context per failure.")
+    parser.add_argument("-t", "--test", action="append", metavar="NAME[,NAME...]",
+                        help="Run only the named test group(s). Repeat or comma-separate. "
+                             f"Choices: {', '.join(name for name, _runner in TEST_GROUPS)}.")
+    parser.add_argument("--list-tests", action="store_true",
+                        help="List available --test names and exit.")
     args = parser.parse_args()
+    selected_tests = _parse_selected_tests(parser, args.test)
+    if args.list_tests:
+        for name, _runner in TEST_GROUPS:
+            print(name)
+        return 0
 
     mt.TestConfig.target = args.target
     # In U2 mode the REST API is typically unreachable; default to keep-going
@@ -1962,21 +2006,9 @@ def main() -> int:
         _reset_c64_core(rest_host)
         session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
         mt.TestConfig.session = session
-        run_ram_edit_regression_tests(rest_host, session)
-        run_debug_tests(rest_host, session)
-        run_flag_control_flow_tests(rest_host, session)
-        run_refusal_and_return_edge_tests(rest_host, session)
-        run_page_cross_and_indirect_jump_tests(rest_host, session)
-        run_nested_out_tests(rest_host, session)
-        run_step_out_target_proof_tests(rest_host, session)
-        run_rom_single_step_tests(rest_host, session)
-        run_rom_breakpoint_tests(rest_host, session)
-        run_kernal_basic_breakpoint_regression(rest_host, session)
-        run_deep_kernal_basic_trace_tests(rest_host, session)
-        run_brk_orchestrator_tests(rest_host, session)
-        run_side_effect_step_tests(rest_host, session)
-        run_cleanup_exit_tests(rest_host, session)
-        run_breakpoint_reentry_tests(rest_host, session)
+        for name, runner in TEST_GROUPS:
+            if selected_tests is None or name in selected_tests:
+                runner(rest_host, session)
     except mt.Failure as exc:
         print(exc, file=sys.stderr)
         if session is not None:
