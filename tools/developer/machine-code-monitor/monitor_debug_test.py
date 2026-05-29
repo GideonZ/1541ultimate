@@ -789,6 +789,30 @@ def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
     raise mt.Failure(f"PC did not reach {expected_pc}; last footer={last!r} ({values!r})")
 
 
+def _wait_for_pc_register(session: "mt.MonitorSession", expected_pc: str,
+                          register: str, expected_value: str,
+                          timeout: float = 6.0) -> dict:
+    """Poll until the footer reaches PC with a register value from the new stop."""
+    import time as _time
+    deadline = _time.time() + timeout
+    last = None
+    register = register.lower()
+    while _time.time() < deadline:
+        snap = session.capture()
+        _assert_no_debug_modal_snapshot(
+            snap, f"Waiting for PC {expected_pc} {register.upper()}={expected_value}")
+        values = _footer_value_line(session)
+        parsed = _parse_footer_values(values)
+        last = parsed
+        if (parsed["pc"].upper() == expected_pc.upper() and
+                parsed.get(register, "").upper() == expected_value.upper()):
+            return parsed
+        _time.sleep(0.1)
+    raise mt.Failure(
+        f"PC/register did not reach {expected_pc} {register.upper()}={expected_value}; "
+        f"last footer={last!r} ({values!r})")
+
+
 def _wait_for_pc_not(session: "mt.MonitorSession", previous_pc: str,
                      timeout: float = 6.0) -> dict:
     import time as _time
@@ -1316,9 +1340,11 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
     """Ensure repeated Go from the current breakpoint re-arms cleanly."""
 
     # $C300: EE 90 C1    INC $C190
-    # $C303: 4C 00 C3    JMP $C300
+    # $C303: AE 90 C1    LDX $C190
+    # $C306: 4C 00 C3    JMP $C300
     program = bytes([
         0xEE, 0x90, 0xC1,
+        0xAE, 0x90, 0xC1,
         0x4C, 0x00, 0xC3,
     ])
 
@@ -1332,9 +1358,9 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
         session.goto("C300")
         session.send_char("A")
         session.send_char("D")
-        _clear_breakpoint_at(session, 0xC300, "$C300 stale breakpoint clear")
+        _clear_all_breakpoints(session, "breakpoint re-entry setup cleanup")
         session.goto("C300")
-        session.send_char("R")
+        _ensure_breakpoint_at(session, 0xC300, "$C300 re-entry breakpoint set")
 
         session.send_char("G")
         _wait_for_pc(session, "C300")
@@ -1342,7 +1368,7 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
             raise mt.Failure("Initial breakpoint hit must stop before INC $C190 executes")
 
         session.send_char("G")
-        _wait_for_pc(session, "C300")
+        _wait_for_pc_register(session, "C300", "xr", "01")
         if mt.read_rest_memory(rest_host, 0xC190, 1)[0] != 0x01:
             raise mt.Failure("Second G from the active breakpoint must execute INC exactly once")
 
@@ -1708,7 +1734,7 @@ def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> 
         # Set a breakpoint at $C006 by parking the cursor there and pressing R.
         session.send_char("J")
         session.send_text("C006\r", "J C006")
-        session.send_char("R")
+        _ensure_breakpoint_at(session, 0xC006, "$C006 orchestrator breakpoint set")
         # Bring cursor back to $C000 so G's start_pc fallback runs from there.
         session.send_char("J")
         session.send_text("C000\r", "J C000")
@@ -1744,6 +1770,7 @@ def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> 
             raise mt.Failure(f"Subroutine should have set AC to $11, got {parsed!r}")
 
     with mt.check("Debug: cleanup restores user bytes at the breakpoint"):
+        _clear_breakpoint_at(session, 0xC006, "$C006 orchestrator breakpoint clear")
         _ensure_no_debug(session)
         # The byte at $C006 must be the original NOP again.
         b = mt.read_rest_memory(rest_host, 0xC006, 1)[0]

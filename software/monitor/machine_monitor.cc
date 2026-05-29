@@ -4332,7 +4332,6 @@ void MachineMonitor :: draw_debug_footer()
     header_accent[MonitorDebug::FOOTER_POS_XR + 0] = true;
     header_accent[MonitorDebug::FOOTER_POS_YR + 0] = true;
     header_accent[MonitorDebug::FOOTER_POS_SP + 0] = true;
-    header_accent[MonitorDebug::FOOTER_POS_SP + 1] = true;
     if (ctx.valid) {
         for (int i = 0; i < 4; i++) {
             value_accent[MonitorDebug::FOOTER_POS_PC + i] = true;
