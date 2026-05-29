@@ -3,15 +3,7 @@
 #include "filemanager.h"
 #include "file_device.h"
 #include "filesystem_fat.h"
-#include <assert.h>
-
-#define REQUIRE(expr) do { \
-    bool require_ok = (expr); \
-    if (!require_ok) { \
-        printf("%s: ASSERT FAILED %s:%d: %s\n", testname, __FILE__, __LINE__, #expr); \
-    } \
-    assert(require_ok); \
-} while (0)
+#include "macros.h"
 
 void outbyte(int c) { putc(c, stdout); }
 CommandInterface cmd_if;
@@ -23,131 +15,9 @@ BlockDevice *flashdisk_blk;
 FileDevice *flashdisk_node;
 
 char last_status[128];
-
-static const int D64_SIZE = 174848;
-static const int D64_TRACKS = 35;
-static const int D64_SECTORS_PER_TRACK[D64_TRACKS + 1] = {
-    0,
-    21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
-    19, 19, 19, 19, 19, 19, 19,
-    18, 18, 18, 18, 18, 18,
-    17, 17, 17, 17, 17
-};
-
-static int d64_abs_sector(int track, int sector)
-{
-    const char *testname = "d64_abs_sector";
-    REQUIRE(track >= 1);
-    REQUIRE(track <= D64_TRACKS);
-    REQUIRE(sector >= 0);
-    REQUIRE(sector < D64_SECTORS_PER_TRACK[track]);
-
-    int abs = sector;
-    for (int t = 1; t < track; t++) {
-        abs += D64_SECTORS_PER_TRACK[t];
-    }
-    return abs;
-}
-
-static uint8_t *d64_sector(uint8_t *disk, int track, int sector)
-{
-    return disk + 256 * d64_abs_sector(track, sector);
-}
-
-static void d64_set_allocated(uint8_t *bam, int track, int sector)
-{
-    uint8_t *entry = bam + 4 * track;
-    uint8_t bit = (uint8_t)(1 << (sector & 7));
-    if (entry[1 + (sector >> 3)] & bit) {
-        entry[1 + (sector >> 3)] &= (uint8_t)~bit;
-        entry[0]--;
-    }
-}
-
-static void d64_add_file(uint8_t *disk, int dir_index, const uint8_t *name, int name_len,
-                         uint8_t type, int track, int sector, const char *payload)
-{
-    const char *testname = "d64_add_file";
-    REQUIRE(dir_index >= 0);
-    REQUIRE(dir_index < 8);
-    REQUIRE(name_len > 0);
-    REQUIRE(name_len <= 16);
-
-    uint8_t *dir = d64_sector(disk, 18, 1);
-    uint8_t *entry = dir + 32 * dir_index;
-    entry[2] = (uint8_t)(0x80 | type);
-    entry[3] = (uint8_t)track;
-    entry[4] = (uint8_t)sector;
-    memset(entry + 5, 0xA0, 16);
-    memcpy(entry + 5, name, name_len);
-    entry[30] = 1;
-    entry[31] = 0;
-
-    int payload_len = strlen(payload);
-    REQUIRE(payload_len > 0);
-    REQUIRE(payload_len <= 254);
-
-    uint8_t *data = d64_sector(disk, track, sector);
-    data[0] = 0;
-    data[1] = (uint8_t)(payload_len + 1);
-    memcpy(data + 2, payload, payload_len);
-
-    d64_set_allocated(d64_sector(disk, 18, 0), track, sector);
-}
-
-static void create_iec_d64_fixture(const char *path)
-{
-    const char *testname = "create_iec_d64_fixture";
-    uint8_t *disk = new uint8_t[D64_SIZE];
-    memset(disk, 0, D64_SIZE);
-
-    uint8_t *bam = d64_sector(disk, 18, 0);
-    bam[0] = 18;
-    bam[1] = 1;
-    bam[2] = 0x41;
-    bam[3] = 0x00;
-    for (int track = 1; track <= D64_TRACKS; track++) {
-        uint8_t *entry = bam + 4 * track;
-        entry[0] = (uint8_t)D64_SECTORS_PER_TRACK[track];
-        entry[1] = entry[2] = entry[3] = 0;
-        for (int sector = 0; sector < D64_SECTORS_PER_TRACK[track]; sector++) {
-            entry[1 + (sector >> 3)] |= (uint8_t)(1 << (sector & 7));
-        }
-    }
-    memset(bam + 144, 0xA0, 27);
-    memcpy(bam + 144, "IEC TEST", 8);
-    bam[144 + 21] = '2';
-    bam[144 + 22] = 'A';
-    d64_set_allocated(bam, 18, 0);
-    d64_set_allocated(bam, 18, 1);
-
-    uint8_t *dir = d64_sector(disk, 18, 1);
-    dir[0] = 0;
-    dir[1] = 0xFF;
-
-    static const uint8_t basic[] = "BASIC";
-    static const uint8_t literal[] = "LITERAL";
-    static const uint8_t literal_prg[] = "LITERAL.PRG";
-    static const uint8_t onlybase[] = "ONLYBASE";
-    static const uint8_t nasty[] = {
-        'Q', '.', 0xC6, 0xC3, 0xC4, 0xC3, 0xC6, 0xC3,
-        0xC4, 0xC3, 0xC6, 0xC3, 0xC4, 0xC3, 0xC6, 0xC3
-    };
-
-    d64_add_file(disk, 0, basic, sizeof(basic) - 1, 2, 17, 0, "BASIC:PRG");
-    d64_add_file(disk, 1, basic, sizeof(basic) - 1, 1, 17, 1, "BASIC:SEQ");
-    d64_add_file(disk, 2, literal, sizeof(literal) - 1, 2, 17, 2, "LITERAL:PRG");
-    d64_add_file(disk, 3, literal_prg, sizeof(literal_prg) - 1, 2, 17, 3, "LITERAL.PRG:PRG");
-    d64_add_file(disk, 4, literal_prg, sizeof(literal_prg) - 1, 1, 17, 4, "LITERAL.PRG:SEQ");
-    d64_add_file(disk, 5, onlybase, sizeof(onlybase) - 1, 2, 17, 5, "ONLYBASE:PRG");
-    d64_add_file(disk, 6, nasty, sizeof(nasty), 2, 17, 6, "NASTY:PRG");
-
-    FILE *f = fopen(path, "wb");
-    REQUIRE(f != NULL);
-    REQUIRE(fwrite(disk, 1, D64_SIZE, f) == D64_SIZE);
-    REQUIRE(fclose(f) == 0);
-    delete[] disk;
-}
+int last_status_size;
+void create_iec_d64_fixture(const char *path);
+void create_iec_d81_fixture(const char *path);
 
 static void save_fixture_file(FileManager *fm, const char *path, const char *name, const char *payload)
 {
@@ -211,9 +81,9 @@ void form_new_partition(UserInterface*, JSON_Object*)
 void init_ram_disk()
 {
     const int sz = 512;
-    const int size = 1024 * 1024;
+    const int size = 2024 * 1024;
     const int sectors = size / sz;
-    uint8_t *ramdisk_mem = new uint8_t[size]; // 1 MB only
+    uint8_t *ramdisk_mem = new uint8_t[size]; // 2 MB only
     ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
     {
         FileSystem *ramdisk_fs;
@@ -340,6 +210,7 @@ void get_status(IecDrive *dr)
     dr->prefetch_more(256, data, data_size);
 
     memcpy(last_status, data, data_size);
+    last_status_size = data_size;
     last_status[data_size] = 0;
     data[data_size] = 0;
     //printf("Status: %s\n", data);
@@ -440,7 +311,7 @@ void close_read_file(IecDrive *dr)
 static void expect_status_ok(const char *testname, const char *context)
 {
     if (strcmp(last_status, "00, OK,00,00\r") != 0) {
-        printf("%s: status was '%s'\n", testname, context, last_status);
+        printf("%s: %s: status was '%s'\n", testname, context, last_status);
     }
     REQUIRE(strcmp(last_status, "00, OK,00,00\r") == 0);
 }
@@ -448,14 +319,14 @@ static void expect_status_ok(const char *testname, const char *context)
 static void expect_file_not_found(const char *testname, const char *context)
 {
     if (strncmp(last_status, "62,FILE NOT FOUND", 17) != 0) {
-        printf("%s: status was '%s'\n", testname, context, last_status);
+        printf("%s: %s: status was '%s'\n", testname, context, last_status);
     }
     REQUIRE(strncmp(last_status, "62,FILE NOT FOUND", 17) == 0);
 }
 
 static void expect_iec_file(const char *testname, IecDrive *dr, uint8_t chan, const char *name, const char *expected)
 {
-    uint8_t buffer[64];
+    uint8_t buffer[256];
     memset(buffer, 0, sizeof(buffer));
 
     open_file(dr, chan, name);
@@ -465,8 +336,9 @@ static void expect_iec_file(const char *testname, IecDrive *dr, uint8_t chan, co
     int got = read_file(dr, chan, buffer, sizeof(buffer));
     int expected_len = strlen(expected);
     if (got != expected_len || memcmp(buffer, expected, expected_len) != 0) {
-        printf(testname, "%s on channel %u: got %d bytes, expected %d bytes '%s'\n",
+        printf("%s: %s on channel %u: got %d bytes, expected %d bytes '%s'\n",
                 testname, name, chan, got, expected_len, expected);
+        dump_hex_relative(buffer, got);
     }
     REQUIRE(got == expected_len);
     REQUIRE(memcmp(buffer, expected, expected_len) == 0);
@@ -487,7 +359,7 @@ static void expect_command_response(const char *testname, IecDrive *dr, const ch
 {
     const char *status = send_command(dr, cmd);
     if (strcmp(status, expected) != 0) {
-        printf("%s: response was '%s', expected '%s'\n", testname, cmd, status, expected);
+        printf("%s: %s: response was '%s', expected '%s'\n", testname, cmd, status, expected);
     }
     REQUIRE(strcmp(status, expected) == 0);
 }
@@ -495,6 +367,172 @@ static void expect_command_response(const char *testname, IecDrive *dr, const ch
 static void expect_command_ok(const char *testname, IecDrive *dr, const char *cmd)
 {
     expect_command_response(testname, dr, cmd, "00, OK,00,00\r");
+}
+
+static void expect_command_bytes(const char *testname, IecDrive *dr, const char *cmd,
+                                 const uint8_t *expected, int expected_len)
+{
+    send_command(dr, cmd);
+    if (last_status_size != expected_len || memcmp(last_status, expected, expected_len) != 0) {
+        printf("%s: %s: got %d response bytes, expected %d\n",
+               testname, cmd, last_status_size, expected_len);
+        dump_hex_relative((uint8_t *)last_status, last_status_size);
+    }
+    REQUIRE(last_status_size == expected_len);
+    REQUIRE(memcmp(last_status, expected, expected_len) == 0);
+}
+
+static void expect_fresult(const char *testname, const char *context, FRESULT got, FRESULT expected)
+{
+    if (got != expected) {
+        printf("%s: %s: got %s, expected %s\n", testname, context,
+               FileSystem::get_error_string(got), FileSystem::get_error_string(expected));
+    }
+    REQUIRE(got == expected);
+}
+
+static void expect_transferred(const char *testname, const char *context, uint32_t got, uint32_t expected)
+{
+    if (got != expected) {
+        printf("%s: %s: transferred %u bytes, expected %u\n", testname, context, got, expected);
+    }
+    REQUIRE(got == expected);
+}
+
+static int expect_directory_read(const char *testname, IecDrive *dr, const char *name)
+{
+    uint8_t buffer[8192];
+    memset(buffer, 0, sizeof(buffer));
+
+    open_file(dr, 0, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+
+    int got = read_file(dr, 0, buffer, sizeof(buffer));
+    if (got <= 0) {
+        printf("%s: %s: directory read returned %d bytes\n", testname, name, got);
+    }
+    REQUIRE(got > 0);
+
+    close_file(dr, 0);
+    expect_status_ok(testname, name);
+    return got;
+}
+
+static void send_channel_data(IecDrive *dr, uint8_t chan, const uint8_t *data, int len)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60 | chan);
+    for (int i = 0; i < len; i++) {
+        dr->push_data(data[i]);
+    }
+    dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
+static void send_command_data(IecDrive *dr, const uint8_t *data, int len)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x6F);
+    for (int i = 0; i < len; i++) {
+        dr->push_data(data[i]);
+    }
+    dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
+static void expect_status_prefix(const char *testname, const char *context, const char *prefix)
+{
+    int len = strlen(prefix);
+    if (strncmp(last_status, prefix, len) != 0) {
+        printf("%s: %s: status was '%s', expected prefix '%s'\n",
+               testname, context, last_status, prefix);
+    }
+    REQUIRE(strncmp(last_status, prefix, len) == 0);
+}
+
+static void expect_current_status(const char *testname, const char *context, const char *expected)
+{
+    if (strcmp(last_status, expected) != 0) {
+        printf("%s: %s: status was '%s', expected '%s'\n",
+               testname, context, last_status, expected);
+    }
+    REQUIRE(strcmp(last_status, expected) == 0);
+}
+
+static void expect_rel_open(const char *testname, IecDrive *dr, uint8_t chan,
+                            const char *name, uint8_t record_size)
+{
+    char filename[80];
+    int len = snprintf(filename, sizeof(filename), "%s,L,", name);
+    REQUIRE(len > 0);
+    REQUIRE(len + 2 < (int)sizeof(filename));
+    filename[len++] = (char)record_size;
+    filename[len] = 0;
+
+    open_file(dr, chan, filename);
+    get_status(dr);
+    expect_status_ok(testname, name);
+}
+
+static void expect_rel_open_status_prefix(const char *testname, IecDrive *dr, uint8_t chan,
+                                          const char *name, uint8_t record_size,
+                                          const char *prefix)
+{
+    char filename[80];
+    int len = snprintf(filename, sizeof(filename), "%s,L", name);
+    REQUIRE(len > 0);
+    REQUIRE(len + 3 < (int)sizeof(filename));
+    if (record_size) {
+        filename[len++] = ',';
+        filename[len++] = (char)record_size;
+        filename[len] = 0;
+    }
+    open_file(dr, chan, filename);
+    get_status(dr);
+    expect_status_prefix(testname, name, prefix);
+}
+
+static void expect_rel_position_status(const char *testname, IecDrive *dr, uint8_t chan,
+                                       uint16_t record, uint8_t offset,
+                                       const char *expected)
+{
+    uint8_t cmd[5] = {
+        'P',
+        chan,
+        (uint8_t)(record & 0xFF),
+        (uint8_t)(record >> 8),
+        offset
+    };
+    send_command_data(dr, cmd, sizeof(cmd));
+    get_status(dr);
+    if (strcmp(last_status, expected) != 0) {
+        printf("%s: P channel %u record %u offset %u: status was '%s', expected '%s'\n",
+               testname, chan, record, offset, last_status, expected);
+    }
+    REQUIRE(strcmp(last_status, expected) == 0);
+}
+
+static void expect_rel_write(const char *testname, IecDrive *dr, uint8_t chan,
+                             const uint8_t *data, int len)
+{
+    send_channel_data(dr, chan, data, len);
+    get_status(dr);
+    expect_status_ok(testname, "REL write");
+}
+
+static void expect_rel_read(const char *testname, IecDrive *dr, uint8_t chan,
+                            const uint8_t *expected, int expected_len)
+{
+    uint8_t buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+
+    int got = read_file(dr, chan, buffer, sizeof(buffer));
+    if (got != expected_len || memcmp(buffer, expected, expected_len) != 0) {
+        printf("%s: REL read channel %u: got %d bytes, expected %d bytes\n",
+               testname, chan, got, expected_len);
+        dump_hex_relative(buffer, got);
+    }
+    REQUIRE(got == expected_len);
+    REQUIRE(memcmp(buffer, expected, expected_len) == 0);
 }
 
 void read_directory(IecDrive *dr, const char *file)
@@ -558,125 +596,112 @@ void create_test_files(FileManager *fm)
     fm->create_dir("/Temp/blah{c1c2}");
 }
 
-int execute_suite1(FileManager *fm, IecDrive *dr)
+void execute_suite1(FileManager *fm, IecDrive *dr)
 {
-    mstring status;
-    int error = 0;
+    const char *testname = "Suite1";
     FRESULT fres;
     uint32_t tr;
+    const char *msg = (const char *)testmsg;
+    const char *write_msg = "This is some random string that should be written to an open file.";
 
+    create_test_files(fm);
     fm->create_dir("/Temp/Partition2");
     dr->add_partition(1, "/Temp", "RAMDISK");
     dr->add_partition(2, "/Temp/Partition2", "PART2");
 
-    status = send_command(dr, "CP1");
-    if(status != "02,PARTITION SELECTED,01,00\r") error++;
+    expect_command_response("Suite1-CP1", dr, "CP1", "02,PARTITION SELECTED,01,00\r");
 
-    status = send_command(dr, "CD/TEMP");
-    if(status != "71,DIRECTORY ERROR,01,00\r") error++;
+    expect_command_response("Suite1-CD-TEMP", dr, "CD/TEMP", "71,DIRECTORY ERROR,01,00\r");
 
-    status = send_command(dr, "CD/SOMEDIR");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD/_/OTHERDIR");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD:LEVEL2");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD//");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD/OTHERDIR/LEVEL2");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD//:BLAH\xc1\xc2");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CD_");
-    if(status != "00, OK,00,00\r") error++;
+    expect_command_ok("Suite1-CD-SOMEDIR", dr, "CD/SOMEDIR");
+    expect_command_ok("Suite1-CD-PARENT-OTHERDIR", dr, "CD/_/OTHERDIR");
+    expect_command_ok("Suite1-CD-LEVEL2", dr, "CD:LEVEL2");
+    expect_command_ok("Suite1-CD-ROOT", dr, "CD//");
+    expect_command_ok("Suite1-CD-ABS-LEVEL2", dr, "CD/OTHERDIR/LEVEL2");
+    expect_command_ok("Suite1-CD-PETSCII", dr, "CD//:BLAH\xc1\xc2");
+    expect_command_ok("Suite1-CD-PARENT", dr, "CD_");
 
-    read_directory(dr, "$=T0:*=L");
+    expect_directory_read("Suite1-DIR-TIME-LONG", dr, "$=T0:*=L");
 
-    // send_command(dr, "MD//HOI");
-    status = send_command(dr, "MD:HOI");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "MD/OTHERDIR:DEEPER");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "MD_/OTHERDIR:DEEPER");
-    if(status != "71,DIRECTORY ERROR,00,00\r") error++;
-    status = send_command(dr, "MD:_/DEEPER");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "RD:HOI");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "MD:HOI");
-    if(status != "00, OK,00,00\r") error++;
+    expect_command_ok("Suite1-MD-HOI", dr, "MD:HOI");
+    expect_command_ok("Suite1-MD-OTHERDIR-DEEPER", dr, "MD/OTHERDIR:DEEPER");
+    expect_command_response("Suite1-MD-BAD-PARENT", dr, "MD_/OTHERDIR:DEEPER", "71,DIRECTORY ERROR,00,00\r");
+    expect_command_ok("Suite1-MD-PARENT-DEEPER", dr, "MD:_/DEEPER");
+    expect_command_ok("Suite1-RD-HOI", dr, "RD:HOI");
+    expect_command_ok("Suite1-MD-HOI-AGAIN", dr, "MD:HOI");
 
     fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", testmsg, 28, &tr);
-    if (fres == FR_OK) {
-        printf("Written %u bytes to the file.\n", tr);
-    } else {
-        printf("%s\n", FileSystem::get_error_string(fres));
-    }
-    status = send_command(dr, "RD:HOI");
-    if(status != "63,FILE EXISTS,00,00\r") error++;
+    expect_fresult("Suite1-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", fres, FR_OK);
+    expect_transferred("Suite1-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", tr, 28);
+    expect_command_response("Suite1-RD-NONEMPTY-HOI", dr, "RD:HOI", "63,FILE EXISTS,00,00\r");
 
-    // read_directory(dr, "$");
-    status = send_command(dr, "T-RA");
-    if(status != "WED. 26/06/25 12:41:01 AM\r") error++;
-    status = send_command(dr, "T-RI");
-    if(status != "2025-06-26T00:41:01 WED\r") error++;
-    status = send_command(dr, "T-RB");
+    expect_command_response("Suite1-T-RA", dr, "T-RA", "WED. 26/06/25 12:41:01 AM\r");
+    expect_command_response("Suite1-T-RI", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
+    static const uint8_t t_rd[] = { 3, 125, 6, 26, 12, 41, 1, 0, 0x0d };
+    static const uint8_t t_rb[] = { 3, 0x25, 0x06, 0x26, 0x12, 0x41, 0x01, 0, 0x0d };
+    expect_command_bytes("Suite1-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
+    expect_command_bytes("Suite1-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
 
-    status = send_command(dr, "C2:DEST=");
-    if(status != "32,SYNTAX ERROR,00,00\r") error++;
-    status = send_command(dr, "C2:DEST=1:A,1:BB");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "CP2");
-    if(status != "02,PARTITION SELECTED,02,00\r") error++;
+    expect_command_response("Suite1-COPY-MISSING-SOURCE", dr, "C2:DEST=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_ok("Suite1-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
+    expect_iec_file("Suite1-COPY-DEST", dr, 0, "2:DEST", "This is really a silly test.This is really a silly test.");
 
-    status = send_command(dr, "RENAME1:DOOM=1:DDDD");
-    if(status != "00, OK,00,00\r") error++;
+    expect_command_response("Suite1-CP2", dr, "CP2", "02,PARTITION SELECTED,02,00\r");
 
-    status = send_command(dr, "RENAME2:DOOM=1:DOOM");
-    if(status != "00, OK,00,00\r") error++;
+    expect_command_ok("Suite1-RENAME-P1", dr, "RENAME1:DOOM=1:DDDD");
+    expect_iec_file("Suite1-RENAME-P1-CHECK", dr, 0, "1:DOOM", msg);
 
-    printf("\n\nError until now: %d\n\n", error);
+    expect_command_ok("Suite1-RENAME-P1-TO-P2", dr, "RENAME2:DOOM=1:DOOM");
+    expect_iec_file("Suite1-RENAME-P2-CHECK", dr, 0, "2:DOOM", msg);
+    expect_iec_file_missing("Suite1-RENAME-P1-MISSING", dr, 0, "1:DOOM");
 
-    // send_command(dr, "CP3");
-    read_directory(dr, "$1");
-    // send_command(dr, "CP2");
-    //read_directory(dr, "$=P");
-    status = send_command(dr, "SCRATCH1:C*");
-    if(status != "01, FILES SCRATCHED,03,00\r") error++;
+    expect_directory_read("Suite1-DIR-P1", dr, "$1");
+    expect_command_response("Suite1-SCRATCH-C-WILDCARD", dr, "SCRATCH1:C*", "01, FILES SCRATCHED,03,00\r");
+    expect_iec_file_missing("Suite1-SCRATCH-CCC-MISSING", dr, 0, "1:CCC");
 
-    read_directory(dr, "1:A");
+    expect_iec_file("Suite1-READ-A", dr, 0, "1:A", msg);
 
-    write_file(dr, 3, "2:WRITETEST,U,W", "This is some random string that should be written to an open file.");
+    write_file(dr, 3, "2:WRITETEST,U,W", write_msg);
+    expect_iec_file("Suite1-WRITETEST", dr, 2, "2:WRITETEST,U,R", write_msg);
 
-    fm->print_directory("/Temp/Partition2");
-    return error;
+    printf("Suite1 completed successfully!\n");
 }
 
-int execute_suite2(FileManager *fm, IecDrive *dr)
+void execute_suite2(FileManager *fm, IecDrive *dr)
 {
-    mstring status;
-    int error = 0;
+    const char *testname = "Suite2";
+    FRESULT fres;
     uint32_t tr;
 
-    read_directory(dr, "$=P");
-    status = send_command(dr, "C\xD0\x0B");
-    if(status != "02,PARTITION SELECTED,11,00\r") error++;
+    dr->add_partition(11, "/Temp", "P11");
 
-    fm->save_file(false, "/Temp", "ccc.prg", testmsg, 28, &tr);
-    fm->save_file(false, "/Temp", "cc2.prg", testmsg, 28, &tr);
-    fm->save_file(false, "/Temp", "abc.prg", testmsg, 28, &tr);
-    fm->create_dir("/Temp/Subdir");
-    fm->save_file(false, "/Temp/SubDir", "01234.usr", testmsg, 28, &tr);
-    read_directory(dr, "$:*=B");
-    read_directory(dr, "$/Subdir");
-    status = send_command(dr, "CD/Subdir");
-    if(status != "00, OK,00,00\r") error++;
-    status = send_command(dr, "XPWD");
-    if(status != "/Subdir/") error++;
-    read_directory(dr, "$//");
-    read_directory(dr, "$_");
+    expect_directory_read("Suite2-DIR-PARTITIONS", dr, "$=P");
+    expect_command_response("Suite2-BINARY-CP11", dr, "C\xD0\x0B", "02,PARTITION SELECTED,11,00\r");
 
-    return error;
+    fres = fm->save_file(true, "/Temp", "ccc.prg", testmsg, 28, &tr);
+    expect_fresult("Suite2-SAVE-CCC", "/Temp/ccc.prg", fres, FR_OK);
+    expect_transferred("Suite2-SAVE-CCC", "/Temp/ccc.prg", tr, 28);
+    fres = fm->save_file(true, "/Temp", "cc2.prg", testmsg, 28, &tr);
+    expect_fresult("Suite2-SAVE-CC2", "/Temp/cc2.prg", fres, FR_OK);
+    expect_transferred("Suite2-SAVE-CC2", "/Temp/cc2.prg", tr, 28);
+    fres = fm->save_file(true, "/Temp", "abc.prg", testmsg, 28, &tr);
+    expect_fresult("Suite2-SAVE-ABC", "/Temp/abc.prg", fres, FR_OK);
+    expect_transferred("Suite2-SAVE-ABC", "/Temp/abc.prg", tr, 28);
+
+    fres = fm->create_dir("/Temp/Subdir");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    fres = fm->save_file(true, "/Temp/SubDir", "01234.usr", testmsg, 28, &tr);
+    expect_fresult("Suite2-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", fres, FR_OK);
+    expect_transferred("Suite2-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", tr, 28);
+
+    expect_directory_read("Suite2-DIR-FOLDERS", dr, "$:*=B");
+    expect_directory_read("Suite2-DIR-SUBDIR", dr, "$/Subdir");
+    expect_command_ok("Suite2-CD-SUBDIR", dr, "CD/Subdir");
+    expect_command_response("Suite2-XPWD-SUBDIR", dr, "XPWD", "11:/SUBDIR/");
+    expect_directory_read("Suite2-DIR-ROOT", dr, "$//");
+    expect_directory_read("Suite2-DIR-PARENT", dr, "$_");
+
+    printf("Suite2 completed successfully!\n");
 }
 
 static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
@@ -710,7 +735,12 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
     expect_command_ok("TEST17", dr, "C3:COMBO=3:BASIC,3:LITERAL");
     expect_iec_file("TEST18", dr, 0, "3:COMBO", "BASIC:PRGLITERAL:PRG");
 
+    copy_from("/Temp/iec_corner_cases.d81", "after_copy.d81");
+
     expect_command_ok("TEST19", dr, "R3:RENAMED=3:BASIC");
+
+    copy_from("/Temp/iec_corner_cases.d81", "after_19.d81");
+
     expect_iec_file("TEST20", dr, 0, "3:RENAMED", "BASIC:PRG");
     expect_iec_file("TEST21", dr, 2, "3:BASIC", "BASIC:SEQ");
 
@@ -727,20 +757,109 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
 void execute_suite3(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite3";
-    const char *diskname = "output/iec_corner_cases.d64";
+    const char *diskname_41 = "output/iec_corner_cases.d64";
+    const char *diskname_81 = "output/iec_corner_cases.d81";
     const char *d64_path = "/Temp/iec_corner_cases.d64";
+    const char *d81_path = "/Temp/iec_corner_cases.d81";
     const char *fat_path = "/Fat/iec_fat_cases";
 
     dr->add_partition(1, "/Temp", "RAMDISK");
 
-    create_iec_d64_fixture(diskname);
-    REQUIRE(copy_to(diskname, d64_path) == FR_OK);
+    create_iec_d64_fixture(diskname_41);
+    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
     dr->add_partition(3, d64_path, "D64");
     run_iec_partition3_sequence(dr, "D64");
+
+    create_iec_d81_fixture(diskname_81);
+    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
+    dr->add_partition(3, d81_path, "D81");
+    run_iec_partition3_sequence(dr, "D81");
 
     create_iec_fat_fixture(fm, fat_path);
     dr->add_partition(3, fat_path, "FAT");
     run_iec_partition3_sequence(dr, "FAT");
+}
+
+static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
+{
+    const uint8_t chan = 5;
+    static const int record_size = 40;
+
+    uint8_t record1[record_size];
+    uint8_t expected[record_size];
+    uint8_t gap[record_size];
+    uint8_t cr = 0x0D;
+    const uint8_t patch[] = "xy";
+    const uint8_t tail[] = "TAIL";
+
+    memcpy(record1, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd", record_size);
+    memcpy(expected, record1, record_size);
+    memset(gap, 0, sizeof(gap));
+    gap[0] = 0xFF;
+
+    expect_rel_open("Suite4-CreateRel", dr, chan, "4:RELTEST", record_size);
+    expect_rel_position_status("Suite4-PositionRecord1", dr, chan, 1, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_write("Suite4-WriteRecord1", dr, chan, record1, record_size);
+    close_file(dr, chan);
+    expect_status_ok("Suite4-CloseAfterCreate", "4:RELTEST");
+
+    // copy_from(d64_path, diskname); // Use this to analyze what's on the disk until a certain point (debug)
+
+    expect_rel_open("Suite4-ReopenRel", dr, chan, "4:RELTEST", record_size);
+    expect_rel_position_status("Suite4-PositionRecord1Read", dr, chan, 1, 1, "00, OK,00,00\r");
+    expect_rel_read("Suite4-ReadRecord1", dr, chan, record1, record_size);
+
+    expect_rel_position_status("Suite4-PositionRecord1Patch", dr, chan, 1, 11, "00, OK,00,00\r");
+    expect_rel_write("Suite4-ShortOverwrite", dr, chan, patch, sizeof(patch) - 1);
+    expected[10] = 'x';
+    expected[11] = 'y';
+    expect_rel_position_status("Suite4-PositionRecord1AfterPatch", dr, chan, 1, 1, "00, OK,00,00\r");
+    expect_rel_read("Suite4-ReadShortOverwrite", dr, chan, expected, 12); // not record_size, as it got truncated
+
+    expect_rel_position_status("Suite4-PositionRecord3Write", dr, chan, 3, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_write("Suite4-ExtendRecord3", dr, chan, tail, sizeof(tail) - 1);
+    expect_rel_position_status("Suite4-PositionGapRecord", dr, chan, 2, 1, "00, OK,00,00\r");
+    expect_rel_read("Suite4-ReadGapRecord", dr, chan, gap, 1); // only expect one 0xFF to be returned
+
+    expect_rel_position_status("Suite4-PositionBeyondEof", dr, chan, 4, 1, "50,RECORD NOT PRESENT,00,00\r");
+    expect_rel_read("Suite4-ReadBeyondEof", dr, chan, gap, 1);
+    get_status(dr);
+    expect_current_status("Suite4-StatusBeyondEof", "4:RELTEST", "00, OK,00,00\r");
+
+    close_file(dr, chan);
+    expect_status_ok("Suite4-CloseRel", "4:RELTEST");
+
+    expect_rel_open_status_prefix("Suite4-RecordSizeMismatch", dr, chan, "4:RELTEST", record_size - 1, "50,RECORD NOT PRESENT");
+    close_file(dr, chan);
+
+    expect_rel_open_status_prefix("Suite4-CreateRelWithNoRecordSize", dr, chan, "4:RELTEST2", 0, "62,FILE NOT FOUND");
+    close_file(dr, chan);
+
+    printf("%s completed successfully!\n", testname);
+}
+
+void execute_suite4(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite4";
+    const char *diskname_41 = "output/iec_rel_cases.d64";
+    const char *diskname_81 = "output/iec_rel_cases.d81";
+    const char *d64_path = "/Temp/iec_rel_cases.d64";
+    const char *d81_path = "/Temp/iec_rel_cases.d81";
+    const char *fat_path = "/Fat/iec_rel_cases_fat";
+
+    create_iec_d64_fixture(diskname_41);
+    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
+    dr->add_partition(4, d64_path, "REL");
+    run_iec_rel_sequence(dr, "REL Suite on D64");
+
+    create_iec_d81_fixture(diskname_81);
+    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
+    dr->add_partition(4, d81_path, "REL");
+    run_iec_rel_sequence(dr, "REL Suite on D81");
+
+    create_iec_fat_fixture(fm, fat_path);
+    dr->add_partition(4, fat_path, "FAT");
+    run_iec_rel_sequence(dr, "REL Suite on FAT");
 }
 
 int main(int argc, const char **argv)
@@ -759,10 +878,10 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    //create_test_files(fm);
-    //error += execute_suite1(fm, dr);
-    //error += execute_suite2(fm, dr);
+    // execute_suite1(fm, dr);
+    // execute_suite2(fm, dr);
     execute_suite3(fm, dr);
+    execute_suite4(fm, dr);
 
     delete dr;
     delete ui;

@@ -55,6 +55,8 @@ SRCS_CC	 =  small_printf.cc \
 			cbmdos_parser.cc \
 			json.cc \
 			init_function.cc \
+			d64.cc \
+			d81.cc \
 			testdrive.cc
 
 SRCS_ASM =  

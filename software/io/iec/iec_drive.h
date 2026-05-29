@@ -90,7 +90,7 @@ public:
 
     int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
-    IecCommandChannel *get_data_channel(int chan);
+    IecChannel *get_data_channel(int chan);
     IecFileSystem *get_file_system(void) { return vfs; }
     const char *get_partition_dir(int p);
     void add_partition(int p, const char *path, const char *name);

@@ -220,8 +220,11 @@ int parse_open(const char *buf, open_t& fn)
         case 'U': fn.filetype = e_usr; break;
         case 'L':
             if (i == 1) {
-                fn.filetype = e_rel; break;
-                fn.record_size = modifiers[2][0];
+                fn.filetype = e_rel;
+                if (modifiers[2]) {
+                    fn.record_size = modifiers[2][0];
+                } // if not set, it will be zero
+                i++;
             } else {
                 return ERR_SYNTAX;
             }

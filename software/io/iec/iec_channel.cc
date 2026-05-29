@@ -414,7 +414,7 @@ t_channel_retval IecChannel::write_record(void)
             res = f->write(buffer, recordSize, &bytes);
             if (res == FR_OK) {
                 recordOffset += recordSize; // move to the next record
-                res = f->sync();
+                //res = f->sync();
             }
         }
         // If the file pointer was aligned on a record boundary, it will still be on a record boundary.
@@ -738,6 +738,9 @@ int IecChannel :: setup_file_access()
     }
     if (name_to_open.filetype == e_rel) {
         flags |= ( FA_READ | FA_WRITE );
+        if (name_to_open.record_size != 0) {
+            flags |= FA_OPEN_ALWAYS;
+        }
     }
 
     DBGIECV("Setup File Access %s %02x\n", full_path, flags);
@@ -747,6 +750,13 @@ int IecChannel :: setup_file_access()
         drive->set_error_fres(fres);
         return 0;
     }
+
+    last_byte = -1;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = 512;
+    state = e_file;
+
     if (name_to_open.filetype == e_rel) {
         uint32_t tr;
         if (!f->get_size()) { // the file must be newly created, because its size is 0.
@@ -760,28 +770,32 @@ int IecChannel :: setup_file_access()
         } else { // file already exists
             uint16_t wrd;
             fres = f->read(&wrd, 2, &tr);
-            recordSize = (uint8_t) wrd;
             if (wrd >= 256) {
-                printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
+                DBGIECV("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
+                state = e_error;
+                drive->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
+                return ERR_RECORD_NOT_PRESENT;
+            }
+            recordSize = (uint8_t) wrd;
+            DBGIECV("Opened existing relative file. Record size found is: %d. Expected: %d\n", recordSize, name_to_open.record_size);
+            if (recordSize != name_to_open.record_size) {
+                state = e_error;
+                drive->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
+                return ERR_RECORD_NOT_PRESENT;
             }
             drive->set_error_fres(fres);
-            DBGIECV("Opened existing relative file. Record size is: %d.\n", recordSize);
             state = e_record;
         }
     } else if (name_to_open.access == e_append) {
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
             drive->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
+            state = e_error;
             return 0;
         }
     }
-    last_byte = -1;
-    pointer = 0;
-    prefetch = 0;
-    prefetch_max = 512;
-    state = e_file;
 
-    if (name_to_open.access == e_read) {
+    if (state == e_file && name_to_open.access == e_read) {
         if (f) {
             curblk->valid_bytes = 0;
             // queue up one next block
@@ -824,7 +838,7 @@ int IecChannel::open_file(void)  // name should be in buffer
     case e_stream_file:
         return setup_file_access();
     default: // file
-        DBGIECV("Unknown stream mode\n");
+        DBGIEC("Unknown stream mode\n");
     }
     return -1;
 }
@@ -877,9 +891,12 @@ int IecChannel::seek_record(int recordNumber, int offset)
         return ERR_FILE_TYPE_MISMATCH;
     }
 
-    uint32_t minimumFileSize = (recordNumber + 1) * recordSize; // reserve 2 bytes in the beginning
+    uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
+    recordOffset = targetPosition;
+    uint32_t minimumFileSize = targetPosition + recordSize; // Fileshould be at least one record larger than the begin position of the one requested
     uint32_t currentSize = f->get_size();
     FRESULT fres;
+    int err = ERR_ALL_OK;
     if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
         fres = f->seek(currentSize);
 
@@ -903,25 +920,25 @@ int IecChannel::seek_record(int recordNumber, int offset)
             remain -= recordSize;
         }
         delete[] block;
-        return ERR_RECORD_NOT_PRESENT;
+        err = ERR_RECORD_NOT_PRESENT;
     }
-    if (offset > recordSize - 1) {
-        offset = recordSize - 1;
-        return ERR_OVERFLOW_IN_RECORD;
-    }
-    uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
 
     fres = f->seek(targetPosition);
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
         return 0;
     }
-    recordOffset = targetPosition;
+
+    if (offset > recordSize - 1) {
+        offset = recordSize - 1;
+        err = ERR_OVERFLOW_IN_RECORD;
+    }
+
     t_channel_retval ret = read_record(offset);
     if (ret != IEC_OK) {
-        return ERR_READ_ERROR;
+        err = ERR_READ_ERROR;
     }
-    return 0;    
+    return err;
 }
 
 /******************************************************************************
@@ -1341,11 +1358,11 @@ int IecCommandChannel::do_pwd_command()
 
 int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int recoffset)
 {
-    printf("Set File position to %lu on chan %d\n", pos, chan);
+    DBGIECV("Set File position to %u on chan %d. RecNr %d:%d\n", pos, chan, recnr, recoffset);
     if ((chan < 0) || (chan > 14)) {
         return ERR_SYNTAX_ERROR_CMD;
     }
-    IecChannel *channel = iec_drive->get_data_channel(chan);
+    IecChannel *channel = drive->get_data_channel(chan);
     if (!channel->f) {
         return ERR_FILE_NOT_OPEN;
     }

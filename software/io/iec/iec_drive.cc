@@ -187,9 +187,9 @@ IecCommandChannel *IecDrive :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
-IecCommandChannel *IecDrive :: get_data_channel(int chan)
+IecChannel *IecDrive :: get_data_channel(int chan)
 {
-    return (IecCommandChannel *)channels[chan & 15];
+    return (IecChannel *)channels[chan & 15];
 }
 
 void IecDrive :: effectuate_settings(void)
