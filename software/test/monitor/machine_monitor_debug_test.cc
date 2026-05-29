@@ -2675,7 +2675,7 @@ static int test_help_screen_shows_debug_commands()
     static const char *expected_lines[] = {
         "",
         "D Step Over  T Step Into  O Step Out",
-        "G Continue   K Cursor     RETURN Follow",
+        "G Continue   K Cursor     RET Follow",
         "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",
@@ -2731,8 +2731,8 @@ static int test_help_screen_shows_debug_commands()
         "C=+R Brkpts must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "C=+X Reset",
         "C=+X Reset must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "RETURN Follow",
-        "RETURN Follow must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "RET Follow",
+        "RET Follow must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "C=+D/RSTOP",
         "C=+D/RSTOP must not use a distinct debug help colour")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
@@ -3579,6 +3579,40 @@ static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
                "Visible ROM breakpoint Go must not use RAM under ROM as proof")) return 1;
     if (expect(m.rom_patch_writes == 2,
                "Visible ROM breakpoint Go must patch and restore the ROM image")) return 1;
+    return 0;
+}
+
+static int test_run_to_current_visible_kernal_jsr_enters_callee_before_rearming_cursor_breakpoint()
+{
+    FakeVisibleRomMachine m(true);
+    m.allow_visible_rom_patching = true;
+    m.cpu_port = 0x07;
+    m.kernal_rom[0x0000] = 0x20; // JSR $BC0F
+    m.kernal_rom[0x0001] = 0x0F;
+    m.kernal_rom[0x0002] = 0xBC;
+    m.kernal_rom[0x0003] = 0xEA;
+    m.basic_rom[0x1C0F] = 0xEA;
+    fake_seed_captured_context(m, 0xBC0F, 0xFD, 0, 0, 0, 0x24);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xE000;
+    from.sp = 0xF7;
+    from.sr = 0x24;
+
+    DebugContext ctx;
+    DebugSession::Result r = m.run_to(from, 0xE000, 0, 0xE000, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "K Cursor from the current visible KERNAL JSR must run successfully")) return 1;
+    if (expect(m.brk_patch_writes >= 2,
+               "K Cursor current-row JSR must patch the callee and then re-arm the cursor breakpoint")) return 1;
+    if (expect(m.brk_patch_addrs[0] == 0xBC0F,
+               "K Cursor current-row JSR must first arm the callee target, not the fall-through")) return 1;
+    if (expect(fake_recorded_brk_patch(m, 0xE000),
+               "K Cursor current-row JSR must re-arm the transient cursor breakpoint afterwards")) return 1;
+    if (expect(!fake_recorded_brk_patch(m, 0xE003),
+               "K Cursor current-row JSR must not step over to the fall-through address")) return 1;
     return 0;
 }
 
@@ -4550,6 +4584,7 @@ int main()
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
     RUN(test_visible_rom_breakpoint_go_uses_same_capability_gate);
     RUN(test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram);
+    RUN(test_run_to_current_visible_kernal_jsr_enters_callee_before_rearming_cursor_breakpoint);
     RUN(test_overlay_step_over_never_freezes);
     RUN(test_overlay_accessible_unfrozen_step_over_does_not_unfreeze);
     RUN(test_overlay_render_target_disables_stale_frozen_unfreeze);

@@ -1023,7 +1023,11 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
         DebugPredictResult pred;
         debug_predict(run_pc, bytes, false, &pred);
         DebugContext stepped;
-        Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, false,
+        // Escaping an immediate self-hit must execute the current instruction
+        // exactly once using real control flow. In particular, K Cursor on a
+        // current-row JSR must enter the callee before re-arming the transient
+        // cursor breakpoint, not step over to the fall-through address.
+        Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, true,
                                         &stepped, cpu_port, bps, run_pc, true);
         if (skip != DBG_OK) {
             return skip;
