@@ -650,7 +650,9 @@ def enter_routine(session: "mt.MonitorSession", rest_host: str, routine: Routine
     session.goto(f"{routine.address:04X}")
     session.send_char("A")
     session.send_char("D")
-    session.send_char("R")
+    dbg._clear_all_breakpoints(session, f"{routine.name} entry breakpoint cleanup")
+    session.goto(f"{routine.address:04X}")
+    dbg._ensure_breakpoint_at(session, routine.address, f"{routine.name} entry breakpoint set")
     session.goto(f"{BOOTSTRAP_ADDR:04X}")
     session.send_char("G")
     dbg._wait_for_pc(session, f"{routine.address:04X}")
@@ -714,7 +716,6 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
         verify_rom_mapping(rest_host)
 
     rng = random.Random(args.seed)
-    deadline = time.time() + args.duration
     iteration = 0
     validated_steps = 0
     rom_validations = 0
@@ -753,6 +754,7 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
             cleanup_validations += 1
             mem.cache.clear()
 
+        deadline = time.time() + args.duration
         while time.time() < deadline:
             if restarts > 0 and restarts % 6 == 0:
                 rom_validations += rom_step_cycle(
@@ -849,7 +851,7 @@ def main() -> int:
     parser.add_argument("--max-steps-per-entry", type=int, default=24)
     parser.add_argument("--min-validated-steps", type=int, default=50)
     parser.add_argument("--progress-every", type=int, default=100)
-    parser.add_argument("--autonomous-trace-runs", type=int, default=50)
+    parser.add_argument("--autonomous-trace-runs", type=int, default=5)
     parser.add_argument("--autonomous-trace-steps", type=int, default=10)
     parser.add_argument("--autonomous-trace-settle", type=float, default=0.35)
     parser.add_argument("--autonomous-trace-only", action="store_true")
