@@ -850,6 +850,7 @@ def run_flag_control_flow_tests(rest_host: str, session: "mt.MonitorSession") ->
     # $C212: EA          NOP
     # $C213: EA          NOP
     # $C214: EA          NOP
+    # $C215: 4C 14 C2    JMP $C214     ; park live CPU after leaving Debug
     program = bytes([
         0x18,
         0xA9, 0x00,
@@ -864,6 +865,7 @@ def run_flag_control_flow_tests(rest_host: str, session: "mt.MonitorSession") ->
         0xEA,
         0xEA,
         0xEA,
+        0x4C, 0x14, 0xC2,
     ])
 
     _reopen_monitor(session)
@@ -987,6 +989,7 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         session.goto("C2B0")
         session.send_char("A")
         session.send_char("D")
+        _wait_for_blank_debug_context(session)
         for expected_pc in ("C2B2", "C2B3", "C2B5", "C2B8", "C2BA", "C2BD"):
             session.send_char("D")
             _wait_for_pc(session, expected_pc)

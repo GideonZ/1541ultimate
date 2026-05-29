@@ -616,37 +616,56 @@ void BrkDebugSession :: reset_spin_target(void)
     end_stopped_session(stopped_it);
 }
 
-void BrkDebugSession :: nmi_redirect_to(uint16_t target)
+void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
+                                        bool force_cpu_port)
 {
     bool stopped_it = begin_stopped_session();
     uint8_t old_nmi_lo = peek_visible(NMI_VECTOR_LO);
     uint8_t old_nmi_hi = peek_visible(NMI_VECTOR_HI);
-    const uint8_t bytes[] = {
-        // Taking the NMI pushes a 3-byte frame (PCH, PCL, SR) onto the stack.
-        // We resume with a JMP (not an RTI), so without discarding that frame
-        // the program's stack pointer would be left 3 bytes low for the rest of
-        // the run - every later push (e.g. a JSR return address) would then land
-        // 3 bytes below where an undebugged run puts it. Stepping stays
-        // self-consistent (a matching RTS still works) but the stack contents no
-        // longer match real execution. Pull the 3 frame bytes back off first so
-        // SP is exactly what it was before the NMI, then redirect to the target.
-        0x68, 0x68, 0x68,
-        0xA9, old_nmi_lo,
-        0x8D, (uint8_t)(NMI_VECTOR_LO & 0xFF), (uint8_t)(NMI_VECTOR_LO >> 8),
-        0xA9, old_nmi_hi,
-        0x8D, (uint8_t)(NMI_VECTOR_HI & 0xFF), (uint8_t)(NMI_VECTOR_HI >> 8),
-        0x4C, (uint8_t)(target & 0xFF), (uint8_t)(target >> 8)
-    };
+    uint8_t bytes[24];
+    int len = 0;
+
+    // Taking the NMI pushes a 3-byte frame (PCH, PCL, SR) onto the stack.
+    // We resume with a JMP (not an RTI), so without discarding that frame
+    // the program's stack pointer would be left 3 bytes low for the rest of
+    // the run - every later push (e.g. a JSR return address) would then land
+    // 3 bytes below where an undebugged run puts it. Stepping stays
+    // self-consistent (a matching RTS still works) but the stack contents no
+    // longer match real execution. Pull the 3 frame bytes back off first so
+    // SP is exactly what it was before the NMI, then redirect to the target.
+    bytes[len++] = 0x68;
+    bytes[len++] = 0x68;
+    bytes[len++] = 0x68;
+    bytes[len++] = 0xA9;
+    bytes[len++] = old_nmi_lo;
+    bytes[len++] = 0x8D;
+    bytes[len++] = (uint8_t)(NMI_VECTOR_LO & 0xFF);
+    bytes[len++] = (uint8_t)(NMI_VECTOR_LO >> 8);
+    bytes[len++] = 0xA9;
+    bytes[len++] = old_nmi_hi;
+    bytes[len++] = 0x8D;
+    bytes[len++] = (uint8_t)(NMI_VECTOR_HI & 0xFF);
+    bytes[len++] = (uint8_t)(NMI_VECTOR_HI >> 8);
+    if (force_cpu_port) {
+        bytes[len++] = 0xA9;
+        bytes[len++] = (uint8_t)(cpu_port & 0x07);
+        bytes[len++] = 0x85;
+        bytes[len++] = 0x01;
+    }
+    bytes[len++] = 0x4C;
+    bytes[len++] = (uint8_t)(target & 0xFF);
+    bytes[len++] = (uint8_t)(target >> 8);
+
     if (!nmi_trampoline_installed) {
         saved_nmi_vector[0] = old_nmi_lo;
         saved_nmi_vector[1] = old_nmi_hi;
-        for (unsigned i = 0; i < sizeof(bytes); i++) {
+        for (int i = 0; i < (int)sizeof(saved_nmi_trampoline_bytes); i++) {
             saved_nmi_trampoline_bytes[i] =
                 peek_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i));
         }
         nmi_trampoline_installed = true;
     }
-    for (unsigned i = 0; i < sizeof(bytes); i++) {
+    for (int i = 0; i < len; i++) {
         poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i), bytes[i]);
     }
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
@@ -686,9 +705,10 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         start_context.pc = start_pc;
         release_to_run(&start_context);
     } else if (from && from->valid) {
-        nmi_redirect_to(from->pc);
+        nmi_redirect_to(from->pc, cpu_port, false);
     } else if (use_start_pc) {
-        nmi_redirect_to(start_pc);
+        nmi_redirect_to(start_pc, cpu_port,
+                        patch_requires_visible_rom(start_pc, cpu_port));
     } else {
         release_to_run(0);
     }
@@ -993,9 +1013,10 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
         release_to_run(&start_context);
     } else if (resume_from->valid) {
-        nmi_redirect_to(resume_from->pc);
+        nmi_redirect_to(resume_from->pc, cpu_port, false);
     } else if (start_pc != 0) {
-        nmi_redirect_to(start_pc);
+        nmi_redirect_to(start_pc, cpu_port,
+                        patch_requires_visible_rom(start_pc, cpu_port));
     } else {
         release_to_run(0);
     }

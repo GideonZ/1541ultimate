@@ -5126,10 +5126,18 @@ void MachineMonitor :: draw_disassembly()
         // the regular foreground color so the row reads as "armed and live"
         // vs "remembered but quiet".
         bool bp_accent = bp_slot >= 0 && bp_enabled && debug.is_active();
+        if (bp_accent && brk_pos >= 0) {
+            int accent_end = brk_pos + bp_len + 2;
+            if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                accent_end = MONITOR_DISASM_ROW_CHARS;
+            }
+            for (int i = brk_pos; i < accent_end; i++) {
+                accent_mask[i] = true;
+            }
+        }
         draw_with_style_mask(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS,
                              reverse_mask, accent_mask,
-                             bp_accent ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg,
-                             MONITOR_UI_ACCENT_COLOR);
+                             get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
     }
 }
 

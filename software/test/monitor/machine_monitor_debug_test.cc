@@ -717,6 +717,20 @@ static bool fake_recorded_brk_patch(const FakeFreezeMachine &m, uint16_t addr)
     return false;
 }
 
+static bool fake_nmi_trampoline_stores_cpu_port(const FakeFreezeMachine &m,
+                                                uint8_t cpu_port)
+{
+    for (int i = 0; i <= 20; i++) {
+        if (m.ram[FAKE_NMI_TRAMP + i] == 0xA9 &&
+                m.ram[FAKE_NMI_TRAMP + i + 1] == (uint8_t)(cpu_port & 0x07) &&
+                m.ram[FAKE_NMI_TRAMP + i + 2] == 0x85 &&
+                m.ram[FAKE_NMI_TRAMP + i + 3] == 0x01) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 static int trim_end(const char *s)
@@ -760,6 +774,31 @@ static int find_row_with_address(CaptureScreen &screen, const char *address)
     return -1;
 }
 
+static int expect_breakpoint_label_only_accent(CaptureScreen &screen, int row_y,
+                                               const char *label,
+                                               uint8_t normal_color,
+                                               uint8_t accent_color,
+                                               const char *message)
+{
+    char row[40];
+    screen.get_slice(1, row_y, 38, row);
+    const char *at = strstr(row, label);
+    if (expect(at != NULL, message)) return 1;
+
+    int label_start = (int)(at - row);
+    int label_len = (int)strlen(label);
+    for (int i = 0; i < 38; i++) {
+        bool label_cell = (i >= label_start && i < label_start + label_len);
+        uint8_t expected = label_cell ? accent_color : normal_color;
+        if (screen.colors[row_y][1 + i] != expected) {
+            char detail[160];
+            sprintf(detail, "%s color at row column %d", message, i);
+            return expect(false, detail);
+        }
+    }
+    return 0;
+}
+
 static int test_predictor_classifies_control_flow()
 {
     DebugPredictResult p;
@@ -770,6 +809,11 @@ static int test_predictor_classifies_control_flow()
     if (expect(p.length == 3, "JSR length should be 3")) return 1;
     if (expect(p.fall_through == 0x1003, "JSR fall-through should be PC+3")) return 1;
     if (expect(p.has_target && p.branch_target == 0x1234, "JSR target should decode")) return 1;
+
+    uint8_t jmp[3] = { 0x4C, 0x34, 0x12 };
+    debug_predict(0x1800, jmp, false, &p);
+    if (expect(p.kind == DBG_PREDICT_JMP_ABS, "JMP should classify as absolute jump")) return 1;
+    if (expect(p.has_target && p.branch_target == 0x1234, "JMP target should decode")) return 1;
 
     uint8_t branch[2] = { 0xD0, 0x02 }; // BNE +2
     debug_predict(0x2000, branch, false, &p);
@@ -1700,7 +1744,7 @@ static int test_breakpoints_survive_ctrl_x_reset_reentry()
     monitor_reset_saved_state();
 
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
-    backend.write(0xA000, 0xEA);
+    backend.write(0xC000, 0xEA);
 
     // J $A000 -> A (asm) -> D (debug on) -> R (BP at A000) -> C=+X (reset).
     const int keys[] = { 'J', 'A', 'D', 'R', KEY_CTRL_X };
@@ -1966,13 +2010,15 @@ static int test_breakpoint_row_indicator_and_color()
     monitor_reset_saved_state();
 
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
-    backend.write(0xA000, 0xEA);
+    backend.write(0xC000, 0xAD);
+    backend.write(0xC001, 0x34);
+    backend.write(0xC002, 0x12);
 
     const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    ui.set_prompt("A000", 1);
+    ui.set_prompt("C000", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
@@ -1982,22 +2028,23 @@ static int test_breakpoint_row_indicator_and_color()
 
     char row[40];
     screen.get_slice(1, 4, 38, row);
-    if (expect(strstr(row, "A000") != NULL, "Breakpoint row should show the target address")) return 1;
-    if (expect(strstr(row, "[BRK0][BAS]") != NULL,
+    if (expect(strstr(row, "C000") != NULL, "Breakpoint row should show the target address")) return 1;
+    if (expect(strstr(row, "LDA $1234") != NULL,
+               "Breakpoint row should show mnemonic and operand text")) return 1;
+    if (expect(strstr(row, "[BRK0][RAM]") != NULL,
                "Breakpoint row must show [BRKx] before normalized source")) return 1;
-    if (expect(strstr(row, "BASIC") == NULL,
-               "Assembly source indicator must use the 3-character BAS label")) return 1;
+    if (expect(strstr(row, "[RAM]") != NULL,
+               "Assembly source indicator must use the 3-character RAM label")) return 1;
 
-    // Enabled breakpoint + Debug active: opcode row renders in the accent
-    // color used for the Dbg / Edit flags (MONITOR_UI_ACCENT_COLOR == 1).
-    for (int x = 1; x <= 38; x++) {
-        if (expect(screen.colors[4][x] == 1,
-                   "Enabled breakpoint row must render in the Dbg/Edit accent color")) return 1;
-    }
+    // Enabled breakpoint + Debug active: only the complete breakpoint label is
+    // accented; address, bytes, mnemonic, source, and row fill remain normal.
+    if (expect_breakpoint_label_only_accent(screen, 4, "[BRK0]",
+                                           ui.color_fg, 1,
+                                           "Enabled breakpoint should accent only its label")) return 1;
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     screen.get_slice(1, 4, 38, row);
-    if (expect(strstr(row, "[BRK0][BAS]") != NULL,
+    if (expect(strstr(row, "[BRK0][RAM]") != NULL,
                "Row still shows the stored breakpoint after Debug exits")) return 1;
     // Debug off: every breakpoint row reverts to the regular foreground color.
     for (int x = 1; x <= 38; x++) {
@@ -2060,7 +2107,7 @@ static int test_breakpoint_label_replaces_row_indicator()
     monitor_reset_saved_state();
 
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
-    backend.write(0xA000, 0xEA);
+    backend.write(0xC000, 0xEA);
 
     const int keys[] = {
         'J', 'A', 'D', 'R', KEY_CTRL_R, 'L', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
@@ -2068,7 +2115,7 @@ static int test_breakpoint_label_replaces_row_indicator()
     FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
-    ui.push_prompt("A000", 1);
+    ui.push_prompt("C000", 1);
     ui.push_prompt("readc", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
@@ -2079,16 +2126,19 @@ static int test_breakpoint_label_replaces_row_indicator()
 
     char popup_row[42];
     get_popup_line(screen, 2, popup_row, sizeof(popup_row));
-    if (expect(strstr(popup_row, "0 SET READ $A000") == popup_row,
+    if (expect(strstr(popup_row, "0 SET READ $C000") == popup_row,
                "Breakpoint popup row must show the assigned label")) return 1;
 
     if (expect(monitor.poll(0) == 0, "ESC closes labelled breakpoint popup")) return 1;
     char row[40];
     screen.get_slice(1, 4, 38, row);
-    if (expect(strstr(row, "[READ][BAS]") != NULL,
+    if (expect(strstr(row, "[READ][RAM]") != NULL,
                "Assembly row must show the breakpoint label instead of [BRKx]")) return 1;
     if (expect(strstr(row, "[BRK0]") == NULL,
                "Labelled breakpoint row must not also show [BRK0]")) return 1;
+    if (expect_breakpoint_label_only_accent(screen, 4, "[READ]",
+                                           ui.color_fg, 1,
+                                           "Labelled breakpoint should accent the whole bracketed label only")) return 1;
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
@@ -3562,6 +3612,32 @@ static int test_u64_debug_cpu_port_uses_monitor_bank()
     return 0;
 }
 
+static int test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = true;
+    m.cpu_port = 0x07;
+    m.ram[0x0001] = 0x05;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    m.arm_capture_context(0xE001, 0xFE, 0, 0, 0, 0x24);
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "No-context visible-ROM Step Into must complete")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0xE001,
+               "No-context visible-ROM Step Into must capture the ROM fall-through")) return 1;
+    if (expect(fake_nmi_trampoline_stores_cpu_port(m, 0x07),
+               "No-context visible-ROM launch must select the monitor CPU bank before jumping")) return 1;
+    if (expect(m.last_rom_patch_addr == 0xE001,
+               "No-context visible-ROM Step Into must patch the monitor-bank ROM fall-through")) return 1;
+    return 0;
+}
+
 static int test_visible_kernal_step_into_uses_rom_patch_support()
 {
     FakeVisibleRomMachine m(false);
@@ -4324,6 +4400,71 @@ static int test_cursor_row_highlights_jsr_target()
     backend.canned_snapshot.y = 0x00;
     backend.canned_snapshot.sr = 0x20;
 
+    const int keys[] = { 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Breakpoint on JSR row should return 0")) return 1;
+
+    char row[40];
+    int row_y = -1;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strncmp(row, "1000", 4) == 0) {
+            row_y = y;
+            break;
+        }
+    }
+    if (expect(row_y >= 0, "Current JSR row must be visible")) return 1;
+    const char *target = strstr(row, "$1234");
+    if (expect(target != NULL, "JSR row must display the target address")) return 1;
+    const char *label = strstr(row, "[BRK0]");
+    if (expect(label != NULL, "JSR row with breakpoint must display the breakpoint label")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    const char *dbg = strstr(header, "Dbg");
+    if (expect(dbg != NULL, "Header must show the Dbg badge")) return 1;
+    uint8_t accent = screen.colors[3][1 + (int)(dbg - header)];
+    int x = 1 + (int)(target - row);
+    for (int i = 0; i < 5; i++) {
+        if (expect(screen.colors[row_y][x + i] == accent,
+                   "Current JSR target must use the accent colour")) return 1;
+    }
+    x = 1 + (int)(label - row);
+    for (int i = 0; i < 6; i++) {
+        if (expect(screen.colors[row_y][x + i] == accent,
+                   "Breakpoint label must remain accented on a highlighted JSR row")) return 1;
+    }
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_cursor_row_highlights_jmp_target()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+    ui.color_fg = 12;
+
+    backend.write(0x1000, 0x4C);
+    backend.write(0x1001, 0x34);
+    backend.write(0x1002, 0x12);
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0x1000;
+    backend.canned_snapshot.sp = 0xF7;
+    backend.canned_snapshot.sr = 0x20;
+
     const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 4);
     ui.screen = &screen;
@@ -4343,9 +4484,9 @@ static int test_cursor_row_highlights_jsr_target()
             break;
         }
     }
-    if (expect(row_y >= 0, "Current JSR row must be visible")) return 1;
+    if (expect(row_y >= 0, "Current JMP row must be visible")) return 1;
     const char *target = strstr(row, "$1234");
-    if (expect(target != NULL, "JSR row must display the target address")) return 1;
+    if (expect(target != NULL, "JMP row must display the target address")) return 1;
     char header[40];
     screen.get_slice(1, 3, 38, header);
     const char *dbg = strstr(header, "Dbg");
@@ -4353,8 +4494,8 @@ static int test_cursor_row_highlights_jsr_target()
     uint8_t accent = screen.colors[3][1 + (int)(dbg - header)];
     int x = 1 + (int)(target - row);
     for (int i = 0; i < 5; i++) {
-    if (expect(screen.colors[row_y][x + i] == accent,
-               "Current JSR target must use the accent colour")) return 1;
+        if (expect(screen.colors[row_y][x + i] == accent,
+                   "Current JMP target must use the accent colour")) return 1;
     }
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
@@ -4883,6 +5024,7 @@ int main()
     RUN(test_visible_basic_step_uses_rom_patch_support);
     RUN(test_visible_rom_step_bytes_use_cpu_visible_mapping);
     RUN(test_u64_debug_cpu_port_uses_monitor_bank);
+    RUN(test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump);
     RUN(test_visible_kernal_step_into_uses_rom_patch_support);
     RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
@@ -4909,6 +5051,7 @@ int main()
     RUN(test_debug_ownership_blocks_second_stakeholder_until_remote_expires);
     RUN(test_monitor_refuses_debug_when_owner_is_busy);
     RUN(test_cursor_row_highlights_jsr_target);
+    RUN(test_cursor_row_highlights_jmp_target);
     RUN(test_cursor_row_highlights_taken_branch_target_only_when_taken);
     RUN(test_debug_rts_shows_inferred_target);
     RUN(test_debug_rts_empty_stack_shows_unknown);

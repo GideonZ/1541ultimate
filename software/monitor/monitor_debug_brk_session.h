@@ -155,7 +155,7 @@ private:
     void release_to_run(const DebugContext *from);
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
-    void nmi_redirect_to(uint16_t target);
+    void nmi_redirect_to(uint16_t target, uint8_t cpu_port, bool force_cpu_port);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,
