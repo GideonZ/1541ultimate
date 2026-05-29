@@ -157,7 +157,7 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
     static const char *const text[] = {
         "",
         "D Step Over  T Step Into  O Step Out",
-        "G Continue   K Cursor     RET Follow",
+        "G Continue   K Cont Crsr  RET Follow",
         "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",

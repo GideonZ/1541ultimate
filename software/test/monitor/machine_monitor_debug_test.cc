@@ -2675,7 +2675,7 @@ static int test_help_screen_shows_debug_commands()
     static const char *expected_lines[] = {
         "",
         "D Step Over  T Step Into  O Step Out",
-        "G Continue   K Cursor     RET Follow",
+        "G Continue   K Cont Crsr  RET Follow",
         "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",
