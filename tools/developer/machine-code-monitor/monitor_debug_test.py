@@ -446,12 +446,14 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if not slot_match:
             raise mt.Failure(f"Breakpoint list did not expose the $C050 slot number:\n{joined}")
         c050_breakpoint_slot = int(slot_match.group(1))
-        session.send_key_repeat("DOWN", c050_breakpoint_slot + 1)
+        session.send_key_repeat("UP", 9)
+        if c050_breakpoint_slot > 0:
+            session.send_key_repeat("DOWN", c050_breakpoint_slot)
         session.send_char("L")
-        session.send_text("read\r", "BP label READ")
-        snap = _wait_for_screen_text(session, "READ")
-        if "$C050" not in snap.text():
-            raise mt.Failure(f"Breakpoint label edit lost the selected breakpoint:\n{snap.text()}")
+        snap = session.send_text("READ\r", "BP label READ")
+        text = snap.text()
+        if f"{c050_breakpoint_slot} SET READ" not in text or "$C050" not in text:
+            raise mt.Failure(f"Breakpoint label edit did not update the live slot:\n{text}")
         session.send_key("ESC")
 
     with mt.check("Debug: breakpoint label replaces [BRKx] on the ASM page"):
@@ -1856,6 +1858,40 @@ def run_side_effect_step_tests(rest_host: str, session: "mt.MonitorSession") -> 
         side = mt.read_rest_memory(rest_host, 0xC180, 4)
         if side[1] != 0x01:
             raise mt.Failure(f"Over inside traced subroutine did not execute INC: {side.hex()}")
+        _ensure_no_debug(session)
+
+    # Stack side effects of step mode must match a real run: the NMI used to
+    # launch the first step must not leak its 3-byte frame onto the stack. Trace
+    # into the JSR (the first, NMI-launched step), confirm the real return
+    # address is on the stack at the SP-relative slot RTS will read, and confirm
+    # the JSR push / RTS pop balance the stack pointer exactly (+2 / -2). The
+    # precise 3-byte NMI-frame balance is pinned deterministically by the host
+    # unit test test_nmi_launch_trampoline_balances_stack.
+    with mt.check("Debug: step-mode JSR/RTS keep the stack balanced and return address correct"):
+        _reopen_monitor(session)
+        session.goto("C105")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("T")               # first step: NMI launch, Trace into JSR
+        into = _wait_for_pc(session, "C130")
+        sp_into = int(into["sp"], 16)
+        # JSR pushed the return address ($C105 + 2 = $C107): low byte at
+        # $0100+SP+1, high byte at $0100+SP+2 - exactly what RTS will pull.
+        stack = mt.read_rest_memory(rest_host, 0x0100, 256)
+        ret = stack[(sp_into + 1) & 0xFF] | (stack[(sp_into + 2) & 0xFF] << 8)
+        if ret != 0xC107:
+            raise mt.Failure(
+                f"JSR return address not on the stack at the SP slot RTS reads: "
+                f"got ${ret:04X}, SP=${sp_into:02X}")
+        session.send_char("D")               # Over INC $C181
+        _wait_for_pc(session, "C133")
+        out = _step_and_assert_pc(session, "D", 0xC108,
+                                  "step-mode JSR/RTS stack balance")  # Over RTS
+        sp_back = int(out["sp"], 16)
+        if ((sp_back - sp_into) & 0xFF) != 2:
+            raise mt.Failure(
+                f"JSR/RTS did not balance the stack: SP ${sp_into:02X} -> ${sp_back:02X} "
+                f"(expected +2)")
         _ensure_no_debug(session)
 
 

@@ -159,18 +159,53 @@ def _predict_trace_target(pc: int, row: str, sr: Optional[int]) -> int:
     return _u16(pc + dbg._instruction_length_from_row(row))
 
 
+def _observed_debug_pc(snapshot: mt.Snapshot) -> Optional[int]:
+    for y in range(mt.HEIGHT):
+        line = snapshot.line(y)
+        if "PC" in line and "SP" in line and "NV-BDIZC" in line and y + 1 < mt.HEIGHT:
+            parsed = dbg._parse_footer_values(snapshot.line(y + 1))
+            if parsed["pc"]:
+                return int(parsed["pc"], 16)
+            break
+    try:
+        line = mt.highlighted_line(snapshot)
+    except mt.Failure:
+        return None
+    match = re.match(r"^\|([0-9A-Fa-f]{4})\s", line)
+    if not match:
+        return None
+    return int(match.group(1), 16)
+
+
+def _wait_for_observed_pc(session: "mt.MonitorSession", expected_pc: int,
+                          timeout: float = 6.0) -> mt.Snapshot:
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        snap = session.capture()
+        last = snap
+        dbg._assert_no_debug_modal_snapshot(snap, f"Waiting for observed PC {expected_pc:04X}")
+        actual = _observed_debug_pc(snap)
+        if actual == expected_pc:
+            return snap
+        time.sleep(0.1)
+    raise mt.Failure(
+        f"Observed PC did not reach {expected_pc:04X}; "
+        f"last screen:\n{last.text() if last is not None else '<no snapshot>'}")
+
+
 def _assert_pc_stable(session: "mt.MonitorSession", expected_pc: int,
                       settle_time: float, context: str) -> None:
     deadline = time.time() + settle_time
-    expected = f"{expected_pc:04X}"
     while time.time() < deadline:
         snap = session.capture()
         dbg._assert_no_debug_modal_snapshot(snap, context)
-        parsed = dbg._parse_footer_values(dbg._footer_value_line(session))
-        actual = parsed["pc"].upper()
-        if actual != expected:
+        actual = _observed_debug_pc(snap)
+        if actual != expected_pc:
+            actual_text = "----" if actual is None else f"{actual:04X}"
             raise mt.Failure(
-                f"{context}: PC replayed unexpectedly to ${actual} after settling on ${expected}")
+                f"{context}: PC replayed unexpectedly to "
+                f"${actual_text} after settling on ${expected_pc:04X}")
         time.sleep(0.05)
 
 
@@ -185,19 +220,21 @@ def prove_no_autonomous_trace_replay(rest_host: str, session: "mt.MonitorSession
         context = f"autonomous trace replay soak run {run + 1}/{runs}"
         dbg._enter_rom_debug_at(session, 0xE000, "KRN", context, "$E:KRN")
         for step, expected_pc in enumerate(AUTONOMOUS_TRACE_PC_SEQUENCE[:steps_per_run]):
-            session.last_command = "TT"
-            session.sock.sendall(b"TT")
-            dbg._wait_for_pc(session, f"{expected_pc:04X}")
+            snap = session.send_char("T")
+            dbg._assert_no_debug_modal_snapshot(snap, context)
+            snap = _wait_for_observed_pc(session, expected_pc)
             _assert_pc_stable(
                 session,
                 expected_pc,
                 settle_time,
                 f"{context}, step {step + 1}/{steps_per_run}",
             )
-            state = CpuState.from_footer(session)
-            if state.pc != expected_pc:
+            actual_pc = _observed_debug_pc(snap)
+            if actual_pc != expected_pc:
+                actual_text = "----" if actual_pc is None else f"{actual_pc:04X}"
                 raise mt.Failure(
-                    f"{context}: expected PC ${expected_pc:04X}, got ${state.pc:04X}")
+                    f"{context}: expected PC ${expected_pc:04X}, got "
+                    f"${actual_text}")
         dbg._leave_debug_and_reset(rest_host, session)
 
 

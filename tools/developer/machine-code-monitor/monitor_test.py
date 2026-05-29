@@ -720,10 +720,31 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
     if not rest_available(host):
         raise SkipCheck(f"REST API not reachable on {host}")
 
-    url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
-    request = urllib.request.Request(url, data=b"", method="PUT")
-    with urllib.request.urlopen(request, timeout=5.0):
-        pass
+    deadline = time.time() + 15.0
+    last_error: Optional[BaseException] = None
+
+    while time.time() < deadline:
+        try:
+            if len(data) <= 128:
+                url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
+                request = urllib.request.Request(url, data=b"", method="PUT")
+            else:
+                url = f"http://{host}/v1/machine:writemem?address={address:04X}"
+                request = urllib.request.Request(
+                    url,
+                    data=data,
+                    method="POST",
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+            with urllib.request.urlopen(request, timeout=5.0):
+                return
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            last_error = exc
+            time.sleep(0.5)
+
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError(f"Timed out writing REST memory to {host} at ${address:04X}")
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -1044,7 +1065,7 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen = session.send_key("CTRL_B")
     screen.find_line_containing("BOOKMARKS")
     assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
-    screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
+    screen.find_line_containing("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")
 
     screen = session.send_key("DOWN")
     screen = session.send_char("L")
@@ -1265,6 +1286,26 @@ def assert_highlighted_line_contains(snapshot: Snapshot, values: Tuple[str, ...]
         )
 
 
+def wait_for_highlighted_line_contains(session: MonitorSession, values: Tuple[str, ...],
+                                       timeout: float = 5.0) -> Snapshot:
+    deadline = time.time() + timeout
+    last_snapshot: Optional[Snapshot] = None
+
+    while time.time() < deadline:
+        snapshot = session.capture()
+        last_snapshot = snapshot
+        try:
+            assert_highlighted_line_contains(snapshot, values)
+            return snapshot
+        except Failure:
+            time.sleep(0.1)
+
+    if last_snapshot is None:
+        raise Failure(f"Timed out waiting for highlighted line {values!r}")
+    assert_highlighted_line_contains(last_snapshot, values)
+    return last_snapshot
+
+
 def assert_canonical_kernal_lane(snapshot: Snapshot, highlighted_values: Tuple[str, ...]) -> None:
     top_row = snapshot.find_line_containing(ASM_KERNAL_ROWS[0][0])
     for offset, (address_bytes, disasm_text) in enumerate(ASM_KERNAL_ROWS):
@@ -1354,10 +1395,10 @@ def run_asm_decode_offset_test(session: MonitorSession, rest_host: str) -> None:
     screen = session.goto(f"{sliding_start:04X}")
     screen = ensure_view(session, "ASM ")
     assert_highlighted_line_contains(screen, (f"{sliding_start:04X} EA", "NOP"))
-    screen = session.send_key_repeat("UP", sliding_steps)
-    assert_highlighted_line_contains(screen, (f"{sliding_start - sliding_steps:04X} EA", "NOP"))
-    screen = session.send_key_repeat("DOWN", sliding_steps)
-    assert_highlighted_line_contains(screen, (f"{sliding_start:04X} EA", "NOP"))
+    session.send_key_repeat("UP", sliding_steps)
+    screen = wait_for_highlighted_line_contains(session, (f"{sliding_start - sliding_steps:04X} EA", "NOP"))
+    session.send_key_repeat("DOWN", sliding_steps)
+    screen = wait_for_highlighted_line_contains(session, (f"{sliding_start:04X} EA", "NOP"))
 
 
 def run_asm_edit_navigation_test(session: MonitorSession, rest_host: str) -> None:
