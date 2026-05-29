@@ -778,13 +778,18 @@ int IecChannel :: setup_file_access()
             }
             recordSize = (uint8_t) wrd;
             DBGIECV("Opened existing relative file. Record size found is: %d. Expected: %d\n", recordSize, name_to_open.record_size);
-            if (recordSize != name_to_open.record_size) {
+            if ((name_to_open.record_size != 0) && (recordSize != name_to_open.record_size)) {
                 state = e_error;
                 drive->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
                 return ERR_RECORD_NOT_PRESENT;
             }
             drive->set_error_fres(fres);
             state = e_record;
+            int err = seek_record(1, 1);
+            if (err != ERR_ALL_OK) {
+                drive->set_error(err, 0, 0);
+                return err;
+            }
         }
     } else if (name_to_open.access == e_append) {
         FRESULT fres = f->seek(f->get_size());

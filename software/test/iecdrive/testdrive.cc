@@ -535,6 +535,45 @@ static void expect_rel_read(const char *testname, IecDrive *dr, uint8_t chan,
     REQUIRE(memcmp(buffer, expected, expected_len) == 0);
 }
 
+static void expect_short_read(const char *testname, IecDrive *dr, uint8_t chan, int readlen,
+                            const uint8_t *expected, int expected_len)
+{
+    uint8_t buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+
+    int got = read_file(dr, chan, buffer, readlen);
+    if (got != expected_len || memcmp(buffer, expected, expected_len) != 0) {
+        printf("%s: REL read channel %u: got %d bytes, expected %d bytes\n",
+               testname, chan, got, expected_len);
+        dump_hex_relative(buffer, got);
+    }
+    REQUIRE(got == expected_len);
+    REQUIRE(memcmp(buffer, expected, expected_len) == 0);
+}
+
+static void expect_rel_read_bytes_individually(const char *testname, IecDrive *dr, uint8_t chan,
+                                               const uint8_t *expected, int expected_len)
+{
+    uint8_t buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+
+    for (int i = 0; i < expected_len; i++) {
+        int got = read_file_limited(dr, chan, buffer + i, 1);
+        if (got != 1) {
+            printf("%s: REL single-byte read %d on channel %u got %d bytes\n",
+                   testname, i, chan, got);
+        }
+        REQUIRE(got == 1);
+    }
+
+    if (memcmp(buffer, expected, expected_len) != 0) {
+        printf("%s: REL single-byte stream mismatch, expected %d bytes\n",
+               testname, expected_len);
+        dump_hex_relative(buffer, expected_len);
+    }
+    REQUIRE(memcmp(buffer, expected, expected_len) == 0);
+}
+
 void read_directory(IecDrive *dr, const char *file)
 {
     open_file(dr, file);
@@ -735,11 +774,7 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
     expect_command_ok("TEST17", dr, "C3:COMBO=3:BASIC,3:LITERAL");
     expect_iec_file("TEST18", dr, 0, "3:COMBO", "BASIC:PRGLITERAL:PRG");
 
-    copy_from("/Temp/iec_corner_cases.d81", "after_copy.d81");
-
     expect_command_ok("TEST19", dr, "R3:RENAMED=3:BASIC");
-
-    copy_from("/Temp/iec_corner_cases.d81", "after_19.d81");
 
     expect_iec_file("TEST20", dr, 0, "3:RENAMED", "BASIC:PRG");
     expect_iec_file("TEST21", dr, 2, "3:BASIC", "BASIC:SEQ");
@@ -788,6 +823,7 @@ static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
     uint8_t record1[record_size];
     uint8_t expected[record_size];
     uint8_t gap[record_size];
+    uint8_t stream_expected[record_size];
     uint8_t cr = 0x0D;
     const uint8_t patch[] = "xy";
     const uint8_t tail[] = "TAIL";
@@ -828,6 +864,29 @@ static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
 
     close_file(dr, chan);
     expect_status_ok("Suite4-CloseRel", "4:RELTEST");
+
+    int stream_len = 0;
+    memcpy(stream_expected + stream_len, expected, 12);
+    stream_len += 12;
+    stream_expected[stream_len++] = 0xFF;
+    memcpy(stream_expected + stream_len, tail, sizeof(tail) - 1);
+    stream_len += sizeof(tail) - 1;
+    stream_expected[stream_len++] = 0xFF;
+
+    expect_rel_open_status_prefix("Suite4-OpenExistingRelWithNoRecordSize", dr, chan, "4:RELTEST", 0, "00, OK");
+    expect_short_read("Suite4-SequentialReadRecord1a", dr, chan, 4, expected, 4);
+    expect_short_read("Suite4-SequentialReadRecord1b", dr, chan, 4, expected+4, 4);
+    expect_short_read("Suite4-SequentialReadRecord1c", dr, chan, 4, expected+8, 4);
+    expect_rel_read("Suite4-SequentialReadRecord2", dr, chan, gap, 1);
+    expect_rel_read("Suite4-SequentialReadRecord3", dr, chan, tail, sizeof(tail) - 1);
+    expect_rel_read("Suite4-SequentialReadRecord4", dr, chan, gap, 1);
+    close_file(dr, chan);
+    expect_status_ok("Suite4-CloseRelNoRecordSize", "4:RELTEST");
+
+    expect_rel_open_status_prefix("Suite4-OpenExistingRelWithNoRecordSizeByteReads", dr, chan, "4:RELTEST", 0, "00, OK");
+    expect_rel_read_bytes_individually("Suite4-SingleByteSequentialReads", dr, chan, stream_expected, stream_len);
+    close_file(dr, chan);
+    expect_status_ok("Suite4-CloseRelAfterSingleByteReads", "4:RELTEST");
 
     expect_rel_open_status_prefix("Suite4-RecordSizeMismatch", dr, chan, "4:RELTEST", record_size - 1, "50,RECORD NOT PRESENT");
     close_file(dr, chan);
