@@ -81,9 +81,9 @@ void form_new_partition(UserInterface*, JSON_Object*)
 void init_ram_disk()
 {
     const int sz = 512;
-    const int size = 2024 * 1024;
+    const int size = 4 * 1024 * 1024;
     const int sectors = size / sz;
-    uint8_t *ramdisk_mem = new uint8_t[size]; // 2 MB only
+    uint8_t *ramdisk_mem = new uint8_t[size]; // 4 MB only
     ramdisk_blk = new BlockDevice_Ram(ramdisk_mem, sz, sectors);
     {
         FileSystem *ramdisk_fs;
@@ -278,6 +278,34 @@ int read_file(IecDrive *dr, uint8_t *out, int len)
     return read_file(dr, 0, out, len);
 }
 
+int read_file_limited(IecDrive *dr, uint8_t chan, uint8_t *out, int len)
+{
+    dr->push_ctrl(SLAVE_CMD_ATN);
+    dr->push_ctrl(0x60 | chan);
+    dr->talk();
+    int ret;
+    uint8_t *data;
+    int data_size;
+    int total_read = 0;
+    while(len > 0) {
+        ret = dr->prefetch_more(len, data, data_size);
+        if (data_size == 0) {
+            break;
+        }
+        if(out) {
+            memcpy(out, data, data_size);
+            out += data_size;
+        }
+        len -= data_size;
+        total_read += data_size;
+        dr->pop_more(data_size);
+        if (ret != 0) {
+            break;
+        }
+    }
+    return total_read;
+}
+
 void write_file(IecDrive *dr, uint8_t chan, const char *fn, const char *msg)
 {
     dr->push_ctrl(SLAVE_CMD_ATN);
@@ -427,6 +455,34 @@ static void send_channel_data(IecDrive *dr, uint8_t chan, const uint8_t *data, i
         dr->push_data(data[i]);
     }
     dr->push_ctrl(SLAVE_CMD_EOI);
+}
+
+static void expect_iec_write_ok(const char *testname, IecDrive *dr, uint8_t chan,
+                                const char *name, const char *payload)
+{
+    open_file(dr, chan, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+
+    send_channel_data(dr, chan, (const uint8_t *)payload, strlen(payload));
+    get_status(dr);
+    expect_status_ok(testname, "IEC write");
+
+    close_file(dr, chan);
+    expect_status_ok(testname, name);
+}
+
+static void expect_iec_open_status_prefix(const char *testname, IecDrive *dr, uint8_t chan,
+                                          const char *name, const char *prefix)
+{
+    open_file(dr, chan, name);
+    get_status(dr);
+    int len = strlen(prefix);
+    if (strncmp(last_status, prefix, len) != 0) {
+        printf("%s: %s: status was '%s', expected prefix '%s'\n",
+               testname, name, last_status, prefix);
+    }
+    REQUIRE(strncmp(last_status, prefix, len) == 0);
 }
 
 static void send_command_data(IecDrive *dr, const uint8_t *data, int len)
@@ -921,6 +977,63 @@ void execute_suite4(FileManager *fm, IecDrive *dr)
     run_iec_rel_sequence(dr, "REL Suite on FAT");
 }
 
+static void run_iec_append_replace_sequence(IecDrive *dr, const char *label)
+{
+    const uint8_t chan = 6;
+
+    printf("\nRunning append/replace sequence on %s\n", label);
+
+    expect_iec_write_ok("Suite5-CreateSeq", dr, chan, "5:APPENDME,S,W", "alpha");
+    expect_iec_file("Suite5-ReadCreatedSeq", dr, chan, "5:APPENDME,S,R", "alpha");
+
+    expect_iec_write_ok("Suite5-AppendExplicitSeq", dr, chan, "5:APPENDME,S,A", "+beta");
+    expect_iec_file("Suite5-ReadExplicitAppend", dr, chan, "5:APPENDME,S,R", "alpha+beta");
+
+    expect_iec_write_ok("Suite5-AppendDefaultSeq", dr, chan, "5:APPENDME,A", "+gamma");
+    expect_iec_file("Suite5-ReadDefaultAppend", dr, chan, "5:APPENDME,S,R", "alpha+beta+gamma");
+
+    expect_iec_open_status_prefix("Suite5-AppendMissing", dr, chan, "5:MISSING,S,A", "62,FILE NOT FOUND");
+
+    expect_iec_open_status_prefix("Suite5-WriteExistingNoReplace", dr, chan, "5:APPENDME,S,W", "63,FILE EXISTS");
+    expect_iec_file("Suite5-ReadAfterFailedWrite", dr, chan, "5:APPENDME,S,R", "alpha+beta+gamma");
+
+    expect_iec_write_ok("Suite5-ReplaceExisting", dr, chan, "@5:APPENDME,S,W", "replaced");
+    expect_iec_file("Suite5-ReadReplaced", dr, chan, "5:APPENDME,S,R", "replaced");
+
+    expect_iec_write_ok("Suite5-AppendAfterReplace", dr, chan, "5:APPENDME,S,A", "+tail");
+    expect_iec_file("Suite5-ReadAppendAfterReplace", dr, chan, "5:APPENDME,S,R", "replaced+tail");
+
+    expect_iec_write_ok("Suite5-ReplaceCreatesMissing", dr, chan, "@5:CREATED,S,W", "created");
+    expect_iec_file("Suite5-ReadReplaceCreated", dr, chan, "5:CREATED,S,R", "created");
+
+    printf("Append/replace sequence on %s completed successfully!\n", label);
+}
+
+void execute_suite5(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite5";
+    const char *diskname_41 = "output/iec_append_replace_cases.d64";
+    const char *diskname_81 = "output/iec_append_replace_cases.d81";
+    const char *d64_path = "/Temp/iec_append_replace_cases.d64";
+    const char *d81_path = "/Temp/iec_append_replace_cases.d81";
+    const char *fat_path = "/Fat/iec_append_replace_cases";
+
+    create_iec_d64_fixture(diskname_41);
+    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
+    dr->add_partition(5, d64_path, "APPEND");
+    run_iec_append_replace_sequence(dr, "D64");
+
+    create_iec_d81_fixture(diskname_81);
+    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
+    dr->add_partition(5, d81_path, "APPEND");
+    run_iec_append_replace_sequence(dr, "D81");
+
+    FRESULT fres = fm->create_dir(fat_path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    dr->add_partition(5, fat_path, "APPEND");
+    run_iec_append_replace_sequence(dr, "FAT");
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -941,6 +1054,7 @@ int main(int argc, const char **argv)
     // execute_suite2(fm, dr);
     execute_suite3(fm, dr);
     execute_suite4(fm, dr);
+    execute_suite5(fm, dr);
 
     delete dr;
     delete ui;
