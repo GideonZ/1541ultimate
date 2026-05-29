@@ -585,7 +585,7 @@ static int test_bookmark_default_popup_alignment(void)
 
 static int test_bookmark_popup_instruction_line(void)
 {
-    const char *expected = "0-9/RET Jmp  S Set  L Label  DEL Reset";
+    const char *expected = "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset";
     if (expect((int)strlen(expected) == 38,
                "Instruction line must be 38 chars (within the 38-column popup).")) return 1;
     if (expect((int)strlen(expected) <= 38, "Instruction line must fit in 38 columns.")) return 1;
@@ -882,8 +882,8 @@ static int test_monitor_bookmark_popup_render(void)
     if (expect(strspn(line, " ") == strlen(line),
                "Popup must separate bookmarks from the help line with a blank line.")) return 1;
     get_popup_line(screen, 13, line, sizeof(line));
-    if (expect(strncmp(line, "0-9/RET Jmp  S Set  L Label  DEL Reset",
-                       strlen("0-9/RET Jmp  S Set  L Label  DEL Reset")) == 0,
+    if (expect(strncmp(line, "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset",
+                       strlen("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")) == 0,
                "Popup instruction line must match addendum text.")) return 1;
 
     monitor.deinit();

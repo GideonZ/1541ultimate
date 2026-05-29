@@ -840,16 +840,27 @@ const char *FakeRestrictedMemoryBackend :: source_name(uint16_t) const
     return "CPU";
 }
 
-FakeKeyboard :: FakeKeyboard(const int *k, int c) : keys(k), count(c), index(0)
+FakeKeyboard :: FakeKeyboard(const int *k, int c)
+    : keys(k), count(c), index(0), pushed(false), pushed_key(-1)
 {
 }
 
 int FakeKeyboard :: getch(void)
 {
+    if (pushed) {
+        pushed = false;
+        return pushed_key;
+    }
     if (index >= count) {
         return -1;
     }
     return keys[index++];
+}
+
+void FakeKeyboard :: push_head(int key)
+{
+    pushed = true;
+    pushed_key = key;
 }
 
 CaptureScreen :: CaptureScreen() : width(40), height(25), cursor_x(0), cursor_y(0), color(0), reverse_mode_on(false), clear_calls(0)

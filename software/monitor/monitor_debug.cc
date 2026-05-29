@@ -10,15 +10,15 @@ namespace {
 // whether the context is known. Positions are referenced explicitly by name
 // to keep the layout obvious and to avoid creeping field reorderings.
 enum {
-    FOOTER_POS_PC = 0,
-    FOOTER_POS_AC = 5,
-    FOOTER_POS_XR = 8,
-    FOOTER_POS_YR = 11,
-    FOOTER_POS_SP = 14,
-    FOOTER_POS_FLAGS = 17,
-    FOOTER_POS_IRQ = 26,
-    FOOTER_POS_NMI = 31,
-    FOOTER_WIDTH = 35
+    FOOTER_POS_PC = MonitorDebug::FOOTER_POS_PC,
+    FOOTER_POS_AC = MonitorDebug::FOOTER_POS_AC,
+    FOOTER_POS_XR = MonitorDebug::FOOTER_POS_XR,
+    FOOTER_POS_YR = MonitorDebug::FOOTER_POS_YR,
+    FOOTER_POS_SP = MonitorDebug::FOOTER_POS_SP,
+    FOOTER_POS_FLAGS = MonitorDebug::FOOTER_POS_FLAGS,
+    FOOTER_POS_IRQ = MonitorDebug::FOOTER_POS_IRQ,
+    FOOTER_POS_NMI = MonitorDebug::FOOTER_POS_NMI,
+    FOOTER_WIDTH = MonitorDebug::FOOTER_WIDTH
 };
 
 static void blank_buffer(char *buf, int len)
@@ -157,8 +157,8 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
     static const char *const text[] = {
         "",
         "D Step Over  T Step Into  O Step Out",
-        "G Continue   R Breakpt    C=+R Brkpts",
-        "C=+X Reset   RETURN Follow",
+        "G Continue   K Cursor     RETURN Follow",
+        "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",
         "A Assembly   B Binary     U Undoc/Case",

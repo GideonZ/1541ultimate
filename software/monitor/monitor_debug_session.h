@@ -107,6 +107,19 @@ public:
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc) = 0;
 
+    // Run until `target_pc` is hit, using a temporary non-visible breakpoint
+    // alongside the visible breakpoint table. If `from.valid` is false, the
+    // backend should start from `start_pc`.
+    virtual Result run_to(const DebugContext &from,
+                          uint16_t target_pc,
+                          const MonitorBreakpoints *breakpoints,
+                          uint16_t start_pc,
+                          DebugContext *ctx)
+    {
+        (void)from; (void)target_pc; (void)breakpoints; (void)start_pc; (void)ctx;
+        return DBG_NOT_SUPPORTED;
+    }
+
     // Restore every patched byte / vector / trampoline state. MUST be safe
     // to call at any time (success, failure, mode change, destructor) and
     // must be idempotent.
@@ -153,6 +166,10 @@ public:
     // Cleared at the start of the next CPU-run window. Always false in overlay
     // mode because overlay sessions disable freeze/refreeze run windows.
     virtual bool screen_render_target_invalidated(void) const { return false; }
+
+    virtual bool claim_debug_ownership(bool remote) { (void)remote; return true; }
+    virtual void refresh_debug_ownership(void) { }
+    virtual void release_debug_ownership(void) { }
 };
 
 #endif

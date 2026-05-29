@@ -347,7 +347,7 @@ class MachineMonitor : public UIObject
     bool debug_active(void) const { return debug.is_active(); }
     bool debug_input_active(void) const { return debug.is_active() || breakpoint_popup_active; }
     int  debug_handle_key(int key);
-    void debug_enter(void);
+    bool debug_enter(void);
     void debug_leave(void);
     void debug_sync_cursor_to_context(void);
     bool debug_handle_terminal_result(DebugSession::Result result);
@@ -355,6 +355,8 @@ class MachineMonitor : public UIObject
     void debug_request_trace(void);
     void debug_request_out(void);
     void debug_request_go(void);
+    void debug_request_cursor(void);
+    bool debug_has_breakpoint(void) const;
     bool debug_has_enabled_breakpoint(void) const;
     void debug_toggle_breakpoint(void);
     void debug_open_breakpoint_popup(void);

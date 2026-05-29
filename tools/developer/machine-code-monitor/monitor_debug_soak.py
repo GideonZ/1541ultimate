@@ -42,6 +42,30 @@ FLAG_B = 0x10
 FLAG_V = 0x40
 FLAG_N = 0x80
 
+BRANCH_TAKEN = {
+    "BCC": lambda sr: (sr & FLAG_C) == 0,
+    "BCS": lambda sr: (sr & FLAG_C) != 0,
+    "BEQ": lambda sr: (sr & FLAG_Z) != 0,
+    "BMI": lambda sr: (sr & FLAG_N) != 0,
+    "BNE": lambda sr: (sr & FLAG_Z) == 0,
+    "BPL": lambda sr: (sr & FLAG_N) == 0,
+    "BVC": lambda sr: (sr & FLAG_V) == 0,
+    "BVS": lambda sr: (sr & FLAG_V) != 0,
+}
+
+AUTONOMOUS_TRACE_PC_SEQUENCE = (
+    0xE002,
+    0xBC0F,
+    0xBC11,
+    0xBC13,
+    0xBC15,
+    0xBC16,
+    0xBC11,
+    0xBC13,
+    0xBC15,
+    0xBC16,
+)
+
 
 @dataclass(frozen=True)
 class Routine:
@@ -106,6 +130,75 @@ class CpuState:
             "yr": f"{self.yr:02X}",
             "sr": f"{self.sr:08b}",
         }
+
+
+def _branch_target(row: str, sr: int) -> Optional[int]:
+    match = re.search(r"\b(BCC|BCS|BEQ|BMI|BNE|BPL|BVC|BVS) \$([0-9A-Fa-f]{4})", row)
+    if not match:
+        return None
+    mnemonic = match.group(1).upper()
+    if not BRANCH_TAKEN[mnemonic](sr):
+        return None
+    return int(match.group(2), 16)
+
+
+def _jump_target(row: str) -> Optional[int]:
+    match = re.search(r"\b(?:JMP|JSR) \$([0-9A-Fa-f]{4})", row)
+    if not match:
+        return None
+    return int(match.group(1), 16)
+
+
+def _predict_trace_target(pc: int, row: str, sr: Optional[int]) -> int:
+    branch_target = _branch_target(row, sr) if sr is not None else None
+    if branch_target is not None:
+        return branch_target
+    jump_target = _jump_target(row)
+    if jump_target is not None:
+        return jump_target
+    return _u16(pc + dbg._instruction_length_from_row(row))
+
+
+def _assert_pc_stable(session: "mt.MonitorSession", expected_pc: int,
+                      settle_time: float, context: str) -> None:
+    deadline = time.time() + settle_time
+    expected = f"{expected_pc:04X}"
+    while time.time() < deadline:
+        snap = session.capture()
+        dbg._assert_no_debug_modal_snapshot(snap, context)
+        parsed = dbg._parse_footer_values(dbg._footer_value_line(session))
+        actual = parsed["pc"].upper()
+        if actual != expected:
+            raise mt.Failure(
+                f"{context}: PC replayed unexpectedly to ${actual} after settling on ${expected}")
+        time.sleep(0.05)
+
+
+def prove_no_autonomous_trace_replay(rest_host: str, session: "mt.MonitorSession",
+                                     runs: int, steps_per_run: int,
+                                     settle_time: float) -> None:
+    if steps_per_run > len(AUTONOMOUS_TRACE_PC_SEQUENCE):
+        raise mt.Failure(
+            f"autonomous trace soak only knows {len(AUTONOMOUS_TRACE_PC_SEQUENCE)} "
+            f"validated PCs from $E000, got {steps_per_run} requested steps")
+    for run in range(runs):
+        context = f"autonomous trace replay soak run {run + 1}/{runs}"
+        dbg._enter_rom_debug_at(session, 0xE000, "KRN", context, "$E:KRN")
+        for step, expected_pc in enumerate(AUTONOMOUS_TRACE_PC_SEQUENCE[:steps_per_run]):
+            session.last_command = "TT"
+            session.sock.sendall(b"TT")
+            dbg._wait_for_pc(session, f"{expected_pc:04X}")
+            _assert_pc_stable(
+                session,
+                expected_pc,
+                settle_time,
+                f"{context}, step {step + 1}/{steps_per_run}",
+            )
+            state = CpuState.from_footer(session)
+            if state.pc != expected_pc:
+                raise mt.Failure(
+                    f"{context}: expected PC ${expected_pc:04X}, got ${state.pc:04X}")
+        dbg._leave_debug_and_reset(rest_host, session)
 
 
 def _u8(value: int) -> int:
@@ -590,10 +683,24 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     rom_validations = 0
     step_out_validations = 0
     cleanup_validations = 0
+    trace_replay_validations = 0
     restarts = 0
     mem = Memory(rest_host)
 
     try:
+        with mt.check("Debug soak: no autonomous trace replay from $E000"):
+            prove_no_autonomous_trace_replay(
+                rest_host,
+                session,
+                args.autonomous_trace_runs,
+                args.autonomous_trace_steps,
+                args.autonomous_trace_settle,
+            )
+            trace_replay_validations += args.autonomous_trace_runs
+        if args.autonomous_trace_only:
+            print(f"debug_soak_test: OK ({trace_replay_validations} autonomous-trace runs)")
+            return
+
         with mt.check("Debug soak: bare BASIC/KERNAL ROM Step Into cycle"):
             rom_validations += rom_step_cycle(rest_host, session, "initial ROM cycle")
             mem.cache.clear()
@@ -682,10 +789,15 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     if cleanup_validations < 1:
         raise mt.Failure(
             f"Soak only validated {cleanup_validations} RAM cleanup cycles; expected at least 1")
+    if trace_replay_validations < args.autonomous_trace_runs:
+        raise mt.Failure(
+            f"Soak only validated {trace_replay_validations} autonomous-trace runs; "
+            f"expected at least {args.autonomous_trace_runs}")
     print(f"debug_soak_test: OK ({validated_steps} validated steps, "
           f"{rom_validations} ROM debug steps, "
           f"{step_out_validations} active-JSR Step Out cycles, "
-          f"{cleanup_validations} cleanup cycles across {restarts} entries)")
+          f"{cleanup_validations} cleanup cycles, "
+          f"{trace_replay_validations} autonomous-trace runs across {restarts} entries)")
 
 
 def main() -> int:
@@ -700,6 +812,10 @@ def main() -> int:
     parser.add_argument("--max-steps-per-entry", type=int, default=24)
     parser.add_argument("--min-validated-steps", type=int, default=50)
     parser.add_argument("--progress-every", type=int, default=100)
+    parser.add_argument("--autonomous-trace-runs", type=int, default=50)
+    parser.add_argument("--autonomous-trace-steps", type=int, default=10)
+    parser.add_argument("--autonomous-trace-settle", type=float, default=0.35)
+    parser.add_argument("--autonomous-trace-only", action="store_true")
     args = parser.parse_args()
 
     rest_host = args.rest_host or args.host

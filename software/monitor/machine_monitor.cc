@@ -20,6 +20,8 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>
 
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
 namespace {
 
 #ifdef RUNS_ON_PC
@@ -872,6 +874,111 @@ static void draw_with_mask(Window *window, int y, const char *text, int len, con
         window->reverse_mode(0);
     }
     window->repeat(' ', width - len);
+}
+
+static void draw_with_style_mask(Window *window, int y, const char *text, int len,
+                                 const bool *reverse_mask, const bool *accent_mask,
+                                 int normal_color, int accent_color)
+{
+    int width = window->get_size_x();
+    bool reverse = false;
+    int color = normal_color;
+
+    if (len > width) {
+        len = width;
+    }
+    if (len < 0) {
+        len = 0;
+    }
+
+    window->move_cursor(0, y);
+    window->set_color(normal_color);
+    window->reverse_mode(0);
+    for (int i = 0; i < len; i++) {
+        bool want_reverse = reverse_mask && reverse_mask[i];
+        int want_color = (accent_mask && accent_mask[i]) ? accent_color : normal_color;
+        if (want_reverse != reverse) {
+            reverse = want_reverse;
+            window->reverse_mode(reverse ? 1 : 0);
+        }
+        if (want_color != color) {
+            color = want_color;
+            window->set_color(color);
+        }
+        window->output_length(text + i, 1);
+    }
+    if (reverse) {
+        window->reverse_mode(0);
+    }
+    window->set_color(normal_color);
+    window->repeat(' ', width - len);
+}
+
+static bool monitor_debug_branch_taken(uint8_t opcode, uint8_t sr)
+{
+    switch (opcode) {
+        case 0x10: return (sr & 0x80) == 0; // BPL
+        case 0x30: return (sr & 0x80) != 0; // BMI
+        case 0x50: return (sr & 0x40) == 0; // BVC
+        case 0x70: return (sr & 0x40) != 0; // BVS
+        case 0x90: return (sr & 0x01) == 0; // BCC
+        case 0xB0: return (sr & 0x01) != 0; // BCS
+        case 0xD0: return (sr & 0x02) == 0; // BNE
+        case 0xF0: return (sr & 0x02) != 0; // BEQ
+    }
+    return false;
+}
+
+static bool monitor_find_target_span(const char *text, int text_len,
+                                     int *span_start, int *span_len)
+{
+    if (!text || text_len <= 0 || !span_start || !span_len) {
+        return false;
+    }
+    for (int i = 0; i < text_len; i++) {
+        if (text[i] != '$') {
+            continue;
+        }
+        int hex_count = 0;
+        while (i + 1 + hex_count < text_len) {
+            char c = text[i + 1 + hex_count];
+            bool digit = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
+                         (c >= 'a' && c <= 'f');
+            if (!digit) {
+                break;
+            }
+            hex_count++;
+        }
+        if (hex_count >= 4) {
+            *span_start = i;
+            *span_len = hex_count + 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool monitor_normalize_jump_input(char *buffer)
+{
+    int len = 0;
+    if (!buffer) {
+        return false;
+    }
+    while (buffer[len]) {
+        char c = buffer[len];
+        if (c >= 'a' && c <= 'f') {
+            c = (char)(c - 'a' + 'A');
+            buffer[len] = c;
+        }
+        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {
+            return false;
+        }
+        len++;
+        if (len > 4) {
+            return false;
+        }
+    }
+    return len > 0;
 }
 
 struct MonitorCpuStatusFields {
@@ -4206,37 +4313,57 @@ void MachineMonitor :: draw_debug_footer()
     char value_row[40];
     int width;
     int draw_len;
-    int highlight_len;
-    enum {
-        MONITOR_DEBUG_FOOTER_VALUE_HIGHLIGHT_END = 26,
-        MONITOR_DEBUG_FOOTER_WIDTH = 35,
-    };
+    bool header_accent[MonitorDebug::FOOTER_WIDTH];
+    bool value_accent[MonitorDebug::FOOTER_WIDTH];
+    const DebugContext &ctx = debug.context();
+    const char *flags = "NV-BDIZC";
 
     if (!window) {
         return;
     }
     MonitorDebug::format_footer_header(header_row, sizeof(header_row));
     MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
+    memset(header_accent, 0, sizeof(header_accent));
+    memset(value_accent, 0, sizeof(value_accent));
+    header_accent[MonitorDebug::FOOTER_POS_PC + 0] = true;
+    header_accent[MonitorDebug::FOOTER_POS_PC + 1] = true;
+    header_accent[MonitorDebug::FOOTER_POS_AC + 0] = true;
+    header_accent[MonitorDebug::FOOTER_POS_XR + 0] = true;
+    header_accent[MonitorDebug::FOOTER_POS_YR + 0] = true;
+    header_accent[MonitorDebug::FOOTER_POS_SP + 0] = true;
+    header_accent[MonitorDebug::FOOTER_POS_SP + 1] = true;
+    if (ctx.valid) {
+        for (int i = 0; i < 4; i++) {
+            value_accent[MonitorDebug::FOOTER_POS_PC + i] = true;
+        }
+        for (int i = 0; i < 2; i++) {
+            value_accent[MonitorDebug::FOOTER_POS_AC + i] = true;
+            value_accent[MonitorDebug::FOOTER_POS_XR + i] = true;
+            value_accent[MonitorDebug::FOOTER_POS_YR + i] = true;
+            value_accent[MonitorDebug::FOOTER_POS_SP + i] = true;
+        }
+        for (int i = 0; i < 8; i++) {
+            value_accent[MonitorDebug::FOOTER_POS_FLAGS + i] = true;
+        }
+        for (int i = 0; i < 8; i++) {
+            if (flags[i] == '-') {
+                continue;
+            }
+            if ((ctx.sr & (1 << (7 - i))) != 0) {
+                header_accent[MonitorDebug::FOOTER_POS_FLAGS + i] = true;
+            }
+        }
+    }
     width = window->get_size_x();
     draw_len = width;
-    if (draw_len > MONITOR_DEBUG_FOOTER_WIDTH) {
-        draw_len = MONITOR_DEBUG_FOOTER_WIDTH;
-    }
-    highlight_len = draw_len;
-    if (highlight_len > MONITOR_DEBUG_FOOTER_VALUE_HIGHLIGHT_END) {
-        highlight_len = MONITOR_DEBUG_FOOTER_VALUE_HIGHLIGHT_END;
+    if (draw_len > MonitorDebug::FOOTER_WIDTH) {
+        draw_len = MonitorDebug::FOOTER_WIDTH;
     }
     window->set_color(get_ui()->color_fg);
-    draw_padded(window, window->get_size_y() - 3, header_row, draw_len);
-
-    window->move_cursor(0, window->get_size_y() - 2);
-    window->set_color(MONITOR_UI_ACCENT_COLOR);
-    window->output_length(value_row, highlight_len);
-    window->set_color(get_ui()->color_fg);
-    if (draw_len > highlight_len) {
-        window->output_length(value_row + highlight_len, draw_len - highlight_len);
-    }
-    window->repeat(' ', width - draw_len);
+    draw_with_style_mask(window, window->get_size_y() - 3, header_row, draw_len,
+                         0, header_accent, get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+    draw_with_style_mask(window, window->get_size_y() - 2, value_row, draw_len,
+                         0, value_accent, get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
     window->set_color(get_ui()->color_fg);
 }
 
@@ -4316,7 +4443,7 @@ void MachineMonitor :: draw_bookmark_popup()
                                            bookmarks ? bookmarks->get((uint8_t)i) : NULL);
     }
     strcpy(popup_lines[MONITOR_BOOKMARK_POPUP_HELP_ROW],
-           "0-9/RET Jmp  S Set  L Label  DEL Reset");
+           "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset");
 
     window->getOffsets(screen_x, screen_y);
     popup_x = screen_x + ((window->get_size_x() - MONITOR_BOOKMARK_POPUP_INNER_WIDTH) / 2);
@@ -4749,6 +4876,8 @@ void MachineMonitor :: draw_disassembly()
         const char *bp_label = NULL;
         int indicator_start;
         int brk_pos = -1;
+        bool reverse_mask[MONITOR_DISASM_ROW_CHARS];
+        bool accent_mask[MONITOR_DISASM_ROW_CHARS];
 
         if (row_len) {
             int lane_index = asm_lane_top + line_idx;
@@ -4853,6 +4982,8 @@ void MachineMonitor :: draw_disassembly()
         }
         int hl_x = 0;
         int hl_len = MONITOR_DISASM_ROW_CHARS;
+        memset(reverse_mask, 0, sizeof(reverse_mask));
+        memset(accent_mask, 0, sizeof(accent_mask));
         if (highlight == 0 && edit_mode && state.view == MONITOR_VIEW_ASM) {
             uint8_t part = asm_edit_part;
             uint8_t part_count = asm_edit_part_count(addr);
@@ -4901,19 +5032,57 @@ void MachineMonitor :: draw_disassembly()
                 }
             }
         }
+        if (highlight >= 0 && hl_len > 0) {
+            int reverse_start = hl_x;
+            int reverse_end = hl_x + hl_len;
+            if (reverse_start < 0) {
+                reverse_start = 0;
+            }
+            if (reverse_end > MONITOR_DISASM_ROW_CHARS) {
+                reverse_end = MONITOR_DISASM_ROW_CHARS;
+            }
+            for (int i = reverse_start; i < reverse_end; i++) {
+                reverse_mask[i] = true;
+            }
+        }
+        if (debug.is_active() && debug.has_context() &&
+                debug.context().valid && addr == debug.context().pc &&
+                line_idx == state.disasm_offset) {
+            DebugPredictResult pred;
+            debug_predict(addr, row_bytes, state.illegal_enabled, &pred);
+            bool target_highlight = false;
+            if (pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) {
+                target_highlight = pred.has_target;
+            } else if (pred.kind == DBG_PREDICT_BRANCH && pred.has_target) {
+                target_highlight = monitor_debug_branch_taken(row_bytes[0], debug.context().sr);
+            }
+            if (target_highlight) {
+                int target_start = -1;
+                int target_len = 0;
+                if (monitor_find_target_span(decoded.text, text_len, &target_start, &target_len)) {
+                    int accent_start = MONITOR_DISASM_TEXT_COL + target_start;
+                    int accent_end = accent_start + target_len;
+                    if (accent_start < MONITOR_DISASM_ROW_CHARS) {
+                        if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                            accent_end = MONITOR_DISASM_ROW_CHARS;
+                        }
+                        for (int i = accent_start; i < accent_end; i++) {
+                            accent_mask[i] = true;
+                        }
+                    }
+                }
+            }
+        }
         // Enabled breakpoints render in the same accent color as the Dbg /
         // Edit header flags - but only while Debug mode is active. Disabled
         // breakpoints, and any breakpoint shown when Debug is off, stay in
         // the regular foreground color so the row reads as "armed and live"
         // vs "remembered but quiet".
         bool bp_accent = bp_slot >= 0 && bp_enabled && debug.is_active();
-        if (bp_accent) {
-            window->set_color(MONITOR_UI_ACCENT_COLOR);
-        }
-        draw_with_highlight(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS, highlight < 0 ? -1 : hl_x, hl_len);
-        if (bp_accent) {
-            window->set_color(get_ui()->color_fg);
-        }
+        draw_with_style_mask(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS,
+                             reverse_mask, accent_mask,
+                             bp_accent ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg,
+                             MONITOR_UI_ACCENT_COLOR);
     }
 }
 
@@ -5555,13 +5724,19 @@ void MachineMonitor :: enter_edit_mode()
     reset_edit_blink();
 }
 
-void MachineMonitor :: debug_enter()
+bool MachineMonitor :: debug_enter()
 {
     if (debug.is_active()) {
-        return;
+        return true;
     }
     monitor_log_address("debug enter", state.current_addr);
     help_visible = false;
+    DebugSession *session = ensure_debug_session();
+    if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
+        get_ui()->popup("DEBUG IN USE", BUTTON_OK);
+        redraw_full();
+        return false;
+    }
     debug.enter();
     if (restore_debug_after_reset) {
         debug_cursor_override = true;
@@ -5589,6 +5764,7 @@ void MachineMonitor :: debug_enter()
             debug_sync_cursor_to_context();
         }
     }
+    return true;
 }
 
 void MachineMonitor :: debug_leave()
@@ -5626,6 +5802,7 @@ void MachineMonitor :: debug_leave()
             cleanup_target = &debug_entry_context;
         }
         debug_session->cleanup_to_context(cleanup_target);
+        debug_session->release_debug_ownership();
         debug_full_restore_screen();
         // Forget the cached PC so re-entering Debug starts from the monitor
         // cursor (where the user navigated) instead of resuming the previous
@@ -5695,6 +5872,13 @@ void MachineMonitor :: restore_debug_mode_after_reset(void)
     }
     monitor_log_address("debug restore-after-reset", state.current_addr);
     help_visible = false;
+    DebugSession *session = ensure_debug_session();
+    if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
+        restore_debug_after_reset = false;
+        get_ui()->popup("DEBUG IN USE", BUTTON_OK);
+        redraw_full();
+        return;
+    }
     debug.enter();
     debug.invalidate_context();
     debug_cursor_override = true;
@@ -5724,6 +5908,7 @@ void MachineMonitor :: debug_cleanup_session()
 {
     if (debug_session) {
         debug_session->cleanup();
+        debug_session->release_debug_ownership();
         delete debug_session;
         debug_session = NULL;
     }
@@ -6141,6 +6326,55 @@ void MachineMonitor :: debug_request_go()
     }
 }
 
+void MachineMonitor :: debug_request_cursor()
+{
+    DebugContext from = debug.context();
+    if (!from.valid) {
+        DebugContext snap;
+        if (debug_capture_context(&snap)) {
+            debug.set_context(snap);
+            from = snap;
+        }
+    }
+    DebugSession *session = ensure_debug_session();
+    if (!session) {
+        monitor_log_debug("cursor", state.current_addr, DebugSession::DBG_NOT_SUPPORTED);
+        get_ui()->popup(monitor_debug_session_refused, BUTTON_OK);
+        redraw_full();
+        return;
+    }
+    uint16_t start_pc = from.valid ? from.pc : state.current_addr;
+    DebugContext next;
+    DebugSession::Result r = session->run_to(from, state.current_addr, &breakpoints,
+                                             start_pc, &next);
+    monitor_log_debug("cursor", state.current_addr, r);
+    debug_full_restore_screen();
+    if (r == DebugSession::DBG_OK) {
+        debug.set_context(next);
+        debug_sync_cursor_to_context();
+    } else {
+        if (debug_handle_terminal_result(r)) {
+            return;
+        }
+        const char *msg = monitor_debug_result_message(r);
+        if (msg) {
+            get_ui()->popup(msg, BUTTON_OK);
+            redraw_full();
+        }
+    }
+}
+
+bool MachineMonitor :: debug_has_breakpoint(void) const
+{
+    for (int i = 0; i < breakpoints.slot_count(); i++) {
+        const MonitorBreakpointSlot *bp = breakpoints.get(i);
+        if (bp && bp->used) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MachineMonitor :: debug_has_enabled_breakpoint(void) const
 {
     for (int i = 0; i < breakpoints.slot_count(); i++) {
@@ -6308,7 +6542,7 @@ void MachineMonitor :: debug_render_breakpoint_popup()
                                              breakpoints.get(i));
     }
     strcpy(popup_lines[BRK_POPUP_HELP_ROW],
-           "0-9/RET Jmp  S Sto  L Lab E En DEL Res");
+           "0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res");
     int screen_x, screen_y;
     window->getOffsets(screen_x, screen_y);
     int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
@@ -6441,6 +6675,14 @@ int MachineMonitor :: debug_handle_key(int key)
         draw();
         return 0;
     }
+    if (key == 'k' || key == 'K') {
+        debug_request_cursor();
+        if (reset_exit_pending) {
+            return MENU_EXIT;
+        }
+        draw();
+        return 0;
+    }
     // Any other key falls through to the normal monitor dispatcher so the
     // user can still navigate, switch views, edit, etc. while Debug is on.
     return -1;
@@ -6537,6 +6779,9 @@ int MachineMonitor :: handle_key(int key)
     if (key == KEY_CTRL_X) {
         return handle_reset_shortcut();
     }
+    if (key == KEY_CTRL_I) {
+        return swap_interface_type ? swap_interface_type(get_ui()) : MENU_NOP;
+    }
 
     if (hunt_picker_active) {
         return hunt_picker_handle_key(key);
@@ -6589,7 +6834,13 @@ int MachineMonitor :: handle_key(int key)
         if (state.view != MONITOR_VIEW_ASM) {
             set_view(MONITOR_VIEW_ASM);
         }
-        debug_enter();
+        if (debug_enter()) {
+            draw();
+        }
+        return 0;
+    }
+    if (!edit_mode && key == KEY_CTRL_R && debug_has_breakpoint()) {
+        debug_open_breakpoint_popup();
         draw();
         return 0;
     }
@@ -7056,7 +7307,12 @@ int MachineMonitor :: handle_key(int key)
         {
             char jump_buffer[5];
             strcpy(jump_buffer, "AAAA");
-            if (prompt_command("Jump AAAA", jump_buffer, sizeof(jump_buffer), true)) {
+            while (prompt_command("Jump AAAA", jump_buffer, 4, true)) {
+                if (!monitor_normalize_jump_input(jump_buffer)) {
+                    get_ui()->popup("HEX 0-9/A-F ONLY", BUTTON_OK);
+                    redraw_full();
+                    continue;
+                }
                 error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
                     apply_go_local(address);
@@ -7064,6 +7320,7 @@ int MachineMonitor :: handle_key(int key)
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
+                break;
             }
             break;
         }
@@ -7179,6 +7436,9 @@ int MachineMonitor :: poll(int)
     if (key == -1) {
         if (bookmark_popup_active || opcode_picker_active) {
             return 0;
+        }
+        if (debug.is_active() && debug_session) {
+            debug_session->refresh_debug_ownership();
         }
         uint16_t now = getMsTimer();
         bool redraw = false;

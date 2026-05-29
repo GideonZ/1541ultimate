@@ -2,6 +2,7 @@
 
 #include "keyboard.h"
 #include "monitor_file_io.h"
+#include "itu.h"
 
 #include <string.h>
 
@@ -74,6 +75,7 @@ static const uint8_t TRAMPOLINE_BYTES[] = {
 
 static const int HANDLER_BYTES_LEN = (int)sizeof(HANDLER_BYTES);
 static const int TRAMPOLINE_BYTES_LEN = (int)sizeof(TRAMPOLINE_BYTES);
+static const uint16_t DEBUG_OWNER_STALE_REMOTE_MS = 3000;
 
 static bool patch_requires_visible_rom(uint16_t addr, uint8_t cpu_port)
 {
@@ -89,6 +91,14 @@ static bool patch_requires_visible_rom(uint16_t addr, uint8_t cpu_port)
     }
     return false;
 }
+
+struct DebugOwnerState {
+    BrkDebugSession *owner;
+    bool remote;
+    uint16_t last_seen_ms;
+};
+
+static DebugOwnerState debug_owner = { 0, false, 0 };
 
 }
 
@@ -142,6 +152,49 @@ void BrkDebugSession :: set_cancel_keyboard(Keyboard *keyboard)
 void BrkDebugSession :: set_run_window_refreeze_enabled(bool enabled)
 {
     run_window_refreeze_enabled = enabled;
+}
+
+bool BrkDebugSession :: claim_debug_ownership(bool remote)
+{
+    uint16_t now = getMsTimer();
+    if (debug_owner.owner == this) {
+        debug_owner.remote = remote;
+        debug_owner.last_seen_ms = now;
+        return true;
+    }
+    if (debug_owner.owner) {
+        bool stale_remote = debug_owner.remote &&
+            (uint16_t)(now - debug_owner.last_seen_ms) >= DEBUG_OWNER_STALE_REMOTE_MS;
+        if (!stale_remote) {
+            return false;
+        }
+        BrkDebugSession *stale_owner = debug_owner.owner;
+        debug_owner.owner = 0;
+        debug_owner.remote = false;
+        debug_owner.last_seen_ms = now;
+        stale_owner->cleanup();
+        stale_owner->forget_context();
+    }
+    debug_owner.owner = this;
+    debug_owner.remote = remote;
+    debug_owner.last_seen_ms = now;
+    return true;
+}
+
+void BrkDebugSession :: refresh_debug_ownership(void)
+{
+    if (debug_owner.owner == this) {
+        debug_owner.last_seen_ms = getMsTimer();
+    }
+}
+
+void BrkDebugSession :: release_debug_ownership(void)
+{
+    if (debug_owner.owner == this) {
+        debug_owner.owner = 0;
+        debug_owner.remote = false;
+        debug_owner.last_seen_ms = getMsTimer();
+    }
 }
 
 bool BrkDebugSession :: reserved_patch_address(uint16_t addr) const
@@ -409,11 +462,35 @@ void BrkDebugSession :: pop_return_target(uint16_t target)
     }
 }
 
+void BrkDebugSession :: drop_queued_execution_keys(void)
+{
+    if (!cancel_keyboard) {
+        return;
+    }
+    while (1) {
+        int key = cancel_keyboard->getch();
+        if (key < 0) {
+            return;
+        }
+        if (key == 'd' || key == 'D' ||
+            key == 't' || key == 'T' ||
+            key == 'o' || key == 'O' ||
+            key == 'g' || key == 'G' ||
+            key == 'k' || key == 'K') {
+            continue;
+        }
+        cancel_keyboard->push_head(key);
+        return;
+    }
+}
+
 DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
 {
     int waited = 0;
     while (waited < timeout_ms) {
+        refresh_debug_ownership();
         if (peek_visible(SENTINEL_ADDR) != 0x00) {
+            drop_queued_execution_keys();
             return DBG_OK;
         }
         if (cancel_keyboard) {
@@ -430,9 +507,6 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
                 debug_context_reset(&last_context);
                 reset_machine();
                 return DBG_RESET;
-            }
-            if (key >= 0) {
-                cancel_keyboard->push_head(key);
             }
         }
         delay_ms(5);
@@ -581,6 +655,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     DebugContext *out,
                                                     uint8_t cpu_port)
 {
+    refresh_debug_ownership();
     begin_run_window();
     save_and_install_handler();
     if (cpu_parked_in_spin && from && from->valid) {
@@ -643,15 +718,20 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
             if (pred.has_target) addrs[n++] = pred.branch_target;
             break;
         case DBG_PREDICT_JMP_IND: {
-            uint16_t op = (uint16_t)(peek_cpu((uint16_t)(start_pc + 1), cpu_port) |
-                                     (peek_cpu((uint16_t)(start_pc + 2), cpu_port) << 8));
+            uint16_t op = (uint16_t)(read_patch_byte((uint16_t)(start_pc + 1), cpu_port) |
+                                     (read_patch_byte((uint16_t)(start_pc + 2), cpu_port) << 8));
             uint16_t op_hi = (uint16_t)((op & 0xFF00) | ((op + 1) & 0x00FF));
-            uint16_t target = (uint16_t)(peek_cpu(op, cpu_port) |
-                                         (peek_cpu(op_hi, cpu_port) << 8));
+            uint16_t target = (uint16_t)(read_patch_byte(op, cpu_port) |
+                                         (read_patch_byte(op_hi, cpu_port) << 8));
             addrs[n++] = target;
             break;
         }
         case DBG_PREDICT_RTS: {
+            uint16_t traced_target;
+            if (peek_return_target(&traced_target)) {
+                addrs[n++] = traced_target;
+                break;
+            }
             if (!from || !from->valid) return DBG_REFUSED;
             uint16_t sp1 = (uint16_t)(0x0100 + ((from->sp + 1) & 0xFF));
             uint16_t sp2 = (uint16_t)(0x0100 + ((from->sp + 2) & 0xFF));
@@ -661,7 +741,7 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
             // stale/forged stack targets early so Over/Trace report a clear
             // "not in subroutine" outcome instead of a generic patch failure.
             uint16_t caller = (uint16_t)(ret - 2);
-            if (peek_cpu(caller, cpu_port) != 0x20) {
+            if (read_patch_byte(caller, cpu_port) != 0x20) {
                 return DBG_NOT_IN_SUBROUTINE;
             }
             addrs[n++] = (uint16_t)(ret + 1);
@@ -822,23 +902,28 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
 {
     if (!backend_ready()) return DBG_REFUSED;
     uint8_t cpu_port = current_cpu_port();
-    bool current_on_bp = false;
+    bool skip_current_bp = false;
+    bool has_other_bp = false;
     if (from.valid && bps) {
         for (int i = 0; i < bps->slot_count(); i++) {
             const MonitorBreakpointSlot *bp = bps->get(i);
-            if (bp && bp->used && bp->enabled && bp->address == from.pc) {
-                current_on_bp = true;
-                break;
+            if (!bp || !bp->used || !bp->enabled) {
+                continue;
+            }
+            if (bp->address == from.pc) {
+                skip_current_bp = true;
+            } else {
+                has_other_bp = true;
             }
         }
     }
 
-    DebugContext step_ctx;
     const DebugContext *resume_from = &from;
-    if (current_on_bp) {
+    DebugContext step_ctx;
+    if (skip_current_bp && !has_other_bp) {
         uint8_t bytes[3];
         for (int i = 0; i < 3; i++) {
-            bytes[i] = peek_cpu((uint16_t)(from.pc + i), cpu_port);
+            bytes[i] = read_patch_byte((uint16_t)(from.pc + i), cpu_port);
         }
         DebugPredictResult pred;
         debug_predict(from.pc, bytes, false, &pred);
@@ -847,13 +932,18 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         if (skip != DBG_OK) {
             return skip;
         }
+        if (step_ctx.valid && step_ctx.pc == from.pc) {
+            return DBG_OK;
+        }
         if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
             return DBG_OK;
         }
-        resume_from = &step_ctx;
+        DebugContext out;
+        return run_to(step_ctx, from.pc, 0, step_ctx.pc, &out);
     }
 
-    PatchInstallResult bp_patched = install_breakpoints(bps, 0, false);
+    PatchInstallResult bp_patched = install_breakpoints(
+        bps, from.pc, skip_current_bp);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -910,6 +1000,61 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     return DBG_OK;
 }
 
+DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
+                                              uint16_t target_pc,
+                                              const MonitorBreakpoints *bps,
+                                              uint16_t start_pc,
+                                              DebugContext *ctx)
+{
+    if (!backend_ready() || !ctx) {
+        return DBG_REFUSED;
+    }
+
+    DebugContext resume_from = from;
+    bool have_context = from.valid;
+    uint16_t run_pc = have_context ? from.pc : start_pc;
+    uint8_t cpu_port = current_cpu_port();
+
+    if (run_pc == target_pc) {
+        uint8_t bytes[3];
+        for (int i = 0; i < 3; i++) {
+            bytes[i] = read_patch_byte((uint16_t)(run_pc + i), cpu_port);
+        }
+        DebugPredictResult pred;
+        debug_predict(run_pc, bytes, false, &pred);
+        DebugContext stepped;
+        Result skip = step_with_predict(have_context ? &from : 0, run_pc, pred, false,
+                                        &stepped, cpu_port, bps, run_pc, true);
+        if (skip != DBG_OK) {
+            return skip;
+        }
+        resume_from = stepped;
+        have_context = stepped.valid;
+        run_pc = have_context ? stepped.pc : run_pc;
+        if (have_context && run_pc == target_pc) {
+            *ctx = stepped;
+            return DBG_OK;
+        }
+    }
+
+    PatchInstallResult bp_patched = install_breakpoints(
+        bps, target_pc, true);
+    if (bp_patched != PATCH_INSTALL_OK) {
+        restore_patches();
+        return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+    }
+    PatchInstallResult patched = install_brk_at(target_pc, cpu_port);
+    if (patched != PATCH_INSTALL_OK) {
+        restore_patches();
+        return (patched == PATCH_INSTALL_NOT_SUPPORTED) ?
+            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+    }
+    return perform_run(have_context ? &resume_from : 0,
+                       have_context ? resume_from.pc : start_pc,
+                       !have_context, ctx, cpu_port);
+}
+
 void BrkDebugSession :: cleanup(void)
 {
     if (!backend_ready()) return;
@@ -929,6 +1074,7 @@ void BrkDebugSession :: cleanup(void)
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
+    release_debug_ownership();
 }
 
 void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
@@ -945,6 +1091,7 @@ void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
+    release_debug_ownership();
 }
 
 bool BrkDebugSession :: read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)

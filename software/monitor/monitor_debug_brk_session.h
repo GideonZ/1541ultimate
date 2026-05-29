@@ -71,11 +71,19 @@ public:
     virtual Result go(const DebugContext &from,
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc);
+    virtual Result run_to(const DebugContext &from,
+                          uint16_t target_pc,
+                          const MonitorBreakpoints *breakpoints,
+                          uint16_t start_pc,
+                          DebugContext *ctx);
     virtual void cleanup(void);
     virtual void cleanup_to_context(const DebugContext *ctx);
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len);
     virtual void forget_context(void);
     virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
+    virtual bool claim_debug_ownership(bool remote);
+    virtual void refresh_debug_ownership(void);
+    virtual void release_debug_ownership(void);
 
 private:
     enum PatchInstallResult {
@@ -141,6 +149,7 @@ private:
     void push_return_target(uint16_t target);
     bool peek_return_target(uint16_t *target) const;
     void pop_return_target(uint16_t target);
+    void drop_queued_execution_keys(void);
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void release_to_run(const DebugContext *from);

@@ -30,6 +30,18 @@ class MonitorDebug
     bool active;
     DebugContext ctx;
 public:
+    enum {
+        FOOTER_POS_PC = 0,
+        FOOTER_POS_AC = 5,
+        FOOTER_POS_XR = 8,
+        FOOTER_POS_YR = 11,
+        FOOTER_POS_SP = 14,
+        FOOTER_POS_FLAGS = 17,
+        FOOTER_POS_IRQ = 26,
+        FOOTER_POS_NMI = 31,
+        FOOTER_WIDTH = 35
+    };
+
     MonitorDebug();
 
     bool is_active(void) const { return active; }
