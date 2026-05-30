@@ -105,7 +105,8 @@ int parse_full_path(const char *buf, filename_t& name, bool *replace = NULL, boo
             } else { // there is no colon, so we do path only
                 name.path = buf + idx;
             }
-        } else if(buf[idx] != ':') { // other non-zero char: error
+        } else if (!path_only && buf[idx] != ':') { // other non-zero char: error
+            //printf("Syntaxing out, expecting :, but found %b: '%s' (P=%d)\n", buf[idx], buf, name.partition);
             return ERR_SYNTAX;
         }
     } else { // no colon
@@ -168,7 +169,7 @@ int parse_open(const char *buf, open_t& fn)
     if (buf[0] == '#') {
         fn.dir_opt.stream = e_stream_buffer;
         // Call parse to initialize the rest
-        parse_full_path(buf+1, fn.file, NULL, true); 
+        err = parse_full_path(buf+1, fn.file, NULL, true);
     } else if (buf[0] == '$') {
         fn.dir_opt.stream = e_stream_dir;
         if (buf[1] == '=') {
@@ -177,9 +178,9 @@ int parse_open(const char *buf, open_t& fn)
             } else if(buf[2] == 'T') {
                 fn.dir_opt.timefmt = e_stamp_short;
             }
-            parse_full_path(buf+3, fn.file, &fn.replace, true);
+            err = parse_full_path(buf+3, fn.file, &fn.replace, true);
         } else {
-            parse_full_path(buf+1, fn.file, &fn.replace, true);
+            err = parse_full_path(buf+1, fn.file, &fn.replace, true);
         }
     } else {
         err = parse_full_path(buf, fn.file, &fn.replace);

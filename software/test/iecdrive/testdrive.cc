@@ -526,6 +526,44 @@ static void expect_iec_open_status_prefix(const char *testname, IecDrive *dr, ui
     REQUIRE(strncmp(last_status, prefix, len) == 0);
 }
 
+static void send_command_data(IecDrive *dr, const uint8_t *data, int len);
+
+static void expect_iec_seek_read(const char *testname, IecDrive *dr, uint8_t chan,
+                                 const char *name, uint32_t pos, const char *expected)
+{
+    uint8_t buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+
+    open_file(dr, chan, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+
+    uint8_t cmd[6] = {
+        'P',
+        chan,
+        (uint8_t)(pos & 0xFF),
+        (uint8_t)((pos >> 8) & 0xFF),
+        (uint8_t)((pos >> 16) & 0xFF),
+        (uint8_t)((pos >> 24) & 0xFF)
+    };
+    send_command_data(dr, cmd, sizeof(cmd));
+    get_status(dr);
+    expect_status_ok(testname, "file position");
+
+    int got = read_file(dr, chan, buffer, sizeof(buffer));
+    int expected_len = strlen(expected);
+    if (got != expected_len || memcmp(buffer, expected, expected_len) != 0) {
+        printf("%s: %s after pos %u on channel %u: got %d bytes, expected %d bytes '%s'\n",
+                testname, name, pos, chan, got, expected_len, expected);
+        dump_hex_relative(buffer, got);
+    }
+    REQUIRE(got == expected_len);
+    REQUIRE(memcmp(buffer, expected, expected_len) == 0);
+
+    close_file(dr, chan);
+    expect_status_ok(testname, name);
+}
+
 static void send_command_data(IecDrive *dr, const uint8_t *data, int len)
 {
     dr->push_ctrl(SLAVE_CMD_ATN);
@@ -1139,6 +1177,36 @@ void execute_suite6(FileManager *fm, IecDrive *dr)
     printf("Suite6 completed successfully!\n");
 }
 
+void execute_suite7(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite7";
+    const char *fat_path = "/Fat/iec_fixes_1_to_4";
+
+    FRESULT fres = fm->create_dir(fat_path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+
+    save_fixture_file(fm, fat_path, "SEEKME.prg", "0123456789");
+    save_fixture_file(fm, fat_path, "EMPTY.prg", "");
+    save_fixture_file(fm, fat_path, "BAD.prg", "BAD");
+
+    dr->add_partition(7, fat_path, "FIXES");
+    dr->add_partition(999, fat_path, "INVALID");
+
+    expect_iec_open_status_prefix("Suite7-OpenBadModifier", dr, 0, "7:BAD,X", "30,SYNTAX ERROR");
+    expect_iec_open_status_prefix("Suite7-OpenBadRecordType", dr, 0, "7:BAD,P,L", "30,SYNTAX ERROR");
+    expect_iec_open_status_prefix("Suite7-OpenMalformedReplace", dr, 0, "@345:", "32,SYNTAX ERROR");
+    expect_iec_open_status_prefix("Suite7-OpenMalformedDollar", dr, 0, "$", "00");
+    //expect_iec_open_status_prefix("Suite7-OpenMalformedHash", dr, 0, "#", "30,SYNTAX ERROR");
+
+    expect_command_response("Suite7-CP999", dr, "CP999", "77,SELECTED PARTITION ILLEGAL,999,00\r");
+    expect_iec_open_status_prefix("Suite7-OpenInvalidPartition", dr, 0, "999:SEEKME", "77,SELECTED PARTITION ILLEGAL");
+
+    expect_iec_seek_read("Suite7-SeekNormalFile", dr, 2, "7:SEEKME", 3, "3456789");
+    expect_iec_file("Suite7-EmptyAfterNonEmpty", dr, 2, "7:EMPTY", "");
+
+    printf("Suite7 completed successfully!\n");
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -1161,6 +1229,7 @@ int main(int argc, const char **argv)
     execute_suite4(fm, dr);
     execute_suite5(fm, dr);
     execute_suite6(fm, dr);
+    execute_suite7(fm, dr);
 
     delete dr;
     delete ui;

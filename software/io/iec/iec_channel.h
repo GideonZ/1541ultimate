@@ -23,6 +23,11 @@ class IecCommandChannel;
 
 #define MAX_PARTITIONS 256
 
+static inline bool is_valid_partition_number(int p)
+{
+    return (p > 0) && (p < MAX_PARTITIONS);
+}
+
 class IecFileSystem;
 
 struct set_part_t
@@ -182,6 +187,9 @@ public:
 
     void add_partition(int p, const char *path, const char *name)
     {
+        if (!is_valid_partition_number(p)) {
+            return;
+        }
         if (partitions[p]) {
             partitions[p]->SetName(name);
             partitions[p]->SetRoot(path);
@@ -192,6 +200,9 @@ public:
 
     void RemovePartition(int p)
     {
+        if (!is_valid_partition_number(p)) {
+            return;
+        }
         if (partitions[p]) {
             delete partitions[p];
             partitions[p] = NULL;
@@ -200,6 +211,9 @@ public:
 
     const char *GetPartitionPath(int index, bool root)
     {
+        if (!is_valid_partition_number(index)) {
+            return NULL;
+        }
         if (partitions[index]) {
             if (root) {
                 return partitions[index]->GetRootPath();
@@ -221,12 +235,15 @@ public:
     IecPartition *GetPartition(int index)
     {
         index = GetTargetPartitionNumber(index);
+        if (!is_valid_partition_number(index)) {
+            return NULL;
+        }
         return partitions[index];
     }
 
     void SetCurrentPartition(int pn)
     {
-        if (pn) { // zero is not allowed
+        if (is_valid_partition_number(pn)) {
             currentPartition = pn;
         }
     }

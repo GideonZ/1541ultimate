@@ -53,7 +53,7 @@ void IecChannel::reset_prefetch(void)
 
 t_channel_retval IecChannel::prefetch_data(uint8_t& data)
 {
-    if (state == e_error) {
+    if ((state == e_error) || (state == e_complete)) {
         return IEC_NO_FILE;
     }
 
@@ -89,7 +89,7 @@ t_channel_retval IecChannel::prefetch_data(uint8_t& data)
 
 t_channel_retval IecChannel::prefetch_more(int max_fetch, uint8_t*& datapointer, int &fetched)
 {
-    if (state == e_error) {
+    if ((state == e_error) || (state == e_complete)) {
         fetched = 0;
         return IEC_NO_FILE;
     }
@@ -236,8 +236,14 @@ int IecChannel::read_block(void)
         state = e_error;
         return IEC_READ_ERROR;
     }
-    if (curblk->valid_bytes == 0)
+    if (curblk->valid_bytes == 0) {
         state = e_complete; // end should have triggered already
+        last_byte = -1;
+        pointer = 0;
+        prefetch = 0;
+        prefetch_max = 0;
+        return 0;
+    }
 
     if (curblk->valid_bytes != 512) {
         last_byte = int(curblk->valid_bytes) - 1;
@@ -1063,7 +1069,12 @@ int IecChannel::open_file(void)  // name should be in buffer
 {
     buffer[pointer] = 0; // string terminator
     DBGIECV("Open file. Raw Filename = '%s'\n", buffer);
-    parse_open((const char *)buffer, name_to_open);
+    int parse_err = parse_open((const char *)buffer, name_to_open);
+    if (parse_err) {
+        state = e_error;
+        drive->set_error(parse_err, 0, 0);
+        return -1;
+    }
 
     IecPartition *partition = drive->vfs->GetPartition(name_to_open.file.partition);
     recordSize = 0;
@@ -1644,18 +1655,34 @@ int IecCommandChannel::do_set_position(int chan, uint32_t pos, int recnr, int re
             drive->set_error_fres(fres);
             return 0;
         }
+        channel->curblk->valid_bytes = 0;
+        channel->nxtblk->valid_bytes = 0;
+        fres = channel->f->read(channel->nxtblk->bufdata, 512, &channel->nxtblk->valid_bytes);
+        if (fres != FR_OK) {
+            drive->set_error_fres(fres);
+            channel->state = e_error;
+            return 0;
+        }
+        if (channel->read_block()) {
+            drive->set_error(ERR_READ_ERROR, 0, 0);
+            channel->state = e_error;
+            return 0;
+        }
+        channel->pointer = 0;
+        channel->reset_prefetch();
+        channel->recordOffset = pos;
+        drive->set_error(ERR_ALL_OK, 0, 0);
+        state = e_idle;
+        return 0;
     case e_record:
-        return channel->seek_record(recnr, recoffset);
+        {
+            int err = channel->seek_record(recnr, recoffset);
+            state = e_idle;
+            return err;
+        }
     default:
         return ERR_FILE_NOT_OPEN;
     }  
-
-    channel->recordOffset = pos;
-    channel->pointer = 0;
-    channel->reset_prefetch();
-    drive->set_error(ERR_ALL_OK, 0, 0);
-    state = e_idle;
-    return 0;
 }
 
 int IecCommandChannel::do_get_partition_info(int part)
@@ -1832,7 +1859,7 @@ void IecFileSystem :: LoadPartitions(File *f)
                 const char *name = entry->string_or("name", "PARTITION");
                 const char *path = entry->string_or("path", "");
                 const int part = entry->int_or("number", -1);
-                if (!path[0] || part == -1) {
+                if (!path[0] || !is_valid_partition_number(part)) {
                     continue;
                 }
                 if (partitions[part]) {
