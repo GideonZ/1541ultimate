@@ -446,10 +446,242 @@ static void iec_path_to_fs_path(mstring &path)
     // with a /, it should be stripped off, while // means root,
     // which corresponds to starting with / in Ultimate VFS.
     if (path[0] == '/' && path[1] != '/') {
-        path = path.c_str() + 1;
+        mstring stripped(path.c_str() + 1);
+        path = stripped;
     }
     path.replace("_", "..");
     path.replace("//", "/");
+}
+
+static bool iec_file_type_matches(filetype_t requested, filetype_t found)
+{
+    return requested == e_any || found == e_any || requested == found;
+}
+
+static bool iec_name_has_wildcards(const char *name)
+{
+    return name && (strchr(name, '*') || strchr(name, '?'));
+}
+
+static void append_path_component(mstring& path, const char *component)
+{
+    if (!component || !component[0]) {
+        return;
+    }
+    if (path.length()) {
+        const char *p = path.c_str();
+        if (p[path.length() - 1] != '/') {
+            path += "/";
+        }
+    }
+    path += component;
+}
+
+static void partition_relative_to_full_path(IecPartition *partition, Path& relative, mstring& full_path)
+{
+    full_path = partition->GetRootPath();
+    full_path += relative.get_path() + 1;
+}
+
+static FRESULT find_rendered_iec_child(FileManager *fm, const char *full_dir,
+                                       const char *iec_pattern, filetype_t ftype,
+                                       bool allow_dirs, bool allow_files,
+                                       bool allow_wildcards,
+                                       mstring& actual_name, FileInfo *out_info)
+{
+    if (!allow_wildcards && iec_name_has_wildcards(iec_pattern)) {
+        return FR_NO_FILE;
+    }
+
+    Directory *dir = NULL;
+    FRESULT fres = fm->open_directory(full_dir, &dir);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    FileInfo info(INFO_SIZE);
+    while (dir->get_entry(info) == FR_OK) {
+        bool is_dir = (info.attrib & AM_DIR) != 0;
+        if ((info.attrib & (AM_VOL | AM_HID)) || !info.lfname[0]) {
+            continue;
+        }
+        if ((is_dir && !allow_dirs) || (!is_dir && !allow_files)) {
+            continue;
+        }
+
+        char iec_name[24];
+        filetype_t found_type = e_any;
+        IecPartition::CreateIecName(&info, iec_name, found_type);
+        if (!is_dir && !iec_file_type_matches(ftype, found_type)) {
+            continue;
+        }
+        if (is_dir && ftype != e_any && ftype != e_folder) {
+            continue;
+        }
+        if (!pattern_match(iec_pattern, iec_name, false)) {
+            continue;
+        }
+
+        actual_name = info.lfname;
+        if (out_info) {
+            out_info->copyfrom(&info);
+        }
+        delete dir;
+        return FR_OK;
+    }
+
+    delete dir;
+    return FR_NO_FILE;
+}
+
+static FRESULT resolve_directory_path(FileManager *fm, IecPartition *partition,
+                                      mstring path, mstring& full_path,
+                                      mstring *relative_path = NULL)
+{
+    // printf("resolve_directory_path: %s (pwd = %s)\n", path.c_str(), partition->GetRelativePath());
+    iec_path_to_fs_path(path);
+
+    Path resolved;
+    if (path[0] != '/') {
+        resolved.cd(partition->GetRelativePath());
+    }
+
+    // Path requested(path.c_str()); // this doesnt work if the path starts with .. for example
+    // printf("resolve_directory_path: path = %s. Requested = %s. Resolved before loop = %s.\n", path.c_str(), requested.get_path(), resolved.get_path());
+    const char *components[16];
+    int count = path.split('/', components, 16);
+
+    for (int i = 0; i < count; i++) {
+        const char *component = components[i]; //requested.getElement(i);
+        char fat_component[52];
+        const char *direct_component = component;
+
+        if (!strcmp(component, ".") || !strcmp(component, "..")) {
+            if (!resolved.cd(component)) { // not possible to move
+                return FR_NO_PATH;
+            }
+            continue;
+        } 
+
+        petscii_to_fat(component, fat_component, 52);
+        // printf("Fat component: %s\n", fat_component);
+        direct_component = fat_component;
+
+        Path direct_path(&resolved);
+        if (direct_path.cd(direct_component)) {
+            mstring direct_full_path;
+            partition_relative_to_full_path(partition, direct_path, direct_full_path);
+
+            // printf("Full Path is now: %s\n", direct_full_path.c_str());
+            Directory *test_dir = NULL;
+            FRESULT direct_fres = fm->open_directory(direct_full_path.c_str(), &test_dir);
+            if (direct_fres == FR_OK) {
+                delete test_dir;
+                resolved.cd(direct_component);
+                // printf("Resolved: %s\n", resolved.get_path());
+                continue;
+            }
+        }
+
+        mstring current_full_path;
+        partition_relative_to_full_path(partition, resolved, current_full_path);
+        // printf("Current Full Path: %s\n", current_full_path.c_str());
+        mstring actual_name;
+        FRESULT fres = find_rendered_iec_child(fm, current_full_path.c_str(), component,
+                                               e_folder, true, false, false,
+                                               actual_name, NULL);
+        // printf("Fres = %s. Actual name = %s\n", FileSystem::get_error_string(fres), actual_name.c_str());
+        if (fres != FR_OK) {
+            return fres;
+        }
+        resolved.cd(actual_name.c_str());
+    }
+
+    partition_relative_to_full_path(partition, resolved, full_path);
+    // printf("Full Path: %s\n", full_path.c_str());
+    if (relative_path) {
+        *relative_path = resolved.get_path();
+    }
+    return FR_OK;
+}
+
+static FRESULT resolve_existing_iec_path(FileManager *fm, IecPartition *partition,
+                                         filename_t& name, filetype_t ftype,
+                                         bool allow_dirs, bool allow_files,
+                                         bool allow_wildcards,
+                                         mstring& resolved, FileInfo *out_info = NULL)
+{
+    mstring full_dir;
+    FRESULT fres = resolve_directory_path(fm, partition, name.path, full_dir);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    mstring actual_name;
+    fres = find_rendered_iec_child(fm, full_dir.c_str(), name.filename.c_str(),
+                                   ftype, allow_dirs, allow_files, allow_wildcards,
+                                   actual_name, out_info);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    resolved = full_dir;
+    append_path_component(resolved, actual_name.c_str());
+    return FR_OK;
+}
+
+static FRESULT resolve_directory_target(FileManager *fm, IecPartition *partition,
+                                        filename_t& name, mstring& full_path,
+                                        mstring& relative_path)
+{
+    FRESULT fres = resolve_directory_path(fm, partition, name.path, full_path, &relative_path);
+    if (fres != FR_OK || name.filename.length() == 0) {
+        return fres;
+    }
+
+    char fatname[52];
+    petscii_to_fat(name.filename.c_str(), fatname, 52);
+
+    Path direct_relative(relative_path.c_str());
+    if (direct_relative.cd(fatname)) {
+        mstring direct_full_path;
+        partition_relative_to_full_path(partition, direct_relative, direct_full_path);
+
+        Directory *test_dir = NULL;
+        FRESULT direct_fres = fm->open_directory(direct_full_path.c_str(), &test_dir);
+        if (direct_fres == FR_OK) {
+            delete test_dir;
+            full_path = direct_full_path;
+            relative_path = direct_relative.get_path();
+            return FR_OK;
+        }
+    }
+
+    mstring actual_name;
+    fres = find_rendered_iec_child(fm, full_path.c_str(), name.filename.c_str(),
+                                   e_folder, true, false, false,
+                                   actual_name, NULL);
+    if (fres != FR_OK) {
+        return fres;
+    }
+
+    Path resolved_relative(relative_path.c_str());
+    resolved_relative.cd(actual_name.c_str());
+    partition_relative_to_full_path(partition, resolved_relative, full_path);
+    relative_path = resolved_relative.get_path();
+    return FR_OK;
+}
+
+static FRESULT open_by_rendered_iec_name(FileManager *fm, IecPartition *partition,
+                                         filename_t& name, filetype_t ftype,
+                                         uint8_t flags, File **file, mstring& resolved)
+{
+    FRESULT fres = resolve_existing_iec_path(fm, partition, name, ftype,
+                                             false, true, true, resolved);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    return fm->fopen(resolved.c_str(), flags, file);
 }
 
 int IecChannel::read_dir_entry(void)
@@ -596,7 +828,7 @@ int IecChannel::read_dir_entry(void)
 
 int IecChannel :: setup_partition_read()
 {
-    printf("Setup partition read\n");
+    DBGIEC("Setup partition read\n");
     drive->get_command_channel()->set_error(ERR_ALL_OK, 0, 0);
     state = e_partlist;
     part_idx = 1;
@@ -613,7 +845,7 @@ int IecChannel :: setup_partition_read()
 
 int IecChannel :: setup_directory_read()
 {
-    printf("Setup dir read\n");
+    DBGIEC("Setup dir read\n");
     char fatname[48];
 
     // previously not closed??
@@ -622,26 +854,20 @@ int IecChannel :: setup_directory_read()
     }    
 
     GETPARTITION(name_to_open.file.partition, partition, -1);
-    // first get names in more usable format
-    iec_path_to_fs_path(name_to_open.file.path);
     petscii_to_fat(name_to_open.file.filename.c_str(), fatname, 48);
 
-    Path workpath;
     mstring work;
-    workpath.cd(partition->GetRelativePath());
-    if(!workpath.cd(name_to_open.file.path.c_str())) {
+    FRESULT fres = resolve_directory_path(fm, partition, name_to_open.file.path, work);
+    if (fres != FR_OK) {
         drive->set_error(ERR_DIRECTORY_ERROR, drive->vfs->GetTargetPartitionNumber(name_to_open.file.partition), 0);
         state = e_error;
         return -1;
     }
-    const char *pp = workpath.get_path();
-    work = partition->GetRootPath();
-    work += (pp + 1);
 
-    printf("Full Path = %s, filename = %s\n", work.c_str(), fatname);
+    DBGIECV("Full Path = %s, filename = %s\n", work.c_str(), fatname);
 
     FileInfo info(40);
-    FRESULT fres = fm->open_directory(work.c_str(), &dir, &info);
+    fres = fm->open_directory(work.c_str(), &dir, &info);
     if (fres != FR_OK) {
         printf("opening dir failed %s\n", FileSystem::get_error_string(fres));
         drive->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, name_to_open.file.partition);
@@ -676,7 +902,7 @@ int IecChannel :: setup_directory_read()
     }
 
     //const char *fullname = part->GetRelativePath();
-    pp = partition->GetName(); // new feature!
+    const char *pp = partition->GetName(); // new feature!
     int pos = 8;
     int len = strlen(pp);
     if (len > 16) {
@@ -746,6 +972,15 @@ int IecChannel :: setup_file_access()
     DBGIECV("Setup File Access %s %02x\n", full_path, flags);
 
     FRESULT fres = fm->fopen(full_path, flags, &f);
+    if ((fres == FR_NO_FILE) && (name_to_open.access == e_read)) {
+        GETPARTITION(name_to_open.file.partition, partition, 0);
+        fres = open_by_rendered_iec_name(fm, partition, name_to_open.file,
+                                         name_to_open.filetype, flags, &f, work);
+        if (fres == FR_OK) {
+            full_path = work.c_str();
+            DBGIECV("Directory-assisted open resolved to %s\n", full_path);
+        }
+    }
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
         return 0;
@@ -886,9 +1121,7 @@ int IecChannel::seek_record(int recordNumber, int offset)
     if (offset != 0)
         offset--; // Offset starts from 1, too.. we are 0 based
 
-#if IECDEBUG > 0
-    printf("SEEK Record Number #%d. Offset = %d\n", recordNumber, offset);
-#endif
+    DBGIECV("SEEK Record Number #%d. Offset = %d\n", recordNumber, offset);
     if (!f) {
         return ERR_FILE_NOT_OPEN;
     }
@@ -915,9 +1148,8 @@ int IecChannel::seek_record(int recordNumber, int offset)
             fres = f->write(block, partialRecord, &tr);
             currentSize += partialRecord;
         }
-#if IECDEBUG > 0
-        printf("Append REL file until size %d (was %d)\n", minimumFileSize, currentSize);
-#endif
+
+        DBGIECV("Append REL file until size %d (was %d)\n", minimumFileSize, currentSize);
         uint32_t remain = minimumFileSize - currentSize;
         block[0] = 0xFF;
         while (remain >= recordSize) {
@@ -1038,8 +1270,6 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
     const char *types[] = { ".???", ".prg", ".seq", ".usr", ".rel", "" };
 
     GETPARTITION(name.partition, partition, NULL);
-    // first get names in more usable format
-    iec_path_to_fs_path(name.path);
     char fatname[52];
     petscii_to_fat(name.filename.c_str(), fatname, 52);
     // printf("After petscii_to_fat: '%s'\n", fatname);
@@ -1048,13 +1278,11 @@ const char *IecChannel :: ConstructPath(mstring& work, filename_t& name, filetyp
         add_extension(fatname, ext, 48);
     }
 
-    Path workpath;
-    workpath.cd(partition->GetRelativePath());
-    if(!workpath.cd(name.path.c_str())) return NULL;
-    if(!workpath.cd(fatname)) return NULL;
-    const char *pp = workpath.get_path();
-    work = partition->GetRootPath();
-    work += (pp + 1);
+    FRESULT dir_fres = resolve_directory_path(fm, partition, name.path, work);
+    if (dir_fres != FR_OK) {
+        return NULL;
+    }
+    append_path_component(work, fatname);
     return work.c_str();
 }
 
@@ -1132,16 +1360,10 @@ int IecCommandChannel::do_change_dir(filename_t& dest)
     GETPARTITION(dest.partition, prt, -1);
     DBGIECV("Partition %d ('%s') Change dir %s:%s\n", dest.partition, prt->GetFullPath(), dest.path.c_str(), dest.filename.c_str());
 
-    // first get names in more usable format
-    iec_path_to_fs_path(dest.path);
-    char fatname[48];
-    petscii_to_fat(dest.filename.c_str(), fatname, 48);
-
-    if(!prt->cd(dest.path.c_str())) {
-        drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
-        return -1;
-    }
-    if(!prt->cd(fatname)) {
+    mstring full_path;
+    mstring relative_path;
+    FRESULT fres = resolve_directory_target(fm, prt, dest, full_path, relative_path);
+    if ((fres != FR_OK) || !prt->cd(relative_path.c_str())) {
         drive->get_command_channel()->set_error(ERR_DIRECTORY_ERROR, prt->GetPartitionNumber());
         return -1;
     }
@@ -1170,6 +1392,15 @@ int IecCommandChannel::do_remove_dir(filename_t& dest)
     if (fullpath) {
         DBGIECV("Directory to remove: %s\n", fullpath);
         FRESULT fres = fm->delete_file(fullpath);
+        if ((fres == FR_NO_FILE || fres == FR_NO_PATH) && !dest.has_wildcard) {
+            GETPARTITION(dest.partition, partition, 0);
+            fres = resolve_existing_iec_path(fm, partition, dest, e_folder,
+                                             true, false, false, work);
+            if (fres == FR_OK) {
+                DBGIECV("Directory-assisted RD resolved to %s\n", work.c_str());
+                fres = fm->delete_file(work.c_str());
+            }
+        }
         if (fres == FR_DENIED) {
             return ERR_FILE_EXISTS;
         } else {
@@ -1189,12 +1420,16 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
     mstring work;
     FileInfo info(48);
     const char *source1 = ConstructPath(work, sources[0], e_any, e_read);
-    if (!source1) {
-        drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, sources[0].partition);
-        return 0;
-    }
-    FRESULT fres = fm->fstat(source1, info);
+    FRESULT fres = source1 ? fm->fstat(source1, info) : FR_NO_PATH;
     if (fres != FR_OK) {
+        GETPARTITION(sources[0].partition, partition, 0);
+        fres = resolve_existing_iec_path(fm, partition, sources[0], e_any,
+                                         false, true, sources[0].has_wildcard,
+                                         work, &info);
+        source1 = work.c_str();
+    }
+    if (fres != FR_OK) {
+        drive->set_error_fres(fres);
         return ERR_FILE_NOT_FOUND;
     }
     // convert FAT name to CBM name
@@ -1224,10 +1459,18 @@ int IecCommandChannel::do_copy(filename_t& dest, filename_t sources[], int n)
         if (frompath) {
             DBGIECV("  %d. %s\n", i, frompath);
         } else {
-            drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, sources[i].partition);
-            break;
+            DBGIECV("  %d. unresolved by canonical path\n", i);
         }
-        fres = fm->fopen(frompath, FA_READ, &fi);
+        fres = frompath ? fm->fopen(frompath, FA_READ, &fi) : FR_NO_PATH;
+        if (fres != FR_OK) {
+            GETPARTITION(sources[i].partition, partition, 0);
+            fres = open_by_rendered_iec_name(fm, partition, sources[i], e_any,
+                                             FA_READ, &fi, work);
+            frompath = work.c_str();
+            if (fres == FR_OK) {
+                DBGIECV("  %d. directory-assisted source %s\n", i, frompath);
+            }
+        }
         if (fres != FR_OK) {
             drive->set_error_fres(fres);
             break;
@@ -1268,11 +1511,15 @@ int IecCommandChannel::do_rename(filename_t &src, filename_t &dest)
 {
     mstring works, workd;
     const char *src_path = ConstructPath(works, src, e_any, e_read);
-    if (!src_path) {
-        return ERR_PARTITION_ERROR;
-    }
     FileInfo info(48);
-    FRESULT fres = fm->fstat(src_path, info);
+    FRESULT fres = src_path ? fm->fstat(src_path, info) : FR_NO_PATH;
+    if (fres != FR_OK) {
+        GETPARTITION(src.partition, partition, 0);
+        fres = resolve_existing_iec_path(fm, partition, src, e_any,
+                                         false, true, src.has_wildcard,
+                                         works, &info);
+        src_path = works.c_str();
+    }
     if (fres != FR_OK) {
         drive->set_error_fres(fres);
         return 0;
@@ -1301,20 +1548,36 @@ int IecCommandChannel::do_scratch(filename_t filenames[], int n)
     mstring work;
     int scratched = 0;
     for(int i=0;i<n;i++) {
+        int scratched_this_file = 0;
         const char *fp = ConstructPath(work, filenames[i], e_any, e_read); // If read is not set, the extension will not be set to .???
         if (fp) {
             DBGIECV("  %d. %s\n", i, fp);
         } else {
-            drive->get_command_channel()->set_error(ERR_PARTITION_ERROR, filenames[i].partition);
-            break;
+            DBGIECV("  %d. unresolved by canonical path\n", i);
         }
-        FRESULT fres;
-        do {
-            fres = fm->delete_file(fp);
+        FRESULT fres = FR_NO_PATH;
+        if (fp) {
+            do {
+                fres = fm->delete_file(fp);
+                if (fres == FR_OK) {
+                    scratched ++;
+                    scratched_this_file ++;
+                }
+            } while(fres == FR_OK);
+        }
+        if (!scratched_this_file && !filenames[i].has_wildcard &&
+                (fres == FR_NO_FILE || fres == FR_NO_PATH)) {
+            GETPARTITION(filenames[i].partition, partition, 0);
+            fres = resolve_existing_iec_path(fm, partition, filenames[i], e_any,
+                                             false, true, false, work);
             if (fres == FR_OK) {
-                scratched ++;
+                DBGIECV("  %d. directory-assisted scratch %s\n", i, work.c_str());
+                fres = fm->delete_file(work.c_str());
+                if (fres == FR_OK) {
+                    scratched ++;
+                }
             }
-        } while(fres == FR_OK);
+        }
     }
     if (scratched == 0) {
         return ERR_FILE_NOT_FOUND;

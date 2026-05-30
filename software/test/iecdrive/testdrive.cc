@@ -387,7 +387,13 @@ static void expect_command_response(const char *testname, IecDrive *dr, const ch
 {
     const char *status = send_command(dr, cmd);
     if (strcmp(status, expected) != 0) {
-        printf("%s: %s: response was '%s', expected '%s'\n", testname, cmd, status, expected);
+        char copy[64];
+        strncpy(copy, status, 63);
+        int len = strlen(copy);
+        if ((len > 0) && (copy[len-1] == 0x0d)) { // cut off the trailing newline
+            copy[len-1] = 0;
+        }
+        printf("%s: %s: response was '%s', expected '%s'\n", testname, cmd, copy, expected);
     }
     REQUIRE(strcmp(status, expected) == 0);
 }
@@ -445,6 +451,41 @@ static int expect_directory_read(const char *testname, IecDrive *dr, const char 
     close_file(dr, 0);
     expect_status_ok(testname, name);
     return got;
+}
+
+static void expect_directory_contains(const char *testname, IecDrive *dr,
+                                      const char *name, const char *expected)
+{
+    uint8_t buffer[8192];
+    memset(buffer, 0, sizeof(buffer));
+
+    open_file(dr, 0, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+
+    int got = read_file(dr, 0, buffer, sizeof(buffer));
+    if (got <= 0) {
+        printf("%s: %s: directory read returned %d bytes\n", testname, name, got);
+    }
+    REQUIRE(got > 0);
+
+    int expected_len = strlen(expected);
+    bool found = false;
+    for (int i = 0; i <= got - expected_len; i++) {
+        if (memcmp(buffer + i, expected, expected_len) == 0) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        printf("%s: %s: directory listing did not contain '%s'\n",
+               testname, name, expected);
+        dump_hex_relative(buffer, got);
+    }
+    REQUIRE(found);
+
+    close_file(dr, 0);
+    expect_status_ok(testname, name);
 }
 
 static void send_channel_data(IecDrive *dr, uint8_t chan, const uint8_t *data, int len)
@@ -1034,6 +1075,70 @@ void execute_suite5(FileManager *fm, IecDrive *dr)
     run_iec_append_replace_sequence(dr, "FAT");
 }
 
+void execute_suite6(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite6";
+    const char *fat_path = "/Fat/iec_fat_accessibility_cases";
+
+    FRESULT fres = fm->create_dir(fat_path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+
+    save_fixture_file(fm, fat_path, "JOHN.DOE", "JOHN:DOE");
+    save_fixture_file(fm, fat_path, "MYPROGRAM", "NOEXT");
+    save_fixture_file(fm, fat_path, "A{41}B.prg", "ESCAPED");
+    save_fixture_file(fm, fat_path, "1234567890123456ZZ.prg", "LONGNAME");
+    save_fixture_file(fm, fat_path, "PRIORITY.prg", "CANONICAL");
+    save_fixture_file(fm, fat_path, "PRIORITY", "DIRECT");
+
+    fres = fm->create_dir("/Fat/iec_fat_accessibility_cases/A{44}IR");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    save_fixture_file(fm, "/Fat/iec_fat_accessibility_cases/A{44}IR", "INNER.prg", "INNER");
+
+    fres = fm->create_dir("/Fat/iec_fat_accessibility_cases/P{41}RENT");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+
+    fres = fm->create_dir("/Fat/iec_fat_accessibility_cases/R{44}IR");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+
+    save_fixture_file(fm, fat_path, "C{4f}PYSRC.prg", "COPY");
+    save_fixture_file(fm, fat_path, "R{45}NAMESRC.prg", "RENAME");
+    save_fixture_file(fm, fat_path, "S{43}RATCHME.prg", "SCRATCH");
+
+    dr->add_partition(6, fat_path, "ACCESS");
+
+    expect_iec_file("Suite6-NonCbmExtensionAny", dr, 2, "6:JOHN.DOE", "JOHN:DOE");
+    expect_iec_file("Suite6-NonCbmExtensionLoad", dr, 0, "6:JOHN.DOE", "JOHN:DOE");
+    expect_iec_file("Suite6-NoExtension", dr, 0, "6:MYPROGRAM", "NOEXT");
+    expect_iec_file("Suite6-EscapeLookingFatName", dr, 0, "6:AAB,P,R", "ESCAPED");
+    expect_iec_file("Suite6-TruncatedRenderedName", dr, 0, "6:1234567890123456,P,R", "LONGNAME");
+    expect_iec_file("Suite6-CanonicalNamePriority", dr, 0, "6:PRIORITY", "CANONICAL");
+    expect_iec_file("Suite6-ReadThroughRenderedDirPath", dr, 0, "6/ADIR:INNER", "INNER");
+
+    expect_directory_contains("Suite6-DirectoryRenderedPath", dr, "$6/ADIR", "INNER");
+    expect_command_ok("Suite6-CDRenderedPath", dr, "CD6/ADIR");
+    expect_iec_file("Suite6-ReadAfterCDRenderedPath", dr, 0, "6:INNER", "INNER");
+    expect_command_ok("Suite6-CDRoot", dr, "CD6//");
+
+    expect_command_ok("Suite6-MDRenderedParentPath", dr, "MD6/PARENT:CHILD");
+    expect_command_ok("Suite6-CDRenderedParentCreatedChild", dr, "CD6/PARENT/CHILD");
+    expect_command_ok("Suite6-CDRootAfterMD", dr, "CD6//");
+    expect_command_ok("Suite6-RDRenderedParentPath", dr, "RD6/PARENT:CHILD");
+    expect_command_ok("Suite6-RDRenderedFinalDirectory", dr, "RD6:RDIR");
+
+    expect_command_ok("Suite6-CopyRenderedSource", dr, "C6:COPYDST=6:COPYSRC");
+    expect_iec_file("Suite6-ReadCopiedRenderedSource", dr, 0, "6:COPYDST", "COPY");
+
+    expect_command_ok("Suite6-RenameRenderedSource", dr, "R6:RENAMED=6:RENAMESRC");
+    expect_iec_file("Suite6-ReadRenamedRenderedSource", dr, 0, "6:RENAMED", "RENAME");
+    expect_iec_file_missing("Suite6-RenamedRenderedSourceMissing", dr, 0, "6:RENAMESRC");
+
+    expect_command_response("Suite6-ScratchRenderedSource", dr, "S6:SCRATCHME",
+                            "01, FILES SCRATCHED,01,00\r");
+    expect_iec_file_missing("Suite6-ScratchedRenderedSourceMissing", dr, 0, "6:SCRATCHME");
+
+    printf("Suite6 completed successfully!\n");
+}
+
 int main(int argc, const char **argv)
 {
     UserInterface *ui = new UserInterface("Test Drive");
@@ -1050,11 +1155,12 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    // execute_suite1(fm, dr);
-    // execute_suite2(fm, dr);
+    execute_suite1(fm, dr);
+    execute_suite2(fm, dr);
     execute_suite3(fm, dr);
     execute_suite4(fm, dr);
     execute_suite5(fm, dr);
+    execute_suite6(fm, dr);
 
     delete dr;
     delete ui;
