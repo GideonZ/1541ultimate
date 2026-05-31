@@ -1313,7 +1313,11 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_read_sector(&path, channel->buffer, track, sector);
-    drive->set_error_fres(fres);
+    if (fres == FR_DENIED) {
+        drive->set_error(ERR_DENIED, track, sector);
+    } else {
+        drive->set_error_fres(fres);
+    }
     channel->pointer = 0;
     channel->reset_prefetch();
     state = e_idle;
@@ -1335,7 +1339,11 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
-    drive->set_error_fres(fres);
+    if (fres == FR_DENIED) {
+        drive->set_error(ERR_DENIED, track, sector);
+    } else {
+        drive->set_error_fres(fres);
+    }
     state = e_idle;
     return 0;
 }
@@ -1355,7 +1363,11 @@ int IecCommandChannel::do_block_allocate(int chan, int part, int track, int sect
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_allocate_sector(&path, track, sector, alloc);
-    drive->set_error_fres(fres);
+    if (fres == FR_DENIED) {
+        drive->set_error(ERR_DENIED, track, sector);
+    } else {
+        drive->set_error_fres(fres);
+    }
     state = e_idle;
     return 0;
 }

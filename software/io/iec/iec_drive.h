@@ -130,10 +130,11 @@ public:
 #define ERR_BAD_COMMAND					75
 #define ERR_UNIMPLEMENTED				76
 #define ERR_PARTITION_ERROR             77
+#define ERR_DENIED                      78
 
 typedef struct {
 	uint8_t nr;
-	char* msg;
+	const char* msg;
 	uint8_t len;
 } IEC_ERROR_MSG;
 

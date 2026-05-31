@@ -26,6 +26,8 @@ int read_file(IecDrive *dr, uint8_t chan, uint8_t *out, int len);
 static void send_channel_data(IecDrive *dr, uint8_t chan, const uint8_t *data, int len);
 static void expect_status_ok(const char *testname, const char *context);
 static void expect_command_ok(const char *testname, IecDrive *dr, const char *cmd);
+static const char *send_command(IecDrive *dr, const char *cmd);
+static void expect_status_prefix(const char *testname, const char *context, const char *prefix);
 
 static void save_fixture_file(FileManager *fm, const char *path, const char *name, const char *payload)
 {
@@ -192,6 +194,14 @@ static uint32_t get_free_sectors(FileManager *fm, const char *path)
     REQUIRE(fres == FR_OK);
     REQUIRE(cluster_size == 256);
     return free;
+}
+
+static void expect_command_status_prefix(const char *testname, IecDrive *dr,
+                                         const char *cmd, const char *prefix)
+{
+    const char *status = send_command(dr, cmd);
+    (void)status;
+    expect_status_prefix(testname, cmd, prefix);
 }
 
 static void open_buffer_channel(const char *testname, IecDrive *dr, uint8_t chan)
@@ -1418,6 +1428,7 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
         { create_iec_d64_fixture, "output/iec_block_cases.d64", "/Temp/iec_block_cases.d64", "D64", 9, 17, 0, 17, 10, 18, 0, false },
         { create_iec_d81_fixture, "output/iec_block_cases.d81", "/Temp/iec_block_cases.d81", "D81", 9, 39, 0, 39, 10, 40, 1, true },
     };
+    const char *fat_path = "/Fat/iec_block_cases_fat";
 
     print_scenario(suite, "Block read/write/allocate/free on D64/D81");
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -1450,6 +1461,13 @@ static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
         uint32_t free_after_free = get_free_sectors(fm, c.mount);
         REQUIRE(free_after_free == free_before);
     }
+
+    print_scenario(suite, "Block commands on FAT fail");
+    prepare_fat_partition(fm, dr, fat_path, 8, "FAT-BLOCK");
+    expect_command_status_prefix("Suite9-FAT-BlockRead", dr, "B-R 2 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockWrite", dr, "B-W 2 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockAllocate", dr, "B-A 2 8 17 0", "78,BLOCK ACCESS DENIED");
+    expect_command_status_prefix("Suite9-FAT-BlockFree", dr, "B-F 2 8 17 0", "78,BLOCK ACCESS DENIED");
 
     printf("Suite9 completed successfully!\n");
 }
