@@ -5,6 +5,65 @@
 
 class DebugSession;
 
+enum MonitorBackingStore {
+    MONITOR_BACKING_RAM = 0,
+    MONITOR_BACKING_BASIC,
+    MONITOR_BACKING_KERNAL,
+    MONITOR_BACKING_IO,
+    MONITOR_BACKING_CHAR
+};
+
+static inline MonitorBackingStore monitor_backing_store_for_cpu_port(uint16_t address, uint8_t cpu_port)
+{
+    cpu_port &= 0x07;
+
+    if (address >= 0xA000 && address <= 0xBFFF) {
+        return ((cpu_port & 0x03) == 0x03) ?
+            MONITOR_BACKING_BASIC : MONITOR_BACKING_RAM;
+    }
+    if (address >= 0xD000 && address <= 0xDFFF) {
+        if ((cpu_port & 0x03) == 0x00) {
+            return MONITOR_BACKING_RAM;
+        }
+        return (cpu_port & 0x04) ? MONITOR_BACKING_IO : MONITOR_BACKING_CHAR;
+    }
+    if (address >= 0xE000) {
+        return (cpu_port & 0x02) ? MONITOR_BACKING_KERNAL : MONITOR_BACKING_RAM;
+    }
+    return MONITOR_BACKING_RAM;
+}
+
+static inline const char *monitor_backing_store_tag(MonitorBackingStore target)
+{
+    switch (target) {
+        case MONITOR_BACKING_BASIC:  return "BAS";
+        case MONITOR_BACKING_KERNAL: return "KRN";
+        case MONITOR_BACKING_IO:     return "I/O";
+        case MONITOR_BACKING_CHAR:   return "CHR";
+        case MONITOR_BACKING_RAM:
+        default:                     return "RAM";
+    }
+}
+
+static inline const char *monitor_backing_store_source_name(MonitorBackingStore target)
+{
+    switch (target) {
+        case MONITOR_BACKING_BASIC:  return "BASIC";
+        case MONITOR_BACKING_KERNAL: return "KERNAL";
+        case MONITOR_BACKING_IO:     return "IO";
+        case MONITOR_BACKING_CHAR:   return "CHAR";
+        case MONITOR_BACKING_RAM:
+        default:                     return "RAM";
+    }
+}
+
+static inline bool monitor_backing_store_is_visible_rom(MonitorBackingStore target)
+{
+    return target == MONITOR_BACKING_BASIC ||
+           target == MONITOR_BACKING_KERNAL ||
+           target == MONITOR_BACKING_CHAR;
+}
+
 class MemoryBackend
 {
     uint8_t monitor_cpu_port;
@@ -61,6 +120,11 @@ public:
         return read(0x0001) & 0x07;
     }
 
+    virtual MonitorBackingStore backing_store_for_cpu_port(uint16_t address, uint8_t cpu_port) const
+    {
+        return monitor_backing_store_for_cpu_port(address, cpu_port);
+    }
+
     virtual uint8_t get_live_vic_bank(void)
     {
         // CIA2 stores the VIC bank in inverted form; keep the monitor's
@@ -81,21 +145,8 @@ public:
 
     virtual const char *source_name(uint16_t address) const
     {
-        uint8_t cpu_port = get_monitor_cpu_port();
-
-        if (address >= 0xA000 && address <= 0xBFFF) {
-            return ((cpu_port & 0x03) == 0x03) ? "BASIC" : "RAM";
-        }
-        if (address >= 0xD000 && address <= 0xDFFF) {
-            if ((cpu_port & 0x03) == 0x00) {
-                return "RAM";
-            }
-            return (cpu_port & 0x04) ? "IO" : "CHAR";
-        }
-        if (address >= 0xE000) {
-            return (cpu_port & 0x02) ? "KERNAL" : "RAM";
-        }
-        return "RAM";
+        return monitor_backing_store_source_name(
+            backing_store_for_cpu_port(address, get_monitor_cpu_port()));
     }
 };
 

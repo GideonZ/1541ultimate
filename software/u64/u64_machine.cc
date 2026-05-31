@@ -261,8 +261,12 @@ uint8_t U64Machine :: get_cpu_port(void)
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
     uint8_t ddr = read_frozen_byte(ram, freezerMenu, 0x0000, screen_backup, ram_backup) & 0x07;
     uint8_t port = read_frozen_byte(ram, freezerMenu, 0x0001, screen_backup, ram_backup) & 0x07;
+    C64_SERVE_CONTROL = saved_serve;
 
     after_memory_access(0, freezerMenu, stopped_it);
     return (uint8_t)(((port & ddr) | ((uint8_t)(~ddr) & 0x07)) & 0x07);
@@ -274,6 +278,21 @@ uint8_t U64Machine :: peek(uint16_t address)
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
     uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu, stopped_it);
+    return byte;
+}
+
+uint8_t U64Machine :: peek_raw(uint16_t address)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(true, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
+    C64_SERVE_CONTROL = saved_serve;
 
     after_memory_access(0, freezerMenu, stopped_it);
     return byte;
@@ -324,6 +343,20 @@ void U64Machine :: poke(uint16_t address, uint8_t byte)
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
 
     write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu, stopped_it);
+}
+
+void U64Machine :: poke_raw(uint16_t address, uint8_t byte)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(true, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+    C64_SERVE_CONTROL = saved_serve;
 
     after_memory_access(0, freezerMenu, stopped_it);
 }

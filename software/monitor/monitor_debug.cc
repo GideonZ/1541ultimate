@@ -72,6 +72,11 @@ void debug_context_reset(DebugContext *ctx)
     ctx->y = 0;
     ctx->sr = 0;
     ctx->sp = 0;
+    ctx->live_cpu_port_valid = false;
+    ctx->live_cpu_port = 0;
+    ctx->cpu_port_registers_valid = false;
+    ctx->cpu_ddr = 0;
+    ctx->cpu_port_latch = 0;
     ctx->irq_valid = false;
     ctx->irq_vec = 0;
     ctx->nmi_valid = false;
@@ -156,12 +161,12 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
 {
     static const char *const text[] = {
         "",
-        "D Step Over  T Step Into  O Step Out",
+        "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
         "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",
-        "A Assembly   B Binary     U Undoc/Case",
+        "A Assembly   B Binary     O CPU Bank",
         "J Jump       P Poll       N Number",
         "E Edit       F Fill       W Width",
         "C Compare    H Hunt       Z Freeze",

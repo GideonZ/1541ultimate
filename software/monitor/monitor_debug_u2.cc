@@ -35,9 +35,7 @@ protected:
     virtual bool backend_ready(void) const { return machine != 0 && machine->exists(); }
     virtual uint8_t current_cpu_port(void) const
     {
-        // U2 does not expose CPU bank selection from the monitor; the live
-        // CPU port read from $0001 is the only authoritative value.
-        return 0x07;
+        return backend ? backend->get_live_cpu_port() : (uint8_t)0x07;
     }
     virtual bool begin_stopped_session(void) { return machine->begin_stopped_session(); }
     virtual void end_stopped_session(bool stopped_it) { machine->end_stopped_session(stopped_it); }

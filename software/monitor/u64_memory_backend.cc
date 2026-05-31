@@ -106,11 +106,6 @@ static CpuRegionMapping cpu_region_mapping(uint16_t address, uint8_t cpu_port)
     return MAP_RAM;
 }
 
-static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_port, uint8_t monitor_cpu_port)
-{
-    return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
-}
-
 bool U64MemoryBackend :: freeze_available(void) const
 {
     return machine && !machine->is_accessible();
@@ -170,6 +165,7 @@ bool U64MemoryBackend :: reset_machine(void)
     if (!machine) {
         return false;
     }
+    clear_observed_live_cpu_port();
     if (stopped_machine_for_session) {
         machine->end_stopped_session(stopped_machine_for_session);
         stopped_machine_for_session = false;
@@ -189,21 +185,15 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
-    bool use_cached_rom = machine->is_accessible() || is_frozen() ||
-            !uses_live_mapping_for_address(address, live_cpu_port, cpu_port);
 
-    if (read_monitor_rom_byte(address, cpu_port, &rom_value) && use_cached_rom) {
+    if (read_monitor_rom_byte(address, cpu_port, &rom_value)) {
         return rom_value;
     }
-    if (machine->is_accessible()) {
-        return machine->peek_cpu(address, cpu_port);
+    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
+        return machine->peek_visible(address);
     }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
-        return machine->peek_cpu(address, cpu_port);
-    }
-    return machine->peek(address);
+    return machine->peek_raw(address);
 }
 
 void U64MemoryBackend :: write(uint16_t address, uint8_t value)
@@ -213,17 +203,12 @@ void U64MemoryBackend :: write(uint16_t address, uint8_t value)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
 
-    if (machine->is_accessible()) {
-        machine->poke_cpu(address, value, cpu_port);
+    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
+        machine->poke_visible(address, value);
         return;
     }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
-        machine->poke_cpu(address, value, cpu_port);
-        return;
-    }
-    machine->poke(address, value);
+    machine->poke_raw(address, value);
 }
 
 void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
@@ -236,7 +221,21 @@ void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len
 
 uint8_t U64MemoryBackend :: get_live_cpu_port(void)
 {
+    if (observed_live_cpu_port_valid) {
+        return observed_live_cpu_port & 0x07;
+    }
     return machine ? machine->get_cpu_port() : 0;
+}
+
+void U64MemoryBackend :: set_observed_live_cpu_port(uint8_t cpu_port)
+{
+    observed_live_cpu_port = cpu_port & 0x07;
+    observed_live_cpu_port_valid = true;
+}
+
+void U64MemoryBackend :: clear_observed_live_cpu_port(void)
+{
+    observed_live_cpu_port_valid = false;
 }
 
 uint8_t U64MemoryBackend :: get_live_vic_bank(void)
@@ -245,7 +244,7 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
         return 0;
     }
 
-    uint8_t dd00 = machine->peek_cpu(0xDD00, 0x07);
+    uint8_t dd00 = machine->peek_visible(0xDD00);
     return (uint8_t)(3 - (dd00 & 0x03));
 }
 

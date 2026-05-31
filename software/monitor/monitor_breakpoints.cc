@@ -22,7 +22,8 @@ void MonitorBreakpoints :: clear_all(void)
         slots[i].used = false;
         slots[i].enabled = false;
         slots[i].address = 0;
-        slots[i].cpu_port = 0x07;
+        slots[i].view_cpu_port = 0x07;
+        slots[i].target = MONITOR_BACKING_RAM;
         slots[i].label[0] = 0;
     }
 }
@@ -37,9 +38,27 @@ int MonitorBreakpoints :: find_at(uint16_t address) const
     return -1;
 }
 
+int MonitorBreakpoints :: find_at(uint16_t address, MonitorBackingStore target) const
+{
+    for (int i = 0; i < MONITOR_BREAKPOINT_SLOT_COUNT; i++) {
+        if (slots[i].used && slots[i].address == address &&
+                slots[i].target == target) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port)
 {
-    int existing = find_at(address);
+    return allocate(address, cpu_port,
+                    monitor_backing_store_for_cpu_port(address, cpu_port));
+}
+
+int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port,
+                                   MonitorBackingStore target)
+{
+    int existing = find_at(address, target);
     if (existing >= 0) {
         return existing;
     }
@@ -48,7 +67,8 @@ int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port)
             slots[i].used = true;
             slots[i].enabled = true;
             slots[i].address = address;
-            slots[i].cpu_port = (uint8_t)(cpu_port & 0x07);
+            slots[i].view_cpu_port = (uint8_t)(cpu_port & 0x07);
+            slots[i].target = target;
             slots[i].label[0] = 0;
             return i;
         }
@@ -58,6 +78,13 @@ int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port)
 
 void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_port)
 {
+    store_slot(slot, address, cpu_port,
+               monitor_backing_store_for_cpu_port(address, cpu_port));
+}
+
+void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_port,
+                                      MonitorBackingStore target)
+{
     if (slot < 0 || slot >= MONITOR_BREAKPOINT_SLOT_COUNT) {
         return;
     }
@@ -65,7 +92,8 @@ void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_po
     slots[slot].used = true;
     slots[slot].enabled = true;
     slots[slot].address = address;
-    slots[slot].cpu_port = (uint8_t)(cpu_port & 0x07);
+    slots[slot].view_cpu_port = (uint8_t)(cpu_port & 0x07);
+    slots[slot].target = target;
     if (!was_used) {
         slots[slot].label[0] = 0;
     }
@@ -79,7 +107,8 @@ void MonitorBreakpoints :: clear_slot(int slot)
     slots[slot].used = false;
     slots[slot].enabled = false;
     slots[slot].address = 0;
-    slots[slot].cpu_port = 0x07;
+    slots[slot].view_cpu_port = 0x07;
+    slots[slot].target = MONITOR_BACKING_RAM;
     slots[slot].label[0] = 0;
 }
 
@@ -144,15 +173,15 @@ void MonitorBreakpoints :: format_popup_row(char *out, int out_len, int slot,
         return;
     }
     if (bp->label[0]) {
-        sprintf(out, "%d %s %-4s $%04X CPU%d", slot,
+        sprintf(out, "%d %s %-4s $%04X %s", slot,
                 bp->enabled ? "SET" : "OFF",
                 bp->label,
                 (unsigned)bp->address,
-                (int)(bp->cpu_port & 0x07));
+                monitor_backing_store_tag(bp->target));
     } else {
-        sprintf(out, "%d %s $%04X CPU%d", slot,
+        sprintf(out, "%d %s $%04X %s", slot,
                 bp->enabled ? "SET" : "OFF",
                 (unsigned)bp->address,
-                (int)(bp->cpu_port & 0x07));
+                monitor_backing_store_tag(bp->target));
     }
 }

@@ -64,6 +64,7 @@ AUTONOMOUS_TRACE_PC_SEQUENCE = (
     0xBC13,
     0xBC15,
     0xBC16,
+    0xBC11,
 )
 
 
@@ -88,7 +89,7 @@ ROUTINES = [
     Routine("BASIC PRINT", 0xAAA0, "BASIC"),
     Routine("BASIC PEEK", 0xB80D, "BASIC"),
     Routine("BASIC POKE", 0xB824, "BASIC"),
-    Routine("KERNAL FLOAT-FAC", 0xE000, "KERNAL"),
+    Routine("KERNAL FLOAT-JSR", 0xE002, "KERNAL"),
     Routine("KERNAL FLOAT-CONT", 0xE013, "KERNAL"),
     Routine("KERNAL FLOAT-SEC", 0xE018, "KERNAL"),
     Routine("KERNAL LOAD", 0xE168, "KERNAL"),
@@ -212,14 +213,15 @@ def _assert_pc_stable(session: "mt.MonitorSession", expected_pc: int,
 def prove_no_autonomous_trace_replay(rest_host: str, session: "mt.MonitorSession",
                                      runs: int, steps_per_run: int,
                                      settle_time: float) -> None:
-    if steps_per_run > len(AUTONOMOUS_TRACE_PC_SEQUENCE):
+    stable_sequence = AUTONOMOUS_TRACE_PC_SEQUENCE[1:]
+    if steps_per_run > len(stable_sequence):
         raise mt.Failure(
-            f"autonomous trace soak only knows {len(AUTONOMOUS_TRACE_PC_SEQUENCE)} "
-            f"validated PCs from $E000, got {steps_per_run} requested steps")
+            f"autonomous trace soak only knows {len(stable_sequence)} "
+            f"validated PCs from $E002, got {steps_per_run} requested steps")
     for run in range(runs):
         context = f"autonomous trace replay soak run {run + 1}/{runs}"
-        dbg._enter_rom_debug_at(session, 0xE000, "KRN", context, "$E:KRN")
-        for step, expected_pc in enumerate(AUTONOMOUS_TRACE_PC_SEQUENCE[:steps_per_run]):
+        dbg._enter_rom_debug_at(session, 0xE002, "KRN", context, "$E:KRN")
+        for step, expected_pc in enumerate(stable_sequence[:steps_per_run]):
             snap = session.send_char("T")
             dbg._assert_no_debug_modal_snapshot(snap, context)
             snap = _wait_for_observed_pc(session, expected_pc)
@@ -666,7 +668,7 @@ def exercise_debug_ux(session: "mt.MonitorSession", current: CpuState, iteration
     if iteration % 11 == 0:
         session.send_key("F3")
         text = session.capture().text()
-        for token in ("D Step Over", "T Step Into", "O Step Out", "C=+X Reset", "RSTOP"):
+        for token in ("D Step Over", "T Step Into", "U Step Out", "C=+X Reset", "RSTOP"):
             if token not in text:
                 raise mt.Failure(f"Debug help missing {token!r} during soak:\n{text}")
         session.send_key("ESC")
@@ -690,10 +692,10 @@ def rom_step_cycle(rest_host: str, session: "mt.MonitorSession", label: str) -> 
     """Run a bare ROM Step Into cycle that must move PC and show ROM mapping."""
     validations = 0
 
-    snap = dbg._enter_rom_debug_at(session, 0xE000, "KRN",
+    snap = dbg._enter_rom_debug_at(session, 0xE002, "KRN",
                                    f"{label}: KERNAL ROM Step Into", "$E:KRN")
-    row = dbg._disassembly_row(snap, 0xE000)
-    expected_pc = 0xE002 if "85 56" in row else 0xE000 + dbg._instruction_length_from_row(row)
+    row = dbg._disassembly_row(snap, 0xE002)
+    expected_pc = 0xBC0F if "20 0F BC" in row else 0xE002 + dbg._instruction_length_from_row(row)
     dbg._step_and_assert_pc(session, "T", expected_pc, f"{label}: KERNAL ROM Step Into")
     validations += 1
     dbg._leave_debug_and_reset(rest_host, session)
@@ -726,7 +728,7 @@ def run_soak(args: argparse.Namespace, rest_host: str, session: "mt.MonitorSessi
     mem = Memory(rest_host)
 
     try:
-        with mt.check("Debug soak: no autonomous trace replay from $E000"):
+        with mt.check("Debug soak: no autonomous trace replay from $E002"):
             prove_no_autonomous_trace_replay(
                 rest_host,
                 session,

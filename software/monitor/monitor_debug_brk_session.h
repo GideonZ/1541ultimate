@@ -36,6 +36,7 @@ protected:
     virtual bool free_run_no_breakpoint(uint16_t address);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
     virtual void write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port);
+    virtual void note_captured_cpu_port(uint8_t) { }
 
 public:
     BrkDebugSession();
@@ -97,6 +98,7 @@ private:
         uint16_t address;
         uint8_t original;
         uint8_t cpu_port;
+        MonitorBackingStore target;
     };
 
     enum {
@@ -118,11 +120,17 @@ private:
     // can read this via screen_render_target_invalidated() to know whether the
     // firmware chrome rows need restoring before the next visible redraw.
     bool screen_was_clobbered;
-    uint8_t saved_handler_bytes[100];
+    uint8_t saved_handler_bytes[128];
     uint8_t saved_nmi_trampoline_bytes[24];
     bool nmi_trampoline_installed;
     uint8_t saved_nmi_vector[2];
     uint8_t saved_brk_vector[2];
+    uint8_t saved_hard_vector[2];
+    uint8_t saved_hard_rom_vector[2];
+    uint8_t saved_hard_brk_stub_bytes[48];
+    uint8_t saved_hard_brk_vector_ptr[2];
+    bool hard_vector_installed;
+    bool hard_rom_vector_installed;
     bool has_last_context;
     DebugContext last_context;
     uint16_t return_targets[MAX_RETURN_TARGETS];
@@ -132,16 +140,24 @@ private:
     void begin_run_window(void);
     void end_run_window(void);
     void save_and_install_handler(void);
+    void save_and_install_hard_vector(void);
+    void save_and_install_visible_hard_vector(void);
+    void restore_stale_visible_hard_vector(void);
+    void uninstall_hard_vector(void);
     void uninstall_handler(void);
     int find_free_patch(void);
-    bool already_patched(uint16_t addr);
+    bool already_patched(uint16_t addr, MonitorBackingStore target);
     PatchInstallResult install_brk_at(uint16_t addr, uint8_t cpu_port);
+    PatchInstallResult install_brk_at(uint16_t addr, uint8_t cpu_port,
+                                      MonitorBackingStore target);
     PatchInstallResult install_breakpoints(const MonitorBreakpoints *breakpoints,
                                            uint16_t skip_address,
+                                           MonitorBackingStore skip_target,
                                            bool skip_address_valid);
     bool context_at_breakpoint(const DebugContext &ctx,
                                const MonitorBreakpoints *breakpoints,
                                uint16_t skip_address,
+                               MonitorBackingStore skip_target,
                                bool skip_address_valid) const;
     void restore_patches(void);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
@@ -149,9 +165,11 @@ private:
     void push_return_target(uint16_t target);
     bool peek_return_target(uint16_t *target) const;
     void pop_return_target(uint16_t target);
+    uint8_t execution_cpu_port(const DebugContext *ctx) const;
     void drop_queued_execution_keys(void);
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
+    void restore_cpu_port_registers(const DebugContext &from);
     void release_to_run(const DebugContext *from);
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);

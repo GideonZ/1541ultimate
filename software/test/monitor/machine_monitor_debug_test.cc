@@ -71,6 +71,8 @@ struct StubDebugSession : public DebugSession
     int release_calls;
     uint16_t last_start_pc;
     uint16_t last_run_to_target;
+    bool last_go_from_valid;
+    uint16_t last_go_from_pc;
     DebugContext cleanup_target_ctx;
     DebugContext next_ctx;
     bool predict_bytes_valid;
@@ -82,6 +84,7 @@ struct StubDebugSession : public DebugSession
     Result run_to_result;
     Result snapshot_result;
     bool claim_allowed;
+    bool go_produces_snapshot;
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0),
@@ -93,10 +96,12 @@ struct StubDebugSession : public DebugSession
           snapshot_calls(0), claim_calls(0),
           refresh_calls(0), release_calls(0),
           last_start_pc(0), last_run_to_target(0),
+          last_go_from_valid(false), last_go_from_pc(0),
           predict_bytes_valid(false),
           over_result(DBG_OK), trace_result(DBG_OK),
           out_result(DBG_OK), go_result(DBG_OK), run_to_result(DBG_OK),
-          snapshot_result(DBG_OK), claim_allowed(true)
+          snapshot_result(DBG_OK), claim_allowed(true),
+          go_produces_snapshot(false)
     {
         debug_context_reset(&cleanup_target_ctx);
         debug_context_reset(&next_ctx);
@@ -175,14 +180,17 @@ struct StubDebugSession : public DebugSession
         out_breakpoint_calls++;
         return step_out(from, ctx);
     }
-    virtual Result go(const DebugContext &, const MonitorBreakpoints *, uint16_t) {
+    virtual Result go(const DebugContext &from, const MonitorBreakpoints *, uint16_t start_pc) {
         go_calls++;
+        last_start_pc = start_pc;
+        last_go_from_valid = from.valid;
+        last_go_from_pc = from.pc;
         // Model the real session's semantic: Go invalidates the previous
         // capture. If a stop happens during this Go, a real session would
         // refresh `next_ctx`; the stub simulates "no stop happened" by
         // marking snapshot unavailable until the next over/trace/out call
         // explicitly captures something.
-        if (snapshot_result == DBG_OK) {
+        if (snapshot_result == DBG_OK && !go_produces_snapshot) {
             snapshot_result = DBG_NOT_SUPPORTED;
         }
         return go_result;
@@ -278,12 +286,14 @@ struct TrackingDebugBackend : public FakeMemoryBackend
     bool canned_snapshot_set;
     DebugSession::Result snapshot_result;
     bool session_claim_allowed;
+    bool go_produces_snapshot;
 
     TrackingDebugBackend() : last_session(NULL), session_creations(0),
                              refuse_session(false), reset_calls(0),
                              allow_reset(true), canned_snapshot_set(false),
                              snapshot_result(DebugSession::DBG_OK),
-                             session_claim_allowed(true)
+                             session_claim_allowed(true),
+                             go_produces_snapshot(false)
     {
         debug_context_reset(&canned_snapshot);
     }
@@ -299,6 +309,7 @@ struct TrackingDebugBackend : public FakeMemoryBackend
         }
         last_session->snapshot_result = snapshot_result;
         last_session->claim_allowed = session_claim_allowed;
+        last_session->go_produces_snapshot = go_produces_snapshot;
         return last_session;
     }
 
@@ -347,11 +358,29 @@ static const uint16_t FAKE_STORE_SR      = 0x03F3;
 static const uint16_t FAKE_STORE_PCLO    = 0x03F4;
 static const uint16_t FAKE_STORE_PCHI    = 0x03F5;
 static const uint16_t FAKE_STORE_SP      = 0x03F6;
-static const uint16_t FAKE_SPIN_LO       = 0x0378;
-static const uint16_t FAKE_SPIN_HI       = 0x0379;
-static const uint16_t FAKE_RESUME_TRAMP  = 0x033C;
+static const uint16_t FAKE_STORE_CPU_DDR = 0x03F8;
+static const uint16_t FAKE_STORE_CPU_PORT = 0x03F9;
+static const uint16_t FAKE_STORE_TRAP_MODE = 0x03FA;
+static const uint16_t FAKE_STORE_HARD_CPU_DDR = 0x03FB;
+static const uint16_t FAKE_STORE_HARD_CPU_PORT = 0x03ED;
+static const uint16_t FAKE_HARD_BRK_ORIG_VECTOR_LO = 0x03EE;
+static const uint16_t FAKE_DEBUG_AREA_START = 0x033C;
+static const uint16_t FAKE_DEBUG_AREA_END = 0x03FB;
+static const uint16_t FAKE_HANDLER_ADDR   = 0x0363;
+static const uint16_t FAKE_HANDLER_LEN    = 39;
+static const uint16_t FAKE_SPIN_JMP      = 0x0387;
+static const uint16_t FAKE_SPIN_LO       = 0x0388;
+static const uint16_t FAKE_SPIN_HI       = 0x0389;
+static const uint16_t FAKE_RESUME_TRAMP  = FAKE_HANDLER_ADDR;
+static const uint16_t FAKE_TRAMPOLINE    = 0x038A;
+static const uint16_t FAKE_TRAMPOLINE_LEN = 38;
 static const uint16_t FAKE_NMI_VECTOR_HI = 0x0319; // mirrors NMI_VECTOR_HI
-static const uint16_t FAKE_NMI_TRAMP     = 0x03A0; // mirrors NMI_TRAMPOLINE_ADDR
+static const uint16_t FAKE_NMI_TRAMP     = 0x03B0; // mirrors NMI_TRAMPOLINE_ADDR
+static const uint16_t FAKE_NMI_TRAMP_LEN = 24;
+static const uint16_t FAKE_HARD_BRK_STUB = 0x03C8; // mirrors HARD_BRK_STUB_ADDR
+static const uint16_t FAKE_HARD_BRK_STUB_LEN = 37;
+static const uint16_t FAKE_HARD_VECTOR_LO = 0xFFFE;
+static const uint16_t FAKE_HARD_VECTOR_HI = 0xFFFF;
 
 class FakeFreezeMachine : public BrkDebugSession
 {
@@ -388,6 +417,9 @@ public:
     uint8_t capture_override_x;
     uint8_t capture_override_y;
     uint8_t capture_override_sr;
+    uint8_t capture_override_trap_mode;
+    uint8_t capture_override_hard_cpu_ddr;
+    uint8_t capture_override_hard_cpu_port;
 
     FakeFreezeMachine(bool start_frozen)
         : frozen(start_frozen), accessible_when_unfrozen(false),
@@ -399,7 +431,8 @@ public:
           capture_override_armed(false),
           capture_override_pc(0), capture_override_sp(0),
           capture_override_a(0), capture_override_x(0), capture_override_y(0),
-          capture_override_sr(0)
+          capture_override_sr(0), capture_override_trap_mode(0),
+          capture_override_hard_cpu_ddr(0), capture_override_hard_cpu_port(0)
     {
         memset(ram, 0, sizeof(ram));
         memset(brk_patch_addrs, 0, sizeof(brk_patch_addrs));
@@ -437,6 +470,19 @@ public:
         capture_override_x = x;
         capture_override_y = y;
         capture_override_sr = sr;
+        capture_override_trap_mode = 0;
+        capture_override_hard_cpu_ddr = 0;
+        capture_override_hard_cpu_port = 0;
+    }
+
+    void arm_hard_vector_capture_context(uint16_t pc, uint8_t sp, uint8_t a,
+                                         uint8_t x, uint8_t y, uint8_t sr,
+                                         uint8_t cpu_ddr, uint8_t cpu_port)
+    {
+        arm_capture_context(pc, sp, a, x, y, sr);
+        capture_override_trap_mode = 0xA5;
+        capture_override_hard_cpu_ddr = cpu_ddr;
+        capture_override_hard_cpu_port = cpu_port;
     }
 
 protected:
@@ -447,7 +493,7 @@ protected:
     virtual uint8_t peek_cpu(uint16_t a, uint8_t) { return ram[a]; }
     virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
-        if (b == 0x00) {
+        if (b == 0x00 && a != FAKE_HARD_VECTOR_LO && a != FAKE_HARD_VECTOR_HI) {
             if (brk_patch_writes < MAX_RECORDED_BRK_PATCHES) {
                 brk_patch_addrs[brk_patch_writes] = a;
             }
@@ -495,7 +541,8 @@ protected:
         nmi_pulses++;
         if (nmi_from_spin_times_out &&
             nmi_pulses > 1 &&
-            ram[FAKE_SPIN_LO] == 0x77 && ram[FAKE_SPIN_HI] == 0x03) {
+            ram[FAKE_SPIN_LO] == (uint8_t)(FAKE_SPIN_JMP & 0xFF) &&
+            ram[FAKE_SPIN_HI] == (uint8_t)(FAKE_SPIN_JMP >> 8)) {
             sentinel_armed = false;
         }
     }
@@ -514,6 +561,12 @@ protected:
                 ram[FAKE_STORE_PCLO] = (uint8_t)((capture_override_pc + 2) & 0xFF);
                 ram[FAKE_STORE_PCHI] = (uint8_t)((capture_override_pc + 2) >> 8);
                 ram[FAKE_STORE_SP] = capture_override_sp;
+                ram[FAKE_STORE_TRAP_MODE] = capture_override_trap_mode;
+                ram[FAKE_STORE_HARD_CPU_DDR] = capture_override_hard_cpu_ddr;
+                ram[FAKE_STORE_HARD_CPU_PORT] = capture_override_hard_cpu_port;
+                capture_override_trap_mode = 0;
+                capture_override_hard_cpu_ddr = 0;
+                capture_override_hard_cpu_port = 0;
                 capture_override_armed = false;
             }
             ram[FAKE_SENTINEL_ADDR] = 0xFF;
@@ -533,11 +586,17 @@ public:
     uint16_t force_raw_peek_brk_addr;
     int rom_patch_writes;
     uint16_t last_rom_patch_addr;
+    int ram_patch_writes;
+    uint16_t last_ram_patch_addr;
+    bool switch_cpu_port_on_delay;
+    uint8_t cpu_port_after_delay;
 
     FakeVisibleRomMachine(bool start_frozen)
         : FakeFreezeMachine(start_frozen), cpu_port(0x07),
           allow_visible_rom_patching(false), force_raw_peek_brk(false),
-          force_raw_peek_brk_addr(0), rom_patch_writes(0), last_rom_patch_addr(0)
+          force_raw_peek_brk_addr(0), rom_patch_writes(0), last_rom_patch_addr(0),
+          ram_patch_writes(0), last_ram_patch_addr(0),
+          switch_cpu_port_on_delay(false), cpu_port_after_delay(0x07)
     {
         memset(basic_rom, 0, sizeof(basic_rom));
         memset(kernal_rom, 0, sizeof(kernal_rom));
@@ -587,8 +646,13 @@ protected:
         }
         return ram[a];
     }
-    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
+    virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t patch_cpu_port)
     {
+        volatile uint8_t *rom = rom_patch_ptr(a, patch_cpu_port);
+        if (rom && allow_visible_rom_patching) {
+            *rom = b;
+            return;
+        }
         ram[a] = b;
     }
     virtual uint8_t read_patch_byte(uint16_t a, uint8_t patch_cpu_port)
@@ -615,7 +679,19 @@ protected:
             last_rom_patch_addr = a;
             return;
         }
+        if (b == 0x00) {
+            ram_patch_writes++;
+            last_ram_patch_addr = a;
+        }
         poke_cpu(a, b, patch_cpu_port);
+    }
+    virtual void delay_ms(int ms)
+    {
+        if (switch_cpu_port_on_delay) {
+            cpu_port = (uint8_t)(cpu_port_after_delay & 0x07);
+            switch_cpu_port_on_delay = false;
+        }
+        FakeFreezeMachine::delay_ms(ms);
     }
 };
 
@@ -701,6 +777,8 @@ static void fake_seed_captured_context(FakeFreezeMachine &m, uint16_t pc,
     m.ram[FAKE_STORE_PCLO] = (uint8_t)((pc + 2) & 0xFF);
     m.ram[FAKE_STORE_PCHI] = (uint8_t)((pc + 2) >> 8);
     m.ram[FAKE_STORE_SP] = sp;
+    m.ram[FAKE_STORE_CPU_DDR] = 0x07;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x07;
 }
 
 static bool fake_recorded_brk_patch(const FakeFreezeMachine &m, uint16_t addr)
@@ -729,6 +807,206 @@ static bool fake_nmi_trampoline_stores_cpu_port(const FakeFreezeMachine &m,
         }
     }
     return false;
+}
+
+struct Mini6510 {
+    uint8_t a;
+    uint8_t x;
+    uint8_t y;
+    uint8_t sp;
+    uint8_t sr;
+    uint16_t pc;
+    bool zero;
+    bool rti;
+};
+
+static uint16_t mini_abs(const uint8_t *mem, uint16_t pc)
+{
+    return (uint16_t)(mem[pc] | (mem[(uint16_t)(pc + 1)] << 8));
+}
+
+static void mini_set_zn(Mini6510 &cpu, uint8_t value)
+{
+    cpu.zero = (value == 0);
+}
+
+static void mini_push(uint8_t *mem, Mini6510 &cpu, uint8_t value)
+{
+    mem[(uint16_t)(0x0100 | cpu.sp)] = value;
+    cpu.sp--;
+}
+
+static uint8_t mini_pull(uint8_t *mem, Mini6510 &cpu)
+{
+    cpu.sp++;
+    return mem[(uint16_t)(0x0100 | cpu.sp)];
+}
+
+static bool mini_run(uint8_t *mem, Mini6510 &cpu, uint16_t stop_pc, int max_steps)
+{
+    for (int steps = 0; steps < max_steps; steps++) {
+        if (steps > 0 && cpu.pc == stop_pc) {
+            return true;
+        }
+        uint8_t op = mem[cpu.pc++];
+        switch (op) {
+            case 0x29:
+                cpu.a &= mem[cpu.pc++];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0x40:
+                cpu.sr = mini_pull(mem, cpu);
+                cpu.pc = mini_pull(mem, cpu);
+                cpu.pc = (uint16_t)(cpu.pc | (mini_pull(mem, cpu) << 8));
+                cpu.rti = true;
+                return true;
+            case 0x48:
+                mini_push(mem, cpu, cpu.a);
+                break;
+            case 0x4C:
+                cpu.pc = mini_abs(mem, cpu.pc);
+                break;
+            case 0x68:
+                cpu.a = mini_pull(mem, cpu);
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0x6C: {
+                uint16_t ptr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(mem[ptr] | (mem[(uint16_t)(ptr + 1)] << 8));
+                break;
+            }
+            case 0x85:
+                mem[mem[cpu.pc++]] = cpu.a;
+                break;
+            case 0x8A:
+                cpu.a = cpu.x;
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0x8D: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                mem[addr] = cpu.a;
+                break;
+            }
+            case 0x8E: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                mem[addr] = cpu.x;
+                break;
+            }
+            case 0x98:
+                cpu.a = cpu.y;
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0x99: {
+                uint16_t addr = (uint16_t)(mini_abs(mem, cpu.pc) + cpu.y);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                mem[addr] = cpu.a;
+                break;
+            }
+            case 0x9D: {
+                uint16_t addr = (uint16_t)(mini_abs(mem, cpu.pc) + cpu.x);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                mem[addr] = cpu.a;
+                break;
+            }
+            case 0xA0:
+                cpu.y = mem[cpu.pc++];
+                mini_set_zn(cpu, cpu.y);
+                break;
+            case 0xA5:
+                cpu.a = mem[mem[cpu.pc++]];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0xA9:
+                cpu.a = mem[cpu.pc++];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            case 0xAA:
+                cpu.x = cpu.a;
+                mini_set_zn(cpu, cpu.x);
+                break;
+            case 0xAC: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                cpu.y = mem[addr];
+                mini_set_zn(cpu, cpu.y);
+                break;
+            }
+            case 0xAD: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                cpu.a = mem[addr];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            }
+            case 0xAE: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                cpu.x = mem[addr];
+                mini_set_zn(cpu, cpu.x);
+                break;
+            }
+            case 0xB9: {
+                uint16_t addr = (uint16_t)(mini_abs(mem, cpu.pc) + cpu.y);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                cpu.a = mem[addr];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            }
+            case 0xBA:
+                cpu.x = cpu.sp;
+                mini_set_zn(cpu, cpu.x);
+                break;
+            case 0xBD: {
+                uint16_t addr = (uint16_t)(mini_abs(mem, cpu.pc) + cpu.x);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                cpu.a = mem[addr];
+                mini_set_zn(cpu, cpu.a);
+                break;
+            }
+            case 0xC0:
+                cpu.zero = (cpu.y == mem[cpu.pc++]);
+                break;
+            case 0xC8:
+                cpu.y++;
+                mini_set_zn(cpu, cpu.y);
+                break;
+            case 0xD0: {
+                int8_t rel = (int8_t)mem[cpu.pc++];
+                if (!cpu.zero) {
+                    cpu.pc = (uint16_t)(cpu.pc + rel);
+                }
+                break;
+            }
+            case 0xE8:
+                cpu.x++;
+                mini_set_zn(cpu, cpu.x);
+                break;
+            case 0xEE: {
+                uint16_t addr = mini_abs(mem, cpu.pc);
+                cpu.pc = (uint16_t)(cpu.pc + 2);
+                mem[addr]++;
+                mini_set_zn(cpu, mem[addr]);
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+static bool fake_install_debug_stubs(FakeFreezeMachine &m, uint16_t addr)
+{
+    fake_seed_nop_run(m, addr);
+    fake_seed_captured_context(m, (uint16_t)(addr + 1), 0xF8,
+                               0x11, 0x22, 0x33, 0x24);
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(addr, bytes, false, &pred);
+    DebugContext ctx;
+    return m.trace_at(addr, pred, &ctx) == DebugSession::DBG_OK;
 }
 
 } // namespace
@@ -847,25 +1125,47 @@ static int test_breakpoint_slots_allocate_clear_and_format()
     if (expect(s1 == 1, "Second allocation must use slot 1")) return 1;
     int dup = bps.allocate(0xC000, 0x07);
     if (expect(dup == 0, "Allocating an existing address returns its slot")) return 1;
+    int krn = bps.allocate(0xE000, 0x07);
+    if (expect(krn == 2, "KERNAL breakpoint must allocate a distinct slot")) return 1;
+    int ram = bps.allocate(0xE000, 0x05);
+    if (expect(ram == 3, "RAM-under-KERNAL breakpoint at same address must coexist")) return 1;
+    if (expect(bps.find_at(0xE000, MONITOR_BACKING_KERNAL) == krn,
+               "KERNAL breakpoint lookup must use the target backing store")) return 1;
+    if (expect(bps.find_at(0xE000, MONITOR_BACKING_RAM) == ram,
+               "RAM breakpoint lookup must use the target backing store")) return 1;
+    bps.set_enabled(krn, false);
+    if (expect(!bps.get(krn)->enabled && bps.get(ram)->enabled,
+               "Disabling one same-address target must not disable the other")) return 1;
+    bps.set_enabled(krn, true);
 
-    for (int i = 2; i < MONITOR_BREAKPOINT_SLOT_COUNT; i++) {
+    for (int i = 4; i < MONITOR_BREAKPOINT_SLOT_COUNT; i++) {
         bps.allocate((uint16_t)(0xD000 + i), 0x07);
     }
     int full = bps.allocate(0xE000, 0x07);
+    if (expect(full == krn, "Full table should still return an existing same-target slot")) return 1;
+    full = bps.allocate(0xE100, 0x07);
     if (expect(full < 0, "Allocation must fail when all slots are used")) return 1;
 
     char row[40];
     MonitorBreakpoints::format_popup_row(row, sizeof(row), 0, bps.get(0));
-    if (expect(strstr(row, "0 SET $C000") == row, "Slot 0 popup row should start with state and address")) return 1;
+    if (expect(strcmp(row, "0 SET $C000 RAM") == 0,
+               "Slot 0 popup row should include the RAM target tag")) return 1;
     bps.set_enabled(0, false);
     MonitorBreakpoints::format_popup_row(row, sizeof(row), 0, bps.get(0));
-    if (expect(strstr(row, "0 OFF $C000") == row, "Disabled slot should show OFF")) return 1;
+    if (expect(strcmp(row, "0 OFF $C000 RAM") == 0,
+               "Disabled slot should keep the target tag")) return 1;
     bps.set_label(0, "readc");
     if (expect(strcmp(bps.get(0)->label, "READ") == 0,
                "Breakpoint labels must normalize to four uppercase chars")) return 1;
     MonitorBreakpoints::format_popup_row(row, sizeof(row), 0, bps.get(0));
-    if (expect(strstr(row, "0 OFF READ $C000") == row,
-               "Breakpoint popup row should include an assigned label")) return 1;
+    if (expect(strcmp(row, "0 OFF READ $C000 RAM") == 0,
+               "Breakpoint popup row should include label and target tag")) return 1;
+    MonitorBreakpoints::format_popup_row(row, sizeof(row), krn, bps.get(krn));
+    if (expect(strcmp(row, "2 SET $E000 KRN") == 0,
+               "KERNAL breakpoint popup row must show KRN target tag")) return 1;
+    MonitorBreakpoints::format_popup_row(row, sizeof(row), ram, bps.get(ram));
+    if (expect(strcmp(row, "3 SET $E000 RAM") == 0,
+               "Same-address RAM breakpoint popup row must remain distinguishable")) return 1;
 
     bps.clear_slot(0);
     MonitorBreakpoints::format_popup_row(row, sizeof(row), 0, bps.get(0));
@@ -956,7 +1256,8 @@ static int test_debug_footer_sits_above_normal_status()
         if (strstr(row, "PC") != NULL && strstr(row, "NV-BDIZC") != NULL) {
             label_y = y;
         }
-        if (strstr(row, "CPU") != NULL && strstr(row, "VIC") != NULL) {
+        if (((strstr(row, "CPU") != NULL) || (strstr(row, "C") == row && strstr(row, "O") != NULL)) &&
+                strstr(row, "VIC") != NULL) {
             status_y = y;
         }
     }
@@ -1216,6 +1517,59 @@ static int test_debug_predictor_uses_session_bytes_over_backend_reads()
     return 0;
 }
 
+static int test_debug_pc_disassembly_uses_session_live_bytes_over_view()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    DebugBackendController ctrl;
+    FakeDebugBackend backend(&ctrl);
+    monitor_reset_saved_state();
+
+    ctrl.session.next_ctx.valid = true;
+    ctrl.session.next_ctx.pc = 0xE000;
+    ctrl.session.next_ctx.sp = 0xF7;
+    ctrl.session.next_ctx.sr = 0x24;
+    ctrl.session.predict_bytes_valid = true;
+    ctrl.session.predict_bytes[0] = 0xA9;
+    ctrl.session.predict_bytes[1] = 0x42;
+    ctrl.session.predict_bytes[2] = 0xEA;
+    backend.write(0x0001, 0x05);
+    backend.set_monitor_cpu_port(0x07);
+
+    // The monitor view would decode BRK from the backing memory. The active
+    // Debug PC row must instead use the session's execution-facing bytes,
+    // which are supplied by the live CPU-bank route.
+    backend.write(0xE000, 0x00);
+    backend.write(0xE001, 0x00);
+    backend.write(0xE002, 0x00);
+
+    const int keys[] = { 'A', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Switch to ASM should stay in monitor")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug should stay in monitor")) return 1;
+
+    char row[40];
+    int row_y = find_row_with_address(screen, "E000");
+    if (expect(row_y >= 0, "Debug PC row must be visible")) return 1;
+    screen.get_slice(1, row_y, 38, row);
+    if (expect(strstr(row, ">LDA #$42<") != NULL,
+               "Debug PC row must decode live session bytes instead of monitor-view BRK")) return 1;
+    if (expect(strstr(row, ">BRK<") == NULL,
+               "Debug PC row must not display monitor-view BRK bytes")) return 1;
+    if (expect(strstr(row, "[RAM]") != NULL,
+               "Debug PC row source marker must describe the live CPU backing store")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
 static int test_t_traces_and_o_outs_inside_debug()
 {
     TestUserInterface ui;
@@ -1227,7 +1581,7 @@ static int test_t_traces_and_o_outs_inside_debug()
     backend.write(0xC004, 0x00);
     backend.write(0xC005, 0xEA);
 
-    const int keys[] = { 'A', 'D', 'T', 'O', KEY_ESCAPE, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'T', 'U', KEY_ESCAPE, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1243,8 +1597,41 @@ static int test_t_traces_and_o_outs_inside_debug()
         }
     }
     if (expect(backend.last_session->trace_calls == 1, "T should call trace exactly once")) return 1;
-    if (expect(backend.last_session->out_calls == 1, "O should call step-out exactly once")) return 1;
-    if (expect(backend.last_session->over_calls == 0, "Neither T nor O should call Over")) return 1;
+    if (expect(backend.last_session->out_calls == 1, "U should call step-out exactly once")) return 1;
+    if (expect(backend.last_session->over_calls == 0, "Neither T nor U should call Over")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_debug_o_does_not_step_out()
+{
+    // Debug-mode Step Out moved from 'O' to 'U'. 'O'/'o' must no longer invoke
+    // step-out; they fall through to the normal monitor dispatcher so the
+    // monitor view CPU/VIC bank can still be cycled while Debug is active.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'A', 'D', 'O', 'o', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(backend.last_session != NULL, "Debug session must exist")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug 'O' must stay in monitor")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug 'o' must stay in monitor")) return 1;
+    if (expect(backend.last_session->out_calls == 0,
+               "Debug-mode O/o must not invoke Step Out")) return 1;
+    if (expect(backend.last_session->trace_calls == 0 &&
+               backend.last_session->over_calls == 0,
+               "Debug-mode O/o must not invoke any stepping command")) return 1;
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -1264,7 +1651,7 @@ static int test_o_without_traced_jsr_reports_not_in_subroutine()
     backend.canned_snapshot.sp = 0xFA;
     backend.canned_snapshot.sr = 0x24;
 
-    const int keys[] = { 'A', 'D', 'O', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'U', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1295,7 +1682,7 @@ static int test_o_without_context_reports_not_in_subroutine()
 
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
 
-    const int keys[] = { 'A', 'D', 'O', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'U', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1350,6 +1737,189 @@ static int test_t_inside_debug_without_context_traces_from_cursor()
                "No-context T in Debug must execute Trace from the cursor")) return 1;
     if (expect(backend.last_session->last_start_pc == 0x2000,
                "No-context Trace must start at the Assembly cursor address")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_t_after_goto_ignores_successful_stale_snapshot()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    DebugContext stale;
+    debug_context_reset(&stale);
+    stale.valid = true;
+    stale.pc = 0x0000;
+    stale.sp = 0xE4;
+    stale.sr = 0x36;
+    backend.canned_snapshot = stale;
+    backend.canned_snapshot_set = true;
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.write(0xE000, 0x85);
+    backend.write(0xE001, 0x56);
+    backend.write(0xE002, 0xEA);
+    backend.write(0x0000, 0xEA);
+    backend.write(0x0001, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'T', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 6; i++) {
+        int r = monitor.poll(0);
+        if (i < 5) {
+            if (expect(r == 0, "Stale-snapshot Trace setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->trace_calls == 0,
+               "Cursor-authoritative Debug entry must ignore a successful stale snapshot")) return 1;
+    if (expect(backend.last_session->trace_at_calls == 1,
+               "Cursor-authoritative Debug entry must Trace from the cursor")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0xE000,
+               "Trace after J E000 must start at the cursor, not stale PC $0000")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_g_after_goto_ignores_successful_stale_snapshot()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    DebugContext stale;
+    debug_context_reset(&stale);
+    stale.valid = true;
+    stale.pc = 0x0000;
+    stale.sp = 0xE4;
+    stale.sr = 0x36;
+    backend.canned_snapshot = stale;
+    backend.canned_snapshot_set = true;
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.write(0xE000, 0x85);
+    backend.write(0xE001, 0x56);
+    backend.write(0xE002, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 6; i++) {
+        int r = monitor.poll(0);
+        if (i < 5) {
+            if (expect(r == 0, "Stale-snapshot Go setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->go_calls == 1,
+               "G must invoke the debug session Go path")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0xE000,
+               "G after J E000 must start at the cursor, not stale PC $0000")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_g_after_cursor_stop_uses_captured_context()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    DebugContext stopped;
+    debug_context_reset(&stopped);
+    stopped.valid = true;
+    stopped.pc = 0xE003;
+    stopped.sp = 0xE4;
+    stopped.sr = 0x36;
+    backend.canned_snapshot = stopped;
+    backend.canned_snapshot_set = true;
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.go_produces_snapshot = true;
+    backend.write(0xE000, 0x85);
+    backend.write(0xE001, 0x56);
+    backend.write(0xE002, 0xEA);
+    backend.write(0xE003, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'G', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 7);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 7; i++) {
+        int r = monitor.poll(0);
+        if (i < 6) {
+            if (expect(r == 0, "Two-Go cursor/context setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->go_calls == 2,
+               "Two G commands must invoke the debug session twice")) return 1;
+    if (expect(backend.last_session->last_go_from_valid,
+               "Second G after a captured stop must use the captured context")) return 1;
+    if (expect(backend.last_session->last_go_from_pc == 0xE003,
+               "Second G must resume from the captured PC, not the cursor override")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_g_after_goto_with_active_context_uses_cursor()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.write(0x1000, 0xEA);
+    backend.write(0xE000, 0x85);
+    backend.write(0xE001, 0x56);
+    backend.write(0xE002, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'D', 'D', 'J', 'G', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("1000", 1);
+    ui.push_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 8; i++) {
+        int r = monitor.poll(0);
+        if (i < 7) {
+            if (expect(r == 0, "Active-context Goto/Go setup polls should return 0")) return 1;
+        } else {
+            if (expect(r == 1, "Final RUN/STOP exits")) return 1;
+        }
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->go_calls == 1,
+               "G after active-context J must invoke Go once")) return 1;
+    if (expect(!backend.last_session->last_go_from_valid,
+               "G after active-context J must ignore the previous captured context")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0xE000,
+               "G after active-context J must start from the cursor address")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -1918,6 +2488,93 @@ static int test_breakpoint_toggle_via_r()
     return 0;
 }
 
+static int test_breakpoint_mismatch_message_uses_view_target_and_live_cpu()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x0001, 0x07); // live CPU sees KERNAL at $E000
+    backend.write(0xE000, 0xEA);
+
+    int keys[14];
+    int n = 0;
+    keys[n++] = 'J';
+    keys[n++] = 'A';
+    for (int i = 0; i < 6; i++) {
+        keys[n++] = 'o'; // monitor view CPU7 -> CPU5, RAM under KERNAL
+    }
+    keys[n++] = 'D';
+    keys[n++] = 'R';
+    keys[n++] = KEY_BREAK;
+    keys[n++] = KEY_BREAK;
+    FakeKeyboard keyboard(keys, n);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < n - 2; i++) {
+        if (expect(monitor.poll(0) == 0,
+                   "Mismatch breakpoint setup should stay in monitor")) return 1;
+    }
+    if (expect(strcmp(ui.last_popup, "BRK RAM, CPU KRN; not mapped now") == 0,
+               "Mismatch popup must describe breakpoint target and live CPU mapping")) return 1;
+    if (expect((int)strlen(ui.last_popup) <= 38,
+               "Mismatch popup must fit one 38-column line")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+
+    TestUserInterface matched_ui;
+    CaptureScreen matched_screen;
+    TrackingDebugBackend matched_backend;
+    monitor_reset_saved_state();
+    matched_backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    matched_backend.write(0x0001, 0x07);
+    matched_backend.write(0xE000, 0xEA);
+    const int matched_keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard matched_keyboard(matched_keys, 6);
+    matched_ui.screen = &matched_screen;
+    matched_ui.keyboard = &matched_keyboard;
+    matched_ui.set_prompt("E000", 1);
+    BackendMachineMonitor matched_monitor(&matched_ui, &matched_backend);
+    matched_monitor.init(&matched_screen, &matched_keyboard);
+    for (int i = 0; i < 4; i++) {
+        if (expect(matched_monitor.poll(0) == 0,
+                   "Matched breakpoint setup should stay in monitor")) return 1;
+    }
+    if (expect(matched_ui.popup_count == 0,
+               "No mismatch popup should appear when target is currently mapped")) return 1;
+    if (expect(matched_monitor.poll(0) == 0, "RUN/STOP leaves matched Debug")) return 1;
+    if (expect(matched_monitor.poll(0) == 1, "Second RUN/STOP exits matched monitor")) return 1;
+    matched_monitor.deinit();
+
+    const MonitorBackingStore tags[] = {
+        MONITOR_BACKING_RAM,
+        MONITOR_BACKING_BASIC,
+        MONITOR_BACKING_KERNAL,
+        MONITOR_BACKING_IO,
+        MONITOR_BACKING_CHAR
+    };
+    char msg[40];
+    for (unsigned i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {
+        for (unsigned j = 0; j < sizeof(tags) / sizeof(tags[0]); j++) {
+            monitor_format_breakpoint_mismatch(msg, sizeof(msg), tags[i], tags[j]);
+            if (expect((int)strlen(msg) <= 38,
+                       "All mismatch tag combinations must fit the footer width")) return 1;
+            if (expect(strstr(msg, "BRK ") == msg && strstr(msg, ", CPU ") != NULL &&
+                       strstr(msg, "; not mapped now") != NULL,
+                       "Mismatch formatter must keep the required template")) return 1;
+        }
+    }
+    return 0;
+}
+
 static int test_breakpoint_popup_store_reuses_selected_slot()
 {
     TestUserInterface ui;
@@ -2388,7 +3045,7 @@ static int test_breakpoint_popup_blocks_debug_execution_keys()
     monitor_reset_saved_state();
 
     const int keys[] = {
-        'A', 'D', KEY_CTRL_R, 'D', 'T', 'O', 'G', 'R',
+        'A', 'D', KEY_CTRL_R, 'D', 'T', 'U', 'G', 'R',
         KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 11);
@@ -2742,12 +3399,12 @@ static int test_help_screen_shows_debug_commands()
     int n = MonitorDebug::format_help_lines(lines, 20);
     static const char *expected_lines[] = {
         "",
-        "D Step Over  T Step Into  O Step Out",
+        "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
         "R Breakpt    C=+R Brkpts  C=+X Reset",
         "",
         "M Memory     I ASCII      V Screen",
-        "A Assembly   B Binary     U Undoc/Case",
+        "A Assembly   B Binary     O CPU Bank",
         "J Jump       P Poll       N Number",
         "E Edit       F Fill       W Width",
         "C Compare    H Hunt       Z Freeze",
@@ -2787,8 +3444,8 @@ static int test_help_screen_shows_debug_commands()
         "D Step Over must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "T Step Into",
         "T Step Into must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "O Step Out",
-        "O Step Out must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "U Step Out",
+        "U Step Out must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "G Continue",
         "G Continue must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "K Cont Crsr",
@@ -3589,26 +4246,343 @@ static int test_visible_rom_step_bytes_use_cpu_visible_mapping()
     return 0;
 }
 
-static int test_u64_debug_cpu_port_uses_monitor_bank()
+static int test_u64_debug_cpu_port_uses_live_cpu_bank()
 {
     FakeCpuPortBackend backend;
 
     backend.set_monitor_cpu_port(0x07);
     backend.live_cpu_port = 0x05;
-    if (expect(u64_debug_step_cpu_port(&backend) == 0x07,
-               "U64 Debug stepping must use the monitor-selected CPU bank")) return 1;
-    if (expect(backend.live_reads == 0,
-               "U64 Debug stepping must not sample the live CPU port for cursor stepping")) return 1;
+    if (expect(u64_debug_step_cpu_port(&backend) == 0x05,
+               "U64 Debug stepping must use the live CPU bank")) return 1;
+    if (expect(backend.live_reads == 1,
+               "U64 Debug stepping must sample $0001 for the live CPU bank")) return 1;
 
     backend.set_monitor_cpu_port(0x05);
     backend.live_cpu_port = 0x07;
-    if (expect(u64_debug_step_cpu_port(&backend) == 0x05,
-               "U64 Debug stepping must follow monitor bank changes")) return 1;
-    if (expect(backend.live_reads == 0,
-               "U64 Debug stepping must not sample live bank changes")) return 1;
+    if (expect(u64_debug_step_cpu_port(&backend) == 0x07,
+               "U64 Debug stepping must ignore monitor-bank changes")) return 1;
+    if (expect(backend.live_reads == 2,
+               "U64 Debug stepping must re-sample live bank changes")) return 1;
     if (expect(u64_debug_step_cpu_port(0) == 0x07,
                "U64 Debug stepping must default to all ROMs visible without a backend")) return 1;
 
+    return 0;
+}
+
+static int test_brk_debug_cassette_layout_is_compact_and_top_aligned()
+{
+    if (expect(FAKE_HANDLER_ADDR >= FAKE_DEBUG_AREA_START,
+               "BRK debug handler must stay inside the cassette buffer")) return 1;
+    if (expect(FAKE_HANDLER_LEN == 39,
+               "BRK debug handler byte count must stay compact")) return 1;
+    if (expect(FAKE_TRAMPOLINE_LEN == 38,
+               "BRK debug trampoline byte count must stay compact")) return 1;
+    if (expect(FAKE_NMI_TRAMP_LEN == 24,
+               "NMI trampoline reservation must remain 24 bytes")) return 1;
+    if (expect(FAKE_HARD_BRK_STUB_LEN == 37,
+               "Hard BRK stub reservation must preserve the validated hardware entry address")) return 1;
+    if (expect(FAKE_HANDLER_ADDR + FAKE_HANDLER_LEN == FAKE_TRAMPOLINE,
+               "Handler and trampoline must be contiguous")) return 1;
+    if (expect(FAKE_TRAMPOLINE + FAKE_TRAMPOLINE_LEN == FAKE_NMI_TRAMP,
+               "Trampoline and NMI trampoline reservation must be contiguous")) return 1;
+    if (expect(FAKE_NMI_TRAMP + FAKE_NMI_TRAMP_LEN == FAKE_HARD_BRK_STUB,
+               "NMI reservation and hard BRK stub must be contiguous")) return 1;
+    if (expect(FAKE_HARD_BRK_STUB + FAKE_HARD_BRK_STUB_LEN == FAKE_STORE_HARD_CPU_PORT,
+               "Code stubs must pack directly below the fixed scratch block")) return 1;
+    if (expect(FAKE_STORE_HARD_CPU_PORT == 0x03ED &&
+               FAKE_STORE_HARD_CPU_DDR == FAKE_DEBUG_AREA_END,
+               "Fixed scratch bytes must still end at DEBUG_AREA_END $03FB")) return 1;
+    if (expect(FAKE_DEBUG_AREA_END == 0x03FB,
+               "DEBUG_AREA_END must remain $03FB so $03FC-$03FF stay free")) return 1;
+    if (expect(FAKE_HARD_BRK_STUB + FAKE_HARD_BRK_STUB_LEN <= 0x03FC,
+               "Debug stubs must not reserve $03FC-$03FF")) return 1;
+    if (expect((FAKE_SPIN_JMP >> 8) == 0x03 &&
+               (FAKE_TRAMPOLINE >> 8) == 0x03 &&
+               (FAKE_HANDLER_ADDR >> 8) == 0x03,
+               "All spin targets must stay on page $03")) return 1;
+    return 0;
+}
+
+static int test_brk_handler_bytes_preserve_stack_and_port_capture_semantics()
+{
+    FakeFreezeMachine m(false);
+    if (expect(fake_install_debug_stubs(m, 0x2000),
+               "Installing debug stubs for handler byte test must succeed")) return 1;
+
+    const uint8_t sp = 0x80;
+    const uint8_t frame[6] = { 0x33, 0x22, 0x11, 0xA4, 0x34, 0x12 };
+    for (int i = 0; i < 6; i++) {
+        m.ram[(uint16_t)(0x0101 + sp + i)] = frame[i];
+    }
+    m.ram[0x0000] = 0x37;
+    m.ram[0x0001] = 0x35;
+    m.ram[FAKE_SENTINEL_ADDR] = 0x00;
+    m.ram[FAKE_SPIN_LO] = 0x00;
+    m.ram[FAKE_SPIN_HI] = (uint8_t)(FAKE_SPIN_JMP >> 8);
+
+    Mini6510 cpu = { 0, 0, 0, sp, 0, FAKE_HANDLER_ADDR, false, false };
+    if (expect(mini_run(m.ram, cpu, FAKE_SPIN_JMP, 100),
+               "Optimized handler bytes must reach the self-spin JMP")) return 1;
+    if (expect(m.ram[FAKE_STORE_Y] == 0x33 &&
+               m.ram[FAKE_STORE_X] == 0x22 &&
+               m.ram[FAKE_STORE_A] == 0x11 &&
+               m.ram[FAKE_STORE_SR] == 0xA4 &&
+               m.ram[FAKE_STORE_PCLO] == 0x34 &&
+               m.ram[FAKE_STORE_PCHI] == 0x12,
+               "Optimized handler loop must preserve the old stack-frame mapping")) return 1;
+    if (expect(m.ram[FAKE_STORE_SP] == (uint8_t)(sp + 6),
+               "Optimized handler loop must preserve saved SP semantics")) return 1;
+    if (expect(m.ram[FAKE_STORE_CPU_DDR] == 0x37 &&
+               m.ram[FAKE_STORE_CPU_PORT] == 0x35,
+               "Optimized handler must capture $00/$01 through zero-page loads")) return 1;
+    if (expect(m.ram[FAKE_SENTINEL_ADDR] != 0x00 &&
+               m.ram[FAKE_SPIN_LO] == (uint8_t)(FAKE_SPIN_JMP & 0xFF) &&
+               m.ram[FAKE_SPIN_HI] == (uint8_t)(FAKE_SPIN_JMP >> 8),
+               "Optimized handler must mark sentinel nonzero and restore self-spin")) return 1;
+    return 0;
+}
+
+static int test_brk_trampoline_bytes_preserve_rti_restore_semantics()
+{
+    FakeFreezeMachine m(false);
+    if (expect(fake_install_debug_stubs(m, 0x2100),
+               "Installing debug stubs for trampoline byte test must succeed")) return 1;
+
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+    m.ram[FAKE_STORE_SR] = 0xA5;
+    m.ram[FAKE_STORE_PCLO] = 0x78;
+    m.ram[FAKE_STORE_PCHI] = 0x56;
+    m.ram[FAKE_STORE_Y] = 0x44;
+    m.ram[FAKE_STORE_X] = 0x55;
+    m.ram[FAKE_STORE_A] = 0x66;
+
+    Mini6510 cpu = { 0x10, 0x20, 0x30, 0xF0, 0x00, FAKE_TRAMPOLINE, false, false };
+    m.ram[0x01F1] = 0xDE;
+    m.ram[0x01F2] = 0xAD;
+    m.ram[0x01F3] = 0xBE;
+    if (expect(mini_run(m.ram, cpu, 0, 100),
+               "Optimized trampoline bytes must reach RTI")) return 1;
+    if (expect(cpu.rti && cpu.pc == 0x5678 && cpu.sr == 0xA5,
+               "Optimized trampoline must rebuild the RTI frame from stored SR/PC")) return 1;
+    if (expect(m.ram[0x01F4] == 0xA5 &&
+               m.ram[0x01F5] == 0x78 &&
+               m.ram[0x01F6] == 0x56,
+               "Optimized trampoline loop must write $0101,X..$0103,X after discarding the NMI frame")) return 1;
+    if (expect(cpu.sp == 0xF6,
+               "Optimized trampoline RTI must leave SP after the rebuilt frame")) return 1;
+    if (expect(m.ram[0x0000] == 0x37 && m.ram[0x0001] == 0x35,
+               "Optimized trampoline must restore $00/$01 before RTI")) return 1;
+    if (expect(cpu.a == 0x66 && cpu.x == 0x55 && cpu.y == 0x44,
+               "Optimized trampoline must restore A/X/Y before RTI")) return 1;
+    return 0;
+}
+
+static int test_hard_brk_stub_bytes_preserve_irq_and_brk_paths()
+{
+    FakeFreezeMachine m(false);
+    if (expect(fake_install_debug_stubs(m, 0x2200),
+               "Installing debug stubs for hard-BRK byte test must succeed")) return 1;
+
+    m.ram[FAKE_HARD_BRK_STUB + 19] = 0xA5;
+    m.ram[FAKE_HARD_BRK_STUB + 24] = 0xA5;
+
+    m.ram[FAKE_HARD_BRK_STUB + 0] = 0x48;
+    m.ram[FAKE_HARD_BRK_STUB + 1] = 0x8A;
+    m.ram[FAKE_HARD_BRK_STUB + 2] = 0x48;
+    m.ram[FAKE_HARD_BRK_STUB + 3] = 0xBA;
+    if (expect(m.ram[FAKE_HARD_BRK_STUB + 19] == 0xA5 &&
+               m.ram[FAKE_HARD_BRK_STUB + 24] == 0xA5,
+               "Hard BRK stub must use zero-page LDA $00/$01 opcodes")) return 1;
+
+    m.ram[FAKE_HARD_BRK_ORIG_VECTOR_LO] = 0x34;
+    m.ram[(uint16_t)(FAKE_HARD_BRK_ORIG_VECTOR_LO + 1)] = 0x12;
+    m.ram[0x01FA] = 0x24; // B flag clear: non-BRK IRQ fallback.
+    Mini6510 irq = { 0xA5, 0x5A, 0xC3, 0xF9, 0, FAKE_HARD_BRK_STUB, false, false };
+    if (expect(mini_run(m.ram, irq, 0x1234, 100),
+               "Hard BRK stub non-BRK path must jump through the original vector")) return 1;
+    if (expect(irq.pc == 0x1234 && irq.a == 0xA5 && irq.x == 0x5A && irq.sp == 0xF9,
+               "Hard BRK stub non-BRK path must restore A, X, and SP")) return 1;
+
+    m.ram[FAKE_STORE_HARD_CPU_DDR] = 0x00;
+    m.ram[FAKE_STORE_HARD_CPU_PORT] = 0x00;
+    m.ram[FAKE_STORE_TRAP_MODE] = 0x00;
+    m.ram[0x0000] = 0x37;
+    m.ram[0x0001] = 0x35;
+    m.ram[0x01FA] = 0x34; // B flag set: BRK path.
+    m.ram[0x01FB] = 0x78;
+    m.ram[0x01FC] = 0x56;
+    Mini6510 brk = { 0xA5, 0x5A, 0xC3, 0xF9, 0, FAKE_HARD_BRK_STUB, false, false };
+    if (expect(mini_run(m.ram, brk, FAKE_HANDLER_ADDR, 100),
+               "Hard BRK stub BRK path must jump to the soft handler")) return 1;
+    if (expect(brk.pc == FAKE_HANDLER_ADDR && brk.sp == 0xF6,
+               "Hard BRK stub BRK path must stack Y above saved X/A before handler entry")) return 1;
+    if (expect(m.ram[0x01F7] == 0xC3 &&
+               m.ram[0x01F8] == 0x5A &&
+               m.ram[0x01F9] == 0xA5,
+               "Hard BRK stub BRK path must preserve Y, X, and A on the stack")) return 1;
+    if (expect(m.ram[FAKE_STORE_HARD_CPU_DDR] == 0x37 &&
+               m.ram[FAKE_STORE_HARD_CPU_PORT] == 0x35 &&
+               m.ram[FAKE_STORE_TRAP_MODE] != 0x00,
+               "Hard BRK stub BRK path must capture $00/$01 and mark hard-trap mode")) return 1;
+    return 0;
+}
+
+static int test_brk_capture_records_live_cpu_port()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+    fake_seed_captured_context(m, 0x2001, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "BRK capture with live CPU port must complete")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0x2001,
+               "BRK capture must keep the captured PC")) return 1;
+    if (expect(ctx.live_cpu_port_valid && ctx.live_cpu_port == 0x05,
+               "BRK capture must record the live $0001 execution bank")) return 1;
+    if (expect(ctx.cpu_port_registers_valid && ctx.cpu_ddr == 0x37 &&
+               ctx.cpu_port_latch == 0x35,
+               "BRK capture must retain the full $00/$01 register bytes")) return 1;
+
+    FakeFreezeMachine m2(false);
+    fake_seed_nop_run(m2, 0x2100);
+    fake_seed_captured_context(m2, 0x2101, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m2.ram[FAKE_STORE_CPU_DDR] = 0x04;
+    m2.ram[FAKE_STORE_CPU_PORT] = 0x00;
+    debug_predict(0x2100, bytes, false, &pred);
+    r = m2.trace_at(0x2100, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "BRK capture with input CPU-port bits must complete")) return 1;
+    if (expect(ctx.live_cpu_port_valid && ctx.live_cpu_port == 0x03,
+               "Input CPU-port bits must resolve high in the live bank")) return 1;
+
+    FakeVisibleRomMachine m3(false);
+    m3.cpu_port = 0x05;
+    fake_seed_nop_run(m3, 0xE000);
+    fake_seed_captured_context(m3, 0xE001, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m3.ram[FAKE_STORE_CPU_DDR] = 0x00;
+    m3.ram[FAKE_STORE_CPU_PORT] = 0x00;
+    m3.arm_hard_vector_capture_context(0xE001, 0xF8, 0x11, 0x22, 0x33, 0x24,
+                                       0x37, 0x35);
+    debug_predict(0xE000, bytes, false, &pred);
+    r = m3.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Hard-vector BRK capture must complete with hidden KERNAL")) return 1;
+    if (expect(ctx.live_cpu_port_valid && ctx.live_cpu_port == 0x05,
+               "Hard-vector BRK capture must keep the execution bank when DDR readback is empty")) return 1;
+    if (expect(ctx.cpu_port_registers_valid && ctx.cpu_ddr == 0x37 &&
+               ctx.cpu_port_latch == 0x35,
+               "Hard-vector BRK capture must retain the full $00/$01 register bytes")) return 1;
+
+    FakeVisibleRomMachine m4(false);
+    m4.cpu_port = 0x05;
+    fake_seed_nop_run(m4, 0xE100);
+    fake_seed_captured_context(m4, 0xE101, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m4.ram[FAKE_STORE_CPU_DDR] = 0x00;
+    m4.ram[FAKE_STORE_CPU_PORT] = 0x00;
+    m4.arm_hard_vector_capture_context(0xE101, 0xF8, 0x11, 0x22, 0x33, 0x24,
+                                       0x00, 0x35);
+    debug_predict(0xE100, bytes, false, &pred);
+    r = m4.trace_at(0xE100, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Hard-vector BRK capture with unreadable DDR must complete")) return 1;
+    if (expect(ctx.live_cpu_port_valid && ctx.live_cpu_port == 0x05,
+               "Hard-vector BRK capture with unreadable DDR must keep the execution bank")) return 1;
+    if (expect(ctx.cpu_port_registers_valid &&
+               (ctx.cpu_ddr & 0x07) == 0x07 &&
+               (ctx.cpu_port_latch & 0x07) == 0x05,
+               "Hard-vector unreadable DDR fallback must resume in the captured execution bank")) return 1;
+
+    return 0;
+}
+
+static int test_parked_step_resume_restores_captured_cpu_port_registers()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2000);
+    fake_seed_captured_context(m, 0x2001, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Initial step must park a captured context")) return 1;
+    if (expect(ctx.cpu_port_registers_valid && ctx.cpu_ddr == 0x37 &&
+               ctx.cpu_port_latch == 0x35,
+               "Initial capture must retain the program CPU-port registers")) return 1;
+
+    m.ram[0x0000] = 0x00;
+    m.ram[0x0001] = 0x07;
+    fake_seed_captured_context(m, 0x2002, 0xF8, 0x11, 0x22, 0x33, 0x24);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+    debug_predict(0x2001, bytes, false, &pred);
+
+    DebugContext next;
+    r = m.over(ctx, pred, &next);
+    if (expect(r == DebugSession::DBG_OK,
+               "Parked Step Over must complete after a CPU-port clobber")) return 1;
+    if (expect(m.ram[FAKE_STORE_CPU_DDR] == 0x37 &&
+               m.ram[FAKE_STORE_CPU_PORT] == 0x35,
+               "Parked step resume must stage captured $00/$01 for the trampoline")) return 1;
+    if (expect(m.ram[FAKE_TRAMPOLINE + 0] == 0xAD &&
+               m.ram[FAKE_TRAMPOLINE + 1] == (uint8_t)(FAKE_STORE_CPU_DDR & 0xFF) &&
+               m.ram[FAKE_TRAMPOLINE + 2] == (uint8_t)(FAKE_STORE_CPU_DDR >> 8) &&
+               m.ram[FAKE_TRAMPOLINE + 3] == 0x85 &&
+               m.ram[FAKE_TRAMPOLINE + 4] == 0x00 &&
+               m.ram[FAKE_TRAMPOLINE + 5] == 0xAD &&
+               m.ram[FAKE_TRAMPOLINE + 6] == (uint8_t)(FAKE_STORE_CPU_PORT & 0xFF) &&
+               m.ram[FAKE_TRAMPOLINE + 7] == (uint8_t)(FAKE_STORE_CPU_PORT >> 8) &&
+               m.ram[FAKE_TRAMPOLINE + 8] == 0x85 &&
+               m.ram[FAKE_TRAMPOLINE + 9] == 0x01,
+               "Parked step trampoline must restore $00/$01 in CPU-executed code")) return 1;
+    return 0;
+}
+
+static int test_no_breakpoint_continue_restores_captured_cpu_port_registers()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2100);
+    fake_seed_captured_context(m, 0x2101, 0xF8, 0x44, 0x55, 0x66, 0x24);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2100, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2100, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Initial step must park a context for continue")) return 1;
+
+    m.ram[0x0000] = 0x00;
+    m.ram[0x0001] = 0x07;
+    r = m.go(ctx, 0, ctx.pc);
+    if (expect(r == DebugSession::DBG_OK,
+               "No-breakpoint continue must release the parked context")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 0] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 1] == 0x37 &&
+               m.ram[FAKE_RESUME_TRAMP + 2] == 0x85 &&
+               m.ram[FAKE_RESUME_TRAMP + 3] == 0x00 &&
+               m.ram[FAKE_RESUME_TRAMP + 4] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 5] == 0x35 &&
+               m.ram[FAKE_RESUME_TRAMP + 6] == 0x85 &&
+               m.ram[FAKE_RESUME_TRAMP + 7] == 0x01,
+               "No-breakpoint continue stub must restore $00/$01 in CPU-executed code")) return 1;
     return 0;
 }
 
@@ -3760,6 +4734,206 @@ static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
                "Visible ROM breakpoint Go must not use RAM under ROM as proof")) return 1;
     if (expect(m.rom_patch_writes == 2,
                "Visible ROM breakpoint Go must patch and restore the ROM image")) return 1;
+    return 0;
+}
+
+static int test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores()
+{
+    FakeVisibleRomMachine m(false);
+    m.allow_visible_rom_patching = true;
+    m.cpu_port = 0x05; // live CPU has KERNAL banked out
+    m.ram[0xC000] = 0xEA;
+    m.kernal_rom[0] = 0x4C;
+    m.ram[0xE000] = 0xEA;
+
+    MonitorBreakpoints bps;
+    int krn = bps.allocate(0xE000, 0x07);
+    int ram = bps.allocate(0xE000, 0x05);
+    if (expect(krn != ram && krn >= 0 && ram >= 0,
+               "KERNAL and RAM-under-KERNAL breakpoints must coexist")) return 1;
+    bps.set_enabled(krn, false);
+    if (expect(!bps.get(krn)->enabled && bps.get(ram)->enabled,
+               "Disabling KERNAL breakpoint must leave RAM breakpoint enabled")) return 1;
+    bps.set_enabled(krn, true);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xC000;
+    from.sp = 0xF7;
+    from.sr = 0x24;
+
+    m.arm_capture_context(0xE000, 0xF5, 0, 0, 0, 0x24);
+    DebugSession::Result r = m.go(from, &bps, 0xC000);
+    if (expect(r == DebugSession::DBG_OK,
+               "Mixed KERNAL/RAM breakpoints must run and trap")) return 1;
+    if (expect(m.last_rom_patch_addr == 0xE000 && m.rom_patch_writes == 2,
+               "KERNAL breakpoint must patch and restore the ROM image")) return 1;
+    if (expect(m.last_ram_patch_addr == 0xE000 && m.ram_patch_writes == 1,
+               "RAM-under-KERNAL breakpoint must patch hidden RAM")) return 1;
+    if (expect(m.kernal_rom[0] == 0x4C && m.ram[0xE000] == 0xEA,
+               "Mixed breakpoint cleanup must restore both backing stores")) return 1;
+
+    char row[40];
+    MonitorBreakpoints::format_popup_row(row, sizeof(row), krn, bps.get(krn));
+    if (expect(strstr(row, "$E000 KRN") != NULL,
+               "Breakpoint popup must distinguish the KERNAL target")) return 1;
+    MonitorBreakpoints::format_popup_row(row, sizeof(row), ram, bps.get(ram));
+    if (expect(strstr(row, "$E000 RAM") != NULL,
+               "Breakpoint popup must distinguish the RAM target")) return 1;
+    return 0;
+}
+
+static int test_patch_restore_uses_recorded_destination_after_cpu_bank_changes()
+{
+    FakeVisibleRomMachine m(false);
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.allow_visible_rom_patching = true;
+    m.cpu_port = 0x07;
+    m.ram[0xE001] = 0x6C;
+    m.switch_cpu_port_on_delay = true;
+    m.cpu_port_after_delay = 0x05;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible KERNAL step must complete while live bank changes before cleanup")) return 1;
+    if (expect(m.cpu_port == 0x05,
+               "Test must change the live CPU bank before patch restoration")) return 1;
+    if (expect(m.kernal_rom[1] == 0xEA,
+               "Patch restoration must use the recorded KERNAL destination")) return 1;
+    if (expect(m.ram[0xE001] == 0x6C,
+               "Patch restoration must not recompute and restore into hidden RAM")) return 1;
+
+    m.cleanup();
+    m.cleanup();
+    if (expect(m.kernal_rom[1] == 0xEA && m.ram[0xE001] == 0x6C,
+               "Patch cleanup must be idempotent after the bank changed")) return 1;
+    return 0;
+}
+
+static int test_kernal_out_hard_vector_installs_and_restores_on_cleanup()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;
+    m.ram[FAKE_HARD_VECTOR_LO] = 0x34;
+    m.ram[FAKE_HARD_VECTOR_HI] = 0x12;
+    m.ram[0xE000] = 0xEA;
+    m.ram[0xE001] = 0xEA;
+    m.ram[0xE002] = 0xEA;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "RAM-under-KERNAL step must trap without Debug Timeout")) return 1;
+    if (expect(m.ram[FAKE_HARD_VECTOR_LO] == (uint8_t)(FAKE_HARD_BRK_STUB & 0xFF) &&
+               m.ram[FAKE_HARD_VECTOR_HI] == (uint8_t)(FAKE_HARD_BRK_STUB >> 8),
+               "KERNAL-out hard IRQ/BRK vector must point at the debug stub while parked")) return 1;
+    if (expect(m.ram_patch_writes == 1 && m.last_ram_patch_addr == 0xE001,
+               "RAM-under-KERNAL step must patch hidden RAM fall-through")) return 1;
+    if (expect(m.ram[0xE001] == 0xEA,
+               "RAM-under-KERNAL patch byte must be restored after the step")) return 1;
+
+    m.cleanup();
+    if (expect(m.ram[FAKE_HARD_VECTOR_LO] == 0x34 &&
+               m.ram[FAKE_HARD_VECTOR_HI] == 0x12,
+               "Cleanup must restore hidden-RAM hard vector bytes")) return 1;
+    return 0;
+}
+
+static int test_kernal_out_hard_vector_restores_on_timeout()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;
+    m.ram[FAKE_HARD_VECTOR_LO] = 0x78;
+    m.ram[FAKE_HARD_VECTOR_HI] = 0x56;
+    m.ram[0xE000] = 0xEA;
+    m.ram[0xE001] = 0xEA;
+    m.ram[0xE002] = 0xEA;
+    m.sentinel_armed = false;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "Debug Timeout must remain a failure result")) return 1;
+    if (expect(m.ram[FAKE_HARD_VECTOR_LO] == 0x78 &&
+               m.ram[FAKE_HARD_VECTOR_HI] == 0x56,
+               "Timeout cleanup must restore hidden-RAM hard vector bytes")) return 1;
+    if (expect(m.ram[0xE001] == 0xEA,
+               "Timeout cleanup must restore RAM-under-KERNAL patch bytes")) return 1;
+    return 0;
+}
+
+static int test_visible_kernal_hard_vector_installs_and_restores()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0x1FFE] = 0x66;
+    m.kernal_rom[0x1FFF] = 0xFE;
+    m.kernal_rom[0x0000] = 0xEA;
+    m.kernal_rom[0x0001] = 0xEA;
+    m.kernal_rom[0x0002] = 0xEA;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible KERNAL step must trap through the direct hard vector")) return 1;
+    if (expect(m.kernal_rom[0x1FFE] == (uint8_t)(FAKE_HARD_BRK_STUB & 0xFF) &&
+               m.kernal_rom[0x1FFF] == (uint8_t)(FAKE_HARD_BRK_STUB >> 8),
+               "Visible KERNAL hard IRQ/BRK vector must point at the debug stub while parked")) return 1;
+    if (expect(m.kernal_rom[0x0001] == 0xEA,
+               "Visible KERNAL patch byte must be restored after the step")) return 1;
+
+    m.cleanup();
+    if (expect(m.kernal_rom[0x1FFE] == 0x66 &&
+               m.kernal_rom[0x1FFF] == 0xFE,
+               "Cleanup must restore visible KERNAL hard vector bytes")) return 1;
+    return 0;
+}
+
+static int test_stale_visible_kernal_hard_vector_is_recovered()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0x1FFE] = (uint8_t)(FAKE_HARD_BRK_STUB & 0xFF);
+    m.kernal_rom[0x1FFF] = (uint8_t)(FAKE_HARD_BRK_STUB >> 8);
+    m.ram[0xC000] = 0xEA;
+    m.ram[0xC001] = 0xEA;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xC000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xC000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "RAM-only debug step must recover a stale visible KERNAL hard vector")) return 1;
+    if (expect(m.kernal_rom[0x1FFE] == 0x48 &&
+               m.kernal_rom[0x1FFF] == 0xFF,
+               "Stale visible KERNAL hard vector must be restored before RAM-only stepping")) return 1;
+
+    m.cleanup();
+    if (expect(m.kernal_rom[0x1FFE] == 0x48 &&
+               m.kernal_rom[0x1FFF] == 0xFF,
+               "Cleanup must not reinstall the stale visible KERNAL hard vector")) return 1;
     return 0;
 }
 
@@ -4135,27 +5309,36 @@ static int test_cleanup_resume_trampoline_restores_full_context()
     if (expect(m.ram[FAKE_SPIN_LO] == (uint8_t)(FAKE_RESUME_TRAMP & 0xFF) &&
                m.ram[FAKE_SPIN_HI] == (uint8_t)(FAKE_RESUME_TRAMP >> 8),
                "Cleanup must retarget the parked CPU to the resume trampoline")) return 1;
-    if (expect(m.ram[FAKE_RESUME_TRAMP + 0] == 0xA2 &&
-               m.ram[FAKE_RESUME_TRAMP + 1] == 0xF9 &&
-               m.ram[FAKE_RESUME_TRAMP + 2] == 0x9A,
-               "Cleanup trampoline must restore SP before returning")) return 1;
-    if (expect(m.ram[FAKE_RESUME_TRAMP + 3] == 0xA9 &&
-               m.ram[FAKE_RESUME_TRAMP + 4] == 0x20 &&
-               m.ram[FAKE_RESUME_TRAMP + 6] == 0xA9 &&
-               m.ram[FAKE_RESUME_TRAMP + 7] == 0x01 &&
-               m.ram[FAKE_RESUME_TRAMP + 9] == 0xA9 &&
-               m.ram[FAKE_RESUME_TRAMP + 10] == 0xA4,
-               "Cleanup trampoline must push PCH, PCL, then SR for RTI")) return 1;
-    if (expect(m.ram[FAKE_RESUME_TRAMP + 6] == 0xA9 &&
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 0] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 1] == 0x07 &&
+               m.ram[FAKE_RESUME_TRAMP + 2] == 0x85 &&
+               m.ram[FAKE_RESUME_TRAMP + 3] == 0x00 &&
+               m.ram[FAKE_RESUME_TRAMP + 4] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 5] == 0x07 &&
+               m.ram[FAKE_RESUME_TRAMP + 6] == 0x85 &&
                m.ram[FAKE_RESUME_TRAMP + 7] == 0x01,
+               "Cleanup trampoline must restore captured $00/$01 before returning")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 8] == 0xA2 &&
+               m.ram[FAKE_RESUME_TRAMP + 9] == 0xF9 &&
+               m.ram[FAKE_RESUME_TRAMP + 10] == 0x9A,
+               "Cleanup trampoline must restore SP before returning")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 11] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 12] == 0x20 &&
+               m.ram[FAKE_RESUME_TRAMP + 14] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 15] == 0x01 &&
+               m.ram[FAKE_RESUME_TRAMP + 17] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 18] == 0xA4,
+               "Cleanup trampoline must push PCH, PCL, then SR for RTI")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 14] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 15] == 0x01,
                "Cleanup trampoline must include the captured PC low byte")) return 1;
-    if (expect(m.ram[FAKE_RESUME_TRAMP + 12] == 0xA0 &&
-               m.ram[FAKE_RESUME_TRAMP + 13] == 0x99 &&
-               m.ram[FAKE_RESUME_TRAMP + 14] == 0xA2 &&
-               m.ram[FAKE_RESUME_TRAMP + 15] == 0x17 &&
-               m.ram[FAKE_RESUME_TRAMP + 16] == 0xA9 &&
-               m.ram[FAKE_RESUME_TRAMP + 17] == 0x42 &&
-               m.ram[FAKE_RESUME_TRAMP + 18] == 0x40,
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 20] == 0xA0 &&
+               m.ram[FAKE_RESUME_TRAMP + 21] == 0x99 &&
+               m.ram[FAKE_RESUME_TRAMP + 22] == 0xA2 &&
+               m.ram[FAKE_RESUME_TRAMP + 23] == 0x17 &&
+               m.ram[FAKE_RESUME_TRAMP + 24] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 25] == 0x42 &&
+               m.ram[FAKE_RESUME_TRAMP + 26] == 0x40,
                "Cleanup trampoline must restore Y, X, A and finish with RTI")) return 1;
     return 0;
 }
@@ -4973,10 +6156,16 @@ int main()
     RUN(test_d_inside_debug_without_context_goto_keeps_cursor_authoritative);
     RUN(test_d_refuses_undocumented_opcode_with_specific_warning);
     RUN(test_debug_predictor_uses_session_bytes_over_backend_reads);
+    RUN(test_debug_pc_disassembly_uses_session_live_bytes_over_view);
     RUN(test_t_traces_and_o_outs_inside_debug);
+    RUN(test_debug_o_does_not_step_out);
     RUN(test_o_without_traced_jsr_reports_not_in_subroutine);
     RUN(test_o_without_context_reports_not_in_subroutine);
     RUN(test_t_inside_debug_without_context_traces_from_cursor);
+    RUN(test_t_after_goto_ignores_successful_stale_snapshot);
+    RUN(test_g_after_goto_ignores_successful_stale_snapshot);
+    RUN(test_g_after_cursor_stop_uses_captured_context);
+    RUN(test_g_after_goto_with_active_context_uses_cursor);
     RUN(test_g_invalidates_context);
     RUN(test_return_remains_non_executing_navigation);
     RUN(test_ctrl_d_leaves_debug_only);
@@ -4991,6 +6180,7 @@ int main()
     RUN(test_breakpoints_survive_normal_close_reopen);
     RUN(test_monitor_reset_saved_state_clears_breakpoints);
     RUN(test_breakpoint_toggle_via_r);
+    RUN(test_breakpoint_mismatch_message_uses_view_target_and_live_cpu);
     RUN(test_breakpoint_popup_store_reuses_selected_slot);
     RUN(test_breakpoint_popup_digit_jumps_to_slot);
     RUN(test_breakpoint_row_indicator_and_color);
@@ -5033,13 +6223,26 @@ int main()
     RUN(test_step_over_stops_at_callee_breakpoint);
     RUN(test_visible_basic_step_uses_rom_patch_support);
     RUN(test_visible_rom_step_bytes_use_cpu_visible_mapping);
-    RUN(test_u64_debug_cpu_port_uses_monitor_bank);
+    RUN(test_u64_debug_cpu_port_uses_live_cpu_bank);
+    RUN(test_brk_debug_cassette_layout_is_compact_and_top_aligned);
+    RUN(test_brk_handler_bytes_preserve_stack_and_port_capture_semantics);
+    RUN(test_brk_trampoline_bytes_preserve_rti_restore_semantics);
+    RUN(test_hard_brk_stub_bytes_preserve_irq_and_brk_paths);
+    RUN(test_brk_capture_records_live_cpu_port);
+    RUN(test_parked_step_resume_restores_captured_cpu_port_registers);
+    RUN(test_no_breakpoint_continue_restores_captured_cpu_port_registers);
     RUN(test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump);
     RUN(test_visible_kernal_step_into_uses_rom_patch_support);
     RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
     RUN(test_visible_rom_breakpoint_go_uses_same_capability_gate);
     RUN(test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram);
+    RUN(test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores);
+    RUN(test_patch_restore_uses_recorded_destination_after_cpu_bank_changes);
+    RUN(test_kernal_out_hard_vector_installs_and_restores_on_cleanup);
+    RUN(test_kernal_out_hard_vector_restores_on_timeout);
+    RUN(test_visible_kernal_hard_vector_installs_and_restores);
+    RUN(test_stale_visible_kernal_hard_vector_is_recovered);
     RUN(test_run_to_current_visible_kernal_jsr_enters_callee_before_rearming_cursor_breakpoint);
     RUN(test_overlay_step_over_never_freezes);
     RUN(test_overlay_accessible_unfrozen_step_over_does_not_unfreeze);

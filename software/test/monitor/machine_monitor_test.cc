@@ -695,11 +695,24 @@ static int test_parsers_and_formatters(void)
                    "High-bit differences must not change the displayed CPU7 map.")) return 1;
     }
 
+    {
+        monitor_format_status_line(status_line, 0x05, 0x07, 0);
+        if (expect(strcmp(status_line, "C7O5 $A:RAM $D:I/O $E:RAM VIC0 $0000") == 0,
+                   "Differing live/view CPU banks must render CPU-first CnOo status.")) return 1;
+        if (expect(strncmp(status_line, "C7O5", 4) == 0,
+                   "Differing CPU field must be exactly four chars.")) return 1;
+        if (expect(strstr(status_line, "$A:RAM $D:I/O $E:RAM") != NULL,
+                   "Differing CPU status labels must describe the monitor view bank.")) return 1;
+    }
+
     for (uint8_t cpu_bank = 0; cpu_bank < 8; cpu_bank++) {
         for (uint8_t vic_bank = 0; vic_bank < 4; vic_bank++) {
             monitor_format_status_line(status_line, cpu_bank, vic_bank);
             if (expect(strlen(status_line) <= 38, "Status line width exceeded 38 characters.")) return 1;
             if (expect(strchr(status_line, '|') == NULL, "Status line must not contain a pipe separator.")) return 1;
+            monitor_format_status_line(status_line, cpu_bank, (uint8_t)(cpu_bank ^ 0x07), vic_bank);
+            if (expect(strlen(status_line) <= 38, "Split CPU/VIC status line width exceeded 38 characters.")) return 1;
+            if (expect(strchr(status_line, '|') == NULL, "Split status line must not contain a pipe separator.")) return 1;
         }
     }
 
@@ -2251,15 +2264,15 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU0 should expose RAM at A000.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
-               "CPU0 status did not update after O.")) return 1;
+    if (expect(strstr(status, "C7O0 $A:RAM $D:RAM $E:RAM VIC2 $8000") == status,
+               "CPU0 monitor-view status did not update after O.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "CPU bank cycle to CPU1 failed.")) return 1;
     screen.get_slice(1, 4, 8, line);
     if (expect(strncmp(line, "a000 aa", 7) == 0 || strncmp(line, "A000 AA", 7) == 0, "CPU1 should keep A000 in RAM.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000") == status,
-               "CPU1 status did not update after O.")) return 1;
+    if (expect(strstr(status, "C7O1 $A:RAM $D:CHR $E:RAM VIC2 $8000") == status,
+               "CPU1 monitor-view status did not update after O.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help open failed.")) return 1;
     screen.get_slice(1, 3, 38, status);
@@ -2337,12 +2350,12 @@ static int test_monitor_interaction(void)
         BackendMachineMonitor vic_monitor(&ui, &banked_backend);
         vic_monitor.init(&screen, &idle_keyboard);
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
-                   "Idle VIC refresh test should preserve the selected default CPU7 bank.")) return 1;
+        if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+                   "Idle VIC refresh test should show live CPU0 and monitor CPU7 separately.")) return 1;
         banked_backend.live_dd00 = 0x00;
         if (expect(vic_monitor.poll(0) == 0, "VIC idle refresh poll failed.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC3 $C000") == status,
+        if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC3 $C000") == status,
                    "VIC status did not refresh after DD00 change.")) return 1;
         vic_monitor.deinit();
     }
@@ -2597,13 +2610,13 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     };
     FakeKeyboard keyboard(keys, sizeof(keys) / sizeof(keys[0]));
     static const char *cpu_cycle_status[] = {
-        "CPU1 $A:RAM $D:CHR $E:RAM VIC2 $8000",
-        "CPU2 $A:RAM $D:CHR $E:KRN VIC2 $8000",
-        "CPU3 $A:BAS $D:CHR $E:KRN VIC2 $8000",
-        "CPU4 $A:RAM $D:RAM $E:RAM VIC2 $8000",
-        "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000",
-        "CPU6 $A:RAM $D:I/O $E:KRN VIC2 $8000",
-        "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
+        "C0O1 $A:RAM $D:CHR $E:RAM VIC2 $8000",
+        "C0O2 $A:RAM $D:CHR $E:KRN VIC2 $8000",
+        "C0O3 $A:BAS $D:CHR $E:KRN VIC2 $8000",
+        "C0O4 $A:RAM $D:RAM $E:RAM VIC2 $8000",
+        "C0O5 $A:RAM $D:I/O $E:RAM VIC2 $8000",
+        "C0O6 $A:RAM $D:I/O $E:KRN VIC2 $8000",
+        "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000",
         "CPU0 $A:RAM $D:RAM $E:RAM VIC2 $8000",
     };
     static const char *vic_cycle_status[] = {
@@ -2633,8 +2646,8 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     monitor.init(&screen, &keyboard);
 
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
-               "Fresh monitor sessions must default to CPU7 regardless of the live machine bank.")) return 1;
+    if (expect(strstr(status, "C0O7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+               "Fresh monitor sessions must display live CPU0 and monitor CPU7 separately.")) return 1;
 
     if (expect(monitor.poll(0) == 0, "Jump command failed for CPU/VIC shortcut test.")) return 1;
     if (expect(!monitor_io::g_monitor_io.jump_called, "J must change the monitor address without executing code.")) return 1;
@@ -2676,6 +2689,42 @@ static int test_monitor_default_cpu_bank_and_vic_shortcuts(void)
     }
 
     if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after CPU/VIC shortcut test.")) return 1;
+    monitor.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
+static int test_monitor_split_cpu_status_highlights_digits_only()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
+    char status[39];
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.color_fg = 12;
+    monitor_reset_saved_state();
+
+    backend.live_cpu_port = 0x05;
+    backend.live_cpu_ddr = 0x07;
+    backend.live_dd00 = 0x01;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "C5O7 $A:BAS $D:I/O $E:KRN VIC2 $8000") == status,
+               "Split CPU status must show live CPU first and monitor view second")) return 1;
+    if (expect(screen.colors[22][1] == ui.color_fg &&
+               screen.colors[22][2] == 1 &&
+               screen.colors[22][3] == ui.color_fg &&
+               screen.colors[22][4] == 1,
+               "Split CPU status must highlight only the two numeric bank values")) return 1;
+    if (expect(screen.colors[22][5] == ui.color_fg,
+               "Split CPU status letters must stay in the normal foreground color")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after split CPU status test")) return 1;
     monitor.deinit();
     monitor_reset_saved_state();
     return 0;
@@ -2836,8 +2885,8 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU4 failed for KERNAL banking test.")) return 1;
     if (expect(monitor.poll(0) == 0, "CPU bank cycle to CPU5 failed for KERNAL banking test.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU5 $A:RAM $D:I/O $E:RAM VIC2 $8000") == status,
-               "CPU5 status did not expose RAM at E000.")) return 1;
+    if (expect(strstr(status, "C7O5 $A:RAM $D:I/O $E:RAM VIC2 $8000") == status,
+               "CPU5 monitor-view status did not expose RAM at E000.")) return 1;
     screen.get_slice(1, 4, MONITOR_HEX_ROW_CHARS, line);
     if (expect(strstr(line, "e000 55 bb") == line || strstr(line, "E000 55 BB") == line,
                "Bank switching to RAM did not reveal the underlying bytes at E000.")) return 1;
@@ -4121,8 +4170,8 @@ static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
     if (expect(strstr(header, "MONITOR ASM $A006") == header,
                "CPU bank cycling in ASM view must preserve the logical cursor address when possible.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "CPU0 ") == status,
-               "CPU bank cycling test must actually advance the visible CPU bank status.")) return 1;
+    if (expect(strstr(status, "C7O0 ") == status,
+               "CPU bank cycling test must advance the monitor CPU bank while live CPU stays separate.")) return 1;
     if (expect(mon.poll(0) == 1, "ASM bank-anchor test: exit failed.")) return 1;
     mon.deinit();
     return 0;
@@ -6701,7 +6750,7 @@ static int test_asm_follow_and_return_navigation(void)
         advance_fake_ms_timer(1);
         if (expect(mon.poll(0) == 0, "Follow JMP: status expiry poll failed.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "CPU") == status,
+        if (expect(strstr(status, "CPU") == status || strstr(status, "C0O7") == status,
                    "Follow JMP: follow-stack status must clear after its timeout.")) return 1;
         mon.deinit();
     }
@@ -7035,6 +7084,7 @@ int main()
     if (test_monitor_cursor_header_and_scroll()) return 1;
     if (test_monitor_interaction()) return 1;
     if (test_monitor_default_cpu_bank_and_vic_shortcuts()) return 1;
+    if (test_monitor_split_cpu_status_highlights_digits_only()) return 1;
     if (test_monitor_freeze_mode_vic_shortcut_override()) return 1;
     if (test_monitor_reopen_restores_state()) return 1;
     if (test_monitor_kernal_bank_switch_and_ram_interaction()) return 1;

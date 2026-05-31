@@ -209,6 +209,7 @@ def _enter_rom_debug_at(session: "mt.MonitorSession", address: int, marker: str,
                         context: str, *status_tokens: str) -> mt.Snapshot:
     _reopen_monitor(session)
     mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    _ensure_no_debug(session)
     session.goto(f"{address:04X}")
     session.send_char("A")
     header = _header_line(session)
@@ -318,15 +319,40 @@ def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
     request = urllib.request.Request(url, data=b"", method="PUT")
     with urllib.request.urlopen(request, timeout=5.0):
         pass
+    _wait_for_c64_ready(rest_host, timeout)
+    time.sleep(3.0)
 
+def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
     ready = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
     deadline = time.time() + timeout
+    stable_since = 0.0
     while time.time() < deadline:
         screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
         if ready in screen:
-            return
+            now = time.time()
+            if stable_since == 0.0:
+                stable_since = now
+            elif now - stable_since >= 0.75:
+                return
+        else:
+            stable_since = 0.0
         time.sleep(0.1)
     raise mt.Failure("C64 core reset did not reach READY prompt")
+
+
+def _reset_monitor_and_c64(rest_host: str, session: "mt.MonitorSession",
+                           timeout: float = 8.0) -> None:
+    _reopen_monitor(session)
+    _send_ctrl_x(session)
+    _wait_for_c64_ready(rest_host, timeout)
+    # C=+X tears down the live Debug session, but the REST reset path is the
+    # deterministic core reset used by standalone hardware runs.
+    _reset_c64_core(rest_host, timeout)
+    try:
+        _wait_for_blank_debug_context(session, 2.0)
+    except mt.Failure:
+        pass
+    _reopen_monitor(session)
 
 
 def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
@@ -385,7 +411,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
-                      "C=+B List", "D Step Over", "T Step Into", "O Step Out",
+                      "C=+B List", "D Step Over", "T Step Into", "U Step Out",
                       "C=+R", "C=+D", "C=+X", "RSTOP"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")
@@ -999,7 +1025,7 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         session.goto("C2A0")
         session.send_char("A")
         session.send_char("D")
-        session.send_char("O")
+        session.send_char("U")
         snap = _wait_for_screen_text(session, "NOT IN SUBROUTINE")
         text = snap.text()
         if "UNSAFE TARGET" in text:
@@ -1027,15 +1053,13 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
 
     with mt.check("Debug: undocumented NOP is decoded by Undc but not debug-stepped"):
         session.goto("C243")
-        snap = session.send_char("A")
-        if "Undc" in snap.text():
+        session.send_char("A")
+        # The Undc display toggle is U OUTSIDE Debug only; inside Debug U is Step
+        # Out. Enable Undc here (before entering Debug) and verify $1A decodes as
+        # NOP, then enter Debug and confirm the undocumented opcode refuses to
+        # step regardless of the display flag.
+        if "Undc" not in _header_line(session):
             session.send_char("U")
-        session.send_char("D")
-        session.send_char("D")
-        _wait_for_screen_text(session, "UNSUPPORTED OPCODE")
-        session.send_key("ENTER")
-        _wait_for_blank_debug_context(session)
-        session.send_char("U")
         header = _header_line(session)
         if "Undc" not in header:
             raise mt.Failure(f"Undc flag must appear after U: {header!r}")
@@ -1043,10 +1067,14 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         if "NOP" not in row:
             raise mt.Failure(f"Undc flag must decode $1A as NOP: {row!r}")
         session.send_char("D")
+        session.send_char("D")
         _wait_for_screen_text(session, "UNSUPPORTED OPCODE")
         session.send_key("ENTER")
-        session.send_char("U")
+        _wait_for_blank_debug_context(session)
         _ensure_no_debug(session)
+        # Restore the Undc display toggle off (outside Debug).
+        if "Undc" in _header_line(session):
+            session.send_char("U")
 
     with mt.check("Debug: traced RTS lands on the caller continuation address"):
         _reopen_monitor(session)
@@ -1193,13 +1221,13 @@ def run_nested_out_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure("Outer-frame side effect did not execute before entering the inner call")
         session.send_char("T")
         _wait_for_pc(session, "C3C0")
-        session.send_char("O")
+        session.send_char("U")
         parsed = _wait_for_pc(session, "C389")
         if mt.read_rest_memory(rest_host, 0xC193, 1)[0] != 0x33:
             raise mt.Failure(f"Inner Out did not execute the inner side effect: {parsed!r}")
         if mt.read_rest_memory(rest_host, 0xC191, 1)[0] != 0x00:
             raise mt.Failure("Inner Out must not run the caller-side store yet")
-        session.send_char("O")
+        session.send_char("U")
         parsed = _wait_for_pc(session, "C365")
         session.send_char("D")
         parsed = _wait_for_pc(session, "C368")
@@ -1254,7 +1282,7 @@ def prove_step_out_breaks_after_active_jsr(rest_host: str, session: "mt.MonitorS
     session.send_char("D")
     _wait_for_pc(session, "C6D0")
 
-    parsed = _step_and_assert_pc(session, "O", 0xC6A3, context)
+    parsed = _step_and_assert_pc(session, "U", 0xC6A3, context)
     side = mt.read_rest_memory(rest_host, 0xC6F0, 2)
     if side != bytes([0x00, 0x01]):
         raise mt.Failure(
@@ -1518,32 +1546,32 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
 
 
 def run_kernal_basic_breakpoint_regression(rest_host: str, session: "mt.MonitorSession") -> None:
-    """Reproduce the $E000 -> $BC9B current-breakpoint continuation path."""
+    """Reproduce a KERNAL-to-BASIC ROM breakpoint continuation path."""
 
-    with mt.check("Debug: KERNAL $E000 G continues safely from BASIC $BC9B", u2=False,
+    with mt.check("Debug: KERNAL $E002 G continues safely to BASIC $BC0F", u2=False,
                   u2_reason="U64 BASIC/KERNAL ROM breakpoints are required"):
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         _ensure_no_debug(session)
         mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
 
-        session.goto("BC9B")
+        session.goto("BC0F")
         session.send_char("A")
         session.send_char("D")
         for stale in (0xBC0F, 0xE005, 0xBC9B, 0xBCF2):
             _clear_breakpoint_at(session, stale, f"${stale:04X} stale breakpoint clear")
-        session.goto("BC9B")
-        row = _disassembly_row(session.capture(), 0xBC9B)
+        session.goto("BC0F")
+        row = _disassembly_row(session.capture(), 0xBC0F)
         if "[BAS]" not in row:
-            raise mt.Failure(f"$BC9B must be visible as BASIC ROM before breakpointing: {row!r}")
-        _ensure_breakpoint_at(session, 0xBC9B, "$BC9B breakpoint set")
+            raise mt.Failure(f"$BC0F must be visible as BASIC ROM before breakpointing: {row!r}")
+        _ensure_breakpoint_at(session, 0xBC0F, "$BC0F breakpoint set")
 
-        session.goto("E000")
+        _enter_rom_debug_at(session, 0xE002, "KRN", "$E002 Go to $BC0F setup", "$E:KRN")
         session.send_char("G")
-        parsed = _wait_for_pc(session, "BC9B")
-        _assert_no_debug_modal(session, "$E000 Go to $BC9B")
-        if parsed["pc"].upper() != "BC9B":
-            raise mt.Failure(f"$E000 Go did not stop at $BC9B: {parsed!r}")
+        parsed = _wait_for_pc(session, "BC0F")
+        _assert_no_debug_modal(session, "$E002 Go to $BC0F")
+        if parsed["pc"].upper() != "BC0F":
+            raise mt.Failure(f"$E002 Go did not stop at $BC0F: {parsed!r}")
 
         session.goto("BCF2")
         row = _disassembly_row(session.capture(), 0xBCF2)
@@ -1552,12 +1580,12 @@ def run_kernal_basic_breakpoint_regression(rest_host: str, session: "mt.MonitorS
         _ensure_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint set")
 
         session.send_char("G")
-        parsed = _wait_for_pc_not(session, "BC9B")
-        _assert_no_debug_modal(session, "$BC9B Go to $BCF2")
-        if parsed["pc"].upper() == "BC9B":
-            raise mt.Failure(f"Continue from $BC9B did not advance: {parsed!r}")
+        parsed = _wait_for_pc_not(session, "BC0F")
+        _assert_no_debug_modal(session, "$BC0F Go with $BCF2 armed")
+        if parsed["pc"].upper() == "BC0F":
+            raise mt.Failure(f"Continue from $BC0F did not advance: {parsed!r}")
 
-        _clear_breakpoint_at(session, 0xBC9B, "$BC9B breakpoint clear")
+        _clear_breakpoint_at(session, 0xBC0F, "$BC0F breakpoint clear")
         _clear_breakpoint_at(session, 0xBCF2, "$BCF2 breakpoint clear")
         _ensure_no_debug(session)
         _reset_c64_core(rest_host)
@@ -1668,15 +1696,15 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: "mt.MonitorSessio
         _wait_for_pc(session, "E005")
         _assert_no_debug_modal(session, "deep trace current BASIC breakpoint skip")
 
-        session.send_char("O")
+        session.send_char("U")
         _wait_for_pc(session, "C754")
         session.send_char("D")
         parsed = _wait_for_pc(session, "C755")
         if parsed["ac"] != "5A":
             raise mt.Failure(f"PLA after KERNAL/BASIC return did not restore AC: {parsed!r}")
-        session.send_char("O")
+        session.send_char("U")
         _wait_for_pc(session, "C733")
-        session.send_char("O")
+        session.send_char("U")
         _wait_for_pc(session, "C705")
         session.send_char("D")
         _wait_for_pc(session, "C708")
@@ -1685,6 +1713,440 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: "mt.MonitorSessio
         _clear_breakpoint_at(session, 0xBC0F, "$BC0F deep trace breakpoint clear")
         _clear_breakpoint_at(session, 0xE005, "$E005 deep trace breakpoint clear")
         _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
+
+def _banked_kernal_out_program(base: int, ready_addr: int) -> bytes:
+    payload = bytes([
+        0xEE, 0x20, 0xD0,       # INC $D020
+        0x4C, 0x00, 0xE0,       # JMP $E000
+    ])
+    payload_addr = base + 43
+    program = bytes([
+        0x78,                   # SEI
+        0xA9, 0x37,             # LDA #$37
+        0x85, 0x00,             # STA $00
+        0xA9, 0x35,             # LDA #$35
+        0x85, 0x01,             # STA $01
+        0xA2, 0x00,             # LDX #$00
+        0xBD, payload_addr & 0xFF, payload_addr >> 8,
+        0x9D, 0x00, 0xE0,       # STA $E000,X
+        0xE8,                   # INX
+        0xE0, len(payload),     # CPX #payload_end-payload
+        0xD0, 0xF5,             # BNE copy
+        0xA9, 0xA5,             # LDA #$A5
+        0x8D, ready_addr & 0xFF, ready_addr >> 8,
+        0xEA,                   # ready: NOP
+        0xEA,                   # NOP
+        0xA9, 0x37,             # LDA #$37
+        0x85, 0x00,             # STA $00
+        0xA9, 0x35,             # LDA #$35
+        0x85, 0x01,             # STA $01
+        0xEA,                   # NOP
+        0xEA,                   # NOP
+        0xEA,                   # NOP
+        0x4C, 0x00, 0xE0,       # JMP $E000
+    ])
+    return program + payload
+
+
+def _open_breakpoint_popup(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
+    session.last_command = f"CTRL_R_{context}"
+    session.sock.sendall(b"\x12")
+    snap = session.capture()
+    if "BREAKPOINTS" not in snap.text():
+        raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
+    return snap
+
+
+def _assert_breakpoint_popup_contains(session: "mt.MonitorSession",
+                                      context: str, *patterns: str) -> mt.Snapshot:
+    snap = _open_breakpoint_popup(session, context)
+    text = snap.text()
+    for pattern in patterns:
+        if re.search(pattern, text, re.MULTILINE) is None:
+            raise mt.Failure(f"{context}: missing popup pattern {pattern!r}\n{text}")
+    return snap
+
+
+def _select_monitor_view(session: "mt.MonitorSession", bank: int,
+                         context: str) -> mt.Snapshot:
+    bank &= 0x07
+    for _ in range(8):
+        snap = session.capture()
+        status = snap.line(snap.find_status_line())
+        if f"CPU{bank}" in status or f"O{bank}" in status:
+            return snap
+        session.send_char("o")
+    snap = session.capture()
+    raise mt.Failure(f"{context}: could not select monitor view O{bank}\n{snap.text()}")
+
+
+def _assert_rest_byte_changes(rest_host: str, address: int, context: str,
+                              minimum_values: int = 3) -> None:
+    seen = set()
+    deadline = time.time() + 4.0
+    while time.time() < deadline and len(seen) < minimum_values:
+        seen.add(mt.read_rest_memory(rest_host, address, 1)[0])
+        time.sleep(0.05)
+    if len(seen) < minimum_values:
+        raise mt.Failure(
+            f"{context}: ${address:04X} did not keep changing; "
+            f"observed values={sorted(seen)!r}")
+
+
+def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """Prove monitor-view breakpoints and live $0001 execution stay separate."""
+
+    bootstrap_addr = 0xC880
+    ready_addr = 0xC8F0
+    capture_addr = bootstrap_addr + 27
+    program = _banked_kernal_out_program(bootstrap_addr, ready_addr)
+
+    with mt.check("Debug: KERNAL-out bank separation fixture reaches live CPU5", u2=False,
+                  u2_reason="U64 CPU banking and volatile ROM-image breakpoints are required"):
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "bank separation setup cleanup")
+        _ensure_no_debug(session)
+        _select_monitor_view(session, 7, "select KERNAL monitor view before bank capture")
+        mt.write_rest_memory(rest_host, ready_addr, bytes([0x00]))
+        mt.write_rest_memory(rest_host, bootstrap_addr, program)
+        session.goto(f"{capture_addr:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} stale live-port breakpoint clear")
+        _ensure_breakpoint_at(session, capture_addr, f"${capture_addr:04X} live-port capture breakpoint set")
+        session.goto(f"{bootstrap_addr:04X}")
+        session.send_char("G")
+        _wait_for_pc(session, f"{capture_addr:04X}")
+        mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
+        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} live-port capture breakpoint clear")
+        snap = mt.ensure_status(session, "C5O7 $A:BAS $D:I/O $E:KRN VIC")
+        status = snap.line(snap.find_status_line())
+        if "C5O7" not in status or "$E:KRN" not in status:
+            raise mt.Failure(f"Footer must show live CPU5, monitor O7 KERNAL labels: {status!r}")
+
+    with mt.check("Debug: KERNAL and RAM $E000 breakpoints coexist with target tags", u2=False,
+                  u2_reason="U64 visible-ROM and RAM-under-KERNAL breakpoints are required"):
+        snap = session.goto("E000")
+        row = _disassembly_row(snap, 0xE000)
+        if "[KRN]" not in row or "STA $56" not in row:
+            raise mt.Failure(f"Monitor O7 view must still browse KERNAL at $E000: {row!r}")
+        header = _header_line(session)
+        if "Dbg" not in header:
+            session.send_char("D")
+        session.send_char("R")
+        _wait_for_screen_text(session, "BRK KRN, CPU RAM; not mapped now")
+        session.send_key("ENTER")
+
+        _ensure_no_debug(session)
+        _select_monitor_view(session, 5, "select RAM-under-KERNAL monitor view")
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        session.goto("E000")
+        session.send_char("A")
+        row = _disassembly_row(session.capture(), 0xE000)
+        if "[RAM]" not in row or "INC $D020" not in row:
+            raise mt.Failure(f"Monitor O5 view must browse hidden RAM payload at $E000: {row!r}")
+        session.send_char("D")
+        session.send_char("R")
+        _assert_no_debug_modal(session, "$E000 RAM breakpoint set")
+
+        snap = _assert_breakpoint_popup_contains(
+            session,
+            "mixed $E000 KRN/RAM breakpoint list",
+            r"^\|?\d SET\s+\$E000 KRN\b",
+            r"^\|?\d SET\s+\$E000 RAM\b",
+        )
+        session.send_key_repeat("UP", 9)
+        session.send_char("E")
+        snap = session.capture()
+        if re.search(r"^\|?0 OFF\s+\$E000 KRN\b", snap.text(), re.MULTILINE) is None:
+            raise mt.Failure(f"Disabling KRN slot must retain its target tag:\n{snap.text()}")
+        session.send_char("E")
+        session.send_key("ESC")
+
+    with mt.check("Debug: RAM-under-KERNAL breakpoint hits with KERNAL banked out", u2=False,
+                  u2_reason="U64 live $0001 CPU5 breakpoint trapping is required"):
+        _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, ready_addr, bytes([0x00]))
+        mt.write_rest_memory(rest_host, bootstrap_addr, program)
+        session.goto(f"{capture_addr:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} stale recapture breakpoint clear")
+        _ensure_breakpoint_at(session, capture_addr, f"${capture_addr:04X} recapture breakpoint set")
+        session.goto(f"{bootstrap_addr:04X}")
+        session.send_char("G")
+        _wait_for_pc(session, f"{capture_addr:04X}")
+        mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} recapture breakpoint clear")
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        session.send_char("G")
+        parsed = _wait_for_pc(session, "E000")
+        _assert_no_debug_modal(session, "$E000 RAM-under-KERNAL breakpoint hit")
+        if parsed["pc"].upper() != "E000":
+            raise mt.Failure(f"RAM-under-KERNAL breakpoint did not hit $E000: {parsed!r}")
+        row = _disassembly_row(session.capture(), 0xE000)
+        if "[RAM]" not in row or "INC $D020" not in row:
+            raise mt.Failure(f"Debug PC row must follow live RAM mapping: {row!r}")
+
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "E003")
+        _assert_no_debug_modal(session, "$E000 RAM-under-KERNAL step")
+        row = _disassembly_row(session.capture(), 0xE003)
+        if "[RAM]" not in row or "JMP $E000" not in row:
+            raise mt.Failure(f"Step from RAM-under-KERNAL must decode live bytes: {row!r}")
+
+    with mt.check("Debug: mixed $E000 breakpoint cleanup restores both stores", u2=False,
+                  u2_reason="U64 visible-ROM and hidden-RAM patch restoration are required"):
+        _clear_all_breakpoints(session, "bank separation final cleanup")
+        _ensure_no_debug(session)
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        session.goto("E000")
+        session.send_char("A")
+        row = _disassembly_row(session.capture(), 0xE000)
+        if "[BRK" in row or "INC $D020" not in row:
+            raise mt.Failure(f"Hidden RAM breakpoint byte was not restored: {row!r}")
+
+        _ensure_no_debug(session)
+        _select_monitor_view(session, 7, "select KERNAL monitor view")
+        mt.ensure_status(session, "C5O7 $A:BAS $D:I/O $E:KRN VIC")
+        session.goto("E000")
+        session.send_char("A")
+        row = _disassembly_row(session.capture(), 0xE000)
+        if "[BRK" in row or "[KRN]" not in row or "STA $56" not in row:
+            raise mt.Failure(f"KERNAL ROM breakpoint byte was not restored: {row!r}")
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
+
+def run_banked_continue_no_breakpoints_tests(rest_host: str,
+                                             session: "mt.MonitorSession") -> None:
+    """Prove G/continue with no breakpoints keeps a KERNAL-out program running.
+
+    Mandatory $01=$00 repro from the handover:
+        $C000: SEI; LDA #$00; STA $01; JMP $E000   (banks KERNAL out, bank 0)
+        $E000: INC $D021; JMP $E000                (RAM-under-KERNAL loop)
+    With $01=$00 the $D021 cell is plain RAM, so the live INC is observable as a
+    changing value through the raw REST memory path. Pressing G with no
+    persistent breakpoints must release the CPU back into this loop via the
+    register-restore stub (which preserves $0001 and does not depend on the
+    KERNAL NMI path), not via the KERNAL-dependent NMI trampoline that hangs
+    when KERNAL is banked out.
+    """
+
+    bootstrap = 0xC000
+    payload = 0xE000
+    boot = bytes([0x78, 0xA9, 0x00, 0x85, 0x01, 0x4C, 0x00, 0xE0])
+    pay = bytes([0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xE0])
+
+    with mt.check("Debug: $01=$00 continue repro reaches live CPU0 RAM-under-KERNAL",
+                  u2=False,
+                  u2_reason="U64 live $0001 CPU banking and RAM-under-KERNAL are required"):
+        _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "continue-no-bp setup cleanup")
+        _ensure_no_debug(session)
+        # Write payload directly to RAM-under-KERNAL and the bootstrap (raw REST).
+        mt.write_rest_memory(rest_host, payload, pay)
+        mt.write_rest_memory(rest_host, bootstrap, boot)
+        # Monitor view 5 maps $E000 -> RAM, so the breakpoint targets RAM. The
+        # live execution bank will be 0, so the footer must show a C0O5 mismatch.
+        _select_monitor_view(session, 5, "select RAM view for $E000 breakpoint")
+        session.goto("E000")
+        session.send_char("A")
+        session.send_char("D")
+        # Setting a RAM-target breakpoint while the live CPU still maps $E000 as
+        # KERNAL (bank 7, before the program runs) raises the mismatch notice.
+        # This is expected; dismiss it. The breakpoint is still armed in RAM.
+        row = _disassembly_row(session.capture(), payload)
+        if "[BRK" not in row:
+            session.send_char("R")
+            _wait_for_screen_text(session, "not mapped now")
+            session.send_key("ENTER")
+        session.goto(f"{bootstrap:04X}")
+        session.send_char("G")
+        parsed = _wait_for_pc(session, "E000")
+        _assert_no_debug_modal(session, "$01=$00 $E000 breakpoint hit")
+        snap = session.capture()
+        status = snap.line(snap.find_status_line())
+        if "C0O5" not in status:
+            raise mt.Failure(
+                f"Footer must show live CPU0 vs monitor view 5 mismatch (C0O5): {status!r}")
+        row = _disassembly_row(snap, payload)
+        if "[RAM]" not in row or "INC $D021" not in row:
+            raise mt.Failure(f"Debug PC row must follow live RAM mapping: {row!r}")
+
+    with mt.check("Debug: G with no breakpoints keeps $01=$00 loop running",
+                  u2=False,
+                  u2_reason="U64 register-restore continue under non-standard banking is required"):
+        # Clear the breakpoint so G releases the CPU into free execution.
+        _clear_all_breakpoints(session, "continue-no-bp release cleanup")
+        # Seed $D021 (plain RAM at $01=$00) to a known low value, then continue.
+        mt.write_rest_memory(rest_host, 0xD021, bytes([0x00]))
+        session.send_char("G")
+        _assert_no_debug_modal(session, "$01=$00 continue G")
+        # The loop must increment $D021. Observe several raw reads change over a
+        # short window. A hang/forced-CPU7/lost-Telnet would leave it static.
+        _assert_rest_byte_changes(
+            rest_host, 0xD021,
+            "$01=$00 continue G (machine appears hung or forced back to CPU7)")
+        # Telnet must still be responsive and the monitor reachable afterwards.
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
+    with mt.check("Debug: $01=$35 continue with no breakpoints keeps I/O loop running",
+                  u2=False,
+                  u2_reason="U64 register-restore continue under KERNAL-out I/O banking is required"):
+        bootstrap_addr = 0xC880
+        ready_addr = 0xC8F0
+        capture_addr = bootstrap_addr + 27
+        program = _banked_kernal_out_program(bootstrap_addr, ready_addr)
+        _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "$01=$35 continue setup cleanup")
+        _ensure_no_debug(session)
+        _select_monitor_view(session, 5, "select RAM-under-KERNAL view for $01=$35 continue")
+        mt.write_rest_memory(rest_host, ready_addr, bytes([0x00]))
+        mt.write_rest_memory(rest_host, bootstrap_addr, program)
+        session.goto(f"{capture_addr:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _ensure_breakpoint_at(session, capture_addr,
+                              f"${capture_addr:04X} $01=$35 payload-copy breakpoint set")
+        session.goto(f"{bootstrap_addr:04X}")
+        session.send_char("G")
+        _wait_for_pc(session, f"{capture_addr:04X}")
+        mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        _clear_breakpoint_at(session, capture_addr,
+                             f"${capture_addr:04X} $01=$35 payload-copy breakpoint clear")
+        session.goto("E000")
+        row = _disassembly_row(session.capture(), payload)
+        if "[RAM]" not in row or "INC $D020" not in row:
+            raise mt.Failure(f"$01=$35 payload copy did not install RAM loop: {row!r}")
+        _ensure_breakpoint_at(session, payload, "$01=$35 RAM-under-KERNAL breakpoint set")
+        session.send_char("G")
+        _wait_for_pc(session, "E000")
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        row = _disassembly_row(session.capture(), payload)
+        if "[RAM]" not in row or "INC $D020" not in row:
+            raise mt.Failure(f"$01=$35 Debug PC row must follow live RAM mapping: {row!r}")
+        _clear_all_breakpoints(session, "$01=$35 continue release cleanup")
+        mt.write_rest_memory(rest_host, 0xD020, bytes([0x00]))
+        session.send_char("G")
+        _assert_no_debug_modal(session, "$01=$35 continue G")
+        _assert_rest_byte_changes(
+            rest_host, 0xD020,
+            "$01=$35 continue G (machine appears hung or forced back to CPU7)")
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
+    with mt.check("Debug: $01=$37 continue with no breakpoints keeps baseline I/O loop running",
+                  u2=False,
+                  u2_reason="U64 register-restore continue under baseline banking is required"):
+        base = 0xC020
+        ready = 0xC08F
+        loop = base + 14
+        program = bytes([
+            0x78,                   # SEI
+            0xA9, 0x37,             # LDA #$37
+            0x85, 0x00,             # STA $00
+            0xA9, 0x37,             # LDA #$37
+            0x85, 0x01,             # STA $01
+            0xA9, 0xA5,             # LDA #$A5
+            0x8D, ready & 0xFF, ready >> 8,
+            0xEE, 0x20, 0xD0,       # INC $D020
+            0x4C, loop & 0xFF, loop >> 8,
+        ])
+        _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "$01=$37 continue setup cleanup")
+        _ensure_no_debug(session)
+        mt.write_rest_memory(rest_host, ready, bytes([0x00]))
+        mt.write_rest_memory(rest_host, base, program)
+        _select_monitor_view(session, 7, "select baseline view for $01=$37 continue")
+        session.goto(f"{loop:04X}")
+        session.send_char("A")
+        session.send_char("D")
+        _ensure_breakpoint_at(session, loop, f"${loop:04X} baseline loop breakpoint set")
+        session.goto(f"{base:04X}")
+        session.send_char("G")
+        _wait_for_pc(session, f"{loop:04X}")
+        mt.wait_for_rest_byte(rest_host, ready, 0xA5, timeout=4.0)
+        mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+        _clear_all_breakpoints(session, "$01=$37 continue release cleanup")
+        mt.write_rest_memory(rest_host, 0xD020, bytes([0x00]))
+        session.send_char("G")
+        _assert_no_debug_modal(session, "$01=$37 continue G")
+        _assert_rest_byte_changes(
+            rest_host, 0xD020,
+            "$01=$37 continue G (machine appears hung or forced out of CPU7)")
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+
+    with mt.check("Debug: continue with breakpoints preserves live CPU5 backing store",
+                  u2=False,
+                  u2_reason="U64 concrete backing-store breakpoints under KERNAL-out banking are required"):
+        bootstrap_addr = 0xC880
+        boot = bytes([
+            0x78,                   # SEI
+            0xA9, 0x37,             # LDA #$37
+            0x85, 0x00,             # STA $00
+            0xA9, 0x35,             # LDA #$35
+            0x85, 0x01,             # STA $01
+            0x4C, 0x00, 0xE0,       # JMP $E000
+        ])
+        pay = bytes([0xEE, 0x20, 0xD0, 0x4C, 0x00, 0xE0])
+        _ensure_no_debug(session)
+        _reset_c64_core(rest_host)
+        _reopen_monitor(session)
+        session.send_char("A")
+        session.send_char("D")
+        _clear_all_breakpoints(session, "continue-with-bp setup cleanup")
+        _ensure_no_debug(session)
+        _select_monitor_view(session, 5, "select RAM view for continue-with-bp entry")
+        mt.write_rest_memory(rest_host, payload, pay)
+        mt.write_rest_memory(rest_host, bootstrap_addr, boot)
+        session.goto("E000")
+        row = _disassembly_row(session.capture(), payload)
+        if "[RAM]" not in row or "INC $D020" not in row:
+            raise mt.Failure(f"Continue-with-bp RAM payload was not visible: {row!r}")
+        _select_monitor_view(session, 5, "select RAM view for $E003 RAM breakpoint")
+        session.goto("E003")
+        session.send_char("A")
+        session.send_char("D")
+        session.send_char("R")
+        _wait_for_screen_text(session, "BRK RAM, CPU KRN; not mapped now")
+        session.send_key("ENTER")
+        row = _disassembly_row(session.capture(), 0xE003)
+        if "[BRK" not in row:
+            raise mt.Failure(f"$E003 RAM breakpoint was not set: {row!r}")
+        session.goto(f"{bootstrap_addr:04X}")
+        session.send_char("G")
+        _wait_for_pc(session, "E003")
+        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        row = _disassembly_row(session.capture(), 0xE003)
+        if "[RAM]" not in row or "JMP $E000" not in row:
+            raise mt.Failure(
+                f"Continue-with-breakpoints must hit RAM $E003, not KERNAL: {row!r}")
+        _clear_all_breakpoints(session, "continue-with-bp final cleanup")
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
 
@@ -1763,7 +2225,7 @@ def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> 
     with mt.check("Debug: Out from inside the subroutine returns to $C00A"):
         # We are inside the subroutine at $C00D. Out should run LDA #$11
         # then RTS and stop at the instruction after the JSR (i.e. $C00A).
-        session.send_char("O")
+        session.send_char("U")
         parsed = _wait_for_pc(session, "C00A")
         if parsed["ac"] != "11":
             raise mt.Failure(f"Subroutine should have set AC to $11, got {parsed!r}")
@@ -1936,6 +2398,8 @@ TEST_GROUPS = (
     ("rom-breakpoints", run_rom_breakpoint_tests),
     ("kernal-basic-breakpoint", run_kernal_basic_breakpoint_regression),
     ("deep-trace", run_deep_kernal_basic_trace_tests),
+    ("banked-breakpoints", run_banked_breakpoint_tests),
+    ("banked-continue-no-breakpoints", run_banked_continue_no_breakpoints_tests),
     ("brk-orchestrator", run_brk_orchestrator_tests),
     ("side-effect-step", run_side_effect_step_tests),
     ("cleanup-exit", run_cleanup_exit_tests),
@@ -1944,7 +2408,7 @@ TEST_GROUPS = (
 
 
 def _parse_selected_tests(parser: argparse.ArgumentParser,
-                          selected: list[str] | None) -> set[str] | None:
+                          selected: list[str] | None) -> list[str] | None:
     if not selected:
         return None
     names = []
@@ -1956,7 +2420,7 @@ def _parse_selected_tests(parser: argparse.ArgumentParser,
         parser.error(
             "unknown --test value(s): "
             f"{', '.join(unknown)}; choose from {', '.join(sorted(valid))}")
-    return set(names)
+    return names
 
 
 def main() -> int:
@@ -2003,12 +2467,20 @@ def main() -> int:
             print(f"[info] target=u2 with REST reachable on {rest_host}", flush=True)
     session = None
     try:
-        _reset_c64_core(rest_host)
-        session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
-        mt.TestConfig.session = session
-        for name, runner in TEST_GROUPS:
-            if selected_tests is None or name in selected_tests:
-                runner(rest_host, session)
+        runners = dict(TEST_GROUPS)
+        ordered_tests = selected_tests if selected_tests is not None else [
+            name for name, _runner in TEST_GROUPS
+        ]
+        for name in ordered_tests:
+            if session is not None:
+                session.close()
+                session = None
+                mt.TestConfig.session = None
+            _reset_c64_core(rest_host)
+            mt.wait_for_monitor_ready(args.host, args.port, args.password, args.timeout)
+            session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
+            mt.TestConfig.session = session
+            runners[name](rest_host, session)
     except mt.Failure as exc:
         print(exc, file=sys.stderr)
         if session is not None:

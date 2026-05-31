@@ -1238,6 +1238,11 @@ static int test_monitor_bookmark_status_dismissal(void)
     FakeKeyboard keyboard(keys, 3);
 
     reset_bookmark_test_state();
+    // Model the real C64 power-on 6510 port ($01 = $37 -> live bank 7) so the
+    // live CPU bank matches the restored monitor view bank (7). Otherwise the
+    // live bank reads 0 from the zeroed backend and the normal footer renders a
+    // live/view mismatch (C0O7) instead of the expected CPU7.
+    backend.write(0x0001, 0x37);
     seed_bookmark_full(1, 0x0801, MONITOR_BOOKMARK_VIEW_ASM, 7, 2, false, 1, "BASIC");
     ui.screen = &screen;
     ui.keyboard = &keyboard;

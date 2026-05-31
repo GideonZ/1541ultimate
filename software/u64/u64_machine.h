@@ -17,9 +17,11 @@ public:
     void clear_ram();
     uint8_t get_cpu_port(void);
     uint8_t peek(uint16_t address);
+    uint8_t peek_raw(uint16_t address);
     uint8_t peek_cpu(uint16_t address, uint8_t cpu_port);
     uint8_t peek_visible(uint16_t address);
     void poke(uint16_t address, uint8_t byte);
+    void poke_raw(uint16_t address, uint8_t byte);
     void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port);
     void poke_visible(uint16_t address, uint8_t byte);
     void read_block(uint16_t address, uint8_t *dst, uint32_t len);

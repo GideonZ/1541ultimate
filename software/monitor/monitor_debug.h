@@ -14,6 +14,11 @@ struct DebugContext {
     uint8_t y;
     uint8_t sr;
     uint8_t sp;
+    bool live_cpu_port_valid;
+    uint8_t live_cpu_port;
+    bool cpu_port_registers_valid;
+    uint8_t cpu_ddr;
+    uint8_t cpu_port_latch;
     bool irq_valid;
     uint16_t irq_vec;
     bool nmi_valid;

@@ -63,7 +63,7 @@ struct MachineMonitorState
     uint8_t disasm_offset;
     bool illegal_enabled;
     uint8_t screen_charset;
-    uint8_t cpu_port;
+    uint8_t view_cpu_port;
 };
 
 struct Clipboard {
@@ -82,7 +82,12 @@ void monitor_invalidate_saved_state(void);
 void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
-void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
+void monitor_format_status_line(char *out, uint8_t view_cpu_port, uint8_t vic_bank);
+void monitor_format_status_line(char *out, uint8_t view_cpu_port, uint8_t live_cpu_port,
+                                uint8_t vic_bank);
+void monitor_format_breakpoint_mismatch(char *out, int out_len,
+                                        MonitorBackingStore target,
+                                        MonitorBackingStore current);
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
@@ -195,7 +200,7 @@ class MachineMonitor : public UIObject
     uint8_t asm_edit_pending;
     enum { ASM_LANE_MAX_ROWS = 256 };
     mutable bool asm_lane_valid;
-    mutable uint8_t asm_lane_cpu_port;
+    mutable uint8_t asm_lane_view_cpu_port;
     mutable bool asm_lane_illegal_enabled;
     mutable uint16_t asm_lane_rows[ASM_LANE_MAX_ROWS];
     mutable uint8_t asm_lane_lengths[ASM_LANE_MAX_ROWS];
@@ -359,6 +364,9 @@ class MachineMonitor : public UIObject
     void debug_request_cursor(void);
     bool debug_has_breakpoint(void) const;
     bool debug_has_enabled_breakpoint(void) const;
+    MonitorBackingStore breakpoint_target_for_view(uint16_t address) const;
+    MonitorBackingStore breakpoint_target_for_live_cpu(uint16_t address) const;
+    void show_breakpoint_mapping_note(uint16_t address, MonitorBackingStore target);
     void debug_toggle_breakpoint(void);
     void debug_open_breakpoint_popup(void);
     void edit_breakpoint_label(uint8_t slot);

@@ -4,11 +4,13 @@ The Machine Code Monitor is a keyboard-driven tool for inspecting and editing li
 
 It supports hexadecimal, ASCII, screen-code, binary, and assembly views, plus inline editing, bulk memory operations, file load/save, and execution from a selected address.
 
+You can also debug an assembly program by setting breakpoints, stepping through its execution, and observing its effects on memory and CPU state.
+
 ## Entry and Exit
 
 `C=` denotes the Commodore key. For example, `C=+O` means: hold the Commodore key, then press `O`.
 
-To open the monitor, use one of the following:
+To open the monitor, first open the device menu, then use one of the following:
 
 - Press `C=+O`.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`.
@@ -22,37 +24,28 @@ To close the monitor:
 - Press `C=+O` again.
 - Press `RUN/STOP` when no edit operation or popup is active.
 
+## Access Modes
+
+The machine code monitor can be opened in three ways:
+
+| Mode           | C64 while monitor is open | Video stream           | Use this when                                                                                |
+| -------------- | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| **UI Freeze Mode**  | Frozen                    | Monitor is visible     | You want full-screen monitor use, automatic freezing, or monitor output in the video stream. |
+| **UI Overlay Mode** | Running, but can be frozen via `Z` shortcut or in debug mode                  | Monitor is invisible | You want to use the monitor while the C64 keeps running.                                     |
+| **Telnet**     | Dito                   | Monitor is invisible         | You want to use the monitor from another machine or in an automated way.                                            |
+
+### Switching between UI Freeze and UI Overlay Modes
+
+To change the local UI access mode:
+
+1. Exit the monitor but stay in the device menu.
+2. Press `C=+I`.
+3. Reopen the device menu.
+4. Reopen the monitor.
+
 ## Screen Layout
 
-The monitor screen has three fixed regions:
-
-### Header
-
-- Shows the current view, cursor address, and active modes.
-- Mode indicators include `Undc`, `Frz`, `Pl`, `Dbg`, or `Edit`.
-
-| Mode Indicator | Meaning |
-| --- | --- |
-| `Undc` | Undocumented opcodes are active |
-| `Frz` | Freeze is active |
-| `Pl` | Polling is active |
-| `Dbg` | Debug mode is active |
-| `Edit` | Edit mode is active |
-
-### Body
-
-- Shows the memory region around the current cursor address.
-- The active cursor position is highlighted in reverse.
-- May show popups, such as search results, load/save prompts, completion pickers, or bookmarks.
-
-### Footer
-
-- Shows the active CPU port mapping and VIC bank. For more details, see [CPU and VIC Bank Display](#cpu-and-vic-bank-display)
-- `CPU0`..`CPU7` identify the selected CPU memory configuration.
-- `VIC0`..`VIC3` identify the selected VIC bank and its base address.
-- When jumping to a bookmark, the footer briefly shows bookmark information.
-
-Example layout:
+The machine code monitor screen has three fixed regions: header, body, and footer.
 
 ```text
 +--------------------------------------+
@@ -61,6 +54,48 @@ Example layout:
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+### Header
+
+The header shows the current monitor view, the cursor address, and any active mode indicators.
+
+Mode indicators may include any combination of the following:
+
+| Indicator | Meaning                          |
+| --------- | -------------------------------- |
+| `Undc`    | Undocumented opcodes are decoded |
+| `Frz`     | Freeze is active                 |
+| `Pl`      | Polling is active                |
+| `Dbg`     | Debug mode is active             |
+| `Edit`    | Edit mode is active              |
+
+### Body
+
+The body shows the memory region around the current cursor address.
+
+The active cursor position is highlighted in reverse. Depending on the current operation, the body may also show popups such as search results, load/save prompts, or bookmark lists.
+
+### Footer
+
+The footer shows the current memory-bank context and temporary status information.
+
+It includes:
+
+- The CPU memory configuration used by the monitor view.
+- Any difference between the monitor view and the live CPU execution bank.
+- The selected VIC bank and its base address.
+- Temporary bookmark information after jumping to a bookmark.
+
+Common footer values include:
+
+| Value            | Meaning                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CPU0` to `CPU7` | The monitor view and live CPU execution bank match.                                                                                        |
+| `CxOy`           | The monitor view and live CPU execution bank differ. `Cx` is the live CPU execution bank. `Oy` is the monitor view bank selected with `O`. |
+| `$A`, `$D`, `$E` | Show how the monitor view maps the main ROM/RAM regions.                                                                                   |
+| `VIC0` to `VIC3` | Identify the selected VIC bank. The following address shows its base address.                                                              |
+
+For full details, see [CPU and VIC Bank Display](#cpu-and-vic-bank-display).
 
 ## Views
 
@@ -314,7 +349,7 @@ Binary width details:
 - `F7` or `Space`: page down.
 - Assembly view, non-edit mode: `Up` / `Down` move to the previous / next instruction root; `Left` / `Right` move the decode root by one byte (`-1` / `+1`).
 - `Enter`: in Assembly view, follow the target of a jumpable instruction, or return to the most recent saved source location when the current instruction is not jumpable and the follow stack is non-empty.
-- `O`: cycle CPU port banking, `CPU0`..`CPU7`.
+- `O`: cycle the monitor-view CPU port banking, `CPU0`..`CPU7`. This changes the monitor view only; it does not write `$0001`.
 - `Shift+O`: cycle the VIC bank override.
 - `Z`: toggle freeze when the backend supports it.
 - `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet.
@@ -332,33 +367,62 @@ Follow code flow in the Assembly view:
 
 ### CPU and VIC Bank Display
 
-The footer summarizes the selected CPU-visible memory configuration and VIC bank, for example:
+With the `O` and `Shift+O` keys, you can quickly toggle the CPU and VIC banks.
+
+#### CPU Banking
+
+The monitor shows two independent CPU banking states:
+
+- **CPU execution bank**: The live bank used by the running 6510 CPU. It is derived from the lowest three bits of `$0001`, the 6510 on-chip port register. This is the bank from which the CPU fetches and executes instructions.
+- **Monitor view bank**: The bank selected in the machine code monitor with the `O` key. This controls which memory mapping the monitor displays while you browse the 64 KiB address space.
+
+When both banks are the same, the footer shows a single `CPUx` value, where `x` is a bank number from `0` to `7`:
 
 ```text
 CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000
+````
+
+When the CPU execution bank and monitor view bank differ, the footer shows both values as `CxOy`:
+
+- `Cx` is the live CPU execution bank.
+- `Oy` is the monitor view bank selected with the `O` key.
+
+Example:
+
+```text
+C7O5 $A:RAM $D:I/O $E:RAM VIC0 $0000
 ```
 
-`CPU0`..`CPU7` are shorthand for the three 6510 port memory-configuration bits at `$0001`: `LORAM`, `HIRAM`, and `CHAREN`.
+In the normal no-cartridge configuration, the `$A`, `$D`, and `$E` fields describe how the selected monitor view maps the main ROM/RAM regions:
 
-In the normal no-cartridge configuration, the footer fields have these possible values:
-
-| Field | Address range | Values              |
+| Field | Address range | Possible values     |
 | ----- | ------------- | ------------------- |
 | `$A`  | `$A000-$BFFF` | `BAS`, `RAM`        |
 | `$D`  | `$D000-$DFFF` | `I/O`, `CHR`, `RAM` |
 | `$E`  | `$E000-$FFFF` | `KRN`, `RAM`        |
 
-| Value | Meaning |
-| ----- | ------- |
-| `BAS` | BASIC ROM |
+| Value | Meaning                     |
+| ----- | --------------------------- |
+| `BAS` | BASIC ROM                   |
 | `I/O` | I/O registers and Color RAM |
-| `CHR` | Character generator ROM |
-| `KRN` | KERNAL ROM |
-| `RAM` | RAM |
+| `CHR` | Character generator ROM     |
+| `KRN` | KERNAL ROM                  |
+| `RAM` | RAM                         |
 
-`VIC0`..`VIC3` show the selected VIC bank controlled through CIA 2 port A at `$DD00`, with base address `$0000`, `$4000`, `$8000`, or `$C000`.
+Please note that cartridges can further affect the CPU-visible memory map through the expansion-port `GAME` and `EXROM` lines.
 
-Cartridges can further affect the CPU-visible memory map through the expansion-port `GAME` and `EXROM` lines.
+#### VIC Banking
+
+`VIC0` to `VIC3` show the selected VIC bank, controlled by CIA 2 port A at `$DD00`:
+
+| Field     | Address range |
+| --------- | ------------  |
+| `VIC0`    | `$0000-$3FFF` |
+| `VIC1`    | `$4000-$7FFF` |
+| `VIC2`    | `$8000-$BFFF` |
+| `VIC3`    | `$C000-$FFFF` |
+
+Any change to the VIC bank selection is visible to the CPU and can affect a running program unless you are in freeze mode or stopped at a breakpoint.
 
 ## Edit Mode
 
@@ -593,13 +657,14 @@ Default slots are aimed at common C64 locations:
 
 Debug is a modal state layered on the Assembly view.
 
-Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `O` for Out, `G` for Go) is pressed while Debug is active.
+Entering Debug does not execute CPU instructions by itself; execution only happens when an explicit Debug command (`D` for Over, `T` for Trace, `U` for Out, `G` for Go) is pressed while Debug is active.
 
 | Key | Outside Debug | Inside Debug |
 | --- | --- | --- |
 | `D` | Enter Debug, no execution | Debug (aka Step Over) |
 | `T` | Transfer memory | Trace (aka Step Into) |
-| `O` | CPU bank cycle | Step Out |
+| `U` | Undoc/Case toggle | Step Out |
+| `O` | CPU bank cycle | CPU bank cycle |
 | `G` | Go / execute | Go |
 | `R` | Range mode | Toggle breakpoint |
 | `C=+R` | (unassigned) | Breakpoint list |
@@ -610,11 +675,13 @@ Entering Debug does not execute CPU instructions by itself; execution only happe
 
 Notes:
 
-- Important distinction between `RETURN` vs. `T`/`O`:
+- Important distinction between `RETURN` vs. `T`/`U`:
   - `RETURN` is non-executing subroutine navigation. This is to explore the code without executing it.
-  - `T` (step into) and `O` (step out) is executing subroutine navigation. This is to follow the CPU's call stack.
+  - `T` (step into) and `U` (step out) is executing subroutine navigation. This is to follow the CPU's call stack.
+- Inside Debug, `U` is Step Out, overriding the Assembly-view undocumented-opcode toggle. `O` remains the monitor view CPU bank cycle so the view bank can still be changed while Debug is active.
 - In Debug + Edit, `RUN/STOP` / `ESC` unwind one mode at a time: the first press leaves `Edit` and keeps `Dbg`, the second leaves `Dbg`.
 - `B` keeps Binary view and `C=+B` keeps the bookmark overview. Neither is repurposed for breakpoints.
+- Current-PC disassembly, branch or jump prediction, stepping, and temporary step breakpoints follow the live CPU bank from `$0001`, not the monitor view selected by `O`.
 
 ### CPU footer
 
@@ -643,10 +710,13 @@ Notes:
 
 There are 10 breakpoint slots:
 
-- `R` toggles a breakpoint at the current Assembly address.
-- Opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`. When Debug mode is active and the slot is enabled, the whole row is drawn in the same accent color as the `Dbg` / `Edit` header flags so live breakpoints are immediately visible. Disabled slots and rows shown while Debug mode is off use the regular foreground color.
+- `R` toggles a breakpoint at the current Assembly address in the memory source enabled through `O`.
+- Opcode rows with a breakpoint show `[BRKx]` immediately before the memory source marker, for example `[BRK0][BAS]`.
 - Breakpoints are kept in volatile RAM. They survive a `C=+X` reset and an ordinary monitor close/reopen, but power-cycling the device clears them.
+- Breakpoints refer to an address in a specific memory source. For example,`$E000 KRN` and `$E000 RAM` are distinct breakpoints and can coexist.
+- A breakpoint can be valid but invisible to the live CPU. If you see the popup `BRK <target>, CPU <current>; not mapped now`, it means the breakpoint was set in `<target>`, but the running program must first activate the relevant bank so that the breakpoint will pause the CPU.
 - On U64, breakpoints in BASIC, KERNAL, and character ROM use temporary patches in the volatile U64 ROM image, so ROM code remains step-capable without copying ROMs into C64 RAM or writing flash.
+- RAM-under-KERNAL breakpoints work when KERNAL is banked out.
 
 `C=+R` opens the breakpoint list which offers these shortcuts (the popup help row uses abbreviated forms in parentheses to fit the line):
 
@@ -667,7 +737,7 @@ There are 10 breakpoint slots:
 
 It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags.
 
-`RETURN` remains non-executing follow / return navigation; `O` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
+`RETURN` remains non-executing follow / return navigation; `U` is executing step-out. `C=+X Reset` is the emergency reset / break shortcut.
 
 ### Hardware support
 
@@ -682,15 +752,3 @@ It keeps the normal help layout, replaces the keys Debug owns with Debug actions
 | Monitor-side VIC bank selection (`SH+O`) | Yes         | Not available - status line shows `VIC N/A` |
 | Freeze toggle (`Z`)                      | Yes         | Not available |
 | REST `/v1/machine` memory API            | Yes         | Yes |
-
-## Additional Notes
-
-Use **UI Freeze** mode when the monitor output must be captured in the video stream.
-
-Use **UI Overlay on HDMI** mode when polling is needed to observe live changes.
-
-To switch between UI Freeze and UI Overlay modes:
-
-1. Exit the monitor.
-2. Press `C=+I`.
-3. Reopen the monitor.

@@ -22,7 +22,7 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
-STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+STATUS_LINE_RE = re.compile(r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 # U2 cartridge backend has no monitor-side CPU banking or VIC bank selection,
 # so the status line collapses to a fixed "no banking" label.
 U2_STATUS_LINE_RE = re.compile(r"CPU VIEW\s+CPU BANK N/A\s+VIC N/A")
@@ -1424,7 +1424,7 @@ def run_asm_edit_navigation_test(session: MonitorSession, rest_host: str) -> Non
 def run_asm_cpu0_continuous_ram_test(session: MonitorSession) -> None:
     ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
     screen = session.send_char("o")
-    assert_status_contains(screen, "CPU0 $A:RAM $D:RAM $E:RAM VIC")
+    assert_status_contains(screen, "C7O0 $A:RAM $D:RAM $E:RAM VIC")
     session.fill("DFFE-DFFE,20")
     session.fill("DFFF-DFFF,00")
     session.fill("E000-E000,E0")
