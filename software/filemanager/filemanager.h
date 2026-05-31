@@ -218,6 +218,7 @@ public:
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT fs_allocate_sector(Path *path, int track, int sector, bool alloc);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);

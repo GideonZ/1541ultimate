@@ -223,6 +223,7 @@ public:
 
     FRESULT read_sector(uint8_t *buffer, int track, int sector);
     FRESULT write_sector(uint8_t *buffer, int track, int sector);
+    FRESULT allocate_sector(int track, int sector, bool alloc);
 
     friend class DirInCBM;
     friend class FileInCBM;

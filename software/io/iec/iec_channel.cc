@@ -1308,7 +1308,7 @@ int IecCommandChannel :: do_block_read(int chan, int part, int track, int sector
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    IecChannel *channel = iec_drive->get_data_channel(chan);
+    IecChannel *channel = drive->get_data_channel(chan);
     GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
@@ -1330,11 +1330,31 @@ int IecCommandChannel::do_block_write(int chan, int part, int track, int sector)
         set_error(ERR_SYNTAX_ERROR_CMD);
         return ERR_SYNTAX_ERROR_CMD;
     }
-    IecChannel *channel = iec_drive->get_data_channel(chan);
+    IecChannel *channel = drive->get_data_channel(chan);
     GETPARTITION(part, partition, -1);
     Path path(partition->GetFullPath());
     FRESULT fres;
     fres = fm->fs_write_sector(&path, channel->buffer, track, sector);
+    drive->set_error_fres(fres);
+    state = e_idle;
+    return 0;
+}
+
+int IecCommandChannel::do_block_allocate(int chan, int part, int track, int sector, bool alloc)
+{
+    if ((chan < 0) || (chan > 14)) {
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    if (part >= MAX_PARTITIONS) {
+        set_error(ERR_SYNTAX_ERROR_CMD);
+        return ERR_SYNTAX_ERROR_CMD;
+    }
+    IecChannel *channel = drive->get_data_channel(chan);
+    GETPARTITION(part, partition, -1);
+    Path path(partition->GetFullPath());
+    FRESULT fres;
+    fres = fm->fs_allocate_sector(&path, track, sector, alloc);
     drive->set_error_fres(fres);
     state = e_idle;
     return 0;
@@ -1351,7 +1371,7 @@ int IecCommandChannel :: do_buffer_position(int chan, int pos)
         return ERR_SYNTAX_ERROR_CMD;
     }
     IecChannel *channel;
-    channel = iec_drive->get_data_channel(chan);
+    channel = drive->get_data_channel(chan);
     channel->pointer = pos;
     channel->reset_prefetch();
     set_error(ERR_ALL_OK);

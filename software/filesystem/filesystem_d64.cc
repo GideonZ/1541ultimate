@@ -704,6 +704,18 @@ FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
     return FR_OK;
 }
 
+FRESULT FileSystemCBM::allocate_sector(int track, int sector, bool alloc)
+{
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    bool res = set_sector_allocation(track, sector, alloc);
+    if (!res) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
 
 /**************************************************************************************
  * Disk Type Specifics

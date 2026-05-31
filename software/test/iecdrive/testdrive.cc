@@ -18,6 +18,14 @@ char last_status[128];
 int last_status_size;
 void create_iec_d64_fixture(const char *path);
 void create_iec_d81_fixture(const char *path);
+FRESULT copy_to(const char *from, const char *to);
+void open_file(IecDrive *dr, uint8_t chan, const char *fn);
+void get_status(IecDrive *dr);
+void close_file(IecDrive *dr, uint8_t chan);
+int read_file(IecDrive *dr, uint8_t chan, uint8_t *out, int len);
+static void send_channel_data(IecDrive *dr, uint8_t chan, const uint8_t *data, int len);
+static void expect_status_ok(const char *testname, const char *context);
+static void expect_command_ok(const char *testname, IecDrive *dr, const char *cmd);
 
 static void save_fixture_file(FileManager *fm, const char *path, const char *name, const char *payload)
 {
@@ -69,6 +77,216 @@ static void create_iec_fat_fixture(FileManager *fm, const char *path)
     save_fixture_file(fm, path, "ONLYBASE.prg", "ONLYBASE:PRG");
 }
 
+static void prepare_disk_partition(const char *image_path, const char *mounted_path,
+                                   IecDrive *dr, int part, const char *label)
+{
+    const char *testname = "prepare_disk_partition";
+    REQUIRE(copy_to(image_path, mounted_path) == FR_OK);
+    dr->add_partition(part, mounted_path, label);
+}
+
+static void prepare_fat_partition(FileManager *fm, IecDrive *dr, const char *path,
+                                  int part, const char *label)
+{
+    const char *testname = "prepare_fat_partition";
+    FRESULT fres = fm->create_dir(path);
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    dr->add_partition(part, path, label);
+}
+
+static void print_scenario(const char *suite, const char *scenario)
+{
+    printf("\n[%s] %s\n", suite, scenario);
+}
+
+struct MountedImageCase {
+    void (*create_fixture)(const char *path);
+    const char *source;
+    const char *mount;
+    const char *label;
+};
+
+struct BlockCase {
+    void (*create_fixture)(const char *path);
+    const char *source;
+    const char *mount;
+    const char *label;
+    int partition;
+    int read_track;
+    int read_sector;
+    int write_track;
+    int write_sector;
+    int bam_track;
+    int bam_sector;
+    bool d81;
+};
+
+template <size_t N, typename Fn>
+static void run_image_matrix(const char *suite, const char *scenario,
+                             const MountedImageCase (&cases)[N], Fn fn)
+{
+    print_scenario(suite, scenario);
+    for (size_t i = 0; i < N; i++) {
+        cases[i].create_fixture(cases[i].source);
+        fn(cases[i]);
+    }
+}
+
+static int d64_abs_sector(int track, int sector)
+{
+    const char *testname = "d64_abs_sector";
+    static const int sectors_per_track[] = {
+        0,
+        21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
+        19, 19, 19, 19, 19, 19, 19,
+        18, 18, 18, 18, 18, 18,
+        17, 17, 17, 17, 17
+    };
+    REQUIRE(track >= 1);
+    REQUIRE(track <= 35);
+    REQUIRE(sector >= 0);
+    REQUIRE(sector < sectors_per_track[track]);
+
+    int abs = sector;
+    for (int t = 1; t < track; t++) {
+        abs += sectors_per_track[t];
+    }
+    return abs;
+}
+
+static int d81_abs_sector(int track, int sector)
+{
+    const char *testname = "d81_abs_sector";
+    REQUIRE(track >= 1);
+    REQUIRE(track <= 80);
+    REQUIRE(sector >= 0);
+    REQUIRE(sector < 40);
+    return (track - 1) * 40 + sector;
+}
+
+static void make_sector_payload(uint8_t *buffer, const char *payload)
+{
+    const char *testname = "make_sector_payload";
+    memset(buffer, 0, 256);
+    size_t len = strlen(payload);
+    REQUIRE(len <= 254);
+    buffer[0] = 0;
+    buffer[1] = (uint8_t)(len + 1);
+    memcpy(buffer + 2, payload, len);
+}
+
+static void make_increment_pattern(uint8_t *buffer)
+{
+    for (int i = 0; i < 256; i++) {
+        buffer[i] = (uint8_t)i;
+    }
+}
+
+static uint32_t get_free_sectors(FileManager *fm, const char *path)
+{
+    const char *testname = "get_free_sectors";
+    Path p(path);
+    uint32_t free = 0;
+    uint32_t cluster_size = 0;
+    FRESULT fres = fm->get_free(&p, free, cluster_size);
+    REQUIRE(fres == FR_OK);
+    REQUIRE(cluster_size == 256);
+    return free;
+}
+
+static void open_buffer_channel(const char *testname, IecDrive *dr, uint8_t chan)
+{
+    const char *name = "#";
+    open_file(dr, chan, name);
+    get_status(dr);
+    expect_status_ok(testname, name);
+}
+
+static void read_buffer_channel(const char *testname, IecDrive *dr, uint8_t chan,
+                                uint8_t *buffer, int len);
+
+static void capture_block_sector(const char *testname, IecDrive *dr, uint8_t chan,
+                                 int part, int track, int sector, uint8_t *out)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "B-R %u %d %d %d", chan, part, track, sector);
+    expect_command_ok(testname, dr, cmd);
+    read_buffer_channel(testname, dr, chan, out, 256);
+}
+
+static void read_buffer_channel(const char *testname, IecDrive *dr, uint8_t chan,
+                                uint8_t *buffer, int len)
+{
+    memset(buffer, 0, len);
+    int got = read_file(dr, chan, buffer, len);
+    if (got != len) {
+        printf("%s: buffer channel %u read %d bytes, expected %d\n", testname, chan, got, len);
+        dump_hex_relative(buffer, got);
+    }
+    REQUIRE(got == len);
+}
+
+static void expect_buffer_sector(const char *testname, IecDrive *dr, uint8_t chan,
+                                 int part, int track, int sector, const uint8_t *expected)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "B-R %u %d %d %d", chan, part, track, sector);
+    expect_command_ok(testname, dr, cmd);
+    uint8_t actual[256];
+    read_buffer_channel(testname, dr, chan, actual, sizeof(actual));
+    if (memcmp(actual, expected, sizeof(actual)) != 0) {
+        printf("%s: block read mismatch for %d/%d\n", testname, track, sector);
+        dump_hex_relative(actual, sizeof(actual));
+    }
+    REQUIRE(memcmp(actual, expected, sizeof(actual)) == 0);
+}
+
+static void expect_block_write_sector(const char *testname, IecDrive *dr, uint8_t chan,
+                                      int part, int track, int sector, const uint8_t *payload)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "B-W %u %d %d %d", chan, part, track, sector);
+    expect_command_ok(testname, dr, cmd);
+    uint8_t actual[256];
+    snprintf(cmd, sizeof(cmd), "B-R %u %d %d %d", chan, part, track, sector);
+    expect_command_ok(testname, dr, cmd);
+    read_buffer_channel(testname, dr, chan, actual, sizeof(actual));
+    if (memcmp(actual, payload, sizeof(actual)) != 0) {
+        printf("%s: block write/readback mismatch for %d/%d\n", testname, track, sector);
+        dump_hex_relative(actual, sizeof(actual));
+    }
+    REQUIRE(memcmp(actual, payload, sizeof(actual)) == 0);
+}
+
+static void expect_bam_sector_state(const char *testname, IecDrive *dr, uint8_t chan,
+                                    const BlockCase &c, const uint8_t *before,
+                                    bool expect_allocated, int expected_free_delta)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "B-R %u %d %d %d", chan, c.partition, c.bam_track, c.bam_sector);
+    expect_command_ok(testname, dr, cmd);
+    uint8_t now[256];
+    read_buffer_channel(testname, dr, chan, now, sizeof(now));
+
+    int entry_offset = c.d81 ? (16 + 6 * ((c.write_track - 1) % 40)) : (4 * c.write_track);
+    if (now[entry_offset] != (uint8_t)(before[entry_offset] + expected_free_delta)) {
+        printf("%s: free count mismatch at track %d: got %u, expected %u\n",
+               testname, c.write_track, now[entry_offset], (uint8_t)(before[entry_offset] + expected_free_delta));
+    }
+    REQUIRE(now[entry_offset] == (uint8_t)(before[entry_offset] + expected_free_delta));
+
+    uint8_t bit = (uint8_t)(1 << (c.write_sector & 7));
+    uint8_t before_byte = before[entry_offset + 1 + (c.write_sector >> 3)];
+    uint8_t now_byte = now[entry_offset + 1 + (c.write_sector >> 3)];
+    if (expect_allocated) {
+        REQUIRE((before_byte & bit) != 0);
+        REQUIRE((now_byte & bit) == 0);
+    } else {
+        REQUIRE((before_byte & bit) == 0);
+        REQUIRE((now_byte & bit) != 0);
+    }
+}
+
 void show_partitions(UserInterface *ui, IecFileSystem *fs)
 {
 
@@ -115,7 +333,7 @@ void init_flash_disk()
         delete flashdisk_fs;
         delete flashdisk_prt;
     }
-    flashdisk_node = new FileDevice(ramdisk_blk, "Flash", "Internal Flash");
+    flashdisk_node = new FileDevice(flashdisk_blk, "Flash", "Internal Flash");
     flashdisk_node->attach_disk(sz);
     FileManager :: getFileManager()->add_root_entry(flashdisk_node);
 }
@@ -770,114 +988,6 @@ void create_test_files(FileManager *fm)
     fm->create_dir("/Temp/blah{c1c2}");
 }
 
-void execute_suite1(FileManager *fm, IecDrive *dr)
-{
-    const char *testname = "Suite1";
-    FRESULT fres;
-    uint32_t tr;
-    const char *msg = (const char *)testmsg;
-    const char *write_msg = "This is some random string that should be written to an open file.";
-
-    create_test_files(fm);
-    fm->create_dir("/Temp/Partition2");
-    dr->add_partition(1, "/Temp", "RAMDISK");
-    dr->add_partition(2, "/Temp/Partition2", "PART2");
-
-    expect_command_response("Suite1-CP1", dr, "CP1", "02,PARTITION SELECTED,01,00\r");
-
-    expect_command_response("Suite1-CD-TEMP", dr, "CD/TEMP", "71,DIRECTORY ERROR,01,00\r");
-
-    expect_command_ok("Suite1-CD-SOMEDIR", dr, "CD/SOMEDIR");
-    expect_command_ok("Suite1-CD-PARENT-OTHERDIR", dr, "CD/_/OTHERDIR");
-    expect_command_ok("Suite1-CD-LEVEL2", dr, "CD:LEVEL2");
-    expect_command_ok("Suite1-CD-ROOT", dr, "CD//");
-    expect_command_ok("Suite1-CD-ABS-LEVEL2", dr, "CD/OTHERDIR/LEVEL2");
-    expect_command_ok("Suite1-CD-PETSCII", dr, "CD//:BLAH\xc1\xc2");
-    expect_command_ok("Suite1-CD-PARENT", dr, "CD_");
-
-    expect_directory_read("Suite1-DIR-TIME-LONG", dr, "$=T0:*=L");
-
-    expect_command_ok("Suite1-MD-HOI", dr, "MD:HOI");
-    expect_command_ok("Suite1-MD-OTHERDIR-DEEPER", dr, "MD/OTHERDIR:DEEPER");
-    expect_command_response("Suite1-MD-BAD-PARENT", dr, "MD_/OTHERDIR:DEEPER", "71,DIRECTORY ERROR,00,00\r");
-    expect_command_ok("Suite1-MD-PARENT-DEEPER", dr, "MD:_/DEEPER");
-    expect_command_ok("Suite1-RD-HOI", dr, "RD:HOI");
-    expect_command_ok("Suite1-MD-HOI-AGAIN", dr, "MD:HOI");
-
-    fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", testmsg, 28, &tr);
-    expect_fresult("Suite1-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", fres, FR_OK);
-    expect_transferred("Suite1-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", tr, 28);
-    expect_command_response("Suite1-RD-NONEMPTY-HOI", dr, "RD:HOI", "63,FILE EXISTS,00,00\r");
-
-    expect_command_response("Suite1-T-RA", dr, "T-RA", "WED. 26/06/25 12:41:01 AM\r");
-    expect_command_response("Suite1-T-RI", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
-    static const uint8_t t_rd[] = { 3, 125, 6, 26, 12, 41, 1, 0, 0x0d };
-    static const uint8_t t_rb[] = { 3, 0x25, 0x06, 0x26, 0x12, 0x41, 0x01, 0, 0x0d };
-    expect_command_bytes("Suite1-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
-    expect_command_bytes("Suite1-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
-
-    expect_command_response("Suite1-COPY-MISSING-SOURCE", dr, "C2:DEST=", "32,SYNTAX ERROR,00,00\r");
-    expect_command_ok("Suite1-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
-    expect_iec_file("Suite1-COPY-DEST", dr, 0, "2:DEST", "This is really a silly test.This is really a silly test.");
-
-    expect_command_response("Suite1-CP2", dr, "CP2", "02,PARTITION SELECTED,02,00\r");
-
-    expect_command_ok("Suite1-RENAME-P1", dr, "RENAME1:DOOM=1:DDDD");
-    expect_iec_file("Suite1-RENAME-P1-CHECK", dr, 0, "1:DOOM", msg);
-
-    expect_command_ok("Suite1-RENAME-P1-TO-P2", dr, "RENAME2:DOOM=1:DOOM");
-    expect_iec_file("Suite1-RENAME-P2-CHECK", dr, 0, "2:DOOM", msg);
-    expect_iec_file_missing("Suite1-RENAME-P1-MISSING", dr, 0, "1:DOOM");
-
-    expect_directory_read("Suite1-DIR-P1", dr, "$1");
-    expect_command_response("Suite1-SCRATCH-C-WILDCARD", dr, "SCRATCH1:C*", "01, FILES SCRATCHED,03,00\r");
-    expect_iec_file_missing("Suite1-SCRATCH-CCC-MISSING", dr, 0, "1:CCC");
-
-    expect_iec_file("Suite1-READ-A", dr, 0, "1:A", msg);
-
-    write_file(dr, 3, "2:WRITETEST,U,W", write_msg);
-    expect_iec_file("Suite1-WRITETEST", dr, 2, "2:WRITETEST,U,R", write_msg);
-
-    printf("Suite1 completed successfully!\n");
-}
-
-void execute_suite2(FileManager *fm, IecDrive *dr)
-{
-    const char *testname = "Suite2";
-    FRESULT fres;
-    uint32_t tr;
-
-    dr->add_partition(11, "/Temp", "P11");
-
-    expect_directory_read("Suite2-DIR-PARTITIONS", dr, "$=P");
-    expect_command_response("Suite2-BINARY-CP11", dr, "C\xD0\x0B", "02,PARTITION SELECTED,11,00\r");
-
-    fres = fm->save_file(true, "/Temp", "ccc.prg", testmsg, 28, &tr);
-    expect_fresult("Suite2-SAVE-CCC", "/Temp/ccc.prg", fres, FR_OK);
-    expect_transferred("Suite2-SAVE-CCC", "/Temp/ccc.prg", tr, 28);
-    fres = fm->save_file(true, "/Temp", "cc2.prg", testmsg, 28, &tr);
-    expect_fresult("Suite2-SAVE-CC2", "/Temp/cc2.prg", fres, FR_OK);
-    expect_transferred("Suite2-SAVE-CC2", "/Temp/cc2.prg", tr, 28);
-    fres = fm->save_file(true, "/Temp", "abc.prg", testmsg, 28, &tr);
-    expect_fresult("Suite2-SAVE-ABC", "/Temp/abc.prg", fres, FR_OK);
-    expect_transferred("Suite2-SAVE-ABC", "/Temp/abc.prg", tr, 28);
-
-    fres = fm->create_dir("/Temp/Subdir");
-    REQUIRE(fres == FR_OK || fres == FR_EXIST);
-    fres = fm->save_file(true, "/Temp/SubDir", "01234.usr", testmsg, 28, &tr);
-    expect_fresult("Suite2-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", fres, FR_OK);
-    expect_transferred("Suite2-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", tr, 28);
-
-    expect_directory_read("Suite2-DIR-FOLDERS", dr, "$:*=B");
-    expect_directory_read("Suite2-DIR-SUBDIR", dr, "$/Subdir");
-    expect_command_ok("Suite2-CD-SUBDIR", dr, "CD/Subdir");
-    expect_command_response("Suite2-XPWD-SUBDIR", dr, "XPWD", "11:/SUBDIR/");
-    expect_directory_read("Suite2-DIR-ROOT", dr, "$//");
-    expect_directory_read("Suite2-DIR-PARENT", dr, "$_");
-
-    printf("Suite2 completed successfully!\n");
-}
-
 static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
 {
     printf("\nRunning IEC partition 3 sequence on %s\n", label);
@@ -927,24 +1037,18 @@ static void run_iec_partition3_sequence(IecDrive *dr, const char *label)
 void execute_suite3(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite3";
-    const char *diskname_41 = "output/iec_corner_cases.d64";
-    const char *diskname_81 = "output/iec_corner_cases.d81";
-    const char *d64_path = "/Temp/iec_corner_cases.d64";
-    const char *d81_path = "/Temp/iec_corner_cases.d81";
     const char *fat_path = "/Fat/iec_fat_cases";
+    const MountedImageCase cases[] = {
+        { create_iec_d64_fixture, "output/iec_corner_cases.d64", "/Temp/iec_corner_cases.d64", "D64" },
+        { create_iec_d81_fixture, "output/iec_corner_cases.d81", "/Temp/iec_corner_cases.d81", "D81" },
+    };
 
     dr->add_partition(1, "/Temp", "RAMDISK");
-
-    create_iec_d64_fixture(diskname_41);
-    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
-    dr->add_partition(3, d64_path, "D64");
-    run_iec_partition3_sequence(dr, "D64");
-
-    create_iec_d81_fixture(diskname_81);
-    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
-    dr->add_partition(3, d81_path, "D81");
-    run_iec_partition3_sequence(dr, "D81");
-
+    run_image_matrix(testname, "Partition 3 file-type matrix on D64/D81/FAT", cases,
+        [&](const MountedImageCase &c) {
+            prepare_disk_partition(c.source, c.mount, dr, 3, c.label);
+            run_iec_partition3_sequence(dr, c.label);
+        });
     create_iec_fat_fixture(fm, fat_path);
     dr->add_partition(3, fat_path, "FAT");
     run_iec_partition3_sequence(dr, "FAT");
@@ -1035,24 +1139,18 @@ static void run_iec_rel_sequence(IecDrive *dr, const char *testname)
 void execute_suite4(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite4";
-    const char *diskname_41 = "output/iec_rel_cases.d64";
-    const char *diskname_81 = "output/iec_rel_cases.d81";
-    const char *d64_path = "/Temp/iec_rel_cases.d64";
-    const char *d81_path = "/Temp/iec_rel_cases.d81";
     const char *fat_path = "/Fat/iec_rel_cases_fat";
+    const MountedImageCase cases[] = {
+        { create_iec_d64_fixture, "output/iec_rel_cases.d64", "/Temp/iec_rel_cases.d64", "REL Suite on D64" },
+        { create_iec_d81_fixture, "output/iec_rel_cases.d81", "/Temp/iec_rel_cases.d81", "REL Suite on D81" },
+    };
 
-    create_iec_d64_fixture(diskname_41);
-    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
-    dr->add_partition(4, d64_path, "REL");
-    run_iec_rel_sequence(dr, "REL Suite on D64");
-
-    create_iec_d81_fixture(diskname_81);
-    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
-    dr->add_partition(4, d81_path, "REL");
-    run_iec_rel_sequence(dr, "REL Suite on D81");
-
-    create_iec_fat_fixture(fm, fat_path);
-    dr->add_partition(4, fat_path, "FAT");
+    run_image_matrix(testname, "REL file matrix on D64/D81/FAT", cases,
+        [&](const MountedImageCase &c) {
+            prepare_disk_partition(c.source, c.mount, dr, 4, "REL");
+            run_iec_rel_sequence(dr, c.label);
+        });
+    prepare_fat_partition(fm, dr, fat_path, 4, "FAT");
     run_iec_rel_sequence(dr, "REL Suite on FAT");
 }
 
@@ -1091,25 +1189,18 @@ static void run_iec_append_replace_sequence(IecDrive *dr, const char *label)
 void execute_suite5(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite5";
-    const char *diskname_41 = "output/iec_append_replace_cases.d64";
-    const char *diskname_81 = "output/iec_append_replace_cases.d81";
-    const char *d64_path = "/Temp/iec_append_replace_cases.d64";
-    const char *d81_path = "/Temp/iec_append_replace_cases.d81";
     const char *fat_path = "/Fat/iec_append_replace_cases";
+    const MountedImageCase cases[] = {
+        { create_iec_d64_fixture, "output/iec_append_replace_cases.d64", "/Temp/iec_append_replace_cases.d64", "D64" },
+        { create_iec_d81_fixture, "output/iec_append_replace_cases.d81", "/Temp/iec_append_replace_cases.d81", "D81" },
+    };
 
-    create_iec_d64_fixture(diskname_41);
-    REQUIRE(copy_to(diskname_41, d64_path) == FR_OK);
-    dr->add_partition(5, d64_path, "APPEND");
-    run_iec_append_replace_sequence(dr, "D64");
-
-    create_iec_d81_fixture(diskname_81);
-    REQUIRE(copy_to(diskname_81, d81_path) == FR_OK);
-    dr->add_partition(5, d81_path, "APPEND");
-    run_iec_append_replace_sequence(dr, "D81");
-
-    FRESULT fres = fm->create_dir(fat_path);
-    REQUIRE(fres == FR_OK || fres == FR_EXIST);
-    dr->add_partition(5, fat_path, "APPEND");
+    run_image_matrix(testname, "Append/replace matrix on D64/D81/FAT", cases,
+        [&](const MountedImageCase &c) {
+            prepare_disk_partition(c.source, c.mount, dr, 5, "APPEND");
+            run_iec_append_replace_sequence(dr, c.label);
+        });
+    prepare_fat_partition(fm, dr, fat_path, 5, "APPEND");
     run_iec_append_replace_sequence(dr, "FAT");
 }
 
@@ -1117,9 +1208,10 @@ void execute_suite6(FileManager *fm, IecDrive *dr)
 {
     const char *testname = "Suite6";
     const char *fat_path = "/Fat/iec_fat_accessibility_cases";
+    FRESULT fres;
 
-    FRESULT fres = fm->create_dir(fat_path);
-    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    print_scenario(testname, "Rendered-name fallback and directory-assisted access on FAT");
+    prepare_fat_partition(fm, dr, fat_path, 6, "ACCESS");
 
     save_fixture_file(fm, fat_path, "JOHN.DOE", "JOHN:DOE");
     save_fixture_file(fm, fat_path, "MYPROGRAM", "NOEXT");
@@ -1141,8 +1233,6 @@ void execute_suite6(FileManager *fm, IecDrive *dr)
     save_fixture_file(fm, fat_path, "C{4f}PYSRC.prg", "COPY");
     save_fixture_file(fm, fat_path, "R{45}NAMESRC.prg", "RENAME");
     save_fixture_file(fm, fat_path, "S{43}RATCHME.prg", "SCRATCH");
-
-    dr->add_partition(6, fat_path, "ACCESS");
 
     expect_iec_file("Suite6-NonCbmExtensionAny", dr, 2, "6:JOHN.DOE", "JOHN:DOE");
     expect_iec_file("Suite6-NonCbmExtensionLoad", dr, 0, "6:JOHN.DOE", "JOHN:DOE");
@@ -1182,14 +1272,13 @@ void execute_suite7(FileManager *fm, IecDrive *dr)
     const char *testname = "Suite7";
     const char *fat_path = "/Fat/iec_fixes_1_to_4";
 
-    FRESULT fres = fm->create_dir(fat_path);
-    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    print_scenario(testname, "Parser, seek, empty-file, and partition-guard fixes");
+    prepare_fat_partition(fm, dr, fat_path, 7, "FIXES");
 
     save_fixture_file(fm, fat_path, "SEEKME.prg", "0123456789");
     save_fixture_file(fm, fat_path, "EMPTY.prg", "");
     save_fixture_file(fm, fat_path, "BAD.prg", "BAD");
 
-    dr->add_partition(7, fat_path, "FIXES");
     dr->add_partition(999, fat_path, "INVALID");
 
     expect_iec_open_status_prefix("Suite7-OpenBadModifier", dr, 0, "7:BAD,X", "30,SYNTAX ERROR");
@@ -1205,6 +1294,164 @@ void execute_suite7(FileManager *fm, IecDrive *dr)
     expect_iec_file("Suite7-EmptyAfterNonEmpty", dr, 2, "7:EMPTY", "");
 
     printf("Suite7 completed successfully!\n");
+}
+
+static void run_suite8_control_plane(FileManager *fm, IecDrive *dr)
+{
+    const char *suite = "Suite8";
+    const char *testname = "Suite8";
+    const char *msg = (const char *)testmsg;
+    FRESULT fres;
+    uint32_t tr;
+
+    print_scenario(suite, "Control-plane routing and directory mutation");
+    create_test_files(fm);
+    fres = fm->create_dir("/Temp/Partition2");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    dr->add_partition(1, "/Temp", "RAMDISK");
+    dr->add_partition(2, "/Temp/Partition2", "PART2");
+
+    expect_command_response("Suite8-CP1", dr, "CP1", "02,PARTITION SELECTED,01,00\r");
+    expect_command_response("Suite8-CD-TEMP", dr, "CD/TEMP", "71,DIRECTORY ERROR,01,00\r");
+    expect_command_ok("Suite8-CD-SOMEDIR", dr, "CD/SOMEDIR");
+    expect_command_ok("Suite8-CD-PARENT-OTHERDIR", dr, "CD/_/OTHERDIR");
+    expect_command_ok("Suite8-CD-LEVEL2", dr, "CD:LEVEL2");
+    expect_command_ok("Suite8-CD-ROOT", dr, "CD//");
+    expect_command_ok("Suite8-CD-ABS-LEVEL2", dr, "CD/OTHERDIR/LEVEL2");
+    expect_command_ok("Suite8-CD-PETSCII", dr, "CD//:BLAH\xc1\xc2");
+    expect_command_ok("Suite8-CD-PARENT", dr, "CD_");
+    expect_directory_read("Suite8-DIR-TIME-LONG", dr, "$=T0:*=L");
+    expect_command_ok("Suite8-MD-HOI", dr, "MD:HOI");
+    expect_command_ok("Suite8-MD-OTHERDIR-DEEPER", dr, "MD/OTHERDIR:DEEPER");
+    expect_command_response("Suite8-MD-BAD-PARENT", dr, "MD_/OTHERDIR:DEEPER", "71,DIRECTORY ERROR,00,00\r");
+    expect_command_ok("Suite8-MD-PARENT-DEEPER", dr, "MD:_/DEEPER");
+    expect_command_ok("Suite8-RD-HOI", dr, "RD:HOI");
+    expect_command_ok("Suite8-MD-HOI-AGAIN", dr, "MD:HOI");
+
+    fres = fm->save_file(false, "/Temp/HOI", "mmmmmmmmmmmmm.prg", testmsg, 28, &tr);
+    expect_fresult("Suite8-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", fres, FR_OK);
+    expect_transferred("Suite8-SAVE-NONEMPTY-DIR", "/Temp/HOI/mmmmmmmmmmmmm.prg", tr, 28);
+    expect_command_response("Suite8-RD-NONEMPTY-HOI", dr, "RD:HOI", "63,FILE EXISTS,00,00\r");
+}
+
+static void run_suite8_time_copy_rename_scratch(IecDrive *dr)
+{
+    const char *suite = "Suite8";
+    const char *msg = (const char *)testmsg;
+    const char *write_msg = "This is some random string that should be written to an open file.";
+
+    print_scenario(suite, "Time, copy, rename, scratch");
+    expect_command_response("Suite8-T-RA", dr, "T-RA", "WED. 26/06/25 12:41:01 AM\r");
+    expect_command_response("Suite8-T-RI", dr, "T-RI", "2025-06-26T00:41:01 WED\r");
+    static const uint8_t t_rd[] = { 3, 125, 6, 26, 12, 41, 1, 0, 0x0d };
+    static const uint8_t t_rb[] = { 3, 0x25, 0x06, 0x26, 0x12, 0x41, 0x01, 0, 0x0d };
+    expect_command_bytes("Suite8-T-RD", dr, "T-RD", t_rd, sizeof(t_rd));
+    expect_command_bytes("Suite8-T-RB", dr, "T-RB", t_rb, sizeof(t_rb));
+
+    expect_command_response("Suite8-COPY-MISSING-SOURCE", dr, "C2:DEST=", "32,SYNTAX ERROR,00,00\r");
+    expect_command_ok("Suite8-COPY-A-BB", dr, "C2:DEST=1:A,1:BB");
+    expect_iec_file("Suite8-COPY-DEST", dr, 0, "2:DEST", "This is really a silly test.This is really a silly test.");
+
+    expect_command_response("Suite8-CP2", dr, "CP2", "02,PARTITION SELECTED,02,00\r");
+    expect_command_ok("Suite8-RENAME-P1", dr, "RENAME1:DOOM=1:DDDD");
+    expect_iec_file("Suite8-RENAME-P1-CHECK", dr, 0, "1:DOOM", msg);
+    expect_command_ok("Suite8-RENAME-P1-TO-P2", dr, "RENAME2:DOOM=1:DOOM");
+    expect_iec_file("Suite8-RENAME-P2-CHECK", dr, 0, "2:DOOM", msg);
+    expect_iec_file_missing("Suite8-RENAME-P1-MISSING", dr, 0, "1:DOOM");
+    expect_directory_read("Suite8-DIR-P1", dr, "$1");
+    expect_command_response("Suite8-SCRATCH-C-WILDCARD", dr, "SCRATCH1:C*", "01, FILES SCRATCHED,03,00\r");
+    expect_iec_file_missing("Suite8-SCRATCH-CCC-MISSING", dr, 0, "1:CCC");
+    expect_iec_file("Suite8-READ-A", dr, 0, "1:A", msg);
+    write_file(dr, 3, "2:WRITETEST,U,W", write_msg);
+    expect_iec_file("Suite8-WRITETEST", dr, 2, "2:WRITETEST,U,R", write_msg);
+}
+
+static void run_suite8_partition_listing(FileManager *fm, IecDrive *dr)
+{
+    const char *testname = "Suite8";
+    FRESULT fres;
+    uint32_t tr;
+
+    print_scenario("Suite8", "Partition listing and case-insensitive subdirectories");
+    dr->add_partition(11, "/Temp", "P11");
+    expect_directory_read("Suite8-DIR-PARTITIONS", dr, "$=P");
+    expect_command_response("Suite8-BINARY-CP11", dr, "C\xD0\x0B", "02,PARTITION SELECTED,11,00\r");
+
+    fres = fm->save_file(true, "/Temp", "ccc.prg", testmsg, 28, &tr);
+    expect_fresult("Suite8-SAVE-CCC", "/Temp/ccc.prg", fres, FR_OK);
+    expect_transferred("Suite8-SAVE-CCC", "/Temp/ccc.prg", tr, 28);
+    fres = fm->save_file(true, "/Temp", "cc2.prg", testmsg, 28, &tr);
+    expect_fresult("Suite8-SAVE-CC2", "/Temp/cc2.prg", fres, FR_OK);
+    expect_transferred("Suite8-SAVE-CC2", "/Temp/cc2.prg", tr, 28);
+    fres = fm->save_file(true, "/Temp", "abc.prg", testmsg, 28, &tr);
+    expect_fresult("Suite8-SAVE-ABC", "/Temp/abc.prg", fres, FR_OK);
+    expect_transferred("Suite8-SAVE-ABC", "/Temp/abc.prg", tr, 28);
+
+    fres = fm->create_dir("/Temp/Subdir");
+    REQUIRE(fres == FR_OK || fres == FR_EXIST);
+    fres = fm->save_file(true, "/Temp/SubDir", "01234.usr", testmsg, 28, &tr);
+    expect_fresult("Suite8-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", fres, FR_OK);
+    expect_transferred("Suite8-SAVE-SUBDIR-USR", "/Temp/SubDir/01234.usr", tr, 28);
+
+    expect_directory_read("Suite8-DIR-FOLDERS", dr, "$:*=B");
+    expect_directory_read("Suite8-DIR-SUBDIR", dr, "$/Subdir");
+    expect_command_ok("Suite8-CD-SUBDIR", dr, "CD/Subdir");
+    expect_command_response("Suite8-XPWD-SUBDIR", dr, "XPWD", "11:/SUBDIR/");
+    expect_directory_read("Suite8-DIR-ROOT", dr, "$//");
+    expect_directory_read("Suite8-DIR-PARENT", dr, "$_");
+}
+
+void execute_suite8(FileManager *fm, IecDrive *dr)
+{
+    run_suite8_control_plane(fm, dr);
+    run_suite8_time_copy_rename_scratch(dr);
+    run_suite8_partition_listing(fm, dr);
+
+    printf("Suite8 completed successfully!\n");
+}
+
+static void run_suite9_block_matrix(FileManager *fm, IecDrive *dr)
+{
+    const char *suite = "Suite9";
+    const char *testname = "Suite9";
+    const BlockCase cases[] = {
+        { create_iec_d64_fixture, "output/iec_block_cases.d64", "/Temp/iec_block_cases.d64", "D64", 9, 17, 0, 17, 10, 18, 0, false },
+        { create_iec_d81_fixture, "output/iec_block_cases.d81", "/Temp/iec_block_cases.d81", "D81", 9, 39, 0, 39, 10, 40, 1, true },
+    };
+
+    print_scenario(suite, "Block read/write/allocate/free on D64/D81");
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const BlockCase &c = cases[i];
+        c.create_fixture(c.source);
+        prepare_disk_partition(c.source, c.mount, dr, c.partition, c.label);
+
+        uint8_t expected_read[256];
+        make_sector_payload(expected_read, "BASIC:PRG");
+        open_buffer_channel("Suite9-OpenBufferRead", dr, 2);
+        capture_block_sector("Suite9-BlockRead", dr, 2, c.partition, c.read_track, c.read_sector, expected_read);
+        close_file(dr, 2);
+        expect_status_ok("Suite9-CloseBufferRead", "#2");
+
+        uint8_t write_payload[256];
+        make_increment_pattern(write_payload);
+        open_buffer_channel("Suite9-OpenBufferWrite", dr, 2);
+        send_channel_data(dr, 2, write_payload, sizeof(write_payload));
+        expect_block_write_sector("Suite9-BlockWrite", dr, 2, c.partition, c.write_track, c.write_sector, write_payload);
+        close_file(dr, 2);
+        expect_status_ok("Suite9-CloseBufferWrite", "#2");
+
+        uint32_t free_before = get_free_sectors(fm, c.mount);
+
+        expect_command_ok("Suite9-BlockAllocate", dr, "B-A 2 9 17 10");
+        uint32_t free_after_alloc = get_free_sectors(fm, c.mount);
+        REQUIRE(free_after_alloc + 1 == free_before);
+
+        expect_command_ok("Suite9-BlockFree", dr, "B-F 2 9 17 10");
+        uint32_t free_after_free = get_free_sectors(fm, c.mount);
+        REQUIRE(free_after_free == free_before);
+    }
+
+    printf("Suite9 completed successfully!\n");
 }
 
 int main(int argc, const char **argv)
@@ -1223,8 +1470,8 @@ int main(int argc, const char **argv)
     File *f;
     FileManager *fm = FileManager :: getFileManager();
 
-    execute_suite1(fm, dr);
-    execute_suite2(fm, dr);
+    execute_suite8(fm, dr);
+    run_suite9_block_matrix(fm, dr);
     execute_suite3(fm, dr);
     execute_suite4(fm, dr);
     execute_suite5(fm, dr);

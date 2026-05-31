@@ -352,6 +352,7 @@ class IecCommandChannel: public IecChannel, public IecCommandExecuter {
 
     int do_block_read(int chan, int part, int track, int sector);
     int do_block_write(int chan, int part, int track, int sector);
+    int do_block_allocate(int chan, int part, int track, int sector, bool alloc);
     int do_buffer_position(int chan, int pos);
     int do_set_current_partition(int part);
     int do_change_dir(filename_t& dest);

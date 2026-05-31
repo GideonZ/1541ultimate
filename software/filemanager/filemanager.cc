@@ -772,6 +772,10 @@ FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int 
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->read_sector(buffer, track, sector);
     return fres;
 }
@@ -788,7 +792,30 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->write_sector(buffer, track, sector);
+    return fres;
+}
+
+FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->allocate_sector(track, sector, alloc);
+    if (fres == FR_OK) {
+        fres = inf->fs->sync();
+    }
     return fres;
 }
 
