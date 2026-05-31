@@ -4,18 +4,80 @@ import http.client
 import json
 import os
 import re
+import socket
+import struct
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from PIL import Image
+
 CHECK_COUNT = 0
+TEST_CHOICES = (
+    "all",
+    "contract",
+    "joystick",
+    "keyboard",
+    "keyboard-echo-alphabet",
+    "keyboard-echo-ab-20hz",
+    "keyboard-echo-ab-5hz",
+    "menu",
+    "menu-shift",
+    "menu-repeat-printable",
+    "menu-repeat-cursor",
+)
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
 LETTER_SCREEN_CODES = {chr(ord("A") + index): index + 1 for index in range(26)}
+KEYBOARD_ECHO_PROGRAM_ADDRESS = 0xC000
+KEYBOARD_ECHO_SENTINEL = "x"
+KEYBOARD_ECHO_PROGRAM = bytes(
+    (
+        0xA9, 0x93,             # LDA #$93; clear screen through CHROUT
+        0x20, 0xD2, 0xFF,
+        0xA9, 0x0E,             # LDA #$0E; lower/upper-case character set
+        0x20, 0xD2, 0xFF,
+        0x20, 0xE4, 0xFF,       # GETIN
+        0xF0, 0xFB,             # retry while no key is available
+        0x8D, 0x00, 0x04,       # STA $0400; self-modified after each key
+        0xEE, 0x10, 0xC0,       # INC low byte of STA target
+        0xD0, 0xF3,
+        0xEE, 0x11, 0xC0,       # INC high byte of STA target on wrap
+        0x4C, 0x0A, 0xC0,       # JMP loop
+    )
+)
 BASIC_INPUT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_BASIC_SETTLE", "3.0"))
+MENU_KEY_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_KEY_SETTLE", "0.30"))
+MENU_HOLD_SECONDS = float(os.environ.get("U64_INPUT_MENU_HOLD_SECONDS", "1.2"))
+MENU_POST_RELEASE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_POST_RELEASE_SETTLE", "0.35"))
+MENU_NAV_PREPARE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_PREPARE_SETTLE", "0.15"))
+MENU_NAV_OPEN_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_OPEN_SETTLE", "0.75"))
+MENU_NAV_STEP_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_STEP_SETTLE", "0.08"))
+MENU_NAV_SELECT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_SELECT_SETTLE", "0.45"))
+MENU_EDITOR_OPEN_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EDITOR_OPEN_SETTLE", "0.70"))
+MENU_EDITOR_SAVE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EDITOR_SAVE_SETTLE", "0.25"))
+MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0.25"))
+MENU_RESET_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_RESET_SETTLE", "0.75"))
+MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
+MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
+MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
+MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
+MULTICAST_GROUP = "239.0.1.64"
+VIDEO_PORT = 11000
+MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
+MODEM_SETTINGS_CATEGORY = "Modem Settings"
+MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
+DEFAULT_MODEM_OFFLINE_TEXT = "/flash/offline.txt"
+FONT_PATH = Path(__file__).resolve().parents[2] / "roms" / "chars.bin"
+FONT_BYTES = FONT_PATH.read_bytes()[: 256 * 8]
+PRINTABLE_FALLBACK = {
+    0x00: " ",
+}
 KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
     "inst_del": (0, 0),
     "return": (0, 1),
@@ -105,6 +167,18 @@ def format_exception(exc: BaseException) -> str:
     if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
         return f"{exc} ({exc.reason})"
     return str(exc)
+
+
+def wants_test(selected: Optional[List[str]], name: str) -> bool:
+    return selected is None or "all" in selected or name in selected
+
+
+def wants_menu_tests(selected: Optional[List[str]]) -> bool:
+    return wants_test(selected, "menu") or any(item.startswith("menu-") for item in selected or [])
+
+
+def wants_keyboard_echo_tests(selected: Optional[List[str]]) -> bool:
+    return any(item.startswith("keyboard-echo-") for item in selected or [])
 
 
 def device_unavailable(exc: BaseException) -> bool:
@@ -212,6 +286,12 @@ class RestInputSession:
     def put(self, command: str) -> None:
         self.request("PUT", f"/v1/machine:{command}")
 
+    def start_video_stream(self, ip: str = MULTICAST_GROUP, port: int = VIDEO_PORT) -> None:
+        self.request("PUT", "/v1/streams/video:start", params={"ip": f"{ip}:{port}"})
+
+    def stop_video_stream(self) -> None:
+        self.request("PUT", "/v1/streams/video:stop")
+
     def reset(self) -> None:
         self.put("reset")
 
@@ -228,6 +308,180 @@ class RestInputSession:
         if not data:
             raise Failure("write_memory requires at least one byte")
         self.request("PUT", "/v1/machine:writemem", params={"address": f"{address:04X}", "data": data.hex().upper()})
+
+
+class FrameText:
+    def __init__(self, image: Image.Image, lines: List[str], codes: List[List[int]], bbox: Tuple[int, int, int, int]) -> None:
+        self.image = image
+        self.lines = lines
+        self.codes = codes
+        self.bbox = bbox
+
+    def text(self) -> str:
+        return "\n".join(self.lines)
+
+    def contains(self, needle: str) -> bool:
+        needle_upper = needle.upper()
+        return any(needle_upper in line for line in self.lines)
+
+
+class VicStreamCapture:
+    def __init__(self) -> None:
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(2.0)
+        self.sock.bind(("", VIDEO_PORT))
+        group = socket.inet_aton(MULTICAST_GROUP)
+        membership = struct.pack("4sL", group, socket.INADDR_ANY)
+        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def _drain_partial_frame(self) -> None:
+        while True:
+            data, _ = self.sock.recvfrom(1024)
+            _, _, line, _ = struct.unpack("<HHHH", data[0:8])
+            if line & 0x8000:
+                return
+
+    def capture_image(self) -> Image.Image:
+        for _ in range(8):
+            self._drain_partial_frame()
+            raw = bytearray()
+            while True:
+                data, _ = self.sock.recvfrom(1024)
+                _, _, line, _ = struct.unpack("<HHHH", data[0:8])
+                raw.extend(data[12:])
+                if line & 0x8000:
+                    break
+
+            lines = len(raw) // 192
+            if lines < 180:
+                continue
+
+            image = Image.new("P", (384, lines))
+            i = 0
+            for y in range(lines):
+                for x in range(192):
+                    value = raw[i]
+                    image.putpixel((2 * x, y), value & 0x0F)
+                    image.putpixel((2 * x + 1, y), value >> 4)
+                    i += 1
+            return image
+        raise Failure("Did not receive a complete VIC frame.")
+
+
+class C64FrameOCR:
+    def __init__(self) -> None:
+        self.font = FONT_BYTES
+
+    def _cell_mask(self, cell: Image.Image) -> List[int]:
+        bg = Counter(cell.getdata()).most_common(1)[0][0]
+        mask = []
+        for y in range(8):
+            row = 0
+            for x in range(8):
+                if cell.getpixel((x, y)) != bg:
+                    row |= (1 << (7 - x))
+            mask.append(row)
+        return mask
+
+    def _best_match(self, mask: List[int]) -> Tuple[int, int]:
+        best_dist = 999
+        best_code = 0
+        for code in range(256):
+            glyph = self.font[code * 8:(code + 1) * 8]
+            if len(glyph) < 8:
+                break
+            dist = 0
+            for y in range(8):
+                dist += (mask[y] ^ glyph[y]).bit_count()
+            if dist < best_dist:
+                best_dist = dist
+                best_code = code
+                if dist == 0:
+                    break
+        return best_dist, best_code
+
+    def _alignment_score(self, image: Image.Image, left: int, top: int) -> int:
+        active = image.crop((left, top, left + 320, top + 200))
+        score = 0
+        for row in range(6):
+            for col in range(40):
+                cell = active.crop((col * 8, row * 8, (col + 1) * 8, (row + 1) * 8))
+                score += self._best_match(self._cell_mask(cell))[0]
+        return score
+
+    def _active_bbox(self, image: Image.Image) -> Tuple[int, int, int, int]:
+        border = image.getpixel((0, 0))
+        min_x, min_y = image.width, image.height
+        max_x, max_y = -1, -1
+        for y in range(image.height):
+            for x in range(image.width):
+                if image.getpixel((x, y)) != border:
+                    min_x = min(min_x, x)
+                    min_y = min(min_y, y)
+                    max_x = max(max_x, x)
+                    max_y = max(max_y, y)
+        if max_x < min_x or max_y < min_y:
+            raise Failure("Could not find active 320x200 area inside VIC frame.")
+
+        left_candidates = range(max(0, min_x - 16), min(min_x + 16, image.width - 320) + 1)
+        top_candidates = range(max(0, min_y - 4), min(min_y + 4, image.height - 200) + 1)
+        best = None
+        for top in top_candidates:
+            for left in left_candidates:
+                score = self._alignment_score(image, left, top)
+                if best is None or score < best[0]:
+                    best = (score, left, top)
+        if best is None:
+            raise Failure("Could not align 320x200 OCR grid.")
+        _, left, top = best
+        return left, top, left + 320, top + 200
+
+    @staticmethod
+    def _screen_code_to_char(code: int) -> str:
+        if code in PRINTABLE_FALLBACK:
+            return PRINTABLE_FALLBACK[code]
+        if 2 <= code <= 27:
+            return chr(ord("A") + code - 2)
+        if code == 0x1B:
+            return "["
+        if code == 0x1C:
+            return "\\"
+        if code == 0x1D:
+            return "]"
+        if code == 0x1E:
+            return "^"
+        if code == 0x1F:
+            return "_"
+        if code == 0x20:
+            return " "
+        if 0x21 <= code <= 0x3F:
+            return chr(code)
+        if 0x41 <= code <= 0x5B:
+            return chr(ord("A") + code - 0x41)
+        return " "
+
+    def decode(self, image: Image.Image) -> FrameText:
+        left, top, right, bottom = self._active_bbox(image)
+        active = image.crop((left, top, right, bottom))
+        lines: List[str] = []
+        codes: List[List[int]] = []
+        for row in range(25):
+            chars: List[str] = []
+            row_codes: List[int] = []
+            for col in range(40):
+                cell = active.crop((col * 8, row * 8, (col + 1) * 8, (row + 1) * 8))
+                _, code = self._best_match(self._cell_mask(cell))
+                row_codes.append(code)
+                chars.append(self._screen_code_to_char(code))
+            lines.append("".join(chars))
+            codes.append(row_codes)
+        return FrameText(image, lines, codes, (left, top, right, bottom))
 
 
 def wait_for_input_ready(session: RestInputSession, timeout: float) -> None:
@@ -256,6 +510,9 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
 
 
 def reset_to_basic(session: RestInputSession) -> None:
+    session.post_events([{"kind": "release_all"}])
+    session.post_events([{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}])
+    time.sleep(0.3)
     session.reset()
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
@@ -264,6 +521,11 @@ def reset_to_basic(session: RestInputSession) -> None:
 def reset_to_basic_for_keyboard_input(session: RestInputSession) -> None:
     reset_to_basic(session)
     time.sleep(BASIC_INPUT_SETTLE_SECONDS)
+
+
+def reset_to_basic_for_menu_navigation(session: RestInputSession) -> None:
+    reset_to_basic(session)
+    time.sleep(MENU_RESET_SETTLE_SECONDS)
 
 
 def try_clear_basic_screen(session: RestInputSession) -> bool:
@@ -442,6 +704,43 @@ def text_to_screen_codes(text: str) -> bytes:
     return bytes(out)
 
 
+def keyboard_echo_screen_byte(ch: str) -> int:
+    if "a" <= ch <= "z":
+        return 0x41 + ord(ch) - ord("a")
+    if "A" <= ch <= "Z":
+        return 0xC1 + ord(ch) - ord("A")
+    if "0" <= ch <= "9":
+        return ord(ch)
+    if ch == " ":
+        return 0x20
+    raise Failure(f"Unsupported keyboard echo text {ch!r}")
+
+
+def keyboard_echo_screen_bytes(text: str) -> bytes:
+    return bytes(keyboard_echo_screen_byte(ch) for ch in text)
+
+
+def keyboard_echo_byte_name(value: int) -> str:
+    if 0x41 <= value <= 0x5A:
+        return chr(ord("a") + value - 0x41)
+    if 0xC1 <= value <= 0xDA:
+        return chr(ord("A") + value - 0xC1)
+    if value == 0x20:
+        return "space"
+    return f"${value:02X}"
+
+
+def mixed_alphabet_text(length: int) -> str:
+    return "".join(
+        chr(ord("a") + (index % 26)) if (index % 2) == 0 else chr(ord("A") + (index % 26))
+        for index in range(length)
+    )
+
+
+def alternating_text(first: str, second: str, length: int) -> str:
+    return "".join(first if (index % 2) == 0 else second for index in range(length))
+
+
 def wait_for_screen_sequence(session: RestInputSession, expected: bytes, timeout: float) -> float:
     started = time.monotonic()
     deadline = time.monotonic() + timeout
@@ -452,6 +751,40 @@ def wait_for_screen_sequence(session: RestInputSession, expected: bytes, timeout
         if time.monotonic() >= deadline:
             raise Failure(f"Expected screen sequence {expected!r} not found before timeout")
         time.sleep(0.02)
+
+
+def keyboard_echo_mismatch(expected_text: str, expected: bytes, actual: bytes, offset: int) -> str:
+    for index, expected_byte in enumerate(expected):
+        if index >= len(actual) or actual[index] != expected_byte:
+            actual_byte = actual[index] if index < len(actual) else 0x20
+            context_start = max(0, index - 10)
+            context_end = min(len(expected), index + 10)
+            expected_context = expected_text[context_start:context_end]
+            actual_context = "".join(keyboard_echo_byte_name(byte) for byte in actual[context_start:context_end])
+            return (
+                f"Keyboard echo mismatch at press {index + 1}, screen ${0x0400 + offset + index:04X}: "
+                f"expected {expected_text[index]!r}/${expected_byte:02X}, "
+                f"got {keyboard_echo_byte_name(actual_byte)!r}/${actual_byte:02X}; "
+                f"expected context {expected_context!r}, actual context {actual_context!r}"
+            )
+    return "Keyboard echo mismatch"
+
+
+def wait_for_keyboard_echo_sequence(session: RestInputSession, expected_text: str, offset: int, timeout: float) -> float:
+    expected = keyboard_echo_screen_bytes(expected_text)
+    started = time.monotonic()
+    deadline = started + timeout
+    last = b""
+    while True:
+        last = session.read_memory(0x0400 + offset, len(expected))
+        if last == expected:
+            return time.monotonic() - started
+        mismatch = next((index for index, byte in enumerate(expected) if last[index] != byte), None)
+        if mismatch is not None and last[mismatch] != 0x20:
+            raise Failure(keyboard_echo_mismatch(expected_text, expected, last, offset))
+        if time.monotonic() >= deadline:
+            raise Failure(keyboard_echo_mismatch(expected_text, expected, last, offset))
+        time.sleep(0.05)
 
 
 def read_basic_input_line(session: RestInputSession) -> bytes:
@@ -499,6 +832,176 @@ def keyboard_tap_events_for_text(text: str) -> List[Dict[str, Any]]:
         else:
             raise Failure(f"Unsupported keyboard tap text {text!r}")
     return events
+
+
+def keyboard_press_inputs_for_char(ch: str) -> List[str]:
+    if "a" <= ch <= "z" or "0" <= ch <= "9":
+        return [ch]
+    if "A" <= ch <= "Z":
+        return ["left_shift", ch.lower()]
+    raise Failure(f"Unsupported keyboard press text {ch!r}")
+
+
+def keyboard_release_inputs_for_char(ch: str) -> List[str]:
+    if "A" <= ch <= "Z":
+        return [ch.lower(), "left_shift"]
+    return keyboard_press_inputs_for_char(ch)
+
+
+def keyboard_press_hold_seconds(hz: float) -> float:
+    return max(0.018, min(0.080, (1.0 / hz) * 0.35))
+
+
+def post_keyboard_char_press_release(session: RestInputSession, ch: str, hold_seconds: float) -> None:
+    session.post_events([{"kind": "keyboard", "inputs": keyboard_press_inputs_for_char(ch), "transition": "press"}])
+    time.sleep(hold_seconds)
+    session.post_events([{"kind": "keyboard", "inputs": keyboard_release_inputs_for_char(ch), "transition": "release"}])
+
+
+def post_keyboard_text_at_rate(session: RestInputSession, text: str, hz: float) -> None:
+    interval = 1.0 / hz
+    next_send = time.monotonic()
+    for ch in text:
+        now = time.monotonic()
+        if now < next_send:
+            time.sleep(next_send - now)
+        session.post_events(keyboard_tap_events_for_text(ch))
+        next_send += interval
+        now = time.monotonic()
+        if next_send < now:
+            next_send = now
+
+
+def start_keyboard_echo_program(session: RestInputSession) -> int:
+    session.write_memory(KEYBOARD_ECHO_PROGRAM_ADDRESS, KEYBOARD_ECHO_PROGRAM)
+    start_command = f"SYS{KEYBOARD_ECHO_PROGRAM_ADDRESS}\r".encode("ascii")
+    session.write_memory(0x0277, start_command)
+    session.write_memory(0x00C6, bytes([len(start_command)]))
+
+    expected = keyboard_echo_screen_bytes(KEYBOARD_ECHO_SENTINEL)
+    deadline = time.monotonic() + 5.0
+    while True:
+        session.post_events(keyboard_tap_events_for_text(KEYBOARD_ECHO_SENTINEL))
+        time.sleep(0.25)
+        if session.read_memory(0x0400, 1) == expected:
+            session.post_events([{"kind": "release_all"}])
+            time.sleep(0.35)
+            return len(KEYBOARD_ECHO_SENTINEL)
+        if time.monotonic() >= deadline:
+            screen = session.read_memory(0x0400, 40)
+            raise Failure(f"Keyboard echo program did not start; first screen row is {list(screen)}")
+
+
+def run_keyboard_echo_stress_case(session: RestInputSession, text: str, hz: float) -> None:
+    try:
+        reset_to_basic_for_keyboard_input(session)
+        offset = start_keyboard_echo_program(session)
+        post_keyboard_text_at_rate(session, text, hz)
+        wait_for_keyboard_echo_sequence(session, text, offset, timeout=max(6.0, len(text) * 0.25))
+        time.sleep(0.25)
+        assert_state_empty(session)
+    finally:
+        try:
+            session.post_events([{"kind": "release_all"}])
+        except Exception:
+            pass
+
+
+def keyboard_tap_events_for_menu_text(text: str) -> List[Dict[str, Any]]:
+    punctuation = {
+        "/": "slash",
+        ".": "period",
+        "-": "minus",
+        ":": "colon",
+    }
+    events: List[Dict[str, Any]] = []
+    for ch in text:
+        if "a" <= ch <= "z" or "0" <= ch <= "9":
+            events.append({"kind": "keyboard", "inputs": [ch], "transition": "tap"})
+        elif "A" <= ch <= "Z":
+            events.append({"kind": "keyboard", "inputs": ["left_shift", ch.lower()], "transition": "tap"})
+        elif ch == " ":
+            events.append({"kind": "keyboard", "inputs": ["space"], "transition": "tap"})
+        elif ch in punctuation:
+            events.append({"kind": "keyboard", "inputs": [punctuation[ch]], "transition": "tap"})
+        else:
+            raise Failure(f"Unsupported menu editor text {text!r}")
+    return events
+
+
+def ensure_menu_evidence_dir() -> Optional[str]:
+    if not MENU_EVIDENCE_DIR:
+        return None
+    os.makedirs(MENU_EVIDENCE_DIR, exist_ok=True)
+    return MENU_EVIDENCE_DIR
+
+
+def save_menu_note(tag: str, text: str) -> None:
+    directory = ensure_menu_evidence_dir()
+    if directory is None:
+        return
+    safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", tag)
+    with open(os.path.join(directory, f"{safe_tag}.txt"), "w", encoding="utf-8") as handle:
+        handle.write(text.rstrip())
+        handle.write("\n")
+
+
+def save_menu_frame(tag: str, frame: FrameText) -> None:
+    directory = ensure_menu_evidence_dir()
+    if directory is None:
+        return
+    safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", tag)
+    if frame.image is not None:
+        frame.image.save(os.path.join(directory, f"{safe_tag}.png"))
+    with open(os.path.join(directory, f"{safe_tag}.txt"), "w", encoding="utf-8") as handle:
+        handle.write(frame.text())
+        handle.write("\n")
+
+
+def capture_menu_frame(capture: VicStreamCapture, ocr: C64FrameOCR, tag: Optional[str] = None) -> FrameText:
+    frame = ocr.decode(capture.capture_image())
+    if tag is not None:
+        save_menu_frame(tag, frame)
+    return frame
+
+
+def wait_for_menu_text(capture: VicStreamCapture, ocr: C64FrameOCR, needles: List[str], timeout: float, tag: str) -> FrameText:
+    deadline = time.monotonic() + timeout
+    last_frame: Optional[FrameText] = None
+    upper_needles = [needle.upper() for needle in needles]
+    while time.monotonic() < deadline:
+        frame = capture_menu_frame(capture, ocr)
+        last_frame = frame
+        if all(frame.contains(needle) for needle in upper_needles):
+            save_menu_frame(tag, frame)
+            return frame
+        time.sleep(0.15)
+    if last_frame is not None:
+        save_menu_frame(f"{tag}_timeout", last_frame)
+    raise Failure(f"Timed out waiting for menu text {needles!r}")
+
+
+def non_space_run_length(frame: FrameText, row: int, start_col: int, width: int = 20) -> int:
+    count = 0
+    for offset in range(width):
+        ch = frame.lines[row][start_col + offset]
+        if ch == " ":
+            break
+        count += 1
+    return count
+
+
+def frame_cell_mask(frame: FrameText, ocr: C64FrameOCR, row: int, col: int) -> List[int]:
+    left, top, _, _ = frame.bbox
+    cell = frame.image.crop((left + (col * 8), top + (row * 8), left + ((col + 1) * 8), top + ((row + 1) * 8)))
+    return ocr._cell_mask(cell)
+
+
+def first_mask_position(frame: FrameText, ocr: C64FrameOCR, row: int, start_col: int, width: int, expected_mask: List[int]) -> int:
+    for col in range(start_col, start_col + width):
+        if frame_cell_mask(frame, ocr, row, col) == expected_mask:
+            return col
+    raise Failure("Expected glyph mask not found in decoded frame.")
 
 
 def parse_duration_seconds(text: str) -> float:
@@ -671,6 +1174,126 @@ def soak_invalid_body_case(session: RestInputSession) -> None:
     assert_state_empty(session)
 
 
+def menu_keyboard_tap(session: RestInputSession, inputs: List[str], settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+    response = session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
+    time.sleep(settle)
+    return response
+
+
+def menu_keyboard_transition(session: RestInputSession, inputs: List[str], transition: str, settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+    response = session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": transition}])
+    time.sleep(settle)
+    return response
+
+
+def menu_keyboard_f2_tap(session: RestInputSession, settle: float = MENU_KEY_SETTLE_SECONDS) -> Dict[str, Any]:
+    # The REST API uses C64 matrix names: F2 is shifted F1.
+    return menu_keyboard_tap(session, ["left_shift", "f1"], settle)
+
+
+def close_menu_keyboard(session: RestInputSession) -> None:
+    for _ in range(4):
+        menu_keyboard_tap(session, ["run_stop"], 0.35)
+    session.post_events([{"kind": "release_all"}])
+
+
+def menu_move_to_top(session: RestInputSession, settle: float = 0.05, count: int = 32) -> None:
+    for _ in range(count):
+        menu_keyboard_tap(session, ["left_shift", "cursor_up_down"], settle)
+
+
+def menu_move_down(session: RestInputSession, count: int, settle: float = 0.05) -> None:
+    for _ in range(count):
+        menu_keyboard_tap(session, ["cursor_up_down"], settle)
+
+
+def clear_menu_editor_field(session: RestInputSession, settle: float = 0.8) -> None:
+    delete_events = [{"kind": "keyboard", "inputs": ["inst_del"], "transition": "tap"} for _ in range(32)]
+    session.post_events(delete_events)
+    time.sleep(settle)
+
+
+def type_menu_editor_text(session: RestInputSession, text: str, settle: float = 0.6) -> None:
+    session.post_events(keyboard_tap_events_for_menu_text(text))
+    time.sleep(settle)
+
+
+def get_config_value(session: RestInputSession, category: str, item: str) -> str:
+    body = session.json_request("GET", "/v1/configs/" + urllib.parse.quote(category, safe=""))
+    store = body.get(category)
+    if not isinstance(store, dict) or item not in store:
+        raise Failure(f"Config value {category}/{item} not found in {body}")
+    value = store[item]
+    if not isinstance(value, str):
+        raise Failure(f"Config value {category}/{item} is not a string: {value!r}")
+    return value
+
+
+def set_config_value(session: RestInputSession, category: str, item: str, value: str) -> None:
+    response = session.json_request(
+        "PUT",
+        "/v1/configs/"
+        + urllib.parse.quote(category, safe="")
+        + "/"
+        + urllib.parse.quote(item, safe=""),
+        params={"value": value},
+    )
+    if response.get("errors") != []:
+        raise Failure(f"Failed to set config {category}/{item}: {response}")
+
+
+def read_offline_text_field(session: RestInputSession) -> str:
+    return get_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM)
+
+
+def save_offline_text_evidence(tag: str, value: str) -> None:
+    save_menu_note(tag, f"{MODEM_OFFLINE_TEXT_ITEM}: {value}")
+
+
+def navigate_to_modem_offline_text_editor(session: RestInputSession) -> None:
+    session.post_events([{"kind": "release_all"}])
+    time.sleep(MENU_NAV_PREPARE_SETTLE_SECONDS)
+    session.put("menu_button")
+    time.sleep(MENU_NAV_OPEN_SETTLE_SECONDS)
+    menu_keyboard_f2_tap(session, MENU_NAV_SELECT_SETTLE_SECONDS)
+    menu_move_to_top(session, settle=MENU_NAV_STEP_SETTLE_SECONDS, count=20)
+    menu_move_down(session, 19, settle=MENU_NAV_STEP_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["return"], MENU_NAV_SELECT_SETTLE_SECONDS)
+    menu_move_to_top(session, settle=MENU_NAV_STEP_SETTLE_SECONDS, count=20)
+    menu_move_down(session, 11, settle=MENU_NAV_STEP_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["return"], MENU_EDITOR_OPEN_SETTLE_SECONDS)
+
+
+def read_menu_editor_window(frame: FrameText, row: int, col: int, width: int = 20) -> str:
+    return frame.lines[row][col:col + width]
+
+
+def save_menu_editor_and_read(session: RestInputSession, tag: str) -> str:
+    menu_keyboard_tap(session, ["return"], MENU_EDITOR_SAVE_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["run_stop"], MENU_EXIT_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["run_stop"], MENU_EXIT_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["return"], 0.40)
+    session.post_events([{"kind": "release_all"}])
+    time.sleep(MENU_EXIT_SETTLE_SECONDS)
+    value = read_offline_text_field(session)
+    save_offline_text_evidence(tag, value)
+    assert_state_empty(session)
+    return value
+
+
+def restore_offline_text_field(session: RestInputSession) -> None:
+    set_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM, DEFAULT_MODEM_OFFLINE_TEXT)
+    save_offline_text_evidence("menu_editor_restored", DEFAULT_MODEM_OFFLINE_TEXT)
+
+
+def open_modem_offline_text_editor(session: RestInputSession, initial_value: str) -> None:
+    reset_to_basic_for_menu_navigation(session)
+    assert_state_empty(session)
+    set_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM, initial_value)
+    time.sleep(MENU_CONFIG_SETTLE_SECONDS)
+    navigate_to_modem_offline_text_editor(session)
+
+
 def soak_special_key_edge_case(session: RestInputSession) -> None:
     for inputs in (
         ["ctrl", "9"],
@@ -834,21 +1457,21 @@ def run_contract_tests(session: RestInputSession) -> None:
 
 def run_keyboard_tests(session: RestInputSession) -> None:
     with check("keyboard single letter reaches the live C64 matrix"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events([{"kind": "keyboard", "inputs": ["l"], "transition": "press"}])
         assert_keyboard_matrix_inputs(session, ["l"])
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
     with check("keyboard shifted pair reaches the live C64 matrix"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events([{"kind": "keyboard", "inputs": ["left_shift", "a"], "transition": "press"}])
         assert_keyboard_matrix_inputs(session, ["left_shift", "a"])
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
     with check("keyboard batch applies multiple presses atomically"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         body = session.json_request(
             "POST",
             "/v1/machine:input",
@@ -866,7 +1489,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         assert_state_empty(session)
 
     with check("keyboard ordered batch and idempotent release"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events(
             [
                 {"kind": "keyboard", "inputs": ["left_shift", "ctrl"], "transition": "press"},
@@ -879,7 +1502,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard release_all can be followed by press in same batch"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events(
             [
                 {"kind": "keyboard", "inputs": ["left_shift"], "transition": "press"},
@@ -891,7 +1514,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard accepts eight simultaneous inputs"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         inputs = ["a", "s", "d", "f", "j", "k", "l", "space"]
         session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "press"}])
         assert_input_state(session, ["a", "s", "d", "f", "j", "k", "l", "space"], [], [])
@@ -899,7 +1522,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         assert_state_empty(session)
 
     with check("keyboard tap does not release persistent key"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events(
             [
                 {"kind": "keyboard", "inputs": ["left_shift"], "transition": "press"},
@@ -913,20 +1536,20 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard release_all clears state"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events([{"kind": "keyboard", "inputs": ["left_shift"], "transition": "press"}])
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
     with check("keyboard restore tap auto releases"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         session.post_events([{"kind": "keyboard", "inputs": ["restore"], "transition": "tap"}])
         time.sleep(0.2)
         assert_state_empty(session)
 
     with check("keyboard special-key taps snapshot correctly and auto release"):
         for inputs in (["commodore"], ["ctrl"], ["run_stop"], ["restore"], ["f1"], ["f3"], ["f5"], ["f7"], ["left_shift"], ["right_shift"]):
-            reset_to_basic(session)
+            reset_to_basic_for_keyboard_input(session)
             response = session.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
             if sorted(response.get("keyboard", {}).get("inputs", [])) != sorted(inputs):
                 raise Failure(f"Expected immediate special-key tap snapshot for {inputs}, got {response}")
@@ -934,7 +1557,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
             assert_state_empty(session)
 
     with check("keyboard tap is visible in the live hardware snapshot and auto releases"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         response = session.post_events([{"kind": "keyboard", "inputs": ["a"], "transition": "tap"}])
         if response.get("keyboard", {}).get("inputs") != ["a"]:
             raise Failure(f"Expected immediate tap snapshot for a, got {response}")
@@ -955,7 +1578,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard cursor-left tap is visible in the live hardware snapshot and auto releases"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         response = session.post_events([{"kind": "keyboard", "inputs": ["left_shift", "cursor_left_right"], "transition": "tap"}])
         if sorted(response.get("keyboard", {}).get("inputs", [])) != ["cursor_left_right", "left_shift"]:
             raise Failure(f"Expected immediate cursor-left tap snapshot, got {response}")
@@ -964,7 +1587,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard tap batch drains through the live matrix path"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         response = session.json_request("POST", "/v1/machine:input", payload={"events": keyboard_tap_events_for_text("ABCDEFGHIJ")})
         if not response.get("keyboard", {}).get("inputs"):
             raise Failure(f"Expected a live tap snapshot while the batch was draining, got {response}")
@@ -973,7 +1596,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard long repeated tap train drains fully without sticky state"):
-        reset_to_basic(session)
+        reset_to_basic_for_keyboard_input(session)
         repeated = [{"kind": "keyboard", "inputs": ["a"], "transition": "tap"} for _ in range(60)]
         response = session.json_request("POST", "/v1/machine:input", payload={"events": repeated})
         if response.get("keyboard", {}).get("inputs") != ["a"]:
@@ -981,6 +1604,15 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         time.sleep(6.0)
         assert_state_empty(session)
         session.post_events([{"kind": "release_all"}])
+
+    with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
+        run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0)
+
+    with check("keyboard 20 Hz alternating ab echo has no missed presses"):
+        run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0)
+
+    with check("keyboard 5 Hz alternating ab echo has no missed presses"):
+        run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0)
 
     with check("invalid keyboard batch does not mutate state"):
         reset_to_basic(session)
@@ -991,6 +1623,99 @@ def run_keyboard_tests(session: RestInputSession) -> None:
             ]
         )
         assert_error_body_only(body)
+        assert_state_empty(session)
+
+
+def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[str]] = None) -> None:
+    if wants_test(selected, "keyboard-echo-alphabet"):
+        with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
+            run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0)
+
+    if wants_test(selected, "keyboard-echo-ab-20hz"):
+        with check("keyboard 20 Hz alternating ab echo has no missed presses"):
+            run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0)
+
+    if wants_test(selected, "keyboard-echo-ab-5hz"):
+        with check("keyboard 5 Hz alternating ab echo has no missed presses"):
+            run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0)
+
+
+def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[str]] = None) -> None:
+    reset_to_basic_for_menu_navigation(session)
+    session.post_events([{"kind": "release_all"}])
+    assert_state_empty(session)
+    original_offline_text = read_offline_text_field(session)
+    save_offline_text_evidence("menu_original_value", original_offline_text)
+    try:
+        if wants_test(selected, "menu-shift"):
+            with check("menu editor keeps separate-batch shift active across POSTs"):
+                open_modem_offline_text_editor(session, "")
+                menu_keyboard_tap(session, ["a"], MENU_TYPE_SETTLE_SECONDS)
+                lower_value = save_menu_editor_and_read(session, "menu_lowercase_control")
+                if lower_value != "a":
+                    raise Failure(f"Lowercase control write produced {lower_value!r} instead of 'a'.")
+
+                open_modem_offline_text_editor(session, "")
+                menu_keyboard_transition(session, ["left_shift"], "press", MENU_SHIFT_BATCH_SETTLE_SECONDS)
+                menu_keyboard_tap(session, ["a"], MENU_SHIFT_BATCH_SETTLE_SECONDS)
+                menu_keyboard_transition(session, ["left_shift"], "release", MENU_SHIFT_BATCH_SETTLE_SECONDS)
+                separate_value = save_menu_editor_and_read(session, "menu_shift_separate_batches")
+                if separate_value != "A":
+                    raise Failure(f"Separate-batch shift write produced {separate_value!r} instead of 'A'.")
+
+        if wants_test(selected, "menu-repeat-printable"):
+            with check("menu editor repeats held printable keys and stops after release"):
+                open_modem_offline_text_editor(session, "")
+                menu_keyboard_transition(session, ["c"], "press", 0.1)
+                time.sleep(MENU_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["c"], "release", 0.1)
+                time.sleep(MENU_POST_RELEASE_SETTLE_SECONDS)
+                repeated_value = save_menu_editor_and_read(session, "menu_printable_repeat")
+                if len(repeated_value) < 2 or set(repeated_value) != {"c"}:
+                    raise Failure(f"Held printable key produced {repeated_value!r} instead of a repeated run of 'c'.")
+
+                open_modem_offline_text_editor(session, "")
+                menu_keyboard_transition(session, ["c"], "press", 0.1)
+                time.sleep(MENU_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["c"], "release", 0.1)
+                time.sleep(0.60)
+                stopped_value = save_menu_editor_and_read(session, "menu_printable_repeat_stopped")
+                if stopped_value != repeated_value:
+                    raise Failure("Printable repeat continued after release.")
+
+        if wants_test(selected, "menu-repeat-cursor"):
+            with check("menu editor repeats held cursor keys and stops after release"):
+                open_modem_offline_text_editor(session, "ABCD")
+                menu_keyboard_tap(session, ["left_shift", "cursor_left_right"], 0.2)
+                time.sleep(MENU_POST_RELEASE_SETTLE_SECONDS)
+                type_menu_editor_text(session, "Z", 0.4)
+                control_value = save_menu_editor_and_read(session, "menu_cursor_single_tap")
+
+                open_modem_offline_text_editor(session, "ABCD")
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "press", 0.1)
+                time.sleep(MENU_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "release", 0.1)
+                time.sleep(0.10)
+                type_menu_editor_text(session, "Z", 0.4)
+                short_value = save_menu_editor_and_read(session, "menu_cursor_repeat_short_wait")
+                if short_value == control_value:
+                    raise Failure("Held cursor-left matched the single-tap result; no repeated menu navigation was observed.")
+
+                open_modem_offline_text_editor(session, "ABCD")
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "press", 0.1)
+                time.sleep(MENU_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "release", 0.1)
+                time.sleep(0.60)
+                type_menu_editor_text(session, "Z", 0.4)
+                long_value = save_menu_editor_and_read(session, "menu_cursor_repeat_long_wait")
+                if long_value != short_value:
+                    raise Failure("Cursor repeat continued to move after release.")
+    finally:
+        try:
+            restore_offline_text_field(session)
+        except Exception:
+            pass
+        reset_to_basic_for_keyboard_input(session)
         assert_state_empty(session)
 
 
@@ -1131,13 +1856,21 @@ def run_joystick_tests(session: RestInputSession) -> None:
         assert_state_empty(session)
 
 
-def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] = None) -> int:
+def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] = None, selected: Optional[List[str]] = None) -> int:
     wait_for_input_ready(session, timeout=15.0)
     if soak_duration_seconds is not None:
         return run_soak_tests(session, soak_duration_seconds)
-    run_contract_tests(session)
-    run_joystick_tests(session)
-    run_keyboard_tests(session)
+    if wants_test(selected, "contract"):
+        run_contract_tests(session)
+    if wants_test(selected, "joystick"):
+        run_joystick_tests(session)
+    if wants_test(selected, "keyboard"):
+        run_keyboard_tests(session)
+    if wants_keyboard_echo_tests(selected):
+        run_keyboard_echo_tests(session, selected=selected)
+    if wants_menu_tests(selected):
+        menu_selected = selected if selected and "menu" not in selected and "all" not in selected else None
+        run_menu_keyboard_tests(session, selected=menu_selected)
     return 0
 
 
@@ -1152,6 +1885,12 @@ def main() -> int:
     parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")))
     parser.add_argument("-s", "--soak", action="store_true", help="run the expanded soak suite after the standard checks")
     parser.add_argument(
+        "--test",
+        action="append",
+        choices=TEST_CHOICES,
+        help="run one suite or menu subtest; repeat for multiple selections",
+    )
+    parser.add_argument(
         "-d",
         "--soak-duration",
         default="5m",
@@ -1161,9 +1900,13 @@ def main() -> int:
 
     rest_host = args.rest_host or args.host
     session = RestInputSession(rest_host, args.password, args.timeout)
+    selected_tests = None if not args.test else args.test
     soak_duration_seconds = parse_duration_seconds(args.soak_duration) if args.soak else None
+    if args.soak and selected_tests is not None:
+        print("--test cannot be combined with --soak", file=sys.stderr)
+        return 2
     try:
-        soak_cycles = run_tests(session, soak_duration_seconds=soak_duration_seconds)
+        soak_cycles = run_tests(session, soak_duration_seconds=soak_duration_seconds, selected=selected_tests)
     except Failure as exc:
         print(exc, file=sys.stderr)
         return 1

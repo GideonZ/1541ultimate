@@ -7,6 +7,7 @@
 #if U64
 #include "keyboard_usb.h"
 #include "joystick_output.h"
+extern "C" void route_input_note_menu_button(void);
 #endif
 
 #define MENU_C64_PAUSE      0x640B
@@ -25,6 +26,9 @@ static uint8_t chartohex(const char a)
 
 API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 {
+#if U64
+    route_input_note_menu_button();
+#endif
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, 0);
     SubsysResultCode_t retval = cmd->execute();
     resp->error(SubsysCommand::error_string(retval.status));

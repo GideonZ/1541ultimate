@@ -101,9 +101,15 @@ DIRECT_KEY_SEQUENCE_MAP: Dict[str, List[str]] = {
 ESCAPE_SEQUENCE_TIMEOUT = float(os.environ.get("U64_INPUT_ESCAPE_TIMEOUT", "0.10"))
 MAX_BATCH_EVENTS = 64
 KEYBOARD_TAP_BATCH_EVENTS = max(1, int(os.environ.get("U64_INPUT_KEYBOARD_TAP_BATCH_EVENTS", "10")))
+KEYBOARD_INJECTION_PRESS_RELEASE = "press-release"
+KEYBOARD_INJECTION_TAP = "tap"
+KEYBOARD_INJECTION_MODES = (KEYBOARD_INJECTION_PRESS_RELEASE, KEYBOARD_INJECTION_TAP)
+DEFAULT_KEYBOARD_INJECTION_MODE = os.environ.get("U64_INPUT_KEYBOARD_INJECTION", KEYBOARD_INJECTION_PRESS_RELEASE)
 REPEAT_BATCH_EVENTS = max(1, int(os.environ.get("U64_INPUT_REPEAT_BATCH_EVENTS", "6")))
 REPEAT_BATCH_TARGET_HZ = float(os.environ.get("U64_INPUT_REPEAT_HZ", "50.0"))
 REPEAT_BATCH_INTERVAL = (float(REPEAT_BATCH_EVENTS) / REPEAT_BATCH_TARGET_HZ) if REPEAT_BATCH_TARGET_HZ > 0 else 0.06
+KEYBOARD_RELEASE_DELAY_SECONDS = float(os.environ.get("U64_INPUT_KEYBOARD_RELEASE_DELAY", "0.03"))
+KEYBOARD_INTER_KEY_DELAY_SECONDS = float(os.environ.get("U64_INPUT_KEYBOARD_INTER_KEY_DELAY", "0.03"))
 KEY_REPEAT_STALE_SECONDS = float(os.environ.get("U64_INPUT_REPEAT_STALE", "0.25"))
 KEY_REPEAT_TRIGGER_SECONDS = float(os.environ.get("U64_INPUT_REPEAT_TRIGGER", "0.50"))
 KEY_REPEAT_CONFIRM_COUNT = max(2, int(os.environ.get("U64_INPUT_REPEAT_CONFIRM", "4")))
@@ -115,9 +121,13 @@ QUIT_SEQUENCES = ("\x03", "\x04")
 JOYSTICK_INPUT_ORDER = ["up", "down", "left", "right", "fire", "fire2", "fire3"]
 
 INPUT_EVENT_STRUCT = struct.Struct("llHHi")
+EV_SYN = 0x00
 EV_KEY = 0x01
 EV_ABS = 0x03
+SYN_DROPPED = 0x03
 EVIOCGRAB = 0x40044590
+KEY_STATE_BYTES = 96
+EVIOCGKEY = (2 << 30) | (ord("E") << 16) | (0x18 << 8) | KEY_STATE_BYTES
 ABS_X = 0x00
 ABS_Y = 0x01
 ABS_RX = 0x03
@@ -318,6 +328,14 @@ LOW_LEVEL_SHIFTED_KEY_INPUTS: Dict[int, str] = {
     KEY_F6: "f5",
     KEY_F8: "f7",
 }
+LOW_LEVEL_MODIFIER_KEYCODES = (
+    KEY_TAB,
+    KEY_LEFTCTRL,
+    KEY_RIGHTCTRL,
+    KEY_LEFTSHIFT,
+    KEY_RIGHTSHIFT,
+)
+LOW_LEVEL_STATEFUL_KEYCODES = set(LOW_LEVEL_DIRECT_KEY_INPUTS) | set(LOW_LEVEL_SHIFTED_KEY_INPUTS) | set(LOW_LEVEL_MODIFIER_KEYCODES)
 
 
 @contextmanager
@@ -381,6 +399,11 @@ def cursor_keyboard_event(direction: str) -> Dict[str, object]:
 def ordered_keyboard_inputs(inputs: List[str]) -> List[str]:
     order = {"ctrl": 0, "commodore": 1, "left_shift": 2, "right_shift": 3}
     return sorted(inputs, key=lambda item: (order.get(item, 10), item))
+
+
+def ordered_keyboard_release_inputs(inputs: List[str]) -> List[str]:
+    order = {"ctrl": 1, "commodore": 1, "left_shift": 1, "right_shift": 1}
+    return sorted(inputs, key=lambda item: (order.get(item, 0), item))
 
 
 def print_special_key_help(low_level_keyboard: bool = False) -> None:
@@ -515,6 +538,10 @@ def summarize_json_response(response: Dict[str, Any]) -> str:
         return f"errors={len(response.get('errors', []))}"
     keys = ",".join(sorted(response.keys()))
     return keys or "json"
+
+
+def is_keyboard_release_event(event: Dict[str, object]) -> bool:
+    return event.get("kind") == "keyboard" and event.get("transition") == "release"
 
 
 class RestCallLogger:
@@ -1068,8 +1095,24 @@ def drain_stdin_sequences(stdin_fd: int) -> List[str]:
 
 def flush_event_batch(client: InteractiveRestClient, events: List[Dict[str, object]]) -> None:
     while events:
+        if is_keyboard_release_event(events[0]):
+            release_count = 1
+            while release_count < len(events) and is_keyboard_release_event(events[release_count]):
+                release_count += 1
+            chunk = events[:min(release_count, MAX_BATCH_EVENTS)]
+            if KEYBOARD_RELEASE_DELAY_SECONDS > 0:
+                time.sleep(KEYBOARD_RELEASE_DELAY_SECONDS)
+            client.post_events(chunk)
+            del events[:len(chunk)]
+            if events and KEYBOARD_INTER_KEY_DELAY_SECONDS > 0:
+                time.sleep(KEYBOARD_INTER_KEY_DELAY_SECONDS)
+            continue
+
+        release_index = next((index for index, event in enumerate(events) if is_keyboard_release_event(event)), -1)
         keyboard_taps_only = all(event.get("kind") == "keyboard" and event.get("transition") == "tap" for event in events)
         chunk_size = KEYBOARD_TAP_BATCH_EVENTS if keyboard_taps_only else MAX_BATCH_EVENTS
+        if release_index >= 0:
+            chunk_size = min(chunk_size, release_index)
         chunk = events[:chunk_size]
         client.post_events(chunk)
         del events[:chunk_size]
@@ -1158,6 +1201,25 @@ def keyboard_state_event(inputs: List[str], transition: str) -> Dict[str, object
     return {"kind": "keyboard", "inputs": inputs, "transition": transition}
 
 
+def expand_keyboard_injection_event(event: Dict[str, object], mode: str) -> List[Dict[str, object]]:
+    if mode == KEYBOARD_INJECTION_TAP:
+        return [event]
+    if event.get("kind") != "keyboard" or event.get("transition") != "tap":
+        return [event]
+    inputs = list(event.get("inputs", []))  # type: ignore[arg-type]
+    return [
+        keyboard_state_event(ordered_keyboard_inputs(inputs), "press"),
+        keyboard_state_event(ordered_keyboard_release_inputs(inputs), "release"),
+    ]
+
+
+def expand_keyboard_injection_events(events: List[Dict[str, object]], mode: str) -> List[Dict[str, object]]:
+    expanded: List[Dict[str, object]] = []
+    for event in events:
+        expanded.extend(expand_keyboard_injection_event(event, mode))
+    return expanded
+
+
 class HeldLogicalKey:
     def __init__(self, input_name: str) -> None:
         self.input_name = input_name
@@ -1165,6 +1227,12 @@ class HeldLogicalKey:
 
     def active(self) -> bool:
         return bool(self.sources)
+
+    def has_source(self, source: object) -> bool:
+        return source in self.sources
+
+    def has_source_kind(self, kind: str) -> bool:
+        return any(isinstance(source, tuple) and source[0] == kind for source in self.sources)
 
     def press(self, source: object) -> Optional[Dict[str, object]]:
         if source in self.sources:
@@ -1185,15 +1253,39 @@ class HeldLogicalKey:
 
 
 class LowLevelKeyboardState:
-    def __init__(self, joystick_port: int) -> None:
+    def __init__(self, joystick_port: int, keyboard_injection: str = KEYBOARD_INJECTION_PRESS_RELEASE) -> None:
         self.joystick_port = joystick_port
+        self.keyboard_injection = keyboard_injection
         self.left_shift = HeldLogicalKey("left_shift")
         self.right_shift = HeldLogicalKey("right_shift")
         self.ctrl = HeldLogicalKey("ctrl")
         self.commodore = HeldLogicalKey("commodore")
+        self.pressed_codes: Set[int] = set()
 
     def _shift_active(self) -> bool:
         return self.left_shift.active() or self.right_shift.active()
+
+    def _physical_shift_active(self) -> bool:
+        return self.left_shift.has_source_kind("phys") or self.right_shift.has_source_kind("phys")
+
+    def _active_shift_input(self) -> str:
+        if self.left_shift.active():
+            return "left_shift"
+        if self.right_shift.active():
+            return "right_shift"
+        return "left_shift"
+
+    def _is_stateful_key(self, code: int) -> bool:
+        return code in LOW_LEVEL_STATEFUL_KEYCODES
+
+    def _tap_injection(self) -> bool:
+        return self.keyboard_injection == KEYBOARD_INJECTION_TAP
+
+    def _press_order(self, code: int) -> Tuple[int, int]:
+        return (0 if code in LOW_LEVEL_MODIFIER_KEYCODES else 1, code)
+
+    def _release_order(self, code: int) -> Tuple[int, int]:
+        return (1 if code in LOW_LEVEL_MODIFIER_KEYCODES else 0, code)
 
     def _press_modifier(self, code: int) -> Optional[Dict[str, object]]:
         if code == KEY_LEFTSHIFT:
@@ -1228,12 +1320,18 @@ class LowLevelKeyboardState:
 
         direct_input = LOW_LEVEL_DIRECT_KEY_INPUTS.get(code)
         if direct_input is not None:
+            if self._tap_injection():
+                return [keyboard_event([direct_input])]
             return [keyboard_state_event([direct_input], "press")]
 
         shifted_input = LOW_LEVEL_SHIFTED_KEY_INPUTS.get(code)
         if shifted_input is not None:
+            if self._tap_injection():
+                if self._physical_shift_active():
+                    return [keyboard_event([shifted_input])]
+                return [keyboard_event(["left_shift", shifted_input])]
             events: List[Dict[str, object]] = []
-            if not self._shift_active():
+            if not self._physical_shift_active():
                 event = self.left_shift.press(("synthetic", code))
                 if event is not None:
                     events.append(event)
@@ -1248,25 +1346,35 @@ class LowLevelKeyboardState:
 
         direct_input = LOW_LEVEL_DIRECT_KEY_INPUTS.get(code)
         if direct_input is not None:
+            if self._tap_injection():
+                return []
             return [keyboard_state_event([direct_input], "release")]
 
         shifted_input = LOW_LEVEL_SHIFTED_KEY_INPUTS.get(code)
         if shifted_input is not None:
+            if self._tap_injection():
+                return []
             events: List[Dict[str, object]] = [keyboard_state_event([shifted_input], "release")]
-            event = self.left_shift.release(("synthetic", code))
-            if event is not None:
-                events.append(event)
+            if self.left_shift.has_source(("synthetic", code)):
+                event = self.left_shift.release(("synthetic", code))
+                if event is not None:
+                    events.append(event)
             return events
         return []
 
     def apply_input_event(self, code: int, value: int) -> Tuple[Optional[str], List[Dict[str, object]]]:
         if value == 0:
+            self.pressed_codes.discard(code)
             event = self._release_modifier(code)
             if event is not None:
                 return None, [event]
             return None, self._release_mapped_key(code)
         if value != 1:
             return None, []
+        if self._is_stateful_key(code):
+            if code in self.pressed_codes:
+                return None, []
+            self.pressed_codes.add(code)
         modifier_event = self._press_modifier(code)
         if modifier_event is not None:
             return None, [modifier_event]
@@ -1282,12 +1390,27 @@ class LowLevelKeyboardState:
             return "release_all", [release_all_event()]
         return None, self._press_mapped_key(code)
 
+    def sync_pressed_codes(self, physical_codes: Set[int]) -> List[Dict[str, object]]:
+        events: List[Dict[str, object]] = []
+        desired = {code for code in physical_codes if self._is_stateful_key(code)}
+
+        for code in sorted(self.pressed_codes - desired, key=self._release_order):
+            _, release_events = self.apply_input_event(code, 0)
+            events.extend(release_events)
+
+        for code in sorted(desired - self.pressed_codes, key=self._press_order):
+            control, press_events = self.apply_input_event(code, 1)
+            if control is None:
+                events.extend(press_events)
+
+        return events
+
 
 class KeyboardDevice:
-    def __init__(self, path: str, joystick_port: int) -> None:
+    def __init__(self, path: str, joystick_port: int, keyboard_injection: str = KEYBOARD_INJECTION_PRESS_RELEASE) -> None:
         self.path = path
         self.fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-        self.state = LowLevelKeyboardState(joystick_port)
+        self.state = LowLevelKeyboardState(joystick_port, keyboard_injection)
         self.grabbed = False
         try:
             fcntl.ioctl(self.fd, EVIOCGRAB, 1)
@@ -1305,8 +1428,19 @@ class KeyboardDevice:
         finally:
             os.close(self.fd)
 
+    def pressed_codes(self) -> Set[int]:
+        keys = bytearray(KEY_STATE_BYTES)
+        fcntl.ioctl(self.fd, EVIOCGKEY, keys, True)
+        pressed: Set[int] = set()
+        for code in LOW_LEVEL_STATEFUL_KEYCODES:
+            index = code // 8
+            if index < len(keys) and (keys[index] & (1 << (code % 8))):
+                pressed.add(code)
+        return pressed
+
     def read_updates(self) -> List[Tuple[Optional[str], List[Dict[str, object]]]]:
         updates: List[Tuple[Optional[str], List[Dict[str, object]]]] = []
+        sync_dropped = False
         while True:
             try:
                 data = os.read(self.fd, INPUT_EVENT_STRUCT.size * 64)
@@ -1317,13 +1451,25 @@ class KeyboardDevice:
             limit = len(data) - (len(data) % INPUT_EVENT_STRUCT.size)
             for offset in range(0, limit, INPUT_EVENT_STRUCT.size):
                 _, _, event_type, code, value = INPUT_EVENT_STRUCT.unpack_from(data, offset)
+                if event_type == EV_SYN:
+                    if code == SYN_DROPPED:
+                        sync_dropped = True
+                    continue
                 if event_type != EV_KEY:
+                    continue
+                if sync_dropped:
                     continue
                 control, events = self.state.apply_input_event(code, value)
                 if control is not None or events:
                     updates.append((control, events))
             if len(data) < INPUT_EVENT_STRUCT.size * 64:
                 break
+        try:
+            events = self.state.sync_pressed_codes(self.pressed_codes())
+        except OSError:
+            events = []
+        if events:
+            updates.append((None, events))
         return updates
 
 
@@ -1373,16 +1519,21 @@ def open_gamepad_checked(device_path: Optional[str], joystick_port: int, tolerat
         return None
 
 
-def open_keyboard(device_path: Optional[str], joystick_port: int) -> Optional[KeyboardDevice]:
-    return open_keyboard_checked(device_path, joystick_port, tolerate_error=True)
+def open_keyboard(device_path: Optional[str], joystick_port: int, keyboard_injection: str) -> Optional[KeyboardDevice]:
+    return open_keyboard_checked(device_path, joystick_port, keyboard_injection, tolerate_error=True)
 
 
-def open_keyboard_checked(device_path: Optional[str], joystick_port: int, tolerate_error: bool = False) -> Optional[KeyboardDevice]:
+def open_keyboard_checked(
+    device_path: Optional[str],
+    joystick_port: int,
+    keyboard_injection: str,
+    tolerate_error: bool = False,
+) -> Optional[KeyboardDevice]:
     path = device_path or find_default_keyboard_device()
     if not path:
         return None
     try:
-        return KeyboardDevice(path, joystick_port)
+        return KeyboardDevice(path, joystick_port, keyboard_injection)
     except OSError as exc:
         if not tolerate_error:
             raise InputDeviceOpenError("keyboard", path, exc) from exc
@@ -1447,6 +1598,7 @@ def print_mapping_overview(
     joystick_port: int,
     keyboard: Optional[KeyboardDevice],
     gamepad: Optional[GamepadDevice],
+    keyboard_injection: str,
     verbosity: int,
 ) -> None:
     print(f"REST input tool -> {host}")
@@ -1457,8 +1609,10 @@ def print_mapping_overview(
     print_special_key_help(low_level_keyboard=keyboard is not None)
     if keyboard:
         print("keyboard repeats: Linux low-level key-repeat events")
+        print(f"keyboard injection: {keyboard_injection}")
     else:
         print(f"interactive hold queue: repeated same-key taps are sent in batches up to {REPEAT_BATCH_EVENTS} events")
+        print(f"terminal keyboard injection: {keyboard_injection}")
     print(f"rapid keyboard batches: up to {KEYBOARD_TAP_BATCH_EVENTS} taps/request")
     print(f"joystick port: {joystick_port}")
     if verbosity >= 2:
@@ -1483,13 +1637,14 @@ def handle_interactive_sequence(
     seq: str,
     repeat_state: RepeatState,
     decoder: SequenceDecoder,
+    keyboard_injection: str,
     now: float,
 ) -> Tuple[Optional[str], List[Dict[str, object]]]:
     action, event, repeat_sequence = decoder.translate(seq, joystick_port, now)
     if action in ("ignore", "prefix"):
-        return None, repeat_state.poll(now)
+        return None, expand_keyboard_injection_events(repeat_state.poll(now), keyboard_injection)
     if action == "help":
-        return "help", repeat_state.poll(now)
+        return "help", expand_keyboard_injection_events(repeat_state.poll(now), keyboard_injection)
     if action == "toggle_joystick_port":
         repeat_state.stop()
         decoder.clear()
@@ -1503,11 +1658,11 @@ def handle_interactive_sequence(
         decoder.clear()
         return "release_all", [release_all_event()]
     if event is None:
-        return None, repeat_state.poll(now)
+        return None, expand_keyboard_injection_events(repeat_state.poll(now), keyboard_injection)
     suppress_original, extra_events = repeat_state.observe(repeat_sequence or seq, event, now)
     if suppress_original:
-        return None, extra_events
-    return None, extra_events + [event]
+        return None, expand_keyboard_injection_events(extra_events, keyboard_injection)
+    return None, expand_keyboard_injection_events(extra_events + [event], keyboard_injection)
 
 
 def toggle_gamepad_port(gamepad: Optional[GamepadDevice]) -> Tuple[Optional[int], List[Dict[str, object]]]:
@@ -1520,6 +1675,7 @@ def toggle_gamepad_port(gamepad: Optional[GamepadDevice]) -> Tuple[Optional[int]
 def run_interactive_loop(
     session: RestInputSession,
     joystick_port: int,
+    keyboard_injection: str,
     logger: Optional[RestCallLogger],
 ) -> None:
     stdin_fd = sys.stdin.fileno()
@@ -1538,7 +1694,7 @@ def run_interactive_loop(
                 pending_events.extend(events)
             if ready:
                 for seq in drain_stdin_sequences(stdin_fd):
-                    control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, time.monotonic())
+                    control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, keyboard_injection, time.monotonic())
                     if events:
                         pending_events.extend(events)
                     if control == "release_all":
@@ -1556,7 +1712,7 @@ def run_interactive_loop(
                             flush_event_batch(client, pending_events)
                         client.post_events([release_all_event()])
                         return
-            pending_events.extend(repeat_state.poll(time.monotonic()))
+            pending_events.extend(expand_keyboard_injection_events(repeat_state.poll(time.monotonic()), keyboard_injection))
             if pending_events:
                 flush_event_batch(client, pending_events)
     finally:
@@ -1566,6 +1722,7 @@ def run_interactive_loop(
 def run_interactive_with_gamepad(
     session: RestInputSession,
     joystick_port: int,
+    keyboard_injection: str,
     gamepad: GamepadDevice,
     logger: Optional[RestCallLogger],
 ) -> None:
@@ -1598,7 +1755,7 @@ def run_interactive_with_gamepad(
                         pending_events.append(repeat_event)
                 if stdin_fd in ready:
                     for seq in drain_stdin_sequences(stdin_fd):
-                        control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, time.monotonic())
+                        control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, keyboard_injection, time.monotonic())
                         if events:
                             pending_events.extend(events)
                         if control == "release_all":
@@ -1618,7 +1775,7 @@ def run_interactive_with_gamepad(
                                 flush_event_batch(client, pending_events)
                             client.post_events([release_all_event()])
                             return
-            pending_events.extend(repeat_state.poll(time.monotonic()))
+            pending_events.extend(expand_keyboard_injection_events(repeat_state.poll(time.monotonic()), keyboard_injection))
             if pending_events:
                 flush_event_batch(client, pending_events)
     finally:
@@ -1687,10 +1844,11 @@ def run_interactive(
     joystick_port: int,
     keyboard: Optional[KeyboardDevice],
     gamepad: Optional[GamepadDevice],
+    keyboard_injection: str,
     logger: Optional[RestCallLogger],
     verbosity: int,
 ) -> None:
-    print_mapping_overview(session.host, joystick_port, keyboard, gamepad, verbosity)
+    print_mapping_overview(session.host, joystick_port, keyboard, gamepad, keyboard_injection, verbosity)
     wait_for_input_ready(session, timeout=15.0)
     startup_client = InteractiveRestClient(session, logger=logger)
     try:
@@ -1702,9 +1860,9 @@ def run_interactive(
     else:
         with raw_terminal():
             if gamepad:
-                run_interactive_with_gamepad(session, joystick_port, gamepad, logger)
+                run_interactive_with_gamepad(session, joystick_port, keyboard_injection, gamepad, logger)
             else:
-                run_interactive_loop(session, joystick_port, logger)
+                run_interactive_loop(session, joystick_port, keyboard_injection, logger)
 
 
 def assert_input_state(session: RestInputSession, keyboard: List[str], joystick1: List[str], joystick2: List[str]) -> None:
@@ -1715,7 +1873,11 @@ def assert_input_state(session: RestInputSession, keyboard: List[str], joystick1
         raise Failure(f"Joystick state mismatch: {state}")
 
 
-def collect_interactive_events(sequence_times: List[Tuple[float, str]], joystick_port: int) -> List[Tuple[float, Dict[str, object]]]:
+def collect_interactive_events(
+    sequence_times: List[Tuple[float, str]],
+    joystick_port: int,
+    keyboard_injection: str = KEYBOARD_INJECTION_TAP,
+) -> List[Tuple[float, Dict[str, object]]]:
     repeat_state = RepeatState()
     decoder = SequenceDecoder()
     emitted: List[Tuple[float, Dict[str, object]]] = []
@@ -1723,11 +1885,11 @@ def collect_interactive_events(sequence_times: List[Tuple[float, str]], joystick
         control, events = decoder.poll(now)
         if control == "release_all":
             repeat_state.stop()
-        for event in events:
+        for event in expand_keyboard_injection_events(events, keyboard_injection):
             emitted.append((now, event))
-        for event in repeat_state.poll(now):
+        for event in expand_keyboard_injection_events(repeat_state.poll(now), keyboard_injection):
             emitted.append((now, event))
-        control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, now)
+        control, events = handle_interactive_sequence(joystick_port, seq, repeat_state, decoder, keyboard_injection, now)
         if control == "release_all":
             repeat_state.stop()
         if control == "quit":
@@ -1738,15 +1900,19 @@ def collect_interactive_events(sequence_times: List[Tuple[float, str]], joystick
     control, events = decoder.poll(final_time)
     if control == "release_all":
         repeat_state.stop()
-    for event in events:
+    for event in expand_keyboard_injection_events(events, keyboard_injection):
         emitted.append((final_time, event))
-    for event in repeat_state.poll(final_time):
+    for event in expand_keyboard_injection_events(repeat_state.poll(final_time), keyboard_injection):
         emitted.append((final_time, event))
     return emitted
 
 
-def collect_low_level_keyboard_events(key_events: List[Tuple[int, int]], joystick_port: int) -> List[Tuple[Optional[str], List[Dict[str, object]]]]:
-    state = LowLevelKeyboardState(joystick_port)
+def collect_low_level_keyboard_events(
+    key_events: List[Tuple[int, int]],
+    joystick_port: int,
+    keyboard_injection: str = KEYBOARD_INJECTION_PRESS_RELEASE,
+) -> List[Tuple[Optional[str], List[Dict[str, object]]]]:
+    state = LowLevelKeyboardState(joystick_port, keyboard_injection)
     return [state.apply_input_event(code, value) for code, value in key_events]
 
 
@@ -1754,6 +1920,49 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     decoder = SequenceDecoder()
     if any(input_name in ("shift_lock", "shl") for input_name in LOW_LEVEL_DIRECT_KEY_INPUTS.values()):
         raise Failure("Low-level positional map must not expose shift_lock/shl")
+
+    class CaptureClient:
+        def __init__(self) -> None:
+            self.posts: List[List[Dict[str, object]]] = []
+
+        def post_events(self, events: List[Dict[str, object]]) -> Dict[str, object]:
+            self.posts.append([dict(event) for event in events])
+            return {}
+
+    old_release_delay = KEYBOARD_RELEASE_DELAY_SECONDS
+    old_inter_key_delay = KEYBOARD_INTER_KEY_DELAY_SECONDS
+    try:
+        globals()["KEYBOARD_RELEASE_DELAY_SECONDS"] = 0.0
+        globals()["KEYBOARD_INTER_KEY_DELAY_SECONDS"] = 0.0
+        capture = CaptureClient()
+        flush_event_batch(
+            capture,  # type: ignore[arg-type]
+            [
+                keyboard_state_event(["a"], "press"),
+                keyboard_state_event(["b"], "press"),
+                keyboard_state_event(["a"], "release"),
+                keyboard_state_event(["b"], "release"),
+            ],
+        )
+        if capture.posts != [
+            [keyboard_state_event(["a"], "press"), keyboard_state_event(["b"], "press")],
+            [keyboard_state_event(["a"], "release"), keyboard_state_event(["b"], "release")],
+        ]:
+            raise Failure(f"Keyboard release batch split mismatch: {capture.posts}")
+
+        capture = CaptureClient()
+        flush_event_batch(
+            capture,  # type: ignore[arg-type]
+            expand_keyboard_injection_events([keyboard_event(["left_shift", "a"])], KEYBOARD_INJECTION_PRESS_RELEASE),
+        )
+        if capture.posts != [
+            [keyboard_state_event(["left_shift", "a"], "press")],
+            [keyboard_state_event(["a", "left_shift"], "release")],
+        ]:
+            raise Failure(f"Keyboard press/release injection split mismatch: {capture.posts}")
+    finally:
+        globals()["KEYBOARD_RELEASE_DELAY_SECONDS"] = old_release_delay
+        globals()["KEYBOARD_INTER_KEY_DELAY_SECONDS"] = old_inter_key_delay
 
     for seq, expected in (
         ("\x1b[A", ["left_shift", "cursor_up_down"]),
@@ -1980,6 +2189,46 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     ]:
         raise Failure(f"Low-level random typing injected unexpected modifiers: {rapid_low_level_events}")
 
+    rapid_low_level_tap_events = collect_low_level_keyboard_events(
+        [
+            (KEY_A, 1), (KEY_A, 0),
+            (KEY_B, 1), (KEY_B, 0),
+        ],
+        joystick_port,
+        KEYBOARD_INJECTION_TAP,
+    )
+    if rapid_low_level_tap_events != [
+        (None, [keyboard_event(["a"])]),
+        (None, []),
+        (None, [keyboard_event(["b"])]),
+        (None, []),
+    ]:
+        raise Failure(f"Low-level tap typing mismatch: {rapid_low_level_tap_events}")
+
+    shifted_low_level_tap_events = collect_low_level_keyboard_events(
+        [(KEY_RIGHTSHIFT, 1), (KEY_A, 1), (KEY_A, 0), (KEY_RIGHTSHIFT, 0)],
+        joystick_port,
+        KEYBOARD_INJECTION_TAP,
+    )
+    if shifted_low_level_tap_events != [
+        (None, [keyboard_state_event(["right_shift"], "press")]),
+        (None, [keyboard_event(["a"])]),
+        (None, []),
+        (None, [keyboard_state_event(["right_shift"], "release")]),
+    ]:
+        raise Failure(f"Low-level shifted tap typing mismatch: {shifted_low_level_tap_events}")
+
+    left_arrow_tap_events = collect_low_level_keyboard_events(
+        [(KEY_LEFT, 1), (KEY_LEFT, 0)],
+        joystick_port,
+        KEYBOARD_INJECTION_TAP,
+    )
+    if left_arrow_tap_events != [
+        (None, [keyboard_event(["left_shift", "cursor_left_right"])]),
+        (None, []),
+    ]:
+        raise Failure(f"Low-level shifted cursor tap mismatch: {left_arrow_tap_events}")
+
     left_arrow_events = collect_low_level_keyboard_events(
         [(KEY_LEFT, 1), (KEY_LEFT, 0)],
         joystick_port,
@@ -2019,6 +2268,54 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
         (None, [keyboard_state_event(["cursor_up_down"], "release"), keyboard_state_event(["left_shift"], "release")]),
     ]:
         raise Failure(f"Low-level up-arrow mapping mismatch: {up_arrow_events}")
+
+    shifted_up_arrow_events = collect_low_level_keyboard_events(
+        [(KEY_RIGHTSHIFT, 1), (KEY_UP, 1), (KEY_UP, 0), (KEY_RIGHTSHIFT, 0)],
+        joystick_port,
+    )
+    if shifted_up_arrow_events != [
+        (None, [keyboard_state_event(["right_shift"], "press")]),
+        (None, [keyboard_state_event(["cursor_up_down"], "press")]),
+        (None, [keyboard_state_event(["cursor_up_down"], "release")]),
+        (None, [keyboard_state_event(["right_shift"], "release")]),
+    ]:
+        raise Failure(f"Low-level held-shift up-arrow mapping mismatch: {shifted_up_arrow_events}")
+
+    sync_state = LowLevelKeyboardState(joystick_port)
+    if sync_state.apply_input_event(KEY_A, 1) != (None, [keyboard_state_event(["a"], "press")]):
+        raise Failure("Low-level sync setup failed to press a")
+    if sync_state.sync_pressed_codes({KEY_A}) != []:
+        raise Failure("Low-level sync emitted events while physical and logical states matched")
+    if sync_state.apply_input_event(KEY_A, 1) != (None, []):
+        raise Failure("Low-level duplicate press was not suppressed")
+    if sync_state.sync_pressed_codes(set()) != [keyboard_state_event(["a"], "release")]:
+        raise Failure("Low-level sync did not repair a missed release")
+    if sync_state.sync_pressed_codes({KEY_A}) != [keyboard_state_event(["a"], "press")]:
+        raise Failure("Low-level sync did not repair a missed press")
+
+    shifted_sync_state = LowLevelKeyboardState(joystick_port)
+    if shifted_sync_state.sync_pressed_codes({KEY_UP}) != [
+        keyboard_state_event(["left_shift"], "press"),
+        keyboard_state_event(["cursor_up_down"], "press"),
+    ]:
+        raise Failure("Low-level sync did not synthesize shifted cursor-up press")
+    if shifted_sync_state.sync_pressed_codes(set()) != [
+        keyboard_state_event(["cursor_up_down"], "release"),
+        keyboard_state_event(["left_shift"], "release"),
+    ]:
+        raise Failure("Low-level sync did not release synthesized cursor-up state")
+
+    physical_shift_sync_state = LowLevelKeyboardState(joystick_port)
+    if physical_shift_sync_state.sync_pressed_codes({KEY_RIGHTSHIFT, KEY_UP}) != [
+        keyboard_state_event(["right_shift"], "press"),
+        keyboard_state_event(["cursor_up_down"], "press"),
+    ]:
+        raise Failure("Low-level sync did not use physical shift for cursor-up")
+    if physical_shift_sync_state.sync_pressed_codes(set()) != [
+        keyboard_state_event(["cursor_up_down"], "release"),
+        keyboard_state_event(["right_shift"], "release"),
+    ]:
+        raise Failure("Low-level sync did not release physical-shift cursor-up state")
 
     gamepad = GamepadState(joystick_port)
     fire23_events = [
@@ -2125,6 +2422,19 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
     if [event for _, event in rapid_events] != expected_rapid:
         raise Failure("Rapid mixed-key stream dropped or reordered keys")
 
+    press_release_events = collect_interactive_events(
+        [(0.00, "A"), (0.20, "\x1b[D")],
+        joystick_port,
+        KEYBOARD_INJECTION_PRESS_RELEASE,
+    )
+    if [event for _, event in press_release_events] != [
+        keyboard_state_event(["left_shift", "a"], "press"),
+        keyboard_state_event(["a", "left_shift"], "release"),
+        keyboard_state_event(["left_shift", "cursor_left_right"], "press"),
+        keyboard_state_event(["cursor_left_right", "left_shift"], "release"),
+    ]:
+        raise Failure(f"Press/release keyboard injection mismatch: {press_release_events}")
+
     hold_sequences = [(0.0, "a")] + [(0.60 + index * 0.033, "a") for index in range(36)]
     hold_events = collect_interactive_events(hold_sequences, joystick_port)
     hold_times = [timestamp for timestamp, event in hold_events if event == keyboard_event(["a"])]
@@ -2140,9 +2450,9 @@ def run_local_input_tool_regressions(joystick_port: int) -> None:
         raise Failure(f"Held-key regression stopped too early: {hold_times[-4:]}")
 
 
-def run_self_test(session: RestInputSession, joystick_port: int, gamepad: Optional[GamepadDevice]) -> None:
+def run_self_test(session: RestInputSession, joystick_port: int, gamepad: Optional[GamepadDevice], keyboard_injection: str) -> None:
     verbosity = session.logger.level if isinstance(session, VerboseRestSession) else 0
-    print_mapping_overview(session.host, joystick_port, None, gamepad, verbosity)
+    print_mapping_overview(session.host, joystick_port, None, gamepad, keyboard_injection, verbosity)
     wait_for_input_ready(session, timeout=15.0)
 
     print("[1] local repeat, cursor, and special-key regressions ... ", end="", flush=True)
@@ -2226,7 +2536,8 @@ def main() -> int:
         description="Inject local keyboard and gamepad input via the Ultimate 64 REST API.",
         epilog=(
             "Environment: U64_INPUT_HOST, U64_INPUT_REST_HOST, "
-            "U64_INPUT_PASSWORD or C64U_PASSWORD, U64_INPUT_TIMEOUT.\n"
+            "U64_INPUT_PASSWORD or C64U_PASSWORD, U64_INPUT_TIMEOUT, "
+            "U64_INPUT_KEYBOARD_INJECTION.\n"
             "Use -v for concise REST logging, -vv or -V for full request/response details."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2305,6 +2616,12 @@ def main() -> int:
         action="store_true",
         help="use the legacy stdin raw-terminal decoder instead of low-level /dev/input keyboard capture",
     )
+    input_group.add_argument(
+        "--keyboard-injection",
+        choices=KEYBOARD_INJECTION_MODES,
+        default=DEFAULT_KEYBOARD_INJECTION_MODE if DEFAULT_KEYBOARD_INJECTION_MODE in KEYBOARD_INJECTION_MODES else KEYBOARD_INJECTION_PRESS_RELEASE,
+        help="keyboard event style: tap sends REST tap events; press-release sends press and release events (default: %(default)s)",
+    )
 
     logging = parser.add_argument_group("logging options")
     logging.add_argument(
@@ -2333,7 +2650,7 @@ def main() -> int:
     keyboard = None
     if not args.terminal_keyboard:
         try:
-            keyboard = open_keyboard_checked(args.keyboard_device, args.joystick_port)
+            keyboard = open_keyboard_checked(args.keyboard_device, args.joystick_port, args.keyboard_injection)
         except InputDeviceOpenError as exc:
             if request_input_access_or_warn(exc):
                 return 0
@@ -2353,9 +2670,9 @@ def main() -> int:
         raise Failure(f"Unable to open gamepad device {args.gamepad_device}")
     try:
         if args.self_test:
-            run_self_test(session, args.joystick_port, gamepad)
+            run_self_test(session, args.joystick_port, gamepad, args.keyboard_injection)
         else:
-            run_interactive(session, args.joystick_port, keyboard, gamepad, logger if verbosity > 0 else None, verbosity)
+            run_interactive(session, args.joystick_port, keyboard, gamepad, args.keyboard_injection, logger if verbosity > 0 else None, verbosity)
     except KeyboardInterrupt:
         try:
             session.post_events([release_all_event()])

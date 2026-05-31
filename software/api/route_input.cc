@@ -1,18 +1,31 @@
+#include "input_api.h"
+#include "route_input_menu.h"
+
 #include "routes.h"
 #include "attachment_writer.h"
-#include "input_api.h"
 #include "itu.h"
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "timers.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
 static const char *INPUT_CAPABILITY_ERROR = "Keyboard and joystick injection require Ultimate 64-class hardware.";
+extern "C" bool userinterface_any_menu_active(void) __attribute__((weak));
+
+#if U64
+static volatile TickType_t rest_input_menu_button_tick = 0;
+
+extern "C" void route_input_note_menu_button(void)
+{
+    rest_input_menu_button_tick = xTaskGetTickCount();
+}
+#endif
 
 namespace {
 
@@ -136,8 +149,70 @@ void *input_json_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCal
 
 #if U64
 
-static const uint8_t REST_TAP_HOLD_TICKS = 1;
+static const uint8_t REST_JOYSTICK_TAP_HOLD_TICKS = 1;
+static const TickType_t REST_KEYBOARD_TAP_SETUP_TICKS = 0;
+static const TickType_t REST_KEYBOARD_TAP_HOLD_TICKS = (pdMS_TO_TICKS(60) > 0) ? pdMS_TO_TICKS(60) : 1;
+static const TickType_t REST_KEYBOARD_TAP_RELEASE_TICKS = 0;
+static const TickType_t REST_KEYBOARD_TAP_GAP_TICKS = (pdMS_TO_TICKS(40) > 0) ? pdMS_TO_TICKS(40) : 1;
+static const uint8_t REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS = 3;
+static const int ROUTE_INPUT_MENU_MAX_PENDING_REPEAT_KEYS = 2;
+static const TickType_t ROUTE_INPUT_MENU_REPEAT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 static SemaphoreHandle_t rest_input_mutex = NULL;
+static TimerHandle_t rest_menu_repeat_timer = NULL;
+static RouteInputMenuKeyboardState rest_menu_keyboard_state;
+
+static void route_input_menu_repeat_timer_callback(TimerHandle_t timer);
+
+struct RouteInputResponseKeys {
+    uint8_t matrix[8];
+    bool restore;
+
+    void clear(void)
+    {
+        memset(matrix, 0, sizeof(matrix));
+        restore = false;
+    }
+
+    void addKeyboardTap(const InputParsedEvent &event)
+    {
+        const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
+        for (int i = 0; i < event.keyboard_count; i++) {
+            const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
+            if (entry.restore) {
+                restore = true;
+            } else {
+                matrix[entry.row] |= (1 << entry.col);
+            }
+        }
+    }
+};
+
+static void ensure_menu_repeat_timer(void)
+{
+    if (rest_menu_repeat_timer) {
+        return;
+    }
+
+    TimerHandle_t timer = xTimerCreate("RestMenu", ROUTE_INPUT_MENU_REPEAT_TIMER_TICKS,
+        pdTRUE, NULL, route_input_menu_repeat_timer_callback);
+    if (!timer) {
+        return;
+    }
+
+    bool use_timer = false;
+    taskENTER_CRITICAL();
+    if (!rest_menu_repeat_timer) {
+        rest_menu_repeat_timer = timer;
+        use_timer = true;
+    }
+    taskEXIT_CRITICAL();
+
+    if (use_timer) {
+        xTimerStart(timer, 0);
+    } else {
+        xTimerDelete(timer, 0);
+    }
+}
 
 static SemaphoreHandle_t input_mutex(void)
 {
@@ -148,6 +223,7 @@ static SemaphoreHandle_t input_mutex(void)
         }
         taskEXIT_CRITICAL();
     }
+    ensure_menu_repeat_timer();
     return rest_input_mutex;
 }
 
@@ -180,7 +256,7 @@ static void apply_joystick_event(const InputParsedEvent &event)
     case INPUT_PARSED_TAP:
         for (int i = 0; i < INPUT_API_MAX_JOYSTICK_INPUTS; i++) {
             if (event.joystick_mask & (1 << i)) {
-                hold[i] = REST_TAP_HOLD_TICKS;
+                hold[i] = REST_JOYSTICK_TAP_HOLD_TICKS;
             }
         }
         active_low = ((1 << INPUT_API_MAX_JOYSTICK_INPUTS) - 1) & ~event.joystick_mask;
@@ -193,57 +269,244 @@ static void apply_joystick_event(const InputParsedEvent &event)
     }
 }
 
-static void apply_keyboard_event(const InputParsedEvent &event)
+static void route_input_queue_menu_repeat_key(uint8_t key)
+{
+    int opposite = 0;
+    switch (key) {
+    case KEY_UP:
+        opposite = KEY_DOWN;
+        break;
+    case KEY_DOWN:
+        opposite = KEY_UP;
+        break;
+    case KEY_LEFT:
+        opposite = KEY_RIGHT;
+        break;
+    case KEY_RIGHT:
+        opposite = KEY_LEFT;
+        break;
+    default:
+        break;
+    }
+    if (opposite != 0) {
+        system_usb_keyboard.remove_injected_key(opposite);
+    }
+    int pending = system_usb_keyboard.count_injected_key(key);
+    if (pending >= ROUTE_INPUT_MENU_MAX_PENDING_REPEAT_KEYS) {
+        return;
+    }
+    system_usb_keyboard.push_head(key);
+}
+
+static bool route_input_menu_active(void)
+{
+    bool rest_opened_menu = (rest_input_menu_button_tick != 0) &&
+        ((xTaskGetTickCount() - rest_input_menu_button_tick) < pdMS_TO_TICKS(60000));
+    if (rest_opened_menu && userinterface_any_menu_active && userinterface_any_menu_active()) {
+        return true;
+    }
+    return !system_usb_keyboard.isMatrixEnabled();
+}
+
+static bool sync_menu_keyboard_state(void)
+{
+    bool active = route_input_menu_active();
+    rest_menu_keyboard_state.sync(active);
+    return active;
+}
+
+static void apply_keyboard_menu_event(const InputParsedEvent &event)
+{
+    uint8_t keys[INPUT_API_MAX_KEYBOARD_INPUTS];
+    uint8_t release_keys[INPUT_API_MAX_KEYBOARD_INPUTS];
+    int release_key_count = rest_menu_keyboard_state.collectReleaseKeys(event,
+        release_keys, INPUT_API_MAX_KEYBOARD_INPUTS);
+    int key_count = rest_menu_keyboard_state.applyKeyboardEvent(event, keys,
+        INPUT_API_MAX_KEYBOARD_INPUTS, system_usb_keyboard.initialRepeatDelay());
+    for (int i = 0; i < release_key_count; i++) {
+        system_usb_keyboard.remove_injected_key(release_keys[i]);
+    }
+    for (int i = 0; i < key_count; i++) {
+        system_usb_keyboard.push_head(keys[i]);
+    }
+}
+
+static void apply_menu_keyboard_repeat(void)
+{
+    uint8_t keys[1];
+    int key_count = rest_menu_keyboard_state.repeatTick(keys, 1, system_usb_keyboard.repeatSpeed());
+    for (int i = 0; i < key_count; i++) {
+        route_input_queue_menu_repeat_key(keys[i]);
+    }
+}
+
+static void route_input_menu_repeat_timer_callback(TimerHandle_t timer)
+{
+    (void)timer;
+    SemaphoreHandle_t mutex = input_mutex();
+    if (!mutex) {
+        return;
+    }
+    if (xSemaphoreTake(mutex, 0) != pdTRUE) {
+        return;
+    }
+    if (sync_menu_keyboard_state()) {
+        apply_menu_keyboard_repeat();
+    }
+    xSemaphoreGive(mutex);
+}
+
+static void release_live_keyboard_event(const InputParsedEvent &event)
+{
+    const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
+    uint8_t release_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    for (int i = 0; i < event.keyboard_count; i++) {
+        const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
+        if (!entry.restore) {
+            release_matrix[entry.row] |= (1 << entry.col);
+        }
+    }
+    system_usb_keyboard.restReleaseMatrix(release_matrix);
+}
+
+static bool keyboard_matrix_has_any(const uint8_t matrix[8])
+{
+    for (int row = 0; row < 8; row++) {
+        if (matrix[row] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void tap_live_keyboard_matrix(const uint8_t tap_matrix[8], const uint8_t setup_matrix[8], bool restore)
+{
+	uint8_t release_matrix[8];
+	uint8_t persistent_matrix[8];
+	bool persistent_restore;
+	bool has_tap = keyboard_matrix_has_any(tap_matrix);
+	bool has_setup = keyboard_matrix_has_any(setup_matrix);
+
+	system_usb_keyboard.restPersistentSnapshot(persistent_matrix, persistent_restore);
+	system_usb_keyboard.restBeginMatrixControl();
+	if (has_setup) {
+		system_usb_keyboard.restPressMatrix(setup_matrix);
+		if (REST_KEYBOARD_TAP_SETUP_TICKS > 0) {
+			vTaskDelay(REST_KEYBOARD_TAP_SETUP_TICKS);
+		}
+    }
+
+    if (has_tap) {
+        system_usb_keyboard.restPressMatrix(tap_matrix);
+    }
+    if (restore) {
+        system_usb_keyboard.restPressRestore();
+    }
+
+    vTaskDelay(REST_KEYBOARD_TAP_HOLD_TICKS);
+
+    for (int row = 0; row < 8; row++) {
+        release_matrix[row] = tap_matrix[row] & ~setup_matrix[row] & ~persistent_matrix[row];
+    }
+    if (keyboard_matrix_has_any(release_matrix)) {
+        system_usb_keyboard.restReleaseMatrix(release_matrix);
+    }
+    if (restore && !persistent_restore) {
+        system_usb_keyboard.restReleaseRestore();
+    }
+
+    if (has_setup) {
+        if (REST_KEYBOARD_TAP_RELEASE_TICKS > 0) {
+            vTaskDelay(REST_KEYBOARD_TAP_RELEASE_TICKS);
+        }
+        for (int row = 0; row < 8; row++) {
+            release_matrix[row] = setup_matrix[row] & ~persistent_matrix[row];
+        }
+        if (keyboard_matrix_has_any(release_matrix)) {
+            system_usb_keyboard.restReleaseMatrix(release_matrix);
+        }
+	}
+
+	vTaskDelay(REST_KEYBOARD_TAP_GAP_TICKS);
+	system_usb_keyboard.restEndMatrixControl();
+}
+
+static void apply_keyboard_event(const InputParsedEvent &event, RouteInputResponseKeys *response_keys)
 {
     const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
     uint8_t tap_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    uint8_t tap_setup_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    uint8_t live_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
     bool tap_restore = false;
+    bool menu_active = sync_menu_keyboard_state();
 
     if (event.transition == INPUT_PARSED_TAP) {
+        if (menu_active) {
+            apply_keyboard_menu_event(event);
+            if (response_keys) {
+                response_keys->addKeyboardTap(event);
+            }
+            return;
+        }
         for (int i = 0; i < event.keyboard_count; i++) {
             const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
             if (entry.restore) {
                 tap_restore = true;
             } else {
-                tap_matrix[entry.row] |= (1 << entry.col);
+                uint8_t bit = (1 << entry.col);
+                tap_matrix[entry.row] |= bit;
             }
         }
-        while (!system_usb_keyboard.restQueueTap(tap_matrix, tap_restore, REST_TAP_HOLD_TICKS)) {
+        while (!system_usb_keyboard.restQueueTap(tap_matrix, tap_setup_matrix,
+            tap_restore, REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS)) {
             vTaskDelay(1);
+        }
+        if (response_keys) {
+            response_keys->addKeyboardTap(event);
         }
         return;
     }
 
-    for (int i = 0; i < event.keyboard_count; i++) {
-        const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
-        if (entry.restore) {
-            system_usb_keyboard.restTapRestore(REST_TAP_HOLD_TICKS);
-            continue;
+    if (event.transition == INPUT_PARSED_RELEASE) {
+        // A live-matrix press can be released during a brief UI/menu ownership
+        // handoff. Releases are cleanup, so clear the live REST matrix even
+        // when the same event is also routed to menu-held state below.
+        release_live_keyboard_event(event);
+    }
+
+    if (menu_active) {
+        apply_keyboard_menu_event(event);
+        return;
+    }
+
+    if (event.transition == INPUT_PARSED_PRESS) {
+        for (int i = 0; i < event.keyboard_count; i++) {
+            const InputKeyboardMapEntry &entry = keyboard_map[event.keyboard_index[i]];
+            if (!entry.restore) {
+                live_matrix[entry.row] |= (1 << entry.col);
+            }
         }
-        switch (event.transition) {
-        case INPUT_PARSED_PRESS:
-            system_usb_keyboard.restPress(entry.row, entry.col);
-            break;
-        case INPUT_PARSED_RELEASE:
-            system_usb_keyboard.restRelease(entry.row, entry.col);
-            break;
-        case INPUT_PARSED_TAP:
-            break;
-        }
+        system_usb_keyboard.restPressMatrix(live_matrix);
     }
 }
 
-static void apply_batch(const InputParsedEvent *events, int event_count)
+static void apply_batch(const InputParsedEvent *events, int event_count, RouteInputResponseKeys *response_keys)
 {
     for (int i = 0; i < event_count; i++) {
         switch (events[i].kind) {
         case INPUT_PARSED_KEYBOARD:
-            apply_keyboard_event(events[i]);
+            apply_keyboard_event(events[i], response_keys);
             break;
         case INPUT_PARSED_JOYSTICK:
             apply_joystick_event(events[i]);
             break;
         case INPUT_PARSED_RELEASE_ALL:
+            rest_input_menu_button_tick = 0;
+            rest_menu_keyboard_state.clear();
+            if (response_keys) {
+                response_keys->clear();
+            }
             system_usb_keyboard.restReleaseAll();
             JoystickOutput::instance().releaseAllRest();
             break;
@@ -265,15 +528,24 @@ static void emit_joystick_inputs(JSON_Object *obj, uint8_t active_low)
     obj->add("inputs", inputs);
 }
 
-static void emit_state_snapshot(ResponseWrapper *resp)
+static void emit_state_snapshot(ResponseWrapper *resp, const RouteInputResponseKeys *response_keys)
 {
     uint8_t matrix[8];
     bool restore;
     uint8_t joy1;
     uint8_t joy2;
+    uint8_t menu_matrix[8];
 
+    sync_menu_keyboard_state();
     system_usb_keyboard.restSnapshot(matrix, restore);
     JoystickOutput::instance().snapshot(joy1, joy2);
+    rest_menu_keyboard_state.snapshot(menu_matrix);
+    if (response_keys) {
+        for (int i = 0; i < 8; i++) {
+            matrix[i] |= response_keys->matrix[i];
+        }
+        restore = restore || response_keys->restore;
+    }
 
     const InputKeyboardMapEntry *keyboard_map = input_api_keyboard_map();
     JSON_List *keyboard_inputs = JSON::List();
@@ -283,7 +555,7 @@ static void emit_state_snapshot(ResponseWrapper *resp)
             if (restore) {
                 keyboard_inputs->add(entry.name);
             }
-        } else if (matrix[entry.row] & (1 << entry.col)) {
+        } else if ((matrix[entry.row] & (1 << entry.col)) || (menu_matrix[entry.row] & (1 << entry.col))) {
             keyboard_inputs->add(entry.name);
         }
     }
@@ -327,7 +599,7 @@ API_CALL(GET, machine, input, NULL, ARRAY( { }))
         return;
     }
     xSemaphoreTake(mutex, portMAX_DELAY);
-    emit_state_snapshot(resp);
+    emit_state_snapshot(resp, 0);
     xSemaphoreGive(mutex);
     resp->json_response(HTTP_OK);
 #else
@@ -404,8 +676,10 @@ API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
         resp->json_response(HTTP_BAD_REQUEST);
         return;
     }
-    apply_batch(events, event_count);
-    emit_state_snapshot(resp);
+    RouteInputResponseKeys response_keys;
+    response_keys.clear();
+    apply_batch(events, event_count, &response_keys);
+    emit_state_snapshot(resp, &response_keys);
     xSemaphoreGive(mutex);
     resp->json_response(HTTP_OK);
     delete obj;

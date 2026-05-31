@@ -32,6 +32,8 @@ public:
 
     static uint8_t scan_keyboard(volatile uint8_t *r, volatile uint8_t *c);
     static bool joystick_blocks_keyboard(uint8_t observed_active_low, uint8_t injected_active_low);
+    static uint8_t matrixModifierFlag(uint8_t row, uint8_t col);
+    static uint8_t matrixToKeyCode(uint8_t row, uint8_t col, uint8_t shift_flag);
 
     void scan(void);
     void set_delays(int, int);

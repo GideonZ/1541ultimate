@@ -25,6 +25,7 @@ class Keyboard_USB : public Keyboard
 {
 	struct RestTapEntry {
 		uint8_t matrix[8];
+		uint8_t setup_matrix[8];
 		uint8_t hold_ticks;
 		bool restore;
 	};
@@ -36,10 +37,14 @@ class Keyboard_USB : public Keyboard
 	uint8_t rest_matrix_state[8];
 	uint8_t rest_matrix_overlay[8];
 	uint8_t rest_overlay_hold[8][8];
+	bool rest_matrix_control;
 	RestTapEntry rest_tap_queue[REST_TAP_QUEUE_SIZE];
 	uint8_t rest_tap_head;
 	uint8_t rest_tap_tail;
 	uint8_t rest_tap_gap_ticks;
+	uint8_t rest_pending_tap_matrix[8];
+	uint8_t rest_pending_tap_hold;
+	uint8_t rest_pending_tap_delay;
 	uint8_t key_buffer[USB_KEY_BUFFER_SIZE];
 	uint8_t injected_buffer[USB_KEY_BUFFER_SIZE];
     uint8_t last_data[USB_DATA_SIZE];
@@ -68,7 +73,6 @@ class Keyboard_USB : public Keyboard
 	void clearInjectedMatrixState(void);
 	void setInjectedMatrixKey(int key);
 	uint8_t effectiveRestoreBit(void) const;
-	bool restMatrixActive(void) const;
 	void applyRestWasdGuard(void) const;
 	bool restTapQueueEmpty(void) const;
 	bool restTapOverlayActive(void) const;
@@ -95,15 +99,25 @@ public:
 
 	void restPress(uint8_t row, uint8_t col_bit);
 	void restRelease(uint8_t row, uint8_t col_bit);
-	void restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks);
+		void restPressMatrix(const uint8_t press_matrix[8]);
+		void restReleaseMatrix(const uint8_t release_matrix[8]);
+		void restBeginMatrixControl(void);
+		void restEndMatrixControl(void);
+		void restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks);
 	bool restQueueTap(const uint8_t matrix[8], bool restore, uint8_t hold_ticks);
+	bool restQueueTap(const uint8_t matrix[8], const uint8_t setup_matrix[8], bool restore, uint8_t hold_ticks);
 	void restPressRestore(void);
 	void restReleaseRestore(void);
     void restTapRestore(uint8_t hold_ticks);
     void restReleaseAll(void);
     void restSnapshot(uint8_t out_matrix[8], bool &out_restore) const;
     void restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const;
+    bool restMatrixActive(void) const;
     void tickRestOverlays(void);
+
+    bool isMatrixEnabled() const { return matrixEnabled; }
+    int initialRepeatDelay() const { return first_delay; }
+    int repeatSpeed() const { return repeat_speed; }
 
     // attach / detach matrix peripheral to send keystrokes to.
     void setMatrix(volatile uint8_t *matrix);

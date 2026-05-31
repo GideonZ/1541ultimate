@@ -79,6 +79,22 @@ const uint8_t *keymaps[8] = {
 		keymap_control  // 7 Shift C= Control
 };
 
+uint8_t Keyboard_C64 :: matrixModifierFlag(uint8_t row, uint8_t col)
+{
+    if ((row >= 8) || (col >= 8)) {
+        return 0;
+    }
+    return modifier_map[(row << 3) | col];
+}
+
+uint8_t Keyboard_C64 :: matrixToKeyCode(uint8_t row, uint8_t col, uint8_t shift_flag)
+{
+    if ((row >= 8) || (col >= 8)) {
+        return 0;
+    }
+    return keymaps[shift_flag & 0x07][(row << 3) | col];
+}
+
 Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col, volatile uint8_t *joy)
 {
     host = h;
@@ -168,6 +184,14 @@ void Keyboard_C64 :: scan(void)
     // check if we have access to the I/O
     if(!(host->is_accessible()))
         return;
+
+#if U64 && !RECOVERYAPP
+    if (system_usb_keyboard.restMatrixActive()) {
+        mtrx_prev = 0xFF;
+        shift_prev = 0xFF;
+        return;
+    }
+#endif
 
 #if U64 == 2
     MATRIX_WASD_TO_JOY = 0; // Forces WASD crap to be off
