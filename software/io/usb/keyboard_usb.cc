@@ -10,6 +10,13 @@
 #include "task.h"
 #include <stdio.h>
 
+#if U64 && !RECOVERYAPP
+#include "timers.h"
+#endif
+#if U64 == 2
+#include "u64.h"
+#endif
+
 #ifndef portENTER_CRITICAL
 #define portENTER_CRITICAL()
 #define portEXIT_CRITICAL()
@@ -31,7 +38,18 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 	return (key < map_size) ? map[key] : 0xFF;
 }
 
+#if U64 && !RECOVERYAPP
+static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
+#endif
+static const uint8_t REST_TAP_GAP_TICKS = 2;
+static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
+static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
+
 }
+
+#if U64 == 2
+extern uint8_t wasd_to_joy __attribute__((weak));
+#endif
 
 const uint8_t keymap_normal[] = {
     0x00, KEY_ERR, KEY_ERR, KEY_ERR, 'a', 'b', 'c', 'd',
@@ -116,6 +134,28 @@ Keyboard_USB :: Keyboard_USB()
 	matrixEnabled = false;
 	memset(matrix_state, 0, sizeof(matrix_state));
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
+	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
+	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
+	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	rest_matrix_control = false;
+	memset(rest_tap_queue, 0, sizeof(rest_tap_queue));
+	rest_tap_head = 0;
+	rest_tap_tail = 0;
+	rest_tap_gap_ticks = 0;
+	memset(rest_pending_tap_matrix, 0, sizeof(rest_pending_tap_matrix));
+	rest_pending_tap_hold = 0;
+	rest_pending_tap_delay = 0;
+	usb_restore = 0;
+	usb_freeze = 0;
+	rest_restore = false;
+	rest_restore_overlay = 0;
+	rest_restore_hold = 0;
+#if U64 && !RECOVERYAPP
+	rest_timer = xTimerCreate("RestInput", REST_INPUT_TIMER_TICKS, pdTRUE, this, Keyboard_USB :: S_rest_timer);
+	if (rest_timer) {
+		xTimerStart(rest_timer, 0);
+	}
+#endif
 	key_head = 0;
 	key_tail = 0;
 	injected_head = 0;
@@ -134,7 +174,13 @@ Keyboard_USB :: Keyboard_USB()
 
 Keyboard_USB :: ~Keyboard_USB()
 {
-
+#if U64 && !RECOVERYAPP
+	if (rest_timer) {
+		xTimerStop(rest_timer, 0);
+		xTimerDelete(rest_timer, 0);
+		rest_timer = NULL;
+	}
+#endif
 }
 
 void Keyboard_USB :: putch(uint8_t ch)
@@ -152,12 +198,43 @@ void Keyboard_USB :: putch(uint8_t ch)
 
 void Keyboard_USB :: applyMatrixState(void)
 {
+	applyRestWasdGuard();
 	if (!matrix) {
 		return;
 	}
+	bool rest_control = rest_matrix_control || restMatrixActive();
 	for (int i = 0; i < 8; i++) {
-		matrix[i] = matrixEnabled ? (matrix_state[i] | injected_matrix_state[i]) : 0;
+		uint8_t rest_state = rest_matrix_state[i] | rest_matrix_overlay[i];
+		uint8_t local_state = (matrixEnabled && !rest_control) ? (matrix_state[i] | injected_matrix_state[i]) : 0;
+		matrix[i] = local_state | rest_state;
 	}
+	matrix[9] = (matrixEnabled ? usb_restore : 0) | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
+	matrix[10] = matrixEnabled ? usb_freeze : 0;
+}
+
+uint8_t Keyboard_USB :: effectiveRestoreBit(void) const
+{
+	return usb_restore | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
+}
+
+bool Keyboard_USB :: restMatrixActive(void) const
+{
+	if (rest_restore || rest_restore_overlay) {
+		return true;
+	}
+	for (int i = 0; i < 8; i++) {
+		if (rest_matrix_state[i] || rest_matrix_overlay[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void Keyboard_USB :: applyRestWasdGuard(void) const
+{
+#if U64 == 2
+	MATRIX_WASD_TO_JOY = (rest_matrix_control || restMatrixActive()) ? 0 : (&wasd_to_joy ? wasd_to_joy : 0);
+#endif
 }
 
 void Keyboard_USB :: clearInjectedMatrixState(void)
@@ -168,6 +245,76 @@ void Keyboard_USB :: clearInjectedMatrixState(void)
 	injected_matrix_hold = 0;
 	memset(injected_matrix_state, 0, sizeof(injected_matrix_state));
 	applyMatrixState();
+}
+
+bool Keyboard_USB :: restTapQueueEmpty(void) const
+{
+	return rest_tap_head == rest_tap_tail;
+}
+
+bool Keyboard_USB :: restTapOverlayActive(void) const
+{
+	if (rest_pending_tap_hold != 0) {
+		return true;
+	}
+	if (rest_restore_hold != 0) {
+		return true;
+	}
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			if (rest_overlay_hold[row][col] != 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void Keyboard_USB :: startRestTap(const RestTapEntry& entry)
+{
+	uint8_t first_matrix[8];
+	uint8_t deferred_matrix[8];
+	bool has_setup = false;
+	bool has_deferred = false;
+
+	for (int row = 0; row < 8; row++) {
+		first_matrix[row] = entry.matrix[row];
+		deferred_matrix[row] = 0;
+		if (entry.setup_matrix[row]) {
+			has_setup = true;
+		}
+	}
+	if (has_setup) {
+		for (int row = 0; row < 8; row++) {
+			first_matrix[row] = entry.setup_matrix[row] & entry.matrix[row];
+			deferred_matrix[row] = entry.matrix[row] & ~first_matrix[row];
+			if (deferred_matrix[row]) {
+				has_deferred = true;
+			}
+		}
+	}
+
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			uint8_t bit = (1 << col);
+			if (first_matrix[row] & bit) {
+				if ((rest_matrix_state[row] & bit) == 0) {
+					rest_matrix_overlay[row] |= bit;
+				}
+				rest_overlay_hold[row][col] = entry.hold_ticks +
+					(has_deferred ? (REST_TAP_CHORD_SETUP_TICKS + REST_TAP_CHORD_RELEASE_TICKS) : 0);
+			}
+		}
+	}
+	if (has_deferred) {
+		memcpy(rest_pending_tap_matrix, deferred_matrix, sizeof(rest_pending_tap_matrix));
+		rest_pending_tap_hold = entry.hold_ticks;
+		rest_pending_tap_delay = REST_TAP_CHORD_SETUP_TICKS;
+	}
+	if (entry.restore) {
+		rest_restore_overlay = 1;
+		rest_restore_hold = entry.hold_ticks;
+	}
 }
 
 void Keyboard_USB :: setInjectedMatrixKey(int key)
@@ -269,8 +416,8 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		}
 	}
 
-	matrix[9] = restore;
-	matrix[10] = freeze;
+	usb_restore = restore;
+	usb_freeze = freeze;
 
 	if (!something_else_pressed) {
 	    if (modi & 0x02) { // left shift
@@ -287,6 +434,16 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 	applyMatrixState();
 }
+
+#if U64 && !RECOVERYAPP
+void Keyboard_USB :: S_rest_timer(TimerHandle_t a)
+{
+	Keyboard_USB *keyboard = (Keyboard_USB *)pvTimerGetTimerID(a);
+	if (keyboard) {
+		keyboard->tickRestOverlays();
+	}
+}
+#endif
 
 // called from USB thread
 void Keyboard_USB :: process_data(uint8_t *kbdata)
@@ -403,7 +560,7 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 			next_head = 0;
 		}
 		if (next_head == injected_tail) {
-			return;
+			break;
 		}
 		injected_buffer[injected_head] = (uint8_t)c;
 		injected_head = next_head;
@@ -495,6 +652,265 @@ void Keyboard_USB :: clear_buffer(void)
 	clearInjectedMatrixState();
 }
 
+void Keyboard_USB :: restPress(uint8_t row, uint8_t col_bit)
+{
+	if ((row >= 8) || (col_bit >= 8)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_matrix_state[row] |= (1 << col_bit);
+	rest_matrix_overlay[row] &= ~(1 << col_bit);
+	rest_overlay_hold[row][col_bit] = 0;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restRelease(uint8_t row, uint8_t col_bit)
+{
+	if ((row >= 8) || (col_bit >= 8)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_matrix_state[row] &= ~(1 << col_bit);
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restPressMatrix(const uint8_t press_matrix[8])
+{
+	portENTER_CRITICAL();
+	for (int row = 0; row < 8; row++) {
+		uint8_t bits = press_matrix[row];
+		rest_matrix_state[row] |= bits;
+		rest_matrix_overlay[row] &= ~bits;
+		for (int col = 0; col < 8; col++) {
+			if (bits & (1 << col)) {
+				rest_overlay_hold[row][col] = 0;
+			}
+		}
+	}
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restReleaseMatrix(const uint8_t release_matrix[8])
+{
+	portENTER_CRITICAL();
+	for (int row = 0; row < 8; row++) {
+		rest_matrix_state[row] &= ~release_matrix[row];
+	}
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restBeginMatrixControl(void)
+{
+	portENTER_CRITICAL();
+	rest_matrix_control = true;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restEndMatrixControl(void)
+{
+	portENTER_CRITICAL();
+	rest_matrix_control = false;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restTap(uint8_t row, uint8_t col_bit, uint8_t hold_ticks)
+{
+	if ((row >= 8) || (col_bit >= 8) || (hold_ticks == 0)) {
+		return;
+	}
+	portENTER_CRITICAL();
+	if ((rest_matrix_state[row] & (1 << col_bit)) == 0) {
+		rest_matrix_overlay[row] |= (1 << col_bit);
+	}
+	rest_overlay_hold[row][col_bit] = hold_ticks;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+bool Keyboard_USB :: restQueueTap(const uint8_t matrix[8], bool restore, uint8_t hold_ticks)
+{
+	uint8_t setup_matrix[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+	return restQueueTap(matrix, setup_matrix, restore, hold_ticks);
+}
+
+bool Keyboard_USB :: restQueueTap(const uint8_t matrix[8], const uint8_t setup_matrix[8], bool restore, uint8_t hold_ticks)
+{
+	if (hold_ticks == 0) {
+		return true;
+	}
+	portENTER_CRITICAL();
+
+	bool has_any_key = restore;
+	for (int row = 0; row < 8; row++) {
+		if (matrix[row] != 0) {
+			has_any_key = true;
+			break;
+		}
+	}
+	if (!has_any_key) {
+		portEXIT_CRITICAL();
+		return true;
+	}
+
+	uint8_t next_head = rest_tap_head + 1;
+	if (next_head >= REST_TAP_QUEUE_SIZE) {
+		next_head = 0;
+	}
+	if (next_head == rest_tap_tail) {
+		portEXIT_CRITICAL();
+		return false;
+	}
+
+	memcpy(rest_tap_queue[rest_tap_head].matrix, matrix, sizeof(rest_tap_queue[rest_tap_head].matrix));
+	memcpy(rest_tap_queue[rest_tap_head].setup_matrix, setup_matrix, sizeof(rest_tap_queue[rest_tap_head].setup_matrix));
+	rest_tap_queue[rest_tap_head].hold_ticks = hold_ticks;
+	rest_tap_queue[rest_tap_head].restore = restore;
+	rest_tap_head = next_head;
+	portEXIT_CRITICAL();
+	return true;
+}
+
+void Keyboard_USB :: restPressRestore(void)
+{
+	portENTER_CRITICAL();
+	rest_restore = true;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restReleaseRestore(void)
+{
+	portENTER_CRITICAL();
+	rest_restore = false;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restTapRestore(uint8_t hold_ticks)
+{
+	if (hold_ticks == 0) {
+		return;
+	}
+	portENTER_CRITICAL();
+	rest_restore_overlay = 1;
+	rest_restore_hold = hold_ticks;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restReleaseAll(void)
+{
+	portENTER_CRITICAL();
+	memset(rest_matrix_state, 0, sizeof(rest_matrix_state));
+	memset(rest_matrix_overlay, 0, sizeof(rest_matrix_overlay));
+	memset(rest_overlay_hold, 0, sizeof(rest_overlay_hold));
+	rest_tap_head = 0;
+	rest_tap_tail = 0;
+	rest_tap_gap_ticks = 0;
+	memset(rest_pending_tap_matrix, 0, sizeof(rest_pending_tap_matrix));
+	rest_pending_tap_hold = 0;
+	rest_pending_tap_delay = 0;
+	rest_matrix_control = false;
+	rest_restore = false;
+	rest_restore_overlay = 0;
+	rest_restore_hold = 0;
+	applyMatrixState();
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restSnapshot(uint8_t out_matrix[8], bool &out_restore) const
+{
+	portENTER_CRITICAL();
+	for (int i = 0; i < 8; i++) {
+		out_matrix[i] = rest_matrix_state[i] | rest_matrix_overlay[i];
+	}
+	out_restore = rest_restore || (rest_restore_overlay != 0);
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: restPersistentSnapshot(uint8_t out_matrix[8], bool &out_restore) const
+{
+	portENTER_CRITICAL();
+	for (int i = 0; i < 8; i++) {
+		out_matrix[i] = rest_matrix_state[i] & ~rest_matrix_overlay[i];
+	}
+	out_restore = rest_restore;
+	portEXIT_CRITICAL();
+}
+
+void Keyboard_USB :: tickRestOverlays(void)
+{
+	portENTER_CRITICAL();
+	bool changed = false;
+	for (int row = 0; row < 8; row++) {
+		for (int col = 0; col < 8; col++) {
+			if (rest_overlay_hold[row][col] == 0) {
+				continue;
+			}
+			rest_overlay_hold[row][col]--;
+			if (rest_overlay_hold[row][col] == 0) {
+				uint8_t bit = (1 << col);
+				if (rest_matrix_overlay[row] & bit) {
+					rest_matrix_overlay[row] &= ~bit;
+				}
+				rest_tap_gap_ticks = REST_TAP_GAP_TICKS;
+				changed = true;
+			}
+		}
+	}
+	if (rest_restore_hold > 0) {
+		rest_restore_hold--;
+		if (rest_restore_hold == 0) {
+			rest_restore_overlay = 0;
+			rest_tap_gap_ticks = REST_TAP_GAP_TICKS;
+			changed = true;
+		}
+	}
+	if (rest_pending_tap_hold != 0) {
+		if (rest_pending_tap_delay > 0) {
+			rest_pending_tap_delay--;
+		}
+		if (rest_pending_tap_delay == 0) {
+			for (int row = 0; row < 8; row++) {
+				for (int col = 0; col < 8; col++) {
+					uint8_t bit = (1 << col);
+					if (rest_pending_tap_matrix[row] & bit) {
+						if ((rest_matrix_state[row] & bit) == 0) {
+							rest_matrix_overlay[row] |= bit;
+						}
+						rest_overlay_hold[row][col] = rest_pending_tap_hold;
+					}
+				}
+			}
+			memset(rest_pending_tap_matrix, 0, sizeof(rest_pending_tap_matrix));
+			rest_pending_tap_hold = 0;
+			changed = true;
+		}
+	}
+	if (!restTapOverlayActive()) {
+		if (rest_tap_gap_ticks > 0) {
+			rest_tap_gap_ticks--;
+		} else if (!restTapQueueEmpty()) {
+			startRestTap(rest_tap_queue[rest_tap_tail]);
+			rest_tap_tail++;
+			if (rest_tap_tail >= REST_TAP_QUEUE_SIZE) {
+				rest_tap_tail = 0;
+			}
+			changed = true;
+		}
+	}
+	if (changed) {
+		applyMatrixState();
+	}
+	portEXIT_CRITICAL();
+}
+
 void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 {
 	if (this->matrix) {
@@ -513,6 +929,7 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 			matrix[i] = 0x00;
 		}
 	}
+	applyMatrixState();
 }
 
 void Keyboard_USB :: enableMatrix(bool enable)

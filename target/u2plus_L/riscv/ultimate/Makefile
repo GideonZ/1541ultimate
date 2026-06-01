@@ -168,6 +168,7 @@ SRCS_CC	 =  u2pl_init.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_input.cc \
 			http_request.cc \
 			http_target.cc \
 			assembly_search.cc \

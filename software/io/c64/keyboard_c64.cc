@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include "itu.h"
 #include "keyboard_c64.h"
-#include "c64.h"
 #include "keyboard_usb.h"
+#if U64 && !RECOVERYAPP
+#include "joystick_output.h"
+#endif
 
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
@@ -20,8 +22,8 @@ const uint8_t modifier_map[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
     0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00, // right shift
     0x00,0x00,0x04,0x00,0x00,0x02,0x00,0x00, // control, C=
-    0x00 }; 
-    
+    0x00 };
+
 const uint8_t keymap_normal[] = {
     KEY_BACK, KEY_RETURN, KEY_RIGHT, KEY_F7, KEY_F1, KEY_F3, KEY_F5, KEY_DOWN,
     '3', 'w', 'a', '4', 'z', 's', 'e', 0x00,
@@ -77,6 +79,22 @@ const uint8_t *keymaps[8] = {
 		keymap_control  // 7 Shift C= Control
 };
 
+uint8_t Keyboard_C64 :: matrixModifierFlag(uint8_t row, uint8_t col)
+{
+    if ((row >= 8) || (col >= 8)) {
+        return 0;
+    }
+    return modifier_map[(row << 3) | col];
+}
+
+uint8_t Keyboard_C64 :: matrixToKeyCode(uint8_t row, uint8_t col, uint8_t shift_flag)
+{
+    if ((row >= 8) || (col >= 8)) {
+        return 0;
+    }
+    return keymaps[shift_flag & 0x07][(row << 3) | col];
+}
+
 Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uint8_t *col, volatile uint8_t *joy)
 {
     host = h;
@@ -92,7 +110,7 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     shift_prev = 0xFF;
     delay_count = first_delay;
 }
-    
+
 Keyboard_C64 :: ~Keyboard_C64()
 {
 }
@@ -131,10 +149,18 @@ uint8_t Keyboard_C64 :: scan_keyboard(volatile uint8_t *row_reg, volatile uint8_
             col = (col << 1) | 1;
         }
     }
-    
+
     map = keymaps[shift_flag & 0x07];
     return map[mtrx];
 }
+
+bool Keyboard_C64 :: joystick_blocks_keyboard(uint8_t observed_active_low, uint8_t injected_active_low)
+{
+    observed_active_low &= 0x1F;
+    injected_active_low &= 0x1F;
+    return (observed_active_low != 0x1F) && (observed_active_low != injected_active_low);
+}
+
 #include "u64.h" // temporary!
 void Keyboard_C64 :: scan(void)
 {
@@ -145,13 +171,27 @@ void Keyboard_C64 :: scan(void)
     uint8_t col, row, key = 0xFF;
     uint8_t mod = 0;
     bool joy = false;
-    
+    bool software_joy_only = false;
+    bool keyboard_pressed = false;
+    uint8_t joy_shift_flag = 0;
+    uint8_t joy_mtrx = 0x40;
+    uint8_t injected_joy2 = 0x1F;
+    uint8_t injected_joy1 = 0x1F;
+
     if(!host) {
         return;
     }
     // check if we have access to the I/O
     if(!(host->is_accessible()))
         return;
+
+#if U64 && !RECOVERYAPP
+    if (system_usb_keyboard.restMatrixActive()) {
+        mtrx_prev = 0xFF;
+        shift_prev = 0xFF;
+        return;
+    }
+#endif
 
 #if U64 == 2
     MATRIX_WASD_TO_JOY = 0; // Forces WASD crap to be off
@@ -167,19 +207,30 @@ void Keyboard_C64 :: scan(void)
 
     row = *joy_register;
     row = *joy_register;
+#if U64 && !RECOVERYAPP
+    JoystickOutput::instance().snapshot(injected_joy1, injected_joy2);
+#endif
     if((row & 0x1F) != 0x1F) {
-        joy = true;
-        if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }
-        else if(!(row & 0x02)) { shift_flag = 0x00; mtrx = 0x07; }
-        else if(!(row & 0x04)) { shift_flag = 0x01; mtrx = 0x02; }
-        else if(!(row & 0x08)) { shift_flag = 0x00; mtrx = 0x02; }
-        else if(!(row & 0x10)) { shift_flag = 0x00; mtrx = 0x01; }
+        if     (!(row & 0x01)) { joy_shift_flag = 0x01; joy_mtrx = 0x07; }
+        else if(!(row & 0x02)) { joy_shift_flag = 0x00; joy_mtrx = 0x07; }
+        else if(!(row & 0x04)) { joy_shift_flag = 0x01; joy_mtrx = 0x02; }
+        else if(!(row & 0x08)) { joy_shift_flag = 0x00; joy_mtrx = 0x02; }
+        else if(!(row & 0x10)) { joy_shift_flag = 0x00; joy_mtrx = 0x01; }
+
+        software_joy_only = !joystick_blocks_keyboard(row, injected_joy2);
+        if (!software_joy_only) {
+            joy = true;
+            shift_flag = joy_shift_flag;
+            mtrx = joy_mtrx;
+        }
     }
-    
-    // If the joystick was not used, we can safely scan the keyboard
+
+    // Physical joystick activity shares matrix lines with the keyboard and must keep
+    // the old precedence. REST-owned port 2 activity should not starve the local keyboard.
     if(!joy) {
         *col_register = 0; // select all rows of keyboard
         if (*row_register != 0xFF) { // process key image
+            keyboard_pressed = true;
             map = keymap_normal;
             col = 0xFE;
             for(int idx=0,y=0;y<8;y++) {
@@ -202,7 +253,7 @@ void Keyboard_C64 :: scan(void)
                 }
                 col = (col << 1) | 1;
             }
-        } else { // no key pressed
+        } else if (!software_joy_only) { // no key pressed
             mtrx_prev = 0xFF;
             shift_prev = 0xFF;
 #if U64 == 2
@@ -212,7 +263,11 @@ void Keyboard_C64 :: scan(void)
             return;
         }
     }
-    
+    if (software_joy_only && !keyboard_pressed) {
+        shift_flag = joy_shift_flag;
+        mtrx = joy_mtrx;
+    }
+
 #if U64 == 2
     MATRIX_WASD_TO_JOY = wasd_to_joy;
     BLING_RX_FLAGS = 0x00; // reenable shift lock
@@ -227,7 +282,7 @@ void Keyboard_C64 :: scan(void)
         shift_prev = 0xFF;
         return;
     }
-            
+
     if((shift_flag == shift_prev) && (mtrx_prev == mtrx)) { // this key was pressed before
         if (delay_count == 0) {
             delay_count = repeat_speed;
@@ -243,7 +298,7 @@ void Keyboard_C64 :: scan(void)
     } else {  // first time this key was pressed
         delay_count = first_delay;
         mtrx_prev = mtrx;
-        shift_prev = shift_flag;        
+        shift_prev = shift_flag;
     }
 
 //    printf("%b ", key);

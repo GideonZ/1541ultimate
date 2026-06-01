@@ -69,6 +69,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			ramdisk.cc \
 			rtc_dummy.cc \
 			c64.cc \
+			joystick_output.cc \
 			c64_crt.cc \
 			u64_machine.cc \
 			u64_memory_backend.cc \
@@ -183,6 +184,7 @@ SRCS_CC	 =  u64ii_init.cc \
 			route_runners.cc \
 			route_configs.cc \
 			route_machine.cc \
+			route_input.cc \
 			route_streams.cc \
 			http_request.cc \
 			http_target.cc \

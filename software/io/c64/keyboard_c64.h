@@ -14,13 +14,13 @@ class Keyboard_C64 : public Keyboard
     volatile uint8_t *row_register;
     volatile uint8_t *col_register;
     volatile uint8_t *joy_register;
-    
+
     uint8_t shift_prev;
     uint8_t mtrx_prev;
-    
+
     int  repeat_speed;
     int  first_delay;
-        
+
     int  delay_count;
 
     int key_buffer[KEY_BUFFER_SIZE];
@@ -29,8 +29,11 @@ class Keyboard_C64 : public Keyboard
 public:
     Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c, volatile uint8_t *j);
     ~Keyboard_C64();
-    
+
     static uint8_t scan_keyboard(volatile uint8_t *r, volatile uint8_t *c);
+    static bool joystick_blocks_keyboard(uint8_t observed_active_low, uint8_t injected_active_low);
+    static uint8_t matrixModifierFlag(uint8_t row, uint8_t col);
+    static uint8_t matrixToKeyCode(uint8_t row, uint8_t col, uint8_t shift_flag);
 
     void scan(void);
     void set_delays(int, int);
