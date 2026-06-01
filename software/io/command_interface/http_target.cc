@@ -312,6 +312,14 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
             *status = &c_status_http_ok;
             break;
 
+        case HTTP_CMD_FREE_ALL:
+            for(int i=0; i<MAX_HTTP_HANDLES; i++) {
+                if (headers[i]) { delete headers[i]; headers[i] = NULL; }
+                if (bodies[i])  { delete bodies[i];  bodies[i]  = NULL; }
+            }
+            *status = &c_status_http_ok;
+            break;
+
         case HTTP_CMD_HEADER_CREATE:
             cmd_header_create(command, reply, status);
             break;
@@ -382,6 +390,18 @@ void HttpTarget::parse_command(Message *command, Message **reply, Message **stat
 
         case HTTP_CMD_BODY_ADD_BINARY:
             cmd_body_add_binary(command, reply, status);
+            break;
+
+        case HTTP_CMD_BODY_CLEAR:
+            {
+                uint8_t handle = command->message[2];
+                if (handle >= MAX_HTTP_HANDLES || !bodies[handle]) {
+                    *status = &c_status_bad_req;
+                } else {
+                    bodies[handle]->clear();
+                    *status = &c_status_http_ok;
+                }
+            }
             break;
 
         case HTTP_CMD_DO_EXCHANGE_OBJ:
@@ -814,6 +834,17 @@ void HttpTarget :: express(JSON *j)
     }
 }
 
+static const char *content_type_for_format(uint8_t fmt)
+{
+    switch(fmt) {
+    case HTTP_TYPE_BINARY:      return "application/octet-stream";
+    case HTTP_TYPE_JSON_OBJ:
+    case HTTP_TYPE_JSON_ARRAY:  return "application/json";
+    case HTTP_TYPE_URL_ENCODED: return "application/x-www-form-urlencoded";
+    default:                    return NULL;
+    }
+}
+
 void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **status, bool raw)
 {
     uint8_t hdr_handle = command->message[2];
@@ -833,9 +864,14 @@ void HttpTarget::cmd_exchange(Message *command, Message **reply, Message **statu
     }
     
     StreamRamFile req(512);
-    hdr->render(&req);
     if(bdy) {
-        bdy->render(&req);
+        StreamRamFile body_stream(512);
+        bdy->render(&body_stream);
+        int body_len = body_stream.getLength();
+        hdr->render_with_body(&req, content_type_for_format(bdy->get_format()), body_len);
+        req.copy_from(&body_stream);
+    } else {
+        hdr->render(&req);
     }
 
     hdr->dump();

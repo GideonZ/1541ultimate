@@ -63,8 +63,11 @@ static Message c_cmd_body_free_01  = {  3, true, (uint8_t *)"\x06\x22\x01" };
 static Message c_exchange          = {  4, true, (uint8_t *)"\x06\x31\x00\xFF" };
 static Message c_exchange_raw      = {  4, true, (uint8_t *)"\x06\x32\x00\xFF" };
 
+static Message c_cmd_free_all      = {  2, true, (uint8_t *)"\x06\x10" };
+
 static const char status_ok[]      = "000 OK";
 static const char status_bad_cmd[] = "400 BAD COMMAND";
+static const char status_bad_req[] = "400 BAD REQUEST";
 static const char status_no_more[] = "500 NO MORE DATA";
 
 static int checks = 0;
@@ -421,6 +424,83 @@ static void test_external_json(HttpTarget *target)
     command_external_empty(target, "external delete object", HTTP_CMD_BODY_REMOVE, handle, "%1", status_ok);
 }
 
+static void test_free_all(HttpTarget *target)
+{
+    // After test_external_json: headers[0] and bodies[0..2] are all allocated.
+    // FREE_ALL must release all of them.
+    static const uint8_t handle0[] = { 0x00 };
+    static const uint8_t handle1[] = { 0x01 };
+
+    run_expect_empty(target, "free all",              &c_cmd_free_all,       status_ok);
+    // All slots freed: next allocations start from handle 0.
+    run_expect(target, "free all: header create",     &c_cmd_header_create,  handle0, sizeof(handle0), status_ok);
+    run_expect(target, "free all: body create",       &c_cmd_body_create,    handle0, sizeof(handle0), status_ok);
+    run_expect(target, "free all: second header",     &c_cmd_header_create,  handle1, sizeof(handle1), status_ok);
+    // FREE_ALL on already-allocated slots must also return OK.
+    run_expect_empty(target, "free all: second call", &c_cmd_free_all,       status_ok);
+    // All slots freed again: first allocation returns handle 0.
+    run_expect(target, "free all: confirm header",    &c_cmd_header_create,  handle0, sizeof(handle0), status_ok);
+    run_expect(target, "free all: confirm body",      &c_cmd_body_create,    handle0, sizeof(handle0), status_ok);
+    // Leave clean for the next test.
+    run_expect_empty(target, "free all: final cleanup", &c_cmd_free_all,     status_ok);
+}
+
+static void test_body_clear(HttpTarget *target)
+{
+    // test_free_all leaves all slots empty, so handle numbers are predictable.
+    static const uint8_t handle0[] = { 0x00 };
+    static const uint8_t handle1[] = { 0x01 };
+
+    // --- Binary body: clear resets accumulated data, handle remains valid ---
+
+    static uint8_t bin_create_data[] = { 0x06, HTTP_CMD_BODY_CREATE, HTTP_TYPE_BINARY };
+    static uint8_t bin_add_data[]    = { 0x06, HTTP_CMD_BODY_ADD_BINARY, 0x00,
+                                         0xDE, 0xAD, 0xBE, 0xEF };
+    static uint8_t bin_clear_data[]  = { 0x06, HTTP_CMD_BODY_CLEAR, 0x00 };
+    Message create_binary = make_msg(bin_create_data, sizeof(bin_create_data));
+    Message add_binary    = make_msg(bin_add_data,    sizeof(bin_add_data));
+    Message clear_binary  = make_msg(bin_clear_data,  sizeof(bin_clear_data));
+
+    run_expect(target, "body clear: binary create",   &create_binary, handle0, sizeof(handle0), status_ok);
+    run_expect_empty(target, "body clear: binary add",          &add_binary,    status_ok);
+    run_expect_empty(target, "body clear: binary clear",        &clear_binary,  status_ok);
+    // Handle is still valid; re-adding binary data after clear must succeed.
+    run_expect_empty(target, "body clear: binary re-add",       &add_binary,    status_ok);
+
+    // --- JSON object body: clear resets to empty root object ---
+
+    // Expected query result before clear: { "count": 1 }
+    static const uint8_t count_obj[] = {
+        HTTP_DATA_OBJECT, 0x01,
+        0x05, 'c', 'o', 'u', 'n', 't',
+        HTTP_DATA_INTEGER, 0x01, 0x00, 0x00, 0x00
+    };
+    // Expected query result after clear: { }
+    static const uint8_t empty_obj[] = { HTTP_DATA_OBJECT, 0x00 };
+
+    // JSON OBJ is type 0x02, matching c_cmd_body_create
+    static uint8_t json_add_data[]   = { 0x06, HTTP_CMD_BODY_ADD_INT, 0x01,
+                                          0x05, 'c', 'o', 'u', 'n', 't', 0x01 };
+    static uint8_t json_query_data[] = { 0x06, HTTP_CMD_BODY_QUERY, 0x01 };
+    static uint8_t json_clear_data[] = { 0x06, HTTP_CMD_BODY_CLEAR, 0x01 };
+    Message add_count     = make_msg(json_add_data,   sizeof(json_add_data));
+    Message query_root    = make_msg(json_query_data, sizeof(json_query_data));
+    Message clear_json    = make_msg(json_clear_data, sizeof(json_clear_data));
+
+    run_expect(target, "body clear: json create",              &c_cmd_body_create, handle1, sizeof(handle1), status_ok);
+    run_expect_empty(target, "body clear: json add count",     &add_count,    status_ok);
+    run_expect(target, "body clear: json query before clear",  &query_root,   count_obj, sizeof(count_obj), status_ok);
+    run_expect_empty(target, "body clear: json clear",         &clear_json,   status_ok);
+    run_expect(target, "body clear: json query after clear",   &query_root,   empty_obj, sizeof(empty_obj), status_ok);
+    run_more_expect(target, "body clear: json no more",        (const uint8_t *)"", 0, status_no_more);
+
+    // --- Error case: clearing an unallocated handle returns BAD REQUEST ---
+
+    static uint8_t clear_bad_data[] = { 0x06, HTTP_CMD_BODY_CLEAR, 0x0F }; // handle 15: not allocated
+    Message clear_bad = make_msg(clear_bad_data, sizeof(clear_bad_data));
+    run_expect_empty(target, "body clear: invalid handle", &clear_bad, status_bad_req);
+}
+
 static void run_network_smoke(HttpTarget *target)
 {
     Message *reply;
@@ -452,6 +532,8 @@ int main(int argc, char **argv)
     run_expect_empty(target, "free legacy body 1", &c_cmd_body_free_01, status_ok);
     test_structured_body_add(target);
     test_external_json(target);
+    test_free_all(target);
+    test_body_clear(target);
 
     if ((argc > 1) && (strcmp(argv[1], "--network") == 0)) {
         run_network_smoke(target);

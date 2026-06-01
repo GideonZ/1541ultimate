@@ -11,6 +11,7 @@
 
 // Command Definitions
 #define HTTP_CMD_IDENTIFY         0x01
+#define HTTP_CMD_FREE_ALL         0x10
 #define HTTP_CMD_HEADER_CREATE    0x11
 #define HTTP_CMD_HEADER_FREE      0x12
 #define HTTP_CMD_HEADER_ADD       0x13
@@ -29,6 +30,7 @@
 #define HTTP_CMD_BODY_MOVE        0x2B
 #define HTTP_CMD_BODY_ADD_BINARY  0x2C
 #define HTTP_CMD_BODY_ADD         0x2D
+#define HTTP_CMD_BODY_CLEAR       0x2E
 #define HTTP_CMD_DO_EXCHANGE_OBJ  0x31
 #define HTTP_CMD_DO_EXCHANGE_RAW  0x32
 
@@ -172,6 +174,39 @@ public:
                     s->format("\r\n");
                 }
             }
+        }
+        s->format("\r\n");
+    }
+
+    void render_with_body(StreamRamFile *s, const char *content_type, int body_length)
+    {
+        static const char *verbs[] = { "GET", "PUT", "POST", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE" };
+        s->format("%s /%s HTTP/1.1\r\n", verbs[verb-1], url.c_str());
+
+        IndexedList<const char *> *keys = lines.get_keys();
+        IndexedList<JSON *> *values = lines.get_values();
+        bool has_content_type = false;
+        bool has_content_length = false;
+        for(int i=0;i<keys->get_elements();i++) {
+            const char *key = (*keys)[i];
+            JSON *j = (*values)[i];
+            if(j) {
+                if (strcmp(key, "Content-Type") == 0)   has_content_type = true;
+                if (strcmp(key, "Content-Length") == 0) has_content_length = true;
+                s->format("%s: ", key);
+                if (j->type() == eString) {
+                    s->format("%s\r\n", ((JSON_String *)j)->get_string());
+                } else {
+                    j->render(s);
+                    s->format("\r\n");
+                }
+            }
+        }
+        if (!has_content_type && content_type) {
+            s->format("Content-Type: %s\r\n", content_type);
+        }
+        if (!has_content_length && body_length >= 0) {
+            s->format("Content-Length: %d\r\n", body_length);
         }
         s->format("\r\n");
     }
@@ -387,6 +422,29 @@ public:
     void add_binary(uint8_t *data, int length)
     {
         binary_blob->write(data, length);
+    }
+
+    void clear(void)
+    {
+        switch(format) {
+        case HTTP_TYPE_BINARY:
+            if (binary_blob) {
+                delete binary_blob;
+                binary_blob = new StreamRamFile(512);
+            }
+            break;
+        default:
+            if (root_object) {
+                delete root_object;
+            }
+            if (format == HTTP_TYPE_JSON_ARRAY) {
+                root_object = JSON::List();
+            } else {
+                root_object = new JSON_Object(true);
+            }
+            current = root_object;
+            break;
+        }
     }
 
     bool add_encoded(const uint8_t *data, int length, char *error);
