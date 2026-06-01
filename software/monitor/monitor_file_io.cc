@@ -21,6 +21,7 @@
 #include "subsys.h"
 #if defined(U64) && (U64)
 #include "u64_machine.h"
+#include "itu.h"
 #endif
 #endif
 #endif
@@ -34,48 +35,137 @@ mstring s_monitor_browse_path("/");
 
 static const uint16_t c_monitor_nmi_vector = 0x0318;
 static const uint16_t c_monitor_jump_trampoline = 0x033C;
+static const uint16_t c_monitor_cpu_ddr = 0x0000;
+static const uint16_t c_monitor_cpu_port = 0x0001;
+static const uint16_t c_monitor_hard_nmi_vector = 0xFFFA;
+static const uint8_t c_monitor_hard_nmi_cpu_port = 0x05;
 
 #if !defined(RECOVERYAPP) && !defined(UPDATER) && defined(U64) && (U64)
-static void run_u64_nmi_trampoline(U64Machine *machine,
-                                   const uint8_t *body, unsigned body_len)
+static uint8_t monitor_effective_cpu_port(const DebugContext *context)
+{
+    if (context && context->valid) {
+        if (context->live_cpu_port_valid) {
+            return (uint8_t)(context->live_cpu_port & 0x07);
+        }
+        if (context->cpu_port_registers_valid) {
+            return (uint8_t)(((context->cpu_port_latch & context->cpu_ddr) |
+                ((uint8_t)(~context->cpu_ddr) & 0x07)) & 0x07);
+        }
+    }
+    return 0x07;
+}
+
+static bool monitor_cpu_port_maps_kernal_ram(uint8_t cpu_port)
+{
+    return (cpu_port & 0x02) == 0;
+}
+
+static void monitor_append_lda_sta_abs(uint8_t *bytes, unsigned *pos,
+                                       uint16_t address, uint8_t value)
+{
+    bytes[(*pos)++] = 0xA9;
+    bytes[(*pos)++] = value;
+    bytes[(*pos)++] = 0x8D;
+    bytes[(*pos)++] = (uint8_t)(address & 0xFF);
+    bytes[(*pos)++] = (uint8_t)(address >> 8);
+}
+
+static void monitor_append_lda_sta_zp(uint8_t *bytes, unsigned *pos,
+                                      uint8_t address, uint8_t value)
+{
+    bytes[(*pos)++] = 0xA9;
+    bytes[(*pos)++] = value;
+    bytes[(*pos)++] = 0x85;
+    bytes[(*pos)++] = address;
+}
+
+static bool run_u64_nmi_trampoline(U64Machine *machine,
+                                   const uint8_t *body, unsigned body_len,
+                                   const DebugContext *context = 0,
+                                   bool pulse_nmi = true)
 {
     if (!machine || !body) {
-        return;
+        return false;
+    }
+    if (!pulse_nmi && !machine->is_stopped()) {
+        return false;
     }
 
     bool stopped_it = machine->begin_stopped_session();
     uint8_t old_nmi_lo = machine->peek_visible(c_monitor_nmi_vector + 0);
     uint8_t old_nmi_hi = machine->peek_visible(c_monitor_nmi_vector + 1);
+    bool restore_cpu_port = context && context->valid &&
+        context->cpu_port_registers_valid;
+    uint8_t effective_cpu_port = monitor_effective_cpu_port(context);
+    bool install_hard_nmi = context && context->valid &&
+        monitor_cpu_port_maps_kernal_ram(effective_cpu_port);
+    uint8_t old_hard_nmi_lo = 0;
+    uint8_t old_hard_nmi_hi = 0;
     uint8_t trampoline[64];
     unsigned pos = 0;
 
-    trampoline[pos++] = 0xA9;
-    trampoline[pos++] = old_nmi_lo;
-    trampoline[pos++] = 0x8D;
-    trampoline[pos++] = (uint8_t)(c_monitor_nmi_vector & 0xFF);
-    trampoline[pos++] = (uint8_t)(c_monitor_nmi_vector >> 8);
-    trampoline[pos++] = 0xA9;
-    trampoline[pos++] = old_nmi_hi;
-    trampoline[pos++] = 0x8D;
-    trampoline[pos++] = (uint8_t)((c_monitor_nmi_vector + 1) & 0xFF);
-    trampoline[pos++] = (uint8_t)((c_monitor_nmi_vector + 1) >> 8);
+    monitor_append_lda_sta_abs(trampoline, &pos, c_monitor_nmi_vector + 0,
+                               old_nmi_lo);
+    monitor_append_lda_sta_abs(trampoline, &pos, c_monitor_nmi_vector + 1,
+                               old_nmi_hi);
 
+    if (install_hard_nmi) {
+        old_hard_nmi_lo = machine->peek_cpu(c_monitor_hard_nmi_vector + 0,
+                                            c_monitor_hard_nmi_cpu_port);
+        old_hard_nmi_hi = machine->peek_cpu(c_monitor_hard_nmi_vector + 1,
+                                            c_monitor_hard_nmi_cpu_port);
+        monitor_append_lda_sta_abs(trampoline, &pos,
+                                   c_monitor_hard_nmi_vector + 0,
+                                   old_hard_nmi_lo);
+        monitor_append_lda_sta_abs(trampoline, &pos,
+                                   c_monitor_hard_nmi_vector + 1,
+                                   old_hard_nmi_hi);
+    }
+
+    if (restore_cpu_port) {
+        monitor_append_lda_sta_zp(trampoline, &pos,
+                                  (uint8_t)c_monitor_cpu_ddr,
+                                  context->cpu_ddr);
+        monitor_append_lda_sta_zp(trampoline, &pos,
+                                  (uint8_t)c_monitor_cpu_port,
+                                  context->cpu_port_latch);
+    }
+
+    if (pos + body_len > sizeof(trampoline)) {
+        machine->end_stopped_session(stopped_it);
+        return false;
+    }
     for (unsigned i = 0; i < body_len; i++) {
         trampoline[pos++] = body[i];
     }
 
     for (unsigned i = 0; i < pos; i++) {
-        machine->poke_visible((uint16_t)(c_monitor_jump_trampoline + i),
-                              trampoline[i]);
+        machine->poke_visible_preserving_freeze_restore(
+            (uint16_t)(c_monitor_jump_trampoline + i), trampoline[i]);
     }
-    machine->poke_visible(c_monitor_nmi_vector + 0,
-                          (uint8_t)(c_monitor_jump_trampoline & 0xFF));
-    machine->poke_visible(c_monitor_nmi_vector + 1,
-                          (uint8_t)(c_monitor_jump_trampoline >> 8));
+    machine->poke_visible_preserving_freeze_restore(
+        c_monitor_nmi_vector + 0,
+        (uint8_t)(c_monitor_jump_trampoline & 0xFF));
+    machine->poke_visible_preserving_freeze_restore(
+        c_monitor_nmi_vector + 1,
+        (uint8_t)(c_monitor_jump_trampoline >> 8));
+    if (install_hard_nmi) {
+        machine->poke_cpu(c_monitor_hard_nmi_vector + 0,
+                          (uint8_t)(c_monitor_jump_trampoline & 0xFF),
+                          c_monitor_hard_nmi_cpu_port);
+        machine->poke_cpu(c_monitor_hard_nmi_vector + 1,
+                          (uint8_t)(c_monitor_jump_trampoline >> 8),
+                          c_monitor_hard_nmi_cpu_port);
+    }
 
-    C64_MODE = C64_MODE_NMI;
+    if (pulse_nmi) {
+        C64_MODE = C64_MODE_NMI;
+    }
     machine->end_stopped_session(stopped_it);
-    C64_MODE = MODE_NORMAL;
+    if (pulse_nmi) {
+        C64_MODE = MODE_NORMAL;
+    }
+    return true;
 }
 #endif
 
@@ -315,11 +405,60 @@ void monitor_io::resume_to_context(const DebugContext &context)
         0xA9, context.a,
         0x40
     };
-    run_u64_nmi_trampoline(machine, body, sizeof(body));
+    run_u64_nmi_trampoline(machine, body, sizeof(body), &context);
 #else
     jump_to(context.pc);
 #endif
 #else
     (void)context;
+#endif
+}
+
+bool monitor_io::stage_jump_to(uint16_t address)
+{
+#if !defined(RECOVERYAPP) && !defined(UPDATER) && defined(U64) && (U64)
+    U64Machine *machine = static_cast<U64Machine *>(C64::getMachine());
+    const uint8_t body[] = {
+        0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
+    };
+    return run_u64_nmi_trampoline(machine, body, sizeof(body), 0, false);
+#else
+    (void)address;
+    return false;
+#endif
+}
+
+bool monitor_io::stage_resume_to_context(const DebugContext &context)
+{
+#if !defined(RECOVERYAPP) && !defined(UPDATER) && defined(U64) && (U64)
+    U64Machine *machine = static_cast<U64Machine *>(C64::getMachine());
+    const uint8_t body[] = {
+        0xA2, context.sp,
+        0x9A,
+        0xA9, (uint8_t)(context.pc >> 8),
+        0x48,
+        0xA9, (uint8_t)(context.pc & 0xFF),
+        0x48,
+        0xA9, context.sr,
+        0x48,
+        0xA0, context.y,
+        0xA2, context.x,
+        0xA9, context.a,
+        0x40
+    };
+    return run_u64_nmi_trampoline(machine, body, sizeof(body), &context,
+                                  false);
+#else
+    (void)context;
+    return false;
+#endif
+}
+
+void monitor_io::pulse_staged_nmi(void)
+{
+#if !defined(RECOVERYAPP) && !defined(UPDATER) && defined(U64) && (U64)
+    C64_MODE = C64_MODE_NMI;
+    wait_10us(1);
+    C64_MODE = MODE_NORMAL;
 #endif
 }

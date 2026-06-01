@@ -24,6 +24,7 @@ public:
     void poke_raw(uint16_t address, uint8_t byte);
     void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port);
     void poke_visible(uint16_t address, uint8_t byte);
+    void poke_visible_preserving_freeze_restore(uint16_t address, uint8_t byte);
     void read_block(uint16_t address, uint8_t *dst, uint32_t len);
     void read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, uint8_t cpu_port);
     void read_visible_block(uint16_t address, uint8_t *dst, uint32_t len);

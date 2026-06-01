@@ -91,6 +91,10 @@ static MachineMonitorState monitor_reset_reentry_state(const MachineMonitorState
     sanitized.current_addr = source.current_addr;
     sanitized.base_addr = source.base_addr;
     sanitized.disasm_offset = source.disasm_offset;
+    if (source.view == MONITOR_VIEW_ASM) {
+        sanitized.base_addr = source.current_addr;
+        sanitized.disasm_offset = 0;
+    }
     sanitized.illegal_enabled = source.illegal_enabled;
     sanitized.screen_charset = source.screen_charset;
     sanitized.view_cpu_port = source.view_cpu_port;
@@ -3858,6 +3862,29 @@ bool MachineMonitor :: disasm_is_io_source(uint16_t address) const
     return strcmp(source ? source : "", "IO") == 0;
 }
 
+bool MachineMonitor :: disasm_explicitly_targets(uint16_t candidate, uint16_t address) const
+{
+    uint8_t bytes[3];
+
+    read_row(candidate, bytes, 3);
+    if (bytes[0] == 0x4C) {
+        uint16_t target = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
+        return target == address;
+    }
+    switch (bytes[0]) {
+        case 0x10: case 0x30: case 0x50: case 0x70:
+        case 0x90: case 0xB0: case 0xD0: case 0xF0:
+        {
+            int8_t rel = (int8_t)bytes[1];
+            uint16_t target = (uint16_t)(candidate + 2 + rel);
+            return target == address;
+        }
+        default:
+            break;
+    }
+    return false;
+}
+
 uint16_t MachineMonitor :: disasm_next_addr(uint16_t address) const
 {
     if (address == 0xFFFF) {
@@ -3908,12 +3935,19 @@ bool MachineMonitor :: disasm_find_prev_addr(uint16_t address, uint16_t *previou
     for (int back = 3; back >= 1; back--) {
         uint16_t candidate = (uint16_t)(address - back);
         if (disasm_length(candidate) == (uint16_t)back) {
+            bool crosses_source = disasm_crosses_source_boundary(candidate,
+                                                                 address);
             int score = 0;
 
+            if (crosses_source &&
+                    (disasm_is_io_source(candidate) || disasm_is_io_source(address)) &&
+                    !disasm_explicitly_targets(candidate, address)) {
+                continue;
+            }
             if (disasm_same_source(candidate, address)) {
                 score += 8;
             }
-            if (!disasm_crosses_source_boundary(candidate, address)) {
+            if (!crosses_source) {
                 score += 4;
             }
             if (!disasm_is_io_source(candidate)) {
@@ -4362,8 +4396,31 @@ void MachineMonitor :: debug_full_restore_screen(void)
     }
     if (screen) {
         get_ui()->set_screen_title();
+        restore_underlying_status_row();
     }
     redraw_full();
+}
+
+void MachineMonitor :: restore_underlying_status_row(void)
+{
+    if (!screen || !get_ui()) {
+        return;
+    }
+    UIObject *root = get_ui()->get_root_object();
+    if (root) {
+        root->redraw();
+    }
+    const char *help = "F3=HELP";
+    int width = screen->get_size_x();
+    int height = screen->get_size_y();
+    int x = width - (int)strlen(help) - 1;
+    if (x < 0) {
+        x = 0;
+    }
+    screen->move_cursor(x, height - 1);
+    screen->output("\eA");
+    screen->output(help);
+    screen->output("\eO");
 }
 
 void MachineMonitor :: draw_debug_footer()
@@ -7104,6 +7161,7 @@ int MachineMonitor :: handle_key(int key)
         }
         if (debug.is_active() && key == KEY_CTRL_D) {
             debug_leave();
+            exit_edit_mode();
             draw();
             return 0;
         }

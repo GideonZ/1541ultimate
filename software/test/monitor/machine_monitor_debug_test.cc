@@ -333,8 +333,15 @@ struct SourceLabelDebugBackend : public TrackingDebugBackend
             case 0x1002: return "KERNAL";
             case 0x1003: return "CHAR";
             case 0x1004: return "IO";
-            default: return "RAM";
+            default: break;
         }
+        if (address >= 0xD000 && address <= 0xDFFF) {
+            return "IO";
+        }
+        if (address >= 0xE000) {
+            return "RAM";
+        }
+        return "RAM";
     }
 };
 
@@ -379,6 +386,8 @@ static const uint16_t FAKE_NMI_TRAMP     = 0x03B0; // mirrors NMI_TRAMPOLINE_ADD
 static const uint16_t FAKE_NMI_TRAMP_LEN = 24;
 static const uint16_t FAKE_HARD_BRK_STUB = 0x03C8; // mirrors HARD_BRK_STUB_ADDR
 static const uint16_t FAKE_HARD_BRK_STUB_LEN = 37;
+static const uint16_t FAKE_HARD_NMI_VECTOR_LO = 0xFFFA;
+static const uint16_t FAKE_HARD_NMI_VECTOR_HI = 0xFFFB;
 static const uint16_t FAKE_HARD_VECTOR_LO = 0xFFFE;
 static const uint16_t FAKE_HARD_VECTOR_HI = 0xFFFF;
 
@@ -386,6 +395,7 @@ class FakeFreezeMachine : public BrkDebugSession
 {
 public:
     enum { MAX_RECORDED_BRK_PATCHES = 32 };
+    enum { MAX_RECORDED_FREEZE_RESTORE_POKES = 160 };
 
     uint8_t ram[65536];
     bool frozen;
@@ -396,9 +406,14 @@ public:
     int refreeze_calls;
     int reset_calls;
     int nmi_pulses;
+    int staged_nmi_requests;
+    int staged_nmi_clears;
     int brk_patch_writes;
     uint16_t last_brk_patch_addr;
     uint16_t brk_patch_addrs[MAX_RECORDED_BRK_PATCHES];
+    int freeze_restore_pokes;
+    uint16_t freeze_restore_addrs[MAX_RECORDED_FREEZE_RESTORE_POKES];
+    uint8_t freeze_restore_bytes[MAX_RECORDED_FREEZE_RESTORE_POKES];
     // When false, delay_ms() does NOT raise the sentinel, so wait_for_sentinel
     // runs to its full timeout. Lets a test force the DBG_TIMEOUT path and then
     // re-arm to prove the run-window state (depth, freeze bracketing) recovered.
@@ -425,7 +440,9 @@ public:
         : frozen(start_frozen), accessible_when_unfrozen(false),
           break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
           unfreeze_calls(0), refreeze_calls(0), reset_calls(0), nmi_pulses(0),
+          staged_nmi_requests(0), staged_nmi_clears(0),
           brk_patch_writes(0), last_brk_patch_addr(0),
+          freeze_restore_pokes(0),
           sentinel_armed(true), stale_sentinel_during_nmi_setup(false),
           nmi_from_spin_times_out(false),
           capture_override_armed(false),
@@ -436,6 +453,8 @@ public:
     {
         memset(ram, 0, sizeof(ram));
         memset(brk_patch_addrs, 0, sizeof(brk_patch_addrs));
+        memset(freeze_restore_addrs, 0, sizeof(freeze_restore_addrs));
+        memset(freeze_restore_bytes, 0, sizeof(freeze_restore_bytes));
     }
 
     // Leaf cleanup while the fake hooks are still live (the abstract base
@@ -458,6 +477,28 @@ public:
             }
         }
         return true;
+    }
+
+    void reset_freeze_restore_pokes(void)
+    {
+        freeze_restore_pokes = 0;
+        memset(freeze_restore_addrs, 0, sizeof(freeze_restore_addrs));
+        memset(freeze_restore_bytes, 0, sizeof(freeze_restore_bytes));
+    }
+
+    bool recorded_freeze_restore_poke(uint16_t address, uint8_t byte) const
+    {
+        int n = freeze_restore_pokes;
+        if (n > MAX_RECORDED_FREEZE_RESTORE_POKES) {
+            n = MAX_RECORDED_FREEZE_RESTORE_POKES;
+        }
+        for (int i = 0; i < n; i++) {
+            if (freeze_restore_addrs[i] == address &&
+                    freeze_restore_bytes[i] == byte) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void arm_capture_context(uint16_t pc, uint8_t sp, uint8_t a,
@@ -493,7 +534,11 @@ protected:
     virtual uint8_t peek_cpu(uint16_t a, uint8_t) { return ram[a]; }
     virtual void poke_cpu(uint16_t a, uint8_t b, uint8_t)
     {
-        if (b == 0x00 && a != FAKE_HARD_VECTOR_LO && a != FAKE_HARD_VECTOR_HI) {
+        if (b == 0x00 &&
+                a != FAKE_HARD_NMI_VECTOR_LO &&
+                a != FAKE_HARD_NMI_VECTOR_HI &&
+                a != FAKE_HARD_VECTOR_LO &&
+                a != FAKE_HARD_VECTOR_HI) {
             if (brk_patch_writes < MAX_RECORDED_BRK_PATCHES) {
                 brk_patch_addrs[brk_patch_writes] = a;
             }
@@ -512,6 +557,15 @@ protected:
         if (stale_sentinel_during_nmi_setup && a == FAKE_NMI_VECTOR_HI) {
             ram[FAKE_SENTINEL_ADDR] = 0xFF;
         }
+    }
+    virtual void poke_visible_preserving_freeze_restore(uint16_t a, uint8_t b)
+    {
+        if (freeze_restore_pokes < MAX_RECORDED_FREEZE_RESTORE_POKES) {
+            freeze_restore_addrs[freeze_restore_pokes] = a;
+            freeze_restore_bytes[freeze_restore_pokes] = b;
+        }
+        freeze_restore_pokes++;
+        poke_visible(a, b);
     }
     virtual void unfreeze_if_accessible(void)
     {
@@ -545,6 +599,15 @@ protected:
             ram[FAKE_SPIN_HI] == (uint8_t)(FAKE_SPIN_JMP >> 8)) {
             sentinel_armed = false;
         }
+    }
+    virtual void request_staged_nmi(void)
+    {
+        nmi_pulses++;
+        staged_nmi_requests++;
+    }
+    virtual void clear_staged_nmi(void)
+    {
+        staged_nmi_clears++;
     }
     virtual void delay_ms(int)
     {
@@ -2030,31 +2093,50 @@ static int test_ctrl_d_leaves_debug_only()
     return 0;
 }
 
-static int test_ctrl_d_leaves_debug_but_keeps_edit()
+static int test_ctrl_d_from_edit_clears_edit_for_redebug()
 {
     TestUserInterface ui;
     CaptureScreen screen;
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
-    const int keys[] = { 'A', 'D', 'E', KEY_CTRL_D, KEY_ESCAPE, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 6);
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0x2000, 0xEA);
+    backend.write(0x2001, 0xEA);
+    backend.write(0x2002, 0xEA);
+
+    const int keys[] = { 'A', 'D', 'E', KEY_CTRL_D, 'J', 'D', 'D',
+                         KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.color_fg = 12;
+    ui.set_prompt("2000", 1);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
     if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
     if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
     if (expect(monitor.poll(0) == 0, "Enter Edit ok")) return 1;
-    if (expect(monitor.poll(0) == 0, "C=+D should leave Debug only")) return 1;
+    if (expect(monitor.poll(0) == 0, "C=+D should leave Debug and Edit")) return 1;
     char header[40];
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "Dbg") == NULL && strstr(header, "Edit") != NULL,
-               "C=+D in Debug+Edit must clear Dbg and keep Edit")) return 1;
-    if (expect(monitor.poll(0) == 0, "ESC leaves remaining Edit")) return 1;
-    if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
+    if (expect(strstr(header, "Dbg") == NULL && strstr(header, "Edit") == NULL,
+               "C=+D in Debug+Edit must clear both Dbg and Edit")) return 1;
+    if (expect(monitor.poll(0) == 0, "J after C=+D must be a monitor command")) return 1;
+    if (expect(ui.prompt_index == 1, "J after C=+D must consume the jump prompt")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $2000") != NULL,
+               "Jump after C=+D must move the Assembly cursor")) return 1;
+    if (expect(monitor.poll(0) == 0, "Re-enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Step after re-enter ok")) return 1;
+    if (expect(backend.last_session != NULL, "Re-entered Debug must have a session")) return 1;
+    if (expect(backend.last_session->over_at_calls == 1,
+               "Re-entered no-context Debug must step from the cursor")) return 1;
+    if (expect(backend.last_session->last_start_pc == 0x2000,
+               "Re-entered no-context Debug must use the post-C=+D jump target")) return 1;
+    if (expect(monitor.poll(0) == 0, "First RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits the monitor")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -2261,6 +2343,86 @@ static int test_ctrl_x_local_reset_exits_monitor()
                "Reset re-entry must restore the monitor view and address")) return 1;
     if (expect(strstr(header, "Dbg") != NULL,
                "Reset re-entry must restore Debug mode when reset happened in Debug")) return 1;
+    if (expect(reentered.poll(0) == 0, "RUN/STOP leaves restored Debug")) return 1;
+    if (expect(reentered.poll(0) == 1, "Second RUN/STOP exits restored monitor")) return 1;
+    reentered.deinit();
+    return 0;
+}
+
+static void seed_kernal_out_reset_decode_bytes(SourceLabelDebugBackend &backend)
+{
+    backend.write(0xDFFE, 0x21);
+    backend.write(0xDFFF, 0xD0);
+    backend.write(0xE000, 0xEE);
+    backend.write(0xE001, 0x21);
+    backend.write(0xE002, 0xD0);
+    backend.write(0xE003, 0xE8);
+    backend.write(0xE004, 0x88);
+    backend.write(0xE005, 0x98);
+    backend.write(0xE006, 0x4C);
+    backend.write(0xE007, 0x00);
+    backend.write(0xE008, 0xE0);
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xE000;
+    backend.canned_snapshot.sp = 0xF7;
+    backend.canned_snapshot.sr = 0x24;
+    backend.canned_snapshot.live_cpu_port_valid = true;
+    backend.canned_snapshot.live_cpu_port = 0x05;
+    backend.canned_snapshot.cpu_port_registers_valid = true;
+    backend.canned_snapshot.cpu_ddr = 0x37;
+    backend.canned_snapshot.cpu_port_latch = 0x35;
+    backend.canned_snapshot_set = true;
+}
+
+static int test_ctrl_x_reset_reentry_anchors_asm_at_source_boundary()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    SourceLabelDebugBackend backend;
+    monitor_reset_saved_state();
+
+    seed_kernal_out_reset_decode_bytes(backend);
+
+    const int keys[] = { 'A', 'D', KEY_CTRL_X };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_reset_exits_monitor(true);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug at RAM-under-KERNAL PC ok")) return 1;
+    if (expect(monitor.poll(0) == MENU_EXIT,
+               "CTRL+X reset from direct UI must exit for re-entry")) return 1;
+    if (expect(monitor.consume_reopen_after_reset(),
+               "CTRL+X reset must request monitor re-entry")) return 1;
+    monitor.deinit();
+
+    const int reentry_keys[] = { KEY_BREAK, KEY_BREAK };
+    FakeKeyboard reentry_keyboard(reentry_keys, 2);
+    ui.keyboard = &reentry_keyboard;
+    BackendMachineMonitor reentered(&ui, &backend);
+    reentered.set_reset_exits_monitor(true);
+    reentered.init(&screen, &reentry_keyboard);
+
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR ASM $E000") != NULL,
+               "Reset re-entry must anchor ASM at the captured $E000 PC")) return 1;
+    int row_y = find_row_with_address(screen, "E000");
+    if (expect(row_y == 4,
+               "Reset re-entry must not prepend $DFFE/$DFFF before $E000")) return 1;
+    char row[40];
+    screen.get_slice(1, row_y, 38, row);
+    if (expect(strstr(row, "EE 21 D0") != NULL &&
+               strstr(row, "INC $D021") != NULL,
+               "Reset re-entry must decode the $E000 INC $D021 instruction")) return 1;
+    if (expect(find_row_with_address(screen, "DFFE") < 0 &&
+               find_row_with_address(screen, "DFFF") < 0,
+               "ASM context rows must not cross the IO/RAM source boundary")) return 1;
+
     if (expect(reentered.poll(0) == 0, "RUN/STOP leaves restored Debug")) return 1;
     if (expect(reentered.poll(0) == 1, "Second RUN/STOP exits restored monitor")) return 1;
     reentered.deinit();
@@ -5377,6 +5539,62 @@ static int test_nmi_launch_trampoline_balances_stack()
     return 0;
 }
 
+static int test_kernal_out_cold_nmi_launch_installs_hard_nmi_vector()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;
+    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x34;
+    m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0x12;
+    fake_seed_nop_run(m, 0xE000);
+    m.arm_hard_vector_capture_context(0xE003, 0xF0, 0x11, 0x22, 0x33, 0x24,
+                                      0x37, 0x35);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "KERNAL-out cold NMI launch must complete")) return 1;
+    if (expect(m.nmi_pulses == 1,
+               "Cold no-context KERNAL-out step must launch via NMI")) return 1;
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == (uint8_t)(FAKE_NMI_TRAMP & 0xFF) &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == (uint8_t)(FAKE_NMI_TRAMP >> 8),
+               "KERNAL-out NMI hard vector must point at the debug trampoline while parked")) return 1;
+    if (expect(ctx.valid && ctx.pc == 0xE003 && ctx.live_cpu_port == 0x05,
+               "KERNAL-out cold NMI launch must capture the RAM-under-KERNAL stop")) return 1;
+
+    m.cleanup();
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x34 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x12,
+               "Cleanup must restore hidden-RAM NMI hard vector bytes")) return 1;
+    return 0;
+}
+
+static int test_kernal_out_cold_nmi_launch_restores_hard_nmi_vector_on_timeout()
+{
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;
+    m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x78;
+    m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0x56;
+    fake_seed_nop_run(m, 0xE000);
+    m.sentinel_armed = false;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "KERNAL-out cold NMI timeout must remain a failure")) return 1;
+    if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == 0x78 &&
+               m.ram[FAKE_HARD_NMI_VECTOR_HI] == 0x56,
+               "Timeout cleanup must restore hidden-RAM NMI hard vector bytes")) return 1;
+    return 0;
+}
+
 static int test_freeze_cleanup_after_step_allows_later_step()
 {
     FakeFreezeMachine m(true);
@@ -5404,6 +5622,44 @@ static int test_freeze_cleanup_after_step_allows_later_step()
     debug_predict(0x2200, bytes, false, &pred);
     if (expect(m.over_at(0x2200, pred, &next) == DebugSession::DBG_OK,
                "A later frozen step must still work after cleanup")) return 1;
+    return 0;
+}
+
+static int test_freeze_cleanup_preserves_resume_bytes_across_unfreeze_restore()
+{
+    FakeFreezeMachine m(true);
+    fake_seed_nop_run(m, 0x2100);
+    fake_seed_captured_context(m, 0x2101, 0xF3, 0x33, 0x44, 0x55, 0x66);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2100, bytes, false, &pred);
+
+    DebugContext next;
+    if (expect(m.over_at(0x2100, pred, &next) == DebugSession::DBG_OK,
+               "Initial frozen step with CPU5 context must succeed")) return 1;
+
+    m.reset_freeze_restore_pokes();
+    m.cleanup();
+
+    if (expect(m.recorded_freeze_restore_poke(FAKE_STORE_CPU_DDR, 0x37) &&
+               m.recorded_freeze_restore_poke(FAKE_STORE_CPU_PORT, 0x35),
+               "Frozen cleanup must preserve captured CPU-port stores across unfreeze restore")) return 1;
+    if (expect(m.recorded_freeze_restore_poke(0x0000, 0x37) &&
+               m.recorded_freeze_restore_poke(0x0001, 0x35),
+               "Frozen cleanup must preserve actual $00/$01 across unfreeze restore")) return 1;
+    if (expect(m.recorded_freeze_restore_poke(FAKE_RESUME_TRAMP + 0, 0xA9) &&
+               m.recorded_freeze_restore_poke(FAKE_RESUME_TRAMP + 1, 0x37) &&
+               m.recorded_freeze_restore_poke(FAKE_RESUME_TRAMP + 4, 0xA9) &&
+               m.recorded_freeze_restore_poke(FAKE_RESUME_TRAMP + 5, 0x35),
+               "Frozen cleanup must preserve the CPU-executed $00/$01 restore stub")) return 1;
+    if (expect(m.recorded_freeze_restore_poke(FAKE_SPIN_LO,
+                                              (uint8_t)(FAKE_RESUME_TRAMP & 0xFF)) &&
+               m.recorded_freeze_restore_poke(FAKE_SPIN_HI,
+                                              (uint8_t)(FAKE_RESUME_TRAMP >> 8)),
+               "Frozen cleanup must preserve the spin redirection across unfreeze restore")) return 1;
     return 0;
 }
 
@@ -6169,12 +6425,13 @@ int main()
     RUN(test_g_invalidates_context);
     RUN(test_return_remains_non_executing_navigation);
     RUN(test_ctrl_d_leaves_debug_only);
-    RUN(test_ctrl_d_leaves_debug_but_keeps_edit);
+    RUN(test_ctrl_d_from_edit_clears_edit_for_redebug);
     RUN(test_escape_leaves_edit_before_debug);
     RUN(test_runstop_leaves_edit_before_debug);
     RUN(test_step_from_memory_view_recenters_asm_on_debug_pc);
     RUN(test_ctrl_x_resets_and_keeps_debug_open);
     RUN(test_ctrl_x_local_reset_exits_monitor);
+    RUN(test_ctrl_x_reset_reentry_anchors_asm_at_source_boundary);
     RUN(test_ctrl_x_reenters_monitor_without_debug_when_not_debugging);
     RUN(test_breakpoints_survive_ctrl_x_reset_reentry);
     RUN(test_breakpoints_survive_normal_close_reopen);
@@ -6257,7 +6514,10 @@ int main()
     RUN(test_freeze_step_timeout_refreezes_and_recovers);
     RUN(test_cleanup_resume_trampoline_restores_full_context);
     RUN(test_nmi_launch_trampoline_balances_stack);
+    RUN(test_kernal_out_cold_nmi_launch_installs_hard_nmi_vector);
+    RUN(test_kernal_out_cold_nmi_launch_restores_hard_nmi_vector_on_timeout);
     RUN(test_freeze_cleanup_after_step_allows_later_step);
+    RUN(test_freeze_cleanup_preserves_resume_bytes_across_unfreeze_restore);
     RUN(test_freeze_go_without_breakpoint_schedules_context_handoff);
     RUN(test_freeze_go_with_breakpoint_still_uses_session_go);
     RUN(test_wait_for_sentinel_drops_execution_keys);

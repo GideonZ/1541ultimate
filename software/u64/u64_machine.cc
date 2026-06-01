@@ -385,6 +385,22 @@ void U64Machine :: poke_visible(uint16_t address, uint8_t byte)
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
+void U64Machine :: poke_visible_preserving_freeze_restore(uint16_t address,
+                                                          uint8_t byte)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(false, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup,
+                      ram_backup);
+    if (freezerMenu && address < 0x0400) {
+        ((uint8_t *)ram_backup)[address] = byte;
+    }
+
+    after_memory_access(0, freezerMenu, stopped_it);
+}
+
 void U64Machine :: clear_ram()
 {
 #ifndef RECOVERYAPP

@@ -15,6 +15,7 @@
 #include "u64_machine.h"
 #include "u64.h"
 #include "monitor_file_io.h"
+#include "itu.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -151,6 +152,11 @@ protected:
     {
         machine->poke_visible(address, byte);
     }
+    virtual void poke_visible_preserving_freeze_restore(uint16_t address,
+                                                        uint8_t byte)
+    {
+        machine->poke_visible_preserving_freeze_restore(address, byte);
+    }
     virtual void unfreeze_if_accessible(void)
     {
         if (machine && machine->is_accessible()) {
@@ -180,6 +186,15 @@ protected:
         // NMI edge.
         C64_MODE = C64_MODE_NMI;
         machine->end_stopped_session(stopped_it);
+        C64_MODE = MODE_NORMAL;
+    }
+    virtual void request_staged_nmi(void)
+    {
+        C64_MODE = C64_MODE_NMI;
+    }
+    virtual void clear_staged_nmi(void)
+    {
+        wait_10us(1);
         C64_MODE = MODE_NORMAL;
     }
     virtual void delay_ms(int ms)

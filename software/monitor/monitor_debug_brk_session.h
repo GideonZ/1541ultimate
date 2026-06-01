@@ -17,6 +17,11 @@ protected:
     virtual void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port) = 0;
     virtual uint8_t peek_visible(uint16_t address) = 0;
     virtual void poke_visible(uint16_t address, uint8_t byte) = 0;
+    virtual void poke_visible_preserving_freeze_restore(uint16_t address,
+                                                        uint8_t byte)
+    {
+        poke_visible(address, byte);
+    }
     virtual void unfreeze_if_accessible(void) = 0;
     // Freeze-mode render-target preservation. A debug step must temporarily
     // unfreeze the C64 to run the live CPU; if the machine was frozen, it must
@@ -32,6 +37,8 @@ protected:
     // the resume. Implementations therefore bracket the resume with the
     // request/clear pair.
     virtual void pulse_nmi_and_release(bool stopped_it) = 0;
+    virtual void request_staged_nmi(void) { }
+    virtual void clear_staged_nmi(void) { }
     virtual void delay_ms(int ms) = 0;
     virtual bool free_run_no_breakpoint(uint16_t address);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
@@ -125,10 +132,12 @@ private:
     bool nmi_trampoline_installed;
     uint8_t saved_nmi_vector[2];
     uint8_t saved_brk_vector[2];
+    uint8_t saved_hard_nmi_vector[2];
     uint8_t saved_hard_vector[2];
     uint8_t saved_hard_rom_vector[2];
     uint8_t saved_hard_brk_stub_bytes[48];
     uint8_t saved_hard_brk_vector_ptr[2];
+    bool hard_nmi_vector_installed;
     bool hard_vector_installed;
     bool hard_rom_vector_installed;
     bool has_last_context;
@@ -143,6 +152,8 @@ private:
     void save_and_install_hard_vector(void);
     void save_and_install_visible_hard_vector(void);
     void restore_stale_visible_hard_vector(void);
+    void save_and_install_hard_nmi_vector(uint8_t cpu_port);
+    void uninstall_hard_nmi_vector(void);
     void uninstall_hard_vector(void);
     void uninstall_handler(void);
     int find_free_patch(void);
@@ -173,7 +184,8 @@ private:
     void release_to_run(const DebugContext *from);
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
-    void nmi_redirect_to(uint16_t target, uint8_t cpu_port, bool force_cpu_port);
+    void nmi_redirect_to(uint16_t target, uint8_t cpu_port,
+                         bool force_cpu_port, bool staged = false);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,

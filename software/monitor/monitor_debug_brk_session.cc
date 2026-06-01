@@ -49,6 +49,8 @@ static const uint16_t BRK_VECTOR_HI   = 0x0317;
 static const uint16_t IRQ_VECTOR_LO   = 0x0314;
 static const uint16_t NMI_VECTOR_LO   = 0x0318;
 static const uint16_t NMI_VECTOR_HI   = 0x0319;
+static const uint16_t HARD_NMI_VECTOR_LO = 0xFFFA;
+static const uint16_t HARD_NMI_VECTOR_HI = 0xFFFB;
 static const uint16_t HARD_VECTOR_LO  = 0xFFFE;
 static const uint16_t HARD_VECTOR_HI  = 0xFFFF;
 static const uint8_t HARD_VECTOR_RAM_CPU_PORT = 0x05;
@@ -174,7 +176,8 @@ BrkDebugSession :: BrkDebugSession()
     : cancel_keyboard(0), handler_installed(false), cpu_parked_in_spin(false),
       run_window_depth(0), run_window_refreeze_enabled(true),
       run_window_unfroze(false), screen_was_clobbered(false),
-      nmi_trampoline_installed(false), hard_vector_installed(false),
+      nmi_trampoline_installed(false), hard_nmi_vector_installed(false),
+      hard_vector_installed(false),
       hard_rom_vector_installed(false), has_last_context(false),
       return_target_count(0)
 {
@@ -184,6 +187,7 @@ BrkDebugSession :: BrkDebugSession()
     memset(saved_nmi_trampoline_bytes, 0, sizeof(saved_nmi_trampoline_bytes));
     memset(saved_nmi_vector, 0, sizeof(saved_nmi_vector));
     memset(saved_brk_vector, 0, sizeof(saved_brk_vector));
+    memset(saved_hard_nmi_vector, 0, sizeof(saved_hard_nmi_vector));
     memset(saved_hard_vector, 0, sizeof(saved_hard_vector));
     memset(saved_hard_rom_vector, 0, sizeof(saved_hard_rom_vector));
     memset(saved_hard_brk_stub_bytes, 0, sizeof(saved_hard_brk_stub_bytes));
@@ -425,6 +429,40 @@ void BrkDebugSession :: save_and_install_visible_hard_vector(void)
     hard_rom_vector_installed = true;
 }
 
+void BrkDebugSession :: save_and_install_hard_nmi_vector(uint8_t cpu_port)
+{
+    if (monitor_backing_store_for_cpu_port(HARD_NMI_VECTOR_LO, cpu_port) !=
+            MONITOR_BACKING_RAM) {
+        if (hard_nmi_vector_installed) {
+            uninstall_hard_nmi_vector();
+        }
+        return;
+    }
+    if (!hard_nmi_vector_installed) {
+        saved_hard_nmi_vector[0] = peek_cpu(HARD_NMI_VECTOR_LO,
+                                            HARD_VECTOR_RAM_CPU_PORT);
+        saved_hard_nmi_vector[1] = peek_cpu(HARD_NMI_VECTOR_HI,
+                                            HARD_VECTOR_RAM_CPU_PORT);
+        hard_nmi_vector_installed = true;
+    }
+    poke_cpu(HARD_NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF),
+             HARD_VECTOR_RAM_CPU_PORT);
+    poke_cpu(HARD_NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8),
+             HARD_VECTOR_RAM_CPU_PORT);
+}
+
+void BrkDebugSession :: uninstall_hard_nmi_vector(void)
+{
+    if (!hard_nmi_vector_installed) {
+        return;
+    }
+    poke_cpu(HARD_NMI_VECTOR_LO, saved_hard_nmi_vector[0],
+             HARD_VECTOR_RAM_CPU_PORT);
+    poke_cpu(HARD_NMI_VECTOR_HI, saved_hard_nmi_vector[1],
+             HARD_VECTOR_RAM_CPU_PORT);
+    hard_nmi_vector_installed = false;
+}
+
 void BrkDebugSession :: uninstall_hard_vector(void)
 {
     if (!hard_vector_installed) {
@@ -440,39 +478,51 @@ void BrkDebugSession :: uninstall_hard_vector(void)
         hard_rom_vector_installed = false;
     }
     for (int i = 0; i < HARD_BRK_STUB_BYTES_LEN; i++) {
-        poke_visible((uint16_t)(HARD_BRK_STUB_ADDR + i),
-                     saved_hard_brk_stub_bytes[i]);
+        poke_visible_preserving_freeze_restore(
+            (uint16_t)(HARD_BRK_STUB_ADDR + i),
+            saved_hard_brk_stub_bytes[i]);
     }
-    poke_visible(HARD_BRK_ORIG_VECTOR_LO, saved_hard_brk_vector_ptr[0]);
-    poke_visible((uint16_t)(HARD_BRK_ORIG_VECTOR_LO + 1),
-                 saved_hard_brk_vector_ptr[1]);
+    poke_visible_preserving_freeze_restore(HARD_BRK_ORIG_VECTOR_LO,
+                                           saved_hard_brk_vector_ptr[0]);
+    poke_visible_preserving_freeze_restore(
+        (uint16_t)(HARD_BRK_ORIG_VECTOR_LO + 1),
+        saved_hard_brk_vector_ptr[1]);
     hard_vector_installed = false;
 }
 
 void BrkDebugSession :: uninstall_handler(void)
 {
-    if (!handler_installed && !nmi_trampoline_installed && !hard_vector_installed) {
+    if (!handler_installed && !nmi_trampoline_installed &&
+            !hard_nmi_vector_installed && !hard_vector_installed) {
         return;
     }
     bool stopped_it = begin_stopped_session();
+    uninstall_hard_nmi_vector();
     uninstall_hard_vector();
     if (handler_installed) {
-        poke_visible(BRK_VECTOR_LO, saved_brk_vector[0]);
-        poke_visible(BRK_VECTOR_HI, saved_brk_vector[1]);
+        poke_visible_preserving_freeze_restore(BRK_VECTOR_LO,
+                                               saved_brk_vector[0]);
+        poke_visible_preserving_freeze_restore(BRK_VECTOR_HI,
+                                               saved_brk_vector[1]);
         for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
-            poke_visible((uint16_t)(HANDLER_ADDR + i), saved_handler_bytes[i]);
+            poke_visible_preserving_freeze_restore(
+                (uint16_t)(HANDLER_ADDR + i), saved_handler_bytes[i]);
         }
         for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible((uint16_t)(TRAMPOLINE_ADDR + i),
-                         saved_handler_bytes[HANDLER_BYTES_LEN + i]);
+            poke_visible_preserving_freeze_restore(
+                (uint16_t)(TRAMPOLINE_ADDR + i),
+                saved_handler_bytes[HANDLER_BYTES_LEN + i]);
         }
     }
     if (nmi_trampoline_installed) {
-        poke_visible(NMI_VECTOR_LO, saved_nmi_vector[0]);
-        poke_visible(NMI_VECTOR_HI, saved_nmi_vector[1]);
+        poke_visible_preserving_freeze_restore(NMI_VECTOR_LO,
+                                               saved_nmi_vector[0]);
+        poke_visible_preserving_freeze_restore(NMI_VECTOR_HI,
+                                               saved_nmi_vector[1]);
         for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i),
-                         saved_nmi_trampoline_bytes[i]);
+            poke_visible_preserving_freeze_restore(
+                (uint16_t)(NMI_TRAMPOLINE_ADDR + i),
+                saved_nmi_trampoline_bytes[i]);
         }
         nmi_trampoline_installed = false;
     }
@@ -794,8 +844,9 @@ void BrkDebugSession :: restore_cpu_port_registers(const DebugContext &from)
     if (!from.valid || !from.cpu_port_registers_valid) {
         return;
     }
-    poke_visible(STORE_CPU_DDR, from.cpu_ddr);
-    poke_visible(STORE_CPU_PORT, from.cpu_port_latch);
+    poke_visible_preserving_freeze_restore(STORE_CPU_DDR, from.cpu_ddr);
+    poke_visible_preserving_freeze_restore(STORE_CPU_PORT,
+                                           from.cpu_port_latch);
 }
 
 void BrkDebugSession :: release_to_run(const DebugContext *from)
@@ -829,6 +880,8 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     uint8_t resume_ddr = from.cpu_port_registers_valid ? from.cpu_ddr : 0x37;
     uint8_t resume_port = from.cpu_port_registers_valid ?
         from.cpu_port_latch : (uint8_t)(from.live_cpu_port & 0x07);
+    poke_visible_preserving_freeze_restore(0x0000, resume_ddr);
+    poke_visible_preserving_freeze_restore(0x0001, resume_port);
     const uint8_t bytes[] = {
         0xA9, resume_ddr,
         0x85, 0x00,
@@ -848,11 +901,14 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
         0x40
     };
     for (unsigned i = 0; i < sizeof(bytes); i++) {
-        poke_visible((uint16_t)(HANDLER_ADDR + i), bytes[i]);
+        poke_visible_preserving_freeze_restore((uint16_t)(HANDLER_ADDR + i),
+                                               bytes[i]);
     }
-    poke_visible(SPIN_JMP, 0x4C);
-    poke_visible(SPIN_OPERAND_LO, (uint8_t)(HANDLER_ADDR & 0xFF));
-    poke_visible(SPIN_OPERAND_HI, (uint8_t)(HANDLER_ADDR >> 8));
+    poke_visible_preserving_freeze_restore(SPIN_JMP, 0x4C);
+    poke_visible_preserving_freeze_restore(SPIN_OPERAND_LO,
+                                           (uint8_t)(HANDLER_ADDR & 0xFF));
+    poke_visible_preserving_freeze_restore(SPIN_OPERAND_HI,
+                                           (uint8_t)(HANDLER_ADDR >> 8));
     // Restore the soft vectors the interrupted program needs once it resumes,
     // inside this same stopped session so a live (overlay-mode) CPU sees them
     // before it leaves the spin loop. The handler/trampoline scratch bytes in
@@ -861,17 +917,23 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     // makes any later uninstall_handler() a no-op so it can never overwrite the
     // stub the CPU may still be running.
     if (handler_installed) {
-        poke_visible(BRK_VECTOR_LO, saved_brk_vector[0]);
-        poke_visible(BRK_VECTOR_HI, saved_brk_vector[1]);
+        poke_visible_preserving_freeze_restore(BRK_VECTOR_LO,
+                                               saved_brk_vector[0]);
+        poke_visible_preserving_freeze_restore(BRK_VECTOR_HI,
+                                               saved_brk_vector[1]);
         handler_installed = false;
     }
+    uninstall_hard_nmi_vector();
     uninstall_hard_vector();
     if (nmi_trampoline_installed) {
-        poke_visible(NMI_VECTOR_LO, saved_nmi_vector[0]);
-        poke_visible(NMI_VECTOR_HI, saved_nmi_vector[1]);
+        poke_visible_preserving_freeze_restore(NMI_VECTOR_LO,
+                                               saved_nmi_vector[0]);
+        poke_visible_preserving_freeze_restore(NMI_VECTOR_HI,
+                                               saved_nmi_vector[1]);
         for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i),
-                         saved_nmi_trampoline_bytes[i]);
+            poke_visible_preserving_freeze_restore(
+                (uint16_t)(NMI_TRAMPOLINE_ADDR + i),
+                saved_nmi_trampoline_bytes[i]);
         }
         nmi_trampoline_installed = false;
     }
@@ -887,7 +949,7 @@ void BrkDebugSession :: reset_spin_target(void)
 }
 
 void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
-                                        bool force_cpu_port)
+                                        bool force_cpu_port, bool staged)
 {
     bool stopped_it = begin_stopped_session();
     uint8_t old_nmi_lo = peek_visible(NMI_VECTOR_LO);
@@ -944,6 +1006,7 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     }
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
     poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
+    save_and_install_hard_nmi_vector(cpu_port);
     // Clear the sentinel as the last act before releasing the CPU, while it is
     // still stopped and therefore cannot set it. In freeze mode the run window
     // unfreezes the whole machine, so between that unfreeze and this stopped
@@ -959,10 +1022,14 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     poke_visible(STORE_TRAP_MODE, 0x00);
     poke_visible(STORE_HARD_CPU_DDR, 0x00);
     poke_visible(STORE_HARD_CPU_PORT, 0x00);
-    // The NMI request must be raised while the CPU is still stopped, then
-    // released during resume so the CPU observes the pending edge. The
-    // backend hook handles request+release+clear in one atomic operation.
-    pulse_nmi_and_release(stopped_it);
+    if (staged) {
+        end_stopped_session(stopped_it);
+    } else {
+        // The NMI request must be raised while the CPU is still stopped, then
+        // released during resume so the CPU observes the pending edge. The
+        // backend hook handles request+release+clear in one atomic operation.
+        pulse_nmi_and_release(stopped_it);
+    }
     cpu_parked_in_spin = false;
 }
 
@@ -973,21 +1040,40 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     uint8_t cpu_port)
 {
     refresh_debug_ownership();
-    begin_run_window();
     save_and_install_handler();
     if (cpu_parked_in_spin && from && from->valid) {
+        begin_run_window();
         release_to_run(from);
     } else if (cpu_parked_in_spin && use_start_pc && has_last_context) {
         DebugContext start_context = last_context;
         start_context.pc = start_pc;
+        begin_run_window();
         release_to_run(&start_context);
     } else if (from && from->valid) {
-        nmi_redirect_to(from->pc, cpu_port, false);
+        bool staged = run_window_refreeze_enabled && machine_is_frozen();
+        nmi_redirect_to(from->pc, cpu_port, false, staged);
+        if (staged) {
+            request_staged_nmi();
+        }
+        begin_run_window();
+        if (staged) {
+            clear_staged_nmi();
+        }
     } else if (use_start_pc) {
+        bool staged = run_window_refreeze_enabled && machine_is_frozen();
         nmi_redirect_to(start_pc, cpu_port,
                         patch_requires_visible_rom(
-                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)));
+                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)),
+                        staged);
+        if (staged) {
+            request_staged_nmi();
+        }
+        begin_run_window();
+        if (staged) {
+            clear_staged_nmi();
+        }
     } else {
+        begin_run_window();
         release_to_run(0);
     }
     Result waited = wait_for_sentinel(5000);
@@ -1310,21 +1396,40 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         return DBG_OK;
     }
 
-    begin_run_window();
     save_and_install_handler();
     if (resume_from->valid && cpu_parked_in_spin) {
+        begin_run_window();
         release_to_run(resume_from);
     } else if (cpu_parked_in_spin && has_last_context) {
         DebugContext start_context = last_context;
         start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
+        begin_run_window();
         release_to_run(&start_context);
     } else if (resume_from->valid) {
-        nmi_redirect_to(resume_from->pc, cpu_port, false);
+        bool staged = run_window_refreeze_enabled && machine_is_frozen();
+        nmi_redirect_to(resume_from->pc, cpu_port, false, staged);
+        if (staged) {
+            request_staged_nmi();
+        }
+        begin_run_window();
+        if (staged) {
+            clear_staged_nmi();
+        }
     } else if (start_pc != 0) {
+        bool staged = run_window_refreeze_enabled && machine_is_frozen();
         nmi_redirect_to(start_pc, cpu_port,
                         patch_requires_visible_rom(
-                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)));
+                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)),
+                        staged);
+        if (staged) {
+            request_staged_nmi();
+        }
+        begin_run_window();
+        if (staged) {
+            clear_staged_nmi();
+        }
     } else {
+        begin_run_window();
         release_to_run(0);
     }
 

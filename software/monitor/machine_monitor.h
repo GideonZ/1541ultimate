@@ -388,6 +388,7 @@ class MachineMonitor : public UIObject
     // No-op in overlay mode because overlay sessions disable freeze/refreeze
     // run windows.
     void debug_full_restore_screen(void);
+    void restore_underlying_status_row(void);
     void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
@@ -453,6 +454,7 @@ class MachineMonitor : public UIObject
     bool disasm_same_source(uint16_t a, uint16_t b) const;
     bool disasm_crosses_source_boundary(uint16_t start, uint16_t end) const;
     bool disasm_is_io_source(uint16_t address) const;
+    bool disasm_explicitly_targets(uint16_t candidate, uint16_t address) const;
     bool disasm_find_prev_addr(uint16_t address, uint16_t *previous) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);

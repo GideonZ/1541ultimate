@@ -61,15 +61,25 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         if (do_go) {
 #if defined(U64) && (U64) && !defined(RUNS_ON_PC)
             C64 *machine = C64::getMachine();
+            bool staged_nmi = false;
             if (machine && machine->is_accessible()) {
+                staged_nmi = go_has_context ?
+                    monitor_io::stage_resume_to_context(go_context) :
+                    monitor_io::stage_jump_to(go_address);
                 release_host();
                 machine->release_ownership();
+                if (staged_nmi) {
+                    monitor_io::pulse_staged_nmi();
+                }
             }
+            if (!staged_nmi)
 #endif
-            if (go_has_context) {
-                monitor_io::resume_to_context(go_context);
-            } else {
-                monitor_io::jump_to(go_address);
+            {
+                if (go_has_context) {
+                    monitor_io::resume_to_context(go_context);
+                } else {
+                    monitor_io::jump_to(go_address);
+                }
             }
         }
     } while (reopen_after_reset && host->exists());
