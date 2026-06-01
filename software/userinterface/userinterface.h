@@ -15,6 +15,7 @@
 
                         // Values > 0 are valid choices from the user and need to be passed to the
                         // underlying object.
+#define MENU_DONE    1  // Modal window operation is complete and user "OK'ed"
 #define MENU_NOP     0  // Stay in current window
 #define MENU_CLOSE  -1  // Window operation is complete and can be closed
 #define MENU_HIDE   -2  // The selected action requests the menu to hide. (No effect for remote connection)
@@ -46,6 +47,7 @@
 
 typedef enum {
     e_keymap_default,
+    e_keymap_monitor,
 } keymap_options_t;
 
 
@@ -54,6 +56,7 @@ typedef enum {
 
 class Editor;
 class HexEditor;
+class MemoryBackend;
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -100,7 +103,9 @@ public:
     virtual int  popup(const char *msg, int count, const char **names, const char *keys); // blocking, custom
     virtual int  choice(const char *msg, const char **choices, int count);
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
-    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y);
+    virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode); // blocking
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase); // blocking
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
@@ -114,11 +119,13 @@ public:
     int keymapper(int c, keymap_options_t map);
 
     int  activate_uiobject(UIObject *obj);
+    int  uiobject_modal(UIObject *obj);
     bool has_focus(UIObject *obj);
     int  getPreferredType(void);
     void help();
     void run_editor(const char *, int);
     void run_hex_editor(const char *, int);
+    void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
     static bool anyMenuActive(void);

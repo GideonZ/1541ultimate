@@ -234,8 +234,9 @@ void TreeBrowserState :: down(int num)
 void TreeBrowserState :: reload(void)
 {
 	cleanup();
-	int error;
+	int error = 0;
 	children = node->getSubItems(error);
+    browser->prepend_headers();
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children->get_elements());
 	needs_reload = false;
 	refresh = true;
@@ -248,7 +249,7 @@ void TreeBrowserState :: into(void)
 
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
-	int error;
+	int error = 0;
 	deeper->children = under_cursor->getSubItems(error);
     if(error < 0) {
     	delete deeper;
@@ -260,6 +261,7 @@ void TreeBrowserState :: into(void)
 	//user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 }
 
 bool TreeBrowserState :: into2(void)
@@ -272,7 +274,6 @@ bool TreeBrowserState :: into2(void)
 
     int error;
 	deeper->children = under_cursor->getSubItems(error);
-
     if(error < 0) {
     	delete deeper;
     	deeper = NULL;
@@ -283,6 +284,7 @@ bool TreeBrowserState :: into2(void)
 
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 	return false;
 }
 
@@ -317,6 +319,7 @@ void TreeBrowserState :: into3(const char* name)
     
     browser->state = deeper;
     deeper->previous = this;
+    browser->prepend_headers();
 }
 
 void TreeBrowserState :: level_up(void)
