@@ -11,9 +11,14 @@ extern uint8_t _default_chars_bin_start[4096];
 
 namespace {
 
-static uint8_t monitor_basic_rom[8192];
-static uint8_t monitor_kernal_rom[8192];
-static uint8_t monitor_char_rom[4096];
+// These buffers are filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page),
+// which writes 32-bit words and therefore requires 4-byte alignment. As plain uint8_t
+// arrays they were only byte-aligned; depending on .bss layout they could land on an
+// unaligned address, causing an unaligned 32-bit store trap on Nios2 when the KERNAL ROM
+// cache is loaded on monitor entry. Force word alignment to keep the DMA target valid.
+static uint8_t monitor_basic_rom[8192] __attribute__((aligned(4)));
+static uint8_t monitor_kernal_rom[8192] __attribute__((aligned(4)));
+static uint8_t monitor_char_rom[4096] __attribute__((aligned(4)));
 
 static void snapshot_u64_rom(volatile uint8_t *src, uint8_t *dst, uint16_t len)
 {
