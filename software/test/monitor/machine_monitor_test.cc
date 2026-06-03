@@ -274,6 +274,41 @@ static int test_disassembler(void)
     disassemble_6502(0x3000, illegal_zpx, true, &decoded);
     if (expect(strcmp(decoded.text, "NOP $44,X") == 0, "Illegal zeropage,X disassembly failed.")) return 1;
 
+    const uint8_t bit_zp[] = { 0x24, 0x66, 0x00 };
+    disassemble_6502(0xBCA2, bit_zp, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BIT $66") == 0,
+               "BIT zeropage disassembly failed.")) return 1;
+
+    const uint8_t bcc_rel[] = { 0x90, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcc_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCC $1007") == 0,
+               "BCC branch target disassembly failed.")) return 1;
+
+    const uint8_t bcs_rel[] = { 0xB0, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcs_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCS $1007") == 0,
+               "BCS branch target disassembly failed.")) return 1;
+
+    const uint8_t beq_rel[] = { 0xF0, 0x05, 0x00 };
+    disassemble_6502(0x1000, beq_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BEQ $1007") == 0,
+               "BEQ branch target disassembly failed.")) return 1;
+
+    const uint8_t xaa_imm[] = { 0x8B, 0x44, 0x00 };
+    disassemble_6502(0x3000, xaa_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "XAA #$44") == 0,
+               "XAA immediate disassembly failed.")) return 1;
+
+    const uint8_t axs_imm[] = { 0xCB, 0x44, 0x00 };
+    disassemble_6502(0x3000, axs_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "AXS #$44") == 0,
+               "AXS immediate disassembly failed.")) return 1;
+
+    const uint8_t nop_f4_zpx[] = { 0xF4, 0x44, 0x00 };
+    disassemble_6502(0x3000, nop_f4_zpx, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "NOP $44,X") == 0,
+               "F4 zeropage,X disassembly failed.")) return 1;
+
     return 0;
 }
 
@@ -1281,8 +1316,8 @@ static int test_monitor_interaction(void)
         "Bookmarks:  C=+B List   C=+0-9 Jump",
         "",
         "Open monitor:  C=+O",
-        "Close monitor: C=+O/ESC",
-        "Leave edit:    C=+E/ESC",
+        "Close monitor: C=+O/RSTOP",
+        "Leave edit:    C=+E/RSTOP",
         "Copy/Paste:    C=+C / C=+V",
         "Follow/Return: RETURN",
         NULL

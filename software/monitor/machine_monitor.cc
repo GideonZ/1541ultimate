@@ -41,8 +41,8 @@ static const char *const monitor_help_lines[] = {
     "Bookmarks:  C=+B List   C=+0-9 Jump",
     "",
     "Open monitor:  C=+O",
-    "Close monitor: C=+O/ESC",
-    "Leave edit:    C=+E/ESC",
+    "Close monitor: C=+O/RSTOP",
+    "Leave edit:    C=+E/RSTOP",
     "Copy/Paste:    C=+C / C=+V",
     "Follow/Return: RETURN",
     NULL
@@ -3475,7 +3475,7 @@ void MachineMonitor :: draw_header()
 
     const char *right = NULL;
     if (!help_visible) {
-        if (hunt_picker_active) right = "ENTER jumps  ESC exits";
+        if (hunt_picker_active) right = "ENTER jumps RSTOP exits";
         else if (edit_mode) right = "Edit";
     }
     if (right && (help_visible || hunt_picker_active)) {
