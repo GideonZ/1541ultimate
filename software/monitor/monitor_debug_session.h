@@ -41,6 +41,11 @@ public:
     // stepping cannot enter the C64 freeze/refreeze ownership path.
     virtual void set_run_window_refreeze_enabled(bool) { }
 
+    // External machine reset is a hard cancellation boundary for any blocking
+    // debug wait. Implementations that poll for traps should return DBG_RESET
+    // promptly after this is requested.
+    virtual void request_reset_cancel(void) { }
+
     // Best-effort initial context. May return DBG_NOT_SUPPORTED on backends
     // that cannot snapshot CPU state without first performing a step. The
     // context is also responsible for filling irq_valid / nmi_valid honestly:
@@ -133,6 +138,13 @@ public:
         (void)ctx;
         cleanup();
     }
+
+    // True only when the backend currently owns a parked debug context that can
+    // be handed back to live execution later via cleanup_to_context(). This lets
+    // the monitor defer a no-breakpoint Freeze-mode G handoff until after UI
+    // teardown and ownership release, while leaving overlay and non-parked
+    // backends on the existing immediate path.
+    virtual bool has_parked_context_handoff(void) const { return false; }
 
     // True only when the backend can patch bytes in currently visible ROM
     // windows (e.g. U64 volatile BASIC/KERNAL/CHAR images). Backends that

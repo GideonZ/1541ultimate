@@ -79,6 +79,7 @@ struct Cursor {
 const char *monitor_error_text(MonitorError error);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
+void monitor_reset_saved_cpu_view(void);
 void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
@@ -244,8 +245,12 @@ class MachineMonitor : public UIObject
     bool debug_run_window_refreeze_enabled;
     bool reset_exits_monitor;
     bool reset_exit_pending;
+    bool release_host_after_exit;
     bool reopen_after_reset;
+    bool reopen_on_debug_reset;
     bool restore_debug_after_reset;
+    bool deferred_debug_go_pending;
+    DebugContext deferred_debug_go_context;
     bool breakpoint_popup_active;
     uint8_t breakpoint_selected;
     bool bookmark_popup_active;
@@ -476,7 +481,11 @@ public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
     void set_debug_run_window_refreeze_enabled(bool enabled);
     void set_reset_exits_monitor(bool enabled);
+    bool consume_release_host_after_exit(void);
+    bool has_deferred_debug_go(void) const { return deferred_debug_go_pending; }
+    void dispatch_deferred_debug_go(void);
     void request_reopen_after_reset(void);
+    void request_debug_reset_cancel(void);
     bool consume_reopen_after_reset(void);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);

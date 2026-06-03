@@ -45,6 +45,10 @@ FORBIDDEN_DEBUG_TEXT = (
     "ERROR",
 )
 
+READY_SCREEN_TOKEN = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
+SAFE_CPU_PORT_VALUE = 0x37
+SAFE_CPU_PORT_LOW_BITS = 0x07
+
 
 def _capture_lines(session: "mt.MonitorSession") -> list[str]:
     snap = session.capture()
@@ -205,6 +209,34 @@ def _find_visible_jsr_row(snap: mt.Snapshot, marker: str) -> tuple[int, str]:
     raise mt.Failure(f"No visible [{marker}] JSR row found after {snap.last_command}\n{snap.text()}")
 
 
+def _dump_debug_scratch(rest_host: str, context: str) -> None:
+    """Print the RAM-resident BRK debug scratch + vectors for [43] diagnosis.
+
+    All addresses are CPU-visible RAM read via REST DMA. The cassette buffer
+    ($0363-$03FB) holds the debug HANDLER/TRAMPOLINE/NMI_TRAMPOLINE/HARD_BRK_STUB
+    and register stores. Reset heals the FPGA ROM image but NOT this RAM, so a
+    stale launch-trampoline JMP target or stale vector here is the prime suspect
+    for the second-pass "$0002" capture.
+    """
+    try:
+        regions = [
+            ("zp0000", 0x0000, 8),
+            ("softvec_0314", 0x0314, 6),     # IRQ/BRK/NMI soft vectors
+            ("handler_0363", 0x0363, 0x27),  # HANDLER (ends spin JMP @ $0387)
+            ("tramp_038A", 0x038A, 0x26),    # TRAMPOLINE
+            ("nmitramp_03B0", 0x03B0, 0x18), # NMI_TRAMPOLINE
+            ("hardstub_03C8", 0x03C8, 0x28), # HARD_BRK_STUB + orig vector + stores
+        ]
+        print(f"    ---- DEBUG SCRATCH DUMP ({context}) ----", flush=True)
+        for name, addr, length in regions:
+            data = mt.read_rest_memory(rest_host, addr, length)
+            hexs = " ".join(f"{b:02X}" for b in data)
+            print(f"      {name} ${addr:04X}: {hexs}", flush=True)
+        print("    ---- END DEBUG SCRATCH DUMP ----", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"    [scratch dump failed: {exc!r}]", flush=True)
+
+
 def _enter_rom_debug_at(session: "mt.MonitorSession", address: int, marker: str,
                         context: str, *status_tokens: str) -> mt.Snapshot:
     _reopen_monitor(session)
@@ -317,18 +349,24 @@ def _wait_for_blank_debug_context(session: "mt.MonitorSession",
 def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
     url = f"http://{rest_host}/v1/machine:reset"
     request = urllib.request.Request(url, data=b"", method="PUT")
-    with urllib.request.urlopen(request, timeout=max(5.0, timeout)):
-        pass
+    try:
+        with urllib.request.urlopen(request, timeout=max(5.0, timeout)):
+            pass
+    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        # The firmware may reset the C64 and briefly starve the REST response path
+        # before the HTTP request is completed. Treat the response timeout as
+        # recoverable only if the deterministic READY proof below succeeds.
+        print(f"[info] reset response timed out, verifying READY anyway: {exc}", flush=True)
     _wait_for_c64_ready(rest_host, timeout)
     time.sleep(3.0)
 
+
 def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
-    ready = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
     deadline = time.time() + timeout
     stable_since = 0.0
     while time.time() < deadline:
         screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
-        if ready in screen:
+        if READY_SCREEN_TOKEN in screen:
             now = time.time()
             if stable_since == 0.0:
                 stable_since = now
@@ -338,6 +376,53 @@ def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
             stable_since = 0.0
         time.sleep(0.1)
     raise mt.Failure("C64 core reset did not reach READY prompt")
+
+
+def _live_cpu_bank_from_status(status: str) -> int:
+    match = re.search(r"\bCPU([0-7])\b|\bC([0-7])O[0-7]\b", status)
+    if match is None:
+        raise mt.Failure(f"Could not read live CPU bank from status line: {status!r}")
+    value = match.group(1) if match.group(1) is not None else match.group(2)
+    return int(value)
+
+
+def _assert_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSession",
+                                         context: str) -> None:
+    screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
+    if READY_SCREEN_TOKEN not in screen:
+        raise mt.Failure(f"{context}: C64 READY screen is not readable/deterministic")
+
+    _reopen_monitor(session)
+    snap = session.capture()
+    line = snap.line(snap.find_status_line())
+    live_bank = _live_cpu_bank_from_status(line)
+    if live_bank != SAFE_CPU_PORT_LOW_BITS:
+        raise mt.Failure(
+            f"{context}: live $0001 low bits are CPU{live_bank}, "
+            f"expected CPU{SAFE_CPU_PORT_LOW_BITS}: {line!r}\n{snap.text()}")
+    if "$D:I/O" not in line:
+        raise mt.Failure(f"{context}: I/O is not visible in status line: {line!r}\n{snap.text()}")
+    _assert_rest_byte_changes(rest_host, 0x00A2, f"{context}: jiffy clock responsiveness",
+                              minimum_values=2)
+
+
+def _force_safe_cpu_port(rest_host: str, context: str) -> None:
+    # Some destructive banking regressions deliberately run with $0001 low bits
+    # clear, which can keep KERNAL/I/O hidden across a raw C64 reset. Restore only
+    # the 6510 port latch through the same REST memory aperture used by the tests,
+    # then prove the low bits before issuing reset.
+    mt.write_rest_memory(rest_host, 0x0001, bytes([SAFE_CPU_PORT_VALUE]))
+    readback = mt.read_rest_memory(rest_host, 0x0001, 1)[0]
+    if (readback & 0x07) != SAFE_CPU_PORT_LOW_BITS:
+        raise mt.Failure(
+            f"{context}: failed to restore $0001 low bits, read ${readback:02X}")
+
+
+def _restore_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSession",
+                                          context: str) -> None:
+    _force_safe_cpu_port(rest_host, context)
+    _reset_c64_core(rest_host)
+    _assert_safe_banking_display_hygiene(rest_host, session, context)
 
 
 def _reset_monitor_and_c64(rest_host: str, session: "mt.MonitorSession",
@@ -561,21 +646,34 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"Debugging should continue after leaving Edit, got {parsed!r}")
         _ensure_no_debug(session)
 
-    with mt.check("Debug: C=+D leaves Debug mode while keeping Edit active"):
+    with mt.check("Debug: C=+D from Debug+Edit clears both and allows re-debug"):
         session.send_char("D")
         session.send_char("E")
         header = _header_line(session)
         if "Dbg" not in header or "Edit" not in header:
             raise mt.Failure(f"Header must show both Dbg and Edit: {header!r}")
+        # C=+D leaves both Debug and Edit so the next keystroke is a monitor
+        # command again. This mirrors the authoritative host regression
+        # test_ctrl_d_from_edit_clears_edit_for_redebug: the user can leave a
+        # debug+edit session with one key and immediately navigate/re-debug.
         _send_ctrl_d(session)
         header = _header_line(session)
-        if "Dbg" in header or "Edit" not in header:
-            raise mt.Failure(f"C=+D in Debug+Edit must keep Edit and clear Dbg: {header!r}")
-        session.send_key("ESC")
+        if "Dbg" in header or "Edit" in header:
+            raise mt.Failure(f"C=+D in Debug+Edit must clear both Dbg and Edit: {header!r}")
+        # Prove Edit really cleared: J is consumed as a monitor jump command,
+        # not as edit-mode text input.
+        session.goto("C040")
+        session.send_char("A")
         header = _header_line(session)
-        if "Edit" in header:
-            raise mt.Failure(f"ESC after C=+D must clear the remaining Edit flag: {header!r}")
+        if "MONITOR ASM $C040" not in header or "Edit" in header:
+            raise mt.Failure(f"After C=+D, J must act as a monitor jump command: {header!r}")
+        # Re-enter Debug from the post-C=+D cursor and confirm a step runs.
         session.send_char("D")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, "C042")
+        if parsed["ac"] != "66":
+            raise mt.Failure(f"Re-entered Debug must step from the cursor, got {parsed!r}")
+        _ensure_no_debug(session)
 
     with mt.check("Debug: returning to ASM after stepping elsewhere follows the current debug PC"):
         _reopen_monitor(session)
@@ -1420,7 +1518,11 @@ def run_rom_single_step_tests(rest_host: str, session: "mt.MonitorSession") -> N
         else:
             expected_pc = 0xE000 + _instruction_length_from_row(row)
             print(f"[info] non-canonical KERNAL $E000 row selected: {row}", flush=True)
-        _step_and_assert_pc(session, "T", expected_pc, "KERNAL Step Into $E000")
+        try:
+            _step_and_assert_pc(session, "T", expected_pc, "KERNAL Step Into $E000")
+        except mt.Failure:
+            _dump_debug_scratch(rest_host, "KERNAL Step Into $E000 FAIL")
+            raise
         _leave_debug_and_reset(rest_host, session)
 
     with mt.check("Debug: KERNAL ROM Step Over on visible JSR", u2=False,
@@ -1506,8 +1608,11 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
             if f"[{marker}]" not in row:
                 raise mt.Failure(f"{name} row did not show ROM source marker [{marker}]: {row!r}")
 
-            session.send_char("R")
-            _assert_no_debug_modal(session, f"{name} ROM breakpoint set")
+            _clear_breakpoint_at(session, target, f"{name} stale ROM breakpoint clear")
+            _ensure_breakpoint_at(session, target, f"{name} ROM breakpoint set")
+            armed_row = _disassembly_row(session.capture(), target)
+            if "[BRK" not in armed_row:
+                raise mt.Failure(f"{name} ROM breakpoint row was not armed: {armed_row!r}")
             session.goto(f"{bootstrap_addr:04X}")
             session.send_char("G")
             parsed = _wait_for_pc(session, f"{target:04X}")
@@ -1541,8 +1646,8 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
                 raise mt.Failure(
                     f"{name} ROM byte was not restored at ${target:04X}: "
                     f"expected ${original:02X}, got ${restored:02X}")
-            _reset_c64_core(rest_host)
-            _reopen_monitor(session)
+            _restore_safe_banking_display_hygiene(
+                rest_host, session, f"{name} ROM breakpoint cleanup")
 
 
 def run_kernal_basic_breakpoint_regression(rest_host: str, session: "mt.MonitorSession") -> None:
@@ -2189,9 +2294,9 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         _assert_rest_byte_changes(
             rest_host, 0xD021,
             "$01=$00 continue G (machine appears hung or forced back to CPU7)")
-        # Telnet must still be responsive and the monitor reachable afterwards.
-        _reset_c64_core(rest_host)
-        _reopen_monitor(session)
+        # $01=$00 deliberately hides I/O for this regression. Restore and prove
+        # safe display-compatible banking immediately after the destructive case.
+        _restore_safe_banking_display_hygiene(rest_host, session, "$01=$00 cleanup")
 
     with mt.check("Debug: $01=$35 continue with no breakpoints keeps I/O loop running",
                   u2=False,
@@ -2664,11 +2769,23 @@ def main() -> int:
                 session.close()
                 session = None
                 mt.TestConfig.session = None
+            if args.target == "u64":
+                _force_safe_cpu_port(rest_host, f"pre-{name} reset")
             _reset_c64_core(rest_host)
             mt.wait_for_monitor_ready(args.host, args.port, args.password, args.timeout)
             session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
             mt.TestConfig.session = session
-            runners[name](rest_host, session)
+            try:
+                runners[name](rest_host, session)
+            finally:
+                if args.target == "u64":
+                    _restore_safe_banking_display_hygiene(
+                        rest_host, session, f"post-{name} cleanup")
+        if session is not None:
+            with mt.check("Debug: post-suite banking/display hygiene leaves $0001 safe and C64 readable",
+                          u2=False,
+                          u2_reason="U64 CPU banking/readability hygiene is required"):
+                _restore_safe_banking_display_hygiene(rest_host, session, "post-suite hygiene")
     except mt.Failure as exc:
         print(exc, file=sys.stderr)
         if session is not None:

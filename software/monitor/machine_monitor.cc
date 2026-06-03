@@ -68,6 +68,13 @@ static MachineMonitorState monitor_saved_state = {
 static bool monitor_reset_reopen_state_valid = false;
 static MachineMonitorState monitor_reset_reopen_state;
 static bool monitor_reset_reopen_debug_active = false;
+// Set on every C64 hardware reset (REST / C=+X / RESET button). The next fresh
+// monitor open syncs its view bank to the live CPU bank so re-entry decodes the
+// memory the CPU actually sees (e.g. RAM-under-ROM when $01 low bits are 5),
+// instead of carrying a stale exploratory view or a hardcoded ROM (bank 7) view.
+// This does NOT touch ordinary close/reopen (no intervening reset), so manual
+// O bank exploration still persists across those opens.
+static bool monitor_sync_view_to_live_on_open = false;
 
 // Process-lifetime breakpoint storage. Survives monitor close/reopen, the
 // C=+X reset reentry path, and Stop-Debugging cleanup, but is volatile RAM
@@ -1176,6 +1183,21 @@ void monitor_invalidate_saved_state(void)
     monitor_reset_reopen_debug_active = false;
 }
 
+void monitor_reset_saved_cpu_view(void)
+{
+    // Called on a C64 hardware reset. Rather than hardcoding CPU7 (which is only
+    // correct when the post-reset CPU actually banks ROM in, and otherwise leaves
+    // the monitor showing ROM while the live CPU runs RAM-under-ROM -> the C5O7
+    // footer mismatch), request that the next fresh monitor open sync its view
+    // bank to the live CPU bank. 0x07 is kept as the persisted fallback for the
+    // case where the next open cannot read a live CPU port.
+    monitor_saved_state.view_cpu_port = 0x07;
+    if (monitor_reset_reopen_state_valid) {
+        monitor_reset_reopen_state.view_cpu_port = 0x07;
+    }
+    monitor_sync_view_to_live_on_open = true;
+}
+
 void monitor_apply_go(MachineMonitorState *state, uint16_t address)
 {
     uint16_t span = row_span_for_view(state->view, monitor_memory_bytes_per_row,
@@ -1943,7 +1965,11 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     debug_run_window_refreeze_enabled = false;
     reset_exits_monitor = false;
     reset_exit_pending = false;
+    release_host_after_exit = false;
     reopen_after_reset = false;
+    reopen_on_debug_reset = true;
+    deferred_debug_go_pending = false;
+    debug_context_reset(&deferred_debug_go_context);
     // Restore breakpoints from process-lifetime storage so they survive a
     // C=+X reset reentry and an ordinary monitor close/reopen. Power-off
     // clears `monitor_saved_breakpoints` because it lives in volatile RAM.
@@ -1978,12 +2004,39 @@ void MachineMonitor :: set_reset_exits_monitor(bool enabled)
     reset_exits_monitor = enabled;
 }
 
+bool MachineMonitor :: consume_release_host_after_exit(void)
+{
+    bool ret = release_host_after_exit;
+    release_host_after_exit = false;
+    return ret;
+}
+
 void MachineMonitor :: request_reopen_after_reset(void)
 {
     monitor_reset_reopen_state = monitor_reset_reentry_state(state);
     monitor_reset_reopen_state_valid = true;
     monitor_reset_reopen_debug_active = debug.is_active();
     reopen_after_reset = true;
+    reopen_on_debug_reset = true;
+    if (debug_session) {
+        debug_session->request_reset_cancel();
+    }
+}
+
+void MachineMonitor :: request_debug_reset_cancel(void)
+{
+    // Cancels any in-flight debug sentinel wait without scheduling a monitor
+    // reopen. Used by the REST reset path so the debug engine tears down its
+    // BRK patches and handler before the machine reset pulse fires, without
+    // treating the REST reset as a user-initiated "C=+X while in the monitor"
+    // event that would cause the monitor to reopen.
+    reopen_after_reset = false;
+    reopen_on_debug_reset = false;
+    monitor_reset_reopen_state_valid = false;
+    monitor_reset_reopen_debug_active = false;
+    if (debug_session) {
+        debug_session->request_reset_cancel();
+    }
 }
 
 bool MachineMonitor :: consume_reopen_after_reset(void)
@@ -6098,6 +6151,23 @@ void MachineMonitor :: debug_cleanup_session()
     }
 }
 
+void MachineMonitor :: dispatch_deferred_debug_go(void)
+{
+    if (!deferred_debug_go_pending) {
+        return;
+    }
+    deferred_debug_go_pending = false;
+    if (debug_session) {
+        debug_session->cleanup_to_context(&deferred_debug_go_context);
+        delete debug_session;
+        debug_session = NULL;
+    }
+    debug_context_reset(&deferred_debug_go_context);
+    if (backend) {
+        backend->end_session();
+    }
+}
+
 bool MachineMonitor :: debug_capture_context(DebugContext *out)
 {
     if (!out) {
@@ -6117,20 +6187,34 @@ bool MachineMonitor :: debug_handle_terminal_result(DebugSession::Result result)
     if (result != DebugSession::DBG_RESET) {
         return false;
     }
-    request_reopen_after_reset();
     monitor_log("debug reset-result");
+    if (reopen_on_debug_reset) {
+        request_reopen_after_reset();
+    } else {
+        reopen_after_reset = false;
+        monitor_reset_reopen_state_valid = false;
+        monitor_reset_reopen_debug_active = false;
+    }
     clear_pending_go();
-    restore_debug_after_reset = debug.is_active();
+    restore_debug_after_reset = reopen_on_debug_reset && debug.is_active();
     if (restore_debug_after_reset) {
         debug_cursor_override = true;
     }
     debug.invalidate_context();
     debug_cleanup_session();
-    if (screen) {
+    // Direct render targets (Freeze/Overlay) draw into the live C64 screen via
+    // `screen`. reset_machine() has just unfrozen + reset the C64, so it now owns
+    // its screen RAM again: redrawing the monitor here would paint the monitor
+    // chrome onto the booting C64 screen. These modes exit + reopen, and the
+    // reopen re-takes ownership before repainting, so skip the redraw here.
+    // Non-direct hosts (e.g. Telnet) keep their own screen and stay open, so they
+    // still need the refresh.
+    if (screen && !reset_exits_monitor) {
         get_ui()->set_screen_title();
         redraw_full();
     }
-    reset_exit_pending = reset_exits_monitor;
+    reset_exit_pending = reopen_on_debug_reset ? reset_exits_monitor : true;
+    reopen_on_debug_reset = true;
     return true;
 }
 
@@ -6161,7 +6245,11 @@ int MachineMonitor :: handle_reset_shortcut(void)
         redraw_full();
         return 0;
     }
-    if (screen) {
+    // See debug_handle_terminal_result(): for direct render targets the C64 owns
+    // its screen again immediately after reset_machine(), so a redraw here would
+    // smear the monitor onto the booting C64 screen. The exit + reopen repaints
+    // with ownership re-taken; only non-direct hosts (Telnet) need this refresh.
+    if (screen && !reset_exits_monitor) {
         get_ui()->set_screen_title();
         redraw_full();
     }
@@ -6466,22 +6554,43 @@ void MachineMonitor :: debug_request_go()
     // captured context is already in hand, the session prefers `from.pc`
     // and ignores this fallback.
     uint16_t start_pc = state.current_addr;
-    if (debug_run_window_refreeze_enabled && !debug_has_enabled_breakpoint()) {
-        // Freeze-mode no-breakpoint Go must unwind through run_machine_monitor()
-        // so the C64 freezer ownership is released before execution starts.
+    if (debug_run_window_refreeze_enabled &&
+            !debug_has_enabled_breakpoint() &&
+            from.valid &&
+            session->has_parked_context_handoff()) {
+        // Freeze-mode parked-context G must let the monitor fully tear down
+        // and release ownership before the BRK session hands execution back to
+        // the live machine. Defer that handoff to run_machine_monitor(), which
+        // calls cleanup_to_context() after deinit() and ownership release.
+        last_go_addr = from.pc;
+        last_go_valid = true;
+        deferred_debug_go_pending = true;
+        deferred_debug_go_context = from;
+        release_host_after_exit = true;
+        clear_pending_go();
+        debug.invalidate_context();
+        monitor_log_address("debug go deferred", last_go_addr);
+        return;
+    }
+    if ((debug_run_window_refreeze_enabled || reset_exits_monitor) &&
+            !debug_has_enabled_breakpoint()) {
+        // Direct UI no-breakpoint Go uses the debug session's own parked-spin
+        // release path, then unwinds through run_machine_monitor() so Freeze
+        // releases freezer ownership and Overlay disables the render owner
+        // before execution continues at full speed.
         last_go_addr = from.valid ? from.pc : start_pc;
         last_go_valid = true;
-        go_pending = true;
-        go_pending_addr = last_go_addr;
-        go_pending_has_context = from.valid;
-        if (from.valid) {
-            go_pending_context = from;
-        } else {
-            debug_context_reset(&go_pending_context);
+        DebugSession::Result result = session->go(from, &breakpoints, start_pc);
+        if (debug_handle_terminal_result(result)) {
+            return;
         }
-        if (debug_session) {
-            debug_session->forget_context();
+        if (result != DebugSession::DBG_OK) {
+            printf("MCM debug go $%04X %s\n", last_go_addr,
+                   monitor_debug_result_name(result));
+            return;
         }
+        release_host_after_exit = true;
+        clear_pending_go();
         debug.invalidate_context();
         monitor_log_address("debug go handoff", last_go_addr);
         return;
@@ -6908,7 +7017,7 @@ int MachineMonitor :: debug_handle_key(int key)
         if (reset_exit_pending) {
             return MENU_EXIT;
         }
-        if (go_pending) {
+        if (go_pending || release_host_after_exit) {
             return 1;
         }
         draw();
@@ -6943,6 +7052,17 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 2;
     backend->begin_session();
+    // After a C64 hardware reset, the next fresh open follows the live CPU bank so
+    // the user re-enters at the memory the CPU actually sees (RAM-under-ROM when
+    // $01 low bits are 5), not a stale/forced view -> fixes the C5O7 mismatch.
+    // Skipped when restoring an in-flight debug session, whose carried view bank
+    // is the authoritative debug-context bank.
+    if (monitor_sync_view_to_live_on_open) {
+        monitor_sync_view_to_live_on_open = false;
+        if (!restore_debug_after_reset && backend->supports_cpu_banking()) {
+            state.view_cpu_port = (uint8_t)(backend->get_live_cpu_port() & 0x07);
+        }
+    }
     state.view_cpu_port = normalize_cpu_mode(state.view_cpu_port);
     if (backend->supports_cpu_banking()) {
         backend->set_monitor_cpu_port(state.view_cpu_port);
@@ -6989,8 +7109,10 @@ void MachineMonitor :: deinit(void)
     // Restore every patched byte / vector / trampoline before the backend
     // session ends. Cleanup is idempotent so this is safe even if the user
     // never used Debug mode.
-    debug_cleanup_session();
-    backend->end_session();
+    if (!deferred_debug_go_pending) {
+        debug_cleanup_session();
+        backend->end_session();
+    }
     if (clipboard.data) {
         free(clipboard.data);
         clipboard.data = NULL;
@@ -7063,7 +7185,7 @@ int MachineMonitor :: handle_key(int key)
     // view-switch / file commands while Debug is on.
     if (debug.is_active() && !edit_mode) {
         int r = debug_handle_key(key);
-        if (r >= 0) {
+        if (r != -1) {
             return r;
         }
     } else if (!edit_mode && (key == 'd' || key == 'D')) {

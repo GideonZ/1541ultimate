@@ -39,6 +39,68 @@
 #include "u64_machine.h"
 #endif
 
+#if U64
+// Pristine FPGA ROM-image snapshot + dirty flag. The machine-code monitor's debug
+// engine steps RAM-under-ROM and KERNAL/BASIC ROM by patching BRK traps directly
+// into the FPGA ROM-image buffers (U64_*_BASE). If such a patch is not restored
+// before a reset (e.g. a REST reset fired while the debug CPU is parked), the
+// stale byte stays in the KERNAL image and the next C64 reset executes it during
+// early boot, wedging the machine (blank screen, no READY, frozen jiffy) with no
+// recovery short of a JTAG ROM reload. To make every reset self-healing we capture
+// the authoritative ROM image once it is loaded (init_system_roms) and re-apply it
+// on reset whenever the monitor has flagged the image dirty.
+namespace {
+    uint8_t s_pristine_kernal[8192];
+    uint8_t s_pristine_basic[8192];
+    bool s_pristine_rom_valid = false;
+}
+extern "C" volatile bool g_u64_rom_image_dirty = false;
+extern "C" void u64_mark_rom_image_dirty(void) { g_u64_rom_image_dirty = true; }
+
+// The FPGA ROM-image apertures must be copied byte-by-byte through volatile
+// pointers (block memcpy reads back zeros here), matching the snapshot path in
+// u64_memory_backend.cc.
+static void copy_rom_aperture_in(uint8_t *dst, volatile uint8_t *src, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) dst[i] = src[i];
+}
+static void copy_rom_aperture_out(volatile uint8_t *dst, const uint8_t *src, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) dst[i] = src[i];
+}
+static bool buffer_all_zero(const uint8_t *p, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) if (p[i]) return false;
+    return true;
+}
+
+static void capture_pristine_rom_image(void)
+{
+    // Only BASIC and KERNAL are healed: a stale debug BRK in those is executed
+    // during boot and wedges the machine. The CHAR ROM is never executed, so a
+    // leaked CHAR patch is at worst a cosmetic glyph and is left to the normal
+    // per-session restore; we deliberately do NOT snapshot/rewrite the CHAR
+    // aperture on reset (its base differs and a bad snapshot would render every
+    // glyph as garbage).
+    copy_rom_aperture_in(s_pristine_basic,  (volatile uint8_t *)U64_BASIC_BASE,   sizeof(s_pristine_basic));
+    copy_rom_aperture_in(s_pristine_kernal, (volatile uint8_t *)U64_KERNAL_BASE,  sizeof(s_pristine_kernal));
+    // Only trust the snapshot if the KERNAL image actually read back (guards
+    // against a bad capture ever being restored as a zeroed, unbootable ROM).
+    s_pristine_rom_valid = !buffer_all_zero(s_pristine_kernal, sizeof(s_pristine_kernal));
+    g_u64_rom_image_dirty = false;
+}
+
+static void restore_pristine_rom_image(void)
+{
+    if (!s_pristine_rom_valid) {
+        return;
+    }
+    copy_rom_aperture_out((volatile uint8_t *)U64_BASIC_BASE,   s_pristine_basic,  sizeof(s_pristine_basic));
+    copy_rom_aperture_out((volatile uint8_t *)U64_KERNAL_BASE,  s_pristine_kernal, sizeof(s_pristine_kernal));
+    g_u64_rom_image_dirty = false;
+}
+#endif
+
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
@@ -585,6 +647,14 @@ void C64::resume(void)
 
 void C64::reset(void)
 {
+#if U64
+    // Heal any debug BRK patch the monitor left in the FPGA ROM image before the
+    // CPU starts executing the reset/boot code, so a leaked KERNAL/BASIC byte can
+    // never wedge the boot. The dirty flag is still maintained for diagnostics,
+    // but reset is the recovery chokepoint and must be robust even if a stale
+    // patch path failed to mark the image dirty.
+    restore_pristine_rom_image();
+#endif
     C64_MODE = MODE_NORMAL;
     C64_MODE = C64_MODE_RESET;
     ioWrite8(ITU_TIMER, 20);
@@ -911,6 +981,10 @@ void C64::init_system_roms(void)
         printf("Failed to load CHAR ROM; loading default.\n");
         memcpy((void *)U64_CHARROM_BASE, (void *)_default_chars_bin_start, 4096);
     }
+
+    // The ROM image is now authoritative (freshly loaded from config). Snapshot it
+    // so reset() can heal any debug BRK patch left in the FPGA ROM image.
+    capture_pristine_rom_image();
 
 #else
     uint8_t *temp = new uint8_t[8192];

@@ -212,8 +212,10 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             c64->unfreeze();
             break;
         case MENU_C64_RESET:
+            if (machine_monitor_request_global_reset_cancel) {
+                machine_monitor_request_global_reset_cancel();
+            }
             if (c64->client) { // we can't execute this yet
-                c64->client->request_reset_reentry_after_c64_reset();
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }

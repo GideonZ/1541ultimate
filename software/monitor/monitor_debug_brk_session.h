@@ -39,6 +39,11 @@ protected:
     virtual void pulse_nmi_and_release(bool stopped_it) = 0;
     virtual void request_staged_nmi(void) { }
     virtual void clear_staged_nmi(void) { }
+    // Let the live CPU clock briefly so the FPGA commits a freshly-written
+    // visible-ROM BRK to the live instruction-fetch path before we launch into
+    // it. Only meaningful when the machine is running (overlay/Telnet); the
+    // freeze path already restarts the CPU cleanly on unfreeze. Default no-op.
+    virtual void settle_visible_rom_for_live_fetch(void) { }
     virtual void delay_ms(int ms) = 0;
     virtual bool free_run_no_breakpoint(uint16_t address);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
@@ -51,6 +56,7 @@ public:
 
     virtual void set_cancel_keyboard(Keyboard *keyboard);
     virtual void set_run_window_refreeze_enabled(bool enabled);
+    virtual void request_reset_cancel(void);
     virtual Result snapshot(DebugContext *ctx);
     virtual Result over(const DebugContext &from,
                         const DebugPredictResult &pred,
@@ -86,6 +92,7 @@ public:
                           DebugContext *ctx);
     virtual void cleanup(void);
     virtual void cleanup_to_context(const DebugContext *ctx);
+    virtual bool has_parked_context_handoff(void) const;
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len);
     virtual void forget_context(void);
     virtual bool screen_render_target_invalidated(void) const { return screen_was_clobbered; }
@@ -127,6 +134,7 @@ private:
     // can read this via screen_render_target_invalidated() to know whether the
     // firmware chrome rows need restoring before the next visible redraw.
     bool screen_was_clobbered;
+    volatile bool reset_cancel_requested;
     uint8_t saved_handler_bytes[128];
     uint8_t saved_nmi_trampoline_bytes[24];
     bool nmi_trampoline_installed;
@@ -171,6 +179,7 @@ private:
                                MonitorBackingStore skip_target,
                                bool skip_address_valid) const;
     void restore_patches(void);
+    bool recommit_visible_rom_patches(void);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
     void clear_return_targets(void);
     void push_return_target(uint16_t target);

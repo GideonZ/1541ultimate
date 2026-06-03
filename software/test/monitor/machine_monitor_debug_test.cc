@@ -85,6 +85,7 @@ struct StubDebugSession : public DebugSession
     Result snapshot_result;
     bool claim_allowed;
     bool go_produces_snapshot;
+    bool parked_context_handoff_supported;
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0),
@@ -101,7 +102,8 @@ struct StubDebugSession : public DebugSession
           over_result(DBG_OK), trace_result(DBG_OK),
           out_result(DBG_OK), go_result(DBG_OK), run_to_result(DBG_OK),
           snapshot_result(DBG_OK), claim_allowed(true),
-          go_produces_snapshot(false)
+          go_produces_snapshot(false),
+          parked_context_handoff_supported(false)
     {
         debug_context_reset(&cleanup_target_ctx);
         debug_context_reset(&next_ctx);
@@ -218,6 +220,9 @@ struct StubDebugSession : public DebugSession
             debug_context_reset(&cleanup_target_ctx);
         }
     }
+    virtual bool has_parked_context_handoff(void) const {
+        return parked_context_handoff_supported;
+    }
     virtual bool read_step_bytes(uint16_t, uint8_t *dst, uint8_t len) {
         if (!predict_bytes_valid || !dst || len == 0) {
             return false;
@@ -287,13 +292,15 @@ struct TrackingDebugBackend : public FakeMemoryBackend
     DebugSession::Result snapshot_result;
     bool session_claim_allowed;
     bool go_produces_snapshot;
+    bool parked_context_handoff_supported;
 
     TrackingDebugBackend() : last_session(NULL), session_creations(0),
                              refuse_session(false), reset_calls(0),
                              allow_reset(true), canned_snapshot_set(false),
                              snapshot_result(DebugSession::DBG_OK),
                              session_claim_allowed(true),
-                             go_produces_snapshot(false)
+                             go_produces_snapshot(false),
+                             parked_context_handoff_supported(false)
     {
         debug_context_reset(&canned_snapshot);
     }
@@ -310,6 +317,7 @@ struct TrackingDebugBackend : public FakeMemoryBackend
         last_session->snapshot_result = snapshot_result;
         last_session->claim_allowed = session_claim_allowed;
         last_session->go_produces_snapshot = go_produces_snapshot;
+        last_session->parked_context_handoff_supported = parked_context_handoff_supported;
         return last_session;
     }
 
@@ -409,6 +417,8 @@ public:
     int staged_nmi_requests;
     int staged_nmi_clears;
     int brk_patch_writes;
+    int delay_calls;
+    int pokes_at_cancel;
     uint16_t last_brk_patch_addr;
     uint16_t brk_patch_addrs[MAX_RECORDED_BRK_PATCHES];
     int freeze_restore_pokes;
@@ -425,6 +435,9 @@ public:
     // clear that stale sentinel before releasing the CPU.
     bool stale_sentinel_during_nmi_setup;
     bool nmi_from_spin_times_out;
+    bool reset_cancel_on_delay;
+    bool monitor_reset_cancel_on_delay;
+    MachineMonitor *monitor_reset_cancel_target;
     bool capture_override_armed;
     uint16_t capture_override_pc;
     uint8_t capture_override_sp;
@@ -441,10 +454,13 @@ public:
           break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
           unfreeze_calls(0), refreeze_calls(0), reset_calls(0), nmi_pulses(0),
           staged_nmi_requests(0), staged_nmi_clears(0),
-          brk_patch_writes(0), last_brk_patch_addr(0),
+          brk_patch_writes(0), delay_calls(0), pokes_at_cancel(0),
+          last_brk_patch_addr(0),
           freeze_restore_pokes(0),
           sentinel_armed(true), stale_sentinel_during_nmi_setup(false),
-          nmi_from_spin_times_out(false),
+          nmi_from_spin_times_out(false), reset_cancel_on_delay(false),
+          monitor_reset_cancel_on_delay(false),
+          monitor_reset_cancel_target(NULL),
           capture_override_armed(false),
           capture_override_pc(0), capture_override_sp(0),
           capture_override_a(0), capture_override_x(0), capture_override_y(0),
@@ -611,6 +627,19 @@ protected:
     }
     virtual void delay_ms(int)
     {
+        delay_calls++;
+        if (monitor_reset_cancel_on_delay && monitor_reset_cancel_target) {
+            monitor_reset_cancel_target->request_debug_reset_cancel();
+            pokes_at_cancel = freeze_restore_pokes;
+            monitor_reset_cancel_on_delay = false;
+            return;
+        }
+        if (reset_cancel_on_delay) {
+            request_reset_cancel();
+            pokes_at_cancel = freeze_restore_pokes;
+            reset_cancel_on_delay = false;
+            return;
+        }
         // Model the BRK trampoline reaching the spin loop: the sentinel becomes
         // non-zero so the next wait_for_sentinel poll returns DBG_OK. When the
         // test disarms the sentinel, leave it clear so the engine runs to its
@@ -1113,6 +1142,30 @@ static int find_row_with_address(CaptureScreen &screen, const char *address)
         }
     }
     return -1;
+}
+
+static int debug_visible_disasm_exists(CaptureScreen &screen,
+                                       const char *prefix,
+                                       const char *needle)
+{
+    char row[40];
+
+    for (int y = 4; y <= 22; y++) {
+        screen.get_slice(1, y, 38, row);
+        if ((!prefix || strstr(row, prefix) == row) &&
+            (!needle || strstr(row, needle) != NULL)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int expect_debug_visible_disasm(CaptureScreen &screen,
+                                       const char *prefix,
+                                       const char *needle,
+                                       const char *message)
+{
+    return expect(debug_visible_disasm_exists(screen, prefix, needle), message);
 }
 
 static int expect_breakpoint_label_only_accent(CaptureScreen &screen, int row_y,
@@ -2329,6 +2382,8 @@ static int test_ctrl_x_local_reset_exits_monitor()
                "Local UI CTRL+X reset must issue one backend reset")) return 1;
     if (expect(monitor.consume_reopen_after_reset(),
                "Local UI CTRL+X reset while monitor is open must request monitor re-entry")) return 1;
+    if (expect(!monitor.consume_release_host_after_exit(),
+               "Local UI CTRL+X reset must not take the host-release exit path")) return 1;
     monitor.deinit();
 
     const int reentry_keys[] = { KEY_BREAK, KEY_BREAK };
@@ -2346,6 +2401,43 @@ static int test_ctrl_x_local_reset_exits_monitor()
     if (expect(reentered.poll(0) == 0, "RUN/STOP leaves restored Debug")) return 1;
     if (expect(reentered.poll(0) == 1, "Second RUN/STOP exits restored monitor")) return 1;
     reentered.deinit();
+    return 0;
+}
+
+static int test_external_reset_during_debug_wait_exits_without_reopen()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    BrkSessionBackend backend(false);
+    monitor_reset_saved_state();
+
+    const int keys[] = { 'J', 'A', 'D', 'T' };
+    FakeKeyboard keyboard(keys, 4);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("0801", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_reset_exits_monitor(true);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Jump setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "ASM setup should return 0")) return 1;
+    if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
+    if (expect(backend.last_session != NULL,
+               "Debug entry must create the BRK debug session before trace starts")) return 1;
+    backend.last_session->monitor_reset_cancel_target = &monitor;
+    backend.last_session->monitor_reset_cancel_on_delay = true;
+    if (expect(monitor.poll(0) == MENU_EXIT,
+               "External reset during an active debug wait must unwind out of the monitor")) return 1;
+    if (expect(backend.last_session != NULL,
+               "Active trace must create the BRK debug session")) return 1;
+    if (expect(backend.last_session->freeze_restore_pokes > 0,
+               "External reset during debug wait must clean up the active session")) return 1;
+    if (expect(backend.last_session->reset_calls == 0,
+               "External reset during debug wait must not issue a second machine reset")) return 1;
+    if (expect(!monitor.consume_reopen_after_reset(),
+               "External reset during debug wait must not request monitor re-entry")) return 1;
+    monitor.deinit();
     return 0;
 }
 
@@ -3727,6 +3819,111 @@ static int test_ctrl_i_swaps_interface_in_monitor()
     return 0;
 }
 
+// Locate the rendered "CPUx ... VICy" / "CxOy ... VICy" monitor status footer
+// (it begins at screen column 1). Returns true and fills `out` when found.
+static bool capture_status_footer(CaptureScreen &screen, char *out, int out_len)
+{
+    char row[40];
+    out[0] = 0;
+    for (int y = 0; y < 25; y++) {
+        screen.get_slice(1, y, 38, row);
+        if (strstr(row, "VIC") != NULL &&
+            (strncmp(row, "CPU", 3) == 0 ||
+             (row[0] == 'C' && row[2] == 'O'))) {
+            strncpy(out, row, out_len - 1);
+            out[out_len - 1] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Issue 1: after a C64 hardware reset, a fresh monitor open must follow the live
+// CPU bank so re-entry decodes the memory the CPU actually sees (RAM-under-ROM
+// when $01 low bits are 5), not a stale/forced view. Without the fix the reset
+// hook forces the saved view to 7 and the footer shows the C5O7 mismatch.
+static int test_reset_reentry_view_follows_live_cpu_bank()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    monitor_reset_saved_state();
+    ui.screen = &screen;
+
+    // A C64 hardware reset fires the global reset hook (sets view -> 7 fallback
+    // and arms the sync-to-live request for the next open).
+    monitor_reset_saved_cpu_view();
+
+    // After the reset the live CPU is running RAM-under-ROM: $01 low bits = 5.
+    backend.live_cpu_port = 0x05;
+
+    const int nokeys[] = { 0 };
+    FakeKeyboard kb(nokeys, 0);
+    ui.keyboard = &kb;
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &kb);
+
+    char footer[40];
+    if (expect(capture_status_footer(screen, footer, sizeof(footer)),
+               "Status footer must be visible after reset re-entry")) { monitor.deinit(); return 1; }
+    // Matched form "CPU5" proves the view followed the live bank; the erroneous
+    // "C5O7" mismatch must not appear.
+    if (expect(strncmp(footer, "CPU5", 4) == 0,
+               "Reset re-entry must follow live CPU bank (footer CPU5, not C5O7)")) {
+        printf("  footer was: '%s'\n", footer);
+        monitor.deinit();
+        return 1;
+    }
+    monitor.deinit();
+    return 0;
+}
+
+// Invariant #2: an ordinary monitor close/reopen WITHOUT an intervening reset
+// must preserve a manually selected (O) exploratory view bank, i.e. the
+// sync-to-live behaviour is gated strictly to the post-reset open.
+static int test_reopen_without_reset_preserves_manual_cpu_view()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeBankedMemoryBackend backend;
+    monitor_reset_saved_state();
+    ui.screen = &screen;
+    backend.live_cpu_port = 0x05;   // live CPU banks RAM under ROM
+
+    // Session 1: manually cycle the view bank with 'o'. From the default 7 the
+    // sequence is 7 -> 0 -> 1 -> 2 -> 3, so four presses select view bank 3.
+    {
+        const int keys[] = { 'o', 'o', 'o', 'o' };
+        FakeKeyboard kb(keys, 4);
+        ui.keyboard = &kb;
+        MachineMonitor m(&ui, &backend);
+        m.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(m.poll(0) == 0, "cycle CPU bank ok")) { m.deinit(); return 1; }
+        }
+        m.deinit();   // persists manual view bank 3
+    }
+
+    // Session 2: reopen with NO reset hook in between -> manual view preserved.
+    const int nokeys[] = { 0 };
+    FakeKeyboard kb(nokeys, 0);
+    ui.keyboard = &kb;
+    MachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &kb);
+
+    char footer[40];
+    if (expect(capture_status_footer(screen, footer, sizeof(footer)),
+               "Status footer must be visible on ordinary reopen")) { monitor.deinit(); return 1; }
+    if (expect(strncmp(footer, "C5O3", 4) == 0,
+               "Ordinary reopen must preserve the manual O view bank (footer C5O3)")) {
+        printf("  footer was: '%s'\n", footer);
+        monitor.deinit();
+        return 1;
+    }
+    monitor.deinit();
+    return 0;
+}
+
 static int test_jump_rejects_non_hex_input_and_uppercases()
 {
     TestUserInterface ui;
@@ -4358,8 +4555,15 @@ static int test_visible_basic_step_uses_rom_patch_support()
                "Visible BASIC patch byte must be restored after the step")) return 1;
     if (expect(m.ram[0xA001] == 0x5A,
                "Visible BASIC patching must not scribble into underlying RAM")) return 1;
-    if (expect(m.rom_patch_writes == 2,
-               "Visible BASIC step must patch and restore the ROM image exactly once")) return 1;
+    // Three ROM-image writes: install the BRK, re-commit it at the launch (so the
+    // live 6510 cannot fetch a stale pre-patch ROM byte - the overlay/Telnet
+    // ROM-step runaway fix), then restore the original byte after the step.
+    if (expect(m.rom_patch_writes == 3,
+               "Visible BASIC step must patch, recommit at launch, and restore the ROM image")) return 1;
+    // The BRK ($00) is written twice for the single step: once by install_brk_at
+    // and once by recommit_visible_rom_patches() in the launch's stopped session.
+    if (expect(m.brk_patch_writes == 2,
+               "Visible BASIC step must re-commit the ROM BRK as the final pre-launch write")) return 1;
     return 0;
 }
 
@@ -4748,6 +4952,55 @@ static int test_no_breakpoint_continue_restores_captured_cpu_port_registers()
     return 0;
 }
 
+// Regression: a plain G issued after single-stepping passes NO freshly captured
+// context (resume_from.valid == false); the session must still resume through
+// the banking-preserving register-restore stub using its parked last_context,
+// NOT fall back to free_run_no_breakpoint()/jump_to(). The latter vectors
+// through the (absent) KERNAL NMI handler and silently fails to execute a
+// program running with KERNAL banked out (RAM under ROM). See the no-breakpoint
+// branch in BrkDebugSession::go().
+static int test_no_breakpoint_continue_after_step_without_passed_context()
+{
+    FakeFreezeMachine m(false);
+    fake_seed_nop_run(m, 0x2100);
+    fake_seed_captured_context(m, 0x2101, 0xF8, 0x44, 0x55, 0x66, 0x24);
+    m.ram[FAKE_STORE_CPU_DDR] = 0x37;
+    m.ram[FAKE_STORE_CPU_PORT] = 0x35;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2100, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0x2100, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Initial step must park a context for the no-context continue")) return 1;
+
+    // Wipe the resume stub area so we can prove the Go rebuilds it.
+    for (int i = 0; i < 16; i++) m.ram[FAKE_RESUME_TRAMP + i] = 0x00;
+    m.ram[0x0000] = 0x00;
+    m.ram[0x0001] = 0x07;
+
+    // Plain G with NO passed context: this is what the monitor sends when the
+    // user presses G after stepping (it relies on the session's parked context).
+    DebugContext empty;
+    debug_context_reset(&empty);
+    r = m.go(empty, 0, ctx.pc);
+    if (expect(r == DebugSession::DBG_OK,
+               "No-breakpoint continue without a passed context must succeed")) return 1;
+    if (expect(m.ram[FAKE_RESUME_TRAMP + 0] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 1] == 0x37 &&
+               m.ram[FAKE_RESUME_TRAMP + 2] == 0x85 &&
+               m.ram[FAKE_RESUME_TRAMP + 3] == 0x00 &&
+               m.ram[FAKE_RESUME_TRAMP + 4] == 0xA9 &&
+               m.ram[FAKE_RESUME_TRAMP + 5] == 0x35 &&
+               m.ram[FAKE_RESUME_TRAMP + 6] == 0x85 &&
+               m.ram[FAKE_RESUME_TRAMP + 7] == 0x01,
+               "No-context continue after a step must resume via the banking-"
+               "preserving stub (parked last_context), not the KERNAL-NMI fallback")) return 1;
+    return 0;
+}
+
 static int test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump()
 {
     FakeVisibleRomMachine m(false);
@@ -4793,8 +5046,12 @@ static int test_visible_kernal_step_into_uses_rom_patch_support()
                "Visible KERNAL Step Into patch byte must be restored")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
                "Visible KERNAL Step Into must not patch RAM under ROM")) return 1;
-    if (expect(m.rom_patch_writes == 2,
-               "Visible KERNAL Step Into must patch and restore the ROM image")) return 1;
+    // patch + launch recommit + restore (see recommit_visible_rom_patches: the
+    // recommit guards against the live 6510 fetching a stale pre-patch ROM byte).
+    if (expect(m.rom_patch_writes == 3,
+               "Visible KERNAL Step Into must patch, recommit at launch, and restore the ROM image")) return 1;
+    if (expect(m.brk_patch_writes == 2,
+               "Visible KERNAL Step Into must re-commit the ROM BRK as the final pre-launch write")) return 1;
     return 0;
 }
 
@@ -4820,8 +5077,8 @@ static int test_visible_kernal_step_over_jsr_patches_fallthrough_rom()
                "Visible KERNAL Step Over JSR must restore fall-through ROM byte")) return 1;
     if (expect(m.ram[0xE003] == 0x7B,
                "Visible KERNAL Step Over JSR must not patch RAM under ROM")) return 1;
-    if (expect(m.rom_patch_writes == 2,
-               "Visible KERNAL Step Over JSR must patch and restore ROM exactly once")) return 1;
+    if (expect(m.rom_patch_writes == 3,
+               "Visible KERNAL Step Over JSR must patch, recommit at launch, and restore ROM")) return 1;
     return 0;
 }
 
@@ -4894,8 +5151,8 @@ static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
                "Visible ROM breakpoint Go must restore the ROM byte")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
                "Visible ROM breakpoint Go must not use RAM under ROM as proof")) return 1;
-    if (expect(m.rom_patch_writes == 2,
-               "Visible ROM breakpoint Go must patch and restore the ROM image")) return 1;
+    if (expect(m.rom_patch_writes == 3,
+               "Visible ROM breakpoint Go must patch, recommit at launch, and restore the ROM image")) return 1;
     return 0;
 }
 
@@ -4929,8 +5186,8 @@ static int test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores()
     DebugSession::Result r = m.go(from, &bps, 0xC000);
     if (expect(r == DebugSession::DBG_OK,
                "Mixed KERNAL/RAM breakpoints must run and trap")) return 1;
-    if (expect(m.last_rom_patch_addr == 0xE000 && m.rom_patch_writes == 2,
-               "KERNAL breakpoint must patch and restore the ROM image")) return 1;
+    if (expect(m.last_rom_patch_addr == 0xE000 && m.rom_patch_writes == 3,
+               "KERNAL breakpoint must patch, recommit at launch, and restore the ROM image")) return 1;
     if (expect(m.last_ram_patch_addr == 0xE000 && m.ram_patch_writes == 1,
                "RAM-under-KERNAL breakpoint must patch hidden RAM")) return 1;
     if (expect(m.kernal_rom[0] == 0x4C && m.ram[0xE000] == 0xEA,
@@ -5663,7 +5920,57 @@ static int test_freeze_cleanup_preserves_resume_bytes_across_unfreeze_restore()
     return 0;
 }
 
-static int test_freeze_go_without_breakpoint_schedules_context_handoff()
+static int test_freeze_go_without_breakpoint_defers_handoff_until_after_exit()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xC123;
+    backend.canned_snapshot.sp = 0xF1;
+    backend.canned_snapshot.a = 0x11;
+    backend.canned_snapshot.x = 0x22;
+    backend.canned_snapshot.y = 0x33;
+    backend.canned_snapshot.sr = 0x44;
+    backend.parked_context_handoff_supported = true;
+    backend.write(0xC123, 0xEA);
+
+    const int keys[] = { 'A', 'D', 'G' };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_debug_run_window_refreeze_enabled(true);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 1,
+               "Freeze-mode G without breakpoints must unwind out of the monitor")) return 1;
+    if (expect(backend.last_session && backend.last_session->go_calls == 0,
+               "Freeze no-breakpoint G must defer execution instead of calling session->go immediately")) return 1;
+
+    if (expect(monitor.has_deferred_debug_go(),
+               "Freeze no-breakpoint G must mark a deferred debug handoff after exit")) return 1;
+    if (expect(!monitor.consume_pending_go(NULL, NULL, NULL),
+               "Freeze no-breakpoint G must not use the generic pending-Go handoff channel")) return 1;
+    if (expect(monitor.consume_release_host_after_exit(),
+               "Freeze no-breakpoint G must request host release after exit")) return 1;
+    if (expect(!monitor.consume_reopen_after_reset(),
+               "Freeze no-breakpoint G exit must not look like reset re-entry")) return 1;
+    monitor.dispatch_deferred_debug_go();
+    if (expect(!monitor.has_deferred_debug_go(),
+               "Dispatching the deferred Freeze no-breakpoint G must clear the deferred-debug flag")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_direct_overlay_go_without_breakpoint_releases_context_and_exits()
 {
     TestUserInterface ui;
     CaptureScreen screen;
@@ -5688,26 +5995,62 @@ static int test_freeze_go_without_breakpoint_schedules_context_handoff()
     ui.keyboard = &keyboard;
 
     BackendMachineMonitor monitor(&ui, &backend);
-    monitor.set_debug_run_window_refreeze_enabled(true);
+    monitor.set_reset_exits_monitor(true);
     monitor.init(&screen, &keyboard);
     if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
     if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
     if (expect(monitor.poll(0) == 1,
-               "Freeze-mode G without breakpoints must unwind out of the monitor")) return 1;
-    if (expect(backend.last_session && backend.last_session->go_calls == 0,
-               "Freeze no-breakpoint G must not enter the BRK go path")) return 1;
+               "Direct Overlay G without breakpoints must unwind out of the monitor")) return 1;
+    if (expect(backend.last_session && backend.last_session->go_calls == 1,
+               "Direct Overlay no-breakpoint G must release through the debug session")) return 1;
 
     DebugContext go_ctx;
     bool has_ctx = false;
     uint16_t go_addr = 0;
-    if (expect(monitor.consume_pending_go(&go_addr, &go_ctx, &has_ctx),
-               "Freeze no-breakpoint G must schedule a pending handoff")) return 1;
-    if (expect(has_ctx, "Freeze no-breakpoint G must preserve the captured CPU context")) return 1;
-    if (expect(go_addr == 0xC123, "Pending handoff must target the captured PC")) return 1;
-    if (expect(go_ctx.pc == 0xC123 && go_ctx.sp == 0xF1 &&
-               go_ctx.a == 0x11 && go_ctx.x == 0x22 &&
-               go_ctx.y == 0x33 && go_ctx.sr == 0x44,
-               "Pending handoff must keep the full captured register state")) return 1;
+    if (expect(!monitor.consume_pending_go(&go_addr, &go_ctx, &has_ctx),
+               "Direct Overlay no-breakpoint G must not schedule a second handoff")) return 1;
+    if (expect(monitor.consume_release_host_after_exit(),
+               "Direct Overlay no-breakpoint G must request host release after exit")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_direct_go_exits_monitor_and_requests_host_release()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.canned_snapshot_set = true;
+    debug_context_reset(&backend.canned_snapshot);
+    backend.canned_snapshot.valid = true;
+    backend.canned_snapshot.pc = 0xE006;
+    backend.canned_snapshot.sp = 0xF1;
+    backend.canned_snapshot.sr = 0x44;
+    backend.canned_snapshot.live_cpu_port_valid = true;
+    backend.canned_snapshot.live_cpu_port = 0x05;
+    backend.write(0xE006, 0x4C);
+    backend.write(0xE007, 0x00);
+    backend.write(0xE008, 0xE0);
+
+    const int keys[] = { 'A', 'D', 'G' };
+    FakeKeyboard keyboard(keys, 3);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.set_reset_exits_monitor(true);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "ASM view ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Enter Debug ok")) return 1;
+    if (expect(monitor.poll(0) == 1,
+               "Direct G must unwind out of the monitor")) return 1;
+    if (expect(!monitor.consume_pending_go(NULL, NULL, NULL),
+               "Direct G must not schedule a second handoff")) return 1;
+    if (expect(monitor.consume_release_host_after_exit(),
+               "Direct G must request host release after exit")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -5768,6 +6111,62 @@ static int test_wait_for_sentinel_drops_execution_keys()
                "Trace wait must drop repeated execution keys instead of replaying them")) return 1;
     if (expect(monitor.poll(0) == 1, "Final RUN/STOP should exit")) return 1;
     monitor.deinit();
+    return 0;
+}
+
+static int test_wait_for_sentinel_aborts_immediately_on_reset_cancel()
+{
+    FakeFreezeMachine m(false);
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    DebugContext ctx;
+
+    fake_seed_nop_run(m, 0x2000);
+    m.sentinel_armed = false;
+    m.reset_cancel_on_delay = true;
+    debug_predict(0x2000, bytes, false, &pred);
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_RESET,
+               "Sentinel wait must return DBG_RESET when reset cancellation is requested")) return 1;
+    if (expect(m.delay_calls == 1,
+               "Reset cancellation must stop the wait immediately instead of running to timeout")) return 1;
+    if (expect(m.reset_calls == 0,
+               "External reset cancellation must not issue a second machine reset")) return 1;
+    return 0;
+}
+
+static int test_request_reset_cancel_clears_state_and_makes_handler_pokes_during_delay()
+{
+    FakeFreezeMachine m(false);
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    DebugContext ctx;
+
+    // Arrange: a trace installs the BRK handler. The sentinel never fires,
+    // and the external-cancel signal is delivered inside delay_ms(), simulating
+    // the REST task calling request_reset_cancel() while the UI task is
+    // suspended in vTaskDelay on real FreeRTOS hardware.
+    fake_seed_nop_run(m, 0x2000);
+    m.sentinel_armed = false;
+    m.reset_cancel_on_delay = true;
+    debug_predict(0x2000, bytes, false, &pred);
+    int pokes_before = m.freeze_restore_pokes;
+    DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_RESET,
+               "Sentinel wait must return DBG_RESET on external cancel")) return 1;
+    // With synchronous teardown in request_reset_cancel(), the handler is
+    // uninstalled (via poke_visible_preserving_freeze_restore) during the
+    // delay_ms() call itself, before the second uninstall attempt from
+    // wait_for_sentinel() (which becomes a no-op). The poke count must be
+    // non-zero, proving teardown occurred.
+    if (expect(m.freeze_restore_pokes > pokes_before,
+               "request_reset_cancel must uninstall the handler (poke_visible calls expected)")) return 1;
+    if (expect(m.pokes_at_cancel == m.freeze_restore_pokes,
+               "All handler pokes must complete inside request_reset_cancel before machine reset fires")) return 1;
+    if (expect(m.reset_calls == 0,
+               "External reset cancellation must not issue a second machine reset")) return 1;
+    if (expect(m.delay_calls == 1,
+               "Wait must stop after the first delay once cancel is signalled")) return 1;
     return 0;
 }
 
@@ -6431,6 +6830,7 @@ int main()
     RUN(test_step_from_memory_view_recenters_asm_on_debug_pc);
     RUN(test_ctrl_x_resets_and_keeps_debug_open);
     RUN(test_ctrl_x_local_reset_exits_monitor);
+    RUN(test_external_reset_during_debug_wait_exits_without_reopen);
     RUN(test_ctrl_x_reset_reentry_anchors_asm_at_source_boundary);
     RUN(test_ctrl_x_reenters_monitor_without_debug_when_not_debugging);
     RUN(test_breakpoints_survive_ctrl_x_reset_reentry);
@@ -6460,6 +6860,8 @@ int main()
     RUN(test_k_runs_to_cursor);
     RUN(test_k_without_context_runs_from_debug_entry_to_cursor);
     RUN(test_ctrl_i_swaps_interface_in_monitor);
+    RUN(test_reset_reentry_view_follows_live_cpu_bank);
+    RUN(test_reopen_without_reset_preserves_manual_cpu_view);
     RUN(test_jump_rejects_non_hex_input_and_uppercases);
     RUN(test_edit_and_debug_compose_in_header);
     RUN(test_freeze_step_over_refreezes_and_preserves_screen);
@@ -6488,6 +6890,7 @@ int main()
     RUN(test_brk_capture_records_live_cpu_port);
     RUN(test_parked_step_resume_restores_captured_cpu_port_registers);
     RUN(test_no_breakpoint_continue_restores_captured_cpu_port_registers);
+    RUN(test_no_breakpoint_continue_after_step_without_passed_context);
     RUN(test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump);
     RUN(test_visible_kernal_step_into_uses_rom_patch_support);
     RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
@@ -6518,9 +6921,13 @@ int main()
     RUN(test_kernal_out_cold_nmi_launch_restores_hard_nmi_vector_on_timeout);
     RUN(test_freeze_cleanup_after_step_allows_later_step);
     RUN(test_freeze_cleanup_preserves_resume_bytes_across_unfreeze_restore);
-    RUN(test_freeze_go_without_breakpoint_schedules_context_handoff);
+    RUN(test_freeze_go_without_breakpoint_defers_handoff_until_after_exit);
+    RUN(test_direct_overlay_go_without_breakpoint_releases_context_and_exits);
+    RUN(test_direct_go_exits_monitor_and_requests_host_release);
     RUN(test_freeze_go_with_breakpoint_still_uses_session_go);
     RUN(test_wait_for_sentinel_drops_execution_keys);
+    RUN(test_wait_for_sentinel_aborts_immediately_on_reset_cancel);
+    RUN(test_request_reset_cancel_clears_state_and_makes_handler_pokes_during_delay);
     RUN(test_debug_ownership_blocks_second_stakeholder_until_remote_expires);
     RUN(test_monitor_refuses_debug_when_owner_is_busy);
     RUN(test_cursor_row_highlights_jsr_target);

@@ -19,6 +19,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+// Defined in c64.cc: flags the FPGA ROM image as patched so C64::reset() heals it
+// before the booting CPU can execute a stale BRK left in KERNAL/BASIC ROM.
+extern "C" void u64_mark_rom_image_dirty(void) __attribute__((weak));
+
 namespace {
 
 class U64DebugSession : public BrkDebugSession
@@ -134,6 +138,7 @@ protected:
         volatile uint8_t *rom = rom_patch_ptr(address, cpu_port);
         if (rom) {
             *rom = byte;
+            if (u64_mark_rom_image_dirty) u64_mark_rom_image_dirty();
             remember_rom_patch_shadow(address, byte, cpu_port);
             wait_for_cpu_visible_rom_byte(address, cpu_port, byte);
             return;
@@ -187,6 +192,32 @@ protected:
         C64_MODE = C64_MODE_NMI;
         machine->end_stopped_session(stopped_it);
         C64_MODE = MODE_NORMAL;
+    }
+    virtual void settle_visible_rom_for_live_fetch(void)
+    {
+        // Overlay/Telnet only. The single-step BRK has just been (re)written into
+        // the FPGA ROM image while the machine is DMA-stopped. Writing the image
+        // and reading it back through the stopped-serve aperture does NOT
+        // guarantee the running 6510's instruction-fetch path sees the new byte:
+        // intermittently the CPU fetches the stale pre-patch ROM byte at the step
+        // target right after launch and runs away. Briefly resuming the CPU here
+        // lets it clock a few hundred PHI2 cycles, which commits the ROM-image
+        // write through to the live-fetch path; we then re-stop for the launch.
+        // The machine is fully armed (handler + hard/soft BRK vectors installed),
+        // so a stray BRK during this window is caught and its sentinel is cleared
+        // by the caller before the controlled launch. Frozen (UI Freeze) launches
+        // restart the CPU cleanly on unfreeze and never reach this path.
+        if (!machine || machine->is_accessible()) {
+            return;
+        }
+        // resume() / stop() are private; the public stopped-session wrappers do
+        // exactly resume()-then-stop(false). end_stopped_session(true) resumes;
+        // begin_stopped_session() re-stops and leaves the machine stopped for the
+        // launch (its return is discarded - the caller's own stopped_it still
+        // governs the final release).
+        machine->end_stopped_session(true);
+        wait_10us(50); // ~500us of live execution to flush the ROM-image write
+        machine->begin_stopped_session();
     }
     virtual void request_staged_nmi(void)
     {
@@ -250,6 +281,7 @@ protected:
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
             *rom = byte;
+            if (u64_mark_rom_image_dirty) u64_mark_rom_image_dirty();
             remember_rom_patch_shadow(addr, byte, cpu_port);
             wait_for_cpu_visible_rom_byte(addr, cpu_port, byte);
             return;

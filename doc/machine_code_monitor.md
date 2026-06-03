@@ -36,12 +36,9 @@ The machine code monitor can be opened in three ways:
 
 ### Switching between UI Freeze and UI Overlay Modes
 
-To change the local UI access mode:
+Press `C=+I` to toggle between UI Freeze and UI Overlay mode.
 
-1. Exit the monitor but stay in the device menu.
-2. Press `C=+I`.
-3. Reopen the device menu.
-4. Reopen the monitor.
+Toggling automatically closes the menu. The next time you open the menu, it uses the newly selected mode.
 
 ## Screen Layout
 
@@ -392,6 +389,11 @@ Example:
 ```text
 C7O5 $A:RAM $D:I/O $E:RAM VIC0 $0000
 ```
+
+After a machine reset, the next fresh monitor open syncs its view bank to the live CPU execution bank, so
+re-entry shows the memory the CPU is actually running.
+
+An ordinary monitor close/reopen with no reset in between still preserves a manually selected `O` view bank.
 
 In the normal no-cartridge configuration, the `$A`, `$D`, and `$E` fields describe how the selected monitor view maps the main ROM/RAM regions:
 

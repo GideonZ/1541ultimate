@@ -176,6 +176,7 @@ BrkDebugSession :: BrkDebugSession()
     : cancel_keyboard(0), handler_installed(false), cpu_parked_in_spin(false),
       run_window_depth(0), run_window_refreeze_enabled(true),
       run_window_unfroze(false), screen_was_clobbered(false),
+      reset_cancel_requested(false),
       nmi_trampoline_installed(false), hard_nmi_vector_installed(false),
       hard_vector_installed(false),
       hard_rom_vector_installed(false), has_last_context(false),
@@ -229,6 +230,28 @@ void BrkDebugSession :: set_cancel_keyboard(Keyboard *keyboard)
 void BrkDebugSession :: set_run_window_refreeze_enabled(bool enabled)
 {
     run_window_refreeze_enabled = enabled;
+}
+
+void BrkDebugSession :: request_reset_cancel(void)
+{
+    // If we are inside an active run-window the CPU is running freely and
+    // wait_for_sentinel() is blocking. On FreeRTOS single-core the calling
+    // task owns the CPU while the UI task is in vTaskDelay, so it is safe to
+    // tear down patches and handler here before the machine reset pulse fires.
+    // Do NOT call these when the CPU is parked in the spin loop
+    // (run_window_depth == 0): uninstall_handler() would overwrite the spin
+    // loop code the CPU is executing, corrupting the parked debug state. Any BRK
+    // left in the FPGA ROM image while parked is healed by C64::reset() (it
+    // restores the pristine ROM image whenever the monitor flagged it dirty), so
+    // a leaked ROM-image trap can no longer wedge the next boot.
+    if (run_window_depth > 0) {
+        restore_patches();
+        uninstall_handler();
+        cpu_parked_in_spin = false;
+        has_last_context = false;
+        debug_context_reset(&last_context);
+    }
+    reset_cancel_requested = true;
 }
 
 bool BrkDebugSession :: claim_debug_ownership(bool remote)
@@ -668,6 +691,29 @@ void BrkDebugSession :: restore_patches(void)
     end_stopped_session(stopped_it);
 }
 
+bool BrkDebugSession :: recommit_visible_rom_patches(void)
+{
+    // Re-write each installed visible-ROM BRK ($00) as the final memory write
+    // before the CPU is released to run. On U64 the FPGA ROM-image write made by
+    // install_brk_at is occasionally not yet observed by the LIVE 6510 fetch when
+    // the CPU executes the freshly-patched ROM byte immediately after the launch
+    // (overlay/Telnet, where the machine is DMA-stopped/resumed several times and
+    // the CPU runs between patch and launch). Committing the byte again here -
+    // inside the single stopped session that releases the CPU, with the backend's
+    // CPU-visible read-back barrier - closes that window. RAM patches are
+    // unaffected (RAM writes are always coherent), so only visible-ROM patches are
+    // re-committed to keep this cheap.
+    bool any = false;
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used &&
+                monitor_backing_store_is_visible_rom(patches[i].target)) {
+            write_patch_byte(patches[i].address, 0x00, patches[i].cpu_port);
+            any = true;
+        }
+    }
+    return any;
+}
+
 void BrkDebugSession :: fill_vectors(DebugContext *ctx, uint8_t cpu_port)
 {
     uint8_t lo, hi;
@@ -749,6 +795,14 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
     int waited = 0;
     while (waited < timeout_ms) {
         refresh_debug_ownership();
+        if (reset_cancel_requested) {
+            restore_patches();
+            uninstall_handler();
+            cpu_parked_in_spin = false;
+            has_last_context = false;
+            debug_context_reset(&last_context);
+            return DBG_RESET;
+        }
         if (peek_visible(SENTINEL_ADDR) != 0x00) {
             drop_queued_execution_keys();
             return DBG_OK;
@@ -765,6 +819,7 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
                 cpu_parked_in_spin = false;
                 has_last_context = false;
                 debug_context_reset(&last_context);
+                reset_cancel_requested = true;
                 reset_machine();
                 return DBG_RESET;
             }
@@ -862,6 +917,12 @@ void BrkDebugSession :: release_to_run(const DebugContext *from)
         poke_visible(STORE_PCHI, (uint8_t)(from->pc >> 8));
         poke_visible(SPIN_OPERAND_LO, (uint8_t)(TRAMPOLINE_ADDR & 0xFF));
         poke_visible(SPIN_OPERAND_HI, (uint8_t)(TRAMPOLINE_ADDR >> 8));
+    }
+    // Final ROM-image BRK commit before the parked CPU is released back into the
+    // restore stub (repeated ROM single-stepping installs a fresh BRK at the next
+    // target each step). See recommit_visible_rom_patches() for the rationale.
+    if (recommit_visible_rom_patches()) {
+        settle_visible_rom_for_live_fetch();
     }
     poke_visible(SENTINEL_ADDR, 0x00);
     poke_visible(STORE_TRAP_MODE, 0x00);
@@ -1007,6 +1068,13 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
     poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
     save_and_install_hard_nmi_vector(cpu_port);
+    // Final ROM-image BRK commit before the CPU is released (see method note):
+    // guarantees the live 6510 fetches the freshly-patched ROM byte at the step
+    // target rather than a stale pre-patch byte, eliminating the intermittent
+    // ROM-step runaway in the overlay/Telnet launch path.
+    if (recommit_visible_rom_patches()) {
+        settle_visible_rom_for_live_fetch();
+    }
     // Clear the sentinel as the last act before releasing the CPU, while it is
     // still stopped and therefore cannot set it. In freeze mode the run window
     // unfreezes the whole machine, so between that unfreeze and this stopped
@@ -1039,6 +1107,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     DebugContext *out,
                                                     uint8_t cpu_port)
 {
+    reset_cancel_requested = false;
     refresh_debug_ownership();
     save_and_install_handler();
     if (cpu_parked_in_spin && from && from->valid) {
@@ -1311,6 +1380,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
                                            uint16_t start_pc)
 {
     if (!backend_ready()) return DBG_REFUSED;
+    reset_cancel_requested = false;
     uint8_t cpu_port = execution_cpu_port(&from);
     bool skip_current_bp = false;
     bool has_other_bp = false;
@@ -1370,19 +1440,36 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         if (patches[i].used) { any_bp = true; break; }
     }
     if (!any_bp) {
+        // No breakpoints remain: hand the interrupted program back to free-
+        // running execution from its captured context. resume_from_parked
+        // _context() rebuilds a register-restore stub that the parked spin
+        // loop falls into and RTIs through, preserving the program's $0001
+        // banking, and restores the soft BRK vector, the direct hard BRK
+        // vector (the KERNAL-out path), and the NMI trampoline in the same
+        // stopped session. This must be used instead of the NMI jump_to()
+        // fallback below: that fallback vectors through the KERNAL NMI
+        // handler, which is absent when the program runs with KERNAL banked
+        // out ($01 != $07), so it would hang/not execute under-ROM code.
+        //
+        // A plain G issued after single-stepping passes no freshly captured
+        // context (resume_from->valid == false), but we ARE parked in the spin
+        // loop with a valid last_context. Mirror the breakpoint path below
+        // (which already handles cpu_parked_in_spin && has_last_context) so the
+        // banking-preserving stub is used in that case too, instead of the
+        // KERNAL-dependent jump_to() fallback that silently fails to execute a
+        // RAM-under-ROM program.
+        const DebugContext *parked_ctx = NULL;
+        DebugContext start_context;
         if (cpu_parked_in_spin && resume_from->valid) {
-            // No breakpoints remain: hand the interrupted program back to free-
-            // running execution from its captured context. resume_from_parked
-            // _context() rebuilds a register-restore stub that the parked spin
-            // loop falls into and RTIs through, preserving the program's $0001
-            // banking, and restores the soft BRK vector, the direct hard BRK
-            // vector (the KERNAL-out path), and the NMI trampoline in the same
-            // stopped session. This must be used instead of the NMI jump_to()
-            // fallback below: that fallback vectors through the KERNAL NMI
-            // handler, which is absent when the program runs with KERNAL banked
-            // out ($01 != $07), so it would hang the machine.
+            parked_ctx = resume_from;
+        } else if (cpu_parked_in_spin && has_last_context) {
+            start_context = last_context;
+            start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
+            parked_ctx = &start_context;
+        }
+        if (parked_ctx) {
             restore_patches();
-            resume_from_parked_context(*resume_from);
+            resume_from_parked_context(*parked_ctx);
             cpu_parked_in_spin = false;
             has_last_context = false;
             debug_context_reset(&last_context);
@@ -1550,6 +1637,11 @@ void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
     }
     cpu_parked_in_spin = false;
     release_debug_ownership();
+}
+
+bool BrkDebugSession :: has_parked_context_handoff(void) const
+{
+    return cpu_parked_in_spin && has_last_context;
 }
 
 bool BrkDebugSession :: read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
