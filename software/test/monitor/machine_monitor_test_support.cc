@@ -528,7 +528,7 @@ int UserInterface :: string_box(const char *, char *, int, bool, bool)
     return 0;
 }
 
-int UserInterface :: string_edit(char *, int, Window *, int, int)
+int UserInterface :: string_edit(char *, int, Window *, int, int, int)
 {
     return 0;
 }

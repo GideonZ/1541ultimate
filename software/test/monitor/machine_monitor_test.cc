@@ -3099,6 +3099,30 @@ static int test_asm_edit_branch_two_parts(void)
     return 0;
 }
 
+static int test_asm_edit_bit_operand_not_branch(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0xC000, 0x24);
+    backend.write(0xC001, 0x44);
+    const int keys[] = {
+        'J', 'A', 'E', KEY_RIGHT, '6', '6', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0x24 && backend.read(0xC001) == 0x66,
+               "ASM BIT zeropage edit must treat operand as a byte, not a branch target")) return 1;
+    return 0;
+}
+
 static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
 {
     TestUserInterface ui;
@@ -6014,6 +6038,7 @@ int main()
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_asm_edit_bit_operand_not_branch()) return 1;
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
     if (test_space_shortcuts_match_existing_paging()) return 1;

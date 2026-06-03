@@ -3229,13 +3229,13 @@ bool MachineMonitor :: asm_is_branch(uint16_t address)
 {
     uint8_t op = canonical_read(address);
     const char *templ = disassembler_6502_template(op);
+    const char *spec;
     if (!templ) return false;
-    // Mirror the disassembler's own rule (disassembler_6502.cc): any B*
-    // mnemonic other than BRK is a relative branch. Some templates spell
-    // out "rel" explicitly while others (BCC/BCS/BNE/BEQ) do not, so we
-    // test the leading mnemonic rather than relying on "rel" being present.
-    if (templ[0] == 'B' && templ[1] != 'R') return true;
-    return strstr(templ, "rel") != NULL;
+    spec = templ + 4;
+    while (*spec == ' ') {
+        spec++;
+    }
+    return strncmp(spec, "rel", 3) == 0;
 }
 
 // Number of editable parts presented in the ASM edit cursor for the
