@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "assembler_6502.h"
 #include "disassembler_6502.h"
 #include "monitor_init.h"
 #include "machine_monitor_test_support.h"
@@ -308,20 +309,202 @@ static int test_disassembler(void)
                    "Relative branch target disassembly failed.")) return 1;
     }
 
-    const uint8_t xaa_imm[] = { 0x8B, 0x44, 0x00 };
-    disassemble_6502(0x3000, xaa_imm, true, &decoded);
-    if (expect(decoded.length == 2 && strcmp(decoded.text, "XAA #$44") == 0,
-               "XAA immediate disassembly failed.")) return 1;
+    const uint8_t ane_imm[] = { 0x8B, 0x44, 0x00 };
+    disassemble_6502(0x3000, ane_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "ANE #$44") == 0,
+               "ANE immediate disassembly failed.")) return 1;
 
-    const uint8_t axs_imm[] = { 0xCB, 0x44, 0x00 };
-    disassemble_6502(0x3000, axs_imm, true, &decoded);
-    if (expect(decoded.length == 2 && strcmp(decoded.text, "AXS #$44") == 0,
-               "AXS immediate disassembly failed.")) return 1;
+    const uint8_t sbx_imm[] = { 0xCB, 0x44, 0x00 };
+    disassemble_6502(0x3000, sbx_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "SBX #$44") == 0,
+               "SBX immediate disassembly failed.")) return 1;
 
     const uint8_t nop_f4_zpx[] = { 0xF4, 0x44, 0x00 };
     disassemble_6502(0x3000, nop_f4_zpx, true, &decoded);
     if (expect(decoded.length == 2 && strcmp(decoded.text, "NOP $44,X") == 0,
                "F4 zeropage,X disassembly failed.")) return 1;
+
+    return 0;
+}
+
+static uint8_t test_template_operand_length(const char *templ)
+{
+    const char *spec = operand_spec(templ);
+
+    if (*spec == 0 || !strncmp(spec, "A", 1)) return 0;
+    if (!strncmp(spec, "rel", 3)) return 1;
+    if (!strncmp(spec, "($nnnn,X)", 9) || !strncmp(spec, "($nnnn)", 7) ||
+        !strncmp(spec, "(ABS,X)", 7) || !strncmp(spec, "$nnnn,Y", 7) ||
+        !strncmp(spec, "$nnnn,X", 7) || !strncmp(spec, "$nnnn", 5)) {
+        return 2;
+    }
+    if (!strncmp(spec, "($nn,X)", 7) || !strncmp(spec, "($nn),Y", 7) ||
+        !strncmp(spec, "$nn,Y", 5) || !strncmp(spec, "$nn,X", 5) ||
+        !strncmp(spec, "$nn,S", 5) || !strncmp(spec, "$nn", 3) ||
+        !strncmp(spec, "#", 1)) {
+        return 1;
+    }
+    return 0;
+}
+
+static bool is_ambiguous_roundtrip_opcode(uint8_t opcode)
+{
+    switch (opcode) {
+        case 0x02: return false;
+        case 0x12: case 0x22: case 0x32: case 0x42: case 0x52:
+        case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2:
+        case 0xF2:
+        case 0x04: case 0x0C: case 0x14: case 0x1A: case 0x1C:
+        case 0x34: case 0x3A: case 0x3C: case 0x44: case 0x54:
+        case 0x5A: case 0x5C: case 0x64: case 0x74: case 0x7A:
+        case 0x7C: case 0x80: case 0x82: case 0x89: case 0xC2:
+        case 0xD4: case 0xDA: case 0xDC: case 0xE2: case 0xF4:
+        case 0xFA: case 0xFC:
+        case 0x2B:
+        case 0xEB:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static int expect_disassembly(uint8_t opcode, uint8_t b1, uint8_t b2,
+                              const char *expected, uint8_t expected_length)
+{
+    Disassembled6502 decoded;
+    const uint8_t bytes[] = { opcode, b1, b2 };
+
+    disassemble_6502(0xC000, bytes, true, &decoded);
+    if (expect(decoded.valid, "Opcode must disassemble with illegal opcodes enabled.")) return 1;
+    if (expect(decoded.length == expected_length, "Disassembly length mismatch.")) return 1;
+    if (expect(decoded.operand_bytes == expected_length - 1, "Disassembly operand length mismatch.")) return 1;
+    if (expect(strcmp(decoded.text, expected) == 0, "Disassembly text mismatch.")) return 1;
+    return 0;
+}
+
+static int expect_assembly(const char *line, const uint8_t *bytes, uint8_t length, bool illegal)
+{
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+
+    if (expect(monitor_assemble_line(line, illegal, 0xC000, &insn, &err), "Assembly input must encode.")) return 1;
+    if (expect(insn.length == length, "Assembly length mismatch.")) return 1;
+    for (uint8_t i = 0; i < length; i++) {
+        if (expect(insn.bytes[i] == bytes[i], "Assembly byte mismatch.")) return 1;
+    }
+    return 0;
+}
+
+static int test_illegal_opcode_normalization(void)
+{
+    static const struct {
+        uint8_t opcode;
+        uint8_t b1;
+        uint8_t b2;
+        uint8_t length;
+        const char *text;
+    } disasm_cases[] = {
+        { 0x02, 0x12, 0x34, 1, "JAM" }, { 0x12, 0x12, 0x34, 1, "JAM" },
+        { 0x22, 0x12, 0x34, 1, "JAM" }, { 0x32, 0x12, 0x34, 1, "JAM" },
+        { 0x42, 0x12, 0x34, 1, "JAM" }, { 0x52, 0x12, 0x34, 1, "JAM" },
+        { 0x62, 0x12, 0x34, 1, "JAM" }, { 0x72, 0x12, 0x34, 1, "JAM" },
+        { 0x92, 0x12, 0x34, 1, "JAM" }, { 0xB2, 0x12, 0x34, 1, "JAM" },
+        { 0xD2, 0x12, 0x34, 1, "JAM" }, { 0xF2, 0x12, 0x34, 1, "JAM" },
+
+        { 0x03, 0x12, 0x34, 2, "SLO ($12,X)" }, { 0x07, 0x12, 0x34, 2, "SLO $12" },
+        { 0x0F, 0x34, 0x12, 3, "SLO $1234" }, { 0x13, 0x12, 0x34, 2, "SLO ($12),Y" },
+        { 0x17, 0x12, 0x34, 2, "SLO $12,X" }, { 0x1B, 0x34, 0x12, 3, "SLO $1234,Y" },
+        { 0x1F, 0x34, 0x12, 3, "SLO $1234,X" },
+
+        { 0x43, 0x12, 0x34, 2, "SRE ($12,X)" }, { 0x47, 0x12, 0x34, 2, "SRE $12" },
+        { 0x4F, 0x34, 0x12, 3, "SRE $1234" }, { 0x53, 0x12, 0x34, 2, "SRE ($12),Y" },
+        { 0x57, 0x12, 0x34, 2, "SRE $12,X" }, { 0x5B, 0x34, 0x12, 3, "SRE $1234,Y" },
+        { 0x5F, 0x34, 0x12, 3, "SRE $1234,X" },
+
+        { 0xC3, 0x12, 0x34, 2, "DCP ($12,X)" }, { 0xC7, 0x12, 0x34, 2, "DCP $12" },
+        { 0xCF, 0x34, 0x12, 3, "DCP $1234" }, { 0xD3, 0x12, 0x34, 2, "DCP ($12),Y" },
+        { 0xD7, 0x12, 0x34, 2, "DCP $12,X" }, { 0xDB, 0x34, 0x12, 3, "DCP $1234,Y" },
+        { 0xDF, 0x34, 0x12, 3, "DCP $1234,X" },
+
+        { 0xE3, 0x12, 0x34, 2, "ISC ($12,X)" }, { 0xE7, 0x12, 0x34, 2, "ISC $12" },
+        { 0xEF, 0x34, 0x12, 3, "ISC $1234" }, { 0xF3, 0x12, 0x34, 2, "ISC ($12),Y" },
+        { 0xF7, 0x12, 0x34, 2, "ISC $12,X" }, { 0xFB, 0x34, 0x12, 3, "ISC $1234,Y" },
+        { 0xFF, 0x34, 0x12, 3, "ISC $1234,X" },
+
+        { 0x8B, 0x12, 0x34, 2, "ANE #$12" },
+        { 0x93, 0x12, 0x34, 2, "SHA ($12),Y" },
+        { 0x9F, 0x34, 0x12, 3, "SHA $1234,Y" },
+        { 0xCB, 0x12, 0x34, 2, "SBX #$12" },
+        { 0x54, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x74, 0x12, 0x34, 2, "NOP $12,X" },
+
+        { 0x1A, 0x12, 0x34, 1, "NOP" }, { 0x3A, 0x12, 0x34, 1, "NOP" },
+        { 0x5A, 0x12, 0x34, 1, "NOP" }, { 0x7A, 0x12, 0x34, 1, "NOP" },
+        { 0xDA, 0x12, 0x34, 1, "NOP" }, { 0xFA, 0x12, 0x34, 1, "NOP" },
+        { 0x04, 0x12, 0x34, 2, "NOP $12" }, { 0x44, 0x12, 0x34, 2, "NOP $12" },
+        { 0x64, 0x12, 0x34, 2, "NOP $12" },
+        { 0x14, 0x12, 0x34, 2, "NOP $12,X" }, { 0x34, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0xD4, 0x12, 0x34, 2, "NOP $12,X" }, { 0xF4, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x0C, 0x34, 0x12, 3, "NOP $1234" },
+        { 0x1C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x3C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x5C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x7C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0xDC, 0x34, 0x12, 3, "NOP $1234,X" }, { 0xFC, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x80, 0x12, 0x34, 2, "NOP #$12" }, { 0x82, 0x12, 0x34, 2, "NOP #$12" },
+        { 0x89, 0x12, 0x34, 2, "NOP #$12" }, { 0xC2, 0x12, 0x34, 2, "NOP #$12" },
+        { 0xE2, 0x12, 0x34, 2, "NOP #$12" },
+
+        { 0xA3, 0x12, 0x34, 2, "LAX ($12,X)" }, { 0xB3, 0x12, 0x34, 2, "LAX ($12),Y" },
+        { 0xB7, 0x12, 0x34, 2, "LAX $12,Y" }, { 0xBF, 0x34, 0x12, 3, "LAX $1234,Y" },
+        { 0x83, 0x12, 0x34, 2, "SAX ($12,X)" }, { 0x87, 0x12, 0x34, 2, "SAX $12" },
+        { 0x8F, 0x34, 0x12, 3, "SAX $1234" }, { 0x97, 0x12, 0x34, 2, "SAX $12,Y" },
+        { 0x9B, 0x34, 0x12, 3, "TAS $1234,Y" }, { 0x9C, 0x34, 0x12, 3, "SHY $1234,X" },
+        { 0x9E, 0x34, 0x12, 3, "SHX $1234,Y" }, { 0xBB, 0x34, 0x12, 3, "LAS $1234,Y" },
+        { 0xEB, 0x12, 0x34, 2, "SBC #$12" },
+    };
+
+    for (unsigned i = 0; i < sizeof(disasm_cases) / sizeof(disasm_cases[0]); i++) {
+        if (expect_disassembly(disasm_cases[i].opcode, disasm_cases[i].b1, disasm_cases[i].b2,
+                               disasm_cases[i].text, disasm_cases[i].length)) return 1;
+    }
+
+    if (expect(strncmp(disassembler_6502_template(0x54), "NOP*", 4) == 0,
+               "Opcode $54 must retain the illegal NOP marker in the template.")) return 1;
+    if (expect(strncmp(disassembler_6502_template(0x74), "NOP*", 4) == 0,
+               "Opcode $74 must retain the illegal NOP marker in the template.")) return 1;
+
+    return 0;
+}
+
+static int test_opcode_metadata_consistency(void)
+{
+    for (int op = 0; op < 256; op++) {
+        const char *templ = disassembler_6502_template((uint8_t)op);
+        if (expect(templ != NULL && strlen(templ) >= 3, "Every opcode must have one template.")) return 1;
+
+        uint8_t expected_length = (uint8_t)(1 + test_template_operand_length(templ));
+        if (expect(expected_length >= 1 && expected_length <= 3, "Opcode template length must be 1..3.")) return 1;
+
+        const uint8_t bytes[] = { (uint8_t)op, 0x12, 0x34 };
+        Disassembled6502 decoded;
+        disassemble_6502(0xC000, bytes, true, &decoded);
+        if (expect(decoded.valid, "All opcodes must disassemble with illegal opcodes enabled.")) return 1;
+        if (expect(decoded.length == expected_length, "Template-derived length must match disassembly length.")) return 1;
+        if (expect(decoded.operand_bytes == expected_length - 1, "Template-derived operand length must match disassembly.")) return 1;
+
+        if (is_ambiguous_roundtrip_opcode((uint8_t)op)) {
+            continue;
+        }
+
+        AsmInsn insn;
+        MonitorError err = MONITOR_OK;
+        if (expect(monitor_assemble_line(decoded.text, true, 0xC000, &insn, &err),
+                   "Disassembled instruction must assemble again.")) return 1;
+        if (expect(insn.length == decoded.length, "Round-trip length mismatch.")) return 1;
+        if (expect(insn.bytes[0] == (uint8_t)op, "Round-trip opcode mismatch.")) return 1;
+        for (uint8_t i = 1; i < insn.length; i++) {
+            if (expect(insn.bytes[i] == bytes[i], "Round-trip operand byte mismatch.")) return 1;
+        }
+    }
 
     return 0;
 }
@@ -1985,8 +2168,6 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     return 0;
 }
 
-#include "assembler_6502.h"
-
 static int test_assembler_encoding(void)
 {
     AsmInsn insn;
@@ -2012,6 +2193,86 @@ static int test_assembler_encoding(void)
     // ...accepted when on.
     if (expect(monitor_assemble_line("SLO $12", true, 0xC000, &insn, &err), "SLO $12 must encode when illegal=ON")) return 1;
     if (expect(insn.length == 2 && insn.bytes[0] == 0x07 && insn.bytes[1] == 0x12, "SLO $12 -> 07 12")) return 1;
+
+    static const struct {
+        const char *line;
+        uint8_t length;
+        uint8_t bytes[3];
+    } canonical_cases[] = {
+        { "JAM", 1, { 0x02, 0x00, 0x00 } },
+        { "SLO ($12,X)", 2, { 0x03, 0x12, 0x00 } },
+        { "SLO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "SLO $1234", 3, { 0x0F, 0x34, 0x12 } },
+        { "SLO ($12),Y", 2, { 0x13, 0x12, 0x00 } },
+        { "SLO $12,X", 2, { 0x17, 0x12, 0x00 } },
+        { "SLO $1234,Y", 3, { 0x1B, 0x34, 0x12 } },
+        { "SLO $1234,X", 3, { 0x1F, 0x34, 0x12 } },
+        { "SRE ($12,X)", 2, { 0x43, 0x12, 0x00 } },
+        { "SRE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "SRE $1234", 3, { 0x4F, 0x34, 0x12 } },
+        { "SRE ($12),Y", 2, { 0x53, 0x12, 0x00 } },
+        { "SRE $12,X", 2, { 0x57, 0x12, 0x00 } },
+        { "SRE $1234,Y", 3, { 0x5B, 0x34, 0x12 } },
+        { "SRE $1234,X", 3, { 0x5F, 0x34, 0x12 } },
+        { "DCP ($12,X)", 2, { 0xC3, 0x12, 0x00 } },
+        { "DCP $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "DCP $1234", 3, { 0xCF, 0x34, 0x12 } },
+        { "DCP ($12),Y", 2, { 0xD3, 0x12, 0x00 } },
+        { "DCP $12,X", 2, { 0xD7, 0x12, 0x00 } },
+        { "DCP $1234,Y", 3, { 0xDB, 0x34, 0x12 } },
+        { "DCP $1234,X", 3, { 0xDF, 0x34, 0x12 } },
+        { "ISC ($12,X)", 2, { 0xE3, 0x12, 0x00 } },
+        { "ISC $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISC $1234", 3, { 0xEF, 0x34, 0x12 } },
+        { "ISC ($12),Y", 2, { 0xF3, 0x12, 0x00 } },
+        { "ISC $12,X", 2, { 0xF7, 0x12, 0x00 } },
+        { "ISC $1234,Y", 3, { 0xFB, 0x34, 0x12 } },
+        { "ISC $1234,X", 3, { 0xFF, 0x34, 0x12 } },
+        { "ANE #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "SHA ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "SHA $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "SBX #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "SAX $12", 2, { 0x87, 0x12, 0x00 } },
+        { "SAX $1234", 3, { 0x8F, 0x34, 0x12 } },
+        { "SAX ($12,X)", 2, { 0x83, 0x12, 0x00 } },
+        { "SAX $12,Y", 2, { 0x97, 0x12, 0x00 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(canonical_cases) / sizeof(canonical_cases[0]); i++) {
+        if (expect_assembly(canonical_cases[i].line, canonical_cases[i].bytes,
+                            canonical_cases[i].length, true)) return 1;
+    }
+
+    static const struct {
+        const char *alias;
+        uint8_t length;
+        uint8_t bytes[3];
+    } alias_cases[] = {
+        { "HLT", 1, { 0x02, 0x00, 0x00 } },
+        { "KIL", 1, { 0x02, 0x00, 0x00 } },
+        { "ASO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "LSE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "DCM $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "INS $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISB $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "XAA #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "AHX ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "AHX $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "AXS #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "ASR #$12", 2, { 0x4B, 0x12, 0x00 } },
+        { "LXA #$12", 2, { 0xAB, 0x12, 0x00 } },
+        { "SHS $1234,Y", 3, { 0x9B, 0x34, 0x12 } },
+        { "LAE $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+        { "LDS $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(alias_cases) / sizeof(alias_cases[0]); i++) {
+        if (expect_assembly(alias_cases[i].alias, alias_cases[i].bytes,
+                            alias_cases[i].length, true)) return 1;
+    }
+
+    if (expect(!monitor_assemble_line("SAX #$12", true, 0xC000, &insn, &err),
+               "SAX immediate must not assemble to SBX.")) return 1;
 
     return 0;
 }
@@ -6016,6 +6277,8 @@ static int test_restricted_backend_guards_platform_features(void)
 int main()
 {
     if (test_disassembler()) return 1;
+    if (test_illegal_opcode_normalization()) return 1;
+    if (test_opcode_metadata_consistency()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
     if (test_hunt_prompt_typed_input()) return 1;
