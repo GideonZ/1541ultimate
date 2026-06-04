@@ -59,6 +59,12 @@ static const uint8_t HARD_VECTOR_DEFAULT_LO = 0x48;
 static const uint8_t HARD_VECTOR_DEFAULT_HI = 0xFF;
 static const uint16_t DEBUG_AREA_END  = 0x03FB;
 
+// Max extra attempts to re-issue a patched launch when the live 6510 fetched past
+// an installed BRK and ran away. The race is rare per launch, so keep it bounded.
+static const int MAX_BREAKPOINT_RELAUNCH = 2;
+static const int BREAKPOINT_WAIT_MS = 5000;
+static const int HIGH_MEMORY_BREAKPOINT_WAIT_MS = 900;
+
 static const uint8_t HANDLER_BYTES[] = {
     0xBA,
     0xA0, 0x00,
@@ -153,6 +159,11 @@ static bool patch_requires_visible_rom(MonitorBackingStore target)
     return monitor_backing_store_is_visible_rom(target);
 }
 
+static bool address_is_banked_high_memory(uint16_t addr)
+{
+    return (addr >= 0xA000 && addr <= 0xBFFF) || addr >= 0xE000;
+}
+
 static bool patch_verify_now(uint16_t addr, uint8_t live_cpu_port,
                              MonitorBackingStore target)
 {
@@ -180,6 +191,7 @@ BrkDebugSession :: BrkDebugSession()
       nmi_trampoline_installed(false), hard_nmi_vector_installed(false),
       hard_vector_installed(false),
       hard_rom_vector_installed(false), has_last_context(false),
+      has_resume_context(false),
       return_target_count(0)
 {
     memset(patches, 0, sizeof(patches));
@@ -194,6 +206,7 @@ BrkDebugSession :: BrkDebugSession()
     memset(saved_hard_brk_stub_bytes, 0, sizeof(saved_hard_brk_stub_bytes));
     memset(saved_hard_brk_vector_ptr, 0, sizeof(saved_hard_brk_vector_ptr));
     debug_context_reset(&last_context);
+    debug_context_reset(&resume_context);
 }
 
 BrkDebugSession :: ~BrkDebugSession()
@@ -250,6 +263,8 @@ void BrkDebugSession :: request_reset_cancel(void)
         cpu_parked_in_spin = false;
         has_last_context = false;
         debug_context_reset(&last_context);
+        has_resume_context = false;
+        debug_context_reset(&resume_context);
     }
     reset_cancel_requested = true;
 }
@@ -623,7 +638,8 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
 
 BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
     const MonitorBreakpoints *bps, uint16_t skip_address,
-    MonitorBackingStore skip_target, bool skip_address_valid)
+    MonitorBackingStore skip_target, bool skip_address_valid,
+    bool skip_all_at_address)
 {
     if (!bps) {
         return PATCH_INSTALL_OK;
@@ -633,8 +649,9 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
         if (!bp || !bp->used || !bp->enabled) {
             continue;
         }
-        if (skip_address_valid && bp->address == skip_address &&
-                bp->target == skip_target) {
+        bool skipped = skip_address_valid && bp->address == skip_address &&
+                (skip_all_at_address || bp->target == skip_target);
+        if (skipped) {
             continue;
         }
         PatchInstallResult patched = install_brk_at(bp->address, bp->view_cpu_port,
@@ -649,7 +666,7 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
 bool BrkDebugSession :: context_at_breakpoint(
     const DebugContext &ctx, const MonitorBreakpoints *bps,
     uint16_t skip_address, MonitorBackingStore skip_target,
-    bool skip_address_valid) const
+    bool skip_address_valid, bool skip_all_at_address) const
 {
     if (!ctx.valid || !bps) {
         return false;
@@ -660,7 +677,7 @@ bool BrkDebugSession :: context_at_breakpoint(
             continue;
         }
         if (skip_address_valid && bp->address == skip_address &&
-                bp->target == skip_target) {
+                (skip_all_at_address || bp->target == skip_target)) {
             continue;
         }
         if (bp->address == ctx.pc &&
@@ -681,12 +698,19 @@ void BrkDebugSession :: restore_patches(void)
     if (!any) return;
 
     bool stopped_it = begin_stopped_session();
+    bool restored_visible_rom = false;
     for (int i = 0; i < MAX_PATCHES; i++) {
         if (patches[i].used) {
+            if (monitor_backing_store_is_visible_rom(patches[i].target)) {
+                restored_visible_rom = true;
+            }
             write_patch_byte(patches[i].address, patches[i].original,
                              patches[i].cpu_port);
             patches[i].used = false;
         }
+    }
+    if (restored_visible_rom) {
+        settle_visible_rom_for_live_fetch();
     }
     end_stopped_session(stopped_it);
 }
@@ -712,6 +736,182 @@ bool BrkDebugSession :: recommit_visible_rom_patches(void)
         }
     }
     return any;
+}
+
+bool BrkDebugSession :: patch_installed_at(uint16_t addr,
+                                           MonitorBackingStore target) const
+{
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used && patches[i].address == addr &&
+                patches[i].target == target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BrkDebugSession :: recommit_visible_rom_fetch_byte(uint16_t addr,
+                                                        uint8_t cpu_port)
+{
+    MonitorBackingStore target = monitor_backing_store_for_cpu_port(addr,
+                                                                    cpu_port);
+    if (!monitor_backing_store_is_visible_rom(target) ||
+            patch_installed_at(addr, target)) {
+        return false;
+    }
+    write_patch_byte(addr, read_patch_byte(addr, cpu_port), cpu_port);
+    return true;
+}
+
+bool BrkDebugSession :: has_any_patch(void) const
+{
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BrkDebugSession :: has_banked_ram_patch(void) const
+{
+    // True for banked high-memory patches that do not use the visible-ROM image
+    // path. Visible ROM has its own live-fetch settle; RAM under BASIC/KERNAL
+    // needs the raster-synced clean stop/release.
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used &&
+                address_is_banked_high_memory(patches[i].address) &&
+                !monitor_backing_store_is_visible_rom(patches[i].target)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BrkDebugSession :: has_high_memory_patch(void) const
+{
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used &&
+                address_is_banked_high_memory(patches[i].address)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BrkDebugSession :: begin_clean_stopped_session(void)
+{
+    // Default: same as a normal stopped session. Backends whose plain stop/resume
+    // is not reliable for immediate patched high-memory fetches override this with
+    // a raster-synced stop that mirrors the freeze path.
+    return begin_stopped_session();
+}
+
+bool BrkDebugSession :: captured_at_installed_patch(uint16_t *captured_brk_pc)
+{
+    // The BRK handler stores the trap return address (BRK location + 2) at
+    // STORE_PCLO/HI. A controlled launch is expected to trap at one of our
+    // installed BRK patches; a captured PC that matches no installed patch means
+    // the live 6510 ran past the expected target and tripped some unrelated $00.
+    bool stopped_it = begin_stopped_session();
+    uint8_t lo = peek_visible(STORE_PCLO);
+    uint8_t hi = peek_visible(STORE_PCHI);
+    end_stopped_session(stopped_it);
+    uint16_t brk_pc = (uint16_t)((uint16_t)(lo | (hi << 8)) - 2);
+    if (captured_brk_pc) {
+        *captured_brk_pc = brk_pc;
+    }
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used && patches[i].address == brk_pc) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void BrkDebugSession :: reinstall_handler_bytes(void)
+{
+    // Re-write the BRK handler + restore trampoline scratch and the BRK soft
+    // vector WITHOUT re-saving the program's originals (handler_installed stays
+    // true; saved_* are preserved). Used only on the runaway-relaunch path to
+    // repair any cassette-buffer scratch a runaway may have overwritten before we
+    // re-park the CPU. A no-op-equivalent rewrite when the scratch is intact.
+    bool stopped_it = begin_stopped_session();
+    for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
+        poke_visible((uint16_t)(HANDLER_ADDR + i), HANDLER_BYTES[i]);
+    }
+    for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
+        poke_visible((uint16_t)(TRAMPOLINE_ADDR + i), TRAMPOLINE_BYTES[i]);
+    }
+    poke_visible(BRK_VECTOR_LO, (uint8_t)(HANDLER_ADDR & 0xFF));
+    poke_visible(BRK_VECTOR_HI, (uint8_t)(HANDLER_ADDR >> 8));
+    end_stopped_session(stopped_it);
+}
+
+void BrkDebugSession :: repark_running_cpu(uint8_t cpu_port)
+{
+    // Bring a CPU that is either free-running (launch timed out) or parked at the
+    // wrong PC (stray-$00 runaway capture) back into the controlled spin loop, so
+    // a clean parked relaunch can be retried. The NMI redirect target is the RAM
+    // self-loop (SPIN_JMP), so there is no ROM-fetch coherency race on the redirect
+    // itself. nmi_redirect_to() rewrites the NMI trampoline + vector, so it is
+    // self-repairing if a runaway clobbered them.
+    reinstall_handler_bytes();
+    reset_spin_target();
+    nmi_redirect_to(SPIN_JMP, cpu_port, false, false);
+    delay_ms(1);
+    cpu_parked_in_spin = true;
+}
+
+DebugSession::Result BrkDebugSession :: relaunch_on_breakpoint_runaway(
+    DebugSession::Result waited, const DebugContext *launch_ctx,
+    bool nmi_launch_valid, uint16_t nmi_target, bool nmi_force_cpu_port,
+    uint8_t cpu_port, int wait_ms)
+{
+    // Self-heal a launch that missed an installed BRK patch. A miss either never
+    // traps (timeout) or traps at an unrelated $00 (captured at the wrong PC).
+    // On detection, re-park the CPU and re-issue the launch. Context launches use
+    // the parked restore path so registers are preserved. No-context monitor
+    // starts cannot synthesize registers, so they repeat the NMI redirect.
+    // Normal launches return immediately because captured_at_installed_patch() is
+    // true, so RAM single-step precision is untouched.
+    if ((!launch_ctx && !nmi_launch_valid) || !has_any_patch()) {
+        return waited;
+    }
+    for (int attempt = 0; attempt < MAX_BREAKPOINT_RELAUNCH; attempt++) {
+        bool runaway;
+        bool launch_byte_last = false;
+        if (waited == DBG_TIMEOUT) {
+            runaway = true;
+        } else if (waited == DBG_OK) {
+            uint16_t captured_brk_pc;
+            if (captured_at_installed_patch(&captured_brk_pc)) {
+                return waited;   // legitimate trap at one of our BRKs
+            }
+            if (launch_ctx && launch_ctx->valid &&
+                    captured_brk_pc == launch_ctx->pc) {
+                launch_byte_last = true;
+            }
+            runaway = true;
+        } else {
+            return waited;       // cancelled / reset / refused - never retry
+        }
+        if (!runaway) {
+            return waited;
+        }
+        repark_running_cpu(cpu_port);
+        if (launch_ctx && launch_byte_last) {
+            bool force_cpu_port = patch_requires_visible_rom(
+                monitor_backing_store_for_cpu_port(launch_ctx->pc, cpu_port));
+            nmi_redirect_to(launch_ctx->pc, cpu_port, force_cpu_port, false);
+        } else if (launch_ctx) {
+            release_to_run(launch_ctx, launch_byte_last);
+        } else {
+            nmi_redirect_to(nmi_target, cpu_port, nmi_force_cpu_port, false);
+        }
+        waited = wait_for_sentinel(wait_ms);
+    }
+    return waited;
 }
 
 void BrkDebugSession :: fill_vectors(DebugContext *ctx, uint8_t cpu_port)
@@ -801,6 +1001,8 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
             cpu_parked_in_spin = false;
             has_last_context = false;
             debug_context_reset(&last_context);
+            has_resume_context = false;
+            debug_context_reset(&resume_context);
             return DBG_RESET;
         }
         if (peek_visible(SENTINEL_ADDR) != 0x00) {
@@ -819,6 +1021,8 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
                 cpu_parked_in_spin = false;
                 has_last_context = false;
                 debug_context_reset(&last_context);
+                has_resume_context = false;
+                debug_context_reset(&resume_context);
                 reset_cancel_requested = true;
                 reset_machine();
                 return DBG_RESET;
@@ -904,9 +1108,15 @@ void BrkDebugSession :: restore_cpu_port_registers(const DebugContext &from)
                                            from.cpu_port_latch);
 }
 
-void BrkDebugSession :: release_to_run(const DebugContext *from)
+void BrkDebugSession :: release_to_run(const DebugContext *from,
+                                       bool launch_byte_last)
 {
-    bool stopped_it = begin_stopped_session();
+    // Banked RAM-under-ROM launches use a raster-synced ("clean") stopped session
+    // so the BRK commit + CPU release happen the way the reliable freeze path does
+    // it. Visible-ROM patches use the ROM-image settle below instead; ordinary RAM
+    // single-steps keep the low-latency forced-stop path.
+    bool clean = has_banked_ram_patch();
+    bool stopped_it = clean ? begin_clean_stopped_session() : begin_stopped_session();
     if (from && from->valid) {
         restore_cpu_port_registers(*from);
         poke_visible(STORE_Y, from->y);
@@ -918,10 +1128,25 @@ void BrkDebugSession :: release_to_run(const DebugContext *from)
         poke_visible(SPIN_OPERAND_LO, (uint8_t)(TRAMPOLINE_ADDR & 0xFF));
         poke_visible(SPIN_OPERAND_HI, (uint8_t)(TRAMPOLINE_ADDR >> 8));
     }
-    // Final ROM-image BRK commit before the parked CPU is released back into the
-    // restore stub (repeated ROM single-stepping installs a fresh BRK at the next
-    // target each step). See recommit_visible_rom_patches() for the rationale.
+    // Final ROM-image commits before the parked CPU is released back into the
+    // restore stub. Besides installed BRKs, re-commit the launch opcode itself
+    // when it lives in visible ROM: clearing a visible-ROM breakpoint restores the
+    // byte in the ROM image, but the live fetch path can still see the stale BRK
+    // unless the restored opcode is rewritten immediately before release.
+    bool visible_rom_recommitted = false;
+    if (!launch_byte_last && from && from->valid) {
+        visible_rom_recommitted =
+            recommit_visible_rom_fetch_byte(from->pc, execution_cpu_port(from));
+    }
     if (recommit_visible_rom_patches()) {
+        visible_rom_recommitted = true;
+    }
+    if (launch_byte_last && from && from->valid) {
+        visible_rom_recommitted =
+            recommit_visible_rom_fetch_byte(from->pc, execution_cpu_port(from)) ||
+            visible_rom_recommitted;
+    }
+    if (visible_rom_recommitted) {
         settle_visible_rom_for_live_fetch();
     }
     poke_visible(SENTINEL_ADDR, 0x00);
@@ -1012,11 +1237,27 @@ void BrkDebugSession :: reset_spin_target(void)
 void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
                                         bool force_cpu_port, bool staged)
 {
-    bool stopped_it = begin_stopped_session();
+    bool clean = has_banked_ram_patch();
+    bool stopped_it = clean ? begin_clean_stopped_session() : begin_stopped_session();
     uint8_t old_nmi_lo = peek_visible(NMI_VECTOR_LO);
     uint8_t old_nmi_hi = peek_visible(NMI_VECTOR_HI);
+    uint8_t restore_nmi_lo = old_nmi_lo;
+    uint8_t restore_nmi_hi = old_nmi_hi;
     uint8_t bytes[24];
     int len = 0;
+
+    if (nmi_trampoline_installed) {
+        restore_nmi_lo = saved_nmi_vector[0];
+        restore_nmi_hi = saved_nmi_vector[1];
+    } else {
+        saved_nmi_vector[0] = old_nmi_lo;
+        saved_nmi_vector[1] = old_nmi_hi;
+        for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
+            saved_nmi_trampoline_bytes[i] =
+                peek_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i));
+        }
+        nmi_trampoline_installed = true;
+    }
 
     // Taking the NMI pushes a 3-byte frame (PCH, PCL, SR) onto the stack.
     // We resume with a JMP (not an RTI), so without discarding that frame
@@ -1030,12 +1271,12 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     bytes[len++] = 0x68;
     bytes[len++] = 0x68;
     bytes[len++] = 0xA9;
-    bytes[len++] = old_nmi_lo;
+    bytes[len++] = restore_nmi_lo;
     bytes[len++] = 0x8D;
     bytes[len++] = (uint8_t)(NMI_VECTOR_LO & 0xFF);
     bytes[len++] = (uint8_t)(NMI_VECTOR_LO >> 8);
     bytes[len++] = 0xA9;
-    bytes[len++] = old_nmi_hi;
+    bytes[len++] = restore_nmi_hi;
     bytes[len++] = 0x8D;
     bytes[len++] = (uint8_t)(NMI_VECTOR_HI & 0xFF);
     bytes[len++] = (uint8_t)(NMI_VECTOR_HI >> 8);
@@ -1053,26 +1294,21 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     bytes[len++] = (uint8_t)(target & 0xFF);
     bytes[len++] = (uint8_t)(target >> 8);
 
-    if (!nmi_trampoline_installed) {
-        saved_nmi_vector[0] = old_nmi_lo;
-        saved_nmi_vector[1] = old_nmi_hi;
-        for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
-            saved_nmi_trampoline_bytes[i] =
-                peek_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i));
-        }
-        nmi_trampoline_installed = true;
-    }
     for (int i = 0; i < len; i++) {
         poke_visible((uint16_t)(NMI_TRAMPOLINE_ADDR + i), bytes[i]);
     }
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
     poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
     save_and_install_hard_nmi_vector(cpu_port);
-    // Final ROM-image BRK commit before the CPU is released (see method note):
-    // guarantees the live 6510 fetches the freshly-patched ROM byte at the step
-    // target rather than a stale pre-patch byte, eliminating the intermittent
-    // ROM-step runaway in the overlay/Telnet launch path.
+    // Final ROM-image commits before the CPU is released (see method note):
+    // guarantees the live 6510 fetches the intended ROM byte rather than a stale
+    // pre-patch or pre-restore byte in the overlay/Telnet launch path.
+    bool visible_rom_recommitted =
+        recommit_visible_rom_fetch_byte(target, cpu_port);
     if (recommit_visible_rom_patches()) {
+        visible_rom_recommitted = true;
+    }
+    if (visible_rom_recommitted) {
         settle_visible_rom_for_live_fetch();
     }
     // Clear the sentinel as the last act before releasing the CPU, while it is
@@ -1110,15 +1346,24 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
     reset_cancel_requested = false;
     refresh_debug_ownership();
     save_and_install_handler();
+    // Relaunch metadata for the runaway retry.
+    const DebugContext *launch_ctx = 0;
+    DebugContext start_context;
+    bool nmi_launch_valid = false;
+    uint16_t nmi_launch_target = 0;
+    bool nmi_launch_force_cpu_port = false;
     if (cpu_parked_in_spin && from && from->valid) {
+        launch_ctx = from;
         begin_run_window();
         release_to_run(from);
     } else if (cpu_parked_in_spin && use_start_pc && has_last_context) {
-        DebugContext start_context = last_context;
+        start_context = last_context;
         start_context.pc = start_pc;
+        launch_ctx = &start_context;
         begin_run_window();
         release_to_run(&start_context);
     } else if (from && from->valid) {
+        launch_ctx = from;
         bool staged = run_window_refreeze_enabled && machine_is_frozen();
         nmi_redirect_to(from->pc, cpu_port, false, staged);
         if (staged) {
@@ -1129,11 +1374,30 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
             clear_staged_nmi();
         }
     } else if (use_start_pc) {
+        // Non-parked run-to/breakpoint launch. Provide captured registers when
+        // available; otherwise high-memory monitor starts retry through the same
+        // NMI redirect because there are no registers to synthesize.
+        if (has_any_patch()) {
+            if (has_last_context) {
+                start_context = last_context;
+                start_context.pc = start_pc;
+                launch_ctx = &start_context;
+            } else if (has_resume_context && resume_context.valid) {
+                start_context = resume_context;
+                start_context.pc = start_pc;
+                launch_ctx = &start_context;
+            }
+        }
         bool staged = run_window_refreeze_enabled && machine_is_frozen();
+        bool force_cpu_port = patch_requires_visible_rom(
+            monitor_backing_store_for_cpu_port(start_pc, cpu_port));
+        if (!launch_ctx && has_high_memory_patch()) {
+            nmi_launch_valid = true;
+            nmi_launch_target = start_pc;
+            nmi_launch_force_cpu_port = force_cpu_port;
+        }
         nmi_redirect_to(start_pc, cpu_port,
-                        patch_requires_visible_rom(
-                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)),
-                        staged);
+                        force_cpu_port, staged);
         if (staged) {
             request_staged_nmi();
         }
@@ -1145,7 +1409,12 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         begin_run_window();
         release_to_run(0);
     }
-    Result waited = wait_for_sentinel(5000);
+    int wait_ms = has_high_memory_patch() ?
+        HIGH_MEMORY_BREAKPOINT_WAIT_MS : BREAKPOINT_WAIT_MS;
+    Result waited = wait_for_sentinel(wait_ms);
+    waited = relaunch_on_breakpoint_runaway(
+        waited, launch_ctx, nmi_launch_valid, nmi_launch_target,
+        nmi_launch_force_cpu_port, cpu_port, wait_ms);
     if (waited != DBG_OK) {
         restore_patches();
         uninstall_handler();
@@ -1240,7 +1509,8 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
     MonitorBackingStore skip_target =
         monitor_backing_store_for_cpu_port(skip_breakpoint_address, cpu_port);
     PatchInstallResult bp_patched = install_breakpoints(
-        bps, skip_breakpoint_address, skip_target, skip_breakpoint_address_valid);
+        bps, skip_breakpoint_address, skip_target, skip_breakpoint_address_valid,
+        true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -1349,7 +1619,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     MonitorBackingStore from_target =
         monitor_backing_store_for_cpu_port(from.pc, cpu_port);
     PatchInstallResult bp_patched = install_breakpoints(bps, from.pc,
-                                                        from_target, true);
+                                                        from_target, true, true);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -1366,7 +1636,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
         pop_return_target(target);
     }
     if (result == DBG_OK && ctx->valid &&
-            context_at_breakpoint(*ctx, bps, from.pc, from_target, true)) {
+            context_at_breakpoint(*ctx, bps, from.pc, from_target, true, true)) {
         return DBG_OK;
     }
     if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
@@ -1418,7 +1688,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         }
         MonitorBackingStore from_target =
             monitor_backing_store_for_cpu_port(from.pc, cpu_port);
-        if (context_at_breakpoint(step_ctx, bps, from.pc, from_target, true)) {
+        if (context_at_breakpoint(step_ctx, bps, from.pc, from_target, true, true)) {
             return DBG_OK;
         }
         DebugContext out;
@@ -1428,7 +1698,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     MonitorBackingStore from_target =
         monitor_backing_store_for_cpu_port(from.pc, cpu_port);
     PatchInstallResult bp_patched = install_breakpoints(
-        bps, from.pc, from_target, skip_current_bp);
+        bps, from.pc, from_target, skip_current_bp, skip_current_bp);
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
@@ -1469,6 +1739,8 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         }
         if (parked_ctx) {
             restore_patches();
+            resume_context = *parked_ctx;
+            has_resume_context = parked_ctx->valid;
             resume_from_parked_context(*parked_ctx);
             cpu_parked_in_spin = false;
             has_last_context = false;
@@ -1479,20 +1751,31 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         uninstall_handler();
         has_last_context = false;
         debug_context_reset(&last_context);
+        has_resume_context = false;
+        debug_context_reset(&resume_context);
         free_run_no_breakpoint(go_pc);
         return DBG_OK;
     }
 
     save_and_install_handler();
+    // Relaunch metadata for the runaway retry.
+    const DebugContext *launch_ctx = 0;
+    DebugContext go_start_context;
+    bool nmi_launch_valid = false;
+    uint16_t nmi_launch_target = 0;
+    bool nmi_launch_force_cpu_port = false;
     if (resume_from->valid && cpu_parked_in_spin) {
+        launch_ctx = resume_from;
         begin_run_window();
         release_to_run(resume_from);
     } else if (cpu_parked_in_spin && has_last_context) {
-        DebugContext start_context = last_context;
-        start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
+        go_start_context = last_context;
+        go_start_context.pc = resume_from->valid ? resume_from->pc : start_pc;
+        launch_ctx = &go_start_context;
         begin_run_window();
-        release_to_run(&start_context);
+        release_to_run(&go_start_context);
     } else if (resume_from->valid) {
+        launch_ctx = resume_from;
         bool staged = run_window_refreeze_enabled && machine_is_frozen();
         nmi_redirect_to(resume_from->pc, cpu_port, false, staged);
         if (staged) {
@@ -1503,11 +1786,30 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
             clear_staged_nmi();
         }
     } else if (start_pc != 0) {
+        // Non-parked breakpoint-continue. Provide captured registers when
+        // available; otherwise high-memory monitor starts retry through the same
+        // NMI redirect because there are no registers to synthesize.
+        if (has_any_patch()) {
+            if (has_last_context) {
+                go_start_context = last_context;
+                go_start_context.pc = start_pc;
+                launch_ctx = &go_start_context;
+            } else if (has_resume_context && resume_context.valid) {
+                go_start_context = resume_context;
+                go_start_context.pc = start_pc;
+                launch_ctx = &go_start_context;
+            }
+        }
         bool staged = run_window_refreeze_enabled && machine_is_frozen();
+        bool force_cpu_port = patch_requires_visible_rom(
+            monitor_backing_store_for_cpu_port(start_pc, cpu_port));
+        if (!launch_ctx && has_high_memory_patch()) {
+            nmi_launch_valid = true;
+            nmi_launch_target = start_pc;
+            nmi_launch_force_cpu_port = force_cpu_port;
+        }
         nmi_redirect_to(start_pc, cpu_port,
-                        patch_requires_visible_rom(
-                            monitor_backing_store_for_cpu_port(start_pc, cpu_port)),
-                        staged);
+                        force_cpu_port, staged);
         if (staged) {
             request_staged_nmi();
         }
@@ -1520,7 +1822,12 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         release_to_run(0);
     }
 
-    Result waited = wait_for_sentinel(5000);
+    int wait_ms = has_high_memory_patch() ?
+        HIGH_MEMORY_BREAKPOINT_WAIT_MS : BREAKPOINT_WAIT_MS;
+    Result waited = wait_for_sentinel(wait_ms);
+    waited = relaunch_on_breakpoint_runaway(
+        waited, launch_ctx, nmi_launch_valid, nmi_launch_target,
+        nmi_launch_force_cpu_port, cpu_port, wait_ms);
     if (waited != DBG_OK) {
         restore_patches();
         uninstall_handler();
@@ -1614,8 +1921,12 @@ void BrkDebugSession :: cleanup(void)
         // stopped session. We must NOT run uninstall_handler() first: it would
         // restore the original bytes under the spin loop and, in overlay mode,
         // drop the live CPU straight into them before the resume stub is staged.
+        resume_context = last_context;
+        has_resume_context = last_context.valid;
         resume_from_parked_context(last_context);
     } else {
+        has_resume_context = false;
+        debug_context_reset(&resume_context);
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
@@ -1629,10 +1940,16 @@ void BrkDebugSession :: cleanup_to_context(const DebugContext *ctx)
     bool resume_pending = cpu_parked_in_spin && has_last_context;
     restore_patches();
     if (resume_pending && ctx && ctx->valid) {
+        resume_context = *ctx;
+        has_resume_context = true;
         resume_from_parked_context(*ctx);
     } else if (resume_pending) {
+        resume_context = last_context;
+        has_resume_context = last_context.valid;
         resume_from_parked_context(last_context);
     } else {
+        has_resume_context = false;
+        debug_context_reset(&resume_context);
         uninstall_handler();
     }
     cpu_parked_in_spin = false;
@@ -1660,7 +1977,9 @@ void BrkDebugSession :: forget_context(void)
 {
     // Drop the cached CPU context so the next snapshot() reports "no context".
     // The next execution command then starts from the monitor cursor rather
-    // than the previous session's PC. Patch/handler teardown is cleanup()'s job.
+    // than the previous session's PC. Keep resume_context hidden from snapshot();
+    // it is only a retry seed if a no-context launch with installed patches runs
+    // away. Patch/handler teardown is cleanup()'s job.
     has_last_context = false;
     debug_context_reset(&last_context);
     clear_return_targets();

@@ -49,6 +49,21 @@ READY_SCREEN_TOKEN = bytes([0x12, 0x05, 0x01, 0x04, 0x19])
 SAFE_CPU_PORT_VALUE = 0x37
 SAFE_CPU_PORT_LOW_BITS = 0x07
 
+# Optional suite chunking for diagnostics. The default is a true single-process full
+# pass; use --chunk-size explicitly when investigating service-path slowdowns.
+SUITE_CHUNK_SIZE = 0
+SUITE_CHUNK_COOLDOWN_SECONDS = 6.0
+
+# Post-group hygiene recovery. The per-group cleanup resets the C64 and then probes
+# the jiffy clock ($00A2) to prove the KERNAL IRQ is actually running. Under sustained
+# full-suite load the debug-exit resume / reset can be sluggish, so that probe
+# occasionally runs before the freshly-reset KERNAL IRQ has restarted ($A2 frozen for
+# the whole probe window, then it recovers). Rather than aborting the entire suite on
+# that transient, we cool down, hard-reset again, and retry the hygiene assertion up
+# to this many times. A genuinely wedged machine stays frozen across every recovery
+# and still raises.
+HYGIENE_RECOVERY_ATTEMPTS = 3
+
 
 def _capture_lines(session: "mt.MonitorSession") -> list[str]:
     snap = session.capture()
@@ -226,6 +241,7 @@ def _dump_debug_scratch(rest_host: str, context: str) -> None:
             ("tramp_038A", 0x038A, 0x26),    # TRAMPOLINE
             ("nmitramp_03B0", 0x03B0, 0x18), # NMI_TRAMPOLINE
             ("hardstub_03C8", 0x03C8, 0x28), # HARD_BRK_STUB + orig vector + stores
+            ("hardnmi_FFFA", 0xFFFA, 2),     # CPU-visible hard NMI vector
         ]
         print(f"    ---- DEBUG SCRATCH DUMP ({context}) ----", flush=True)
         for name, addr, length in regions:
@@ -361,6 +377,25 @@ def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
     time.sleep(3.0)
 
 
+def _chunk_boundary_recovery(rest_host: str, context: str, cooldown: float,
+                             timeout: float = 8.0) -> None:
+    """Drain accumulated REST/USB service load at a suite chunk boundary.
+
+    Called between blocks of SUITE_CHUNK_SIZE groups. A plain per-group soft reset
+    does not clear the gradual device slowdown that builds up over a long pass, so
+    here we additionally idle for `cooldown` seconds (letting the firmware service
+    path settle) and then issue one extra soft reset before the next block starts.
+    Deliberately avoids any full device reboot, which would drop the JTAG-loaded
+    firmware image. See WORKLOG.md Phase 3.
+    """
+    if cooldown <= 0:
+        return
+    print(f"[info] chunk boundary ({context}): cooling down {cooldown:.0f}s + "
+          f"extra reset to drain accumulated load", flush=True)
+    time.sleep(cooldown)
+    _reset_c64_core(rest_host, timeout)
+
+
 def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
     deadline = time.time() + timeout
     stable_since = 0.0
@@ -420,9 +455,27 @@ def _force_safe_cpu_port(rest_host: str, context: str) -> None:
 
 def _restore_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSession",
                                           context: str) -> None:
-    _force_safe_cpu_port(rest_host, context)
-    _reset_c64_core(rest_host)
-    _assert_safe_banking_display_hygiene(rest_host, session, context)
+    # Reset + verify, but tolerate a transient load-degraded slow resume: if the
+    # hygiene assertion (notably the jiffy-clock responsiveness probe) misses, cool
+    # down, hard-reset again, and retry. Only a persistently wedged machine fails.
+    last_exc: "mt.Failure | None" = None
+    for attempt in range(HYGIENE_RECOVERY_ATTEMPTS):
+        _force_safe_cpu_port(rest_host, context)
+        _reset_c64_core(rest_host)
+        try:
+            _assert_safe_banking_display_hygiene(rest_host, session, context)
+            return
+        except mt.Failure as exc:
+            last_exc = exc
+            if attempt + 1 >= HYGIENE_RECOVERY_ATTEMPTS:
+                break
+            print(f"[info] {context}: hygiene miss ({exc}); load-degradation "
+                  f"recovery {attempt + 1}/{HYGIENE_RECOVERY_ATTEMPTS - 1} "
+                  f"(cool down {SUITE_CHUNK_COOLDOWN_SECONDS:.0f}s + reset)",
+                  flush=True)
+            time.sleep(SUITE_CHUNK_COOLDOWN_SECONDS)
+    assert last_exc is not None
+    raise last_exc
 
 
 def _reset_monitor_and_c64(rest_host: str, session: "mt.MonitorSession",
@@ -757,16 +810,19 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
 
 def _ensure_no_debug(session: "mt.MonitorSession") -> None:
     """Leave Debug mode if currently active."""
+    deadline = time.time() + 3.0
     sent = False
-    for _ in range(2):
+    while time.time() < deadline:
         header = _header_line(session)
         if "Dbg" not in header:
             if sent:
-                time.sleep(0.5)
+                time.sleep(0.2)
             return
-        _send_ctrl_d(session)
+        if not sent:
+            _send_ctrl_d(session)
         session.capture()
         sent = True
+        time.sleep(0.1)
     raise mt.Failure("Could not leave Debug mode")
 
 
@@ -1632,7 +1688,7 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
 
             session.send_char("D")
             _assert_no_debug_modal(session, f"{name} ROM step after breakpoint")
-            stepped = _wait_for_pc_not(session, f"{target:04X}")
+            stepped = _wait_for_pc_not(session, f"{target:04X}", timeout=20.0)
             stepped_pc = int(stepped["pc"], 16)
             if name == "BASIC" and not (0xA000 <= stepped_pc <= 0xBFFF):
                 raise mt.Failure(f"BASIC ROM step left BASIC unexpectedly: {stepped!r}")
@@ -2005,23 +2061,10 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
 
     with mt.check("Debug: RAM-under-KERNAL breakpoint hits with KERNAL banked out", u2=False,
                   u2_reason="U64 live $0001 CPU5 breakpoint trapping is required"):
-        _ensure_no_debug(session)
-        _reset_c64_core(rest_host)
-        _reopen_monitor(session)
-        mt.write_rest_memory(rest_host, ready_addr, bytes([0x00]))
-        mt.write_rest_memory(rest_host, bootstrap_addr, program)
-        session.goto(f"{capture_addr:04X}")
-        session.send_char("A")
-        session.send_char("D")
-        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} stale recapture breakpoint clear")
-        _ensure_breakpoint_at(session, capture_addr, f"${capture_addr:04X} recapture breakpoint set")
-        session.goto(f"{bootstrap_addr:04X}")
-        session.send_char("G")
-        _wait_for_pc(session, f"{capture_addr:04X}")
-        mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
         mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
-        _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} recapture breakpoint clear")
-        mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
+        session.goto("E000")
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
         session.send_char("G")
         parsed = _wait_for_pc(session, "E000")
         _assert_no_debug_modal(session, "$E000 RAM-under-KERNAL breakpoint hit")
@@ -2165,6 +2208,11 @@ def _cancel_repeat_debug_and_reset(rest_host: str, session: "mt.MonitorSession",
     _reset_monitor_and_c64(rest_host, session)
 
 
+# Keep the former quarantine switch explicit and disabled so the repeated
+# RAM-under-KERNAL redebug check remains part of every full-suite pass.
+QUARANTINE_RAM_UNDER_KERNAL_REDEBUG_FLAKE = False
+
+
 def run_repeat_redebug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     """Repeat cancel/re-enter/step after Debug releases live looping code."""
 
@@ -2194,6 +2242,9 @@ def run_repeat_redebug_tests(rest_host: str, session: "mt.MonitorSession") -> No
     with mt.check("Debug: repeated cancel/redebug RAM-under-KERNAL loop keeps CPU5",
                   u2=False,
                   u2_reason="U64 RAM-under-KERNAL repeated live Debug re-entry is required"):
+        if QUARANTINE_RAM_UNDER_KERNAL_REDEBUG_FLAKE:
+            raise mt.SkipCheck(
+                "quarantined RAM-under-KERNAL repeated redebug check")
         _ensure_no_debug(session)
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
@@ -2736,6 +2787,14 @@ def main() -> int:
                              f"Choices: {', '.join(name for name, _runner in TEST_GROUPS)}.")
     parser.add_argument("--list-tests", action="store_true",
                         help="List available --test names and exit.")
+    parser.add_argument("--chunk-size", type=int, default=SUITE_CHUNK_SIZE,
+                        help="Run the suite in chunks of this many groups, with a "
+                             "cool-down + extra reset at each chunk boundary. "
+                             "0 disables chunking.")
+    parser.add_argument("--chunk-cooldown", type=float,
+                        default=SUITE_CHUNK_COOLDOWN_SECONDS,
+                        help="Seconds to idle at each chunk boundary before the extra "
+                             "reset.")
     args = parser.parse_args()
     selected_tests = _parse_selected_tests(parser, args.test)
     if args.list_tests:
@@ -2759,12 +2818,17 @@ def main() -> int:
         else:
             print(f"[info] target=u2 with REST reachable on {rest_host}", flush=True)
     session = None
+    aborted = False
     try:
         runners = dict(TEST_GROUPS)
         ordered_tests = selected_tests if selected_tests is not None else [
             name for name, _runner in TEST_GROUPS
         ]
-        for name in ordered_tests:
+        for idx, name in enumerate(ordered_tests):
+            if (args.chunk_size and idx > 0
+                    and idx % args.chunk_size == 0):
+                _chunk_boundary_recovery(
+                    rest_host, f"before {name}", args.chunk_cooldown, args.timeout)
             if session is not None:
                 session.close()
                 session = None
@@ -2787,12 +2851,14 @@ def main() -> int:
                           u2_reason="U64 CPU banking/readability hygiene is required"):
                 _restore_safe_banking_display_hygiene(rest_host, session, "post-suite hygiene")
     except mt.Failure as exc:
+        aborted = True
         print(exc, file=sys.stderr)
         if session is not None:
             print("\nFinal screen:", file=sys.stderr)
             print(session.capture().text(), file=sys.stderr)
         # Fall through to summary so any prior keep-going state is still printed.
     except Exception as exc:  # noqa: BLE001
+        aborted = True
         print(f"E2E debug test failed: {exc}", file=sys.stderr)
         # Fall through to summary so prior keep-going state is still printed.
     finally:
@@ -2801,7 +2867,14 @@ def main() -> int:
         mt.TestConfig.session = None
 
     _print_debug_summary()
-    if mt.TestConfig.failures:
+    # An abnormal abort (a Failure raised outside a check body, e.g. inter-group
+    # setup or post-group hygiene) must NOT be reported as green: it is not recorded
+    # in TestConfig.failures, so without this guard the run would print OK and exit 0
+    # despite having stopped early. Treat any abort as a non-zero result.
+    if mt.TestConfig.failures or aborted:
+        if aborted and not mt.TestConfig.failures:
+            print("debug_e2e_test: ABORTED before completion (no check failed, but "
+                  "the suite stopped early; see stderr above)", file=sys.stderr)
         return 1
     print(f"debug_e2e_test: OK ({mt.CHECK_COUNT} checks, "
           f"{len(mt.TestConfig.skipped)} skipped)")

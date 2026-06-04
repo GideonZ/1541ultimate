@@ -753,6 +753,15 @@ bool C64::begin_stopped_session(void)
     return !wasStopped;
 }
 
+bool C64::begin_stopped_session(bool raster)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(raster);
+    }
+    return !wasStopped;
+}
+
 void C64::end_stopped_session(bool stopped_it)
 {
     if (stopped_it) {

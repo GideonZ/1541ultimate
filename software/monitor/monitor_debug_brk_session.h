@@ -39,6 +39,10 @@ protected:
     virtual void pulse_nmi_and_release(bool stopped_it) = 0;
     virtual void request_staged_nmi(void) { }
     virtual void clear_staged_nmi(void) { }
+    // Begin a stopped session suitable for immediate patched high-memory release.
+    // The default is a normal stopped session; the U64 backend overrides it with a
+    // raster-synced ("clean") stop so the live 6510 reliably observes the patch.
+    virtual bool begin_clean_stopped_session(void);
     // Let the live CPU clock briefly so the FPGA commits a freshly-written
     // visible-ROM BRK to the live instruction-fetch path before we launch into
     // it. Only meaningful when the machine is running (overlay/Telnet); the
@@ -150,6 +154,8 @@ private:
     bool hard_rom_vector_installed;
     bool has_last_context;
     DebugContext last_context;
+    bool has_resume_context;
+    DebugContext resume_context;
     uint16_t return_targets[MAX_RETURN_TARGETS];
     uint8_t return_target_count;
 
@@ -172,14 +178,31 @@ private:
     PatchInstallResult install_breakpoints(const MonitorBreakpoints *breakpoints,
                                            uint16_t skip_address,
                                            MonitorBackingStore skip_target,
-                                           bool skip_address_valid);
+                                           bool skip_address_valid,
+                                           bool skip_all_at_address = false);
     bool context_at_breakpoint(const DebugContext &ctx,
                                const MonitorBreakpoints *breakpoints,
                                uint16_t skip_address,
                                MonitorBackingStore skip_target,
-                               bool skip_address_valid) const;
+                               bool skip_address_valid,
+                               bool skip_all_at_address = false) const;
     void restore_patches(void);
     bool recommit_visible_rom_patches(void);
+    bool patch_installed_at(uint16_t addr, MonitorBackingStore target) const;
+    bool recommit_visible_rom_fetch_byte(uint16_t addr, uint8_t cpu_port);
+    bool has_banked_ram_patch(void) const;
+    bool has_high_memory_patch(void) const;
+    bool has_any_patch(void) const;
+    bool captured_at_installed_patch(uint16_t *captured_brk_pc = 0);
+    void reinstall_handler_bytes(void);
+    void repark_running_cpu(uint8_t cpu_port);
+    Result relaunch_on_breakpoint_runaway(Result waited,
+                                          const DebugContext *launch_ctx,
+                                          bool nmi_launch_valid,
+                                          uint16_t nmi_target,
+                                          bool nmi_force_cpu_port,
+                                          uint8_t cpu_port,
+                                          int wait_ms);
     void fill_vectors(DebugContext *ctx, uint8_t cpu_port);
     void clear_return_targets(void);
     void push_return_target(uint16_t target);
@@ -190,7 +213,7 @@ private:
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void restore_cpu_port_registers(const DebugContext &from);
-    void release_to_run(const DebugContext *from);
+    void release_to_run(const DebugContext *from, bool launch_byte_last = false);
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
     void nmi_redirect_to(uint16_t target, uint8_t cpu_port,

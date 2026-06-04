@@ -193,30 +193,25 @@ protected:
         machine->end_stopped_session(stopped_it);
         C64_MODE = MODE_NORMAL;
     }
+    virtual bool begin_clean_stopped_session(void)
+    {
+        // Patched high-memory release path. A raster-synced stop pairs the launch
+        // with the mode-1 resume used by the reliable freeze path, so the live CPU
+        // observes freshly armed high-memory BRKs on release.
+        return machine->begin_stopped_session(true);
+    }
     virtual void settle_visible_rom_for_live_fetch(void)
     {
-        // Overlay/Telnet only. The single-step BRK has just been (re)written into
-        // the FPGA ROM image while the machine is DMA-stopped. Writing the image
-        // and reading it back through the stopped-serve aperture does NOT
-        // guarantee the running 6510's instruction-fetch path sees the new byte:
-        // intermittently the CPU fetches the stale pre-patch ROM byte at the step
-        // target right after launch and runs away. Briefly resuming the CPU here
-        // lets it clock a few hundred PHI2 cycles, which commits the ROM-image
-        // write through to the live-fetch path; we then re-stop for the launch.
-        // The machine is fully armed (handler + hard/soft BRK vectors installed),
-        // so a stray BRK during this window is caught and its sentinel is cleared
-        // by the caller before the controlled launch. Frozen (UI Freeze) launches
-        // restart the CPU cleanly on unfreeze and never reach this path.
+        // Overlay/Telnet only. A visible-ROM BRK has just been (re)written into
+        // the FPGA ROM image while the machine is stopped. The CPU-visible DMA
+        // aperture can read the new byte before the live instruction-fetch path
+        // observes it, so briefly clock the CPU, then stop again for the
+        // controlled launch. The caller clears any stale sentinel afterwards.
         if (!machine || machine->is_accessible()) {
             return;
         }
-        // resume() / stop() are private; the public stopped-session wrappers do
-        // exactly resume()-then-stop(false). end_stopped_session(true) resumes;
-        // begin_stopped_session() re-stops and leaves the machine stopped for the
-        // launch (its return is discarded - the caller's own stopped_it still
-        // governs the final release).
         machine->end_stopped_session(true);
-        wait_10us(50); // ~500us of live execution to flush the ROM-image write
+        wait_10us(50);
         machine->begin_stopped_session();
     }
     virtual void request_staged_nmi(void)
