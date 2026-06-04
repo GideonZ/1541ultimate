@@ -59,6 +59,7 @@ KEYS = {
     "ESC": b"\x1bx",
     "ENTER": b"\r",
     "DEL": b"\x7f",
+    "BACKSPACE": b"\x08",
 }
 
 VIEW_KEYS = {
@@ -1057,6 +1058,161 @@ def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     screen.find_line_containing("MONITOR ASM $3370")
 
 
+# ---------------------------------------------------------------------------
+# Save / Load round-trip tests
+#
+# These drive the monitor's S(ave) and L(oad) commands over telnet, exercising
+# the firmware file picker (a TreeBrowser in PICK mode rendered on the same
+# VT100 screen). They round-trip a known memory pattern to two kinds of target,
+# both under the RAM-disk /Temp folder:
+#   * a plain top-level PRG file
+#   * a PRG file inside a freshly created D64 disk image
+# The pattern is written/verified through the existing REST memory API, and a
+# unique per-run token keeps each run from colliding with leftovers (the picker
+# never has to answer an "overwrite?" prompt, and the D64 is genuinely new).
+# ---------------------------------------------------------------------------
+
+def picker_path(snapshot: Snapshot) -> str:
+    """Return the directory path the file picker currently shows.
+
+    The picker prints the active path on the bottom line, below its border."""
+    for line in reversed(snapshot.lines):
+        text = line.strip()
+        if text and not text.startswith("+"):
+            return text
+    return ""
+
+
+def picker_to_root(session: MonitorSession) -> Snapshot:
+    """Walk the picker up to the filesystem root ("/").
+
+    LEFT moves one level up; at the root LEFT would close the picker, so we
+    check the path before each step and stop as soon as we reach "/"."""
+    snapshot = session.capture()
+    for _ in range(12):
+        if picker_path(snapshot) == "/":
+            return snapshot
+        snapshot = session.send_key("LEFT")
+    raise Failure(f"Unable to reach picker root; last path was {picker_path(snapshot)!r}")
+
+
+def picker_enter(session: MonitorSession, name_prefix: str) -> Snapshot:
+    """Quick-seek to the entry matching name_prefix and step into it."""
+    for ch in name_prefix:
+        session.send_char(ch)
+    return session.send_key("RIGHT")
+
+
+def clear_prompt_field(session: MonitorSession) -> None:
+    """Empty a (non-template) string prompt by sending backspaces.
+
+    The monitor's "Save as" prompt is pre-filled with the last-used name and
+    does not auto-clear on the first keystroke, so we delete it first. The
+    field is at most 35 characters, hence the generous count."""
+    session.sock.sendall(KEYS["BACKSPACE"] * 40)
+    session.capture()
+
+
+def rest_create_d64(host: str, path: str, diskname: str) -> None:
+    url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
+    request = urllib.request.Request(url, data=b"", method="PUT")
+    with urllib.request.urlopen(request, timeout=15.0):
+        pass
+
+
+def rest_file_exists(host: str, path: str) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://{host}/v1/files{path}:info", timeout=5.0) as response:
+            return response.status == 200
+    except urllib.error.HTTPError:
+        return False
+
+
+def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str], filename: str) -> Snapshot:
+    """Save mem_range to filename, navigating from root through enter_dirs.
+
+    enter_dirs is a list of quick-seek prefixes to step into (e.g. ["MS"] for a
+    /Temp subtree reached from root, or ["MD"] then the D64). The final
+    directory must offer "<< Create New File >>" as its first entry."""
+    session.send_char("S")
+    session.send_text(mem_range + "\r", f"save range {mem_range}")
+    picker_to_root(session)
+    snapshot = session.send_key("RIGHT")  # step into /Temp (the first root entry)
+    for prefix in enter_dirs:
+        snapshot = picker_enter(session, prefix)
+    # The cursor defaults to "<< Create New File >>"; RIGHT picks it and the
+    # monitor then asks for the file name.
+    session.send_key("RIGHT")
+    clear_prompt_field(session)
+    snapshot = session.send_text(filename + "\r", f"save as {filename}")
+    snapshot.find_line_containing("SAVE")
+    return session.send_key("ENTER")  # dismiss the confirmation popup
+
+
+def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str) -> Snapshot:
+    """Load filename back, navigating from root through enter_dirs."""
+    session.send_char("L")
+    picker_to_root(session)
+    session.send_key("RIGHT")  # step into /Temp
+    for prefix in enter_dirs:
+        picker_enter(session, prefix)
+    for ch in filename:
+        session.send_char(ch)  # quick-seek to the file
+    session.send_key("ENTER")  # open the context menu ("Select" is first)
+    session.send_key("ENTER")  # Select -> pick the file
+    # "Load [PRG|AAAA],[Offs],[Len|AUTO]" prompt: typing the spec clears the
+    # template, so PRG mode is forced regardless of the last-used value.
+    session.send_text("PRG,0,AUTO\r", "load PRG")
+    return session.send_key("ENTER")  # dismiss the confirmation popup
+
+
+def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: str) -> None:
+    addr = 0xC000
+    pattern = bytes((0x5A, 0xA5, 0x01, 0x02, 0xDE, 0xAD, 0xBE, 0xEF,
+                     0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80))
+    name = f"MS{token}.PRG"
+
+    write_rest_memory(rest_host, addr, pattern)
+    monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [], name)
+    if not rest_file_exists(rest_host, f"/Temp/{name}"):
+        raise Failure(f"Saved file /Temp/{name} not found via REST")
+
+    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    monitor_load(session, [], f"MS{token}")
+    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    if loaded != pattern:
+        raise Failure(
+            f"Top-level save/load mismatch at ${addr:04X}:\n"
+            f"  saved:  {pattern.hex().upper()}\n"
+            f"  loaded: {loaded.hex().upper()}"
+        )
+
+
+def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) -> None:
+    addr = 0xC100
+    pattern = bytes((0x11, 0x22, 0x33, 0x44, 0xAA, 0xBB, 0xCC, 0xDD,
+                     0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02))
+    disk = f"MD{token}.D64"
+    inner = f"D{token}"
+
+    rest_create_d64(rest_host, f"/Temp/{disk}", f"MD{token}")
+    if not rest_file_exists(rest_host, f"/Temp/{disk}"):
+        raise Failure(f"D64 image /Temp/{disk} was not created")
+
+    write_rest_memory(rest_host, addr, pattern)
+    monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [f"MD{token}"], inner)
+
+    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    monitor_load(session, [f"MD{token}"], inner)
+    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    if loaded != pattern:
+        raise Failure(
+            f"D64 save/load mismatch at ${addr:04X}:\n"
+            f"  saved:  {pattern.hex().upper()}\n"
+            f"  loaded: {loaded.hex().upper()}"
+        )
+
+
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
@@ -1197,6 +1353,14 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("number popup arithmetic"):
         run_number_arithmetic_test(session, rest_host)
+
+    save_load_token = f"{int(time.time()) % 100000:05d}"
+
+    with check("save/load round-trip to top-level /Temp file"):
+        run_save_load_topfile_test(session, rest_host, save_load_token)
+
+    with check("save/load round-trip to file in new /Temp D64"):
+        run_save_load_d64_test(session, rest_host, save_load_token)
 
 
 def main() -> int:
