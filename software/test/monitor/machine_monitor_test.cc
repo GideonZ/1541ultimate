@@ -294,6 +294,20 @@ static int test_disassembler(void)
     if (expect(decoded.length == 2 && strcmp(decoded.text, "BEQ $1007") == 0,
                "BEQ branch target disassembly failed.")) return 1;
 
+    // Exercise the remaining relative branches too, so a missing or wrong
+    // `rel` operand spec in the opcode template table is caught here.
+    const struct { uint8_t opcode; const char *text; } rel_branches[] = {
+        { 0x10, "BPL $1007" }, { 0x30, "BMI $1007" },
+        { 0x50, "BVC $1007" }, { 0x70, "BVS $1007" },
+        { 0xD0, "BNE $1007" },
+    };
+    for (unsigned i = 0; i < sizeof(rel_branches) / sizeof(rel_branches[0]); i++) {
+        const uint8_t branch_rel[] = { rel_branches[i].opcode, 0x05, 0x00 };
+        disassemble_6502(0x1000, branch_rel, false, &decoded);
+        if (expect(decoded.length == 2 && strcmp(decoded.text, rel_branches[i].text) == 0,
+                   "Relative branch target disassembly failed.")) return 1;
+    }
+
     const uint8_t xaa_imm[] = { 0x8B, 0x44, 0x00 };
     disassemble_6502(0x3000, xaa_imm, true, &decoded);
     if (expect(decoded.length == 2 && strcmp(decoded.text, "XAA #$44") == 0,

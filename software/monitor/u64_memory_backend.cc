@@ -16,9 +16,9 @@ namespace {
 // arrays they were only byte-aligned; depending on .bss layout they could land on an
 // unaligned address, causing an unaligned 32-bit store trap on Nios2 when the KERNAL ROM
 // cache is loaded on monitor entry. Force word alignment to keep the DMA target valid.
-static uint8_t monitor_basic_rom[8192] __attribute__((aligned(4)));
-static uint8_t monitor_kernal_rom[8192] __attribute__((aligned(4)));
-static uint8_t monitor_char_rom[4096] __attribute__((aligned(4)));
+alignas(4) static uint8_t monitor_basic_rom[8192];
+alignas(4) static uint8_t monitor_kernal_rom[8192];
+alignas(4) static uint8_t monitor_char_rom[4096];
 
 static void snapshot_u64_rom(volatile uint8_t *src, uint8_t *dst, uint16_t len)
 {

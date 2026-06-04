@@ -123,16 +123,6 @@ void canonicalize_mnemonic(uint8_t opcode, const char *templ, char *mnemonic)
     }
 }
 
-const char *operand_spec(const char *templ)
-{
-    const char *spec = templ + 4;
-
-    while (*spec == ' ') {
-        spec++;
-    }
-    return spec;
-}
-
 uint8_t operand_length(const char *templ)
 {
     const char *spec = operand_spec(templ);
@@ -244,6 +234,18 @@ void format_operand(uint8_t opcode, uint16_t pc, const uint8_t *bytes, uint8_t l
     trim_operand(operand);
 }
 
+}
+
+// Defined with external linkage (declared in the header) so the monitor can
+// classify operands the same way the decoder does.
+const char *operand_spec(const char *templ)
+{
+    const char *spec = templ + 4;
+
+    while (*spec == ' ') {
+        spec++;
+    }
+    return spec;
 }
 
 void disassemble_6502(uint16_t pc, const uint8_t *bytes, bool illegal_enabled, Disassembled6502 *out)

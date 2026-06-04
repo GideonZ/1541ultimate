@@ -3229,13 +3229,10 @@ bool MachineMonitor :: asm_is_branch(uint16_t address)
 {
     uint8_t op = canonical_read(address);
     const char *templ = disassembler_6502_template(op);
-    const char *spec;
     if (!templ) return false;
-    spec = templ + 4;
-    while (*spec == ' ') {
-        spec++;
-    }
-    return strncmp(spec, "rel", 3) == 0;
+    // Reuse the decoder's operand-spec accessor so branch classification stays
+    // consistent with disassembly if the template layout ever changes.
+    return strncmp(operand_spec(templ), "rel", 3) == 0;
 }
 
 // Number of editable parts presented in the ASM edit cursor for the

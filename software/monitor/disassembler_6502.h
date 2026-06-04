@@ -21,4 +21,9 @@ void disassemble_6502(uint16_t pc, const uint8_t *bytes, bool illegal_enabled, D
 const char *disassembler_6502_template(uint8_t opcode);
 bool        disassembler_6502_is_illegal(uint8_t opcode);
 
+// Returns the operand-spec portion of an opcode template (the text following
+// the mnemonic). Shared so callers classify operands the same way the decoder
+// does, instead of re-deriving the offset into the template by hand.
+const char *operand_spec(const char *templ);
+
 #endif
