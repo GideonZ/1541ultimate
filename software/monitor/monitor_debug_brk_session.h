@@ -47,7 +47,7 @@ protected:
     // visible-ROM BRK to the live instruction-fetch path before we launch into
     // it. Only meaningful when the machine is running (overlay/Telnet); the
     // freeze path already restarts the CPU cleanly on unfreeze. Default no-op.
-    virtual void settle_visible_rom_for_live_fetch(void) { }
+    virtual void settle_visible_rom_for_live_fetch(bool sustained = false) { (void)sustained; }
     virtual void delay_ms(int ms) = 0;
     virtual bool free_run_no_breakpoint(uint16_t address);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
@@ -128,6 +128,14 @@ private:
     Patch patches[MAX_PATCHES];
     bool handler_installed;
     bool cpu_parked_in_spin;
+    // A free-run (G) breakpoint hit in visible ROM leaves the live 6510
+    // instruction-fetch ROM line for that PC holding the BRK ($00). Restoring it
+    // updates the DMA-visible image immediately, but the fetch path only refreshes
+    // after sustained continuous core execution. The very next step launched from
+    // that exact PC therefore needs the sustained ROM-fetch settle once; ordinary
+    // forward stepping does not. Tracked here and consumed by release_to_run().
+    bool rom_bp_hit_pc_valid;
+    uint16_t rom_bp_hit_pc;
     // Nesting-safe CPU-run window. When enabled, begin_run_window() unfreezes a
     // frozen machine once; end_run_window() re-freezes it on the outermost exit
     // so a frozen monitor's render target survives the step.
@@ -217,7 +225,8 @@ private:
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
     void nmi_redirect_to(uint16_t target, uint8_t cpu_port,
-                         bool force_cpu_port, bool staged = false);
+                         bool force_cpu_port, bool staged = false,
+                         bool sustained_settle = false);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,

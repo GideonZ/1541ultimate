@@ -200,18 +200,32 @@ protected:
         // observes freshly armed high-memory BRKs on release.
         return machine->begin_stopped_session(true);
     }
-    virtual void settle_visible_rom_for_live_fetch(void)
+    virtual void settle_visible_rom_for_live_fetch(bool sustained)
     {
-        // Overlay/Telnet only. A visible-ROM BRK has just been (re)written into
+        // Overlay/Telnet only. A visible-ROM byte has just been (re)written into
         // the FPGA ROM image while the machine is stopped. The CPU-visible DMA
         // aperture can read the new byte before the live instruction-fetch path
-        // observes it, so briefly clock the CPU, then stop again for the
-        // controlled launch. The caller clears any stale sentinel afterwards.
+        // observes it, so clock the CPU, then stop again for the controlled
+        // launch. The caller clears any stale sentinel afterwards.
+        //
+        // Two regimes:
+        //  - Default (short): a freshly INSTALLED BRK or an ordinary forward
+        //    single-step launch byte. A brief clock is enough and keeps stepping
+        //    responsive; a long continuous run here destabilises forward stepping.
+        //  - Sustained (long): a RESTORED launch opcode that the live 6510 keeps
+        //    re-trapping on. The CPU instruction-fetch ROM copy refreshes from
+        //    the image buffer only during sustained continuous core execution -
+        //    NOT from the image write alone, and NOT from fragmented brief
+        //    settles (six 500us settles across the relaunch budget failed
+        //    deterministically because each stop/start aborts the refresh). One
+        //    longer continuous run reliably lands the restored byte in the fetch
+        //    path. Used only on the re-trap relaunch, so the cost is paid only
+        //    when actually needed.
         if (!machine || machine->is_accessible()) {
             return;
         }
         machine->end_stopped_session(true);
-        wait_10us(50);
+        wait_10us(sustained ? 5000 : 50);
         machine->begin_stopped_session();
     }
     virtual void request_staged_nmi(void)
