@@ -649,6 +649,7 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     while(!ret && host->exists()) {
         ret = box->poll(0);
     }
+    box->deinit();
     delete box;
     // Return values are 1 based, unless it's an error
     if (!ret && !host->exists()) {
