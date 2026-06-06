@@ -353,6 +353,18 @@ class MonitorSession:
         self.sock.sendall(payload)
         return self.capture()
 
+    def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
+        """Send a key and return (snapshot, bytes_received_during_redraw).
+
+        Used to measure per-keystroke output volume so a flood-on-scroll
+        regression (full-screen redraw per keystroke on telnet) is observable."""
+        payload = KEYS[key]
+        self.last_command = key
+        self.sock.sendall(payload)
+        self._last_drain_bytes = 0
+        self._drain_until_idle(timeout=self.timeout)
+        return self.screen.snapshot(self.last_command), self._last_drain_bytes
+
     def send_char(self, ch: str) -> Snapshot:
         self.last_command = ch
         self.sock.sendall(ch.encode("ascii"))
@@ -398,16 +410,20 @@ class MonitorSession:
     def _drain_until_idle(self, timeout: float) -> None:
         end = time.time() + timeout
         last_data = time.time()
+        drained = 0
         while time.time() < end:
             wait = min(0.5, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
             if not ready:
                 if time.time() - last_data >= 0.5:
+                    self._last_drain_bytes = drained
                     return
                 continue
             chunk = self.sock.recv(65536)
             if not chunk:
+                self._last_drain_bytes = drained
                 return
+            drained += len(chunk)
             self.screen.feed(chunk)
             last_data = time.time()
         raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
@@ -1088,6 +1104,76 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     session.send_key("ESC")           # leave edit mode
 
 
+# Per-keystroke output budget for scrolling the opcode dropdown over telnet.
+# Regression guard: on a full-refresh (telnet/VT100) screen the buggy path
+# redrew the WHOLE screen on every cursor up/down keystroke (measured 1727 bytes
+# per keystroke). Under cursor-key autorepeat that flood wedged/aborted the
+# telnet monitor connection. The fix repaints only the dropdown overlay (the
+# same incremental path Freeze/Overlay already use), a few hundred bytes per
+# keystroke. The threshold sits well below a full-screen redraw and well above
+# an overlay-only repaint so it cleanly separates buggy from fixed.
+DROPDOWN_SCROLL_BYTE_BUDGET = 1000
+
+
+def run_telnet_dropdown_scroll_flood_test(session: MonitorSession, rest_host: str) -> None:
+    # Stable, deterministic playground: a run of NOPs so the disassembly is fixed
+    # and the opcode dropdown can be anchored mid-screen (so it is larger than the
+    # visible area below it and genuinely scrolls internally).
+    write_rest_memory(rest_host, 0x33C0, bytes([0xEA] * 32))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("33C0")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $33C0")
+    screen = session.send_char("e")  # enter assembly edit mode
+    # Step the cursor down so the dropdown anchor sits low on the screen; with the
+    # large "L" candidate list this guarantees the list exceeds the visible window
+    # and scrolling pushes content past the bottom row and back.
+    for _ in range(10):
+        screen = session.send_key("DOWN")
+    screen = session.send_char("L")  # open the large opcode dropdown
+    screen.find_line_containing(" L_")
+    screen.find_line_containing("LDA")
+
+    # Bounded down/up scroll burst (scroll to the bottom and beyond, then back up,
+    # repeated a few times). Every scroll keystroke is measured. This is NOT a
+    # soak test: the per-keystroke output volume is identical for every scroll
+    # key, so a small bounded burst reliably exposes the flood.
+    max_bytes = 0
+    sample = []
+    cycles = 2
+    down_n = 12
+    up_n = 12
+    for _ in range(cycles):
+        for _ in range(down_n):
+            _, n = session.send_key_count("DOWN")
+            max_bytes = max(max_bytes, n)
+            sample.append(n)
+        for _ in range(up_n):
+            _, n = session.send_key_count("UP")
+            max_bytes = max(max_bytes, n)
+            sample.append(n)
+
+    # The dropdown must remain coherent through the whole burst.
+    screen = session.capture()
+    screen.find_line_containing(" L_")
+    screen.find_line_containing("LDA")
+
+    if max_bytes > DROPDOWN_SCROLL_BYTE_BUDGET:
+        raise Failure(
+            "Telnet opcode dropdown floods on scroll: a single cursor keystroke "
+            f"emitted up to {max_bytes} bytes (budget {DROPDOWN_SCROLL_BYTE_BUDGET}). "
+            "Scrolling must repaint only the dropdown overlay, not the whole "
+            f"screen. First samples: {sample[:8]}"
+        )
+
+    # Connection must still be alive and the monitor must still respond after the
+    # bounded scroll burst.
+    screen = session.send_key("ESC")  # close the dropdown (stays in edit mode)
+    screen.find_line_containing("MONITOR ASM")
+    screen = session.send_key("ESC")  # leave edit mode
+    screen.find_status_line()
+
+
 def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     write_rest_memory(rest_host, 0x3370, bytes((0x20, 0x00, 0xC0, 0xEA)))
 
@@ -1410,6 +1496,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("asm edit mnemonic validation and Return advance"):
         run_asm_edit_validation_test(session, rest_host)
+
+    with check("telnet opcode dropdown scroll does not flood the connection"):
+        run_telnet_dropdown_scroll_flood_test(session, rest_host)
 
     with check("number popup arithmetic"):
         run_number_arithmetic_test(session, rest_host)

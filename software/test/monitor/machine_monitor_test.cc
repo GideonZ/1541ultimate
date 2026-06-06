@@ -3596,6 +3596,62 @@ static int test_space_shortcuts_match_existing_paging(void)
     return 0;
 }
 
+// Regression for the telnet opcode-dropdown scroll flood: on a full-refresh
+// screen (telnet/VT100), scrolling the opcode dropdown used to repaint the WHOLE
+// screen on every cursor keystroke. Under cursor-key autorepeat that flood
+// wedged/aborted the telnet monitor connection. A scroll keystroke must repaint
+// only the dropdown overlay (the same incremental path Freeze/Overlay use), not
+// the header, disassembly or status rows underneath it.
+static int test_opcode_picker_scroll_redraws_overlay_only(void)
+{
+    struct FullRefreshCaptureScreen : public CaptureScreen {
+        virtual bool prefers_full_refresh(void) { return true; }
+    };
+
+    TestUserInterface ui;
+    FullRefreshCaptureScreen screen;
+    FakeMemoryBackend backend;
+    // J(goto) A(asm view) E(edit) L(open big dropdown), then DOWN to scroll.
+    const int keys[] = { 'J', 'A', 'E', 'L', KEY_DOWN, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 4; i++) {
+        if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: setup (J/A/E/L) failed.")) return 1;
+    }
+    // The dropdown box is anchored to the current_addr disassembly row and spans
+    // screen columns 16..33 (window col MONITOR_DISASM_TEXT_COL=15 plus the 1-col
+    // window border). Verify the dropdown is actually showing candidates first.
+    char row[39];
+    screen.get_slice(1, 5, 38, row);
+    if (expect(strstr(row, "LD") != NULL,
+               "Dropdown scroll redraw test: expected LD* candidates for prefix L.")) return 1;
+
+    // A single scroll keystroke must touch ONLY the dropdown box columns.
+    screen.reset_write_counts();
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: DOWN scroll failed.")) return 1;
+
+    int outside_box = screen.count_writes_outside_rect(16, 0, 33, 24);
+    int total = screen.count_writes_outside_rect(1000, 1000, 1000, 1000); // impossible rect => all writes
+    if (expect(total > 0,
+               "Dropdown scroll redraw test: scrolling must repaint the dropdown overlay.")) return 1;
+    if (expect(outside_box == 0,
+               "Dropdown scroll on a full-refresh (telnet) screen must repaint only the dropdown "
+               "overlay, not the whole screen (header/disassembly/status).")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should leave edit mode next.")) return 1;
+    if (expect(mon.poll(0) == 1, "Dropdown scroll redraw test: exit failed.")) return 1;
+    mon.deinit();
+    return 0;
+}
+
 static int test_opcode_picker_refilters_live(void)
 {
     TestUserInterface ui;
@@ -6581,6 +6637,7 @@ int main()
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
     if (test_space_shortcuts_match_existing_paging()) return 1;
+    if (test_opcode_picker_scroll_redraws_overlay_only()) return 1;
     if (test_opcode_picker_refilters_live()) return 1;
     if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
     if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;

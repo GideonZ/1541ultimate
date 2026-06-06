@@ -251,6 +251,7 @@ class MachineMonitor : public UIObject
     void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();
+    void refresh_opcode_overlay();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();

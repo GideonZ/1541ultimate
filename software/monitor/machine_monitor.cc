@@ -3772,6 +3772,27 @@ void MachineMonitor :: refresh_popup_overlay()
     screen->sync();
 }
 
+void MachineMonitor :: refresh_opcode_overlay()
+{
+    // Scrolling the opcode dropdown changes only the overlay box itself; its
+    // anchor, size, and the surrounding disassembly/header/status are unchanged.
+    // Repaint just the box rather than the whole screen. On a full-refresh
+    // (telnet/VT100) screen refresh_popup_overlay() falls back to a full draw()
+    // that emits ~1.5 KB per keystroke; under cursor-key autorepeat that flood
+    // overwhelms the telnet output path and aborts the connection. The box-only
+    // repaint matches the on-device (Freeze/Overlay) incremental path and keeps
+    // per-keystroke output small. Safe for scrolling because the box size is
+    // constant, so no stale rows are left behind.
+    if (!window || !screen) {
+        return;
+    }
+    if (!opcode_picker_active) {
+        return;
+    }
+    draw_opcode_picker();
+    screen->sync();
+}
+
 void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
 {
     char line[MONITOR_MEMORY_ROW_16_CHARS + 1];
@@ -4650,12 +4671,12 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
     }
     if (key == KEY_DOWN) {
         if (opcode_selected + 1 < opcode_candidate_count) opcode_selected++;
-        refresh_popup_overlay();
+        refresh_opcode_overlay();
         return 0;
     }
     if (key == KEY_UP) {
         if (opcode_selected > 0) opcode_selected--;
-        refresh_popup_overlay();
+        refresh_opcode_overlay();
         return 0;
     }
     if (key == KEY_BACK || key == KEY_DELETE) {
