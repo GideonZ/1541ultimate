@@ -4547,6 +4547,11 @@ static int test_visible_basic_step_uses_rom_patch_support()
     DebugPredictResult pred;
     debug_predict(0xA000, bytes, false, &pred);
 
+    // Model a trap at the installed fall-through BRK ($A001) so the relaunch
+    // backstop sees a legitimate capture and does not relaunch. Use the dynamic
+    // override (a static seed is wiped by the handler install).
+    m.arm_capture_context(0xA001, 0xF8, 0x11, 0x22, 0x33, 0x24);
+
     DebugContext ctx;
     DebugSession::Result r = m.over_at(0xA000, pred, &ctx);
     if (expect(r == DebugSession::DBG_OK,
@@ -4555,11 +4560,10 @@ static int test_visible_basic_step_uses_rom_patch_support()
                "Visible BASIC patch byte must be restored after the step")) return 1;
     if (expect(m.ram[0xA001] == 0x5A,
                "Visible BASIC patching must not scribble into underlying RAM")) return 1;
-    // Three ROM-image writes: install the BRK, re-commit it at the launch (so the
-    // live 6510 cannot fetch a stale pre-patch ROM byte - the overlay/Telnet
-    // ROM-step runaway fix), then restore the original byte after the step.
-    if (expect(m.rom_patch_writes == 3,
-               "Visible BASIC step must patch, recommit at launch, and restore the ROM image")) return 1;
+    // 4 ROM-image writes: install BRK + recommit launch-PC fetch byte + recommit
+    // BRK + restore. The two recommits guard the live 6510 against a stale fetch.
+    if (expect(m.rom_patch_writes == 4,
+               "Visible BASIC step must patch, recommit launch byte + BRK, and restore the ROM image")) return 1;
     // The BRK ($00) is written twice for the single step: once by install_brk_at
     // and once by recommit_visible_rom_patches() in the launch's stopped session.
     if (expect(m.brk_patch_writes == 2,
@@ -5038,6 +5042,9 @@ static int test_visible_kernal_step_into_uses_rom_patch_support()
     DebugPredictResult pred;
     debug_predict(0xE000, bytes, false, &pred);
 
+    // Model a trap at the installed fall-through BRK ($E001) (see arm_capture note).
+    m.arm_capture_context(0xE001, 0xF8, 0x11, 0x22, 0x33, 0x24);
+
     DebugContext ctx;
     DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
     if (expect(r == DebugSession::DBG_OK,
@@ -5046,10 +5053,10 @@ static int test_visible_kernal_step_into_uses_rom_patch_support()
                "Visible KERNAL Step Into patch byte must be restored")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
                "Visible KERNAL Step Into must not patch RAM under ROM")) return 1;
-    // patch + launch recommit + restore (see recommit_visible_rom_patches: the
-    // recommit guards against the live 6510 fetching a stale pre-patch ROM byte).
-    if (expect(m.rom_patch_writes == 3,
-               "Visible KERNAL Step Into must patch, recommit at launch, and restore the ROM image")) return 1;
+    // 4 ROM-image writes: install BRK + recommit launch-PC fetch byte ($E000 is
+    // visible ROM) + recommit BRK + restore.
+    if (expect(m.rom_patch_writes == 4,
+               "Visible KERNAL Step Into must patch, recommit launch byte + BRK, and restore the ROM image")) return 1;
     if (expect(m.brk_patch_writes == 2,
                "Visible KERNAL Step Into must re-commit the ROM BRK as the final pre-launch write")) return 1;
     return 0;
@@ -5069,6 +5076,10 @@ static int test_visible_kernal_step_over_jsr_patches_fallthrough_rom()
     DebugPredictResult pred;
     debug_predict(0xE000, bytes, false, &pred);
 
+    // Step-over a 3-byte JSR places the BRK at the fall-through ($E003); model the
+    // trap there so the relaunch backstop sees a legitimate capture.
+    m.arm_capture_context(0xE003, 0xF8, 0x11, 0x22, 0x33, 0x24);
+
     DebugContext ctx;
     DebugSession::Result r = m.over_at(0xE000, pred, &ctx);
     if (expect(r == DebugSession::DBG_OK,
@@ -5077,8 +5088,10 @@ static int test_visible_kernal_step_over_jsr_patches_fallthrough_rom()
                "Visible KERNAL Step Over JSR must restore fall-through ROM byte")) return 1;
     if (expect(m.ram[0xE003] == 0x7B,
                "Visible KERNAL Step Over JSR must not patch RAM under ROM")) return 1;
-    if (expect(m.rom_patch_writes == 3,
-               "Visible KERNAL Step Over JSR must patch, recommit at launch, and restore ROM")) return 1;
+    // patch fall-through BRK + launch-PC ($E000 JSR) fetch-byte recommit + BRK
+    // recommit + restore = 4 (launch PC is visible ROM, so its byte recommits too).
+    if (expect(m.rom_patch_writes == 4,
+               "Visible KERNAL Step Over JSR must patch, recommit launch byte + BRK, and restore ROM")) return 1;
     return 0;
 }
 
@@ -5143,6 +5156,10 @@ static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
     bps.allocate(0xE001, 0x07);
     DebugContext from;
     debug_context_reset(&from);
+
+    // Model the run trapping at the installed breakpoint ($E001) so the relaunch
+    // backstop recognises a legitimate capture (see test_visible_basic_step note).
+    fake_seed_captured_context(m, 0xE001, 0xF8, 0x11, 0x22, 0x33, 0x24);
 
     DebugSession::Result r = m.go(from, &bps, 0xC000);
     if (expect(r == DebugSession::DBG_OK,
@@ -5803,7 +5820,10 @@ static int test_kernal_out_cold_nmi_launch_installs_hard_nmi_vector()
     m.ram[FAKE_HARD_NMI_VECTOR_LO] = 0x34;
     m.ram[FAKE_HARD_NMI_VECTOR_HI] = 0x12;
     fake_seed_nop_run(m, 0xE000);
-    m.arm_hard_vector_capture_context(0xE003, 0xF0, 0x11, 0x22, 0x33, 0x24,
+    // Model the trap at the installed fall-through BRK $E001 (the relaunch backstop
+    // requires the captured PC to be at an installed BRK).
+    fake_seed_captured_context(m, 0xE001, 0xF0, 0x11, 0x22, 0x33, 0x24);
+    m.arm_hard_vector_capture_context(0xE001, 0xF0, 0x11, 0x22, 0x33, 0x24,
                                       0x37, 0x35);
 
     uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
@@ -5819,7 +5839,7 @@ static int test_kernal_out_cold_nmi_launch_installs_hard_nmi_vector()
     if (expect(m.ram[FAKE_HARD_NMI_VECTOR_LO] == (uint8_t)(FAKE_NMI_TRAMP & 0xFF) &&
                m.ram[FAKE_HARD_NMI_VECTOR_HI] == (uint8_t)(FAKE_NMI_TRAMP >> 8),
                "KERNAL-out NMI hard vector must point at the debug trampoline while parked")) return 1;
-    if (expect(ctx.valid && ctx.pc == 0xE003 && ctx.live_cpu_port == 0x05,
+    if (expect(ctx.valid && ctx.pc == 0xE001 && ctx.live_cpu_port == 0x05,
                "KERNAL-out cold NMI launch must capture the RAM-under-KERNAL stop")) return 1;
 
     m.cleanup();
