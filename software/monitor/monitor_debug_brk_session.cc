@@ -1148,18 +1148,19 @@ void BrkDebugSession :: release_to_run(const DebugContext *from,
             recommit_visible_rom_fetch_byte(from->pc, execution_cpu_port(from)) ||
             visible_rom_recommitted;
     }
-    // One-shot sustained settle when this launch resumes at the PC where a
-    // free-run breakpoint just trapped in visible ROM: that line's live fetch
-    // path still holds the BRK and only a sustained continuous run refreshes it.
-    // Consumed here so it applies to exactly the first step after the hit;
-    // ordinary forward stepping keeps the fast short settle.
+    // Only the first step resuming where a free-run breakpoint just trapped in
+    // visible ROM needs the sustained settle: that fetch line still holds the BRK
+    // and only a continuous run refreshes it.
     bool sustained_settle = false;
     if (from && from->valid && rom_bp_hit_pc_valid &&
             from->pc == rom_bp_hit_pc) {
         sustained_settle = true;
         rom_bp_hit_pc_valid = false;
     }
-    if (visible_rom_recommitted) {
+    // Settle ONLY for that re-trap. On a plain forward step the settle's extra
+    // stop/resume cycle frees the 6510 briefly and lets it run past the BRK; the
+    // recommit writes above already place the BRK in the stopped ROM image.
+    if (visible_rom_recommitted && sustained_settle) {
         settle_visible_rom_for_live_fetch(sustained_settle);
     }
     poke_visible(SENTINEL_ADDR, 0x00);
@@ -1322,7 +1323,9 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     if (recommit_visible_rom_patches()) {
         visible_rom_recommitted = true;
     }
-    if (visible_rom_recommitted) {
+    // Settle only on the bp-hit re-trap (see release_to_run): on a plain launch
+    // the extra stop/resume frees the 6510 and lets it run past the BRK.
+    if (visible_rom_recommitted && sustained_settle) {
         settle_visible_rom_for_live_fetch(sustained_settle);
     }
     // Clear the sentinel as the last act before releasing the CPU, while it is
