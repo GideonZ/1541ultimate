@@ -4509,25 +4509,50 @@ bool MachineMonitor :: asm_edit_history_pop()
 // after the 3-letter mnemonic into opcode_operand[] and on commit asks the
 // assembler to turn the full "MNEM operand" string into bytes.
 
-void MachineMonitor :: opcode_picker_open(char seed)
+bool MachineMonitor :: opcode_prefix_is_valid(const char *prefix)
 {
+    if (!prefix || !prefix[0]) {
+        return false;
+    }
+    // The opcode candidate collector is the single source of truth for the
+    // monitor's supported mnemonic set (and honours the illegal-opcode policy).
+    // A non-empty prefix is valid iff at least one candidate matches it. Use a
+    // local scratch buffer so the live picker candidate list is not disturbed.
+    uint8_t scratch[256];
+    return monitor_collect_opcode_candidates(prefix, state.illegal_enabled,
+                                             scratch, (int)sizeof(scratch)) > 0;
+}
+
+bool MachineMonitor :: opcode_picker_open(char seed)
+{
+    char up = 0;
+    if (seed >= 'a' && seed <= 'z') up = (char)(seed - 'a' + 'A');
+    else if (seed >= 'A' && seed <= 'Z') up = seed;
+
+    // Reject a seed letter that cannot begin any supported mnemonic (e.g. G/H/
+    // Z): the picker stays closed so the invalid character is not accepted.
+    if (up) {
+        char trial[2] = { up, 0 };
+        if (!opcode_prefix_is_valid(trial)) {
+            return false;
+        }
+    }
+
     opcode_picker_active = true;
     opcode_drawn_rows = 0;
     opcode_prefix_len = 0;
     opcode_prefix[0] = 0;
     opcode_operand_len = 0;
     opcode_operand[0] = 0;
-    if (seed) {
-        char up = (seed >= 'a' && seed <= 'z') ? (char)(seed - 'a' + 'A') : seed;
-        if ((up >= 'A' && up <= 'Z')) {
-            opcode_prefix[0] = up;
-            opcode_prefix[1] = 0;
-            opcode_prefix_len = 1;
-        }
+    if (up) {
+        opcode_prefix[0] = up;
+        opcode_prefix[1] = 0;
+        opcode_prefix_len = 1;
     }
     opcode_selected = 0;
     opcode_top = 0;
     opcode_picker_refilter();
+    return true;
 }
 
 void MachineMonitor :: opcode_picker_close()
@@ -4610,10 +4635,14 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
     }
     if (key == KEY_RETURN) {
         if (opcode_operand_len > 0) {
+            // A typed operand must assemble cleanly. If it does not, stay in the
+            // picker so the user can correct the incomplete/invalid operand
+            // instead of silently committing the bare highlighted opcode and
+            // advancing past the mistake.
             if (opcode_picker_commit_typed()) {
                 draw();
-                return 0;
             }
+            return 0;
         }
         opcode_picker_commit();
         draw();
@@ -4656,6 +4685,19 @@ int MachineMonitor :: opcode_picker_handle_key(int key)
     bool is_letter = ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'));
     if (is_letter && opcode_prefix_len < 3) {
         char up = (key >= 'a' && key <= 'z') ? (char)(key - 'a' + 'A') : (char)key;
+        // Validate the prospective mnemonic before mutating any editor state.
+        // The new character is only accepted if "<current prefix><up>" remains a
+        // prefix of (or an exact) supported mnemonic. Invalid input is rejected
+        // here so it never changes the buffer, cursor, operand, candidate list,
+        // or bleeds into the operand field.
+        char trial[5];
+        int t = 0;
+        for (; t < opcode_prefix_len && t < 3; t++) trial[t] = opcode_prefix[t];
+        trial[t++] = up;
+        trial[t] = 0;
+        if (!opcode_prefix_is_valid(trial)) {
+            return 0;
+        }
         opcode_prefix[opcode_prefix_len++] = up;
         opcode_prefix[opcode_prefix_len] = 0;
         opcode_selected = 0;
@@ -5021,6 +5063,23 @@ int MachineMonitor :: handle_key(int key)
             uint8_t part_count = asm_edit_part_count(state.current_addr);
             bool branch = asm_is_branch(state.current_addr) && insn_len == 2;
             if (asm_edit_part >= part_count) asm_edit_part = 0;
+            if (key == KEY_RETURN) {
+                // ASM edit mode: RETURN commits the current line and advances to
+                // the next logical disassembly line. The byte editor edits memory
+                // live, so the current instruction is always a complete, valid
+                // line; advancing is the commit. The next address is derived from
+                // the decoder's instruction length via step_disassembly(), so it
+                // is correct for one-, two-, and three-byte instructions.
+                // (The opcode picker, when open, handles RETURN itself and is
+                // dispatched before this block, so partial/invalid mnemonic entry
+                // never reaches here.)
+                asm_edit_pending = 0;
+                step_disassembly(1);
+                asm_edit_part = 0;
+                asm_edit_history_reset(state.current_addr);
+                draw();
+                return 0;
+            }
             if (key == KEY_LEFT) {
                 if (asm_edit_part > 0) {
                     asm_edit_part--;
@@ -5140,8 +5199,12 @@ int MachineMonitor :: handle_key(int key)
                 return 0;
             }
             if (asm_edit_part == 0 && ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
-                opcode_picker_open((char)key);
-                draw();
+                // Opening the picker also validates the first mnemonic letter.
+                // An invalid first letter (no supported mnemonic starts with it)
+                // is rejected: the picker stays closed and the key is a no-op.
+                if (opcode_picker_open((char)key)) {
+                    draw();
+                }
                 return 0;
             }
         }

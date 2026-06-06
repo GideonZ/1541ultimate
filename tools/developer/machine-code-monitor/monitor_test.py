@@ -1031,6 +1031,63 @@ def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     screen.find_line_containing("MONITOR ASM $3360")
     assert_line_lacks(screen, "F0 JMP $")
 
+def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> None:
+    # Bug 2 (Return advances) test program:
+    #   $3380: LDA #$01   A9 01     (2 bytes)
+    #   $3382: NOP        EA        (1 byte)
+    #   $3383: LDA $C000  AD 00 C0  (3 bytes)
+    write_rest_memory(rest_host, 0x3380, bytes((0xA9, 0x01, 0xEA, 0xAD, 0x00, 0xC0)))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("3380")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $3380")
+    screen = session.send_char("e")  # enter assembly edit mode
+    screen.find_line_containing("MONITOR ASM $3380")
+    # RETURN commits the current line and advances by the instruction length.
+    screen = session.send_key("ENTER")  # past LDA #$01 (2 bytes)
+    screen.find_line_containing("MONITOR ASM $3382")
+    screen = session.send_key("ENTER")  # past NOP (1 byte)
+    screen.find_line_containing("MONITOR ASM $3383")
+    screen = session.send_key("ENTER")  # past LDA $C000 (3 bytes)
+    screen.find_line_containing("MONITOR ASM $3386")
+    screen = session.send_key("ESC")    # leave edit mode
+
+    # Bug 1 (invalid mnemonic rejected): edit a clean NOP-filled region so the
+    # opcode picker is exercised in isolation.
+    write_rest_memory(rest_host, 0x33A0, bytes([0xEA] * 8))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("33A0")
+    screen = ensure_view(session, "ASM ")
+    screen = session.send_char("e")  # enter assembly edit mode
+    # A valid prefix is accepted and the completion list stays coherent.
+    screen = session.send_char("A")
+    screen.find_line_containing("ADC")
+    screen = session.send_char("D")
+    screen.find_line_containing(" AD_")
+    screen.find_line_containing("ADC")
+    # An invalid third letter (ADD is not a 6502 mnemonic) is rejected: the
+    # mnemonic field stays at AD and nothing bleeds into the operand area.
+    screen = session.send_char("D")
+    screen.find_line_containing(" AD_")
+    assert_line_lacks(screen, "ADD")
+    # Repeated invalid input does not overflow the field or bleed.
+    for _ in range(3):
+        screen = session.send_char("A")
+    screen.find_line_containing(" AD_")
+    assert_line_lacks(screen, "ADD")
+    assert_line_lacks(screen, "ADA")
+    screen = session.send_key("ESC")  # close the picker (stay in edit mode)
+    # A first letter that begins no supported mnemonic (G) is rejected and never
+    # joins the prefix; a following valid letter still opens the picker.
+    screen = session.send_char("G")
+    screen = session.send_char("L")
+    screen.find_line_containing(" L_")
+    assert_line_lacks(screen, "GL")
+    screen.find_line_containing("LDA")
+    screen = session.send_key("ESC")  # close the picker
+    session.send_key("ESC")           # leave edit mode
+
+
 def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     write_rest_memory(rest_host, 0x3370, bytes((0x20, 0x00, 0xC0, 0xEA)))
 
@@ -1350,6 +1407,9 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("follow and return navigation"):
         run_follow_return_test(session, rest_host)
+
+    with check("asm edit mnemonic validation and Return advance"):
+        run_asm_edit_validation_test(session, rest_host)
 
     with check("number popup arithmetic"):
         run_number_arithmetic_test(session, rest_host)

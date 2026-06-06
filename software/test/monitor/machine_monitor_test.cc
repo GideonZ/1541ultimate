@@ -2660,7 +2660,10 @@ static int test_number_shortcut_routing(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;
         char line[19];
-        const int keys[] = { 'J', 'A', 'E', 'L', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        // "IN" is a valid mnemonic prefix (INC/INX/INY); the point of this test
+        // is that N routes into the opcode picker rather than opening the Number
+        // popup while the picker is active.
+        const int keys[] = { 'J', 'A', 'E', 'I', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
         ui.screen = &screen;
@@ -2678,7 +2681,7 @@ static int test_number_shortcut_routing(void)
         if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
                    "Opcode completion popup must keep N as mnemonic input instead of opening Number.")) return 1;
         screen.get_slice(16, 4, 18, line);
-        if (expect(strstr(line, " LN_") == line,
+        if (expect(strstr(line, " IN_") == line,
                    "While the opcode picker is active, N must continue editing the mnemonic prefix.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should close the picker first.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should leave edit mode next.")) return 1;
@@ -6274,6 +6277,263 @@ static int test_restricted_backend_guards_platform_features(void)
     return 0;
 }
 
+// Bug 1: invalid mnemonic text must be rejected before it mutates the opcode
+// picker's edit state. Valid prefixes/mnemonics are accepted; anything that is
+// not a prefix of (or an exact) supported mnemonic is refused without touching
+// the buffer, cursor, operand, candidate list, or memory.
+static int test_asm_edit_rejects_invalid_mnemonic(void)
+{
+    // Block A: "AD" is a valid prefix (ADC); appending "D" (-> "ADD") is not a
+    // supported mnemonic prefix and must be rejected without any visible or
+    // memory change.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        char candidate[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'A' must open the picker.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'D' must extend prefix to AD.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Valid prefix AD must be accepted into the mnemonic field.")) return 1;
+        screen.get_slice(1, 5, 38, candidate);
+        if (expect(strstr(candidate, "ADC") != NULL,
+                   "Valid prefix AD must show the ADC completion candidate.")) return 1;
+
+        // Snapshot the accepted "AD" state, then feed the invalid third letter.
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: invalid 'D' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid mnemonic ADD must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Rejected ADD must leave the mnemonic field at AD.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected ADD must not write memory.")) return 1;
+        mon.deinit();
+    }
+
+    // Block B: repeating "A" (-> "AA") is not a valid prefix and is rejected.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'A', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "AA-reject test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "AA-reject test: first 'A' must be accepted as the prefix.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "AA-reject test: second 'A' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Repeated A (AA) must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "Rejected AA must leave the mnemonic field at A.")) return 1;
+        mon.deinit();
+    }
+
+    // Block C: a first letter that begins no supported mnemonic (G) is rejected
+    // and never opens the picker; a following valid letter (L) still works.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'G', 'L', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: edit mode entry failed.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'G' must be a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid first letter G must not open the picker or change the screen.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Invalid first letter G must not write memory.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'L' must open the picker.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "A valid first letter after a rejected one must still open the mnemonic field.")) return 1;
+        mon.deinit();
+    }
+
+    // Block D: backspace/delete still recovers after partial valid input.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'D', KEY_DELETE, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "Backspace recovery test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " LD_") == header,
+                   "Backspace recovery test: prefix must read LD before delete.")) return 1;
+        if (expect(mon.poll(0) == 0, "Backspace recovery test: delete must be accepted.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "Backspace must reduce the mnemonic prefix back to L.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+// Bug 2: RETURN in ASM edit mode commits the current line and advances to the
+// next logical disassembly line (length-correct for 1/2/3-byte instructions),
+// and never advances on rejected/invalid input.
+static int test_asm_edit_return_advances(void)
+{
+    struct Case {
+        const char *prompt;
+        uint16_t addr;
+        uint8_t bytes[3];
+        int len;
+        const char *expect_header;
+    } cases[] = {
+        { "C000", 0xC000, { 0xEA, 0x00, 0x00 }, 1, "MONITOR ASM $C001" }, // NOP
+        { "C100", 0xC100, { 0xA9, 0x42, 0x00 }, 2, "MONITOR ASM $C102" }, // LDA #$42
+        { "C200", 0xC200, { 0xAD, 0x00, 0x10 }, 3, "MONITOR ASM $C203" }, // LDA $1000
+    };
+
+    for (int c = 0; c < (int)(sizeof(cases) / sizeof(cases[0])); c++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt(cases[c].prompt, 1);
+        for (int i = 0; i < cases[c].len; i++) {
+            backend.write((uint16_t)(cases[c].addr + i), cases[c].bytes[i]);
+        }
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Return-advance test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: RETURN must advance, not exit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, cases[c].expect_header) == header,
+                   "RETURN in ASM edit mode must advance to the next logical instruction line.")) return 1;
+        mon.deinit();
+    }
+
+    // Invalid mnemonic input must not advance or commit: after a rejected third
+    // letter the cursor stays on the original line and memory is untouched.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Return no-advance test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "Rejected invalid mnemonic input must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected invalid mnemonic input must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    // A typed operand that fails to assemble must not commit bytes or advance;
+    // the picker stays open so the user can correct it (LDA #999 is out of range
+    // for an immediate byte).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = {
+            'J', 'A', 'E', 'L', 'D', 'A', '#', '9', '9', '9', KEY_RETURN, KEY_BREAK, KEY_BREAK, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 11; i++) {
+            if (expect(mon.poll(0) == 0, "Return invalid-operand test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "RETURN on an unassemblable typed operand must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "RETURN on an unassemblable typed operand must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -6312,6 +6572,8 @@ int main()
     if (test_asm_number_popup_targets_operands()) return 1;
     if (test_asm_number_popup_illegal_and_invalid_rows()) return 1;
     if (test_asm_edit_assemble_at_cursor()) return 1;
+    if (test_asm_edit_rejects_invalid_mnemonic()) return 1;
+    if (test_asm_edit_return_advances()) return 1;
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;

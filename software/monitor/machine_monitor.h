@@ -267,7 +267,8 @@ class MachineMonitor : public UIObject
     void hunt_picker_jump();
     int hunt_picker_handle_key(int key);
     void draw_opcode_picker();
-    void opcode_picker_open(char seed);
+    bool opcode_picker_open(char seed);
+    bool opcode_prefix_is_valid(const char *prefix);
     void opcode_picker_close();
     void opcode_picker_refilter();
     void opcode_picker_commit();
