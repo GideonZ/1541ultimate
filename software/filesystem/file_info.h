@@ -149,9 +149,10 @@ public:
         if (name_format & NAME_FORMAT_CBM) {
             petscii_to_fat(lfname, buffer, max_len);
             add_extension(buffer, extension, max_len);
-            return buffer;
+        } else {
+            strncpy(buffer, lfname, max_len);
         }
-        return lfname;
+        return buffer;
     }
 
     // bool match_to_pattern(CbmFileName &cbm)
