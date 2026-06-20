@@ -208,9 +208,8 @@ CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-sta
 LINK 	 = linker.x
 LIBS    = ../../../libs/riscv/lwip/result/liblwip.a
 #LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
-LFLAGS   = --gc-sections --wrap=malloc --wrap=_malloc_r --wrap=free --wrap=_free_r --wrap=realloc --wrap=_realloc_r
+LFLAGS   = --gc-sections --wrap=malloc --wrap=_malloc_r --wrap=free --wrap=_free_r --wrap=realloc --wrap=_realloc_r --wrap=calloc --wrap=_calloc_r
 LINKMETHOD = ld
-
 include ../../../common/rules.mk
 
 mps_png.o: mps_png.cc

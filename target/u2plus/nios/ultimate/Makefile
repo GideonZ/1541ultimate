@@ -223,7 +223,7 @@ CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-sta
 BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a
-LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o -Wl,--wrap=malloc -Wl,--wrap=_malloc_r -Wl,--wrap=free -Wl,--wrap=_free_r -Wl,--wrap=realloc -Wl,--wrap=_realloc_r
+LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o -Wl,--wrap=malloc,--wrap=_malloc_r,--wrap=free,--wrap=_free_r,--wrap=realloc,--wrap=_realloc_r,--wrap=calloc,--wrap=_calloc_r
 
 include ../../../common/rules.mk
 
