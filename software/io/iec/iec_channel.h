@@ -339,6 +339,7 @@ public:
 
     int seek_record(int, int);
     friend class IecCommandChannel;
+    friend class SoftIECTarget;
 };
 
 class IecCommandChannel: public IecChannel, public IecCommandExecuter {

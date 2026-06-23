@@ -540,7 +540,7 @@ static FRESULT find_rendered_iec_child(FileManager *fm, const char *full_dir,
     return FR_NO_FILE;
 }
 
-static FRESULT resolve_directory_path(FileManager *fm, IecPartition *partition,
+FRESULT resolve_directory_path(FileManager *fm, IecPartition *partition,
                                       mstring path, mstring& full_path,
                                       mstring *relative_path = NULL)
 {
