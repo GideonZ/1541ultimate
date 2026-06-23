@@ -59,6 +59,7 @@ KEYS = {
     "ESC": b"\x1bx",
     "ENTER": b"\r",
     "DEL": b"\x7f",
+    "BACKSPACE": b"\x08",
 }
 
 VIEW_KEYS = {
@@ -352,6 +353,18 @@ class MonitorSession:
         self.sock.sendall(payload)
         return self.capture()
 
+    def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
+        """Send a key and return (snapshot, bytes_received_during_redraw).
+
+        Used to measure per-keystroke output volume so a flood-on-scroll
+        regression (full-screen redraw per keystroke on telnet) is observable."""
+        payload = KEYS[key]
+        self.last_command = key
+        self.sock.sendall(payload)
+        self._last_drain_bytes = 0
+        self._drain_until_idle(timeout=self.timeout)
+        return self.screen.snapshot(self.last_command), self._last_drain_bytes
+
     def send_char(self, ch: str) -> Snapshot:
         self.last_command = ch
         self.sock.sendall(ch.encode("ascii"))
@@ -397,16 +410,20 @@ class MonitorSession:
     def _drain_until_idle(self, timeout: float) -> None:
         end = time.time() + timeout
         last_data = time.time()
+        drained = 0
         while time.time() < end:
             wait = min(0.5, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
             if not ready:
                 if time.time() - last_data >= 0.5:
+                    self._last_drain_bytes = drained
                     return
                 continue
             chunk = self.sock.recv(65536)
             if not chunk:
+                self._last_drain_bytes = drained
                 return
+            drained += len(chunk)
             self.screen.feed(chunk)
             last_data = time.time()
         raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
@@ -1030,6 +1047,133 @@ def run_follow_return_test(session: MonitorSession, rest_host: str) -> None:
     screen.find_line_containing("MONITOR ASM $3360")
     assert_line_lacks(screen, "F0 JMP $")
 
+def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> None:
+    # Bug 2 (Return advances) test program:
+    #   $3380: LDA #$01   A9 01     (2 bytes)
+    #   $3382: NOP        EA        (1 byte)
+    #   $3383: LDA $C000  AD 00 C0  (3 bytes)
+    write_rest_memory(rest_host, 0x3380, bytes((0xA9, 0x01, 0xEA, 0xAD, 0x00, 0xC0)))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("3380")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $3380")
+    screen = session.send_char("e")  # enter assembly edit mode
+    screen.find_line_containing("MONITOR ASM $3380")
+    # RETURN commits the current line and advances by the instruction length.
+    screen = session.send_key("ENTER")  # past LDA #$01 (2 bytes)
+    screen.find_line_containing("MONITOR ASM $3382")
+    screen = session.send_key("ENTER")  # past NOP (1 byte)
+    screen.find_line_containing("MONITOR ASM $3383")
+    screen = session.send_key("ENTER")  # past LDA $C000 (3 bytes)
+    screen.find_line_containing("MONITOR ASM $3386")
+    screen = session.send_key("ESC")    # leave edit mode
+
+    # Bug 1 (invalid mnemonic rejected): edit a clean NOP-filled region so the
+    # opcode picker is exercised in isolation.
+    write_rest_memory(rest_host, 0x33A0, bytes([0xEA] * 8))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("33A0")
+    screen = ensure_view(session, "ASM ")
+    screen = session.send_char("e")  # enter assembly edit mode
+    # A valid prefix is accepted and the completion list stays coherent.
+    screen = session.send_char("A")
+    screen.find_line_containing("ADC")
+    screen = session.send_char("D")
+    screen.find_line_containing(" AD_")
+    screen.find_line_containing("ADC")
+    # An invalid third letter (ADD is not a 6502 mnemonic) is rejected: the
+    # mnemonic field stays at AD and nothing bleeds into the operand area.
+    screen = session.send_char("D")
+    screen.find_line_containing(" AD_")
+    assert_line_lacks(screen, "ADD")
+    # Repeated invalid input does not overflow the field or bleed.
+    for _ in range(3):
+        screen = session.send_char("A")
+    screen.find_line_containing(" AD_")
+    assert_line_lacks(screen, "ADD")
+    assert_line_lacks(screen, "ADA")
+    screen = session.send_key("ESC")  # close the picker (stay in edit mode)
+    # A first letter that begins no supported mnemonic (G) is rejected and never
+    # joins the prefix; a following valid letter still opens the picker.
+    screen = session.send_char("G")
+    screen = session.send_char("L")
+    screen.find_line_containing(" L_")
+    assert_line_lacks(screen, "GL")
+    screen.find_line_containing("LDA")
+    screen = session.send_key("ESC")  # close the picker
+    session.send_key("ESC")           # leave edit mode
+
+
+# Per-keystroke output budget for scrolling the opcode dropdown over telnet.
+# Regression guard: on a full-refresh (telnet/VT100) screen the buggy path
+# redrew the WHOLE screen on every cursor up/down keystroke (measured 1727 bytes
+# per keystroke). Under cursor-key autorepeat that flood wedged/aborted the
+# telnet monitor connection. The fix repaints only the dropdown overlay (the
+# same incremental path Freeze/Overlay already use), a few hundred bytes per
+# keystroke. The threshold sits well below a full-screen redraw and well above
+# an overlay-only repaint so it cleanly separates buggy from fixed.
+DROPDOWN_SCROLL_BYTE_BUDGET = 1000
+
+
+def run_telnet_dropdown_scroll_flood_test(session: MonitorSession, rest_host: str) -> None:
+    # Stable, deterministic playground: a run of NOPs so the disassembly is fixed
+    # and the opcode dropdown can be anchored mid-screen (so it is larger than the
+    # visible area below it and genuinely scrolls internally).
+    write_rest_memory(rest_host, 0x33C0, bytes([0xEA] * 32))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto("33C0")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $33C0")
+    screen = session.send_char("e")  # enter assembly edit mode
+    # Step the cursor down so the dropdown anchor sits low on the screen; with the
+    # large "L" candidate list this guarantees the list exceeds the visible window
+    # and scrolling pushes content past the bottom row and back.
+    for _ in range(10):
+        screen = session.send_key("DOWN")
+    screen = session.send_char("L")  # open the large opcode dropdown
+    screen.find_line_containing(" L_")
+    screen.find_line_containing("LDA")
+
+    # Bounded down/up scroll burst (scroll to the bottom and beyond, then back up,
+    # repeated a few times). Every scroll keystroke is measured. This is NOT a
+    # soak test: the per-keystroke output volume is identical for every scroll
+    # key, so a small bounded burst reliably exposes the flood.
+    max_bytes = 0
+    sample = []
+    cycles = 2
+    down_n = 12
+    up_n = 12
+    for _ in range(cycles):
+        for _ in range(down_n):
+            _, n = session.send_key_count("DOWN")
+            max_bytes = max(max_bytes, n)
+            sample.append(n)
+        for _ in range(up_n):
+            _, n = session.send_key_count("UP")
+            max_bytes = max(max_bytes, n)
+            sample.append(n)
+
+    # The dropdown must remain coherent through the whole burst.
+    screen = session.capture()
+    screen.find_line_containing(" L_")
+    screen.find_line_containing("LDA")
+
+    if max_bytes > DROPDOWN_SCROLL_BYTE_BUDGET:
+        raise Failure(
+            "Telnet opcode dropdown floods on scroll: a single cursor keystroke "
+            f"emitted up to {max_bytes} bytes (budget {DROPDOWN_SCROLL_BYTE_BUDGET}). "
+            "Scrolling must repaint only the dropdown overlay, not the whole "
+            f"screen. First samples: {sample[:8]}"
+        )
+
+    # Connection must still be alive and the monitor must still respond after the
+    # bounded scroll burst.
+    screen = session.send_key("ESC")  # close the dropdown (stays in edit mode)
+    screen.find_line_containing("MONITOR ASM")
+    screen = session.send_key("ESC")  # leave edit mode
+    screen.find_status_line()
+
+
 def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     write_rest_memory(rest_host, 0x3370, bytes((0x20, 0x00, 0xC0, 0xEA)))
 
@@ -1055,6 +1199,161 @@ def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
     screen.find_line_containing("Calc with +-*/")
     screen = session.send_key("ESC")
     screen.find_line_containing("MONITOR ASM $3370")
+
+
+# ---------------------------------------------------------------------------
+# Save / Load round-trip tests
+#
+# These drive the monitor's S(ave) and L(oad) commands over telnet, exercising
+# the firmware file picker (a TreeBrowser in PICK mode rendered on the same
+# VT100 screen). They round-trip a known memory pattern to two kinds of target,
+# both under the RAM-disk /Temp folder:
+#   * a plain top-level PRG file
+#   * a PRG file inside a freshly created D64 disk image
+# The pattern is written/verified through the existing REST memory API, and a
+# unique per-run token keeps each run from colliding with leftovers (the picker
+# never has to answer an "overwrite?" prompt, and the D64 is genuinely new).
+# ---------------------------------------------------------------------------
+
+def picker_path(snapshot: Snapshot) -> str:
+    """Return the directory path the file picker currently shows.
+
+    The picker prints the active path on the bottom line, below its border."""
+    for line in reversed(snapshot.lines):
+        text = line.strip()
+        if text and not text.startswith("+"):
+            return text
+    return ""
+
+
+def picker_to_root(session: MonitorSession) -> Snapshot:
+    """Walk the picker up to the filesystem root ("/").
+
+    LEFT moves one level up; at the root LEFT would close the picker, so we
+    check the path before each step and stop as soon as we reach "/"."""
+    snapshot = session.capture()
+    for _ in range(12):
+        if picker_path(snapshot) == "/":
+            return snapshot
+        snapshot = session.send_key("LEFT")
+    raise Failure(f"Unable to reach picker root; last path was {picker_path(snapshot)!r}")
+
+
+def picker_enter(session: MonitorSession, name_prefix: str) -> Snapshot:
+    """Quick-seek to the entry matching name_prefix and step into it."""
+    for ch in name_prefix:
+        session.send_char(ch)
+    return session.send_key("RIGHT")
+
+
+def clear_prompt_field(session: MonitorSession) -> None:
+    """Empty a (non-template) string prompt by sending backspaces.
+
+    The monitor's "Save as" prompt is pre-filled with the last-used name and
+    does not auto-clear on the first keystroke, so we delete it first. The
+    field is at most 35 characters, hence the generous count."""
+    session.sock.sendall(KEYS["BACKSPACE"] * 40)
+    session.capture()
+
+
+def rest_create_d64(host: str, path: str, diskname: str) -> None:
+    url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
+    request = urllib.request.Request(url, data=b"", method="PUT")
+    with urllib.request.urlopen(request, timeout=15.0):
+        pass
+
+
+def rest_file_exists(host: str, path: str) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://{host}/v1/files{path}:info", timeout=5.0) as response:
+            return response.status == 200
+    except urllib.error.HTTPError:
+        return False
+
+
+def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str], filename: str) -> Snapshot:
+    """Save mem_range to filename, navigating from root through enter_dirs.
+
+    enter_dirs is a list of quick-seek prefixes to step into (e.g. ["MS"] for a
+    /Temp subtree reached from root, or ["MD"] then the D64). The final
+    directory must offer "<< Create New File >>" as its first entry."""
+    session.send_char("S")
+    session.send_text(mem_range + "\r", f"save range {mem_range}")
+    picker_to_root(session)
+    snapshot = session.send_key("RIGHT")  # step into /Temp (the first root entry)
+    for prefix in enter_dirs:
+        snapshot = picker_enter(session, prefix)
+    # The cursor defaults to "<< Create New File >>"; RIGHT picks it and the
+    # monitor then asks for the file name.
+    session.send_key("RIGHT")
+    clear_prompt_field(session)
+    snapshot = session.send_text(filename + "\r", f"save as {filename}")
+    snapshot.find_line_containing("SAVE")
+    return session.send_key("ENTER")  # dismiss the confirmation popup
+
+
+def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str) -> Snapshot:
+    """Load filename back, navigating from root through enter_dirs."""
+    session.send_char("L")
+    picker_to_root(session)
+    session.send_key("RIGHT")  # step into /Temp
+    for prefix in enter_dirs:
+        picker_enter(session, prefix)
+    for ch in filename:
+        session.send_char(ch)  # quick-seek to the file
+    session.send_key("ENTER")  # open the context menu ("Select" is first)
+    session.send_key("ENTER")  # Select -> pick the file
+    # "Load [PRG|AAAA],[Offs],[Len|AUTO]" prompt: typing the spec clears the
+    # template, so PRG mode is forced regardless of the last-used value.
+    session.send_text("PRG,0,AUTO\r", "load PRG")
+    return session.send_key("ENTER")  # dismiss the confirmation popup
+
+
+def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: str) -> None:
+    addr = 0xC000
+    pattern = bytes((0x5A, 0xA5, 0x01, 0x02, 0xDE, 0xAD, 0xBE, 0xEF,
+                     0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80))
+    name = f"MS{token}.PRG"
+
+    write_rest_memory(rest_host, addr, pattern)
+    monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [], name)
+    if not rest_file_exists(rest_host, f"/Temp/{name}"):
+        raise Failure(f"Saved file /Temp/{name} not found via REST")
+
+    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    monitor_load(session, [], f"MS{token}")
+    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    if loaded != pattern:
+        raise Failure(
+            f"Top-level save/load mismatch at ${addr:04X}:\n"
+            f"  saved:  {pattern.hex().upper()}\n"
+            f"  loaded: {loaded.hex().upper()}"
+        )
+
+
+def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) -> None:
+    addr = 0xC100
+    pattern = bytes((0x11, 0x22, 0x33, 0x44, 0xAA, 0xBB, 0xCC, 0xDD,
+                     0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02))
+    disk = f"MD{token}.D64"
+    inner = f"D{token}"
+
+    rest_create_d64(rest_host, f"/Temp/{disk}", f"MD{token}")
+    if not rest_file_exists(rest_host, f"/Temp/{disk}"):
+        raise Failure(f"D64 image /Temp/{disk} was not created")
+
+    write_rest_memory(rest_host, addr, pattern)
+    monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [f"MD{token}"], inner)
+
+    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    monitor_load(session, [f"MD{token}"], inner)
+    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    if loaded != pattern:
+        raise Failure(
+            f"D64 save/load mismatch at ${addr:04X}:\n"
+            f"  saved:  {pattern.hex().upper()}\n"
+            f"  loaded: {loaded.hex().upper()}"
+        )
 
 
 def run_tests(session: MonitorSession, rest_host: str) -> None:
@@ -1195,8 +1494,22 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     with check("follow and return navigation"):
         run_follow_return_test(session, rest_host)
 
+    with check("asm edit mnemonic validation and Return advance"):
+        run_asm_edit_validation_test(session, rest_host)
+
+    with check("telnet opcode dropdown scroll does not flood the connection"):
+        run_telnet_dropdown_scroll_flood_test(session, rest_host)
+
     with check("number popup arithmetic"):
         run_number_arithmetic_test(session, rest_host)
+
+    save_load_token = f"{int(time.time()) % 100000:05d}"
+
+    with check("save/load round-trip to top-level /Temp file"):
+        run_save_load_topfile_test(session, rest_host, save_load_token)
+
+    with check("save/load round-trip to file in new /Temp D64"):
+        run_save_load_d64_test(session, rest_host, save_load_token)
 
 
 def main() -> int:

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "assembler_6502.h"
 #include "disassembler_6502.h"
 #include "monitor_init.h"
 #include "machine_monitor_test_support.h"
@@ -273,6 +274,237 @@ static int test_disassembler(void)
     const uint8_t illegal_zpx[] = { 0x54, 0x44, 0x00 };
     disassemble_6502(0x3000, illegal_zpx, true, &decoded);
     if (expect(strcmp(decoded.text, "NOP $44,X") == 0, "Illegal zeropage,X disassembly failed.")) return 1;
+
+    const uint8_t bit_zp[] = { 0x24, 0x66, 0x00 };
+    disassemble_6502(0xBCA2, bit_zp, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BIT $66") == 0,
+               "BIT zeropage disassembly failed.")) return 1;
+
+    const uint8_t bcc_rel[] = { 0x90, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcc_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCC $1007") == 0,
+               "BCC branch target disassembly failed.")) return 1;
+
+    const uint8_t bcs_rel[] = { 0xB0, 0x05, 0x00 };
+    disassemble_6502(0x1000, bcs_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BCS $1007") == 0,
+               "BCS branch target disassembly failed.")) return 1;
+
+    const uint8_t beq_rel[] = { 0xF0, 0x05, 0x00 };
+    disassemble_6502(0x1000, beq_rel, false, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "BEQ $1007") == 0,
+               "BEQ branch target disassembly failed.")) return 1;
+
+    // Exercise the remaining relative branches too, so a missing or wrong
+    // `rel` operand spec in the opcode template table is caught here.
+    const struct { uint8_t opcode; const char *text; } rel_branches[] = {
+        { 0x10, "BPL $1007" }, { 0x30, "BMI $1007" },
+        { 0x50, "BVC $1007" }, { 0x70, "BVS $1007" },
+        { 0xD0, "BNE $1007" },
+    };
+    for (unsigned i = 0; i < sizeof(rel_branches) / sizeof(rel_branches[0]); i++) {
+        const uint8_t branch_rel[] = { rel_branches[i].opcode, 0x05, 0x00 };
+        disassemble_6502(0x1000, branch_rel, false, &decoded);
+        if (expect(decoded.length == 2 && strcmp(decoded.text, rel_branches[i].text) == 0,
+                   "Relative branch target disassembly failed.")) return 1;
+    }
+
+    const uint8_t ane_imm[] = { 0x8B, 0x44, 0x00 };
+    disassemble_6502(0x3000, ane_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "ANE #$44") == 0,
+               "ANE immediate disassembly failed.")) return 1;
+
+    const uint8_t sbx_imm[] = { 0xCB, 0x44, 0x00 };
+    disassemble_6502(0x3000, sbx_imm, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "SBX #$44") == 0,
+               "SBX immediate disassembly failed.")) return 1;
+
+    const uint8_t nop_f4_zpx[] = { 0xF4, 0x44, 0x00 };
+    disassemble_6502(0x3000, nop_f4_zpx, true, &decoded);
+    if (expect(decoded.length == 2 && strcmp(decoded.text, "NOP $44,X") == 0,
+               "F4 zeropage,X disassembly failed.")) return 1;
+
+    return 0;
+}
+
+static uint8_t test_template_operand_length(const char *templ)
+{
+    const char *spec = operand_spec(templ);
+
+    if (*spec == 0 || !strncmp(spec, "A", 1)) return 0;
+    if (!strncmp(spec, "rel", 3)) return 1;
+    if (!strncmp(spec, "($nnnn,X)", 9) || !strncmp(spec, "($nnnn)", 7) ||
+        !strncmp(spec, "(ABS,X)", 7) || !strncmp(spec, "$nnnn,Y", 7) ||
+        !strncmp(spec, "$nnnn,X", 7) || !strncmp(spec, "$nnnn", 5)) {
+        return 2;
+    }
+    if (!strncmp(spec, "($nn,X)", 7) || !strncmp(spec, "($nn),Y", 7) ||
+        !strncmp(spec, "$nn,Y", 5) || !strncmp(spec, "$nn,X", 5) ||
+        !strncmp(spec, "$nn,S", 5) || !strncmp(spec, "$nn", 3) ||
+        !strncmp(spec, "#", 1)) {
+        return 1;
+    }
+    return 0;
+}
+
+static bool is_ambiguous_roundtrip_opcode(uint8_t opcode)
+{
+    switch (opcode) {
+        case 0x02: return false;
+        case 0x12: case 0x22: case 0x32: case 0x42: case 0x52:
+        case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2:
+        case 0xF2:
+        case 0x04: case 0x0C: case 0x14: case 0x1A: case 0x1C:
+        case 0x34: case 0x3A: case 0x3C: case 0x44: case 0x54:
+        case 0x5A: case 0x5C: case 0x64: case 0x74: case 0x7A:
+        case 0x7C: case 0x80: case 0x82: case 0x89: case 0xC2:
+        case 0xD4: case 0xDA: case 0xDC: case 0xE2: case 0xF4:
+        case 0xFA: case 0xFC:
+        case 0x2B:
+        case 0xEB:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static int expect_disassembly(uint8_t opcode, uint8_t b1, uint8_t b2,
+                              const char *expected, uint8_t expected_length)
+{
+    Disassembled6502 decoded;
+    const uint8_t bytes[] = { opcode, b1, b2 };
+
+    disassemble_6502(0xC000, bytes, true, &decoded);
+    if (expect(decoded.valid, "Opcode must disassemble with illegal opcodes enabled.")) return 1;
+    if (expect(decoded.length == expected_length, "Disassembly length mismatch.")) return 1;
+    if (expect(decoded.operand_bytes == expected_length - 1, "Disassembly operand length mismatch.")) return 1;
+    if (expect(strcmp(decoded.text, expected) == 0, "Disassembly text mismatch.")) return 1;
+    return 0;
+}
+
+static int expect_assembly(const char *line, const uint8_t *bytes, uint8_t length, bool illegal)
+{
+    AsmInsn insn;
+    MonitorError err = MONITOR_OK;
+
+    if (expect(monitor_assemble_line(line, illegal, 0xC000, &insn, &err), "Assembly input must encode.")) return 1;
+    if (expect(insn.length == length, "Assembly length mismatch.")) return 1;
+    for (uint8_t i = 0; i < length; i++) {
+        if (expect(insn.bytes[i] == bytes[i], "Assembly byte mismatch.")) return 1;
+    }
+    return 0;
+}
+
+static int test_illegal_opcode_normalization(void)
+{
+    static const struct {
+        uint8_t opcode;
+        uint8_t b1;
+        uint8_t b2;
+        uint8_t length;
+        const char *text;
+    } disasm_cases[] = {
+        { 0x02, 0x12, 0x34, 1, "JAM" }, { 0x12, 0x12, 0x34, 1, "JAM" },
+        { 0x22, 0x12, 0x34, 1, "JAM" }, { 0x32, 0x12, 0x34, 1, "JAM" },
+        { 0x42, 0x12, 0x34, 1, "JAM" }, { 0x52, 0x12, 0x34, 1, "JAM" },
+        { 0x62, 0x12, 0x34, 1, "JAM" }, { 0x72, 0x12, 0x34, 1, "JAM" },
+        { 0x92, 0x12, 0x34, 1, "JAM" }, { 0xB2, 0x12, 0x34, 1, "JAM" },
+        { 0xD2, 0x12, 0x34, 1, "JAM" }, { 0xF2, 0x12, 0x34, 1, "JAM" },
+
+        { 0x03, 0x12, 0x34, 2, "SLO ($12,X)" }, { 0x07, 0x12, 0x34, 2, "SLO $12" },
+        { 0x0F, 0x34, 0x12, 3, "SLO $1234" }, { 0x13, 0x12, 0x34, 2, "SLO ($12),Y" },
+        { 0x17, 0x12, 0x34, 2, "SLO $12,X" }, { 0x1B, 0x34, 0x12, 3, "SLO $1234,Y" },
+        { 0x1F, 0x34, 0x12, 3, "SLO $1234,X" },
+
+        { 0x43, 0x12, 0x34, 2, "SRE ($12,X)" }, { 0x47, 0x12, 0x34, 2, "SRE $12" },
+        { 0x4F, 0x34, 0x12, 3, "SRE $1234" }, { 0x53, 0x12, 0x34, 2, "SRE ($12),Y" },
+        { 0x57, 0x12, 0x34, 2, "SRE $12,X" }, { 0x5B, 0x34, 0x12, 3, "SRE $1234,Y" },
+        { 0x5F, 0x34, 0x12, 3, "SRE $1234,X" },
+
+        { 0xC3, 0x12, 0x34, 2, "DCP ($12,X)" }, { 0xC7, 0x12, 0x34, 2, "DCP $12" },
+        { 0xCF, 0x34, 0x12, 3, "DCP $1234" }, { 0xD3, 0x12, 0x34, 2, "DCP ($12),Y" },
+        { 0xD7, 0x12, 0x34, 2, "DCP $12,X" }, { 0xDB, 0x34, 0x12, 3, "DCP $1234,Y" },
+        { 0xDF, 0x34, 0x12, 3, "DCP $1234,X" },
+
+        { 0xE3, 0x12, 0x34, 2, "ISC ($12,X)" }, { 0xE7, 0x12, 0x34, 2, "ISC $12" },
+        { 0xEF, 0x34, 0x12, 3, "ISC $1234" }, { 0xF3, 0x12, 0x34, 2, "ISC ($12),Y" },
+        { 0xF7, 0x12, 0x34, 2, "ISC $12,X" }, { 0xFB, 0x34, 0x12, 3, "ISC $1234,Y" },
+        { 0xFF, 0x34, 0x12, 3, "ISC $1234,X" },
+
+        { 0x8B, 0x12, 0x34, 2, "ANE #$12" },
+        { 0x93, 0x12, 0x34, 2, "SHA ($12),Y" },
+        { 0x9F, 0x34, 0x12, 3, "SHA $1234,Y" },
+        { 0xCB, 0x12, 0x34, 2, "SBX #$12" },
+        { 0x54, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x74, 0x12, 0x34, 2, "NOP $12,X" },
+
+        { 0x1A, 0x12, 0x34, 1, "NOP" }, { 0x3A, 0x12, 0x34, 1, "NOP" },
+        { 0x5A, 0x12, 0x34, 1, "NOP" }, { 0x7A, 0x12, 0x34, 1, "NOP" },
+        { 0xDA, 0x12, 0x34, 1, "NOP" }, { 0xFA, 0x12, 0x34, 1, "NOP" },
+        { 0x04, 0x12, 0x34, 2, "NOP $12" }, { 0x44, 0x12, 0x34, 2, "NOP $12" },
+        { 0x64, 0x12, 0x34, 2, "NOP $12" },
+        { 0x14, 0x12, 0x34, 2, "NOP $12,X" }, { 0x34, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0xD4, 0x12, 0x34, 2, "NOP $12,X" }, { 0xF4, 0x12, 0x34, 2, "NOP $12,X" },
+        { 0x0C, 0x34, 0x12, 3, "NOP $1234" },
+        { 0x1C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x3C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x5C, 0x34, 0x12, 3, "NOP $1234,X" }, { 0x7C, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0xDC, 0x34, 0x12, 3, "NOP $1234,X" }, { 0xFC, 0x34, 0x12, 3, "NOP $1234,X" },
+        { 0x80, 0x12, 0x34, 2, "NOP #$12" }, { 0x82, 0x12, 0x34, 2, "NOP #$12" },
+        { 0x89, 0x12, 0x34, 2, "NOP #$12" }, { 0xC2, 0x12, 0x34, 2, "NOP #$12" },
+        { 0xE2, 0x12, 0x34, 2, "NOP #$12" },
+
+        { 0xA3, 0x12, 0x34, 2, "LAX ($12,X)" }, { 0xB3, 0x12, 0x34, 2, "LAX ($12),Y" },
+        { 0xB7, 0x12, 0x34, 2, "LAX $12,Y" }, { 0xBF, 0x34, 0x12, 3, "LAX $1234,Y" },
+        { 0x83, 0x12, 0x34, 2, "SAX ($12,X)" }, { 0x87, 0x12, 0x34, 2, "SAX $12" },
+        { 0x8F, 0x34, 0x12, 3, "SAX $1234" }, { 0x97, 0x12, 0x34, 2, "SAX $12,Y" },
+        { 0x9B, 0x34, 0x12, 3, "TAS $1234,Y" }, { 0x9C, 0x34, 0x12, 3, "SHY $1234,X" },
+        { 0x9E, 0x34, 0x12, 3, "SHX $1234,Y" }, { 0xBB, 0x34, 0x12, 3, "LAS $1234,Y" },
+        { 0xEB, 0x12, 0x34, 2, "SBC #$12" },
+    };
+
+    for (unsigned i = 0; i < sizeof(disasm_cases) / sizeof(disasm_cases[0]); i++) {
+        if (expect_disassembly(disasm_cases[i].opcode, disasm_cases[i].b1, disasm_cases[i].b2,
+                               disasm_cases[i].text, disasm_cases[i].length)) return 1;
+    }
+
+    if (expect(strncmp(disassembler_6502_template(0x54), "NOP*", 4) == 0,
+               "Opcode $54 must retain the illegal NOP marker in the template.")) return 1;
+    if (expect(strncmp(disassembler_6502_template(0x74), "NOP*", 4) == 0,
+               "Opcode $74 must retain the illegal NOP marker in the template.")) return 1;
+
+    return 0;
+}
+
+static int test_opcode_metadata_consistency(void)
+{
+    for (int op = 0; op < 256; op++) {
+        const char *templ = disassembler_6502_template((uint8_t)op);
+        if (expect(templ != NULL && strlen(templ) >= 3, "Every opcode must have one template.")) return 1;
+
+        uint8_t expected_length = (uint8_t)(1 + test_template_operand_length(templ));
+        if (expect(expected_length >= 1 && expected_length <= 3, "Opcode template length must be 1..3.")) return 1;
+
+        const uint8_t bytes[] = { (uint8_t)op, 0x12, 0x34 };
+        Disassembled6502 decoded;
+        disassemble_6502(0xC000, bytes, true, &decoded);
+        if (expect(decoded.valid, "All opcodes must disassemble with illegal opcodes enabled.")) return 1;
+        if (expect(decoded.length == expected_length, "Template-derived length must match disassembly length.")) return 1;
+        if (expect(decoded.operand_bytes == expected_length - 1, "Template-derived operand length must match disassembly.")) return 1;
+
+        if (is_ambiguous_roundtrip_opcode((uint8_t)op)) {
+            continue;
+        }
+
+        AsmInsn insn;
+        MonitorError err = MONITOR_OK;
+        if (expect(monitor_assemble_line(decoded.text, true, 0xC000, &insn, &err),
+                   "Disassembled instruction must assemble again.")) return 1;
+        if (expect(insn.length == decoded.length, "Round-trip length mismatch.")) return 1;
+        if (expect(insn.bytes[0] == (uint8_t)op, "Round-trip opcode mismatch.")) return 1;
+        for (uint8_t i = 1; i < insn.length; i++) {
+            if (expect(insn.bytes[i] == bytes[i], "Round-trip operand byte mismatch.")) return 1;
+        }
+    }
 
     return 0;
 }
@@ -1281,8 +1513,8 @@ static int test_monitor_interaction(void)
         "Bookmarks:  C=+B List   C=+0-9 Jump",
         "",
         "Open monitor:  C=+O",
-        "Close monitor: C=+O/ESC",
-        "Leave edit:    C=+E/ESC",
+        "Close monitor: C=+O/RSTOP",
+        "Leave edit:    C=+E/RSTOP",
         "Copy/Paste:    C=+C / C=+V",
         "Follow/Return: RETURN",
         NULL
@@ -1936,8 +2168,6 @@ static int test_monitor_kernal_bank_switch_and_ram_interaction(void)
     return 0;
 }
 
-#include "assembler_6502.h"
-
 static int test_assembler_encoding(void)
 {
     AsmInsn insn;
@@ -1963,6 +2193,86 @@ static int test_assembler_encoding(void)
     // ...accepted when on.
     if (expect(monitor_assemble_line("SLO $12", true, 0xC000, &insn, &err), "SLO $12 must encode when illegal=ON")) return 1;
     if (expect(insn.length == 2 && insn.bytes[0] == 0x07 && insn.bytes[1] == 0x12, "SLO $12 -> 07 12")) return 1;
+
+    static const struct {
+        const char *line;
+        uint8_t length;
+        uint8_t bytes[3];
+    } canonical_cases[] = {
+        { "JAM", 1, { 0x02, 0x00, 0x00 } },
+        { "SLO ($12,X)", 2, { 0x03, 0x12, 0x00 } },
+        { "SLO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "SLO $1234", 3, { 0x0F, 0x34, 0x12 } },
+        { "SLO ($12),Y", 2, { 0x13, 0x12, 0x00 } },
+        { "SLO $12,X", 2, { 0x17, 0x12, 0x00 } },
+        { "SLO $1234,Y", 3, { 0x1B, 0x34, 0x12 } },
+        { "SLO $1234,X", 3, { 0x1F, 0x34, 0x12 } },
+        { "SRE ($12,X)", 2, { 0x43, 0x12, 0x00 } },
+        { "SRE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "SRE $1234", 3, { 0x4F, 0x34, 0x12 } },
+        { "SRE ($12),Y", 2, { 0x53, 0x12, 0x00 } },
+        { "SRE $12,X", 2, { 0x57, 0x12, 0x00 } },
+        { "SRE $1234,Y", 3, { 0x5B, 0x34, 0x12 } },
+        { "SRE $1234,X", 3, { 0x5F, 0x34, 0x12 } },
+        { "DCP ($12,X)", 2, { 0xC3, 0x12, 0x00 } },
+        { "DCP $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "DCP $1234", 3, { 0xCF, 0x34, 0x12 } },
+        { "DCP ($12),Y", 2, { 0xD3, 0x12, 0x00 } },
+        { "DCP $12,X", 2, { 0xD7, 0x12, 0x00 } },
+        { "DCP $1234,Y", 3, { 0xDB, 0x34, 0x12 } },
+        { "DCP $1234,X", 3, { 0xDF, 0x34, 0x12 } },
+        { "ISC ($12,X)", 2, { 0xE3, 0x12, 0x00 } },
+        { "ISC $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISC $1234", 3, { 0xEF, 0x34, 0x12 } },
+        { "ISC ($12),Y", 2, { 0xF3, 0x12, 0x00 } },
+        { "ISC $12,X", 2, { 0xF7, 0x12, 0x00 } },
+        { "ISC $1234,Y", 3, { 0xFB, 0x34, 0x12 } },
+        { "ISC $1234,X", 3, { 0xFF, 0x34, 0x12 } },
+        { "ANE #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "SHA ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "SHA $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "SBX #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "SAX $12", 2, { 0x87, 0x12, 0x00 } },
+        { "SAX $1234", 3, { 0x8F, 0x34, 0x12 } },
+        { "SAX ($12,X)", 2, { 0x83, 0x12, 0x00 } },
+        { "SAX $12,Y", 2, { 0x97, 0x12, 0x00 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(canonical_cases) / sizeof(canonical_cases[0]); i++) {
+        if (expect_assembly(canonical_cases[i].line, canonical_cases[i].bytes,
+                            canonical_cases[i].length, true)) return 1;
+    }
+
+    static const struct {
+        const char *alias;
+        uint8_t length;
+        uint8_t bytes[3];
+    } alias_cases[] = {
+        { "HLT", 1, { 0x02, 0x00, 0x00 } },
+        { "KIL", 1, { 0x02, 0x00, 0x00 } },
+        { "ASO $12", 2, { 0x07, 0x12, 0x00 } },
+        { "LSE $12", 2, { 0x47, 0x12, 0x00 } },
+        { "DCM $12", 2, { 0xC7, 0x12, 0x00 } },
+        { "INS $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "ISB $12", 2, { 0xE7, 0x12, 0x00 } },
+        { "XAA #$12", 2, { 0x8B, 0x12, 0x00 } },
+        { "AHX ($12),Y", 2, { 0x93, 0x12, 0x00 } },
+        { "AHX $1234,Y", 3, { 0x9F, 0x34, 0x12 } },
+        { "AXS #$12", 2, { 0xCB, 0x12, 0x00 } },
+        { "ASR #$12", 2, { 0x4B, 0x12, 0x00 } },
+        { "LXA #$12", 2, { 0xAB, 0x12, 0x00 } },
+        { "SHS $1234,Y", 3, { 0x9B, 0x34, 0x12 } },
+        { "LAE $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+        { "LDS $1234,Y", 3, { 0xBB, 0x34, 0x12 } },
+    };
+
+    for (unsigned i = 0; i < sizeof(alias_cases) / sizeof(alias_cases[0]); i++) {
+        if (expect_assembly(alias_cases[i].alias, alias_cases[i].bytes,
+                            alias_cases[i].length, true)) return 1;
+    }
+
+    if (expect(!monitor_assemble_line("SAX #$12", true, 0xC000, &insn, &err),
+               "SAX immediate must not assemble to SBX.")) return 1;
 
     return 0;
 }
@@ -2350,7 +2660,10 @@ static int test_number_shortcut_routing(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;
         char line[19];
-        const int keys[] = { 'J', 'A', 'E', 'L', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        // "IN" is a valid mnemonic prefix (INC/INX/INY); the point of this test
+        // is that N routes into the opcode picker rather than opening the Number
+        // popup while the picker is active.
+        const int keys[] = { 'J', 'A', 'E', 'I', 'N', KEY_BREAK, KEY_BREAK, KEY_BREAK };
         FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
 
         ui.screen = &screen;
@@ -2368,7 +2681,7 @@ static int test_number_shortcut_routing(void)
         if (expect(!find_popup_rect(screen, NULL, NULL, NULL, NULL),
                    "Opcode completion popup must keep N as mnemonic input instead of opening Number.")) return 1;
         screen.get_slice(16, 4, 18, line);
-        if (expect(strstr(line, " LN_") == line,
+        if (expect(strstr(line, " IN_") == line,
                    "While the opcode picker is active, N must continue editing the mnemonic prefix.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should close the picker first.")) return 1;
         if (expect(mon.poll(0) == 0, "ASM popup N-routing test: RUN/STOP should leave edit mode next.")) return 1;
@@ -3064,6 +3377,30 @@ static int test_asm_edit_branch_two_parts(void)
     return 0;
 }
 
+static int test_asm_edit_bit_operand_not_branch(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    backend.write(0xC000, 0x24);
+    backend.write(0xC001, 0x44);
+    const int keys[] = {
+        'J', 'A', 'E', KEY_RIGHT, '6', '6', KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.read(0xC000) == 0x24 && backend.read(0xC001) == 0x66,
+               "ASM BIT zeropage edit must treat operand as a byte, not a branch target")) return 1;
+    return 0;
+}
+
 static int test_asm_cpu_bank_cycle_preserves_screen_row(void)
 {
     TestUserInterface ui;
@@ -3256,6 +3593,62 @@ static int test_space_shortcuts_match_existing_paging(void)
         }
     }
 
+    return 0;
+}
+
+// Regression for the telnet opcode-dropdown scroll flood: on a full-refresh
+// screen (telnet/VT100), scrolling the opcode dropdown used to repaint the WHOLE
+// screen on every cursor keystroke. Under cursor-key autorepeat that flood
+// wedged/aborted the telnet monitor connection. A scroll keystroke must repaint
+// only the dropdown overlay (the same incremental path Freeze/Overlay use), not
+// the header, disassembly or status rows underneath it.
+static int test_opcode_picker_scroll_redraws_overlay_only(void)
+{
+    struct FullRefreshCaptureScreen : public CaptureScreen {
+        virtual bool prefers_full_refresh(void) { return true; }
+    };
+
+    TestUserInterface ui;
+    FullRefreshCaptureScreen screen;
+    FakeMemoryBackend backend;
+    // J(goto) A(asm view) E(edit) L(open big dropdown), then DOWN to scroll.
+    const int keys[] = { 'J', 'A', 'E', 'L', KEY_DOWN, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < 4; i++) {
+        if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: setup (J/A/E/L) failed.")) return 1;
+    }
+    // The dropdown box is anchored to the current_addr disassembly row and spans
+    // screen columns 16..33 (window col MONITOR_DISASM_TEXT_COL=15 plus the 1-col
+    // window border). Verify the dropdown is actually showing candidates first.
+    char row[39];
+    screen.get_slice(1, 5, 38, row);
+    if (expect(strstr(row, "LD") != NULL,
+               "Dropdown scroll redraw test: expected LD* candidates for prefix L.")) return 1;
+
+    // A single scroll keystroke must touch ONLY the dropdown box columns.
+    screen.reset_write_counts();
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: DOWN scroll failed.")) return 1;
+
+    int outside_box = screen.count_writes_outside_rect(16, 0, 33, 24);
+    int total = screen.count_writes_outside_rect(1000, 1000, 1000, 1000); // impossible rect => all writes
+    if (expect(total > 0,
+               "Dropdown scroll redraw test: scrolling must repaint the dropdown overlay.")) return 1;
+    if (expect(outside_box == 0,
+               "Dropdown scroll on a full-refresh (telnet) screen must repaint only the dropdown "
+               "overlay, not the whole screen (header/disassembly/status).")) return 1;
+
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should close the picker first.")) return 1;
+    if (expect(mon.poll(0) == 0, "Dropdown scroll redraw test: RUN/STOP should leave edit mode next.")) return 1;
+    if (expect(mon.poll(0) == 1, "Dropdown scroll redraw test: exit failed.")) return 1;
+    mon.deinit();
     return 0;
 }
 
@@ -5940,9 +6333,268 @@ static int test_restricted_backend_guards_platform_features(void)
     return 0;
 }
 
+// Bug 1: invalid mnemonic text must be rejected before it mutates the opcode
+// picker's edit state. Valid prefixes/mnemonics are accepted; anything that is
+// not a prefix of (or an exact) supported mnemonic is refused without touching
+// the buffer, cursor, operand, candidate list, or memory.
+static int test_asm_edit_rejects_invalid_mnemonic(void)
+{
+    // Block A: "AD" is a valid prefix (ADC); appending "D" (-> "ADD") is not a
+    // supported mnemonic prefix and must be rejected without any visible or
+    // memory change.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        char candidate[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'A' must open the picker.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: 'D' must extend prefix to AD.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Valid prefix AD must be accepted into the mnemonic field.")) return 1;
+        screen.get_slice(1, 5, 38, candidate);
+        if (expect(strstr(candidate, "ADC") != NULL,
+                   "Valid prefix AD must show the ADC completion candidate.")) return 1;
+
+        // Snapshot the accepted "AD" state, then feed the invalid third letter.
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid mnemonic test: invalid 'D' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid mnemonic ADD must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " AD_") == header,
+                   "Rejected ADD must leave the mnemonic field at AD.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected ADD must not write memory.")) return 1;
+        mon.deinit();
+    }
+
+    // Block B: repeating "A" (-> "AA") is not a valid prefix and is rejected.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'A', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "AA-reject test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "AA-reject test: first 'A' must be accepted as the prefix.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "AA-reject test: second 'A' must be consumed as a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Repeated A (AA) must not change the rendered edit state.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " A_") == header,
+                   "Rejected AA must leave the mnemonic field at A.")) return 1;
+        mon.deinit();
+    }
+
+    // Block C: a first letter that begins no supported mnemonic (G) is rejected
+    // and never opens the picker; a following valid letter (L) still works.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        CaptureScreen snapshot;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'G', 'L', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: edit mode entry failed.")) return 1;
+        snapshot = screen;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'G' must be a no-op.")) return 1;
+        if (expect_screens_equal(snapshot, screen,
+                                 "Invalid first letter G must not open the picker or change the screen.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Invalid first letter G must not write memory.")) return 1;
+        if (expect(mon.poll(0) == 0, "Invalid first-letter test: 'L' must open the picker.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "A valid first letter after a rejected one must still open the mnemonic field.")) return 1;
+        mon.deinit();
+    }
+
+    // Block D: backspace/delete still recovers after partial valid input.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[19];
+        const int keys[] = { 'J', 'A', 'E', 'L', 'D', KEY_DELETE, KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "Backspace recovery test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " LD_") == header,
+                   "Backspace recovery test: prefix must read LD before delete.")) return 1;
+        if (expect(mon.poll(0) == 0, "Backspace recovery test: delete must be accepted.")) return 1;
+        screen.get_slice(16, 4, 18, header);
+        if (expect(strstr(header, " L_") == header,
+                   "Backspace must reduce the mnemonic prefix back to L.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+// Bug 2: RETURN in ASM edit mode commits the current line and advances to the
+// next logical disassembly line (length-correct for 1/2/3-byte instructions),
+// and never advances on rejected/invalid input.
+static int test_asm_edit_return_advances(void)
+{
+    struct Case {
+        const char *prompt;
+        uint16_t addr;
+        uint8_t bytes[3];
+        int len;
+        const char *expect_header;
+    } cases[] = {
+        { "C000", 0xC000, { 0xEA, 0x00, 0x00 }, 1, "MONITOR ASM $C001" }, // NOP
+        { "C100", 0xC100, { 0xA9, 0x42, 0x00 }, 2, "MONITOR ASM $C102" }, // LDA #$42
+        { "C200", 0xC200, { 0xAD, 0x00, 0x10 }, 3, "MONITOR ASM $C203" }, // LDA $1000
+    };
+
+    for (int c = 0; c < (int)(sizeof(cases) / sizeof(cases[0])); c++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', KEY_RETURN, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt(cases[c].prompt, 1);
+        for (int i = 0; i < cases[c].len; i++) {
+            backend.write((uint16_t)(cases[c].addr + i), cases[c].bytes[i]);
+        }
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Return-advance test: goto failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: ASM view switch failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: edit mode entry failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "Return-advance test: RETURN must advance, not exit.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, cases[c].expect_header) == header,
+                   "RETURN in ASM edit mode must advance to the next logical instruction line.")) return 1;
+        mon.deinit();
+    }
+
+    // Invalid mnemonic input must not advance or commit: after a rejected third
+    // letter the cursor stays on the original line and memory is untouched.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'J', 'A', 'E', 'A', 'D', 'D', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 6; i++) {
+            if (expect(mon.poll(0) == 0, "Return no-advance test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "Rejected invalid mnemonic input must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "Rejected invalid mnemonic input must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    // A typed operand that fails to assemble must not commit bytes or advance;
+    // the picker stays open so the user can correct it (LDA #999 is out of range
+    // for an immediate byte).
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = {
+            'J', 'A', 'E', 'L', 'D', 'A', '#', '9', '9', '9', KEY_RETURN, KEY_BREAK, KEY_BREAK, KEY_BREAK
+        };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 11; i++) {
+            if (expect(mon.poll(0) == 0, "Return invalid-operand test: setup key sequence failed.")) return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "MONITOR ASM $C000") == header,
+                   "RETURN on an unassemblable typed operand must not advance the edit cursor.")) return 1;
+        if (expect(backend.read(0xC000) == 0x00,
+                   "RETURN on an unassemblable typed operand must not commit bytes.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
+    if (test_illegal_opcode_normalization()) return 1;
+    if (test_opcode_metadata_consistency()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_parsers_and_formatters()) return 1;
     if (test_hunt_prompt_typed_input()) return 1;
@@ -5976,12 +6628,16 @@ int main()
     if (test_asm_number_popup_targets_operands()) return 1;
     if (test_asm_number_popup_illegal_and_invalid_rows()) return 1;
     if (test_asm_edit_assemble_at_cursor()) return 1;
+    if (test_asm_edit_rejects_invalid_mnemonic()) return 1;
+    if (test_asm_edit_return_advances()) return 1;
     if (test_asm_edit_direct_typing()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
+    if (test_asm_edit_bit_operand_not_branch()) return 1;
     if (test_asm_cpu_bank_cycle_preserves_screen_row()) return 1;
     if (test_asm_page_up_keeps_screen_row()) return 1;
     if (test_space_shortcuts_match_existing_paging()) return 1;
+    if (test_opcode_picker_scroll_redraws_overlay_only()) return 1;
     if (test_opcode_picker_refilters_live()) return 1;
     if (test_opcode_picker_filters_orders_and_commits_on_enter()) return 1;
     if (test_opcode_picker_browsing_does_not_mutate_frozen_charset_backup()) return 1;

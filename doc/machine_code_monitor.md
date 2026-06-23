@@ -18,7 +18,7 @@ Open the built-in help with `F3` or `?`.
 To close the monitor:
 
 - Press `C=+O` again.
-- Press `ESC` when no edit operation or popup is active.
+- Press `RUN/STOP` when no edit operation or popup is active.
 
 ## Screen Layout
 
@@ -348,7 +348,7 @@ Cartridges can further affect the CPU-visible memory map through the expansion-p
 All views support editing:
 
 - `E`: enter edit mode.
-- `C=+E` or `ESC`: leave edit mode.
+- `C=+E` or `RUN/STOP`: leave edit mode.
 
 Edit behavior is view-specific:
 
@@ -406,7 +406,7 @@ The ASCII and Screen rows in the number tool use the same mappings as the ASCII 
 
 In the Number popup, press `+`, `-`, `*`, or `/` to open the calculator. The expression is initialized with the current value and the selected operator.
 
-Press `Return` or `=` to evaluate the expression. Press `ESC` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
+Press `Return` or `=` to evaluate the expression. Press `RUN/STOP` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
 
 Expressions may contain one or more values separated by `+`, `-`, `*`, or `/`.  * and / are evaluated before + and -. Division is unsigned integer division and truncates toward zero.
 
@@ -447,7 +447,7 @@ The monitor includes direct bulk memory commands:
 `Hunt` opens a result picker:
 
 - `Return`: jump to the selected match.
-- `ESC`: close the picker.
+- `RUN/STOP`: close the picker.
 
 ## File I/O
 
