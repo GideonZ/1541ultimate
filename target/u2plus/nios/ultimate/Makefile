@@ -19,7 +19,7 @@ SRCS_C   =	itu.c \
             tasks.c \
             timers.c \
             port.c \
-            heap_3.c \
+            heap_4.c \
             ff.c \
             ffsystem.c \
             ffunicode.c \
@@ -42,7 +42,7 @@ SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
 			stream.cc \
 			stream_uart.cc \
-			memory.cc \
+			memory_wrap.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \
@@ -178,6 +178,7 @@ SRCS_CC +=  iec_interface.cc \
 			iec_drive.cc \
 			iec_channel.cc \
 			iec_printer.cc \
+			iec_ui.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
 			mps_printer_epson.cc \
@@ -187,6 +188,7 @@ SRCS_CC +=  iec_interface.cc \
 			mps_charset.cc \
 			mps_png.cc \
 			iec_ulticopy.cc \
+			cbmdos_parser.cc \
 			softiec_target.cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
@@ -222,7 +224,7 @@ CPPOPT   = $(OPTIONS) -std=gnu++11 -fno-exceptions -fno-rtti -fno-threadsafe-sta
 BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../../../libs/nios2/lwip/result/liblwip.a
-LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
+LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o -Wl,--wrap=malloc,--wrap=_malloc_r,--wrap=free,--wrap=_free_r,--wrap=realloc,--wrap=_realloc_r,--wrap=calloc,--wrap=_calloc_r
 
 include ../../../common/rules.mk
 

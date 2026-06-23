@@ -14,6 +14,10 @@
 #define SOFTIEC_CMD_CLOSE          0x14
 #define SOFTIEC_CMD_CHKIN          0x15
 #define SOFTIEC_CMD_CHKOUT         0x16
+#define SOFTIEC_CMD_ADD_PARTITION  0x20
+#define SOFTIEC_CMD_DEL_PARTITION  0x21
+#define SOFTIEC_CMD_GET_FATNAME    0x22
+#define SOFTIEC_CMD_GET_IECNAME    0x23
 
 class SoftIECTarget : CommandTarget
 {
@@ -32,6 +36,11 @@ class SoftIECTarget : CommandTarget
     void cmd_close(Message *command, Message **reply, Message **status);
     void cmd_chkin(Message *command, Message **reply, Message **status);
     void cmd_chkout(Message *command, Message **reply, Message **status);
+    void cmd_add_partition(Message *command, Message **reply, Message **status);
+    void cmd_del_partition(Message *command, Message **reply, Message **status);
+    void cmd_get_fatname(Message *command, Message **reply, Message **status);
+    void cmd_get_iecname(Message *command, Message **reply, Message **status);
+
     uint16_t get_start_addr(IecChannel *chan);
     uint16_t do_load(IecChannel *chan, uint16_t startaddr);
     bool do_verify(IecChannel *chan, uint16_t startaddr);

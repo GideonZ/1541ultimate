@@ -32,6 +32,7 @@
 #include "dump_hex.h"
 #include "tape_controller.h"
 #include "endianness.h"
+#include "pattern.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFileTypeFactory(), FileTypeTap :: test_type);
@@ -87,28 +88,6 @@ void FileTypeTap :: readIndexFile(void)
     }
 }
 
-uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
-{
-    int i = 0;
-    // trim leading spaces and tabs
-    while ((buffer[index] == 0x20) || (buffer[index] == 0x09)) {
-        index ++;
-    }
-    while ((buffer[index] != 0x0A) && (buffer[index] != 0x00)) {
-        if (buffer[index] != 0x0D) {
-            if (i < (outlen-1)) {
-                out[i++] = buffer[index];
-            }
-        }
-        index++;
-    }
-    if ((buffer[index] == 0x0A) || (buffer[index] == 0x00)) {
-        index++;
-    }
-    out[i] = 0;
-    return index;
-}
-
 static void trimLine(char *line)
 {
     // first truncate anything behind a semicolon
@@ -159,9 +138,9 @@ void FileTypeTap :: parseIndexFile(File *f)
 
     uint32_t offset;
 
-    uint32_t index = 0;
+    int index = 0;
     while(index < size) {
-        index = readLine(buffer, index, linebuf, 80);
+        index = read_line(buffer, index, linebuf, 80);
         trimLine(linebuf);
         if (strlen(linebuf) > 0) {
             TapIndexEntry *entry = new TapIndexEntry;

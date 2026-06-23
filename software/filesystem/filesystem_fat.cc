@@ -116,6 +116,7 @@ FRESULT FileSystemFAT :: format(const char *name)
 
     uint8_t *buffer = new uint8_t[4096];
     FRESULT fres = f_mkfs(prefix, &param, buffer, 4096);
+    delete[] buffer;
     return fres;
 #else
     return FR_NOT_ENABLED;
@@ -270,5 +271,5 @@ uint32_t get_fattime (void)     /* 31-25: Year(0-127 org.1980), 24-21: Month(1-1
     36 <<  5 = 0x00000480
     23 <<  0 = 0x00000017
 */
-    return 0x47244C97;
+    return 0x47244C97; // 0100011 1001 00100 01001 100100 10111 => 2015-09-04 09:36:46
 }

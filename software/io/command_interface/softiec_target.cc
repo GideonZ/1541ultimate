@@ -15,6 +15,10 @@ static Message c_status_save_error          = {  1, true, (uint8_t *)"\x02" };
 static Message c_status_no_input_channel    = {  1, true, (uint8_t *)"\x03" };
 static Message c_status_unknown_cmd_local   = {  1, true, (uint8_t *)"\x04" };
 static Message c_iec_module_not_loaded      = {  1, true, (uint8_t *)"\x05" };
+static Message c_status_invalid_params      = {  1, true, (uint8_t *)"\x06" };
+static Message c_status_invalid_name        = {  1, true, (uint8_t *)"\x07" };
+static Message c_status_invalid_part        = {  1, true, (uint8_t *)"\x08" };
+static Message c_status_invalid_dir         = {  1, true, (uint8_t *)"\x09" };
 
 SoftIECTarget :: SoftIECTarget(int id)
 {
@@ -102,11 +106,21 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
 #endif
             cmd_chkin(command, reply, status);
             break;
+        case SOFTIEC_CMD_ADD_PARTITION:
+            cmd_add_partition(command, reply, status);
+            break;
+        case SOFTIEC_CMD_DEL_PARTITION:
+            cmd_del_partition(command, reply, status);
+            break;
+        case SOFTIEC_CMD_GET_FATNAME:
+            cmd_get_fatname(command, reply, status);
+            break;
+        case SOFTIEC_CMD_GET_IECNAME:
+            cmd_get_iecname(command, reply, status);
+            break;
         default:
             printf("Unknown command:\n");
             dump_hex(command->message, command->length);
-            *reply  = &c_message_empty;
-            *status = &c_status_file_not_found;
             break;
     }
 }
@@ -444,4 +458,160 @@ bool SoftIECTarget :: do_save(IecChannel *chan, uint16_t start, uint16_t end)
     }
     return success;
 }
+
+void SoftIECTarget :: cmd_add_partition(Message *command, Message **reply, Message **status)
+{
+    // Example 05 20 03 'NAME' ':' '/this/is/a/path' [00]  => 3:NAME => /this/is/a/path
+    //         00 01 02 03456  07  089abcdef0123456   17
+    if (command->length < 6) {
+        *status = &c_status_invalid_params;
+        return; 
+    }
+    int index = command->message[2];
+    if (command->message[command->length - 1] == 0) {
+        command->length--; // strip last 00
+    }
+    const char *path = NULL;
+    // Copy entire string to ident, then split on colon
+    mstring ident((const char *)command->message, 3, command->length-1);
+    if (!ident.split(':', &path)) {
+        *status = &c_status_invalid_params;
+        return; 
+    }
+    iec_drive->add_partition(index, path, ident.c_str());
+    *status = &c_status_all_ok;
+}
+
+void SoftIECTarget :: cmd_del_partition(Message *command, Message **reply, Message **status)
+{
+    if (command->length != 3) {
+        *status = &c_status_invalid_params;
+        return; 
+    }
+    int index = command->message[2];
+    iec_drive->get_file_system()->RemovePartition(index);
+    *status = &c_status_all_ok;
+}
+
+// Reuse from iec_channel.cc
+    FRESULT resolve_directory_path(FileManager *fm, IecPartition *partition,
+                                      mstring path, mstring& full_path,
+                                      mstring *relative_path = NULL);
+//
+
+void SoftIECTarget :: cmd_get_fatname(Message *command, Message **reply, Message **status)
+{
+    // 05 22 02 IECNAME => What would the filename be if we try to open IEC name on channel 2?
+    // We'll copy some code sequence here
+    if ((command->length < 4) || (command->length >= CMD_MAX_COMMAND_LEN)) {
+        *status = &c_status_invalid_params;
+        return; 
+    }
+
+    command->message[command->length] = 0; // make sure it's null terminated
+    open_t name;
+
+// typedef struct {
+//     filename_t file;
+//     bool replace;
+//     filetype_t filetype;
+//     fileaccess_t access;
+//     dir_options_t dir_opt;
+//     uint16_t record_size;
+// } open_t;
+
+    int channel = command->message[2] & 15;
+    int err = parse_open((const char *)&command->message[3], name);
+    if (err) {
+        *status = &c_status_invalid_name;
+        return;
+    }
+    switch(name.dir_opt.stream) {
+    case e_stream_buffer:
+        data_message.length = sprintf((char *)data_message.message, "/buffer");
+        *reply = &data_message;
+        *status = &c_status_all_ok;
+        break;
+    case e_stream_dir:
+        {
+            IecPartition *partition = iec_drive->get_file_system()->GetPartition(name.file.partition);
+            if (!partition) {
+                *status = &c_status_invalid_part;
+                return;
+            }
+            char fatname[48];
+            petscii_to_fat(name.file.filename.c_str(), fatname, 48);
+            mstring work;
+            FRESULT fres = resolve_directory_path(FileManager::getFileManager(), partition, name.file.path, work);
+            if (fres == FR_OK) {
+                strncpy((char *)data_message.message, work.c_str(), CMD_MAX_REPLY_LEN);
+                data_message.length = work.length();
+                *reply = &data_message;
+                *status = &c_status_all_ok;
+            } else {
+                *status = &c_status_invalid_dir;
+            }
+        }
+        break;
+    case e_stream_partitions:
+        data_message.length = sprintf((char *)data_message.message, "/partitions");
+        *reply = &data_message;
+        *status = &c_status_all_ok;
+        break;
+    case e_stream_file:
+        {
+            if (name.access == e_not_set) {
+                name.access = (channel == 1) ? e_write : e_read;
+            }
+
+            if (name.filetype == e_any) {
+                if (channel < 2) {
+                    name.filetype = e_prg;
+                } else if (name.access != e_read) { // for writes on other channels, default to seq.
+                    name.filetype = e_seq;
+                }
+            }
+
+            IecChannel *channel = iec_drive->get_data_channel((int)command->message[2]); // also works for command channel ;-)
+            mstring work;
+            const char *full_path = channel->ConstructPath(work, name.file, name.filetype, name.access );
+            if (!full_path) {
+                *status = &c_status_invalid_dir;
+            } else { // yey!
+                strncpy((char *)data_message.message, work.c_str(), CMD_MAX_REPLY_LEN);
+                data_message.length = work.length();
+                *status = &c_status_all_ok;
+                *reply = &data_message;
+            }
+        }
+        break;
+    default:
+        *status = &c_status_invalid_name;
+    }
+}
+
+void SoftIECTarget :: cmd_get_iecname(Message *command, Message **reply, Message **status)
+{
+    if ((command->length < 3) || (command->length >= CMD_MAX_COMMAND_LEN)) {
+        *status = &c_status_invalid_params;
+        return; 
+    }
+
+    command->message[command->length] = 0; // make sure it's null terminated
+    FileInfo info(128);
+    info.lfname[127] = 0;
+    strncpy(info.lfname, (const char *)&command->message[2], 127);
+    get_extension(info.lfname, info.extension, true);
+
+    filetype_t found_type = e_any;
+    char iec_name[24];
+
+    IecPartition::CreateIecName(&info, iec_name, found_type);
+    data_message.message[0] = (uint8_t)found_type;
+    data_message.length = 1 + strlen(iec_name);
+    strcpy((char *)&data_message.message[1], iec_name);
+    *reply = &data_message;
+    *status = &c_status_all_ok;   
+}
+
 

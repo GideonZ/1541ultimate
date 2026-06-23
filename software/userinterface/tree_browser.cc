@@ -36,6 +36,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 {
 	// initialize state
     allow_exit = false;
+    allow_tasks = true;
     has_path = true;
 	user_interface = ui; // copy!
 	screen = NULL;
@@ -430,8 +431,10 @@ int TreeBrowser :: handle_key(int c)
             state->down(window->get_size_y()/2);
             break;
         case KEY_TASKS:
-            reset_quick_seek();
-            task_menu();
+            if (allow_tasks) {
+                reset_quick_seek();
+                task_menu();
+            }
             break;
         case KEY_HELP:
             reset_quick_seek();

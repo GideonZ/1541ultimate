@@ -104,6 +104,7 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
     Directory *dir;
     FileInfo info(INFO_SIZE);
     char fatname[48];
+    char *unified;
     const char *spaces = "                                        ";
     FRESULT fres = fs->dir_open(path, &dir);
     if (fres == FR_OK) {
@@ -111,8 +112,8 @@ FRESULT print_directory(FileSystem *fs, const char *path, int indent = 0)
             fres = dir->get_entry(info);
             if (fres != FR_OK)
                 break;
-            info.generate_fat_name(fatname, 48);
-            printf("%s%-5d%-32s %s (%02x)\n", &spaces[40-indent], info.size / 254, fatname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.attrib);
+            unified = info.generate_fat_name(fatname, 48);
+            printf("%s%-5d%-32s %s (%02x)\n", &spaces[40-indent], (info.size + 253) / 254, unified, (info.attrib &AM_DIR)?"DIR ":"FILE", info.attrib);
             //printf("%s%-32s (%s) %10d\n", &spaces[40-indent], info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 
             if (info.attrib & AM_DIR) {
@@ -195,7 +196,9 @@ bool test_fs(FileSystem *fs)
     ok = ok & (sz == 65536);
     f->close();
 
-    fres = fs->file_rename("hello.prg", "myfile.txt");
+    printf("*** ERRORS UNTIL A? %s ***\n", ok ? "NO" : "YES");
+
+    fres = fs->file_rename("hello.prg", "hola.usr");
     ok = ok && (fres == FR_OK); // we expect the rename to succeed;
     printf("Rename result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
@@ -205,13 +208,15 @@ bool test_fs(FileSystem *fs)
     printf("Delete result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
-    fres = fs->file_delete("myfile.txt");
+    fres = fs->file_delete("hola.usr");
     ok = ok && (fres == FR_OK); // we expect that the file can be deleted
     printf("Delete result: %s\n", FileSystem::get_error_string(fres));
     print_directory(fs, "");
 
     fres = fs->file_open("test.seq", FA_WRITE | FA_CREATE_NEW, &f );
     ok = ok && (fres == FR_OK); // we expect that the file can be created
+
+    printf("*** ERRORS UNTIL 0? %s ***\n", ok ? "NO" : "YES");
 
     printf("SEQ File open result: %s\n", FileSystem::get_error_string(fres));
     if (fres == FR_OK) {
@@ -226,12 +231,14 @@ bool test_fs(FileSystem *fs)
     print_directory(fs, "");
     uint32_t fre;
     fs->get_free(&fre, &cs);
-    if (empty_size < 775) {
+    int expected_blocks = (cs >= 512) ? (3 * 65536 + cs - 1) / cs : 775;
+
+    if (empty_size < expected_blocks) {
         ok = ok && (fre == 0);
         ok = ok && (fres == FR_DISK_FULL); // we expect that the disk is full when there are no blocks free
     } else {
         ok = ok && (fres == FR_OK); // if the disk is not full, the file must have been correctly written
-        ok = ok && (fre == (empty_size - 775));
+        ok = ok && (fre == (empty_size - expected_blocks));
     }
 
     fres = fs->file_open("test.seq", FA_WRITE | FA_CREATE_NEW, &f );
@@ -249,10 +256,13 @@ bool test_fs(FileSystem *fs)
         f->close();
     }
     print_directory(fs, "");
+    printf("*** ERRORS UNTIL 1? %s ***\n", ok ? "NO" : "YES");
 
     fs->get_free(&fre, &cs);
-    ok = ok && (fre == (empty_size - 40)); // 10000 bytes = 40 blocks
+    expected_blocks = (cs >= 512) ? (10000 + cs - 1) / cs : 40;
+    ok = ok && (fre == (empty_size - expected_blocks)); // 10000 bytes = 40 blocks
 
+    printf("*** ERRORS UNTIL 2? %s ***\n", ok ? "NO" : "YES");
     fres = fs->file_open("test.seq", FA_WRITE, &f );
     printf("SEQ File open result with only write flag set: %s (%p)\n", FileSystem::get_error_string(fres), f);
     if (f) {
@@ -291,7 +301,7 @@ bool test_fs(FileSystem *fs)
         f->close();
     }
     print_directory(fs, "");
-
+    printf("*** ERRORS UNTIL NOW? %s ***\n", ok ? "NO" : "YES");
     copy_from(fs, "test.seq", "test.seq");
     memcpy(buffer + 0, "GIDEON", 6);
     memcpy(buffer + 100, "ZWEIJTZER", 9);
@@ -328,7 +338,10 @@ bool test_fs(FileSystem *fs)
     print_directory(fs, "");
 
     fs->get_free(&fre, &cs);
-    ok = ok && (fre == (empty_size - 4)); // 4 blocks should be used for 2 dirs
+    if (cs < 512) {
+        ok = ok && (fre == (empty_size - 4)); // 4 blocks should be used for 2 dirs
+    }
+    printf("*** ERRORS UNTIL SUBDIRS? %s ***\n", ok ? "NO" : "YES");
 
     fres = fs->file_open("BLAHDIR/SECOND/sub.rel", FA_WRITE | FA_CREATE_NEW, &f );
     ok = ok && (fres == FR_OK); // creating file within a sub-directory should pass
@@ -348,7 +361,9 @@ bool test_fs(FileSystem *fs)
         expected_rel_blocks += 1; // Super side block
 
     fs->get_free(&fre, &cs);
-    ok = ok && (fre == (empty_size - 4 - expected_rel_blocks)); // 4 blocks should be used for 2 dirs
+    if (cs < 512) {
+        ok = ok && (fre == (empty_size - 4 - expected_rel_blocks)); // 4 blocks should be used for 2 dirs
+    }
 
     copy_from(fs, "BLAHDIR/SECOND/sub.rel", "sub.rel");
 
@@ -470,7 +485,7 @@ bool test_format_dnp()
 
 bool test_format_fat()
 {
-    create_file("format.fat", 4*2*1024); // 2 MB
+    create_file("format.fat", 4*1*1024); // 1 MB
     BlockDevice_Emulated blk("format.fat", 512);
     Partition prt(&blk, 0, 0, 0);
     FileSystemFAT fs(&prt);
@@ -607,7 +622,7 @@ bool test1(int argc, char **argv)
     ok &= test_format_d71();
     ok &= test_format_d81();
     ok &= test_format_dnp();
-    //ok &= test_format_fat();
+    ok &= test_format_fat();
 
     return ok;
 }

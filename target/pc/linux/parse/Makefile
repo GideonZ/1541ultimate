@@ -1,4 +1,4 @@
-PRJ      =  testdrive
+PRJ      =  parse
 FINAL    =  $(RESULT)/$(PRJ)
 
 include ../../../common/environment.mk
@@ -19,45 +19,11 @@ SIZE	  = $(CROSS)size
 .SUFFIXES:
 
 
-SRCS_C   =	dump_hex.c \
-            ff.c \
-            ffunicode.c \
-            ffsystem.c
-
-SRCS_CC	 =  small_printf.cc \
-			mystring.cc \
-			file_device.cc \
-			file_partition.cc \
-			path.cc \
+SRCS_C   =	dump_hex.c
+SRCS_CC	 =  mystring.cc \
 			pattern.cc \
-			blockdev.cc \
-            blockdev_emul.cc \
-			blockdev_file.cc \
-			blockdev_ram.cc \
-			disk.cc \
-			partition.cc \
-			file_system.cc \
-			diskio.cc \
-			directory.cc \
-			file.cc \
-			filesystem_fat.cc \
-			filesystem_d64.cc \
-			filesystem_t64.cc \
-			filesystem_root.cc \
-			filesystem_iso9660.cc \
-			filemanager.cc \
-			embedded_d64.cc \
-			size_str.cc \
-			config.cc \
-			iec_drive.cc \
-			iec_channel.cc \
-			iec_interface.cc \
 			cbmdos_parser.cc \
-			json.cc \
-			init_function.cc \
-			d64.cc \
-			d81.cc \
-			testdrive.cc
+			cbmdos_parser_test.cc
 
 SRCS_ASM =  
 SRCS_6502 = 
@@ -69,7 +35,8 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -DSAFEMODE -Wno-format -Wno-format-extra-args
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-LIBS     =  -lgcc -lcurses
+#LIBS     =  -lgcc -lcurses
+LIBS     =  -lgcc
 LFLAGS   = --gc-sections 
 
 include ../../../common/rules.mk

@@ -131,7 +131,7 @@ class FileInCBM : public File
     SideSectors *side;
 
     int create_cvt_header(void);
-    FRESULT fixup_cbm_file(void);
+    FRESULT fixup_cbm_file(bool close);
     FRESULT fixup_cvt(void);
 
     FRESULT read_header(uint8_t *dst, int len, uint32_t& transferred);
@@ -223,6 +223,7 @@ public:
 
     FRESULT read_sector(uint8_t *buffer, int track, int sector);
     FRESULT write_sector(uint8_t *buffer, int track, int sector);
+    FRESULT allocate_sector(int track, int sector, bool alloc);
 
     friend class DirInCBM;
     friend class FileInCBM;

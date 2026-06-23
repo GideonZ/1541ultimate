@@ -249,8 +249,9 @@ static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
     if (st->hr > 23)
         st->hr = 23;
 
-    inf->generate_fat_name(st->name, 64);
-
+    char buffer[64];
+    char *unified = inf->generate_fat_name(buffer, 64);
+    strncpy(st->name, unified, 64);
     // > 31 is not possible
     return 0;
 }

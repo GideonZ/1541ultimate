@@ -28,6 +28,7 @@
 #include "userinterface.h"
 #include "c64.h"
 #include "browsable_root.h"
+#include "pattern.h"
 
 extern "C" {
 	#include "dump_hex.h"
@@ -68,9 +69,6 @@ FileType *FileTypePalette :: test_type(BrowsableDirEntry *br)
     return NULL;
 }
 
-// defined in filetype.tap
-uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen);
-
 static void trimLine(char *line)
 {
     // first truncate anything behind a #
@@ -107,12 +105,12 @@ bool FileTypePalette :: parseVplFile(File *f, uint8_t rgb[16][3])
     buffer[size] = 0;
 
     uint32_t offset;
-    uint32_t index = 0;
+    int index = 0;
 
     int r, g, b, idx = 0;
     while(index < size) {
         //uint32_t idx_old = index;
-        index = readLine(buffer, index, linebuf, 80);
+        index = read_line(buffer, index, linebuf, 80);
         trimLine(linebuf);
         if (strlen(linebuf) > 0) {
             int num_values = sscanf(linebuf, "%x %x %x", &r, &g, &b);

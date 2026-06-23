@@ -24,7 +24,14 @@ public:
     const int allocated_space(void) const;
     void to_upper(void);
     void set(int index, char c);
+    void copy(const char *k, int from, int to);
+    bool contains_any(const char *c);
+    int  pos(const char c);
+    bool split(const char c, const char **remaining);
+    int  split(const char c, const char **remaining, int count);
+    void replace(const char *from, const char *to);
 
+    const char operator[](int pos);
     mstring& operator=(const char *rhs);
     mstring& operator=(const mstring &rhs);
 
@@ -35,6 +42,8 @@ public:
 
     bool operator==(const mstring &rhs);
     bool operator==(const char *rhs);
+    bool operator!=(const mstring &rhs);
+    bool operator!=(const char *rhs);
 
     mstring operator+(const mstring &);
     mstring operator+(const char *);

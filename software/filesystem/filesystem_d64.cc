@@ -364,11 +364,11 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 {
     // Easy peasy, for single directories. When we need subdirectories,
     // we simply parse the path using the Path object and search the each element.
-
+    char fatbuf[64], *unified_name;
+    
     if (filename[0] == '/') {
         filename++;
     }
-    CbmFileName cbm(filename);
 
     dir->open(); // Just root
     FRESULT res = FR_NOT_READY;
@@ -380,7 +380,9 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
         if(info->attrib & AM_VOL) {
             continue;
         }
-        if (info->match_to_pattern(cbm)) {
+        unified_name = info->generate_fat_name(fatbuf, 64);
+        // printf("%s matches %s?\n", filename, unified_name);
+        if (pattern_match(filename, unified_name, false)) {
             //printf("Found '%s' -> '%s'!\n", filename, info->lfname);
             break;
         }
@@ -392,7 +394,7 @@ FRESULT FileSystemCBM::find_file(const char *filename, DirInCBM *dir, FileInfo *
 
 FRESULT FileSystemCBM::file_open(const char *pathname, uint8_t flags, File **file)
 {
-    FileInfo info(24);
+    FileInfo info(56);
     DirInCBM *dd;
     mstring fn;
     bool create = false;
@@ -491,7 +493,7 @@ FRESULT FileSystemCBM::file_rename(const char *old_name, const char *new_name)
     const char *filename = pi.getFileName();
 
     DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
-    FileInfo info(20);
+    FileInfo info(56);
     FRESULT res = find_file(filename, dd, &info);
 
 /*
@@ -601,7 +603,7 @@ FRESULT FileSystemCBM::file_delete(const char *path)
     const char *filename = pi.getFileName();
 
     DirInCBM *dd = new DirInCBM(this, pi.getParentInfo()->cluster);
-    FileInfo info(20);
+    FileInfo info(56);
     FRESULT res = find_file(filename, dd, &info);
 
     if (res != FR_OK) {
@@ -702,6 +704,18 @@ FRESULT FileSystemCBM::write_sector(uint8_t *buffer, int track, int sector)
     return FR_OK;
 }
 
+FRESULT FileSystemCBM::allocate_sector(int track, int sector, bool alloc)
+{
+    int abs_sect = get_abs_sector(track, sector);
+    if (abs_sect < 0) {
+        return FR_INVALID_PARAMETER;
+    }
+    bool res = set_sector_allocation(track, sector, alloc);
+    if (!res) {
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
 
 /**************************************************************************************
  * Disk Type Specifics
@@ -1659,15 +1673,17 @@ FRESULT FileInCBM::open(uint8_t flags)
     uint8_t tp = dir_entry.std_fileType & 0x07;
     if (tp == 4) {
         isRel = true;
-        side = new SideSectors(fs, dir_entry.record_size);
-        if (dir_entry.aux_track) {
-            side->load(dir_entry.aux_track, dir_entry.aux_sector);
+        if (dir_entry.record_size) { // file already exists!
+            side = new SideSectors(fs, dir_entry.record_size);
+            if (dir_entry.aux_track) {
+                side->load(dir_entry.aux_track, dir_entry.aux_sector);
+            }
         }
         state = ST_HEADER;
         header.size = 2;
         header.data = new uint8_t[2];
         header.pos = 0;
-        header.data[0] = dir_entry.record_size;
+        header.data[0] = dir_entry.record_size; // might be zeo when just created, but that's ok
         header.data[1] = 0;
     } else if (tp >= 1 && tp <= 3 && (dir_entry.geos_structure == 0 || dir_entry.geos_structure == 1) && dir_entry.aux_track) {
         if (!(flags & FA_OPEN_FROM_CBM)) { // do not do this when opened from IEC
@@ -1823,7 +1839,7 @@ int FileInCBM::create_cvt_header(void)
     return (long_files) ? 4*254 : 3*254;
 }
 
-FRESULT FileInCBM::fixup_cbm_file(void)
+FRESULT FileInCBM::fixup_cbm_file(bool close)
 {
 	FRESULT res = fs->move_window(dir_sect);
 
@@ -1832,7 +1848,9 @@ FRESULT FileInCBM::fixup_cbm_file(void)
 	}
 
     DirEntryCBM *p = (DirEntryCBM *)&fs->sect_buffer[dir_entry_offset];
-	p->std_fileType |= 0x80; // close file
+    if (close) {
+	    p->std_fileType |= 0x80; // close file
+    }
 
     int tr, sec;
     fs->get_track_sector(start_cluster, tr, sec);
@@ -1892,7 +1910,7 @@ FRESULT FileInCBM::fixup_cvt(void)
     if (!mode) {
 		p->std_fileType = 0x81; // set filetype to SEQ as the header check failed.
 		fs->dirty = 1;
-    	return fixup_cbm_file();
+    	return fixup_cbm_file(true);
     }
 
     // Save chain start, since it will be overwritten shortly.
@@ -2056,7 +2074,7 @@ FRESULT FileInCBM::close(void)
     	if (cvt) {
         	res = fixup_cvt();
     	} else {
-    		res = fixup_cbm_file();
+    		res = fixup_cbm_file(true);
     	}
     }
 
@@ -2226,6 +2244,12 @@ FRESULT FileInCBM::write_header(uint8_t *src, int len, uint32_t& tr)
 
     if (header.pos == header.size) {
         state = ST_LINEAR;
+        if (this->isRel && !side) {
+            // if filetype is rel, this is the moment that the record size is known, so update it
+            dir_entry.record_size = header.data[0];
+            side = new SideSectors(fs, dir_entry.record_size);
+            fixup_cbm_file(false); // write the record size to the DIR
+        }
     }
     return FR_OK;
 }
@@ -2371,11 +2395,17 @@ FRESULT FileInCBM::write_linear(uint8_t *src, int len, uint32_t& tr)
 
 uint32_t FileInCBM::get_size()
 {
-    uint32_t size = header.size;
+    uint32_t size = 0;
     if (side) {
+        size += header.size; // only add the header size when the side sectors have alread been created
         size += side->get_file_size();
         file_size = size;
         return size;
+    }
+
+    // if the start cluster < 0; there are not sectors allocated yet, so the size is 0
+    if (start_cluster < 0) {
+        return 0;
     }
 
     // no side sectors, so we check how big the file currently is

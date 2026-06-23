@@ -6,6 +6,7 @@
 #include "command_intf.h"
 #include "init_function.h"
 #include "json.h"
+#include "iec_ui.h"
 
 #ifndef FS_ROOT
 #define FS_ROOT "/USB0/"
@@ -15,7 +16,9 @@
 #define MENU_IEC_OFF         0xCA0F
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_SET_DIR     0xCA17
-   
+#define MENU_IEC_SAVE_PAR    0xCA18
+#define MENU_IEC_SHOW_PARTS  0xCA19
+
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
@@ -23,7 +26,6 @@
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",         "%s", en_dis, 0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID", "%d", NULL,   8, 30, 11 },
-    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",      "%s", NULL,   0, 30, (long int)FS_ROOT },
     { 0xFF, CFG_TYPE_END, "", "", NULL, 0, 0, 0 }
 };
 
@@ -74,54 +76,55 @@ const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "U64IEC ULTIMATE DOS V1.1";//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "U64HD ULTIMATE DOS V2.0"  ;//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
-const char msg_c2[] = "UNIMPLEMENTED";			//custom
-
+const char msg_c2[] = "NOT IMPLEMENTED";		//custom
+const char msg_c3[] = "BLOCK ACCESS DENIED";    //custom
 
 const IEC_ERROR_MSG last_error_msgs[] = {
-		{ 00,(char*)msg00,NR_OF_EL(msg00) - 1 },
-		{ 01,(char*)msg01,NR_OF_EL(msg01) - 1 },
-        { 02,(char*)msg02,NR_OF_EL(msg02) - 1 },
-		{ 20,(char*)msg20,NR_OF_EL(msg20) - 1 },
-//		{ 21,(char*)msg21,NR_OF_EL(msg21) - 1 },
-//		{ 22,(char*)msg22,NR_OF_EL(msg22) - 1 },
-//		{ 23,(char*)msg23,NR_OF_EL(msg23) - 1 },
-//		{ 24,(char*)msg24,NR_OF_EL(msg24) - 1 },
-		{ 25,(char*)msg25,NR_OF_EL(msg25) - 1 },
-		{ 26,(char*)msg26,NR_OF_EL(msg26) - 1 },
-//		{ 27,(char*)msg27,NR_OF_EL(msg27) - 1 },
-//		{ 28,(char*)msg28,NR_OF_EL(msg28) - 1 },
-		{ 29,(char*)msg29,NR_OF_EL(msg29) - 1 },
-		{ 30,(char*)msg30,NR_OF_EL(msg30) - 1 },
-		{ 31,(char*)msg31,NR_OF_EL(msg31) - 1 },
-		{ 32,(char*)msg32,NR_OF_EL(msg32) - 1 },
-		{ 33,(char*)msg33,NR_OF_EL(msg33) - 1 },
-		{ 34,(char*)msg34,NR_OF_EL(msg34) - 1 },
-		{ 39,(char*)msg39,NR_OF_EL(msg39) - 1 },
-		{ 50,(char*)msg50,NR_OF_EL(msg50) - 1 },
-		{ 51,(char*)msg51,NR_OF_EL(msg51) - 1 },
-//		{ 52,(char*)msg52,NR_OF_EL(msg52) - 1 },
-		{ 60,(char*)msg60,NR_OF_EL(msg60) - 1 },
-		{ 61,(char*)msg61,NR_OF_EL(msg61) - 1 },
-		{ 62,(char*)msg62,NR_OF_EL(msg62) - 1 },
-		{ 63,(char*)msg63,NR_OF_EL(msg63) - 1 },
-		{ 64,(char*)msg64,NR_OF_EL(msg64) - 1 },
-//		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
-//		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
-//		{ 67,(char*)msg67,NR_OF_EL(msg67) - 1 },
-        { 69,(char*)msg69,NR_OF_EL(msg69) - 1 },
-		{ 70,(char*)msg70,NR_OF_EL(msg70) - 1 },
-		{ 71,(char*)msg71,NR_OF_EL(msg71) - 1 },
-		{ 72,(char*)msg72,NR_OF_EL(msg72) - 1 },
-		{ 73,(char*)msg73,NR_OF_EL(msg73) - 1 },
-		{ 74,(char*)msg74,NR_OF_EL(msg74) - 1 },
-        { 77,(char*)msg77,NR_OF_EL(msg77) - 1 },
+		{ 00, msg00, NR_OF_EL(msg00) - 1 },
+		{ 01, msg01, NR_OF_EL(msg01) - 1 },
+        { 02, msg02, NR_OF_EL(msg02) - 1 },
+		{ 20, msg20, NR_OF_EL(msg20) - 1 },
+//		{ 21, msg21, NR_OF_EL(msg21) - 1 },
+//		{ 22, msg22, NR_OF_EL(msg22) - 1 },
+//		{ 23, msg23, NR_OF_EL(msg23) - 1 },
+//		{ 24, msg24, NR_OF_EL(msg24) - 1 },
+		{ 25, msg25, NR_OF_EL(msg25) - 1 },
+		{ 26, msg26, NR_OF_EL(msg26) - 1 },
+//		{ 27, msg27, NR_OF_EL(msg27) - 1 },
+//		{ 28, msg28, NR_OF_EL(msg28) - 1 },
+		{ 29, msg29, NR_OF_EL(msg29) - 1 },
+		{ 30, msg30, NR_OF_EL(msg30) - 1 },
+		{ 31, msg31, NR_OF_EL(msg31) - 1 },
+		{ 32, msg32, NR_OF_EL(msg32) - 1 },
+		{ 33, msg33, NR_OF_EL(msg33) - 1 },
+		{ 34, msg34, NR_OF_EL(msg34) - 1 },
+		{ 39, msg39, NR_OF_EL(msg39) - 1 },
+		{ 50, msg50, NR_OF_EL(msg50) - 1 },
+		{ 51, msg51, NR_OF_EL(msg51) - 1 },
+//		{ 52, msg52, NR_OF_EL(msg52) - 1 },
+		{ 60, msg60, NR_OF_EL(msg60) - 1 },
+		{ 61, msg61, NR_OF_EL(msg61) - 1 },
+		{ 62, msg62, NR_OF_EL(msg62) - 1 },
+		{ 63, msg63, NR_OF_EL(msg63) - 1 },
+		{ 64, msg64, NR_OF_EL(msg64) - 1 },
+//		{ 65, msg65, NR_OF_EL(msg65) - 1 },
+//		{ 66, msg66, NR_OF_EL(msg66) - 1 },
+//		{ 67, msg67, NR_OF_EL(msg67) - 1 },
+        { 69, msg69, NR_OF_EL(msg69) - 1 },
+		{ 70, msg70, NR_OF_EL(msg70) - 1 },
+		{ 71, msg71, NR_OF_EL(msg71) - 1 },
+		{ 72, msg72, NR_OF_EL(msg72) - 1 },
+		{ 73, msg73, NR_OF_EL(msg73) - 1 },
+		{ 74, msg74, NR_OF_EL(msg74) - 1 },
+        { 77, msg77, NR_OF_EL(msg77) - 1 },
 
-		{ 75,(char*)msg_c1,NR_OF_EL(msg_c1) - 1 },
-		{ 76,(char*)msg_c2,NR_OF_EL(msg_c2) - 1 }
+		{ 75, msg_c1, NR_OF_EL(msg_c1) - 1 },
+		{ 76, msg_c2, NR_OF_EL(msg_c2) - 1 },
+        { 78, msg_c3, NR_OF_EL(msg_c3) - 1 }
 };
 
 IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
@@ -142,6 +145,11 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
     current_channel = 0;
     my_bus_id = 10;
 
+    form_fields = JSON::Obj()
+        ->add("Number", 1)
+        ->add("Name", "NO NAME")
+        ->add("Path", "");
+
     effectuate_settings();
 
     vfs = new IecFileSystem(this);
@@ -150,6 +158,14 @@ IecDrive :: IecDrive() : SubSystem(SUBSYSID_IEC)
         channels[i] = new IecChannel(this, i);
     }
     channels[15] = new IecCommandChannel(this, 15);
+
+    // Temporary for testing purposes.
+    add_partition(1, "/Temp", "RAMDISK");
+    vfs->SetCurrentPartition(1);
+
+    // Attempt to load default config
+    // Note: Flash file system should exist, because of register_store
+    vfs->LoadPartitions(CFG_FILEPATH, IEC_PARTITION_CONFIG);
 
     // Register and configure the processor
     slot_id = intf->register_slave(this);
@@ -161,6 +177,7 @@ IecDrive :: ~IecDrive()
     for(int i=0;i<16;i++)
         delete channels[i];
 
+    delete form_fields;
     fm->release_path(cmd_path);
     delete vfs;
     intf->unregister_slave(slot_id);
@@ -171,9 +188,9 @@ IecCommandChannel *IecDrive :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
-IecCommandChannel *IecDrive :: get_data_channel(int chan)
+IecChannel *IecDrive :: get_data_channel(int chan)
 {
-    return (IecCommandChannel *)channels[chan & 15];
+    return (IecChannel *)channels[chan & 15];
 }
 
 void IecDrive :: effectuate_settings(void)
@@ -181,15 +198,9 @@ void IecDrive :: effectuate_settings(void)
     my_bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     cmd_if.set_kernal_device_id(my_bus_id);
     
-    rootPath = cfg->get_string(CFG_IEC_PATH);
     enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
 
     intf->configure();
-}
-
-const char *IecDrive :: get_root_path(void)
-{
-    return rootPath;
 }
 
 void IecDrive :: create_task_items(void)
@@ -197,13 +208,17 @@ void IecDrive :: create_task_items(void)
     TaskCategory *iec = TasksCollection :: getCategory("Software IEC", SORT_ORDER_SOFTIEC);
     myActions.turn_on	 = new Action("Turn On",        SUBSYSID_IEC, MENU_IEC_ON);
     myActions.reset      = new Action("Reset",          SUBSYSID_IEC, MENU_IEC_RESET);
-    myActions.set_dir    = new Action("Set dir. here",  SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.show_parts = new Action("Show Partitions", SUBSYSID_IEC, MENU_IEC_SHOW_PARTS);
+    myActions.set_dir    = new Action("Set Partition here", SUBSYSID_IEC, MENU_IEC_SET_DIR);
+    myActions.save_part  = new Action("Save Partitions", SUBSYSID_IEC, MENU_IEC_SAVE_PAR);
     myActions.turn_off	 = new Action("Turn Off",       SUBSYSID_IEC, MENU_IEC_OFF);
 
     iec->append(myActions.turn_on);
     iec->append(myActions.turn_off);
     iec->append(myActions.reset);
+    iec->append(myActions.show_parts);
     iec->append(myActions.set_dir);
+    iec->append(myActions.save_part);
 }
 
 // called from GUI task
@@ -223,8 +238,8 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 {
     const char *path;
     char *pathcopy;
-    iec_closure_t cb;
-
+    int res, part;
+    char temp[32];
     cmd_path->cd(cmd->path.c_str());
 
 	switch(cmd->functionID) {
@@ -242,12 +257,32 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
             reset();
 			break;
 		case MENU_IEC_SET_DIR:
-            path = cmd->path.c_str();
-            pathcopy = new char[strlen(path) + 1];
-            strcpy(pathcopy, path);
-            cb = { this, set_iec_dir, pathcopy };
-            intf->run_from_iec(&cb);
+            if (!cmd->user_interface)
+                break;
+
+            form_fields->set("Path", cmd->path.c_str());
+            form_fields->set("Number", vfs->GetUnusedPartition());
+            if (form_new_partition(cmd->user_interface, form_fields) == MENU_DONE) {
+                vfs->add_partition(form_fields->int_or("Number", 99), form_fields->string_or("Path", "/"), form_fields->string_or("Name", "NO NAME"));
+            }
     	    break;
+        case MENU_IEC_SAVE_PAR:
+            if (!cmd->user_interface)
+                break;
+
+            strcpy(temp, "default");
+            cmd->user_interface->string_box("Give filename or 'default'", temp, 31);
+            if(strcasecmp(temp, "default") == 0) {
+                vfs->SavePartitions(CFG_FILEPATH, IEC_PARTITION_CONFIG);
+            } else {
+                set_extension(temp, "ipr", 32);
+                vfs->SavePartitions(cmd->path.c_str(), temp);
+            }
+            break;
+        case MENU_IEC_SHOW_PARTS:
+            show_partitions(cmd->user_interface, vfs);
+            // We lose focus here
+            break;
 		default:
 			break;
     }
@@ -257,12 +292,16 @@ SubsysResultCode_e IecDrive :: executeCommand(SubsysCommand *cmd)
 void IecDrive :: reset(void)
 {
     effectuate_settings();
-    IecPartition *p = vfs->GetPartition(0);
-    p->cd(rootPath);
     for(int i=0; i < 16; i++) {
         channels[i]->reset();
     }
-    vfs->SetCurrentPartition(0);
+    for(int i=0; i < MAX_PARTITIONS; i++) {
+        IecPartition *p = vfs->GetPartition(i);
+        if (p) {
+            p->cd("/");
+        }
+    }
+    vfs->SetCurrentPartition(1);
     last_error_code = ERR_DOS;
     last_error_track = 0;
     last_error_sector = 0;
@@ -321,18 +360,30 @@ void IecDrive :: talk(void)
 void IecDrive :: set_iec_dir(IecSlave *sl, void *data)
 {
     IecDrive *drive = (IecDrive *)sl;
-    const char *pathstring = (const char *)data;
-    IecPartition *p = drive->vfs->GetPartition(0);
-    p->cd(pathstring);
-    delete[] pathstring;
+    struct set_part_t *pd = (struct set_part_t *)data;
+    IecPartition *p = drive->vfs->GetPartition(pd->partition);
+    if (!p) {
+        drive->vfs->add_partition(pd->partition, pd->path, pd->name);
+    } else {
+        p->SetRoot(pd->path);
+        p->SetName(pd->name);
+    }
+    delete[] pd->path;
+    delete[] pd->name;
+    delete pd;
 }
 
 // called from critical section
 const char *IecDrive :: get_partition_dir(int p)
 {
-    return vfs->GetPartitionPath(p);
+    return vfs->GetPartitionPath(p, false);
 }
                 
+void IecDrive :: add_partition(int p, const char *path, const char *name)
+{
+    vfs->add_partition(p, path, name);
+}
+
 void IecDrive :: set_error(int code, int track, int sector)
 {
     last_error_code = code;
@@ -445,3 +496,45 @@ void IecDrive :: info(JSON_Object *obj)
         ->add("last_error", buffer)
         ->add("partitions", partitions);
 }
+
+void IecDrive :: load_partitions(const char *p, const char *f)
+{
+    vfs->LoadPartitions(p, f);
+}
+
+#ifndef RUNS_ON_PC
+#include "browsable_root.h"
+// tester instance
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_ipr(FileType :: getFileTypeFactory(), FileTypeIPR :: test_type);
+
+FileTypeIPR :: FileTypeIPR(BrowsableDirEntry *br)
+{
+}
+
+FileTypeIPR :: ~FileTypeIPR()
+{
+}
+
+int FileTypeIPR :: fetch_context_items(IndexedList<Action *> &list)
+{
+	list.append(new Action("Load", FileTypeIPR :: load, 0 ));
+    return 1;
+}
+
+FileType *FileTypeIPR :: test_type(BrowsableDirEntry *br)
+{
+	FileInfo *inf = br->getInfo();
+	if(strcmp(inf->extension, "IPR")==0)
+        return new FileTypeIPR(br);
+    return NULL;
+}
+
+SubsysResultCode_e FileTypeIPR :: load(SubsysCommand *cmd)
+{
+    if (iec_drive) {
+        iec_drive->load_partitions(cmd->path.c_str(), cmd->filename.c_str());
+    }
+    return SSRET_OK;
+}
+
+#endif // RUNS_ON_PC

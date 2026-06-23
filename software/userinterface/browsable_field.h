@@ -7,22 +7,24 @@
 class BrowsableQueryField: public Browsable
 {
     const char *field;
-    JSON_List *presets; // When NULL, use a string edit.     
-    mstring value;
-    int current_preset;
+    JSON *target; // When this points to a list, use a drop down menu
+    mstring value; // Visible value in the form
+    int current_preset; // to know where we are at in the list of presets
 
-    static SubsysResultCode_e update(SubsysCommand *cmd)
+    static SubsysResultCode_e update_preset(SubsysCommand *cmd)
     {
         BrowsableQueryField *field = (BrowsableQueryField *)cmd->functionID;
-        // field->value = cmd->actionName;
         field->current_preset = cmd->mode;
         field->setPreset();
         return SSRET_OK;
     }
 public:
-    BrowsableQueryField(const char *field, JSON_List *presets) : field(field), presets(presets)
+    BrowsableQueryField(const char *field, JSON *target) : field(field), target(target)
     {
-        current_preset = -1;
+        current_preset = -1; // none
+        if (target && target->type() != eList) {
+            value = target->render_compact();
+        }
     }
 
     ~BrowsableQueryField()
@@ -42,7 +44,8 @@ public:
 
     const char *getAqlString()
     {
-        if (presets) {
+        if (target && target->type() == eList) {
+            JSON_List *presets = (JSON_List *)target;
             if (current_preset == -1) {
                 return "";
             }
@@ -63,42 +66,73 @@ public:
     void setStringValue(const char *s)
     {
         value = s;
+        if (!target)
+            return;
+        if (target->type() == eString) {
+            ((JSON_String *)target)->set_string(s);
+        } else if (target->type() == eInteger) {
+            int val = 0;
+            int ret = sscanf(s, "%d", &val);
+            if (ret) {
+                char temp[12];
+                sprintf(temp, "%d", val);
+                value = temp;
+                ((JSON_Integer *)target)->set_value(val);
+            }
+        }
     }
 
     bool isDropDown(void)
     {
-        return (presets != NULL);
+        return (target && target->type() == eList);
     }
 
     void updown(int offset)
     {
-        if (!presets)
+        if (!target) {
             return;
-
-        current_preset += offset;
-        if (current_preset < 0)
-            current_preset = 0;
-        if (current_preset >= presets->get_num_elements()) {
-            current_preset = presets->get_num_elements() - 1;
         }
-        setPreset();
+        if (target->type() == eList) { // preset
+            JSON_List *presets = (JSON_List *)target;
+
+            current_preset += offset;
+            if (current_preset < 0)
+                current_preset = 0;
+            if (current_preset >= presets->get_num_elements()) {
+                current_preset = presets->get_num_elements() - 1;
+            }
+            setPreset();
+        } else if(target->type() == eInteger) {
+            JSON_Integer *val = (JSON_Integer *)target;
+            val->set_value(val->get_value() + offset);
+            // Update Display string
+            char temp[12];
+            sprintf(temp, "%d", val->get_value());
+            value = temp;
+        }
     }
 
     void setPreset()
     {
-        JSON *el = (*presets)[current_preset];
-        if (el->type() != eObject) {
+        if (!target) {
             return;
         }
-        JSON_Object *obj = (JSON_Object *)el;
-        JSON *value = obj->get("name");
-        if (!value) {
-            value = obj->get("aqlKey");
+        if (target->type() == eList) { // preset
+            JSON_List *presets = (JSON_List *)target;
+            JSON *el = (*presets)[current_preset];
+            if (el->type() != eObject) {
+                return;
+            }
+            JSON_Object *obj = (JSON_Object *)el;
+            JSON *value = obj->get("name");
+            if (!value) {
+                value = obj->get("aqlKey");
+            }
+            if (value->type() != eString) {
+                return;
+            }
+            setStringValue(((JSON_String *)value)->get_string());
         }
-        if (value->type() != eString) {
-            return;
-        }
-        setStringValue(((JSON_String *)value)->get_string());
     }
 
     void getDisplayString(char *buffer, int width)
@@ -137,9 +171,11 @@ public:
 
     void fetch_context_items(IndexedList<Action *>&actions)
     {
-        if (!presets) {
+        if (!target || target->type() != eList) { // preset
             return;
         }
+
+        JSON_List *presets = (JSON_List *)target;
         for (int i = 0; i < presets->get_num_elements(); i++) {
             JSON *el = (*presets)[i];
             if (el->type() != eObject) {
@@ -153,7 +189,7 @@ public:
             if (value->type() != eString) {
                 continue;
             }
-            actions.append(new Action(((JSON_String *)value)->get_string(), update, (int)this, i));          
+            actions.append(new Action(((JSON_String *)value)->get_string(), update_preset, (int)this, i));          
         }
     }
 

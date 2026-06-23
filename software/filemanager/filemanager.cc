@@ -469,6 +469,18 @@ bool FileManager::is_path_valid(Path *p)
     return (res == FR_OK);
 }
 
+bool FileManager::is_path_valid(const char *p, FileInfo *inf)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(p);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if ((res == FR_OK) && (inf != NULL)) {
+        // if success, we can copy the file info to the output to get more info
+        inf->copyfrom(pathInfo.getLastInfo());
+    }
+    return (res == FR_OK);
+}
+
 void FileManager::get_display_string(Path *p, const char *filename, char *buffer, int width)
 {
     CachedTreeNode *n = root;
@@ -486,6 +498,28 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
         return;
     }
     n->get_display_string(buffer, width);
+}
+
+FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
+{
+    *dir = NULL;
+    lock();
+
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if (res != FR_OK) {
+        unlock();
+        return res;
+    }
+    if (info) {
+        // if info is given, copy the file info to it
+        info->copyfrom(pathInfo.getLastInfo());
+    }
+    FileSystem *fs = pathInfo.getLastInfo()->fs;
+    res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    unlock();
+    return res;
 }
 
 FRESULT FileManager::get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
@@ -738,6 +772,10 @@ FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int 
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->read_sector(buffer, track, sector);
     return fres;
 }
@@ -754,7 +792,30 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->write_sector(buffer, track, sector);
+    return fres;
+}
+
+FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->allocate_sector(track, sector, alloc);
+    if (fres == FR_OK) {
+        fres = inf->fs->sync();
+    }
     return fres;
 }
 
@@ -1236,7 +1297,7 @@ FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t
     return fres;
 }
 
-FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred)
 {
     File *file = 0;
     uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);
