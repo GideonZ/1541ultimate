@@ -121,8 +121,6 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
         default:
             printf("Unknown command:\n");
             dump_hex(command->message, command->length);
-            *reply  = &c_message_empty;
-            *status = &c_status_file_not_found;
             break;
     }
 }
