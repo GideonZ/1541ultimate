@@ -13,6 +13,9 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
     int ret = 0;
     while(!ret && host->exists()) {
         ret = monitor->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     bool do_go = monitor->consume_pending_go(&go_address);
     monitor->deinit();

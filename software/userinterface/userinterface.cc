@@ -475,6 +475,20 @@ int UserInterface :: pollFocussed(void)
     return ret;
 }
 
+// Detect a menu-button push (hardware or REST) while a nested blocking screen
+// (machine monitor / help) owns the loop. The push is re-armed so that the
+// outer run_once() loop also tears the menu down, closing both layers at once
+// instead of leaving the nested screen open over a dismissed menu.
+bool UserInterface :: pollMenuButtonPush(void)
+{
+    host->checkButton();
+    if (host->buttonPush()) {
+        host->setButtonPushed();
+        return true;
+    }
+    return false;
+}
+
 void UserInterface :: appear(void)
 {
 	host->set_colors(color_bg, color_border);
@@ -732,6 +746,9 @@ void UserInterface :: run_editor(Editor *editor)
     int ret = 0;
     while(!ret && host->exists()) {
         ret = editor->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     editor->deinit();
     delete editor;
