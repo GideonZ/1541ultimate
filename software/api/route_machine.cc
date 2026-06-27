@@ -229,15 +229,17 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
 API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))
 {
     const int screen_size = UserInterface::ACTIVE_SCREEN_MATRIX_BYTES;
-    uint8_t buffer[UserInterface::ACTIVE_SCREEN_MATRIX_BYTES];
+    uint8_t *buffer = new uint8_t[screen_size];
 
     if (UserInterface::copy_active_screen_matrix(buffer, screen_size)) {
         StreamRamFile *rf = resp->add_attachment();
         rf->write(buffer, screen_size);
+        delete[] buffer;
         resp->binary_response();
     } else {
         resp->error("Menu screen unavailable.");
         resp->json_response(HTTP_NOT_FOUND);
+        delete[] buffer;
     }
 }
 

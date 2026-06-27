@@ -23,6 +23,14 @@ SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
 SCREEN_PLANES = 2
 SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
+# Structural bounds that any genuinely-rendered menu satisfies, independent of
+# the specific menu, firmware version, or colour scheme. They reject blank or
+# garbage snapshots without pinning the test to exact menu text or layout.
+# Observed across root/context/settings/help screens: printable 176-347,
+# distinct glyphs 57-63, distinct colours 4-7; bounds keep wide margins.
+MENU_MIN_PRINTABLE_CELLS = 20
+MENU_MAX_DISTINCT_COLOURS = 32
+MENU_MAX_DISTINCT_GLYPHS = 160
 MENU_TOGGLE_SETTLE_SECONDS = 0.25
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
@@ -234,6 +242,36 @@ def verify_binary_contract(status: int, headers: Dict[str, str], body: bytes) ->
         raise Failure("snapshot is trivially uniform in both planes")
 
 
+def verify_menu_content(body: bytes) -> None:
+    # Resilience over prescription: confirm the snapshot looks like a real
+    # rendered menu (readable text in a small, deliberate palette) without
+    # asserting any specific menu text, layout, or colours. This survives future
+    # menu changes yet still rejects blank screens and random/garbage data.
+    chars = body[:SCREEN_CELLS]
+    colours = body[SCREEN_CELLS:]
+
+    printable = sum(1 for ch in chars if 0x21 <= (ch & 0x7F) <= 0x7E)
+    if printable < MENU_MIN_PRINTABLE_CELLS:
+        raise Failure(
+            f"snapshot has too little readable text to be a menu: {printable} "
+            f"printable cells (need >= {MENU_MIN_PRINTABLE_CELLS})"
+        )
+
+    distinct_colours = len(set(colours))
+    if not (1 < distinct_colours <= MENU_MAX_DISTINCT_COLOURS):
+        raise Failure(
+            f"snapshot colour plane is not menu-like: {distinct_colours} distinct "
+            f"colours (expected 2..{MENU_MAX_DISTINCT_COLOURS})"
+        )
+
+    distinct_glyphs = len(set(chars))
+    if distinct_glyphs > MENU_MAX_DISTINCT_GLYPHS:
+        raise Failure(
+            f"snapshot character plane is not menu-like: {distinct_glyphs} distinct "
+            f"glyphs (expected <= {MENU_MAX_DISTINCT_GLYPHS})"
+        )
+
+
 def menu_screen_text(body: bytes) -> str:
     chars = body[:SCREEN_CELLS]
     rows = []
@@ -250,6 +288,8 @@ def run_contract(session: RestSession) -> None:
     with check("GET menu_screen contract"):
         status, headers, body = session.request("GET", MENU_SCREEN_PATH)
         verify_binary_contract(status, headers, body)
+    with check("menu_screen renders a real menu"):
+        verify_menu_content(body)
 
 
 def run_contract_with_open_menu(session: RestSession) -> None:
