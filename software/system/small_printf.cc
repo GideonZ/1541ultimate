@@ -288,9 +288,24 @@ extern "C" int snprintf(char *str, size_t size, const char *fmt, ...)
 	char *pnt = str;
 	
     va_start(ap, fmt);
-    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size-1, fmt, ap);
-    _string_write_char(0, (void **)&pnt);
+    /* size==0: write nothing (size-1 would underflow to a huge maxlen and the
+       NUL below would write past a zero-length buffer). */
+    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
     va_end(ap);
+    return (ret);
+}
+
+extern "C" int vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
+{
+    char *pnt = str;
+    /* size==0: write nothing (see snprintf above). */
+    int ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
     return (ret);
 }
 

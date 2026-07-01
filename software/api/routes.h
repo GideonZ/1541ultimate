@@ -155,7 +155,7 @@ public:
         char msg[200];
         va_list ap;
         va_start(ap, fmt);
-        vsprintf(msg, fmt, ap);
+        vsnprintf(msg, sizeof(msg), fmt, ap);
         va_end(ap);
         errors->add(msg);
     }
