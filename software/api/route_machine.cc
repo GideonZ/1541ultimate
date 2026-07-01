@@ -4,10 +4,12 @@
 #include "subsys.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#include "userinterface.h"
 #if U64
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 extern "C" void route_input_note_menu_button(void);
+extern "C" bool push_active_menu_button(void) __attribute__((weak));
 #endif
 
 #define MENU_C64_PAUSE      0x640B
@@ -28,6 +30,10 @@ API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 {
 #if U64
     route_input_note_menu_button();
+    if (push_active_menu_button && push_active_menu_button()) {
+        resp->json_response(HTTP_OK);
+        return;
+    }
 #endif
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, 0);
     SubsysResultCode_t retval = cmd->execute();
@@ -216,6 +222,23 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
     } else {
         resp->error(SubsysCommand::error_string(retval.status));
         resp->json_response(SubsysCommand::http_response_map(retval.status));
+        delete[] buffer;
+    }
+}
+
+API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))
+{
+    const int screen_size = UserInterface::ACTIVE_SCREEN_MATRIX_BYTES;
+    uint8_t *buffer = new uint8_t[screen_size];
+
+    if (UserInterface::copy_active_screen_matrix(buffer, screen_size)) {
+        StreamRamFile *rf = resp->add_attachment();
+        rf->write(buffer, screen_size);
+        delete[] buffer;
+        resp->binary_response();
+    } else {
+        resp->error("Menu screen unavailable.");
+        resp->json_response(HTTP_NOT_FOUND);
         delete[] buffer;
     }
 }

@@ -1,6 +1,10 @@
 #include "userinterface.h"
 #include <stdio.h>
 
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+#include "c64.h"
+#endif
+
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -471,6 +475,20 @@ int UserInterface :: pollFocussed(void)
     return ret;
 }
 
+// Detect a menu-button push (hardware or REST) while a nested blocking screen
+// (machine monitor / help) owns the loop. The push is re-armed so that the
+// outer run_once() loop also tears the menu down, closing both layers at once
+// instead of leaving the nested screen open over a dismissed menu.
+bool UserInterface :: pollMenuButtonPush(void)
+{
+    host->checkButton();
+    if (host->buttonPush()) {
+        host->setButtonPushed();
+        return true;
+    }
+    return false;
+}
+
 void UserInterface :: appear(void)
 {
 	host->set_colors(color_bg, color_border);
@@ -502,6 +520,54 @@ bool UserInterface :: anyMenuActive(void)
     active = active_user_interface_count > 0;
     portEXIT_CRITICAL();
     return active;
+}
+
+static bool active_screen_read_safe(UserInterface *ui)
+{
+    if (!ui || !ui->screen) {
+        return false;
+    }
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    C64 *machine = C64::getMachine();
+    if (machine && ui->host == (GenericHost *)machine && !machine->is_accessible()) {
+        return false;
+    }
+#endif
+    return true;
+}
+
+bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len)
+{
+    bool copied = false;
+    if (!dest || (dest_len < ACTIVE_SCREEN_MATRIX_BYTES)) {
+        return false;
+    }
+
+    IndexedList<UserInterface *> *interfaces = get_user_interfaces();
+    // Keep the UI pointer stable while walking the shared list and making the
+    // bounded matrix copy; IndexedList mutations use the same critical section.
+    portENTER_CRITICAL();
+    for (int i = 0; i < interfaces->get_elements(); i++) {
+        UserInterface *ui = (*interfaces)[i];
+        if (!ui || !ui->is_available() || !active_screen_read_safe(ui)) {
+            continue;
+        }
+
+        int screen_width = 0;
+        int screen_height = 0;
+        if (!ui->screen->copy_matrix(dest, dest + ACTIVE_SCREEN_MATRIX_CELLS,
+                ACTIVE_SCREEN_MATRIX_CELLS, &screen_width, &screen_height)) {
+            continue;
+        }
+        if ((screen_width != ACTIVE_SCREEN_MATRIX_WIDTH) ||
+                (screen_height != ACTIVE_SCREEN_MATRIX_HEIGHT)) {
+            continue;
+        }
+        copied = true;
+        break;
+    }
+    portEXIT_CRITICAL();
+    return copied;
 }
 
 extern "C" bool userinterface_any_menu_active(void)
@@ -680,6 +746,9 @@ void UserInterface :: run_editor(Editor *editor)
     int ret = 0;
     while(!ret && host->exists()) {
         ret = editor->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     editor->deinit();
     delete editor;
