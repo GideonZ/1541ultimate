@@ -159,20 +159,28 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
     }
 
     TempfileWriter *handler = (TempfileWriter *)body;
-    uint8_t *buffer = new uint8_t[65536];
+    // Use malloc (not new): operator new panics on OOM on this target, so a new[]
+    // result can never be NULL. malloc returns NULL, so this 64 KB request can fail
+    // cleanly with HTTP 500 instead of taking the device down.
+    uint8_t *buffer = (uint8_t *)malloc(65536);
+    if (!buffer) {
+        resp->error("Out of memory");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
     uint32_t datalen = 0;
     FRESULT fres = FileManager::getFileManager()->load_file("", handler->get_filename(0), buffer, 65536, &datalen);
     if (fres != FR_OK) {
         resp->error("Could not read data from attachment");
         resp->json_response(HTTP_NOT_FOUND);
-        delete[] buffer;
+        free(buffer);
         return;
     }
 
     if (address + datalen > 65536) {
         resp->error("Memory write exceeds location $FFFF");
         resp->json_response(HTTP_BAD_REQUEST);
-        delete[] buffer;
+        free(buffer);
         return;
     }
 
@@ -182,7 +190,7 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
 
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, address, buffer, datalen);
     SubsysResultCode_t retval = cmd->execute();
-    delete[] buffer;
+    free(buffer);
     resp->error(SubsysCommand::error_string(retval.status));
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }

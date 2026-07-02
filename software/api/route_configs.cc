@@ -250,7 +250,7 @@ API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_REQUIRED }} ))
 
 API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
 {
-    if (strcasecmp(req->ContentType, "application/json") != 0)  {
+    if (!req->ContentType || strcasecmp(req->ContentType, "application/json") != 0)  {
         resp->error("Content type should be 'application/json'.");
         resp->json_response(HTTP_BAD_REQUEST);
         return;

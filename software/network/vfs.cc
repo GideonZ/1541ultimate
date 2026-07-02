@@ -251,7 +251,8 @@ static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
 
     char buffer[64];
     char *unified = inf->generate_fat_name(buffer, 64);
-    strncpy(st->name, unified, 64);
+    strncpy(st->name, unified, sizeof(st->name) - 1);
+    st->name[sizeof(st->name) - 1] = 0; // ensure NUL-termination (strncpy may not)
     // > 31 is not possible
     return 0;
 }
@@ -302,6 +303,8 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     const char *full_path = p->get_path();
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
+    if (!retval)
+        return NULL; // callers null-check the result
     strcpy(retval, full_path);
     int n = strlen(retval);
     // snoop off the last slash

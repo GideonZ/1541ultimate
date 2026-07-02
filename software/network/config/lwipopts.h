@@ -989,6 +989,15 @@
 #define LWIP_SO_RCVTIMEO                1
 
 /**
+ * LWIP_SO_SNDTIMEO==1: Enable SO_SNDTIMEO processing.
+ * Enabled so the SO_SNDTIMEO values already set by the FTP and Telnet servers
+ * actually take effect: without it a non-reading/vanished peer can block a
+ * blocking send() indefinitely, pinning that task and its netconn. The FTP/
+ * Telnet send paths already treat a send timeout/error as a connection close.
+ */
+#define LWIP_SO_SNDTIMEO                1
+
+/**
  * LWIP_SO_RCVBUF==1: Enable SO_RCVBUF processing.
  */
 #define LWIP_SO_RCVBUF                  0
