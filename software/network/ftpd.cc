@@ -17,6 +17,14 @@
 
 static int num_threads = 0;
 
+// Reap a control connection that has been idle (no command) this long. Generous
+// enough for interactive sessions and pauses between transfers; bounds the leak
+// of an abandoned/half-open connection that would otherwise persist until reboot.
+#define FTPD_CONTROL_IDLE_MS (300 * 1000)
+// Cap on concurrent FTP sessions so abandoned connections cannot exhaust the
+// shared lwIP netconn pool (which would also take REST/Telnet down).
+#define FTPD_MAX_SESSIONS 4
+
 #ifdef FTPD_DEBUG
 int dbg_printf(const char *fmt, ...);
 #else
@@ -237,10 +245,12 @@ int FTPDaemon::listen_task()
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
-    if (bind(sockfd, (struct sockaddr *) &serv_addr,
-            sizeof(serv_addr)) < 0) {
-        puts("FTPD: ERROR on binding");
-        return -2;
+    // Retry binding rather than exiting permanently: a transient failure (port
+    // briefly in use, stack not ready) would otherwise kill the FTP listener
+    // until reboot.
+    while (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        puts("FTPD: ERROR on binding; retrying in 2s");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 
     listen(sockfd, 2);
@@ -256,6 +266,16 @@ int FTPDaemon::listen_task()
 
         ftp_set_control_socket_timeouts(actual_socket);
 
+        // Cap concurrent sessions: refuse politely rather than let abandoned
+        // connections accumulate and drain the shared netconn pool.
+        if (num_threads >= FTPD_MAX_SESSIONS) {
+            const char *busy = "421 Too many FTP connections, try again later.\r\n";
+            send(actual_socket, busy, strlen(busy), 0);
+            closesocket(actual_socket);
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            continue;
+        }
+
         FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
 
         BaseType_t res = xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
@@ -263,7 +283,9 @@ int FTPDaemon::listen_task()
             puts("FTPD: xTaskCreate failed; dropping connection");
             closesocket(actual_socket);
             delete thread;
+            portENTER_CRITICAL();
             num_threads--;
+            portEXIT_CRITICAL();
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;
         }
@@ -278,7 +300,13 @@ static uint16_t bind_port = bind_port_first;
 FTPDaemonThread::FTPDaemonThread(int socket, uint32_t addr, uint16_t port) :
         data_connections(4, NULL)
 {
+    // num_threads is decremented from each session task on exit; guard the
+    // read-modify-write so concurrent decrements cannot lose an update and drift
+    // the session count (which would eventually make the cap refuse every
+    // connection permanently). Matches the getBindPort() critical-section idiom.
+    portENTER_CRITICAL();
     num_threads++;
+    portEXIT_CRITICAL();
     this->socket = socket;
 
     {
@@ -334,7 +362,9 @@ void FTPDaemonThread::run(void *a)
         closesocket(thread->socket);
     }
     delete thread;
+    portENTER_CRITICAL();
     num_threads--;
+    portEXIT_CRITICAL();
     vTaskDelete(NULL);
 }
 
@@ -373,6 +403,7 @@ int FTPDaemonThread::handle_connection()
     authenticated = 'n';
 
     int idx = 0;
+    TickType_t last_active = xTaskGetTickCount();
     while (socket >= 0) {
         int n = recv(socket, &command_buffer[idx], 1, 0);
         if (n > 0) {
@@ -388,9 +419,20 @@ int FTPDaemonThread::handle_connection()
                 if (idx >= COMMAND_BUFFER_SIZE)
                     idx = COMMAND_BUFFER_SIZE - 1;
             }
+            // Reset the idle timer on any activity, including after a (possibly
+            // long) transfer run inside dispatch_command.
+            last_active = xTaskGetTickCount();
         } else if (n < 0) {
-            if (errno == EAGAIN)
+            if (errno == EAGAIN) {
+                // Idle reaper: an abandoned/half-open control connection would
+                // otherwise loop here forever (no keepalive), leaking its task,
+                // socket and netconn until reboot. Close it after a bounded idle.
+                if ((xTaskGetTickCount() - last_active) >= pdMS_TO_TICKS(FTPD_CONTROL_IDLE_MS)) {
+                    dbg_printf("FTPD: control connection idle, closing\n");
+                    break;
+                }
                 continue;
+            }
             dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
             return errno;
         } else { // n == 0
@@ -554,33 +596,36 @@ void FTPDaemonThread::cmd_mlst(const char *arg)
     const char *type;
     bool isDir;
 
+    type = "file";
+    isDir = false;
     if ((arg == NULL) || (*arg == '\0')) { // No argument given
         result = vfs_stat(vfs, ".", &st);
         type = "cdir";
         isDir = true;
     } else {
         result = vfs_stat(vfs, arg, &st);
-        if (VFS_ISDIR(st.st_mode)) {
-            type = "dir";
-            isDir = true;
-        } else {
-            type = "file";
-            isDir = false;
+        if (result == 0) { // only inspect st when the stat actually succeeded
+            isDir = VFS_ISDIR(st.st_mode);
+            type = isDir ? "dir" : "file";
         }
     }
 
     if (result) {
-        send_msg(msg501);
+        send_msg(msg550); // file/dir unavailable (matches SIZE/RETR), not a syntax error
         return;
     }
-    char buffer[200];
+    // Bounded formatting: the filename appears twice and can approach the 63-char
+    // limit, so a 200-byte buffer with sprintf could overflow. Use snprintf into a
+    // larger buffer, and send it as a data argument (send_msg("%s", ...)) so a
+    // filename containing '%' is never interpreted as a printf format specifier.
+    char buffer[300];
     if (isDir)
-        sprintf(buffer, "250- Listing %s\r\ntype=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type, st.year,
+        snprintf(buffer, sizeof(buffer), "250- Listing %s\r\ntype=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type, st.year,
                 st.month, st.day, st.hr, st.min, st.sec, st.name);
     else
-        sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
+        snprintf(buffer, sizeof(buffer), "250- Listing %s\r\ntype=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End", st.name, type,
                 st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
-    send_msg(buffer);
+    send_msg("%s", buffer);
 }
 
 void FTPDaemonThread::cmd_mlsd(const char *arg)
@@ -605,7 +650,7 @@ void FTPDaemonThread::cmd_retr(const char *arg)
 
     int ret = vfs_stat(vfs, arg, &st);
     //printf("RET %d s%d m%d\n", ret, st.st_size, st.st_mode);
-    if (!VFS_ISREG(st.st_mode)) {
+    if ((ret != 0) || !VFS_ISREG(st.st_mode)) { // st is only valid when stat succeeded
         send_msg(msg550);
         return;
     }
@@ -1007,6 +1052,10 @@ int FTPDataConnection::connect_to(ip_addr_t ip, uint16_t port) // active mode
 
     serv_addr.sin_addr.s_addr = ip.addr;
 
+    // Bound the connect: a client-supplied PORT address that is unreachable would
+    // otherwise block this task for the full TCP connect timeout. Set the socket
+    // timeout before connecting so a dead data address fails fast.
+    ftp_set_socket_timeout(sockfd, 5, 0);
     if ( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         dbg_printf("FTPD Error : Connect Failed \n");
         return -ENOTCONN;

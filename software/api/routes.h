@@ -292,12 +292,7 @@ public:
                 set(name, value);
             }
         }
-        printf("%s:", comps.path);
         store_path(comps.path);
-        printf("%s -> %d [", full_path.c_str(), path_depth);
-        for (int i=0;i<path_depth;i++) {
-            printf("%s, ", path_parts[i]);
-        } printf("]\n");
 
         const ApiCall_t *call = find_api_call(hdr->Method, comps.route, comps.command);
 
@@ -309,7 +304,9 @@ public:
                 supplied_password = hdr->Fields[h].value;
             }
         }
-        if(call && (*password && strcmp(supplied_password, password) != 0))
+        // A configured password with no supplied X-Password header must be a clean
+        // rejection, not strcmp(NULL, ...): guard the NULL before comparing.
+        if(call && *password && (!supplied_password || strcmp(supplied_password, password) != 0))
             return (ApiCall_t *)-1;  // Signal that endpoint exists but password is incorrect
 
         return call;

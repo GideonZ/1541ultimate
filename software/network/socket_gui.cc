@@ -33,13 +33,28 @@ static void socket_gui_listen_task(void *a)
 	vTaskDelete(NULL);
 }
 
+// Cap on concurrent telnet sessions: bounds task/socket/netconn use so abandoned
+// sessions cannot drain the shared lwIP netconn pool (which would also take
+// REST/FTP down).
+#define TELNET_MAX_SESSIONS 4
+static int telnet_sessions = 0;
+
 static void socket_gui_set_timeouts(int socket_fd)
 {
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 200000; // 200 ms
-    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
-    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
+    // Short receive timeout drives the responsive input-poll loop (get_char
+    // returns -1 on no data). A longer send timeout tolerates a momentarily slow
+    // terminal / large screen redraw while still bounding a truly stuck send
+    // (which, with SO_SNDTIMEO now enabled in lwipopts, would otherwise block the
+    // task indefinitely on a non-reading peer).
+    struct timeval recv_tv;
+    recv_tv.tv_sec = 0;
+    recv_tv.tv_usec = 200000; // 200 ms
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&recv_tv, sizeof(struct timeval));
+
+    struct timeval send_tv;
+    send_tv.tv_sec = 5;
+    send_tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(struct timeval));
 }
 
 SocketGui :: SocketGui()
@@ -142,13 +157,16 @@ void socket_gui_task(void *a)
 {
 	SocketStream *str = (SocketStream *)a;
 	if (!socket_ensure_authenticated(str)) {
+		portENTER_CRITICAL();
+		telnet_sessions--;
+		portEXIT_CRITICAL();
 		vTaskDelete(NULL);
 	}
 
 	char product[64];
 	char title[81];
 	getProductVersionString(product, sizeof(product), true);
-	sprintf(title, "\eA*** %s *** Remote ***\eO", product);
+	snprintf(title, sizeof(title), "\eA*** %s *** Remote ***\eO", product);
 
 	HostStream *host = new HostStream(str);
 //	Screen *scr = host->getScreen();
@@ -180,6 +198,9 @@ void socket_gui_task(void *a)
 	delete str;
 	puts("str gone");
 
+	portENTER_CRITICAL();
+	telnet_sessions--;
+	portEXIT_CRITICAL();
 	vTaskDelete(NULL);
 }
 
@@ -204,10 +225,11 @@ int SocketGui :: listenTask(void)
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
-    if (bind(sockfd, (struct sockaddr *) &serv_addr,
-             sizeof(serv_addr)) < 0) {
-        puts("ERROR on binding");
-        return -2;
+    // Retry binding rather than exiting permanently: a transient failure would
+    // otherwise kill the telnet listener until reboot.
+    while (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        puts("Telnet: ERROR on binding; retrying in 2s");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 
     listen(sockfd, 2);
@@ -223,10 +245,30 @@ int SocketGui :: listenTask(void)
 
         socket_gui_set_timeouts(actual_socket);
 
+		// Cap concurrent telnet sessions: refuse politely rather than let
+		// abandoned connections accumulate and drain the shared netconn pool.
+		if (telnet_sessions >= TELNET_MAX_SESSIONS) {
+			const char *busy = "Too many connections, try again later.\r\n";
+			send(actual_socket, busy, strlen(busy), 0);
+			shutdown(actual_socket, 2);
+			lwip_close(actual_socket);
+			vTaskDelay(100 / portTICK_PERIOD_MS);
+			continue;
+		}
+
 		SocketStream *stream = new SocketStream(actual_socket);
+		// telnet_sessions is decremented from each session task on exit; guard the
+		// read-modify-write so concurrent decrements cannot lose an update and drift
+		// the count (which would eventually make the cap refuse every connection).
+		portENTER_CRITICAL();
+		telnet_sessions++;
+		portEXIT_CRITICAL();
 		BaseType_t res = xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, PRIO_USERIFACE, NULL );
 		if (res != pdPASS) {
 			puts("Telnet: xTaskCreate failed; dropping connection");
+			portENTER_CRITICAL();
+			telnet_sessions--;
+			portEXIT_CRITICAL();
 			stream->close();
 			delete stream;
 			vTaskDelay(100 / portTICK_PERIOD_MS);

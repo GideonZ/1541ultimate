@@ -151,8 +151,6 @@ int convert_text_to_json_objects(char *text, size_t text_size, size_t max_tokens
         printf("Parsing JSON failed with error %d\n", tokens_used);
         free(tokens);
         return tokens_used;
-    } else {
-        printf("Parsing JSON succeeded: %d tokens.\n", tokens_used);
     }
     *out = convert(text, tokens, tokens_used);
     free(tokens);
