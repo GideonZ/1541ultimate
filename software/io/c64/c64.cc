@@ -708,8 +708,41 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             if (restore_mode) {
                 C64_MODE = saved_mode;
             }
+        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
+            // The freezer menu uses this 2KB as its own scratch RAM, so serve
+            // reads/writes from the backup taken at freeze time instead: it is
+            // restored to real RAM on unfreeze, unlike the live (bypassed) range.
+            if ((0x1000 - addr) < chunk) {
+                chunk = 0x1000 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
+        } else if ((addr >= 0xD800) && (addr < 0xDC00)) {
+            // Same reasoning as the ram_backup range above, but for color RAM.
+            if ((0xDC00 - addr) < chunk) {
+                chunk = 0xDC00 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)color_backup) + (addr - 0xD800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
         } else {
-            int next_boundary = (addr < 0x8000) ? 0x8000 : 0xE000;
+            int next_boundary;
+            if (addr < 0x0800) {
+                next_boundary = 0x0800;
+            } else if (addr < 0x8000) {
+                next_boundary = 0x8000;
+            } else if (addr < 0xD800) {
+                next_boundary = 0xD800;
+            } else {
+                next_boundary = 0xE000;
+            }
             if ((next_boundary - addr) < chunk) {
                 chunk = next_boundary - addr;
             }
