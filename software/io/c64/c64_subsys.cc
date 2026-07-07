@@ -564,18 +564,20 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
         i_stopped_it = true;
     }
 
-    uint8_t saved_memonly = C64_DMA_MEMONLY;
-    if (c64->isFrozen) C64_DMA_MEMONLY = 1;
-
-    volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
-
-    if (rw) {
-        memcpy(buffer, (void *)dest, length);
+    if (c64->isFrozen) {
+        // The freezer menu may have its own mode/cart banked in, so route through
+        // dma_transfer_frozen, which restores the frozen C64 mode for ROM/cart
+        // ranges instead of blindly bypassing to raw RAM.
+        c64->dma_transfer_frozen(offset, buffer, length, rw);
     } else {
-        memcpy((void *)dest, buffer, length);
-    }
+        volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
 
-    if (c64->isFrozen) C64_DMA_MEMONLY = saved_memonly;
+        if (rw) {
+            memcpy(buffer, (void *)dest, length);
+        } else {
+            memcpy((void *)dest, buffer, length);
+        }
+    }
 
     if (i_stopped_it) {
         c64->resume();
