@@ -555,7 +555,7 @@ int C64_Subsys :: dma_load_raw(File *f)
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     bool i_stopped_it = false;
-    if (c64->client) {
+    if (c64->client && !c64->isFrozen) {
         c64->client->release_host(); // disconnect from user interface
         c64->release_ownership();
     }
@@ -564,6 +564,9 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
         i_stopped_it = true;
     }
 
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    if (c64->isFrozen) C64_DMA_MEMONLY = 1;
+
     volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
 
     if (rw) {
@@ -571,6 +574,8 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     } else {
         memcpy((void *)dest, buffer, length);
     }
+
+    if (c64->isFrozen) C64_DMA_MEMONLY = saved_memonly;
 
     if (i_stopped_it) {
         c64->resume();
