@@ -508,13 +508,21 @@ def main() -> int:
             # switch to, so restrict to the tests that only need Freeze.
             print("  no 'Interface Type' setting on this device -- freeze-only hardware, "
                   "restricting to freeze-mode tests")
-            requested_overlay_tests = [t for t in tests if t in OVERLAY_DEPENDENT_TESTS]
-            if requested_overlay_tests:
+            # Only a test named individually (not via the "all" wildcard, and not the
+            # implicit default-to-everything when --test is omitted) is an explicit,
+            # unsatisfiable request on this hardware -- anything reached via "all"/the
+            # default should be silently skipped instead, since "all" means "everything
+            # this device can run", not "everything, or fail".
+            explicit_overlay_tests = [t for t in (args.test or []) if t in OVERLAY_DEPENDENT_TESTS]
+            if explicit_overlay_tests:
                 raise Failure(
-                    f"{', '.join(requested_overlay_tests)} require Overlay-on-HDMI support, "
+                    f"{', '.join(explicit_overlay_tests)} require Overlay-on-HDMI support, "
                     f"which this device does not have"
                 )
-            tests = [t for t in tests if t in FREEZE_ONLY_TESTS] or FREEZE_ONLY_TESTS
+            skipped_tests = [t for t in tests if t in OVERLAY_DEPENDENT_TESTS]
+            tests = [t for t in tests if t not in OVERLAY_DEPENDENT_TESTS] or FREEZE_ONLY_TESTS
+            if skipped_tests:
+                print(f"  skipping (requires Overlay-on-HDMI, unsupported here): {', '.join(skipped_tests)}")
         original_menu_open = session.menu_screen_open()
         if original_menu_open:
             session.set_menu_open(False)
