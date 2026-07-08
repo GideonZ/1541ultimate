@@ -338,10 +338,13 @@ def compare(
     return ok
 
 
-def run_selfcheck(session: RestSession, interface: str, xor_value: int, noise_addrs: Set[int]) -> bool:
+def run_selfcheck(
+    session: RestSession, interface: str, xor_value: int, noise_addrs: Set[int], interface_selectable: bool = True
+) -> bool:
     label = f"selfcheck-{interface.lower().replace(' ', '-')}"
-    with check(f"set Interface Type = {interface}"):
-        session.set_interface_type(interface)
+    if interface_selectable:
+        with check(f"set Interface Type = {interface}"):
+            session.set_interface_type(interface)
     with check(f"open menu ({interface})"):
         session.set_menu_open(True)
 
@@ -432,6 +435,10 @@ def run_reset(session: RestSession) -> None:
     wait_for_stable_zero_page(session, attempts=10, interval=1.0)
 
 
+FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
+OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
+
+
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
     all_tests = ["selfcheck-freeze", "selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
@@ -489,9 +496,25 @@ def main() -> int:
     results: Dict[str, bool] = {}
 
     try:
-        with check("read current Interface Type config"):
-            original_interface = session.get_interface_type()
-        print(f"  current Interface Type: {original_interface}")
+        with check("read User Interface Settings config"):
+            ui_config = session.get_config(CONFIG_CATEGORY)
+        interface_selectable = CONFIG_ITEM in ui_config
+        if interface_selectable:
+            original_interface = str(ui_config[CONFIG_ITEM])
+            print(f"  current Interface Type: {original_interface}")
+        else:
+            # Freeze-only hardware (e.g. U2/U2+/U2+L cartridges without HDMI output)
+            # has no "Interface Type" setting at all -- there is no Overlay mode to
+            # switch to, so restrict to the tests that only need Freeze.
+            print("  no 'Interface Type' setting on this device -- freeze-only hardware, "
+                  "restricting to freeze-mode tests")
+            requested_overlay_tests = [t for t in tests if t in OVERLAY_DEPENDENT_TESTS]
+            if requested_overlay_tests:
+                raise Failure(
+                    f"{', '.join(requested_overlay_tests)} require Overlay-on-HDMI support, "
+                    f"which this device does not have"
+                )
+            tests = [t for t in tests if t in FREEZE_ONLY_TESTS] or FREEZE_ONLY_TESTS
         original_menu_open = session.menu_screen_open()
         if original_menu_open:
             session.set_menu_open(False)
@@ -499,16 +522,22 @@ def main() -> int:
         if not args.no_reset:
             run_reset(session)
 
-        with check("switch to Overlay on HDMI to probe live background activity"):
-            session.set_interface_type(INTERFACE_OVERLAY)
-        with check("probe addresses that change on their own while the C64 runs"):
-            noise_addrs = probe_live_noise(session, samples=8, interval=0.6)
-        print(f"  {len(noise_addrs)} address(es) treated as expected live background noise: "
-              f"{', '.join(f'${a:04X}' for a in sorted(noise_addrs)[:20])}"
-              f"{' ...' if len(noise_addrs) > 20 else ''}")
+        noise_addrs: Set[int] = set()
+        if interface_selectable:
+            with check("switch to Overlay on HDMI to probe live background activity"):
+                session.set_interface_type(INTERFACE_OVERLAY)
+            with check("probe addresses that change on their own while the C64 runs"):
+                noise_addrs = probe_live_noise(session, samples=8, interval=0.6)
+            print(f"  {len(noise_addrs)} address(es) treated as expected live background noise: "
+                  f"{', '.join(f'${a:04X}' for a in sorted(noise_addrs)[:20])}"
+                  f"{' ...' if len(noise_addrs) > 20 else ''}")
+        else:
+            print("  skipping live-noise probe: Freeze halts the CPU entirely, no drift is possible")
 
         if "selfcheck-freeze" in tests:
-            results["selfcheck-freeze"] = run_selfcheck(session, INTERFACE_FREEZE, 0x33, noise_addrs)
+            results["selfcheck-freeze"] = run_selfcheck(
+                session, INTERFACE_FREEZE, 0x33, noise_addrs, interface_selectable=interface_selectable
+            )
         if "selfcheck-overlay" in tests:
             results["selfcheck-overlay"] = run_selfcheck(session, INTERFACE_OVERLAY, 0x66, noise_addrs)
         if "overlay-to-freeze" in tests:
