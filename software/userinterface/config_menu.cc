@@ -292,6 +292,7 @@ int ConfigBrowser :: handle_key(int c)
             break;
         case KEY_LEFT: // left
 		case KEY_BACK: // del
+        case '`': // left arrow
             if (state->level == 1) { // going to level 0
                 ((ConfigBrowserState *)state)->on_close();
             }
