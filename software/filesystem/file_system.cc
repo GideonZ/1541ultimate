@@ -88,7 +88,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	pathInfo.enterFileSystem(this);
 
 	FileInfo info(128);
-	char fatbuf[64];
+	char fatbuf[132];
     char *unified_name;
 	Directory *dir;
 	FileInfo *ninf;
@@ -103,7 +103,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 					if (info.attrib & AM_VOL)
 						continue;
                     // Different approach: If NAME_FORMAT_CBM is set, simply convert to FAT and then do a pattern compare
-                    unified_name = info.generate_fat_name(fatbuf, 64);
+                    unified_name = info.generate_fat_name(fatbuf, sizeof(fatbuf));
 
                     if (pattern_match(pathInfo.workPath.getElement(pathInfo.index), unified_name, false)) {
 					    delete dir; // close directory

@@ -146,11 +146,15 @@ public:
 
     char *generate_fat_name(char *buffer, int max_len)
     {
+        if (max_len <= 0) {
+            return buffer;
+        }
         if (name_format & NAME_FORMAT_CBM) {
             petscii_to_fat(lfname, buffer, max_len);
             add_extension(buffer, extension, max_len);
         } else {
             strncpy(buffer, lfname, max_len);
+            buffer[max_len - 1] = 0;
         }
         return buffer;
     }
