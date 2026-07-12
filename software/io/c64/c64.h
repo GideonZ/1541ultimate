@@ -398,6 +398,7 @@ public:
     bool is_in_reset(void);
     virtual uint8_t peek(uint16_t address);
     virtual void poke(uint16_t address, uint8_t value);
+    void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;

@@ -674,6 +674,90 @@ void C64::poke(uint16_t address, uint8_t value)
     }
 }
 
+void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
+{
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_memonly = C64_DMA_MEMONLY;
+    C64_DMA_MEMONLY = 1;
+
+    int pos = 0;
+    while (pos < length) {
+        int addr = offset + pos;
+        int remaining = length - pos;
+        int chunk = remaining;
+
+        if ((addr >= 0x8000) && ((addr < 0xD000) || (addr >= 0xE000))) {
+            // ROM/cart range: the freezer menu may have its own ultimax cart banked
+            // in, so temporarily restore the C64 mode it had when frozen.
+            int region_end = (addr < 0xD000) ? 0xD000 : 0x10000;
+            if ((region_end - addr) < chunk) {
+                chunk = region_end - addr;
+            }
+            uint8_t saved_mode = C64_MODE;
+            bool restore_mode = (saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode);
+            if (restore_mode) {
+                C64_MODE = frozen_mode;
+            }
+            C64_DMA_MEMONLY = 0;
+            if (rw) {
+                memcpy(buffer + pos, (const void *)(ram + addr), chunk);
+            } else {
+                memcpy((void *)(ram + addr), buffer + pos, chunk);
+            }
+            C64_DMA_MEMONLY = 1;
+            if (restore_mode) {
+                C64_MODE = saved_mode;
+            }
+        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
+            // The freezer menu uses this 2KB as its own scratch RAM, so serve
+            // reads/writes from the backup taken at freeze time instead: it is
+            // restored to real RAM on unfreeze, unlike the live (bypassed) range.
+            if ((0x1000 - addr) < chunk) {
+                chunk = 0x1000 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
+        } else if ((addr >= 0xD800) && (addr < 0xDC00)) {
+            // Same reasoning as the ram_backup range above, but for color RAM.
+            if ((0xDC00 - addr) < chunk) {
+                chunk = 0xDC00 - addr;
+            }
+            uint8_t *backup = ((uint8_t *)color_backup) + (addr - 0xD800);
+            if (rw) {
+                memcpy(buffer + pos, backup, chunk);
+            } else {
+                memcpy(backup, buffer + pos, chunk);
+            }
+        } else {
+            int next_boundary;
+            if (addr < 0x0800) {
+                next_boundary = 0x0800;
+            } else if (addr < 0x8000) {
+                next_boundary = 0x8000;
+            } else if (addr < 0xD800) {
+                next_boundary = 0xD800;
+            } else {
+                next_boundary = 0xE000;
+            }
+            if ((next_boundary - addr) < chunk) {
+                chunk = next_boundary - addr;
+            }
+            if (rw) {
+                memcpy(buffer + pos, (const void *)(ram + addr), chunk);
+            } else {
+                memcpy((void *)(ram + addr), buffer + pos, chunk);
+            }
+        }
+        pos += chunk;
+    }
+
+    C64_DMA_MEMONLY = saved_memonly;
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
