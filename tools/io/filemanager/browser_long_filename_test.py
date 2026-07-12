@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Validate browser actions on a long filename through the real U64 menu UI.
 
-The `/Temp` ingress paths expose a shortened actionable path, while `:info`
-still reports the full long filename that the browser renders. This test seeds
-that `/Temp` fixture, verifies the browser is acting on the long-name entry,
-and then checks Rename and Mount on real firmware.
+The `/Temp` ingress paths can still be listed through a shortened FTP alias,
+but after the fix the browser actions resolve and act on the real long FAT
+filename. This test seeds that `/Temp` fixture and verifies Rename and Mount
+against the full requested name on real firmware.
 """
 
 import argparse
@@ -15,7 +15,6 @@ from pathlib import Path
 import sys
 import tempfile
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Dict, List
@@ -78,20 +77,13 @@ def create_seed_d64(host: str, password: str, test_dir: str) -> None:
         raise Failure(f"Seed D64 creation failed: {body}")
 
 
-def fixture_info(host: str, password: str, test_dir: str, stored_name: str) -> Dict[str, object]:
-    errors = []
-    for name in (stored_name, REQUESTED_NAME):
-        path = f"/v1/files/Temp/{test_dir}/{name}:info"
-        try:
-            body = rest_json(host, password, "GET", path)
-        except urllib.error.HTTPError as exc:
-            errors.append(f"{name!r}: HTTP {exc.code}")
-            continue
-        info = body.get("files")
-        if isinstance(info, dict):
-            return info
-        errors.append(f"{name!r}: {body!r}")
-    raise Failure(f"Fixture info missing for {stored_name!r}: {errors}")
+def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str, object]:
+    path = f"/v1/files/Temp/{test_dir}/{name}:info"
+    body = rest_json(host, password, "GET", path)
+    info = body.get("files")
+    if not isinstance(info, dict):
+        raise Failure(f"Fixture info missing for {name!r}: {body}")
+    return info
 
 
 def get_drive_a_image(host: str) -> Dict[str, object]:
@@ -192,7 +184,7 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
     candidates = [name for name in entries if name.startswith(FIXTURE_PREFIX)]
     if len(candidates) != 1:
         raise Failure(f"Expected one stored long-name fixture, got {candidates}")
-    info = fixture_info(host, password, test_dir, candidates[0])
+    info = fixture_info(host, password, test_dir, REQUESTED_NAME)
     display_name = info.get("filename")
     if display_name != REQUESTED_NAME:
         raise Failure(f"Fixture lost its long browser name: {info}")
@@ -330,14 +322,6 @@ def type_editor_text(session: RestSession, text: str) -> None:
         tap(session, [key], 0.08)
 
 
-def ftp_entries_in_test_dir(host: str, password: str, test_dir: str) -> List[str]:
-    ftp = ftp_connect(host, password)
-    try:
-        return ftp_dir_entries(ftp, f"/Temp/{test_dir}")
-    finally:
-        ftp.quit()
-
-
 def run_rename_test(host: str, password: str, session: RestSession, test_dir: str, stored_name: str) -> None:
     open_fixture_directory(session, test_dir)
     open_fixture_context_menu(session)
@@ -352,15 +336,22 @@ def run_rename_test(host: str, password: str, session: RestSession, test_dir: st
     type_editor_text(session, RENAMED_NAME)
     tap(session, ["return"], MENU_POPUP_SETTLE_SECONDS)
 
-    entries = ftp_entries_in_test_dir(host, password, test_dir)
-    if RENAMED_NAME in entries and stored_name not in entries:
+    try:
+        rest_json(host, password, "GET", f"/v1/files/Temp/{test_dir}/{REQUESTED_NAME}:info")
+    except Exception:
+        pass
+    else:
+        raise Failure("Browser rename left the original long filename in place")
+
+    renamed_info = fixture_info(host, password, test_dir, RENAMED_NAME)
+    if renamed_info.get("filename") == RENAMED_NAME:
         return
 
     body = session.get_menu_screen()
     text = menu_screen_text(body)
     if "Error: FILE DOESN'T EXIST" in text:
         raise Failure("Browser rename failed with FILE DOESN'T EXIST")
-    raise Failure(f"Rename did not produce {RENAMED_NAME!r}; entries={entries}")
+    raise Failure(f"Rename did not produce {RENAMED_NAME!r}; info={renamed_info!r}")
 
 
 def run_mount_test(host: str, password: str, session: RestSession, test_dir: str, stored_name: str) -> None:
@@ -376,7 +367,7 @@ def run_mount_test(host: str, password: str, session: RestSession, test_dir: str
         drive_a = get_drive_a_image(host)
         if (
             drive_a.get("image_path") == f"/Temp/{test_dir}/"
-            and drive_a.get("image_file") in (stored_name, REQUESTED_NAME)
+            and drive_a.get("image_file") == REQUESTED_NAME
         ):
             return
         time.sleep(0.10)
