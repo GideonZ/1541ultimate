@@ -16,6 +16,8 @@
 ;                      16 bytes/repeat, ignored in text mode. Controls row
 ;                      width - a large value (e.g. 120) spans the full
 ;                      printable page width for a full-page bitmap test.
+;   $C016  flags: bit 0 emits the issue #717 BASIC byte shape without an
+;                      explicit form feed; Flush/Eject saves the final page.
 ;
 ; Status block (STATUS_BASE = $C000), maintained by this program:
 ;   $C000  magic0 = $55
@@ -122,6 +124,10 @@ chkout_ok:
         lda #PH_OPENED
         sta STATUS_BASE+2
 
+        lda PARAM_BASE+6
+        and #$01
+        bne init_done
+
         ; ---- emulation-specific job init ----
         lda PARAM_BASE
         cmp #1
@@ -146,6 +152,9 @@ init_done:
         ; ---- printed characters are dense/blocky enough for OCR to read
         ; ---- back reliably (the default draft-quality dot pattern is too
         ; ---- sparse for OCR, even after image preprocessing).
+        lda PARAM_BASE+6
+        and #$01
+        bne text_init_done
         lda PARAM_BASE+1        ; mode
         cmp #2
         bne text_init_done
@@ -205,10 +214,16 @@ row_loop:
         lda rownum
         sta STATUS_BASE+6
 
+        lda PARAM_BASE+6
+        and #$01
+        bne do_issue_717_row
         lda PARAM_BASE+1        ; mode
         cmp #1
         beq do_bitmap_row
         jsr print_text_row
+        jmp row_done
+do_issue_717_row:
+        jsr print_issue_717_row
         jmp row_done
 do_bitmap_row:
         jsr print_bitmap_row
@@ -226,6 +241,10 @@ row_heartbeat_done:
         dec rowleft
         bne row_loop
 
+        lda PARAM_BASE+6
+        and #$01
+        bne issue_717_finished
+
         ; ---- eject page ----
         lda #PH_FORMFEED
         sta STATUS_BASE+2
@@ -241,6 +260,14 @@ row_heartbeat_done:
         lda #PH_COMPLETE
         sta STATUS_BASE+2
         sta STATUS_BASE+8
+
+        jmp close_and_finish
+
+issue_717_finished:
+        lda #PH_COMPLETE
+        sta STATUS_BASE+2
+        sta STATUS_BASE+8
+        rts
 
 close_and_finish:
         lda #PH_CLOSING
@@ -312,6 +339,31 @@ pt_tag_done:
         cmp #1
         bne pt_cbm_eol
         lda #$0a                ; Epson: LF then CR
+        jsr CHROUT
+        lda #$0d
+        jsr CHROUT
+        rts
+
+; ---------------------------------------------------------------------------
+; print_issue_717_row: emit the byte shape of the BASIC reproducer:
+;   PRINT#1,"line no "; i
+;   PRINT#1, CHR$(13)
+; The decimal value is immaterial to the printer parser. The normal printer
+; line ending advances the Epson raster, followed by the explicit CR. This
+; routine intentionally sends no form feed.
+; ---------------------------------------------------------------------------
+print_issue_717_row:
+        lda #<str_issue_717
+        sta ps_lda+1
+        lda #>str_issue_717
+        sta ps_lda+2
+        jsr printstr
+
+        lda rownum
+        jsr print3digit
+        lda #$0a
+        jsr CHROUT
+        lda #$0d
         jsr CHROUT
         lda #$0d
         jsr CHROUT
@@ -493,4 +545,6 @@ str_texttag:    .text " TEXT PAGE="
 str_rowtag:     .text " ROW="
                 .byte 0
 str_suffix:     .text " ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789"
+                .byte 0
+str_issue_717:  .text "line no "
                 .byte 0

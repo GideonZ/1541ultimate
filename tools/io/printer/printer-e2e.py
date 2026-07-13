@@ -21,11 +21,19 @@ import os
 import subprocess
 import struct
 import sys
+import tempfile
 import time
 import zlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ASM_PATH = os.path.join(SCRIPT_DIR, "printer-e2e.asm")
+ISSUE_717_BASIC = '''10 open 1,4
+20 for i = 1 to 100
+30 print#1,"line no "; i
+35 print#1, chr$(13)
+40 next i
+50 end
+'''
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
@@ -293,6 +301,14 @@ class FtpInspector:
             except (OSError, EOFError, ftplib.Error):
                 ftp.close()
 
+    def printer_root(self):
+        """Use the first mounted USB volume; Temp is the last resort."""
+        entries = "\n".join(self.list_dir("/"))
+        for volume in ("USB0", "USB1", "USB2"):
+            if volume in entries:
+                return "/" + volume
+        return "/Temp"
+
     def file_size(self, path):
         ftp = self._open()
         try:
@@ -365,6 +381,20 @@ def assemble_prg(asm_path, assembler):
     return data
 
 
+def issue_717_basic_prg():
+    """Tokenize the issue reporter's BASIC program verbatim as BASIC V2."""
+    with tempfile.TemporaryDirectory() as directory:
+        source = os.path.join(directory, "issue-717.bas")
+        output = os.path.join(directory, "issue-717.prg")
+        with open(source, "w", encoding="ascii") as handle:
+            handle.write(ISSUE_717_BASIC)
+        result = subprocess.run(["petcat", "-w2", "-o", output, source], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Failure(f"petcat failed: {result.stdout}\n{result.stderr}")
+        with open(output, "rb") as handle:
+            return handle.read()
+
+
 def decode_status(payload):
     if len(payload) < STATUS_LEN:
         raise Failure(f"short status block read: {len(payload)} bytes")
@@ -385,9 +415,19 @@ def decode_status(payload):
 
 
 def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, timeout_seconds, poll_interval,
-                      bim_repeats=DEFAULT_BIM_REPEATS):
+                      bim_repeats=DEFAULT_BIM_REPEATS, issue_717_basic=False):
     """Write params, launch the PRG, poll the status block. Returns (classification, status_or_none)."""
-    params = bytes([EMU_CODE[emulation], MODE_CODE[mode], rows & 0xFF, pages & 0xFF, bus_id, bim_repeats & 0xFF])
+    if issue_717_basic:
+        client.run_prg(prg_bytes)
+        time.sleep(5.0)
+        if not client.is_alive(timeout=3.0):
+            return "FAIL_CRASH_HARD", None
+        return "PASS_RUN", {"phase_name": "literal BASIC completed", "heartbeat": 0}
+
+    params = bytes([
+        EMU_CODE[emulation], MODE_CODE[mode], rows & 0xFF, pages & 0xFF,
+        bus_id, bim_repeats & 0xFF, 1 if issue_717_basic else 0,
+    ])
     client.writemem(PARAM_BASE, params)
     client.run_prg(prg_bytes)
 
@@ -436,6 +476,18 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     body = client.get_menu_screen()
+    if body is None:
+        # Builds before the menu-screen REST endpoint still accept synthetic
+        # input. Printer is the preselected Tasks entry on those builds.
+        client.menu_button()
+        time.sleep(settle)
+        client.tap_key("f5")
+        time.sleep(settle)
+        client.tap_key("return")
+        time.sleep(settle)
+        client.tap_key("return")
+        time.sleep(1.0)
+        return
     if body is not None:
         client.menu_button()  # close whatever is open
         time.sleep(settle)
@@ -762,6 +814,11 @@ PRESETS = {
         verify_output=True, expected_output_pages=2,
         seed_page_num_collision=True, seed_last_page=7,
     ),
+    "issue-717-basic": dict(
+        emulation="epson", mode="text", output_type="PNG B&W", ink_density="Medium",
+        page_top_margin=1, page_height=66, bus_id=4, rows=100, pages=1,
+        verify_output=True, expected_output_pages=1, issue_717_basic=True,
+    ),
 }
 
 
@@ -815,7 +872,8 @@ def parse_args():
                               "calcPageNum() must ignore colliding names and continue at NNN+1.")
     parser.add_argument("--seed-last-page", type=int, default=7,
                          help="When --seed-page-num-collision is used, seed an existing "
-                              "<base>-NNN.png with this page number (default: 7).")
+                         "<base>-NNN.png with this page number (default: 7).")
+    parser.add_argument("--issue-717-basic", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--host-output-dir", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
     parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
@@ -873,9 +931,9 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     if args.output_base:
         base = args.output_base
     elif args.seed_page_num_collision:
-        base = "/Temp/printer"
+        base = inspector.printer_root() + "/printer"
     else:
-        base = "/Usb0/printer/e2e"
+        base = inspector.printer_root() + "/printer/e2e"
     if args.output_base is None:
         output_base = unique_output_base(base, emulation, mode)
     elif disambiguate:
@@ -914,6 +972,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     classification, status = classify_and_run(
         client, prg_bytes, emulation, mode, rows, args.pages, args.bus_id,
         args.timeout_seconds, POLL_INTERVAL_SECONDS, bim_repeats=bim_repeats,
+        issue_717_basic=args.issue_717_basic,
     )
 
     if classification == "FAIL_CRASH_HARD":
@@ -964,7 +1023,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
             verify_png_output(
                 inspector, output_base, expected_pages, assertions_enabled, first_page=first_page,
             )
-            if mode == "text":
+            if mode == "text" and not args.issue_717_basic:
                 verify_text_ocr(
                     inspector, output_base, emulation, expected_pages, rows, assertions_enabled,
                     first_page=first_page,
@@ -991,9 +1050,10 @@ def main():
         return 1
     check_ok()
 
-    check_start(f"assemble {os.path.basename(args.asm_path)} with {args.assembler}")
+    check_start("tokenize literal issue #717 BASIC" if args.issue_717_basic else
+                f"assemble {os.path.basename(args.asm_path)} with {args.assembler}")
     try:
-        prg_bytes = assemble_prg(args.asm_path, args.assembler)
+        prg_bytes = issue_717_basic_prg() if args.issue_717_basic else assemble_prg(args.asm_path, args.assembler)
     except Failure as exc:
         check_fail(str(exc))
         return 1

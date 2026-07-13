@@ -114,6 +114,17 @@ page number (`...-008.png`, `...-009.png`), and fails if page numbering is
 thrown off by the directory collision or if the overflow path wedges the
 machine.
 
+## Exact issue #717 workload shape
+
+```sh
+./printer-e2e.py -H u64 --preset issue-717-basic --output-base /Usb0/printer \
+    --output-type "PNG B&W" --page-top-margin 1 --page-height 66 --verify-output
+```
+
+The harness tokenizes and runs the reporter's BASIC program verbatim as BASIC
+V2. It expects one PNG page for that exact program at the reported 66-line
+page height.
+
 ## Running the full required matrix
 
 ```sh
