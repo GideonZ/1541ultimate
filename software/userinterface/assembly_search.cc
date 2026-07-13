@@ -88,7 +88,7 @@ int AssemblySearch :: handle_key(int c)
 {
     int ret = 0;
     
-    if ((c == KEY_BREAK) || (c == KEY_ESCAPE)) {
+    if ((c == KEY_BREAK) || (c == KEY_ESCAPE) || (c == '`')) {
         return MENU_CLOSE; // independent of level, it closes the search.
         // if we'd have this handled by the tree browser, it would cause a HIDE instead
     }
