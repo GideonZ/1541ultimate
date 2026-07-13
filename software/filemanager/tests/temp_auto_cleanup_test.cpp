@@ -976,3 +976,65 @@ TEST(TempAutoCleanupTest, ElevenOpenFilesDeleteOldestOnlyOnFinalClose)
         }
     }
 }
+
+TEST(TempAutoCleanupTest, GenerateFatNameKeepsLongDirectNames)
+{
+    const char *boundary_name =
+        "zzzz_long_filename_browser_regression_0123456789_0123456789_0123";
+    ASSERT_EQ(64, (int)strlen(boundary_name));
+
+    FileInfo boundary_info((int)strlen(boundary_name) + 1);
+    strcpy(boundary_info.lfname, boundary_name);
+    boundary_info.name_format = NAME_FORMAT_DIRECT;
+
+    char boundary_buffer[65];
+    memset(boundary_buffer, 'X', sizeof(boundary_buffer));
+    EXPECT_EQ(std::string(boundary_name),
+        std::string(boundary_info.generate_fat_name(boundary_buffer, sizeof(boundary_buffer))));
+    EXPECT_EQ(0, boundary_buffer[64]);
+
+    const char *long_name =
+        "Rambo First Blood Part II NTSC - Thunder Mountain 1985 (EasyLoad64).d64";
+    FileInfo info((int)strlen(long_name) + 1);
+    strcpy(info.lfname, long_name);
+    info.name_format = NAME_FORMAT_DIRECT;
+
+    std::vector<char> full_buffer(strlen(long_name) + 1);
+    EXPECT_EQ(std::string(long_name),
+        std::string(info.generate_fat_name(full_buffer.data(), full_buffer.size())));
+
+    char truncated[16];
+    memset(truncated, 'X', sizeof(truncated));
+    info.generate_fat_name(truncated, sizeof(truncated));
+    EXPECT_EQ(0, truncated[sizeof(truncated) - 1]);
+}
+
+TEST(TempAutoCleanupTest, FileManagerHandlesLongDirectNames)
+{
+    set_auto_cleanup(true);
+    set_use_cache_subfolder(true);
+
+    TempTestEnvironment env;
+    env.reset();
+
+    const char *long_name =
+        "Rambo First Blood Part II NTSC - Thunder Mountain 1985 (EasyLoad64).d64";
+    const char *renamed_name = "lfnok.d64";
+    EXPECT_TRUE((int)strlen(long_name) > 64);
+
+    std::string original_path = create_managed_temp_file(env, "upload", long_name, 16);
+
+    FileInfo info(128);
+    EXPECT_EQ(FR_OK, env.fm->fstat(original_path.c_str(), info));
+    EXPECT_EQ(std::string(long_name), std::string(info.lfname));
+
+    Path *path = env.fm->get_new_path("long-direct-rename");
+    path->cd(parent_path(original_path).c_str());
+    ASSERT_EQ(FR_OK, env.fm->rename(path, long_name, renamed_name));
+    env.fm->release_path(path);
+
+    std::string renamed_path = parent_path(original_path) + "/" + renamed_name;
+    EXPECT_EQ(FR_NO_FILE, env.fm->fstat(original_path.c_str(), info));
+    EXPECT_EQ(FR_OK, env.fm->fstat(renamed_path.c_str(), info));
+    EXPECT_EQ(std::string(renamed_name), std::string(info.lfname));
+}
