@@ -91,6 +91,29 @@ If your unit has no USB stick mounted, point `--output-base` at a path under
 a filesystem that does exist instead, e.g. `/Temp/printer/e2e-smoke` — the
 harness creates the `printer` directory over FTP if it isn't there yet.
 
+## Forcing the issue #717 scan/overflow shape
+
+```sh
+./printer-e2e.py -H u64 --preset issue-717-overflow
+```
+
+This preset forces the two conditions the original branch did **not** verify
+together:
+
+- the `Output file` base is a unique `/Temp/printer-*` prefix, so
+  `calcPageNum()` scans a parent directory that also contains a sibling entry
+  with that exact basename as a directory
+- the harness pre-seeds colliding prefix entries (`printer/`,
+  `printer-old.png`, `printer-7.png`, `printer-abc.png`, `printer-123.txt`)
+  plus a real `printer-007.png`, then sends one continuous bitmap print long
+  enough to overflow naturally onto a second page before the final
+  Flush/Eject
+
+Verification therefore expects **two** new PNGs starting at the seeded next
+page number (`...-008.png`, `...-009.png`), and fails if page numbering is
+thrown off by the directory collision or if the overflow path wedges the
+machine.
+
 ## Running the full required matrix
 
 ```sh
@@ -114,6 +137,13 @@ never gets misread as another's output.
 truncates beyond 31 characters (`CFG_PRINTER_FILENAME` in `iec_printer.cc`).
 The harness raises an explicit error if a computed path would exceed that,
 rather than let verification fail confusingly against a truncated filename.
+
+**Natural overflow verification**: `--verify-output` normally expects the same
+number of PNGs as `--pages`, because each requested page is explicitly ejected
+by the harness. For a single continuous job that *naturally* overruns onto an
+extra page before the final eject (the issue #717 shape), set
+`--expected-output-pages` higher than `--pages`; the `issue-717-overflow`
+preset does this automatically.
 
 ## Full-page bitmap coverage test (opt-in, slow)
 

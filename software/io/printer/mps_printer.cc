@@ -765,27 +765,28 @@ MpsPrinter::calcPageNum(void)
         for(int i=0;i<infos->get_elements();i++)
         {
             FileInfo *inf = (*infos)[i];
+            const char *suffix = inf->lfname + baselength;
 
-            if (!strncmp(basename, inf->lfname, baselength))
+            if (!(inf->attrib & AM_DIR) && !strncmp(basename, inf->lfname, baselength))
             {
                 /* Basename matches, then look if rest of filename is -XXX.png */
-                if (inf->lfname[baselength] != '-') goto next_file;
-                if (inf->lfname[baselength+1] < '0') goto next_file;
-                if (inf->lfname[baselength+1] > '9') goto next_file;
-                if (inf->lfname[baselength+2] < '0') goto next_file;
-                if (inf->lfname[baselength+2] > '9') goto next_file;
-                if (inf->lfname[baselength+3] < '0') goto next_file;
-                if (inf->lfname[baselength+3] > '9') goto next_file;
-                if (inf->lfname[baselength+4] != '.') goto next_file;
-                if (inf->lfname[baselength+5] != 'p') goto next_file;
-                if (inf->lfname[baselength+6] != 'n') goto next_file;
-                if (inf->lfname[baselength+7] != 'g') goto next_file;
-                if (inf->lfname[baselength+8] != '\0') goto next_file;
+                if (suffix[0] != '-') goto next_file;
+                if (suffix[1] < '0') goto next_file;
+                if (suffix[1] > '9') goto next_file;
+                if (suffix[2] < '0') goto next_file;
+                if (suffix[2] > '9') goto next_file;
+                if (suffix[3] < '0') goto next_file;
+                if (suffix[3] > '9') goto next_file;
+                if (suffix[4] != '.') goto next_file;
+                if (suffix[5] != 'p') goto next_file;
+                if (suffix[6] != 'n') goto next_file;
+                if (suffix[7] != 'g') goto next_file;
+                if (suffix[8] != '\0') goto next_file;
 
                 /* If we are here, it maches, get the number */
-                int number = (inf->lfname[baselength+1] - '0') * 100 +
-                             (inf->lfname[baselength+2] - '0') * 10 +
-                             (inf->lfname[baselength+3] - '0');
+                int number = (suffix[1] - '0') * 100 +
+                             (suffix[2] - '0') * 10 +
+                             (suffix[3] - '0');
 
                 if (number >= page_num) page_num = number+1;
             }

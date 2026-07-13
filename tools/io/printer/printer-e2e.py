@@ -317,6 +317,16 @@ class FtpInspector:
             except (OSError, EOFError, ftplib.Error):
                 ftp.close()
 
+    def upload_bytes(self, path, data):
+        ftp = self._open()
+        try:
+            ftp.storbinary(f"STOR {path}", io.BytesIO(data))
+        finally:
+            try:
+                ftp.quit()
+            except (OSError, EOFError, ftplib.Error):
+                ftp.close()
+
     def ensure_directory(self, directory):
         """Create `directory` (and its parents) if it doesn't already exist.
         The printer's fopen() does not create missing directories, so an
@@ -568,12 +578,16 @@ def download_with_retry(inspector, path, timeout_seconds=10.0, interval_seconds=
     raise Failure(f"{path}: not available over FTP after {timeout_seconds}s ({last_error})")
 
 
-def verify_png_output(inspector, output_base, expected_pages, assertions_enabled):
+def page_output_path(output_base, page_number):
     directory, base = os.path.split(output_base)
     directory = directory or "/"
-    for page in range(1, expected_pages + 1):
-        name = f"{base}-{page:03d}.png"
-        path = f"{directory}/{name}" if directory != "/" else f"/{name}"
+    name = f"{base}-{page_number:03d}.png"
+    return f"{directory}/{name}" if directory != "/" else f"/{name}"
+
+
+def verify_png_output(inspector, output_base, expected_pages, assertions_enabled, first_page=1):
+    for page in range(first_page, first_page + expected_pages):
+        path = page_output_path(output_base, page)
         data = download_with_retry(inspector, path)
         assert_or_warn(assertions_enabled, len(data) > 0, f"{path}: file is empty")
         ok, reason = png_is_well_formed(data)
@@ -583,14 +597,11 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         print(f"    {path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
 
 
-def verify_full_page_coverage(inspector, output_base, assertions_enabled):
+def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=1):
     """Decode page 1's pixels and check the ink actually covers most of the
     page - proof this is a genuine full-page fill, not just a small band
     mislabeled as one (e.g. from a parameter that silently had no effect)."""
-    directory, base = os.path.split(output_base)
-    directory = directory or "/"
-    name = f"{base}-001.png"
-    path = f"{directory}/{name}" if directory != "/" else f"/{name}"
+    path = page_output_path(output_base, first_page)
 
     data = download_with_retry(inspector, path)
     width, height, pixel_rows = png_lite.decode_indexed(data)
@@ -644,7 +655,7 @@ def ocr_page_text(data):
     return pytesseract.image_to_string(thresholded, config="--psm 6").upper()
 
 
-def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_enabled):
+def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_enabled, first_page=1):
     """OCR-verify that the printed text pages actually contain the expected
     deterministic content (emulation tag, mode tag, and every PAGE=/ROW=
     marker) - not just that a plausible-looking PNG was produced.
@@ -666,12 +677,9 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
         return
 
     expected_tag = EMU_CONFIG_VALUE[emulation].split()[0].upper()  # "EPSON" / "COMMODORE"
-    directory, base = os.path.split(output_base)
-    directory = directory or "/"
-
-    for page in range(1, pages + 1):
-        name = f"{base}-{page:03d}.png"
-        path = f"{directory}/{name}" if directory != "/" else f"/{name}"
+    for logical_page in range(1, pages + 1):
+        page = first_page + logical_page - 1
+        path = page_output_path(output_base, page)
         data = download_with_retry(inspector, path)
         text = ocr_page_text(data)
 
@@ -691,8 +699,8 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
             f"{path}: OCR did not find the expected 'TEXT' mode tag",
         )
         assert_or_warn(
-            assertions_enabled, f"PAGE={page:03d}" in text,
-            f"{path}: OCR did not find 'PAGE={page:03d}'",
+            assertions_enabled, f"PAGE={logical_page:03d}" in text,
+            f"{path}: OCR did not find 'PAGE={logical_page:03d}'",
         )
         for row in range(1, rows + 1):
             assert_or_warn(
@@ -722,11 +730,38 @@ def require_output_file_length(output_base):
         )
 
 
+def seed_page_num_collision(inspector, output_base, last_page):
+    """Force calcPageNum() through the same basename scan shape as issue #717:
+    the parent directory contains both a directory named like the basename and
+    several same-prefix non-matching files, plus one real <base>-NNN.png that
+    should determine the next page number."""
+    directory, base = os.path.split(output_base)
+    directory = directory or "/"
+    collision_dir = f"{directory}/{base}" if directory != "/" else f"/{base}"
+    inspector.ensure_directory(collision_dir)
+
+    seeded_paths = (
+        page_output_path(output_base, last_page),
+        f"{directory}/{base}-old.png" if directory != "/" else f"/{base}-old.png",
+        f"{directory}/{base}-7.png" if directory != "/" else f"/{base}-7.png",
+        f"{directory}/{base}-abc.png" if directory != "/" else f"/{base}-abc.png",
+        f"{directory}/{base}-123.txt" if directory != "/" else f"/{base}-123.txt",
+    )
+    for path in seeded_paths:
+        inspector.upload_bytes(path, b"seed")
+
+
 PRESETS = {
     "crash-epson-png": dict(emulation="epson", mode="bitmap", output_type="PNG B&W",
                              ink_density="Medium", page_top_margin=1, page_height=66,
                              bus_id=4, rows=4, pages=1),
     "full-matrix": dict(output_type="PNG B&W", page_top_margin=1, page_height=66, bus_id=4),
+    "issue-717-overflow": dict(
+        emulation="epson", mode="bitmap", output_type="PNG B&W", ink_density="Medium",
+        page_top_margin=1, page_height=66, bus_id=4, rows=126, pages=1,
+        verify_output=True, expected_output_pages=2,
+        seed_page_num_collision=True, seed_last_page=7,
+    ),
 }
 
 
@@ -766,10 +801,21 @@ def parse_args():
     parser.add_argument("--output-base", default=None,
                          help="Printer 'Output file' base path (default: unique /Usb0/printer/e2e-<run-id>). "
                               "The base's directory is created over FTP if it doesn't already exist.")
+    parser.add_argument("--expected-output-pages", type=int, default=None,
+                         help="Expected number of output PNG pages to verify. Defaults to --pages, "
+                              "but set this higher for a single continuous print that naturally "
+                              "overflows onto an extra page before the final Flush/Eject.")
     parser.add_argument("--output-type", default="PNG B&W")
     parser.add_argument("--ink-density", default="Medium")
     parser.add_argument("--page-top-margin", type=int, default=1)
     parser.add_argument("--page-height", type=int, default=66)
+    parser.add_argument("--seed-page-num-collision", action="store_true",
+                         help="Pre-create a directory named like the output basename plus several "
+                              "same-prefix junk files, and seed one existing <base>-NNN.png, so "
+                              "calcPageNum() must ignore colliding names and continue at NNN+1.")
+    parser.add_argument("--seed-last-page", type=int, default=7,
+                         help="When --seed-page-num-collision is used, seed an existing "
+                              "<base>-NNN.png with this page number (default: 7).")
     parser.add_argument("--host-output-dir", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
     parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
@@ -795,6 +841,10 @@ def parse_args():
         parser.error("--rows must be between 1 and 255")
     if args.pages < 1 or args.pages > 9:
         parser.error("--pages must be between 1 and 9")
+    if args.expected_output_pages is not None and args.expected_output_pages < 1:
+        parser.error("--expected-output-pages must be >= 1")
+    if args.seed_last_page < 1 or args.seed_last_page > 999:
+        parser.error("--seed-last-page must be between 1 and 999")
 
     if args.full_page_bitmap:
         if args.mode == "text":
@@ -820,7 +870,12 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     label = f"{emulation}/{mode}"
     check_start(f"print {label}: apply settings + run PRG")
 
-    base = args.output_base or "/Usb0/printer/e2e"
+    if args.output_base:
+        base = args.output_base
+    elif args.seed_page_num_collision:
+        base = "/Temp/printer"
+    else:
+        base = "/Usb0/printer/e2e"
     if args.output_base is None:
         output_base = unique_output_base(base, emulation, mode)
     elif disambiguate:
@@ -835,6 +890,11 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     output_directory = os.path.dirname(output_base)
     if output_directory:
         inspector.ensure_directory(output_directory)
+
+    first_page = 1
+    if args.seed_page_num_collision:
+        seed_page_num_collision(inspector, output_base, args.seed_last_page)
+        first_page = args.seed_last_page + 1
 
     if not args.no_config_change:
         apply_settings(
@@ -889,8 +949,8 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     if args.full_page_bitmap:
         check_start(f"print {label}: verify full-page coverage over FTP")
         try:
-            verify_png_output(inspector, output_base, args.pages, assertions_enabled)
-            verify_full_page_coverage(inspector, output_base, assertions_enabled)
+            verify_png_output(inspector, output_base, args.pages, assertions_enabled, first_page=first_page)
+            verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=first_page)
             check_ok()
             return "PASS", output_base, status
         except Failure as exc:
@@ -900,9 +960,15 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
     if args.verify_output:
         check_start(f"print {label}: verify output over FTP")
         try:
-            verify_png_output(inspector, output_base, args.pages, assertions_enabled)
+            expected_pages = args.expected_output_pages or args.pages
+            verify_png_output(
+                inspector, output_base, expected_pages, assertions_enabled, first_page=first_page,
+            )
             if mode == "text":
-                verify_text_ocr(inspector, output_base, emulation, args.pages, rows, assertions_enabled)
+                verify_text_ocr(
+                    inspector, output_base, emulation, expected_pages, rows, assertions_enabled,
+                    first_page=first_page,
+                )
             check_ok()
             return "PASS", output_base, status
         except Failure as exc:
