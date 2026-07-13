@@ -739,7 +739,7 @@ MpsPrinter::calcPageNum(void)
     for (int i=0; dirname[i]; i++)
         if (dirname[i] == '/') last_slash = &dirname[i];
 
-    if (dirname)
+    if (last_slash)
     {
         *last_slash = '\0';
         basename = last_slash + 1;
@@ -748,7 +748,7 @@ MpsPrinter::calcPageNum(void)
     {
         /* No '/', set dirname to current '.' dir (legal in ultimate ?) */
         dirname[0] = '.';
-        dirname[0] = '\0';
+        dirname[1] = '\0';
         basename = outfile;
     }
 
@@ -769,18 +769,18 @@ MpsPrinter::calcPageNum(void)
             if (!strncmp(basename, inf->lfname, baselength))
             {
                 /* Basename matches, then look if rest of filename is -XXX.png */
-                if (inf->lfname[baselength] != '-') continue;
-                if (inf->lfname[baselength+1] < '0') continue;
-                if (inf->lfname[baselength+1] > '9') continue;
-                if (inf->lfname[baselength+2] < '0') continue;
-                if (inf->lfname[baselength+2] > '9') continue;
-                if (inf->lfname[baselength+3] < '0') continue;
-                if (inf->lfname[baselength+3] > '9') continue;
-                if (inf->lfname[baselength+4] != '.') continue;
-                if (inf->lfname[baselength+5] != 'p') continue;
-                if (inf->lfname[baselength+6] != 'n') continue;
-                if (inf->lfname[baselength+7] != 'g') continue;
-                if (inf->lfname[baselength+8] != '\0') continue;
+                if (inf->lfname[baselength] != '-') goto next_file;
+                if (inf->lfname[baselength+1] < '0') goto next_file;
+                if (inf->lfname[baselength+1] > '9') goto next_file;
+                if (inf->lfname[baselength+2] < '0') goto next_file;
+                if (inf->lfname[baselength+2] > '9') goto next_file;
+                if (inf->lfname[baselength+3] < '0') goto next_file;
+                if (inf->lfname[baselength+3] > '9') goto next_file;
+                if (inf->lfname[baselength+4] != '.') goto next_file;
+                if (inf->lfname[baselength+5] != 'p') goto next_file;
+                if (inf->lfname[baselength+6] != 'n') goto next_file;
+                if (inf->lfname[baselength+7] != 'g') goto next_file;
+                if (inf->lfname[baselength+8] != '\0') goto next_file;
 
                 /* If we are here, it maches, get the number */
                 int number = (inf->lfname[baselength+1] - '0') * 100 +
@@ -790,6 +790,7 @@ MpsPrinter::calcPageNum(void)
                 if (number >= page_num) page_num = number+1;
             }
 
+next_file:
             delete inf; // FileInfo not needed anymore
         }
 
