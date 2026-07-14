@@ -26,7 +26,7 @@ timing and buffering behaviour that a BASIC-only test would miss.
 ## How it works
 
 - **REST** (`http.client`, matching the style of
-  `tools/io/temp-auto-cleanup/temp-auto-cleanup-perf-test.py`): reads/writes
+  `tools/io/temp-auto-cleanup/temp_auto_cleanup_perf_test.py`): reads/writes
   `Printer Settings` config, pokes a parameter block and polls a status block
   via `machine:writemem` / `machine:readmem`, uploads and runs the assembled
   PRG via `POST /v1/runners:run_prg`, and drives the on-device Tasks menu
@@ -83,7 +83,7 @@ visible horizontal band (or, with a large repeat count, a full-width row).
 ## Running the smallest reproducer
 
 ```sh
-./printer-e2e.py -H u64 --preset crash-epson-png --rows 1 --pages 1 \
+./printer_test.py -H u64 --preset crash-epson-png --rows 1 --pages 1 \
     --output-base /Usb0/printer/e2e-smoke --verify-output
 ```
 
@@ -94,7 +94,7 @@ harness creates the `printer` directory over FTP if it isn't there yet.
 ## Forcing the issue #717 scan/overflow shape
 
 ```sh
-./printer-e2e.py -H u64 --preset issue-717-overflow
+./printer_test.py -H u64 --preset issue-717-overflow
 ```
 
 This preset forces the two conditions the original branch did **not** verify
@@ -117,7 +117,7 @@ machine.
 ## Exact issue #717 workload shape
 
 ```sh
-./printer-e2e.py -H u64 --preset issue-717-basic --output-base /Usb0/printer \
+./printer_test.py -H u64 --preset issue-717-basic --output-base /Usb0/printer \
     --output-type "PNG B&W" --page-top-margin 1 --page-height 66 --verify-output
 ```
 
@@ -128,13 +128,13 @@ page height.
 ## Running the full required matrix
 
 ```sh
-./printer-e2e.py -H u64 --stage matrix --emulation both --mode both \
+./printer_test.py -H u64 --stage matrix --emulation both --mode both \
     --output-type "PNG B&W" --rows 4 --pages 1 --verify-output
 
-./printer-e2e.py -H u64 --stage matrix --emulation both --mode both \
+./printer_test.py -H u64 --stage matrix --emulation both --mode both \
     --output-type "PNG B&W" --rows 4 --pages 2 --verify-output
 
-./printer-e2e.py -H u64 --preset full-matrix --page-top-margin 1 \
+./printer_test.py -H u64 --preset full-matrix --page-top-margin 1 \
     --page-height 66 --verify-output
 ```
 
@@ -159,7 +159,7 @@ preset does this automatically.
 ## Full-page bitmap coverage test (opt-in, slow)
 
 ```sh
-./printer-e2e.py -H u64 --emulation both --full-page-bitmap \
+./printer_test.py -H u64 --emulation both --full-page-bitmap \
     --output-base /Temp/printer/e2e-full --page-top-margin 1 --page-height 66
 ```
 
@@ -252,6 +252,6 @@ provided the JTAG cable stays connected.
   mounted; the examples above use `/Temp/printer` explicitly for that reason.
 - `--seed-count`, `--test-count`, `--duration`, `--host-output-dir`,
   `--keep-output`, `--limit` are accepted for CLI-shape compatibility with
-  `temp-auto-cleanup-perf-test.py` but are no-ops here — this harness is a
+  `temp_auto_cleanup_perf_test.py` but are no-ops here — this harness is a
   single deterministic print-and-verify per combination, not a
   throughput/soak benchmark.

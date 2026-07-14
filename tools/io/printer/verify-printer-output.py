@@ -4,7 +4,7 @@
 Downloads printer output files from an Ultimate 64/64e over FTP and checks
 that they are well-formed (PNG chunk/CRC structure, or non-blank text) without
 needing to run a print job first. Useful for re-checking output left behind by
-printer-e2e.py, or output produced interactively (e.g. via the on-device menu).
+printer_test.py, or output produced interactively (e.g. via the on-device menu).
 
 Usage:
     ./verify-printer-output.py -H u64 --output-base /Usb0/printer/e2e-abc --pages 2
