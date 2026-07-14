@@ -147,6 +147,7 @@ Keyboard_USB :: Keyboard_USB()
 	rest_pending_tap_delay = 0;
 	usb_restore = 0;
 	usb_freeze = 0;
+	usb_reset = 0;
 	rest_restore = false;
 	rest_restore_overlay = 0;
 	rest_restore_hold = 0;
@@ -208,6 +209,7 @@ void Keyboard_USB :: applyMatrixState(void)
 		uint8_t local_state = (matrixEnabled && !rest_control) ? (matrix_state[i] | injected_matrix_state[i]) : 0;
 		matrix[i] = local_state | rest_state;
 	}
+	matrix[8] = matrixEnabled ? usb_reset : 0;
 	matrix[9] = (matrixEnabled ? usb_restore : 0) | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
 	matrix[10] = matrixEnabled ? usb_freeze : 0;
 }
@@ -354,6 +356,9 @@ bool Keyboard_USB :: PresentInLastData(uint8_t check)
 	return false;
 }
 
+// Only decodes into matrix_state; applyMatrixState() gates it on matrixEnabled.
+// Must stay callable while the matrix is disabled, so that key releases arriving
+// while the menu is open are not lost.
 void Keyboard_USB :: usb2matrix(uint8_t *kd)
 {
 	if (!matrix) {
@@ -373,11 +378,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	const uint8_t key_locations[] = { };
 
 	// reset
-	if (modi == 0x0F) {
-		matrix[8] = 1;
-	} else {
-		matrix[8] = 0;
-	}
+	usb_reset = (modi == 0x0F) ? 1 : 0;
 
 	// Handle the modifiers
 	for(int i=0;i<8;i++) {
@@ -448,9 +449,7 @@ void Keyboard_USB :: S_rest_timer(TimerHandle_t a)
 // called from USB thread
 void Keyboard_USB :: process_data(uint8_t *kbdata)
 {
-	if(matrixEnabled) {
-		usb2matrix(kbdata);
-	}
+	usb2matrix(kbdata);
 
 	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
@@ -934,6 +933,13 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 
 void Keyboard_USB :: enableMatrix(bool enable)
 {
+	if (enable && !matrixEnabled) {
+		// Keys still queued when the menu hands the keyboard back are menu
+		// navigation; getch() would replay them onto the C64 matrix.
+		portENTER_CRITICAL();
+		injected_tail = injected_head;
+		portEXIT_CRITICAL();
+	}
 	matrixEnabled = enable;
 	if (!enable) {
 		clearInjectedMatrixState();

@@ -86,6 +86,155 @@ TEST(KeyboardUsbQueueTest, InjectedCursorKeyPulsesMatrix)
 	EXPECT_EQ(0x00, matrix[6]);
 }
 
+// USB HID usage 0x2C (space) maps to C64 matrix row 7, column 4.
+static const uint8_t USB_KEY_SPACE = 0x2C;
+static const uint8_t MATRIX_SPACE_ROW = 7;
+static const uint8_t MATRIX_SPACE_BIT = 0x10;
+
+TEST(KeyboardUsbMatrixTest, KeyReleasedWhileMatrixDisabledDoesNotStick)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_SPACE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+
+	keyboard.process_data(press);
+	EXPECT_EQ(MATRIX_SPACE_BIT, matrix[MATRIX_SPACE_ROW]);
+
+	keyboard.enableMatrix(false); // menu opens while the key is still held
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+
+	keyboard.process_data(release); // key released with the menu still open
+	keyboard.enableMatrix(true);    // menu closes
+
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+}
+
+TEST(KeyboardUsbMatrixTest, ShiftReleasedWhileMatrixDisabledDoesNotStick)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+	uint8_t left_shift[USB_DATA_SIZE] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+
+	keyboard.process_data(left_shift);
+	EXPECT_EQ(0x80, matrix[1]);
+
+	keyboard.enableMatrix(false);
+	keyboard.process_data(release);
+	keyboard.enableMatrix(true);
+
+	EXPECT_EQ(0x00, matrix[1]);
+}
+
+TEST(KeyboardUsbMatrixTest, KeyStillHeldWhenMatrixIsEnabledIsReported)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_SPACE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(false);
+
+	keyboard.process_data(press); // pressed while the menu owns the keyboard
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+
+	keyboard.enableMatrix(true); // still physically held when the menu closes
+	EXPECT_EQ(MATRIX_SPACE_BIT, matrix[MATRIX_SPACE_ROW]);
+}
+
+TEST(KeyboardUsbMatrixTest, KeysTypedWhileMatrixDisabledDoNotReachTheMatrix)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_SPACE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(false);
+
+	keyboard.process_data(press);
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+	keyboard.process_data(release);
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+
+	keyboard.enableMatrix(true);
+	EXPECT_EQ(0x00, matrix[MATRIX_SPACE_ROW]);
+}
+
+TEST(KeyboardUsbMatrixTest, MenuKeystrokesDoNotLeakToTheMatrixAfterTheMenuCloses)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+
+	keyboard.enableMatrix(false); // menu takes the keyboard
+	keyboard.push_head(KEY_UP);   // menu navigation (mouse wheel / REST)
+	keyboard.push_head(KEY_DOWN);
+	keyboard.enableMatrix(true);  // menu hands it back
+
+	EXPECT_EQ(-1, keyboard.getch());
+	EXPECT_EQ(0x00, matrix[0]);
+	EXPECT_EQ(0x00, matrix[6]);
+}
+
+TEST(KeyboardUsbMatrixTest, CursorKeysQueuedWhileMatrixEnabledStillReachTheMatrix)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+	keyboard.push_head(KEY_UP); // mouse cursor mode drives the C64 this way
+
+	EXPECT_EQ(KEY_UP, keyboard.getch());
+	EXPECT_EQ(0x80, matrix[0]);
+	EXPECT_EQ(0x10, matrix[6]);
+}
+
+TEST(KeyboardUsbMatrixTest, ResetRestoreAndFreezeAreGatedAndNotStale)
+{
+	Keyboard_USB keyboard;
+	uint8_t matrix[11] = { 0 };
+	uint8_t reset_combo[USB_DATA_SIZE] = { 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t restore[USB_DATA_SIZE] = { 0x00, 0x00, 0x45, 0x00, 0x00, 0x00, 0x00, 0x00 }; // F12
+	uint8_t freeze[USB_DATA_SIZE] = { 0x00, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00 };  // F11
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	keyboard.setMatrix(matrix);
+	keyboard.enableMatrix(true);
+
+	keyboard.process_data(reset_combo);
+	EXPECT_EQ(0x01, matrix[8]);
+	keyboard.enableMatrix(false);
+	EXPECT_EQ(0x00, matrix[8]); // reset must not stay asserted while the menu is open
+	keyboard.process_data(release);
+	keyboard.enableMatrix(true);
+	EXPECT_EQ(0x00, matrix[8]);
+
+	keyboard.process_data(restore);
+	EXPECT_EQ(0x01, matrix[9]);
+	keyboard.enableMatrix(false);
+	keyboard.process_data(release);
+	keyboard.enableMatrix(true);
+	EXPECT_EQ(0x00, matrix[9]);
+
+	keyboard.process_data(freeze);
+	EXPECT_EQ(0x01, matrix[10]);
+	keyboard.enableMatrix(false);
+	keyboard.process_data(release);
+	keyboard.enableMatrix(true);
+	EXPECT_EQ(0x00, matrix[10]);
+}
+
 TEST(KeyboardUsbQueueTest, RemoveInjectedKeyDropsPendingDirection)
 {
 	Keyboard_USB keyboard;
