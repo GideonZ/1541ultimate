@@ -720,7 +720,19 @@ SubsysResultCode_e BrowsableFTPServer :: S_remove(SubsysCommand *cmd)
         return SSRET_INTERNAL_ERROR;
     }
     FileManager :: getFileManager()->invalidate(serv);
+    // Close the live FTP control connection before dropping the node. Without
+    // this, removing a server that had been entered leaks its open control
+    // socket (a lwip netconn). Since the netconn pool is small and shared by
+    // the http/ftp/telnet servers too, repeated add/enter/remove cycles would
+    // eventually exhaust it and wedge the whole network stack.
+    serv->drop_connection();
     ftp_root->children.remove(serv);
+    // The list only unlinks; free the node and its filesystem (which owns the
+    // FTP client) so repeated removals don't leak memory either.
+    FileSystemFTP *fs = (FileSystemFTP *)serv->get_file_info()->fs;
+    serv->get_file_info()->fs = NULL;
+    delete fs;
+    delete serv;
     ftp_root->save_servers();
     FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/ftp", "");
     return SSRET_OK;
