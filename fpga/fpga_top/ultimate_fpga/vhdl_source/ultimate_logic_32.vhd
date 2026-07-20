@@ -34,6 +34,10 @@ generic (
     g_mm_drive      : boolean := true;
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
+    g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
+    g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
+    g_max_cart_bits : natural := 20; -- 1 MB is standard
     g_register_addr : boolean := false;
     g_eeprom        : boolean := true;
     g_command_intf  : boolean := true;
@@ -843,9 +847,10 @@ begin
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
-            g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
-            g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
-            g_kernal_base   => X"0EA8000", -- should be on a 32K boundary
+            g_rom_base_cart => g_rom_base_cart, -- should be on a 1M boundary
+            g_ram_base_cart => g_ram_base_cart, -- should be on a 64K boundary
+            g_kernal_base   => g_kernal_base, -- should be on a 32K boundary
+            g_max_cart_bits => g_max_cart_bits,
             g_register_addr => g_register_addr,
             g_big_endian    => g_big_endian,
             g_cartreset_init=> g_cartreset_init,

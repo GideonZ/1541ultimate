@@ -63,6 +63,7 @@ class C64_CRT
 
     // Local Variables
     uint8_t     *cart_memory;
+    uint32_t     max_cart;
     int          bank_multiplier;
     int          machine; // 64 or 128
     bool         a000_seen;
@@ -83,7 +84,7 @@ class C64_CRT
     static C64_CRT *get_instance(void); // singleton
 
     C64_CRT();
-    void initialize(uint8_t *mem);
+    void initialize(uint8_t *mem, uint32_t max_size);
     void cleanup(void);
 
     SubsysResultCode_e check_header(File *f, cart_def *def);

@@ -16,6 +16,9 @@ extern uint8_t _eapi_65_start[768];
 #define CRTCHP_LOAD    0x0C
 #define CRTCHP_SIZE    0x0E
 
+extern uint8_t __cart_rom_start;
+extern uint8_t __cart_rom_limit;
+
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     {  0, 0xFF, CART_NORMAL,    "Normal cartridge" },
     {  1, 0xFF, CART_ACTION,    "Action Replay" }, // max 4 banks of 8K
@@ -112,14 +115,15 @@ C64_CRT::C64_CRT() : chip_chunks(64, NULL)
 {
     eeprom_buffer = NULL;
     original_eapi = NULL;
-    initialize(NULL);
+    initialize(NULL, 0);
 }
 
-void C64_CRT::initialize(uint8_t *mem)
+void C64_CRT::initialize(uint8_t *mem, uint32_t max_size)
 {
     cleanup();
 
     cart_memory = mem;
+    max_cart = max_size;
     local_type = CART_NOT_IMPL;
     machine = 0;
     total_read = 0;
@@ -275,7 +279,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
     uint32_t offset = uint32_t(bank) * bank_multiplier;
     offset += (load & 0x2000); // switch between 8000 and A000
-    if (offset > 0x1000000) { // max 1 MB
+    if (offset >= max_cart) { // exceeds max size
         return SSRET_ROM_IMAGE_TOO_LARGE;
     }
 
@@ -642,12 +646,12 @@ SubsysResultCode_e C64_CRT::load_crt(const char *path, const char *filename, car
     }
 
     C64_CRT *work = get_instance(); // Singleton.
-    work->initialize(mem); // Clear previous definitions
+    work->initialize(mem, C64::get_cartridge_max_rom()); // Clear previous definitions
     SubsysResultCode_e retval = work->read_crt(file, def);
     fm->fclose(file);
 
     if (retval != SSRET_OK) {
-        work->initialize(NULL); // clear remaining stuff if not successful
+        work->initialize(NULL, 0); // clear remaining stuff if not successful
     }
     return { retval };
 }
@@ -764,7 +768,7 @@ void C64_CRT :: find_eeprom(void)
 int C64_CRT :: clear_crt(void)
 {
     C64_CRT *work = get_instance(); // Singleton.
-    work->initialize(NULL);
+    work->initialize(NULL, 0);
     return 0;
 }
 

@@ -420,6 +420,11 @@ public:
         return __cart_rom_start;
     }
 
+    static uint32_t get_cartridge_max_rom(void) {
+        extern uint8_t __cart_rom_limit;
+        return ((uint32_t)&__cart_rom_limit) - (uint32_t)get_cartridge_rom_addr();
+    }
+
     static uint8_t *get_cartridge_ram_addr(void) {
         extern uint8_t __cart_ram_start[64*1024];
         return __cart_ram_start;
