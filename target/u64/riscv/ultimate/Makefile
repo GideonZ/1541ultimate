@@ -63,6 +63,8 @@ SRCS_CC	 =  u2p_init.cc \
 			c64_crt.cc \
 			u64_machine.cc \
 			u64_memory_backend.cc \
+			monitor_debug_brk_session.cc \
+			monitor_debug_u64.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
@@ -102,6 +104,9 @@ SRCS_CC	 =  u2p_init.cc \
 			monitor_init.cc \
 			monitor_file_io.cc \
 			monitor_bookmarks.cc \
+			monitor_breakpoints.cc \
+			monitor_debug.cc \
+			monitor_debug_predictor.cc \
 			machine_monitor.cc \
 			disassembler_6502.cc \
 			assembler_6502.cc \

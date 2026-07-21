@@ -42,22 +42,22 @@
   },
   "status_cpu27": {
     "contains": {
-      "22": "CPU3 $A:BAS $D:CHR $E:KRN VIC"
+      "22": "C7O3 $A:BAS $D:CHR $E:KRN VIC"
     }
   },
   "status_cpu30": {
     "contains": {
-      "22": "CPU6 $A:RAM $D:I/O $E:KRN VIC"
+      "22": "C7O6 $A:RAM $D:I/O $E:KRN VIC"
     }
   },
   "status_cpu26": {
     "contains": {
-      "22": "CPU2 $A:RAM $D:CHR $E:KRN VIC"
+      "22": "C7O2 $A:RAM $D:CHR $E:KRN VIC"
     }
   },
   "status_cpu29": {
     "contains": {
-      "22": "CPU5 $A:RAM $D:I/O $E:RAM VIC"
+      "22": "C7O5 $A:RAM $D:I/O $E:RAM VIC"
     }
   },
   "ram_a000": {

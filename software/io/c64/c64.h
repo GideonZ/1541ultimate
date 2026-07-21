@@ -301,6 +301,10 @@ class C64 : public GenericHost, ConfigurableObject
 
     void setup_config_menu();
     bool isFrozen;
+    // When set, resume() leaves the cartridge NMI asserted (C64_MODE_NMI) as it
+    // un-stops the CPU instead of clearing C64_MODE, so a debug launch NMI raised
+    // while the CPU was stopped survives the un-stop and is taken by the 6510.
+    bool nmi_on_resume;
     void determine_d012(void);
     void goUltimax(void);
     void backup_io(void);
@@ -389,6 +393,7 @@ public:
     /* C64 specifics */
     void resetConfigInFlash(int page);
     void unfreeze(void);
+    void refreeze(void);
     void start_cartridge(void *def);
     void enable_kernal(uint8_t *rom);
     void set_rom_config(uint8_t idx, const char *fname);
@@ -399,6 +404,23 @@ public:
     virtual uint8_t peek(uint16_t address);
     virtual void poke(uint16_t address, uint8_t value);
     void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
+
+    // Atomic stopped-region helpers. Used by the machine code monitor to
+    // bracket multi-byte vector / trampoline installs so the live C64 sees a
+    // single consistent transition. Default forwards to stop()/resume().
+    virtual bool begin_stopped_session(void);
+    // Variant that, when it actually stops a running machine, uses a raster-synced
+    // stop (do_raster=true) instead of the forced DMA stop. The matching resume()
+    // then re-clocks the VIC/CPU the way the freeze path does, which the monitor
+    // debugger needs so freshly armed high-memory BRKs are reliably observed by
+    // the live 6510 fetch on release. No-ops the stop if already stopped.
+    virtual bool begin_stopped_session(bool raster);
+    virtual void end_stopped_session(bool stopped_it);
+    // Like end_stopped_session(), but un-stops the CPU with the cartridge NMI
+    // asserted so a redirect NMI raised while stopped is actually taken by the
+    // 6510 (plain resume() clears C64_MODE before un-stopping, losing it). Used
+    // by the U2 debug launch; no-op when stopped_it is false.
+    virtual void end_stopped_session_nmi(bool stopped_it);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;
