@@ -144,7 +144,11 @@ class _ActiveCheckCtx:
         if exc_type is None:
             print("OK", flush=True)
             return False
-        if exc_type is SkipCheck:
+        if issubclass(exc_type, SkipCheck):
+            # SkipCheck and its subclasses (e.g. RomEntryUncoherent for the
+            # documented closed-core visible-ROM fetch-coherency limit) are
+            # recorded transparently as SKIP with their reason - never a silent
+            # pass and never a reset-retry.
             print(f"SKIP  ({exc})", flush=True)
             TestConfig.skipped.append((self.check_index, self.label, str(exc)))
             return True

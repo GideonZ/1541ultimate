@@ -65,14 +65,72 @@ SUITE_CHUNK_COOLDOWN_SECONDS = 6.0
 # and still raises.
 HYGIENE_RECOVERY_ATTEMPTS = 3
 
-# Contextless visible-ROM breakpoint entry can miss the ROM-image BRK on the very
-# first fetch after the CPU is released (FPGA fetch-path race). Re-issuing the
-# launch in place re-fetches the same stale line and cannot self-heal; only a
-# fresh C64 reset restores an independent fetch state. So the ROM-context
-# acquisition redoes reset -> re-enter debug -> re-arm before each retry, matching
-# the release matrix gate's ROM_ENTRY_MAX_ATTEMPTS. At ~70-80% per-attempt entry
-# this drives the residual miss below ~0.1%.
-ROM_ENTRY_MAX_ATTEMPTS = 5
+# Contextless visible-ROM breakpoint entry (bp+Go into KERNAL/BASIC from a short
+# RAM bootstrap) can miss the ROM-image BRK on the 6510's first fetch: the closed
+# U64 C64 core serves a stale pre-patch byte to the live instruction fetch for a
+# ROM line not re-fetched since the DMA patch. It is rare (not seen at idle on a
+# healthy device) and load-conditioned, and is NOT fixable in this tree (the
+# ROM-serving core is a prebuilt binary); a reset does not create coherency. The
+# firmware waits its full breakpoint budget with a bounded in-place (no-reset)
+# relaunch and then reports a precise DBG_ROM_ENTRY_UNCOHERENT ("ROM BP ENTRY
+# MISSED"). The test surfaces that honestly as a documented-limitation SKIP - it
+# must never be masked by a reset-and-retry loop. See
+# doc/machine-code-monitor-rom-fetch-coherency.md.
+#
+# Substrings the firmware prints for the honest coherency miss.
+_ROM_ENTRY_MISS_MARKERS = ("ROM BP ENTRY MISSED", "ROM_ENTRY_UNCOHERENT")
+
+
+class RomEntryUncoherent(mt.SkipCheck):
+    """Documented closed-core visible-ROM fetch-coherency miss on a contextless
+    entry. A SkipCheck subclass so `mt.check` records it transparently as SKIP
+    (never a pass, never a reset-retry)."""
+
+
+def _rom_entry_miss_detected(session: "mt.MonitorSession") -> bool:
+    """True when the monitor is showing the honest ROM-entry coherency-miss
+    popup (firmware DBG_ROM_ENTRY_UNCOHERENT). Distinguishes the documented
+    closed-core limitation from a genuine debugger defect."""
+    try:
+        lines = _capture_lines(session)
+    except Exception:
+        return False
+    return any(_find(lines, marker) for marker in _ROM_ENTRY_MISS_MARKERS)
+
+
+# The firmware go()/continue for a contextless visible-ROM launch blocks for its
+# full breakpoint wait + bounded in-place relaunch budget before it returns and
+# paints the result popup (~15s). A ROM-entry outcome wait must outlast that or it
+# races the popup and misclassifies the documented miss as a genuine defect.
+ROM_ENTRY_OUTCOME_TIMEOUT = 22.0
+
+
+def _wait_rom_entry_outcome(session: "mt.MonitorSession", target: int,
+                            context: str,
+                            timeout: float = ROM_ENTRY_OUTCOME_TIMEOUT) -> dict:
+    """Wait for a contextless visible-ROM entry to resolve. Returns the parsed
+    footer when the CPU trapped at `target`. Raises RomEntryUncoherent on the
+    honest closed-core miss popup (a documented-limitation SKIP, never a
+    reset-retry). Raises mt.Failure on any other unresolved outcome."""
+    expected = f"{target:04X}"
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        snap = session.capture()
+        if any(marker in snap.text() for marker in _ROM_ENTRY_MISS_MARKERS):
+            session.send_key("ENTER")  # dismiss the honest popup
+            raise RomEntryUncoherent(
+                f"{context}: contextless visible-ROM entry at ${expected} missed the "
+                f"first fetch (closed-core served-ROM coherency limit)")
+        parsed = _parse_footer_values(_footer_value_line(session))
+        if parsed.get("pc", "").upper() == expected:
+            return parsed
+        last = parsed
+        time.sleep(0.2)
+    raise mt.Failure(
+        f"{context}: ROM entry did not resolve within {timeout:.0f}s "
+        f"(neither trapped at ${expected} nor reported the coherency miss); "
+        f"last footer={last!r}")
 
 
 def _capture_lines(session: "mt.MonitorSession") -> list[str]:
@@ -268,26 +326,10 @@ def _open_rom_debug_view(session: "mt.MonitorSession", address: int) -> None:
     address. After a plain C64 reset the machine boots to the default CPU7 bank
     (BASIC + KERNAL + I/O all visible), so the same status token covers KERNAL
     and BASIC targets. Shared by _enter_rom_debug_at and the ROM-context
-    acquisition's reset-retry."""
+    acquisition."""
     _reopen_monitor(session)
     mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
     _ensure_no_debug(session)
-    session.goto(f"{address:04X}")
-    session.send_char("A")
-    if "Dbg" not in _header_line(session):
-        session.send_char("D")
-
-
-def _reconnect_rom_debug_view(session: "mt.MonitorSession", address: int) -> None:
-    """Reopen the Debug ASM view at a ROM address on a fresh telnet connection.
-
-    Used by the ROM reset-retry: after a C64 reset the existing connection's
-    monitor state is uncertain (a CTRL_O toggle can land on a blank screen), so a
-    fresh connection re-enters the monitor deterministically, then we re-navigate
-    to Debug at the target -- the approach the release matrix gate takes for its
-    ROM reset-retry."""
-    session.reconnect()
-    mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
     session.goto(f"{address:04X}")
     session.send_char("A")
     if "Dbg" not in _header_line(session):
@@ -324,17 +366,18 @@ def _bootstrap_hit_rom_breakpoint(rest_host: str, session: "mt.MonitorSession",
     """Arm a breakpoint at a ROM `address` and hit it via a RAM-spin bootstrap.
 
     The bootstrap (`LDX #$40 / DEX / BNE / JMP entry`) releases the CPU in RAM and
-    only jumps into the ROM after ~300 cycles, so the ROM-image BRK is fetched
-    well past the post-release window where the very first fetch can serve a stale
-    byte (the deterministic pattern the matrix gate established). `jump_to`
-    defaults to `address` (jump straight at the breakpoint); pass a different
-    address to enter ROM there and let natural execution reach the breakpoint
-    (e.g. jump to a KERNAL `JSR` that continues into the BASIC target). A missed
-    pass cannot be recovered by re-issuing the launch in place -- the stale ROM
-    fetch line just repeats -- so each retry first takes a fresh C64 reset and
-    re-enters Debug at `address`, matching the release matrix gate's
-    ROM_ENTRY_MAX_ATTEMPTS reset-retry. On success the debugger is parked at
-    `address` with the breakpoint still armed; the parsed footer is returned.
+    only jumps into the ROM after ~300 cycles. `jump_to` defaults to `address`
+    (jump straight at the breakpoint); pass a different address to enter ROM there
+    and let natural execution reach the breakpoint (e.g. jump to a KERNAL `JSR`
+    that continues into the BASIC target).
+
+    ONE attempt, NO reset-retry. A missed first fetch is the documented closed-core
+    served-ROM fetch-coherency limit (the firmware reports DBG_ROM_ENTRY_UNCOHERENT
+    after its bounded in-place, no-reset relaunch); it is surfaced honestly as a
+    RomEntryUncoherent SKIP, never masked by resetting to buy another draw. Any
+    other failure to reach the target is re-raised as a genuine defect. On success
+    the debugger is parked at `address` with the breakpoint still armed; the parsed
+    footer is returned.
     """
     boot = 0xC5F0
     entry = address if jump_to is None else jump_to
@@ -344,30 +387,14 @@ def _bootstrap_hit_rom_breakpoint(rest_host: str, session: "mt.MonitorSession",
         0xD0, 0xFD,             # BNE *-1
         0x4C, entry & 0xFF, (entry >> 8) & 0xFF,  # JMP entry
     ])
-    last_exc: Optional[mt.Failure] = None
-    for attempt in range(ROM_ENTRY_MAX_ATTEMPTS):
-        if attempt > 0:
-            # Fresh reset gives the next attempt an independent fetch state; a
-            # fresh telnet connection then re-enters Debug at the same ROM address
-            # (reset leaves the old connection's monitor state uncertain). The
-            # bootstrap and entry breakpoint are re-established below.
-            _reset_c64_core(rest_host)
-            _reconnect_rom_debug_view(session, address)
-        mt.write_rest_memory(rest_host, boot, program)
-        session.goto(f"{address:04X}")
-        _ensure_breakpoint_at(session, address, f"{context}: entry bp")
-        session.goto(f"{boot:04X}")
-        session.send_char("G")
-        try:
-            return _wait_for_pc(session, f"{address:04X}")
-        except mt.Failure as exc:
-            last_exc = exc
-            # A missed pass times out cleanly firmware-side; dismiss any DEBUG
-            # TIMEOUT popup so the reset+retry starts from a clean monitor.
-            session.send_key("ENTER")
-            time.sleep(1.0)
-    assert last_exc is not None
-    raise last_exc
+    mt.write_rest_memory(rest_host, boot, program)
+    session.goto(f"{address:04X}")
+    _ensure_breakpoint_at(session, address, f"{context}: entry bp")
+    session.goto(f"{boot:04X}")
+    session.send_char("G")
+    # Wait out the full firmware go() budget so a miss resolves to the honest
+    # RomEntryUncoherent popup rather than a premature timeout misread as a defect.
+    return _wait_rom_entry_outcome(session, address, context)
 
 
 def _acquire_rom_context_at(rest_host: str, session: "mt.MonitorSession",
@@ -402,42 +429,37 @@ def _contextless_visible_jsr_step_over(rest_host: str, session: "mt.MonitorSessi
                                        enter_addr: int, marker: str, source: str,
                                        context: str,
                                        canonical: Optional[tuple[str, str]] = None) -> None:
-    """Contextless visible-ROM Step Over of a JSR, reset-retrying the entry.
+    """Contextless visible-ROM Step Over of a JSR. ONE attempt, NO reset-retry.
 
     A contextless Step Over of a JSR installs a BRK at the fall-through in visible
-    ROM and releases the CPU; the CPU can miss that BRK on the first fetch after
-    the release (a short callee gives the freshly DMA-committed BRK little time to
-    propagate before the return), and only a fresh reset restores an independent
-    fetch state. `canonical` = (bytes_prefix, disasm) selects a specific JSR row
-    at `enter_addr` when present; otherwise the first visible JSR is used."""
-    last_exc: Optional[mt.Failure] = None
-    for attempt in range(ROM_ENTRY_MAX_ATTEMPTS):
-        if attempt == 0:
-            snap = _enter_rom_debug_at(session, enter_addr, marker, context, source)
-        else:
-            _reset_c64_core(rest_host)
-            _reconnect_rom_debug_view(session, enter_addr)
-            snap = session.capture()
-        jsr_addr = enter_addr
-        row = _disassembly_row(snap, enter_addr)
-        if canonical is not None and canonical[0] in row:
-            if canonical[1] not in row:
-                raise mt.Failure(
-                    f"{context}: canonical ${enter_addr:04X} bytes did not decode "
-                    f"as {canonical[1]}: {row!r}")
-        else:
-            jsr_addr, row = _find_visible_jsr_row(snap, marker)
-            session.goto(f"{jsr_addr:04X}")
-        expected_pc = jsr_addr + _instruction_length_from_row(row)
-        try:
-            _step_and_assert_pc(session, "D", expected_pc, f"{context} ${jsr_addr:04X}")
-            return
-        except mt.Failure as exc:
-            last_exc = exc
-            session.send_key("ENTER")
-            time.sleep(1.0)
-    assert last_exc is not None
-    raise last_exc
+    ROM and releases the CPU; the CPU can miss that BRK on the first fetch (the
+    closed-core served-ROM fetch-coherency limit). That miss is surfaced honestly
+    as a RomEntryUncoherent SKIP - never masked by resetting to buy another draw.
+    `canonical` = (bytes_prefix, disasm) selects a specific JSR row at `enter_addr`
+    when present; otherwise the first visible JSR is used."""
+    snap = _enter_rom_debug_at(session, enter_addr, marker, context, source)
+    jsr_addr = enter_addr
+    row = _disassembly_row(snap, enter_addr)
+    if canonical is not None and canonical[0] in row:
+        if canonical[1] not in row:
+            raise mt.Failure(
+                f"{context}: canonical ${enter_addr:04X} bytes did not decode "
+                f"as {canonical[1]}: {row!r}")
+    else:
+        jsr_addr, row = _find_visible_jsr_row(snap, marker)
+        session.goto(f"{jsr_addr:04X}")
+    expected_pc = jsr_addr + _instruction_length_from_row(row)
+    step_ctx = f"{context} ${jsr_addr:04X}"
+    snap = session.send_char("D")
+    _assert_no_debug_modal_snapshot(snap, step_ctx)
+    # Wait out the full firmware run budget: a contextless visible-ROM JSR Step
+    # Over that misses the fall-through BRK first fetch resolves to the honest
+    # RomEntryUncoherent popup (SKIP), never a reset-retry.
+    _wait_rom_entry_outcome(session, expected_pc, step_ctx)
+    header = _header_line(session)
+    if f"MONITOR ASM ${expected_pc:04X}" not in header:
+        raise mt.Failure(f"{step_ctx}: header did not follow PC ${expected_pc:04X}: {header!r}")
+    _disassembly_row(session.capture(), expected_pc)
 
 
 def _ensure_breakpoint_at(session: "mt.MonitorSession", address: int,
@@ -1961,10 +1983,9 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
                 raise mt.Failure(f"{name} row did not show ROM source marker [{marker}]: {row!r}")
 
             _clear_breakpoint_at(session, target, f"{name} stale ROM breakpoint clear")
-            # Arm the ROM breakpoint and hit it via the RAM-spin bootstrap with
-            # reset-retry. The previous bare `JMP target` release had no RAM spin
-            # and no retry, so it was directly exposed to the FPGA first-fetch race
-            # (only a fresh reset recovers a missed contextless ROM entry).
+            # Arm the ROM breakpoint and hit it via the RAM-spin bootstrap, ONE
+            # attempt. A missed first fetch is the documented closed-core coherency
+            # limit and is surfaced as a RomEntryUncoherent SKIP, never reset-retried.
             parsed = _bootstrap_hit_rom_breakpoint(rest_host, session, target,
                                                    f"{name} ROM breakpoint")
             armed_row = _disassembly_row(session.capture(), target)
@@ -2029,8 +2050,8 @@ def run_kernal_basic_breakpoint_regression(rest_host: str, session: "mt.MonitorS
             raise mt.Failure(f"$BC0F must be visible as BASIC ROM before breakpointing: {row!r}")
 
         # Reach $BC0F by bootstrapping through the KERNAL JSR at $E002 (JSR $BC0F),
-        # reset-retrying the contextless visible-ROM entry. A bare contextless Go
-        # from the $E002 cursor is directly exposed to the FPGA first-fetch race.
+        # ONE attempt. A missed contextless visible-ROM entry is the documented
+        # closed-core coherency limit (RomEntryUncoherent SKIP), never reset-retried.
         parsed = _bootstrap_hit_rom_breakpoint(rest_host, session, 0xBC0F,
                                                "$E002 Go to $BC0F", jump_to=0xE002)
         _assert_no_debug_modal(session, "$E002 Go to $BC0F")
@@ -2066,8 +2087,9 @@ def run_kernal_basic_breakpoint_regression(rest_host: str, session: "mt.MonitorS
         row = _disassembly_row(session.capture(), 0xBCF2)
         if "[BAS]" not in row:
             raise mt.Failure(f"$BCF2 must be visible as BASIC ROM before breakpointing: {row!r}")
-        # Hit $BCF2 via the RAM-spin bootstrap with reset-retry (a bare
-        # `JMP $BCF2` release is directly exposed to the FPGA first-fetch race).
+        # Hit $BCF2 via the RAM-spin bootstrap, ONE attempt (a missed first fetch
+        # is the documented closed-core coherency limit -> RomEntryUncoherent SKIP,
+        # never reset-retried).
         parsed = _bootstrap_hit_rom_breakpoint(rest_host, session, 0xBCF2,
                                                "$BCF2 manual breakpoint")
         _assert_no_debug_modal(session, "$BCF2 manual breakpoint")

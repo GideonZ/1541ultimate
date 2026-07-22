@@ -6335,6 +6335,11 @@ static const char *const monitor_debug_session_not_in_subroutine = "NOT IN SUBRO
 static const char *const monitor_debug_session_return_not_reached = "RETURN NOT REACHED";
 static const char *const monitor_debug_session_timeout = "DEBUG TIMEOUT";
 static const char *const monitor_debug_session_patch = "PATCH FAILED";
+// Contextless visible-ROM entry missed the ROM-image BRK on the first live fetch
+// (closed-core served-ROM fetch coherency limit). Honest, actionable message: the
+// fix is to run the target so its fetch line warms, not to reset-retry.
+static const char *const monitor_debug_session_rom_entry =
+    "ROM BP ENTRY MISSED - RUN CODE FIRST";
 
 static const char *monitor_debug_result_name(DebugSession::Result result)
 {
@@ -6349,6 +6354,7 @@ static const char *monitor_debug_result_name(DebugSession::Result result)
         case DebugSession::DBG_CANCELLED: return "CANCELLED";
         case DebugSession::DBG_RESET: return "RESET";
         case DebugSession::DBG_PATCH_FAILED: return "PATCH_FAILED";
+        case DebugSession::DBG_ROM_ENTRY_UNCOHERENT: return "ROM_ENTRY_UNCOHERENT";
     }
     return "UNKNOWN";
 }
@@ -6426,6 +6432,7 @@ const char *monitor_debug_result_message(int result)
         case DebugSession::DBG_CANCELLED:     return "DEBUG CANCELLED";
         case DebugSession::DBG_RESET:         return NULL;
         case DebugSession::DBG_PATCH_FAILED:  return monitor_debug_session_patch;
+        case DebugSession::DBG_ROM_ENTRY_UNCOHERENT: return monitor_debug_session_rom_entry;
         default: return NULL;
     }
 }

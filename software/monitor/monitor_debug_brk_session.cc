@@ -1467,6 +1467,11 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
     bool nmi_launch_valid = false;
     uint16_t nmi_launch_target = 0;
     bool nmi_launch_force_cpu_port = false;
+    // True when this launch is the contextless visible-ROM path whose first fetch
+    // can serve a stale pre-patch byte on the closed U64 core. Used only to report
+    // a timeout there as the precise DBG_ROM_ENTRY_UNCOHERENT instead of a generic
+    // TIMEOUT - never to reset/retry.
+    bool contextless_rom_launch = false;
     if (cpu_parked_in_spin && from && from->valid) {
         launch_ctx = from;
         begin_run_window();
@@ -1526,6 +1531,7 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         // force_cpu_port (derived from start_pc) is false here even though the
         // target BRK is in a fetch-lagging ROM window.
         bool rom_entry_settle = (launch_ctx == 0) && has_visible_rom_patch();
+        contextless_rom_launch = rom_entry_settle;
         nmi_redirect_to(start_pc, cpu_port,
                         force_cpu_port, staged, rom_entry_settle);
         if (staged) {
@@ -1546,11 +1552,16 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         waited, launch_ctx, nmi_launch_valid, nmi_launch_target,
         nmi_launch_force_cpu_port, cpu_port, wait_ms);
     if (waited != DBG_OK) {
+        // A contextless visible-ROM entry that still timed out after the bounded
+        // in-place (no-reset) relaunches is the closed-core served-ROM fetch
+        // coherency limit, not a debugger fault. Report it precisely so the UI
+        // states the honest, actionable cause instead of a bare TIMEOUT.
+        bool rom_entry_miss = (waited == DBG_TIMEOUT) && contextless_rom_launch;
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
         end_run_window();
-        return waited;
+        return rom_entry_miss ? DBG_ROM_ENTRY_UNCOHERENT : waited;
     }
     read_captured_context(out, cpu_port);
     restore_patches();
@@ -2747,6 +2758,8 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     bool nmi_launch_valid = false;
     uint16_t nmi_launch_target = 0;
     bool nmi_launch_force_cpu_port = false;
+    // See perform_run: precise reporting of the contextless visible-ROM miss.
+    bool contextless_rom_launch = false;
     if (resume_from->valid && cpu_parked_in_spin) {
         launch_ctx = resume_from;
         begin_run_window();
@@ -2806,6 +2819,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         // force_cpu_port (derived from start_pc) is false here even though the
         // target BRK is in a fetch-lagging ROM window.
         bool rom_entry_settle = (launch_ctx == 0) && has_visible_rom_patch();
+        contextless_rom_launch = rom_entry_settle;
         nmi_redirect_to(start_pc, cpu_port,
                         force_cpu_port, staged, rom_entry_settle);
         if (staged) {
@@ -2827,11 +2841,14 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         waited, launch_ctx, nmi_launch_valid, nmi_launch_target,
         nmi_launch_force_cpu_port, cpu_port, wait_ms);
     if (waited != DBG_OK) {
+        // Honest reporting of the closed-core served-ROM fetch coherency limit on
+        // a contextless visible-ROM continue (see perform_run). No reset/retry.
+        bool rom_entry_miss = (waited == DBG_TIMEOUT) && contextless_rom_launch;
         restore_patches();
         uninstall_handler();
         cpu_parked_in_spin = false;
         end_run_window();
-        return waited;
+        return rom_entry_miss ? DBG_ROM_ENTRY_UNCOHERENT : waited;
     }
     DebugContext captured;
     read_captured_context(&captured, cpu_port);

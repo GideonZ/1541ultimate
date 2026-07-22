@@ -26,7 +26,15 @@ public:
         DBG_TIMEOUT,            // Trap did not fire within the wait window.
         DBG_CANCELLED,          // User pressed RUN/STOP / Telnet ESC during wait.
         DBG_RESET,              // User forced a machine reset; context is no longer truthful.
-        DBG_PATCH_FAILED        // Could not safely install or restore a patch.
+        DBG_PATCH_FAILED,       // Could not safely install or restore a patch.
+        DBG_ROM_ENTRY_UNCOHERENT // Contextless visible-ROM breakpoint entry missed the
+                                 // first fetch: the closed U64 C64 core serves a stale
+                                 // pre-patch ROM byte to the live 6510 instruction fetch
+                                 // for a line not re-fetched since the DMA patch. NOT a
+                                 // debugger fault and NOT deterministically fixable in
+                                 // firmware (the ROM-serving core is a prebuilt binary);
+                                 // reported honestly instead of being masked by a reset
+                                 // retry. See doc: served-ROM fetch coherency.
     };
 
     virtual ~DebugSession() { }

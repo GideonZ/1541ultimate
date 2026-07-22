@@ -5755,6 +5755,67 @@ static int test_kernal_out_hard_vector_restores_on_timeout()
     return 0;
 }
 
+static int test_contextless_visible_rom_entry_reports_uncoherent_on_miss()
+{
+    // A contextless visible-ROM breakpoint entry (bp+Go into KERNAL from a RAM
+    // bootstrap) that never traps is the documented closed-core served-ROM
+    // fetch-coherency limit, not a debugger fault. The engine must report the
+    // precise DBG_ROM_ENTRY_UNCOHERENT (never a bare DBG_TIMEOUT that the test
+    // harness would then mask with a reset), restore its ROM-image patch so no
+    // stale BRK is left in KERNAL, and leave the debugger usable - no reset, no
+    // replay. sentinel_armed=false forces the launch to miss.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;                 // BASIC + KERNAL + I/O visible
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0x0000] = 0xEA;       // $E000 original opcode
+    m.kernal_rom[0x0001] = 0xEA;
+    m.kernal_rom[0x0002] = 0xEA;
+    m.sentinel_armed = false;          // never trap -> forced miss
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);        // visible-KERNAL breakpoint
+
+    DebugContext from;
+    debug_context_reset(&from);        // contextless: from.valid == false
+
+    // Contextless bp+Go launched from a RAM bootstrap PC.
+    DebugSession::Result r = m.go(from, &bps, 0xC5F0);
+    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
+               "Contextless visible-ROM entry miss must report DBG_ROM_ENTRY_UNCOHERENT, "
+               "not a bare DBG_TIMEOUT")) return 1;
+    if (expect(m.kernal_rom[0x0000] == 0xEA,
+               "Miss must restore the visible-ROM breakpoint byte (no stale BRK left)")) return 1;
+    if (expect(!m.is_debug_session_active(),
+               "Miss must leave the debugger inactive and usable, not parked")) return 1;
+    return 0;
+}
+
+static int test_ram_under_rom_timeout_is_not_reported_as_uncoherent()
+{
+    // The precise DBG_ROM_ENTRY_UNCOHERENT is specific to a visible-ROM image
+    // fetch. A RAM-under-KERNAL contextless miss is a plain DBG_TIMEOUT (RAM is
+    // always coherent), so the honest ROM-entry classification must NOT leak onto
+    // it. cpu_port 0x05 has HIRAM clear -> $E000 is RAM, not served KERNAL.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;                 // KERNAL banked out: $E000 is RAM
+    m.allow_visible_rom_patching = true;
+    m.ram[0xE000] = 0xEA;
+    m.ram[0xE001] = 0xEA;
+    m.ram[0xE002] = 0xEA;
+    m.sentinel_armed = false;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x05);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    DebugSession::Result r = m.go(from, &bps, 0xC5F0);
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "RAM-under-ROM contextless miss must stay DBG_TIMEOUT, not "
+               "DBG_ROM_ENTRY_UNCOHERENT")) return 1;
+    return 0;
+}
+
 static int test_visible_kernal_hard_vector_installs_and_restores()
 {
     FakeVisibleRomMachine m(false);
@@ -8673,6 +8734,8 @@ int main()
     RUN(test_patch_restore_uses_recorded_destination_after_cpu_bank_changes);
     RUN(test_kernal_out_hard_vector_installs_and_restores_on_cleanup);
     RUN(test_kernal_out_hard_vector_restores_on_timeout);
+    RUN(test_contextless_visible_rom_entry_reports_uncoherent_on_miss);
+    RUN(test_ram_under_rom_timeout_is_not_reported_as_uncoherent);
     RUN(test_visible_kernal_hard_vector_installs_and_restores);
     RUN(test_stale_visible_kernal_hard_vector_is_recovered);
     RUN(test_run_to_current_visible_kernal_jsr_enters_callee_before_rearming_cursor_breakpoint);
