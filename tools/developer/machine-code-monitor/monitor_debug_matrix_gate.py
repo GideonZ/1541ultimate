@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import socket
 import struct
 import subprocess
@@ -146,6 +147,24 @@ class HarnessBug(GateError):
 
 class BlockedWithEvidence(GateError):
     classification = "BLOCKED_WITH_EVIDENCE"
+
+
+class CellTimeout(GateError):
+    """A single cell exceeded its hard wall-clock watchdog. Bounds any transport /
+    device stall so a stuck cell can never hang the whole run for minutes-to-hours
+    (a degraded httpd/telnet read that never returns). The cell is failed and the
+    run continues (or fail-fasts) rather than blocking indefinitely."""
+    classification = "CELL_WATCHDOG_TIMEOUT"
+
+
+# Per-cell hard bound. A healthy cell is ~2-4 min; 7 min leaves generous headroom
+# for the slowest legitimate cell (visible-ROM with the full go() budget waits,
+# freeze/overlay redraws) while still bounding a true hang.
+CELL_WATCHDOG_SECONDS = 420
+
+
+def _cell_watchdog_handler(signum, frame):
+    raise CellTimeout(f"cell exceeded the {CELL_WATCHDOG_SECONDS}s watchdog")
 
 
 class RomEntryUncoherent(GateError):
@@ -331,6 +350,56 @@ class DebugState:
     sp: int
     sr: int
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+# The debugger publishes its captured context to fixed low-RAM cells STORE_* at
+# $03F0-$03F6 (Y,X,A,SR,PClo,PChi,SP). This is the debugger's own truth and is
+# readable by DMA/REST. Unlike a telnet screen render it can never be dropped: the
+# firmware aborts a telnet screen send it cannot deliver within SO_SNDTIMEO (5s),
+# so under congestion a step's footer update can be lost even though the step
+# executed correctly. Reading STORE_* recovers the true state without re-issuing
+# any debugger command. real PC = (PClo|PChi<<8) - 2 (a BRK pushes PC+2).
+STORE_CONTEXT_ADDR = 0x03F0
+
+
+def _authoritative_debug_state(rest) -> DebugState:
+    b = rest.read_mem(STORE_CONTEXT_ADDR, 7)
+    pc = ((b[4] | (b[5] << 8)) - 2) & 0xFFFF
+    return DebugState(pc=pc, ac=b[2], xr=b[1], yr=b[0], sp=b[6], sr=b[3],
+                      raw={"source": "STORE_via_DMA", "store": b.hex()})
+
+
+def _c64_running(rest_host: str) -> bool:
+    """True when the C64 6510 is executing: the jiffy clock $A0-$A2 advances. A
+    hard wedge (a crashed/parked debug session that even machine:reset cannot
+    clear because C64_STOP is stuck) leaves the jiffy frozen. Read by DMA/REST."""
+    try:
+        a = mt.read_rest_memory(rest_host, 0x00A0, 3)
+        time.sleep(0.6)
+        b = mt.read_rest_memory(rest_host, 0x00A0, 3)
+        return a != b
+    except Exception:  # noqa: BLE001 - treat an unreadable device as not-running
+        return False
+
+
+def _log_wedge_incident(artifact_dir: Path, row: dict, rest_host: str) -> None:
+    """Record a hard-wedge incident (pre-wedge cell + measured state) so the run
+    report can capture exactly what preceded each wedge and how it was recovered."""
+    incident = {
+        "time": now_stamp(),
+        "pre_wedge_cell": row["cell_id"],
+        "pre_wedge_cell_status": row.get("status"),
+        "pre_wedge_last_op": row.get("last_op"),
+    }
+    try:
+        incident["jiffy_a0"] = mt.read_rest_memory(rest_host, 0x00A0, 3).hex()
+        incident["screen_0400"] = mt.read_rest_memory(rest_host, 0x0400, 40).hex()
+        incident["cpu_port_01"] = mt.read_rest_memory(rest_host, 0x0001, 1).hex()
+    except Exception as exc:  # noqa: BLE001
+        incident["read_error"] = str(exc)
+    path = artifact_dir / "wedge-incidents.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(incident) + "\n")
 
 
 @dataclass
@@ -809,9 +878,28 @@ class TelnetDebugDriver(BaseDriver):
             self.send_key("D")
 
     def wait_pc(self, address: int, label: str, timeout: float = 8.0) -> DebugState:
-        parsed = dbg._wait_for_pc(self._session(), f"{address:04X}", timeout=timeout)
-        self.event("wait_pc", label=label, pc=f"{address:04X}", footer=parsed)
-        return self.read_debug_state()
+        try:
+            parsed = dbg._wait_for_pc(self._session(), f"{address:04X}", timeout=timeout)
+            self.event("wait_pc", label=label, pc=f"{address:04X}", footer=parsed)
+            return self.read_debug_state()
+        except mt.Failure:
+            # The telnet render of this step's result may have been dropped under
+            # congestion (firmware aborts a screen send it cannot deliver within
+            # SO_SNDTIMEO), leaving the visible footer stale. Confirm the debugger's
+            # TRUE state via STORE_* (DMA/REST - never dropped). If the debugger is
+            # at the expected PC the step executed correctly and only its render was
+            # lost: resync the footer and return the authoritative state. This is
+            # NOT a retry and re-issues no debugger command.
+            st = _authoritative_debug_state(self.rest)
+            if st.pc == address:
+                self.event("wait_pc_render_recovered", label=label,
+                           pc=f"{address:04X}", store=st.raw.get("store"))
+                try:
+                    self._session().goto(f"{address:04X}")  # force footer redraw
+                except Exception:  # noqa: BLE001 - redraw is best-effort
+                    pass
+                return st
+            raise
 
     def clear_all_breakpoints(self) -> None:
         dbg._clear_all_breakpoints(self._session(), f"{self.row['cell_id']}: clear breakpoints")
@@ -2951,8 +3039,36 @@ def main() -> int:
             deploy_log = Path(row["artifact_dir"]) / "fresh-deploy.log"
             if (REPO_ROOT / "build").exists():
                 run_cmd(["./build"], REPO_ROOT, deploy_log, timeout=900)
-        run_cell(args, row, ledger)
+        # Hard per-cell wall-clock bound: a degraded telnet/httpd read that never
+        # returns must not hang the run. On the watchdog the cell is failed cleanly
+        # (never masked) and the run proceeds to its fail-fast / continue policy.
+        signal.signal(signal.SIGALRM, _cell_watchdog_handler)
+        signal.alarm(CELL_WATCHDOG_SECONDS)
+        try:
+            run_cell(args, row, ledger)
+        except CellTimeout as exc:
+            row["status"] = "FAIL"
+            row["failure"] = {"classification": exc.classification,
+                              "message": str(exc),
+                              "next_action": "Watchdog fired in run_cell teardown; "
+                                             "investigate the stalled transport."}
+            ledger.save()
+            print(f"{row['cell_id']}: CELL WATCHDOG TIMEOUT", flush=True)
+        finally:
+            signal.alarm(0)
         print(progress_line(ledger.rows, opcode_status), flush=True)
+        # Detect a hard C64 wedge left by this cell (jiffy frozen even though REST
+        # is up). Log it with the pre-wedge cell so the report captures exactly what
+        # preceded each wedge, then stop: continuing would fail every later cell on
+        # a dead C64 and mask the wedge as a cascade of unrelated failures.
+        if row["status"] != "PASS" and not _c64_running(args.rest_host):
+            _log_wedge_incident(artifact_dir, row, args.rest_host)
+            row["device_wedged"] = True
+            ledger.save()
+            print(f"{row['cell_id']}: C64 HARD WEDGE DETECTED (jiffy frozen); "
+                  f"logged to wedge-incidents.jsonl; stopping for recovery", flush=True)
+            stopped_after_required_cell_failure = True
+            break
         # ROM_ENTRY_UNCOHERENT is a documented closed-core limitation, not a
         # genuine failure, so it must not trip fail-fast (which is for real defects).
         if (row["status"] not in ("PASS", "ROM_ENTRY_UNCOHERENT")
