@@ -14,16 +14,18 @@ class U64Machine : public C64
 
     void get_all_memory(uint8_t *pb);
 public:
-    bool begin_stopped_session();
-    void end_stopped_session(bool stopped_it);
     void clear_ram();
     uint8_t get_cpu_port(void);
     uint8_t peek(uint16_t address);
+    uint8_t peek_raw(uint16_t address);
     uint8_t peek_cpu(uint16_t address, uint8_t cpu_port);
     uint8_t peek_visible(uint16_t address);
     void poke(uint16_t address, uint8_t byte);
+    void poke_raw(uint16_t address, uint8_t byte);
     void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port);
+    void poke_cpu_rom(volatile uint8_t *image_ptr, uint8_t byte);
     void poke_visible(uint16_t address, uint8_t byte);
+    void poke_visible_preserving_freeze_restore(uint16_t address, uint8_t byte);
     void read_block(uint16_t address, uint8_t *dst, uint32_t len);
     void read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, uint8_t cpu_port);
     void read_visible_block(uint16_t address, uint8_t *dst, uint32_t len);

@@ -585,10 +585,9 @@ static int test_bookmark_default_popup_alignment(void)
 
 static int test_bookmark_popup_instruction_line(void)
 {
-    const char *expected = "0-9/RET Jmp  S Set  L Label  DEL Reset";
+    const char *expected = "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset";
     if (expect((int)strlen(expected) == 38,
                "Instruction line must be 38 chars (within the 38-column popup).")) return 1;
-    if (expect((int)strlen(expected) <= 38, "Instruction line must fit in 38 columns.")) return 1;
     if (expect(strstr(expected, "Jmp") != NULL && strstr(expected, "Set") != NULL &&
                strstr(expected, "Label") != NULL && strstr(expected, "Reset") != NULL,
                "Instruction line must document Jmp/Set/Label/Reset.")) return 1;
@@ -771,7 +770,7 @@ static int test_monitor_bookmark_capture_no_memory_write(void)
     CaptureScreen screen;
     BookmarkTestBackend backend;
     char status[39];
-    const int keys[] = { 'J', 'D', 'e', KEY_CTRL_B, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', 'e', KEY_CTRL_B, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 8);
 
     reset_bookmark_test_state();
@@ -807,7 +806,7 @@ static int test_monitor_bookmark_set_preserves_label(void)
     reset_bookmark_test_state();
     seed_bookmark_full(3, 0xC000, MONITOR_BOOKMARK_VIEW_HEX, 7, 2, false, 1, "OLDLBL");
 
-    const int keys[] = { 'J', 'D', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -882,8 +881,8 @@ static int test_monitor_bookmark_popup_render(void)
     if (expect(strspn(line, " ") == strlen(line),
                "Popup must separate bookmarks from the help line with a blank line.")) return 1;
     get_popup_line(screen, 13, line, sizeof(line));
-    if (expect(strncmp(line, "0-9/RET Jmp  S Set  L Label  DEL Reset",
-                       strlen("0-9/RET Jmp  S Set  L Label  DEL Reset")) == 0,
+    if (expect(strncmp(line, "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset",
+                       strlen("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")) == 0,
                "Popup instruction line must match addendum text.")) return 1;
 
     monitor.deinit();
@@ -1022,7 +1021,7 @@ static int test_monitor_bookmark_popup_set_preserves_label(void)
     reset_bookmark_test_state();
     seed_bookmark_full(2, 0x0801, MONITOR_BOOKMARK_VIEW_ASM, 7, 2, false, 1, "BASIC");
 
-    const int keys[] = { 'J', 'D', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', KEY_CTRL_B, KEY_DOWN, KEY_DOWN, 'S', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 8);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -1154,7 +1153,7 @@ static int test_monitor_bookmark_shortcut_routing(void)
         if (expect(monitor.poll(0) == 0, "Hex edit entry before bookmark jump failed.")) return 1;
         if (expect(monitor.poll(0) == 0, "CBM+1 bookmark jump should work in edit mode.")) return 1;
         get_monitor_header(screen, header);
-        if (expect(strstr(header, "MONITOR ASM $C000") == header && strstr(header, "EDIT") != NULL,
+        if (expect(strstr(header, "MONITOR ASM $C000") == header && strstr(header, "Edit") != NULL,
                    "Bookmark jumps must stay enabled in edit mode and preserve edit state.")) return 1;
         monitor.deinit();
     }
@@ -1238,6 +1237,11 @@ static int test_monitor_bookmark_status_dismissal(void)
     FakeKeyboard keyboard(keys, 3);
 
     reset_bookmark_test_state();
+    // Model the real C64 power-on 6510 port ($01 = $37 -> live bank 7) so the
+    // live CPU bank matches the restored monitor view bank (7). Otherwise the
+    // live bank reads 0 from the zeroed backend and the normal footer renders a
+    // live/view mismatch (C0O7) instead of the expected CPU7.
+    backend.write(0x0001, 0x37);
     seed_bookmark_full(1, 0x0801, MONITOR_BOOKMARK_VIEW_ASM, 7, 2, false, 1, "BASIC");
     ui.screen = &screen;
     ui.keyboard = &keyboard;

@@ -3,6 +3,7 @@
 
 #if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
 #include "c64.h"
+#include "subsys.h"
 #endif
 
 #ifndef NO_FILE_ACCESS
@@ -311,6 +312,7 @@ void UserInterface :: run_once(void)
     }
 
     host->take_ownership(this);
+    menu_response_to_action = MENU_NOP;
     if (!host->is_permanent()) {
         appear();
     }
@@ -406,6 +408,17 @@ void UserInterface :: send_keystroke(int key)
     if (obj) {
         obj->send_keystroke(key);
     }
+}
+
+bool UserInterface :: handle_global_reset_shortcut(void)
+{
+    menu_response_to_action = MENU_EXIT;
+    doBreak = true;
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    SubsysCommand *cmd = new SubsysCommand(this, SUBSYSID_C64, MENU_C64_RESET, 0, NULL, 0);
+    cmd->execute();
+#endif
+    return true;
 }
 
 int UserInterface :: pollInactive(void)
@@ -527,6 +540,9 @@ static bool active_screen_read_safe(UserInterface *ui)
     if (!ui || !ui->screen) {
         return false;
     }
+    // A C64-screen-hosted menu shares the running machine's screen RAM, so
+    // it is only read once the CPU is halted (frozen); an overlay-hosted
+    // menu (U64) renders into independent overlay RAM and bypasses this gate.
 #if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
     C64 *machine = C64::getMachine();
     if (machine && ui->host == (GenericHost *)machine && !machine->is_accessible()) {
@@ -546,6 +562,9 @@ bool UserInterface :: copy_active_screen_matrix(uint8_t *dest, int dest_len)
     IndexedList<UserInterface *> *interfaces = get_user_interfaces();
     // Keep the UI pointer stable while walking the shared list and making the
     // bounded matrix copy; IndexedList mutations use the same critical section.
+    // The ~2 KB copy runs with interrupts masked: accepted because this REST
+    // snapshot is low-frequency and copying outside the lock would race the
+    // UI task mutating the screen.
     portENTER_CRITICAL();
     for (int i = 0; i < interfaces->get_elements(); i++) {
         UserInterface *ui = (*interfaces)[i];
@@ -795,6 +814,9 @@ mstring *UserInterface :: getMessage(void)
 
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
+    if ((map != e_keymap_monitor) && (c == KEY_CTRL_X) && handle_global_reset_shortcut()) {
+        return -2;
+    }
     if ((navmode == 1) && (map != e_keymap_monitor)) { // WASD cursors enabled
         if (c >= 'A' && c <= 'Z') {
             c |= 0x20; // make uppercase lowercase

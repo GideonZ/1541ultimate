@@ -5,6 +5,7 @@
 
 class UserInterface;
 class MemoryBackend;
+struct DebugContext;
 
 // Glue layer between the machine code monitor and shared infrastructure
 // (TreeBrowser, FileManager, SubsysCommand). These helpers exist so that
@@ -48,6 +49,10 @@ const char *save_from_memory(UserInterface *ui, const char *path, const char *na
 // (and freezer) is left. U64 uses a KERNAL RAM NMI trampoline; cartridge
 // targets reuse the existing boot-cartridge DMA jump handoff.
 void jump_to(uint16_t address);
+void resume_to_context(const DebugContext &context);
+bool stage_jump_to(uint16_t address);
+bool stage_resume_to_context(const DebugContext &context);
+void pulse_staged_nmi(void);
 
 } // namespace monitor_io
 

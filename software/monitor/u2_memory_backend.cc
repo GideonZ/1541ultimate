@@ -1,4 +1,5 @@
 #include "u2_memory_backend.h"
+#include "monitor_debug_u2.h"
 
 #include "c64.h"
 
@@ -38,4 +39,18 @@ const char *U2MemoryBackend :: source_name(uint16_t) const
     // U2 reads the current CPU-visible aperture directly. Without ROM shadow
     // snapshots or monitor-selected banking, this is not guaranteed to be RAM.
     return "CPU";
+}
+
+bool U2MemoryBackend :: reset_machine(void)
+{
+    if (!machine) {
+        return false;
+    }
+    machine->reset();
+    return true;
+}
+
+DebugSession *U2MemoryBackend :: create_debug_session(void)
+{
+    return create_u2_debug_session(this);
 }

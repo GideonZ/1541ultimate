@@ -39,6 +39,73 @@
 #include "u64_machine.h"
 #endif
 
+#if U64
+// Pristine FPGA ROM-image snapshot + dirty flag. The machine-code monitor's debug
+// engine steps RAM-under-ROM and KERNAL/BASIC ROM by patching BRK traps into the
+// volatile FPGA ROM-image buffers (U64_*_BASE). No flash, firmware image, ROM
+// file, or configured cartridge storage is changed; a device cold boot reloads
+// those ROM images through init_system_roms(). The snapshot below is only a warm
+// C64-reset safety net: if a reset fires while a debug trap is still present, the
+// stale byte could otherwise be fetched by the next C64 boot attempt. We capture
+// the freshly loaded authoritative image and re-apply it during reset so warm
+// resets are self-healing too.
+namespace {
+    uint8_t s_pristine_kernal[8192];
+    uint8_t s_pristine_basic[8192];
+    bool s_pristine_rom_valid = false;
+}
+extern "C" volatile bool g_u64_rom_image_dirty = false;
+extern "C" void u64_mark_rom_image_dirty(void) { g_u64_rom_image_dirty = true; }
+
+// The FPGA ROM-image apertures must be copied byte-by-byte through volatile
+// pointers (block memcpy reads back zeros here), matching the snapshot path in
+// u64_memory_backend.cc.
+static void copy_rom_aperture_in(uint8_t *dst, volatile uint8_t *src, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) dst[i] = src[i];
+}
+static void copy_rom_aperture_out(volatile uint8_t *dst, const uint8_t *src, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) dst[i] = src[i];
+}
+static bool buffer_all_zero(const uint8_t *p, unsigned len)
+{
+    for (unsigned i = 0; i < len; i++) if (p[i]) return false;
+    return true;
+}
+
+static void capture_pristine_rom_image(void)
+{
+    // Only BASIC and KERNAL are healed: a stale debug BRK in those is executed
+    // during boot and wedges the machine. The CHAR ROM is never executed, so a
+    // leaked CHAR patch is at worst a cosmetic glyph and is left to the normal
+    // per-session restore; we deliberately do NOT snapshot/rewrite the CHAR
+    // aperture on reset (its base differs and a bad snapshot would render every
+    // glyph as garbage).
+    copy_rom_aperture_in(s_pristine_basic,  (volatile uint8_t *)U64_BASIC_BASE,   sizeof(s_pristine_basic));
+    copy_rom_aperture_in(s_pristine_kernal, (volatile uint8_t *)U64_KERNAL_BASE,  sizeof(s_pristine_kernal));
+    // Only trust the snapshot if the KERNAL image actually read back (guards
+    // against a bad capture ever being restored as a zeroed, unbootable ROM).
+    s_pristine_rom_valid = !buffer_all_zero(s_pristine_kernal, sizeof(s_pristine_kernal));
+    g_u64_rom_image_dirty = false;
+}
+
+static void restore_pristine_rom_image(void)
+{
+    // Only heal when the monitor's debug path actually patched the ROM image
+    // (u64_mark_rom_image_dirty sets the flag). Restoring unconditionally would
+    // clobber a runtime KERNAL/BASIC replacement (enable_kernal via cartridge,
+    // network upload, or the C64_SET_KERNAL subsys command) that writes the
+    // apertures directly without ever dirtying them.
+    if (!s_pristine_rom_valid || !g_u64_rom_image_dirty) {
+        return;
+    }
+    copy_rom_aperture_out((volatile uint8_t *)U64_BASIC_BASE,   s_pristine_basic,  sizeof(s_pristine_basic));
+    copy_rom_aperture_out((volatile uint8_t *)U64_KERNAL_BASE,  s_pristine_kernal, sizeof(s_pristine_kernal));
+    g_u64_rom_image_dirty = false;
+}
+#endif
+
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
@@ -147,6 +214,7 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     isFrozen = false;
+    nmi_on_resume = false;
     frozen_mode = MODE_NORMAL;
     backupIsValid = false;
     buttonPushSeen = false;
@@ -572,8 +640,9 @@ void C64::resume(void)
 
         C64_STOP_MODE = STOP_COND_BADLINE;
 
-        // return to normal mode
-        C64_MODE = MODE_NORMAL;
+        // return to normal mode (keep the NMI asserted when a debug launch needs
+        // the 6510 to observe it as it un-stops)
+        C64_MODE = nmi_on_resume ? C64_MODE_NMI : MODE_NORMAL;
 
         // dummy cycle
         dummy = VIC_REG(0);
@@ -585,20 +654,53 @@ void C64::resume(void)
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
         // un-stop the c-64
-        // return to normal mode
-        C64_MODE = MODE_NORMAL;
+        // return to normal mode (keep the NMI asserted when requested; see above)
+        C64_MODE = nmi_on_resume ? C64_MODE_NMI : MODE_NORMAL;
 
         C64_STOP = 0;
     }
 }
 
+void C64::end_stopped_session_nmi(bool stopped_it)
+{
+    if (!stopped_it) {
+        return;
+    }
+    // resume() would clear C64_MODE (and thus the NMI) before un-stopping the
+    // CPU; setting nmi_on_resume makes it leave C64_MODE_NMI asserted through the
+    // un-stop so the 6510 takes the pending edge and vectors through the debug
+    // redirect trampoline. Clear the request once the CPU has observed it.
+    nmi_on_resume = true;
+    resume();
+    nmi_on_resume = false;
+    wait_10us(1);
+    C64_MODE = MODE_NORMAL;
+}
+
 void C64::reset(void)
 {
+#if U64
+    // Heal any debug BRK patch left in the volatile FPGA ROM image before the CPU
+    // starts executing reset/boot code. A cold device boot reloads the configured
+    // ROM images; this restore keeps warm C64 resets equally self-healing.
+    restore_pristine_rom_image();
+#endif
     C64_MODE = MODE_NORMAL;
     C64_MODE = C64_MODE_RESET;
     ioWrite8(ITU_TIMER, 20);
     while (ioRead8(ITU_TIMER))
         ;
+#if U64
+    // The FPGA 6510 does not write CPU stores to $00/$01 through to the RAM
+    // underneath, so the RAM copy only ever changes by DMA and goes stale the
+    // moment anything (a debugged program, a test fixture) alters banking.
+    // A real 6510 leaves DDR=$2F/port=$37 after reset+KERNAL init; write the
+    // same defaults into the RAM mirror while the CPU is held in reset so
+    // every DMA-side reader of $00/$01 (the monitor's live-bank display and
+    // the breakpoint "not mapped now" check) sees the true post-reset state.
+    C64_POKE(0x0000, 0x2F);
+    C64_POKE(0x0001, 0x37);
+#endif
     C64_MODE = C64_MODE_UNRESET;
 }
 
@@ -678,6 +780,31 @@ void C64::poke(uint16_t address, uint8_t value)
         }
     }
 
+    if (stopped_it) {
+        resume();
+    }
+}
+
+bool C64::begin_stopped_session(void)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(false);
+    }
+    return !wasStopped;
+}
+
+bool C64::begin_stopped_session(bool raster)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(raster);
+    }
+    return !wasStopped;
+}
+
+void C64::end_stopped_session(bool stopped_it)
+{
     if (stopped_it) {
         resume();
     }
@@ -889,6 +1016,13 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
+    // Idempotent: a second freeze would call backup_io() again, which trips
+    // configASSERT(!backupIsValid) (a Nios hard-halt) and overwrites the saved
+    // pre-freeze state, corrupting the eventual restore. The local-UI monitor
+    // can reach freeze() twice over REST without an intervening unfreeze().
+    if (isFrozen)
+        return;
+
     frozen_mode = C64_MODE;
     stop(true);
     backup_io();
@@ -989,6 +1123,10 @@ void C64::init_system_roms(void)
         memcpy((void *)U64_CHARROM_BASE, (void *)_default_chars_bin_start, 4096);
     }
 
+    // The ROM image is now authoritative (freshly loaded from config). Snapshot it
+    // so reset() can heal any debug BRK patch left in the volatile FPGA ROM image.
+    capture_pristine_rom_image();
+
 #else
     uint8_t *temp = new uint8_t[8192];
     FRESULT fres = FileManager :: getFileManager()->load_file(ROMS_DIRECTORY, cfg->get_string(CFG_C64_KERNFILE), temp, 8192, NULL);
@@ -1012,12 +1150,23 @@ void C64::unfreeze()
     if (!phi2_present())
         return;
 
-    // bring back C64 in original state
-    restore_io();
+    // Only restore when a valid backup exists. isFrozen and backupIsValid can
+    // desync if a reset path (machine:reset -> MENU_C64_RESET calls unfreeze()
+    // then reset()) races the freeze state; restore_io() with no backup trips
+    // configASSERT(backupIsValid) (a Nios hard-halt). With nothing to restore,
+    // just resume and resync the flag.
+    if (backupIsValid)
+        restore_io();
     // resume C64
     resume();
 
     isFrozen = false;
+}
+
+void C64::refreeze(void)
+{
+    if (!isFrozen)
+        freeze();
 }
 
 void C64 :: start_cartridge(void *vdef)
@@ -1040,6 +1189,12 @@ void C64 :: start_cartridge(void *vdef)
     // To be discussed: Should this only happen with the reboot command?
     C64_MODE = MODE_NORMAL;
     C64_POKE(0x8005, 0);
+#if U64
+    // Keep the $00/$01 RAM mirror truthful across a cold start too; the FPGA
+    // 6510 never writes the port through to RAM (see C64::reset).
+    C64_POKE(0x0000, 0x2F);
+    C64_POKE(0x0001, 0x37);
+#endif
 
     // Now, let's reset the machine and release it into run mode
     C64_MODE = C64_MODE_RESET;
@@ -1270,6 +1425,9 @@ void C64::enable_kernal(uint8_t *rom)
 
 #if U64
     memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
+    // Re-snapshot so a later reset heals to THIS kernal rather than the boot
+    // default, and so the dirty flag is cleared for the fresh image.
+    capture_pristine_rom_image();
 
 #else
     //  mem_addr_i <= g_kernal_base(27 downto 15) & slot_addr(1 downto 0) & slot_addr(12 downto 2) & "00";

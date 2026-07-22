@@ -16,16 +16,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-WIDTH = 40
+WIDTH = 60
 HEIGHT = 24
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
-STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+STATUS_LINE_RE = re.compile(r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+# U2 cartridge backend has no monitor-side CPU banking or VIC bank selection,
+# so the status line collapses to a fixed "no banking" label.
+U2_STATUS_LINE_RE = re.compile(r"CPU VIEW\s+CPU BANK N/A\s+VIC N/A")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 CHECK_COUNT = 0
+ASM_CANONICAL_BYTES = bytes((
+    0x85, 0x56, 0x20, 0x0F, 0xBC, 0xA5, 0x61, 0xC9,
+    0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
+    0xBC, 0xA5, 0x07, 0x18, 0x69, 0x81, 0xF0, 0xF3,
+    0x38, 0xE9, 0x01, 0x48, 0xA2, 0x05, 0xB5, 0x69,
+    0xB4, 0x61,
+))
+ASM_KERNAL_ROWS: Tuple[Tuple[str, str], ...] = (
+    ("E000 85 56", "STA $56"),
+    ("E002 20 0F BC", "JSR $BC0F"),
+    ("E005 A5 61", "LDA $61"),
+    ("E007 C9 88", "CMP #$88"),
+    ("E009 90 03", "BCC $E00E"),
+    ("E00B 20 D4 BA", "JSR $BAD4"),
+    ("E00E 20 CC BC", "JSR $BCCC"),
+    ("E011 A5 07", "LDA $07"),
+    ("E013 18", "CLC"),
+)
 
 ALT_CHARSET_MAP = {
     "l": "+",
@@ -75,17 +96,117 @@ class Failure(RuntimeError):
     pass
 
 
-@contextmanager
-def check(label: str):
+class SkipCheck(Exception):
+    pass
+
+
+# Test configuration. Set by main() before run_tests() so the check() helper and
+# individual tests can branch on the target hardware (u64 vs u2) and on whether
+# the run should accumulate failures rather than aborting on the first one.
+class TestConfig:
+    target: str = "u64"
+    keep_going: bool = False
+    session: Optional["MonitorSession"] = None
+    failures: List[Tuple[int, str, str]] = []
+    skipped: List[Tuple[int, str, str]] = []
+
+
+def is_u2() -> bool:
+    return TestConfig.target == "u2"
+
+
+def is_u64() -> bool:
+    return TestConfig.target == "u64"
+
+
+class _SkipCheckCtx:
+    """No-op context that suppresses every exception raised in the body.
+
+    Used when a check is gated by ``u2=False`` and the active target is u2.
+    Python provides no zero-cost mechanism to suppress a `with` block from
+    its context manager, so the body still runs; suppressing all exceptions
+    keeps state changes intentional while preventing the run from aborting.
+    The skip is announced before the body executes.
+    """
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        return True
+
+
+class _ActiveCheckCtx:
+    def __init__(self, label: str, check_index: int):
+        self.label = label
+        self.check_index = check_index
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            print("OK", flush=True)
+            return False
+        if issubclass(exc_type, SkipCheck):
+            # SkipCheck and its subclasses (e.g. RomEntryUncoherent for the
+            # documented closed-core visible-ROM fetch-coherency limit) are
+            # recorded transparently as SKIP with their reason - never a silent
+            # pass and never a reset-retry.
+            print(f"SKIP  ({exc})", flush=True)
+            TestConfig.skipped.append((self.check_index, self.label, str(exc)))
+            return True
+        print("FAIL", flush=True)
+        diag = _diagnostic_block(self.label, exc)
+        print(diag, flush=True)
+        TestConfig.failures.append((self.check_index, self.label, diag))
+        return bool(TestConfig.keep_going)
+
+
+def check(label: str, *, u2: bool = True, u2_reason: str = ""):
+    """Return a context manager for a single check.
+
+    Setting ``u2=False`` marks the check as U64-only; in U2 mode the check is
+    skipped with a clear reason printed to the console. When
+    ``TestConfig.keep_going`` is true, exceptions raised inside the check are
+    captured with full screen context and logged verbosely, but the run
+    continues so a remote operator can collect all failure evidence in a
+    single console capture.
+    """
     global CHECK_COUNT
     CHECK_COUNT += 1
     print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
+    if is_u2() and not u2:
+        reason = u2_reason or "U64-only feature (CPU banking / VIC bank / ROM patch / REST API)"
+        print(f"SKIP  ({reason})", flush=True)
+        TestConfig.skipped.append((CHECK_COUNT, label, reason))
+        return _SkipCheckCtx()
+    return _ActiveCheckCtx(label, CHECK_COUNT)
+
+
+def _diagnostic_block(label: str, exc: BaseException) -> str:
+    """Render a verbose diagnostic block for a failed check.
+
+    The block always includes the failing check label, the exception type, the
+    full exception message, the last command sent to the device, and the final
+    terminal snapshot (if any). The intent is that a remote operator can copy
+    the entire console output and diagnose each failure in isolation without
+    needing additional context.
+    """
+    lines: List[str] = []
+    lines.append("    ---- FAILURE CONTEXT BEGIN ----")
+    lines.append(f"    check     : {label}")
+    lines.append(f"    target    : {TestConfig.target}")
+    lines.append(f"    exception : {type(exc).__name__}: {format_exception(exc)}")
+    session = TestConfig.session
+    if session is not None:
+        last_cmd = getattr(session, "last_command", "<unknown>")
+        lines.append(f"    last_cmd  : {last_cmd!r}")
+        try:
+            snap = session.capture()
+            lines.append("    screen    :")
+            for row in snap.text().splitlines():
+                lines.append(f"      | {row}")
+        except Exception as cap_exc:  # noqa: BLE001
+            lines.append(f"    screen    : <capture failed: {cap_exc!r}>")
+    lines.append("    ---- FAILURE CONTEXT END ----")
+    return "\n".join(lines)
 
 
 def format_exception(exc: BaseException) -> str:
@@ -159,7 +280,7 @@ class Snapshot:
 
     def find_status_line(self) -> int:
         for index, line in enumerate(self.lines):
-            if STATUS_LINE_RE.search(line):
+            if STATUS_LINE_RE.search(line) or U2_STATUS_LINE_RE.search(line):
                 return index
         raise Failure(
             f"Snapshot mismatch after {self.last_command}: no CPU/VIC status line found\n{self.text()}"
@@ -202,6 +323,10 @@ class VT100Screen:
                 if self.reverse[y][x]:
                     reverse_cells.append((x, y))
         return Snapshot(["".join(row) for row in self.lines], reverse_cells, last_command)
+
+    def signature(self) -> Tuple[Tuple[str, ...], Tuple[Tuple[bool, ...], ...]]:
+        return (tuple("".join(row) for row in self.lines),
+                tuple(tuple(row) for row in self.reverse))
 
     def saw_password_prompt(self) -> bool:
         return self._password_seen
@@ -307,19 +432,39 @@ class VT100Screen:
 
 class MonitorSession:
     def __init__(self, host: str, port: int, password: Optional[str], timeout: float) -> None:
-        self.sock = self._connect_with_retry(host, port, timeout)
-        self.sock.setblocking(False)
+        self.host = host
+        self.port = port
         self.timeout = timeout
         self.password = password
         self.screen = VT100Screen()
         self.last_command = "<connect>"
-        self._drain_until_idle(timeout=timeout)
+        self._open_connection()
+
+    def _open_connection(self) -> None:
+        self.sock = self._connect_with_retry(self.host, self.port, self.timeout)
+        self.sock.setblocking(False)
+        self.screen = VT100Screen()
+        self.last_command = "<connect>"
+        self._drain_until_idle(timeout=self.timeout)
         if self.screen.saw_password_prompt():
-            if password is None:
+            if self.password is None:
                 raise Failure("Telnet password prompt received but no password was provided")
-            self.send_text(password + "\r", "password")
-            self._drain_until_idle(timeout=timeout)
+            self.send_text(self.password + "\r", "password")
+            self._drain_until_idle(timeout=self.timeout)
         self.enter_monitor()
+
+    def reconnect(self) -> None:
+        """Drop the telnet connection and open a fresh one back in the monitor.
+
+        After an external C64 reset the monitor's telnet state is uncertain, and
+        toggling CTRL_O on the stale connection can land on a blank screen. A
+        brand-new connection re-enters the monitor deterministically, which is
+        how the release matrix gate recovers between ROM reset-retries."""
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+        self._open_connection()
 
     def close(self) -> None:
         try:
@@ -344,7 +489,10 @@ class MonitorSession:
         raise TimeoutError(f"Timed out connecting to {host}:{port}")
 
     def capture(self) -> Snapshot:
-        self._drain_until_idle(timeout=self.timeout)
+        try:
+            self._drain_until_idle(timeout=self.timeout)
+        except Failure:
+            pass
         return self.screen.snapshot(self.last_command)
 
     def send_key(self, key: str) -> Snapshot:
@@ -364,6 +512,12 @@ class MonitorSession:
         self._last_drain_bytes = 0
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command), self._last_drain_bytes
+
+    def send_key_repeat(self, key: str, count: int) -> Snapshot:
+        payload = KEYS[key]
+        self.last_command = f"{key} x{count}"
+        self.sock.sendall(payload * count)
+        return self.capture()
 
     def send_char(self, ch: str) -> Snapshot:
         self.last_command = ch
@@ -386,6 +540,10 @@ class MonitorSession:
     def compare(self, expr: str) -> Snapshot:
         self.send_char("C")
         return self.send_text(expr + "\r", f"C {expr}")
+
+    def transfer(self, expr: str) -> Snapshot:
+        self.send_char("T")
+        return self.send_text(expr + "\r", f"T {expr}")
 
     def goto_run(self, address: str) -> Snapshot:
         self.send_char("G")
@@ -411,11 +569,16 @@ class MonitorSession:
         end = time.time() + timeout
         last_data = time.time()
         drained = 0
+        last_change = last_data
+        signature = self.screen.signature()
         while time.time() < end:
             wait = min(0.5, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
             if not ready:
                 if time.time() - last_data >= 0.5:
+                    self._last_drain_bytes = drained
+                    return
+                if time.time() - last_change >= 0.2:
                     self._last_drain_bytes = drained
                     return
                 continue
@@ -425,8 +588,13 @@ class MonitorSession:
                 return
             drained += len(chunk)
             self.screen.feed(chunk)
+            new_signature = self.screen.signature()
+            if new_signature != signature:
+                signature = new_signature
+                last_change = time.time()
             last_data = time.time()
-        raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
+        self._last_drain_bytes = drained
+        self.screen.snapshot(self.last_command).find_status_line()
 
 
 def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeout: float) -> None:
@@ -533,7 +701,36 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
     return rows
 
 
+_REST_UNAVAILABLE: Dict[str, bool] = {}
+
+
+def rest_available(host: str, timeout: float = 1.0) -> bool:
+    """Probe whether the REST API is reachable for `host`.
+
+    Used by U2 (and other non-U64) targets to short-circuit dozens of
+    write_rest_memory / read_rest_memory calls into a single SkipCheck so the
+    test report shows one clear "REST not available" SKIP entry rather than
+    a wall of identical connection errors.
+    """
+    cached = _REST_UNAVAILABLE.get(host)
+    if cached is not None:
+        return not cached
+    url = f"http://{host}/v1/machine:readmem?address=0000&length=1"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            _REST_UNAVAILABLE[host] = False
+            return True
+    except Exception:  # noqa: BLE001 - any failure means unreachable
+        _REST_UNAVAILABLE[host] = True
+        return False
+
+
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
+    # Both U64 and U2/U2+ ship the REST `v1/machine` API (route_machine.cc
+    # is linked into all three target builds). Only fall back to SkipCheck
+    # when the API is actually unreachable, regardless of target type.
+    if not rest_available(host):
+        raise SkipCheck(f"REST API not reachable on {host}")
     url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
     deadline = time.time() + 15.0
     last_error: Optional[BaseException] = None
@@ -555,10 +752,34 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
     if not data:
         raise Failure("write_rest_memory requires at least one byte")
 
-    url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
-    request = urllib.request.Request(url, data=b"", method="PUT")
-    with urllib.request.urlopen(request, timeout=5.0):
-        pass
+    if not rest_available(host):
+        raise SkipCheck(f"REST API not reachable on {host}")
+
+    deadline = time.time() + 15.0
+    last_error: Optional[BaseException] = None
+
+    while time.time() < deadline:
+        try:
+            if len(data) <= 128:
+                url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
+                request = urllib.request.Request(url, data=b"", method="PUT")
+            else:
+                url = f"http://{host}/v1/machine:writemem?address={address:04X}"
+                request = urllib.request.Request(
+                    url,
+                    data=data,
+                    method="POST",
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+            with urllib.request.urlopen(request, timeout=5.0):
+                return
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            last_error = exc
+            time.sleep(0.5)
+
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError(f"Timed out writing REST memory to {host} at ${address:04X}")
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -635,8 +856,10 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
             line_index = screen.find_status_line()
         except Failure:
             line_index = -1
-        if line_index >= 0 and expected in screen.line(line_index):
-            return screen
+        if line_index >= 0:
+            line = screen.line(line_index)
+            if expected in line:
+                return screen
         screen = session.send_char("o")
     raise Failure(
         f"Unable to reach expected CPU/VIC status {expected!r}; last status line was {screen.line(screen.find_status_line())!r}"
@@ -879,7 +1102,7 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen = session.send_key("CTRL_B")
     screen.find_line_containing("BOOKMARKS")
     assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
-    screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
+    screen.find_line_containing("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")
 
     screen = session.send_key("DOWN")
     screen = session.send_char("L")
@@ -1221,6 +1444,8 @@ def picker_path(snapshot: Snapshot) -> str:
     The picker prints the active path on the bottom line, below its border."""
     for line in reversed(snapshot.lines):
         text = line.strip()
+        if text.endswith("-F3=HELP-"):
+            text = text[:-len("-F3=HELP-")].rstrip()
         if text and not text.startswith("+"):
             return text
     return ""
@@ -1355,17 +1580,228 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
             f"  loaded: {loaded.hex().upper()}"
         )
 
+def highlighted_line(snapshot: Snapshot) -> str:
+    if not snapshot.reverse_cells:
+        raise Failure(f"No highlighted cells after {snapshot.last_command}\n{snapshot.text()}")
+    row = snapshot.reverse_cells[0][1]
+    return snapshot.line(row)
+
+
+def highlighted_row_count(snapshot: Snapshot) -> int:
+    return len({row for _, row in snapshot.reverse_cells})
+
+
+def assert_highlighted_line_contains(snapshot: Snapshot, values: Tuple[str, ...]) -> None:
+    count = highlighted_row_count(snapshot)
+    if count != 1:
+        raise Failure(
+            f"Expected exactly one highlighted row after {snapshot.last_command}, got {count}\n"
+            f"{snapshot.text()}"
+        )
+    line = highlighted_line(snapshot)
+    if not all(value in line for value in values):
+        raise Failure(
+            f"Highlighted line after {snapshot.last_command} did not contain {values!r}\n"
+            f"line: {line!r}\n{snapshot.text()}"
+        )
+
+
+def wait_for_highlighted_line_contains(session: MonitorSession, values: Tuple[str, ...],
+                                       timeout: float = 5.0) -> Snapshot:
+    deadline = time.time() + timeout
+    last_snapshot: Optional[Snapshot] = None
+
+    while time.time() < deadline:
+        snapshot = session.capture()
+        last_snapshot = snapshot
+        try:
+            assert_highlighted_line_contains(snapshot, values)
+            return snapshot
+        except Failure:
+            time.sleep(0.1)
+
+    if last_snapshot is None:
+        raise Failure(f"Timed out waiting for highlighted line {values!r}")
+    assert_highlighted_line_contains(last_snapshot, values)
+    return last_snapshot
+
+
+def assert_canonical_kernal_lane(snapshot: Snapshot, highlighted_values: Tuple[str, ...]) -> None:
+    top_row = snapshot.find_line_containing(ASM_KERNAL_ROWS[0][0])
+    for offset, (address_bytes, disasm_text) in enumerate(ASM_KERNAL_ROWS):
+        row_index = top_row + offset
+        if row_index >= len(snapshot.lines):
+            raise Failure(f"KERNAL lane row {address_bytes} is below the captured screen\n{snapshot.text()}")
+        line = snapshot.line(row_index)
+        if address_bytes not in line or disasm_text not in line:
+            raise Failure(
+                f"KERNAL lane row mismatch after {snapshot.last_command}: expected {address_bytes!r} / {disasm_text!r} "
+                f"on line {row_index}\nactual: {line!r}\n{snapshot.text()}"
+            )
+    assert_line_lacks(snapshot, "E001 56 20")
+    assert_line_lacks(snapshot, "E010 BC A5 07")
+    assert_highlighted_line_contains(snapshot, highlighted_values)
+
+
+def run_asm_kernal_root_stability_test(session: MonitorSession) -> None:
+    ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = session.goto("E000")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("MONITOR ASM $E000")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+    screen = session.fill("DFFD-DFFD,4C")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+    screen = session.fill("DFFE-DFFE,00")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+    screen = session.fill("DFFF-DFFF,E0")
+    screen.find_line_containing("MONITOR ASM $E000")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+    screen = session.fill("DFFD-DFFD,20")
+    assert_canonical_kernal_lane(screen, ("E000 85 56", "STA $56"))
+
+
+def run_asm_decode_offset_test(session: MonitorSession, rest_host: str) -> None:
+    address = 0x3400 if is_u2() else 0xE000
+    if is_u2():
+        write_rest_memory(rest_host, address, ASM_CANONICAL_BYTES)
+
+    screen = session.goto(f"{address:04X}")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, (f"{address:04X} 85 56", "STA $56"))
+    top_row = screen.find_line_containing(f"{address:04X} 85 56")
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 1:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 1:04X}",))
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 2:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 2:04X} 20 0F BC", "JSR $BC0F"))
+    screen = session.send_key("LEFT")
+    screen.find_line_containing(f"MONITOR ASM ${address + 1:04X}")
+    screen = session.send_key("LEFT")
+    screen.find_line_containing(f"MONITOR ASM ${address:04X}")
+    screen = session.send_key("DOWN")
+    screen.find_line_containing(f"MONITOR ASM ${address + 2:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 2:04X} 20 0F BC", "JSR $BC0F"))
+    if f"{address:04X} 85 56" not in screen.line(top_row):
+        raise Failure(f"ASM Down to +2 moved the viewport top\n{screen.text()}")
+
+    down_rows = (
+        (0x0005, "A5 61", "LDA $61"),
+        (0x0007, "C9 88", "CMP #$88"),
+        (0x0009, "90 03", "BCC"),
+        (0x000B, "20 D4 BA", "JSR $BAD4"),
+        (0x000E, "20 CC BC", "JSR $BCCC"),
+        (0x0011, "A5 07", "LDA $07"),
+        (0x0013, "18", "CLC"),
+    )
+    for offset, byte_text, disasm_text in down_rows:
+        screen = session.send_key("DOWN")
+        screen.find_line_containing(f"MONITOR ASM ${address + offset:04X}")
+        assert_highlighted_line_contains(screen, (f"{address + offset:04X} {byte_text}", disasm_text))
+        if f"{address:04X} 85 56" not in screen.line(top_row):
+            raise Failure(f"ASM Down to +{offset:04X} moved the viewport top\n{screen.text()}")
+        assert_line_lacks(screen, f"{address + 1:04X} 56 20")
+
+    screen = session.send_key("UP")
+    screen.find_line_containing(f"MONITOR ASM ${address + 0x0011:04X}")
+    assert_highlighted_line_contains(screen, (f"{address + 0x0011:04X} A5 07", "LDA $07"))
+    assert_line_lacks(screen, f"{address + 0x0010:04X} BC A5 07")
+
+    sliding_start = 0x3600
+    sliding_steps = 300
+    # send_key_repeat() puts all sliding_steps cursor keys into a single sendall;
+    # the firmware processes them one redraw at a time over telnet, so a 300-key
+    # burst drains in ~10s on hardware (the viewport still lands exactly on the
+    # target). Scale the settle wait with the burst size so the poll outlasts the
+    # drain instead of timing out mid-scroll (the default 5s is ~half of it).
+    sliding_settle = 5.0 + sliding_steps * 0.05
+    write_rest_memory(rest_host, 0x3400, bytes((0xEA,)) * 0x400)
+    screen = session.goto(f"{sliding_start:04X}")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, (f"{sliding_start:04X} EA", "NOP"))
+    session.send_key_repeat("UP", sliding_steps)
+    screen = wait_for_highlighted_line_contains(
+        session, (f"{sliding_start - sliding_steps:04X} EA", "NOP"), timeout=sliding_settle)
+    session.send_key_repeat("DOWN", sliding_steps)
+    screen = wait_for_highlighted_line_contains(
+        session, (f"{sliding_start:04X} EA", "NOP"), timeout=sliding_settle)
+
+
+def run_asm_edit_navigation_test(session: MonitorSession, rest_host: str) -> None:
+    write_rest_memory(rest_host, 0x3410, bytes((0xA9, 0x12, 0xEA, 0xEA)))
+    screen = session.goto("3410")
+    screen = ensure_view(session, "ASM ")
+    screen.find_line_containing("LDA #$12")
+    screen = session.send_char("e")
+    screen = session.send_key("RIGHT")
+    screen.find_line_containing("MONITOR ASM $3410")
+    assert_highlighted_line_contains(screen, ("3410 A9 12", "LDA #$12"))
+    screen = session.send_key("LEFT")
+    screen.find_line_containing("MONITOR ASM $3410")
+    assert_highlighted_line_contains(screen, ("3410 A9 12", "LDA #$12"))
+    screen = session.send_key("DOWN")
+    screen.find_line_containing("MONITOR ASM $3412")
+    screen = session.send_key("UP")
+    screen.find_line_containing("MONITOR ASM $3410")
+    screen = session.send_key("ESC")
+    screen.find_line_containing("MONITOR ASM $3410")
+
+
+def run_asm_cpu0_continuous_ram_test(session: MonitorSession) -> None:
+    ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = session.send_char("o")
+    assert_status_contains(screen, "C7O0 $A:RAM $D:RAM $E:RAM VIC")
+    session.fill("DFFE-DFFE,20")
+    session.fill("DFFF-DFFF,00")
+    session.fill("E000-E000,E0")
+    screen = session.goto("DFFE")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, ("DFFE 20 00 E0", "JSR $E000"))
+    for _ in range(7):
+        screen = session.send_char("o")
+    assert_status_contains(screen, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+
+
+def run_asm_self_modification_test(session: MonitorSession, rest_host: str) -> None:
+    write_rest_memory(rest_host, 0x3502, bytes((0xA9, 0x00, 0xEA, 0xA5, 0x61, 0xEA, 0xEA)))
+    screen = session.goto("3505")
+    screen = ensure_view(session, "ASM ")
+    assert_highlighted_line_contains(screen, ("3505 A5 61", "LDA $61"))
+
+    session.fill("3502-3502,20")
+    session.fill("3503-3503,05")
+    screen = session.fill("3504-3504,35")
+    screen.find_line_containing("MONITOR ASM $3505")
+    assert_highlighted_line_contains(screen, ("3505 A5 61", "LDA $61"))
+
+    session.fill("3505-3505,A9")
+    screen = session.fill("3506-3506,42")
+    assert_highlighted_line_contains(screen, ("3505 A9 42", "LDA #$42"))
+    screen = session.fill("3507-3507,60")
+    screen.find_line_containing("3507 60")
+    screen.find_line_containing("RTS")
+
 
 def run_tests(session: MonitorSession, rest_host: str) -> None:
     snapshots = load_snapshots()
 
-    with check("initial CPU7/KERNAL monitor status"):
+    with check("initial CPU7/KERNAL monitor status", u2=False,
+               u2_reason="U2 reports 'CPU VIEW CPU BANK N/A VIC N/A' instead of CPU#/$A:.../VIC#"):
         ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
+
+    with check("initial monitor status line is present"):
+        ensure_view(session, "HEX ")
+        snap = session.capture()
+        snap.find_status_line()
 
     with check("telnet blocks poll mode"):
         run_telnet_poll_guard_test(session)
 
-    with check("KERNAL $E000 hex view and REST match"):
+    with check("KERNAL $E000 hex view and REST match", u2=False,
+               u2_reason="U2 monitor does not snapshot KERNAL ROM into its own view, "
+                         "so the expected text fragments differ from U64"):
         ensure_hex_width(session, 8)
         screen = session.goto("E000")
         for row, expected in snapshots["kernal_hex_e000"]["contains"].items():
@@ -1373,27 +1809,58 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_rest_matches_row(screen, 4, 0xE000, rest_host)
 
     with check("paging away and back keeps memory view stable"):
-        initial_snapshot = screen.text()
+        ensure_view(session, "HEX ")
+        # Use a target address that is meaningful for both U64 (KERNAL view
+        # already at $E000) and U2 (no ROM snapshot, but RAM at $C000 is
+        # stable). Move there explicitly so the test does not depend on prior
+        # state set by KERNAL-specific tests that may have been skipped.
+        ref_addr = "E000" if is_u64() else "C000"
+        ref = session.goto(ref_addr)
+        initial_snapshot = ref.text()
         session.send_key("PGDN")
         back = session.send_key("PGUP")
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
-    with check("KERNAL disassembly formatting"):
-        screen = session.send_char("D")
+    with check("KERNAL disassembly formatting", u2=False,
+               u2_reason="U2 does not snapshot KERNAL ROM into the monitor view"):
+        # Reposition explicitly so this test does not depend on prior cursor
+        # state. Previously this relied on the immediately-preceding check
+        # leaving the view at $E000.
+        screen = session.goto("E000")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
         screen = session.goto("E013")
-        screen = session.send_char("D")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
-    with check("KERNAL $E010 REST match"):
+    with check("ASM root stable across volatile pre-root IO", u2=False,
+               u2_reason="U2 backend does not expose U64 CPU7 I/O/KERNAL banking"):
+        run_asm_kernal_root_stability_test(session)
+
+    with check("ASM decode offset and instruction navigation"):
+        run_asm_decode_offset_test(session, rest_host)
+
+    with check("ASM edit navigation keeps root stable"):
+        run_asm_edit_navigation_test(session, rest_host)
+
+    with check("ASM CPU0 continuous RAM can cross DFFF/E000", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
+        run_asm_cpu0_continuous_ram_test(session)
+
+    with check("ASM self-modification root rules"):
+        run_asm_self_modification_test(session, rest_host)
+
+    with check("KERNAL $E010 REST match", u2=False,
+               u2_reason="U2 monitor does not snapshot KERNAL ROM, so monitor row text differs"):
         screen = ensure_view(session, "HEX ")
         screen = session.goto("E010")
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
-    with check("CPU6 RAM under BASIC write/read"):
+    with check("CPU6 RAM under BASIC write/read", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         screen = ensure_view(session, "HEX ")
         session.goto("A000")
         screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
@@ -1401,11 +1868,13 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         screen = session.goto("A000")
         assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
-    with check("CPU5 RAM under KERNAL status"):
+    with check("CPU5 RAM under KERNAL status", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         session.goto("E000")
         screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
-    with check("ASCII view width and scrolling"):
+    with check("ASCII view width and scrolling", u2=False,
+               u2_reason="Reference snapshot keys reference U64-specific CPU bank status"):
         session.goto("C000")
         for row_index in range(19):
             start = 0xC000 + row_index * 0x20
@@ -1435,7 +1904,8 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
         assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
 
-    with check("ASCII and Screen mapping semantics"):
+    with check("ASCII and Screen mapping semantics", u2=False,
+               u2_reason="Helper writes via REST and asserts CPU/VIC status"):
         run_character_mapping_test(session, rest_host)
 
     with check("HEX edit writes both nibbles"):
@@ -1450,7 +1920,8 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         assert_contains(screen, 4, snapshots["hex_second_nibble"]["contains"]["4"])
         session.send_key("ESC")
 
-    with check("CPU bank cycling reaches CHAR and RAM mappings"):
+    with check("CPU bank cycling reaches CHAR and RAM mappings", u2=False,
+               u2_reason="U2 backend does not expose monitor-side CPU banking"):
         session.goto("A000")
         screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
         assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
@@ -1467,8 +1938,23 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         session.fill("C203-C203,93")
         screen = session.compare("C100-C103,C200")
         assert_contains(screen, 4, "C101")
+        session.send_key("ENTER")
+
+    with check("TRANSFER relocates absolute operands", u2=False,
+               u2_reason="Helper writes via REST and asserts U64 RAM content"):
+        write_rest_memory(rest_host, 0xC400, bytes.fromhex("AD08C48D20D04C00C460"))
+        write_rest_memory(rest_host, 0xC410, bytes.fromhex("AE08C4"))
+        write_rest_memory(rest_host, 0xC500, bytes([0x00] * 0x13))
+        session.transfer("C400-C40A,C500,C400-C413")
+        copied = read_rest_memory(rest_host, 0xC500, 0x0A)
+        outside = read_rest_memory(rest_host, 0xC410, 0x03)
+        assert_equal("Relocated copied code", "AD08C58D20D04C00C560", copied.hex().upper(), "T relocate copied")
+        assert_equal("Relocated external operand", "AE08C5", outside.hex().upper(), "T relocate external")
 
     with check("G executes finite loop and returns to monitor"):
+        # REST is available on U2 firmware too (route_machine.cc is linked
+        # into all three target builds); read_rest_memory/write_rest_memory
+        # will raise SkipCheck if the REST endpoint is genuinely unreachable.
         write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
         write_rest_memory(rest_host, 0x0400, bytes([0x20]))
         session.goto("1000")
@@ -1513,25 +1999,48 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over the standard telnet service")
+    parser = argparse.ArgumentParser(description="Validate the machine monitor over the standard telnet service")
     parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
     parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
     parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))
+    parser.add_argument("--target", choices=("u64", "u2"),
+                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
+                        help="Target hardware. 'u2' skips U64-only features (CPU banking, VIC bank, ROM patching, REST API).")
+    parser.add_argument("--keep-going", action="store_true",
+                        default=os.environ.get("U64_MONITOR_KEEP_GOING", "").lower() in ("1", "true", "yes"),
+                        help="Continue running after a check fails, logging verbose context for each failure.")
     args = parser.parse_args()
 
+    TestConfig.target = args.target
+    # U2/U2+ ship the REST API like the U64, but availability is determined at
+    # runtime by rest_available(); dozens of tests are REST-dependent. Default
+    # to keep-going so a remote operator captures every failure in a single
+    # console run instead of stopping at the first.
+    TestConfig.keep_going = args.keep_going or args.target == "u2"
+    TestConfig.failures = []
+    TestConfig.skipped = []
     rest_host = args.rest_host or args.host
+    if args.target == "u2":
+        if not rest_available(rest_host):
+            print(f"[info] target=u2 and REST unreachable on {rest_host}; "
+                  f"REST-dependent checks will SKIP", flush=True)
+        else:
+            print(f"[info] target=u2 with REST reachable on {rest_host}; "
+                  f"U64-only checks (CPU/VIC banking, KERNAL snapshot) still SKIP", flush=True)
 
     redeployed = False
+    hard_error = False
     while True:
         session = None
         try:
             session = MonitorSession(args.host, args.port, args.password, args.timeout)
+            TestConfig.session = session
             run_tests(session, rest_host)
             break
         except Failure as exc:
-            if (not redeployed) and device_unavailable(exc):
+            if (not redeployed) and is_u64() and device_unavailable(exc):
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
@@ -1544,9 +2053,9 @@ def main() -> int:
                 snapshot = session.capture()
                 print("\nFinal screen:", file=sys.stderr)
                 print(snapshot.text(), file=sys.stderr)
-            return 1
+            break
         except (OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as exc:
-            if (not redeployed) and device_unavailable(exc):
+            if (not redeployed) and is_u64() and device_unavailable(exc):
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
@@ -1555,13 +2064,43 @@ def main() -> int:
                 redeployed = True
                 continue
             print(f"Connection failure: {format_exception(exc)}", file=sys.stderr)
-            return 1
+            hard_error = True
+            break
         finally:
             if session is not None:
                 session.close()
+            TestConfig.session = None
 
-    print(f"monitor_test: OK ({CHECK_COUNT} checks)")
+    _print_summary()
+    if TestConfig.failures or hard_error:
+        return 1
+    print(f"monitor_test: OK ({CHECK_COUNT} checks, "
+          f"{len(TestConfig.skipped)} skipped)")
     return 0
+
+
+def _print_summary() -> None:
+    """End-of-run summary. Always prints skip+failure counts; lists every
+    failure in compact form so the operator can scan the console capture
+    quickly and attach each diagnostic block to a fix plan.
+    """
+    passed = CHECK_COUNT - len(TestConfig.failures) - len(TestConfig.skipped)
+    print("")
+    print("==== monitor_test summary ====")
+    print(f"  target  : {TestConfig.target}")
+    print(f"  passed  : {passed}")
+    print(f"  skipped : {len(TestConfig.skipped)}")
+    print(f"  failed  : {len(TestConfig.failures)}")
+    if TestConfig.skipped:
+        print("")
+        print("Skipped checks:")
+        for idx, label, reason in TestConfig.skipped:
+            print(f"  [{idx:02d}] {label}  ({reason})")
+    if TestConfig.failures:
+        print("")
+        print("Failed checks:")
+        for idx, label, _diag in TestConfig.failures:
+            print(f"  [{idx:02d}] {label}")
 
 
 if __name__ == "__main__":

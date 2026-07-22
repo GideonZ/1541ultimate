@@ -212,12 +212,21 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             c64->unfreeze();
             break;
         case MENU_C64_RESET:
+            if (machine_monitor_request_global_reset_cancel) {
+                machine_monitor_request_global_reset_cancel();
+            }
             if (c64->client) { // we can't execute this yet
                 c64->client->release_host(); // disconnect from user interface
                 c64->client = 0;
             }
             c64->unfreeze();
-            c64->reset();
+            // Cold-start if Debug may have left ROM banked out.
+            if (machine_monitor_global_reset_sees_debug_session &&
+                machine_monitor_global_reset_sees_debug_session()) {
+                c64->start_cartridge(NULL);
+            } else {
+                c64->reset();
+            }
             break;
 
         case MENU_C64_PAUSE:
@@ -554,6 +563,12 @@ int C64_Subsys :: dma_load_raw(File *f)
 
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
+    // A raw DMA transfer is a pure memory access; while the freezer menu/monitor
+    // holds the machine (REST readmem/writemem can run while it is open) it must
+    // NOT release the host, or it would tear down the freeze monitor - so the
+    // host is only released when NOT frozen. The frozen path routes through
+    // dma_transfer_frozen, which honours the freezer's own mode/cart banking
+    // instead of blindly bypassing to raw RAM.
     bool i_stopped_it = false;
     if (c64->client && !c64->isFrozen) {
         c64->client->release_host(); // disconnect from user interface

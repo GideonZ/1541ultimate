@@ -22,6 +22,7 @@ TEST(KeyboardUsbQueueTest, ControlBookmarkDigitsStayDistinctFromRecall)
 	uint8_t release[USB_DATA_SIZE] = { 0x00 };
 	uint8_t list_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	uint8_t edit_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t brk_report[USB_DATA_SIZE] = { 0x01, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 	keyboard.process_data(recall_report);
 	EXPECT_EQ('1', keyboard.getch());
@@ -37,6 +38,10 @@ TEST(KeyboardUsbQueueTest, ControlBookmarkDigitsStayDistinctFromRecall)
 
 	keyboard.process_data(edit_report);
 	EXPECT_EQ(KEY_CTRL_E, keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(brk_report);
+	EXPECT_EQ(KEY_CTRL_R, keyboard.getch());
 }
 
 TEST(KeyboardUsbQueueTest, CbmDigitDecodeRejectsInvalidKeys)
