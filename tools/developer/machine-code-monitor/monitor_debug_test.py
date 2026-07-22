@@ -381,10 +381,20 @@ def _bootstrap_hit_rom_breakpoint(rest_host: str, session: "mt.MonitorSession",
     """
     boot = 0xC5F0
     entry = address if jump_to is None else jump_to
+    # Force canonical banking ($00=$2F DDR, $01=$37 = BASIC+KERNAL+I/O in) before
+    # entering ROM. If a first-fetch miss let the CPU briefly run into KERNAL/BASIC
+    # and change $01, the firmware's in-place relaunch re-runs this bootstrap, so
+    # setting the port here makes the entry land with the correct bank regardless
+    # of any transient runaway - without this, a relaunch-healed entry could park
+    # with a stale CPU port (e.g. BASIC banked out) and break downstream ROM
+    # stepping. After a clean reset the port is already $37, so this is a no-op on
+    # the common path.
     program = bytes([
-        0xA2, 0x40,             # LDX #$40
-        0xCA,                   # DEX
-        0xD0, 0xFD,             # BNE *-1
+        0xA9, 0x2F, 0x85, 0x00,  # LDA #$2F / STA $00  (canonical DDR)
+        0xA9, 0x37, 0x85, 0x01,  # LDA #$37 / STA $01  (BASIC+KERNAL+I/O visible)
+        0xA2, 0x40,              # LDX #$40
+        0xCA,                    # DEX
+        0xD0, 0xFD,              # BNE *-1
         0x4C, entry & 0xFF, (entry >> 8) & 0xFF,  # JMP entry
     ])
     mt.write_rest_memory(rest_host, boot, program)
