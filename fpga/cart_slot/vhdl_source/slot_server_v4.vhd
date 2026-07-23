@@ -49,7 +49,7 @@ port (
     -- Cartridge pins
     VCCDET          : in    std_logic := '1';
 
-    dotclk_i        : in    std_logic;
+    dotclk_i        : in    std_logic := '0';
     phi2_i          : in    std_logic;
     io1n_i          : in    std_logic;
     io2n_i          : in    std_logic;
@@ -89,8 +89,8 @@ port (
     sense           : in    std_logic;
 
     buttons         : in    std_logic_vector(2 downto 0);
-    btn_freeze      : in    std_logic;
-    btn_reset       : in    std_logic;
+    btn_freeze      : in    std_logic := '0';
+    btn_reset       : in    std_logic := '0';
     cart_led_n      : out   std_logic;
 
     trigger_1       : out   std_logic;
