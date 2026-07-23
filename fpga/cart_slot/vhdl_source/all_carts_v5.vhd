@@ -109,6 +109,7 @@ architecture gideon of all_carts_v5 is
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
     constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
+    constant c_megabyter    : std_logic_vector(4 downto 0) := "01111";
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
@@ -356,6 +357,20 @@ begin
                 --     mode_bits(0) <= '1';
                 end if;
                 game_n    <= '1';
+                exrom_n   <= mode_bits(0);
+                serve_rom <= '1';
+                rom_mode  <= "00"; -- 8K banks 
+
+            when c_megabyter =>
+                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                    if io_addr(1) = '0' then 
+                        bank_bits(21 downto 14) <= io_wdata;
+                    else
+                        mode_bits(1 downto 0) <= io_wdata(1 downto 0);
+                        -- bit 7 is LED => ignored
+                    end if;
+                end if;
+                game_n    <= not mode_bits(1);
                 exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 rom_mode  <= "00"; -- 8K banks 

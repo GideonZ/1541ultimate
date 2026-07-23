@@ -37,6 +37,7 @@ typedef enum {
     CART_BLACKBOX4,
     CART_BLACKBOX8,
     CART_BLACKBOX9,
+    CART_MEGABYTER,
     CART_C128_STD,
     CART_C128_STD_IO,
 } e_known_cart;

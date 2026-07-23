@@ -84,7 +84,20 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 71, 0xFF, CART_BLACKBOX9, "Blackbox V9" },
     { 72, 0xFF, CART_NOT_IMPL,  "Lt. Kernal Host Adaptor" },
     { 73, 0xFF, CART_NOT_IMPL,  "RAMLink" },
-    { 74, 0xFF, CART_NOT_IMPL,  "H.E.R.O." },
+    { 74, 0xFF, CART_NOT_IMPL,  "Drean" },
+    { 75, 0xFF, CART_NOT_IMPL,  "IEEE Flash! 64" },
+    { 76, 0xFF, CART_NOT_IMPL,  "Turtle Graphics II" },
+    { 77, 0xFF, CART_NOT_IMPL,  "Freeze Frame MK2" },
+    { 78, 0xFF, CART_NOT_IMPL,  "Partner 64" },
+    { 79, 0xFF, CART_NOT_IMPL,  "Hyper-BASIC" },
+    { 80, 0xFF, CART_NOT_IMPL,  "Universal Cartridge 1" },
+    { 81, 0xFF, CART_NOT_IMPL,  "Universal Cartridge 1.5" },
+    { 82, 0xFF, CART_NOT_IMPL,  "Universal Cartridge 2" },
+    { 83, 0xFF, CART_NOT_IMPL,  "BMP Data Turbo" },
+    { 84, 0xFF, CART_NOT_IMPL,  "Profi-DOS" },
+    { 85, 0xFF, CART_NOT_IMPL,  "Magic Desk 16" },
+    { 86, 0xFF, CART_MEGABYTER, "Protovision Megabyter" },
+
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c128_carts[] = {
@@ -592,6 +605,10 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_BLACKBOX9:
             cart_type = CART_TYPE_BLACKBOX_V9;
+            prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_MEGABYTER:
+            cart_type = CART_TYPE_MEGABYTER;
             prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_GMOD2:
