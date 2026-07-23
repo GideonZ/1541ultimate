@@ -6,6 +6,7 @@
  */
 
 #include <sys/socket.h>
+#include "lwip/sockets.h" // SO_KEEPALIVE / IPPROTO_TCP / TCP_KEEPIDLE|INTVL|CNT
 #include "socket_gui.h"
 #include "socket_stream.h"
 
@@ -55,6 +56,20 @@ static void socket_gui_set_timeouts(int socket_fd)
     send_tv.tv_sec = 5;
     send_tv.tv_usec = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(struct timeval));
+
+    // Reap half-open telnet sessions: a vanished peer (WiFi drop, powered-off
+    // phone, AP roam) sends no FIN/RST, so run_remote() would poll recv()
+    // forever and leak its TELNET_MAX_SESSIONS slot. Keepalive errors the pcb
+    // once the peer stops ACKing, so recv() fails and the slot frees (~35s:
+    // 20s idle + 3*5s). Needs LWIP_TCP_KEEPALIVE=1 in lwipopts.h.
+    int keepalive_on = 1;
+    setsockopt(socket_fd, SOL_SOCKET, SO_KEEPALIVE, (char *)&keepalive_on, sizeof(keepalive_on));
+    int keepalive_idle = 20;   // idle seconds before first probe
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, (char *)&keepalive_idle, sizeof(keepalive_idle));
+    int keepalive_intvl = 5;   // seconds between probes
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, (char *)&keepalive_intvl, sizeof(keepalive_intvl));
+    int keepalive_cnt = 3;     // unacked probes -> peer dead
+    setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, (char *)&keepalive_cnt, sizeof(keepalive_cnt));
 }
 
 SocketGui :: SocketGui()

@@ -980,8 +980,11 @@
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT
  * options processing. Note that TCP_KEEPIDLE and TCP_KEEPINTVL have to be set
  * in seconds. (does not require sockets.c, and will affect tcp.c)
+ *
+ * Enabled so socket_gui.cc can arm per-socket keepalive and reap half-open
+ * telnet sessions (a vanished peer sends no FIN/RST and would leak its slot).
  */
-#define LWIP_TCP_KEEPALIVE              0
+#define LWIP_TCP_KEEPALIVE              1
 
 /**
  * LWIP_SO_RCVTIMEO==1: Enable SO_RCVTIMEO processing.
