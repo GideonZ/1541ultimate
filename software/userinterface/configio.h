@@ -52,10 +52,12 @@ public:
     static SubsysResultCode_e S_restore(SubsysCommand *cmd);
     static SubsysResultCode_e S_reset(SubsysCommand *cmd);
     static SubsysResultCode_e S_clear(SubsysCommand *cmd);
-    // Public so the host unit tests can drive the .cfg rules directly; it has
-    // no state of its own and the alternative is a filesystem in the test.
-    static void S_write_to_file(File *f);
-    static bool S_read_from_file(File *f, StreamTextLog *log, IndexedList<ConfigStore *> &loaded_stores);
+
+    static SubsysResultCode_e S_load_and_effectuate(SubsysCommand *cmd);
+    static SubsysResultCode_e S_load_associated_config(SubsysCommand *cmd);
+    static SubsysResultCode_e S_load_associated_config_usr(SubsysCommand *cmd);
+
+    static bool S_read_from_file(File *f, StreamTextLog *log);
 };
 
 

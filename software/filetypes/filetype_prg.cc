@@ -29,6 +29,7 @@
 #include "filemanager.h"
 #include "c1541.h"
 #include "c64.h"
+#include "configio.h"
 #include <ctype.h>
 
 /* Drives to mount on */
@@ -182,6 +183,10 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
                 drive_command->execute();
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_MNT, run_code, cmd->path.c_str(), cmd->filename.c_str());
             } else if (run_code) {
+                SubsysResultCode_e ret = ConfigIO :: S_load_associated_config(cmd);
+                if (ret == SSRET_CANNOT_OPEN_FILE) {
+                    ret = ConfigIO :: S_load_associated_config_usr(cmd);
+                };
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
             } else {
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
@@ -204,5 +209,8 @@ SubsysResultCode_t FileTypePRG :: start_prg(const char *filename, bool run)
 {
     int func = run ? RUNCODE_DMALOAD_RUN : RUNCODE_DMALOAD;
     SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_LOAD, func, "", filename);
+    if (ConfigIO :: S_load_associated_config(c64_command) == SSRET_CANNOT_OPEN_FILE) {
+        ConfigIO :: S_load_associated_config_usr(c64_command);
+    };
     return c64_command->execute(); 
 }

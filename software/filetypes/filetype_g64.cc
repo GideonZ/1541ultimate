@@ -31,6 +31,7 @@
 #include "c64.h"
 #include "c1541.h"
 #include "subsys.h"
+#include "configio.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_g64(FileType :: getFileTypeFactory(), FileTypeG64 :: test_type);
@@ -82,6 +83,8 @@ SubsysResultCode_e FileTypeG64 :: runDisk_st(SubsysCommand *cmd)
     // First command is to mount the disk
     SubsysCommand *drvcmd = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT_G64, cmd->mode, cmd->path.c_str(), cmd->filename.c_str());
     drvcmd->execute();
+
+    ConfigIO :: S_load_associated_config(cmd);
 
     // Second command is to perform a load"*",8,1
     char *drvId = "H";

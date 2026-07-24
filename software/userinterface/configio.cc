@@ -422,4 +422,76 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
     return CFG_LINE_APPLIED;
 }
 
+SubsysResultCode_e ConfigIO :: S_load_and_effectuate(SubsysCommand *cmd)
+{
+	File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    StreamTextLog log(8192);
+
+    if(file) {
+        bool ok = ConfigIO :: S_read_from_file(file, &log);
+        fm->fclose(file);
+        if (cmd->user_interface && !cmd->mode) {  // set mode to 1 when popups should not be shown
+            if (ok) {
+                cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
+            } else {
+                cmd->user_interface->popup("There were errors.", BUTTON_OK);
+                cmd->user_interface->run_editor(log.getText(), log.getLength());
+            }
+        }
+        ConfigStore *s;
+        ConfigManager *cm = ConfigManager :: getConfigManager();
+        IndexedList<ConfigStore*> *stores = cm->getStores();
+        for(int n = 0; n < stores->get_elements();n++) {
+            s = (*stores)[n];
+            if (s->need_effectuate()) {
+                printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
+                s->effectuate();
+                s->set_effectuated();
+            } else {
+                printf("Store '%s' is clean after loading.\n", s->get_store_name());
+            }
+        }
+    } else {
+        if (!cmd->mode) { // set mode to 1 when popups should not be shown
+            printf("Error opening file.\n");
+            if (cmd->user_interface) {
+                cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+            }
+        }
+        return SSRET_CANNOT_OPEN_FILE;
+    }
+    return SSRET_OK;
+}
+
+SubsysResultCode_e ConfigIO :: S_load_associated_config(SubsysCommand *cmd)
+{
+    int size = 4 + cmd->filename.length();
+    char *cfg_name = new char[size];
+    strncpy(cfg_name, cmd->filename.c_str(), size);
+    set_extension(cfg_name, ".cfg", size);
+
+    SubsysCommand *temp = new SubsysCommand(cmd->user_interface, 0, 0, 1, cmd->path.c_str(), cfg_name);
+    SubsysResultCode_e res = S_load_and_effectuate(temp);
+    delete temp;
+    delete[] cfg_name;
+    return res;
+}
+
+SubsysResultCode_e ConfigIO :: S_load_associated_config_usr(SubsysCommand *cmd)
+{
+    int size = 4 + cmd->filename.length();
+    char *cfg_name = new char[size];
+    strncpy(cfg_name, cmd->filename.c_str(), size);
+    set_extension(cfg_name, ".usr", size);
+
+    SubsysCommand *temp = new SubsysCommand(cmd->user_interface, 0, 0, 1, cmd->path.c_str(), cfg_name);
+    SubsysResultCode_e res = S_load_and_effectuate(temp);
+    delete temp;
+    delete[] cfg_name;
+    return res;
+}
+
 ConfigIO config_io;

@@ -33,6 +33,7 @@
 #include "tape_controller.h"
 #include "endianness.h"
 #include "pattern.h"
+#include "configio.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFileTypeFactory(), FileTypeTap :: test_type);
@@ -238,6 +239,10 @@ SubsysResultCode_e FileTypeTap :: execute_st(SubsysCommand *cmd)
 
 	int functionID = cmd->functionID & 0x7FFF;
 	const char *fn = cmd->filename.c_str();
+
+    if (functionID == TAPFILE_RUN) {
+        ConfigIO :: S_load_associated_config(cmd);
+    }
 
 	if (cmd->functionID & 0x8000) {
 	    fn = "";
