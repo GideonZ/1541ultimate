@@ -44,6 +44,7 @@ DataStreamer :: DataStreamer()
     cfg->set_sort_order(SORT_ORDER_CFG_STREAMS);
 
     for (int i=0; i < 4; i++) {
+        streams[i].relay_socket = -1;
         timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
     }
 }
@@ -52,6 +53,21 @@ DataStreamer :: DataStreamer()
 DataStreamer :: ~DataStreamer()
 {
 
+}
+
+// The ARP probe leaves through whichever interface lwIP routes it to, which on a device with
+// two interfaces on one subnet is not necessarily the one the generator transmits from. Both
+// are on the same segment, so an entry learned by either of them holds the MAC we need.
+static bool peek_any_arp_table(uint32_t ip, uint8_t *mac)
+{
+    int n = NetworkInterface :: getNumberOfInterfaces();
+    for (int i = 0; i < n; i++) {
+        NetworkInterface *intf = NetworkInterface :: getInterface(i);
+        if (intf && intf->peekArpTable(ip, mac)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 DataStreamer *dataStreamer;
@@ -65,7 +81,13 @@ InitFunction datastreamer_init_func("Data Streamer", init, NULL, NULL, 70);
 SubsysResultCode_e DataStreamer :: S_startStream(SubsysCommand *cmd)
 {
     DataStreamer *str = (DataStreamer *)cmd->functionID;
-    return str->startStream(cmd);
+    return str->startStream(cmd, false);
+}
+
+SubsysResultCode_e DataStreamer :: S_startStreamWireless(SubsysCommand *cmd)
+{
+    DataStreamer *str = (DataStreamer *)cmd->functionID;
+    return str->startStream(cmd, true);
 }
 
 SubsysResultCode_e DataStreamer :: S_stopStream(SubsysCommand *cmd)
@@ -82,10 +104,11 @@ void DataStreamer :: S_timer(TimerHandle_t a)
         stream_config_t *stream = &(dataStreamer->streams[streamID]);
         stream->enable = 0;
         dataStreamer->calculate_udp_headers(streamID);
+        dataStreamer->stopRelay(streamID);
     }
 }
 
-SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
+SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd, bool wireless)
 {
     if(NetworkInterface :: getNumberOfInterfaces() < 1) {
         if (cmd->user_interface) cmd->user_interface->popup("No Network Interface", BUTTON_OK);
@@ -95,6 +118,17 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
 
     if (!intf) {
         return SSRET_NO_NETWORK; // shouldn't happen
+    }
+
+    // A wireless stream is relayed by the CPU, so we need a wireless interface that can carry it.
+    NetworkInterface *wlan = NULL;
+    if (wireless) {
+        wlan = getWirelessInterface();
+        if (!wlan) {
+            if (cmd->user_interface) cmd->user_interface->popup("No WiFi connection", BUTTON_OK);
+            else printf("No connected WiFi interface to stream over.\n");
+            return SSRET_NO_NETWORK;
+        }
     }
 
     int streamID = cmd->mode;
@@ -192,8 +226,34 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
         return SSRET_INVALID_PARAMETER;
     }
 
+    stopRelay(streamID);
+
+    if (wireless) {
+        // The generator cannot reach the wireless interface, so it is pointed at our own
+        // wireless address, and the relay task forwards the payload to the requested host.
+        union {
+            uint32_t ipaddr32[3];
+            uint8_t ipaddr[12];
+        } wireless_ip;
+        wlan->getIpAddr(wireless_ip.ipaddr);
+
+        stream->relay_ip = stream->dest_ip;
+        stream->relay_port = stream->dest_port;
+        stream->dest_ip = wireless_ip.ipaddr32[0];
+        stream->dest_port = STREAM_RELAY_PORT_BASE + streamID;
+        wlan->getMacAddr(stream->dest_mac);
+
+        SubsysResultCode_e relayResult = startRelay(streamID, wlan);
+        if (relayResult != SSRET_OK) {
+            if (cmd->user_interface) cmd->user_interface->popup("Cannot start WiFi relay.", BUTTON_OK);
+            return relayResult;
+        }
+    }
+
     // destination mac
-    if ((stream->dest_ip & 0x000000F8) == 0x000000E8) {
+    if (wireless) {
+        // already known: it is the MAC of our own wireless interface
+    } else if ((stream->dest_ip & 0x000000F8) == 0x000000E8) {
         printf("** User requested Multicast stream\n");
     } else if (stream->dest_ip == 0xFFFFFFFF) {
         printf("** User requested Broadcast stream\n");
@@ -202,7 +262,7 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
         for(int i=0;i<10;i++) {
             send_udp_packet(query_ip, stream->dest_port);
             vTaskDelay(20);
-            if (intf->peekArpTable(query_ip, stream->dest_mac)) {
+            if (intf->peekArpTable(query_ip, stream->dest_mac) || peek_any_arp_table(query_ip, stream->dest_mac)) {
                 ok = true;
                 break;
             }
@@ -216,6 +276,18 @@ SubsysResultCode_e DataStreamer :: startStream(SubsysCommand *cmd)
         }
     }
     stream->enable = 1;
+
+    if (wireless) {
+        printf("** Stream %d started over WiFi, relayed from %d.%d.%d.%d:%d to %d.%d.%d.%d:%d\n", streamID,
+                (stream->dest_ip >> 0) & 0xFF, (stream->dest_ip >> 8) & 0xFF,
+                (stream->dest_ip >> 16) & 0xFF, (stream->dest_ip >> 24) & 0xFF, stream->dest_port,
+                (stream->relay_ip >> 0) & 0xFF, (stream->relay_ip >> 8) & 0xFF,
+                (stream->relay_ip >> 16) & 0xFF, (stream->relay_ip >> 24) & 0xFF, stream->relay_port);
+    } else {
+        printf("** Stream %d started over Ethernet, to %d.%d.%d.%d:%d\n", streamID,
+                (stream->dest_ip >> 0) & 0xFF, (stream->dest_ip >> 8) & 0xFF,
+                (stream->dest_ip >> 16) & 0xFF, (stream->dest_ip >> 24) & 0xFF, stream->dest_port);
+    }
 
     // start stream!
     calculate_udp_headers(streamID);
@@ -243,9 +315,137 @@ SubsysResultCode_e DataStreamer :: stopStream(SubsysCommand *cmd)
         return SSRET_INVALID_PARAMETER;
     }
     stream_config_t *stream = &streams[streamID];
+    if (stream->enable) {
+        printf("** Stream %d stopped, it was running over %s\n", streamID, stream->relay ? "WiFi" : "Ethernet");
+    }
     stream->enable = 0;
     calculate_udp_headers(streamID);
+    stopRelay(streamID);
     return SSRET_OK;
+}
+
+NetworkInterface *DataStreamer :: getWirelessInterface(void)
+{
+    union {
+        uint32_t ipaddr32[3];
+        uint8_t ipaddr[12];
+    } ip;
+
+    int n = NetworkInterface :: getNumberOfInterfaces();
+    for (int i = 0; i < n; i++) {
+        NetworkInterface *intf = NetworkInterface :: getInterface(i);
+        if (!intf || !intf->is_wireless()) {
+            continue;
+        }
+        intf->getIpAddr(ip.ipaddr);
+        if (intf->is_link_up() && (ip.ipaddr32[0] != 0)) {
+            return intf;
+        }
+    }
+    return NULL;
+}
+
+SubsysResultCode_e DataStreamer :: startRelay(int streamID, NetworkInterface *intf)
+{
+    stream_config_t *stream = &streams[streamID];
+
+    union {
+        uint32_t ipaddr32[3];
+        uint8_t ipaddr[12];
+    } ip;
+    intf->getIpAddr(ip.ipaddr);
+
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        printf("Cannot create relay socket for stream %d\n", streamID);
+        return SSRET_INTERNAL_ERROR;
+    }
+
+    // Bound to the wireless address, so that both the stream we receive and the packets we
+    // forward use that interface.
+    struct sockaddr_in local;
+    memset((char *)&local, 0, sizeof(local));
+    local.sin_family = AF_INET;
+    local.sin_addr.s_addr = ip.ipaddr32[0];
+    local.sin_port = htons(stream->dest_port);
+    if (bind(sockfd, (const struct sockaddr *)&local, sizeof(local)) < 0) {
+        printf("Cannot bind relay socket for stream %d to port %d\n", streamID, stream->dest_port);
+        lwip_close(sockfd);
+        return SSRET_INTERNAL_ERROR;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 500000;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+
+    stream->relay_socket = sockfd;
+    stream->relay_received = 0;
+    stream->relay_dropped = 0;
+    stream->relay = 1;
+
+    if (xTaskCreate(DataStreamer :: S_relayTask, "StreamRelay", configMINIMAL_STACK_SIZE, (void *)streamID,
+                    PRIO_NETSERVICE, &stream->relay_task) != pdPASS) {
+        printf("Cannot create relay task for stream %d\n", streamID);
+        stream->relay = 0;
+        stream->relay_task = NULL;
+        stream->relay_socket = -1;
+        lwip_close(sockfd);
+        return SSRET_INTERNAL_ERROR;
+    }
+    return SSRET_OK;
+}
+
+void DataStreamer :: stopRelay(int streamID)
+{
+    stream_config_t *stream = &streams[streamID];
+
+    stream->relay = 0;
+    // The task closes its own socket, so that it is never closed under a blocking recv(). It
+    // wakes up on its receive timeout, so this normally returns well within a second.
+    for (int i = 0; (i < 80) && stream->relay_task; i++) {
+        vTaskDelay(5);
+    }
+    if (stream->relay_task) {
+        printf("Relay task of stream %d did not stop.\n", streamID);
+    } else if (stream->relay_received) {
+        printf("Relay of stream %d forwarded %d packets, %d could not be sent.\n", streamID,
+                stream->relay_received, stream->relay_dropped);
+    }
+}
+
+void DataStreamer :: S_relayTask(void *context)
+{
+    dataStreamer->relayThread((int)context);
+}
+
+void DataStreamer :: relayThread(int streamID)
+{
+    stream_config_t *stream = &streams[streamID];
+    uint8_t *buffer = new uint8_t[1536];
+
+    struct sockaddr_in target;
+    memset((char *)&target, 0, sizeof(target));
+    target.sin_family = AF_INET;
+    target.sin_addr.s_addr = stream->relay_ip;
+    target.sin_port = htons(stream->relay_port);
+
+    while (stream->relay) {
+        int len = recv(stream->relay_socket, buffer, 1536, 0);
+        if (len <= 0) { // timeout, so that a stop request is picked up
+            continue;
+        }
+        stream->relay_received ++;
+        if (sendto(stream->relay_socket, buffer, len, 0, (const struct sockaddr *)&target, sizeof(target)) < 0) {
+            stream->relay_dropped ++;
+        }
+    }
+
+    delete[] buffer;
+    lwip_close(stream->relay_socket);
+    stream->relay_socket = -1;
+    stream->relay_task = NULL;
+    vTaskDelete(NULL);
 }
 
 void DataStreamer :: create_task_items()

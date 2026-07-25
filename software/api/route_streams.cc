@@ -14,7 +14,20 @@ public:
 };
 static StreamNameToInt streamDict;
 
-API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
+// Query parameters are strings; a flag is set by naming it, or by giving it a truthy value.
+static bool arg_is_true(const char *value)
+{
+    if (!value) {
+        return false;
+    }
+    if (!*value) {
+        return true;
+    }
+    return (strcasecmp(value, "true") == 0) || (strcasecmp(value, "1") == 0) ||
+           (strcasecmp(value, "yes") == 0) || (strcasecmp(value, "on") == 0);
+}
+
+API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED }, { "wifi", P_OPTIONAL } }))
 {
     const char *streamName = args.get_path(0);
     SubsysCommand *sys_command;
@@ -38,7 +51,8 @@ API_CALL(PUT, streams, start, NULL, ARRAY ( { { "ip", P_REQUIRED } }))
     }
 
     sys_command = new SubsysCommand(NULL, -1, (int)dataStreamer, streamIndex, args["ip"], "");
-    sys_command->direct_call = DataStreamer :: S_startStream;
+    sys_command->direct_call = arg_is_true(args.get_or("wifi", NULL)) ? DataStreamer :: S_startStreamWireless
+                                                                     : DataStreamer :: S_startStream;
     SubsysResultCode_t retval = sys_command->execute();
     resp->error(SubsysCommand::error_string(retval.status));
     resp->json_response(SubsysCommand::http_response_map(retval.status));

@@ -25,8 +25,21 @@ typedef struct {
     int      dest_port;
     uint8_t  dest_mac[6];
     uint8_t  enable;
+    uint8_t  relay;         // stream is received by the CPU and forwarded over a wireless interface
+    uint32_t relay_ip;      // final destination of a relayed stream
+    int      relay_port;
+    int      relay_socket;
+    uint32_t relay_received;
+    uint32_t relay_dropped;
+    TaskHandle_t relay_task;
 } stream_config_t;
 
+// The stream generators sit in the FPGA and can only transmit through the wired MAC. A stream
+// that has to leave over a wireless interface is therefore aimed at this device's own wireless
+// address, and forwarded to its final destination by the CPU.
+#define STREAM_RELAY_PORT_BASE 11100
+
+class NetworkInterface;
 
 class DataStreamer : public ObjectWithMenu
 {
@@ -48,8 +61,14 @@ class DataStreamer : public ObjectWithMenu
     TimerHandle_t timers[4];
 
     static void S_timer(TimerHandle_t a);
-    SubsysResultCode_e startStream(SubsysCommand *cmd);
+    static void S_relayTask(void *context);
+    SubsysResultCode_e startStream(SubsysCommand *cmd, bool wireless);
     SubsysResultCode_e stopStream(SubsysCommand *cmd);
+
+    static NetworkInterface *getWirelessInterface(void);
+    SubsysResultCode_e startRelay(int streamID, NetworkInterface *intf);
+    void stopRelay(int streamID);
+    void relayThread(int streamID);
 
     void calculate_udp_headers(int id);
     void send_udp_packet(uint32_t ip, uint16_t port);
@@ -58,6 +77,7 @@ public:
     virtual ~DataStreamer();
 
     static SubsysResultCode_e S_startStream(SubsysCommand *cmd);
+    static SubsysResultCode_e S_startStreamWireless(SubsysCommand *cmd);
     static SubsysResultCode_e S_stopStream(SubsysCommand *cmd);
 
     // from ObjectWithMenu

@@ -112,6 +112,7 @@ public:
 
     virtual void attach_config();
     virtual const char *identify() { return "Wired Network"; }
+    virtual bool is_wireless() { return false; }
 
 	bool start();
     void stop();
