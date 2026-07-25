@@ -138,6 +138,7 @@
 #define CART_TYPE_BLACKBOX_V8 0x0C
 #define CART_TYPE_ZAXXON      0x0D
 #define CART_TYPE_BLACKBOX_V9 0x0E
+#define CART_TYPE_MEGABYTER   0x0F
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -418,6 +419,11 @@ public:
     static uint8_t *get_cartridge_rom_addr(void) {
         extern uint8_t __cart_rom_start[1024*1024];
         return __cart_rom_start;
+    }
+
+    static uint32_t get_cartridge_max_rom(void) {
+        extern uint8_t __cart_rom_limit;
+        return ((uint32_t)&__cart_rom_limit) - (uint32_t)get_cartridge_rom_addr();
     }
 
     static uint8_t *get_cartridge_ram_addr(void) {
