@@ -767,6 +767,37 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
     C64_DMA_MEMONLY = saved_memonly;
 }
 
+#if U64
+// Defined by u64_config.cc, which the recovery and updater targets do not compile.
+extern "C" int u64_get_mapped_sid_bases(uint16_t *addresses, int max_count) __attribute__((weak));
+#define MAX_MAPPED_SIDS 16
+#endif
+
+/*
+ * Writes one register of every SID that can currently be reached over the C64 bus.
+ *
+ * On the U64 the SID decoders are programmable, so the classic $D400 / $D420 / $D500 trio is
+ * only valid when 'Auto Address Mirroring' widens each decode to the full $D400-$D7FF range.
+ * With mirroring disabled, writing to $D438 or $D518 targets an address that no device claims,
+ * which stalls the C64 bus and wedges the menu on a black screen.
+ */
+static void write_to_all_sids(uint8_t reg, uint8_t value)
+{
+#if U64
+    if (u64_get_mapped_sid_bases) {
+        uint16_t addresses[MAX_MAPPED_SIDS];
+        int count = u64_get_mapped_sid_bases(addresses, MAX_MAPPED_SIDS);
+        for (int i = 0; i < count; i++) {
+            *((volatile uint8_t *)(C64_MEMORY_BASE + addresses[i] + reg)) = value;
+        }
+        return;
+    }
+#endif
+    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + reg)) = value;
+    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD420 + reg)) = value;
+    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD500 + reg)) = value;
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
@@ -795,9 +826,7 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-    SID_VOLUME = 0;
-    SID2_VOLUME = 0;
-    SID3_VOLUME = 0;
+    write_to_all_sids(SID_REG_VOLUME, 0);
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -953,12 +982,8 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID_DUMMY = 0;   // clear internal charge on databus!
-    SID2_DUMMY = 0;   // clear internal charge on databus!
-    SID3_DUMMY = 0;   // clear internal charge on databus!
+    write_to_all_sids(SID_REG_VOLUME, 15); // turn on volume. Unfortunately we could not know what it was set to.
+    write_to_all_sids(SID_REG_DUMMY, 0);   // clear internal charge on databus!
 
     backupIsValid = false;
 }

@@ -181,5 +181,8 @@ extern uint8_t C64_SID1_EN_BAK;
 extern uint8_t C64_SID2_EN_BAK;
 extern uint8_t C64_STEREO_ADDRSEL_BAK;
 
+/* Fills 'addresses' with the C64 base address of every SID that the FPGA currently decodes
+   and returns how many were written. Used to avoid DMA writes to unclaimed I/O addresses. */
+extern "C" int u64_get_mapped_sid_bases(uint16_t *addresses, int max_count);
 
 #endif /* U64_CONFIG_H_ */

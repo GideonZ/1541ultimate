@@ -1215,6 +1215,63 @@ void U64Config :: fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split)
     }
 }
 
+// The SID decoder claims an I/O access when (address[11:4] & mask) == base. A base bit that
+// the mask filters out can therefore never match; that is how an unmapped SID is encoded.
+static bool sid_decode_is_reachable(uint8_t base, uint8_t mask)
+{
+    if (mask & 0x01) { // A4 must be don't care, or register $18 is not decoded
+        return false;
+    }
+    if (base & (uint8_t)~mask) { // no address can ever match => not mapped
+        return false;
+    }
+    // Only the SID range and the I/O range can hold a SID; this also rejects the all-zero
+    // state of the shadow registers, which would otherwise resolve to the VIC at $D000.
+    return ((base >= 0x40) && (base < 0x80)) || (base >= 0xE0);
+}
+
+static uint8_t sid_split_bits(const uint8_t *table, int entries, uint8_t selected)
+{
+    return (selected < entries) ? table[selected] : 0;
+}
+
+// Returns the C64 base addresses of all SIDs that the FPGA currently decodes. Writing to an
+// address in the SID range that no device claims stalls the C64 bus, so callers that poke
+// SID registers over DMA must limit themselves to the addresses returned here.
+extern "C" int u64_get_mapped_sid_bases(uint16_t *addresses, int max_count)
+{
+    const uint8_t bases[4]   = { C64_SID1_BASE_BAK, C64_SID2_BASE_BAK, C64_EMUSID1_BASE_BAK, C64_EMUSID2_BASE_BAK };
+    const uint8_t masks[4]   = { C64_SID1_MASK_BAK, C64_SID2_MASK_BAK, C64_EMUSID1_MASK_BAK, C64_EMUSID2_MASK_BAK };
+    const uint8_t enabled[4] = { C64_SID1_EN_BAK, C64_SID2_EN_BAK, 1, 1 };
+    const uint8_t stereo     = sid_split_bits(stereo_bits, sizeof(stereo_bits), C64_STEREO_ADDRSEL_BAK);
+    const uint8_t emusplit   = sid_split_bits(split_bits, sizeof(split_bits), C64_EMUSID_SPLIT_BAK);
+    const uint8_t splits[4]  = { stereo, stereo, emusplit, emusplit };
+
+    int count = 0;
+    for (int i = 0; i < 4; i++) {
+        if (!enabled[i] || !sid_decode_is_reachable(bases[i], masks[i])) {
+            continue;
+        }
+        // A split turns one decode window into two or four SIDs; report each of them.
+        for (uint8_t sub = 0; sub <= splits[i]; sub++) {
+            if ((sub & splits[i]) != sub) {
+                continue;
+            }
+            uint16_t address = (uint16_t)(0xD000 + ((uint16_t)(bases[i] | sub) << 4));
+            bool duplicate = false;
+            for (int j = 0; j < count; j++) {
+                if (addresses[j] == address) {
+                    duplicate = true;
+                }
+            }
+            if (!duplicate && (count < max_count)) {
+                addresses[count++] = address;
+            }
+        }
+    }
+    return count;
+}
+
 int U64Config :: setFilter(ConfigItem *it)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_SID_BASE + 0x1000);

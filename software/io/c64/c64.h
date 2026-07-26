@@ -168,12 +168,10 @@
 #define CIA2_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00 + x))
 #define CIA1_CRA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC0E))
 #define CIA1_CRB     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC0F))
-#define SID_VOLUME   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD418))
-#define SID2_VOLUME  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD438))
-#define SID3_VOLUME  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD518))
-#define SID_DUMMY    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD41F))
-#define SID2_DUMMY   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD43F))
-#define SID3_DUMMY   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD51F))
+// Offsets within a SID; the SIDs are not at fixed addresses on the U64, so the freezer
+// resolves the bases at run time. See write_to_all_sids() in c64.cc.
+#define SID_REG_VOLUME 0x18
+#define SID_REG_DUMMY  0x1F
 #define VIC_CTRL     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD011))
 #define BORDER       *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD020))
 #define BACKGROUND   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD021))
