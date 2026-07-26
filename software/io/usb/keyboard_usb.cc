@@ -41,6 +41,12 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 #if U64 && !RECOVERYAPP
 static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 #endif
+#ifndef NO_FILE_ACCESS
+// vTaskDelay() counts ticks, not milliseconds: at configTICK_RATE_HZ = 200 a
+// tick is 5ms, so the conversion has to be explicit. Never round down to 0.
+static const uint32_t WAIT_FREE_POLL_TICKS =
+	(pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) > 0) ? pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) : 1;
+#endif
 static const uint8_t REST_TAP_GAP_TICKS = 2;
 static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
 static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
@@ -623,23 +629,27 @@ void Keyboard_USB :: remove_injected_key(int c)
 	portEXIT_CRITICAL();
 }
 
+// True while the last USB report still holds any key or modifier down.
+bool Keyboard_USB :: anyKeyPressed(void) const
+{
+	for (int i=0; i < USB_DATA_SIZE; i++) {
+		if (last_data[i] != 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Keyboard_USB :: wait_free(void)
 {
-	bool free;
-	do {
-		free = true;
-		for (int i=0; i < USB_DATA_SIZE; i++) {
-			if (last_data[i] != 0) {
-				free = false;
-				break;
-			}
-		}
+	int remaining_ms = KEYBOARD_WAIT_FREE_TIMEOUT_MS;
+
+	while (anyKeyPressed() && (remaining_ms > 0)) {
+		remaining_ms -= KEYBOARD_WAIT_FREE_POLL_MS;
 #ifndef NO_FILE_ACCESS
-		if (!free) {
-			vTaskDelay(10);
-		}
+		vTaskDelay(WAIT_FREE_POLL_TICKS);
 #endif
-	} while(!free);
+	}
 }
 
 void Keyboard_USB :: clear_buffer(void)
