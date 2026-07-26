@@ -5,13 +5,15 @@ ARCHITECTURE = riscv
 # CPU architecture and ABI
 MARCH ?= rv32i
 MABI  ?= ilp32
+PRODFAMILY = U64MK2
+#PRODNAME   = Ultimate\ 64-II
 
 include ../../../common/environment.mk
 
 FPGA_PATH ?= $(PATH_SW)/../external
 
 PRJ      =  update
-FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).cfw $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
@@ -136,12 +138,19 @@ LINKMETHOD = ld
 include ../../../common/rules.mk
 
 
-u64.swp: $(FPGA_PATH)/u64_mk2_artix.bit
+u64e2_50t.swp: $(FPGA_PATH)/u64_mk2_artix.bit
+	cp $< $(OUTPUT)/$(@F)
+
+u64e2_100t.swp: $(FPGA_PATH)/u64e2_100t.bit
 	cp $< $(OUTPUT)/$(@F)
 
 #$(SWAP) -h $< $(OUTPUT)/u64.swp 220000 
 	 
-u64.chk: u64.swp
+u64e2_50t.chk: u64e2_50t.swp
+	@echo Calculating checksum of $< binary to $(@F)..
+	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
+
+u64e2_100t.chk: u64e2_100t.swp
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
 
@@ -149,13 +158,13 @@ ultimate.chk: ../ultimate/result/ultimate.app
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
 
-update_binaries_u64ii.o: u64.swp ../ultimate/result/ultimate.app
+update_binaries_u64ii.o: u64e2_50t.swp u64e2_100t.swp ../ultimate/result/ultimate.app
 
 ../ultimate/result/ultimate.app::
 	make -C ../ultimate
 
-update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64.chk
+update_u64ii.o: update_u64ii.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64e2_50t.chk u64e2_100t.chk
 	@echo "Compiling $(notdir $<)"
-	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64.chk >$(OUTPUT)/checksums.h
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64e2_50t.chk $(OUTPUT)/u64e2_100t.chk >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 

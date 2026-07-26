@@ -18,6 +18,8 @@ SVFDUMP = $(TOOLS)/svf_dump
 CROSS        ?= mb-
 ELFTYPE      ?= elf32-microblaze
 ARCHITECTURE ?= MicroBlaze
+PRODFAMILY   ?= .
+PRODNAME     ?= .
 
 #BOOT = ../2nd_boot
 #LWIPLIB = ../$(subst -,_,$(CROSS))lwip/result/liblwip.a

@@ -57,6 +57,10 @@ $(RESULT)/$(PRJ).app: $(OUTPUT)/$(PRJ).shex
 	@echo Creating Binary Application $@
 	@$(HEX2BIN) -r $< $@
 
+$(RESULT)/$(PRJ).cfw: $(OUTPUT)/$(PRJ).shex
+	@echo Creating Binary Application Format 1 $@
+	$(HEX2BIN) -r -F $(PRODFAMILY) -P $(PRODNAME) $< $@
+
 $(RESULT)/$(PRJ).hex: $(OUTPUT)/$(PRJ).out
 	@echo Creating Hex File for On Chip Memory $@
 	@elf2hex --input=$< 0x0000 $(HEXLAST) --width=32 --little-endian-mem --create-lanes=0 --record=4 --output=$@ --base=$(HEXBASE) --end=$(HEXEND)
