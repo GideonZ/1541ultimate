@@ -42,20 +42,23 @@ static bool contains_path_separator(const char *name)
     return false;
 }
 
-static void format_bootcrt_display_name(const char *name, char *display_name)
+// Returns either the name itself, or a trimmed copy in the caller's buffer.
+// Plain names are passed on untouched: CbmFileName cuts them to 16 PETSCII
+// characters itself, and needs the extension that trimming here would remove.
+static const char *format_bootcrt_display_name(const char *name, char *trimmed)
 {
     const int kDisplayChars = 16;
     const int kTrimmedTailChars = 13;
     int length = strlen(name);
 
     if ((length <= kDisplayChars) || !contains_path_separator(name)) {
-        strcpy(display_name, name);
-        return;
+        return name;
     }
 
-    memcpy(display_name, "...", 3);
-    memcpy(display_name + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
-    display_name[kDisplayChars] = 0;
+    memcpy(trimmed, "...", 3);
+    memcpy(trimmed + 3, name + length - kTrimmedTailChars, kTrimmedTailChars);
+    trimmed[kDisplayChars] = 0;
+    return trimmed;
 }
 
 cart_def boot_cart; // static => initialized with all zeros.
@@ -601,8 +604,8 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
-    char display_name[17];
-    format_bootcrt_display_name(name, display_name);
+    char trimmed_name[17];
+    const char *display_name = format_bootcrt_display_name(name, trimmed_name);
 
     CbmFileName cbm;
     cbm.init(display_name);

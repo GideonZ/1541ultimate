@@ -53,6 +53,11 @@ void Keyboard_USB::wait_free(void)
 {
 }
 
+bool Keyboard_USB::anyKeyPressed(void) const
+{
+    return false;
+}
+
 void Keyboard_USB::clear_buffer(void)
 {
 }
