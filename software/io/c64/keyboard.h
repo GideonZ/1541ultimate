@@ -1,6 +1,11 @@
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
 
+// Upper bound for wait_free(): how long a menu exit waits for the key that
+// triggered it to be released, before giving up and continuing anyway.
+#define KEYBOARD_WAIT_FREE_TIMEOUT_MS 2000
+#define KEYBOARD_WAIT_FREE_POLL_MS      10
+
 class Keyboard
 {
 
