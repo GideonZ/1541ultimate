@@ -13,6 +13,7 @@
 #define ROMS_DIRECTORY  "/prep/roms"
 #define CARTS_DIRECTORY "/prep/carts"
 #define HTML_DIRECOTRY "/prep/html"
+#define CFG_DIRECTORY  "/prep/config"
 
 // This fragment prepares a flash disk image from binary files in RAM, in order to flash
 // it into the DUT as one block, using the standard infrastructure.
@@ -28,6 +29,8 @@ extern uint8_t _kernal_901227_03_bin_start;
 extern uint8_t _basic_901226_01_bin_start;
 extern uint8_t _index_html_start[];
 extern uint8_t _index_html_end[1];
+extern uint8_t _iec_config_bin_start[];
+extern uint8_t _iec_config_bin_end[1];
 
 BlockDevice *prep_blk;
 FileDevice *prep_node;
@@ -76,6 +79,7 @@ static void copy_files(void)
     create_dir(ROMS_DIRECTORY);
     create_dir(CARTS_DIRECTORY);
     create_dir(HTML_DIRECOTRY);
+    create_dir(CFG_DIRECTORY);
     write_file(ROMS_DIRECTORY, "1581.rom", &_1581_bin_start, 0x8000);
     write_file(ROMS_DIRECTORY, "1571.rom", &_1571_bin_start, 0x8000);
     write_file(ROMS_DIRECTORY, "1541.rom", &_1541_bin_start, 0x4000);
@@ -86,6 +90,7 @@ static void copy_files(void)
 //    write_file(ROMS_DIRECTORY, "basic.bin", &_basic_901226_01_bin_start, 0x2000);
 //    write_file(ROMS_DIRECTORY, "chars.bin", &_characters_901225_01_bin_start, 0x1000);
     write_file(HTML_DIRECOTRY, "index.html", (uint8_t *)_index_html_start, (long int)_index_html_end - (long int)_index_html_start);
+    write_file(CFG_DIRECTORY, "iec_partitions.ipr", (uint8_t *)_iec_config_bin_start, (long int)_iec_config_bin_end - (long int)_iec_config_bin_start);
 }
 
 int prepare_flashdisk_pre(uint8_t *mem, uint32_t mem_size)
@@ -103,6 +108,13 @@ int prepare_flashdisk_pre(uint8_t *mem, uint32_t mem_size)
         return -1;
     }
     return 0;
+}
+
+void cleanup()
+{
+    FileManager :: getFileManager()->remove_root_entry(prep_node);
+    delete prep_node;
+    delete prep_blk;
 }
 
 int prepare_flashdisk_used(uint32_t mem_size)
@@ -131,21 +143,22 @@ int prepare_flashdisk(uint8_t *mem, uint32_t mem_size)
     return prepare_flashdisk_used(mem_size);
 }
 
-int main(int argc, char **argv)
+void create(const uint32_t mem_size, const char *fn)
 {
-    if (argc < 2) {
-        printf("Usage: %s <outfile>\n", argv[0]);
-        return 1;
-    }
-    const uint32_t mem_size = 0xBE8000;
     uint8_t *mem = new uint8_t[mem_size]; // from w25q_flash.cc
     int used = prepare_flashdisk(mem, mem_size);
     printf("Used blocks: %d\n", used);
-    FILE *fo = fopen(argv[1], "wb");    
+    FILE *fo = fopen(fn, "wb");    
     if (fo) {
         fwrite(mem, 4096, used, fo);
         fclose(fo);
     }
     delete[] mem;
-    return 0;
+    cleanup();
+}
+
+int main(int argc, char **argv)
+{
+    create(0xBE8000, "fat_50t.bin");
+    create(0xA68000, "fat_100t.bin");
 }

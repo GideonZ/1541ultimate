@@ -59,7 +59,8 @@ SRCS_CC	 =  mystring.cc \
 SRCS_ASM =
 SRCS_6502 = 
 SRCS_BIN =  1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin \
-            characters.901225-01.bin kernal.901227-03.bin basic.901226-01.bin 
+            characters.901225-01.bin kernal.901227-03.bin basic.901226-01.bin \
+			iec_config.bin
 SRCS_IEC = 
 SRCS_NANO = 
 SRCS_HTML = index.html
