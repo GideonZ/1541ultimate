@@ -175,7 +175,7 @@ void do_update(void)
         case 3:
             flash_buffer_at(flash2, screen, 0x000000, false, &_u64e2_100t_swp_start, &_u64e2_100t_swp_end,   "V1.0", "Runtime FPGA");
             flash_buffer_at(flash2, screen, 0x3C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-            write_protect(flash2, 8192);
+            write_protect(flash2, 4096); // cannot protect just 5.5 MB... :-(
         default:
             user_interface->popup("FPGA Type not supported.", BUTTON_OK);
             goto off;
