@@ -144,6 +144,7 @@ jobs:
             update_${{ env.GIT_VERSION }}.u2l
             update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
+            update_${{ env.GIT_VERSION }}.cfw
 
       - name: Upload Factory Artifacts U2+L
         uses: actions/upload-artifact@v5
