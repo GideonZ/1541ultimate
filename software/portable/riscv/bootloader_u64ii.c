@@ -170,7 +170,8 @@ int main()
         BOOT_MAGIC_LOCATION = 0;
         jump_run(BOOT_MAGIC_JUMPADDR);
     } else if (!(capabilities & CAPAB_BOOT_FPGA)) {
-        uint32_t flash_addr = 0x220000; // 2176K from start. FPGA image is (uncompressed) 2141K
+        uint8_t fpgatype_id = getFpgaType();
+        uint32_t flash_addr = (fpgatype_id == 3) ? 0x3C0000 : 0x220000;
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;

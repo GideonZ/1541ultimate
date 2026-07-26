@@ -450,13 +450,17 @@ void ultimate_main(void *context)
 
     int errors = 0; // always flash
 
+    uint8_t fpgatype_id = getFpgaType();
+    uint32_t appl_addr = (fpgatype_id == 3) ? 0x3C0000 : 0x220000;
+    uint32_t fat_addr  = (fpgatype_id == 3) ? 0x580000 : 0x400000;
+
     if (errors == 0) {
-        attempt_programming(0xFFFFF8, 0x1800000, 0x400000);
-        attempt_programming(0xFFFFF4, 0x1400000, 0x220000);
+        attempt_programming(0xFFFFF8, 0x1800000, fat_addr);
+        attempt_programming(0xFFFFF4, 0x1400000, appl_addr);
         attempt_programming(0xFFFFF0, 0x1000000, 0x000000);
         errors += verify(0xFFFFF0, 0x1000000, 0x000000);
-        errors += verify(0xFFFFF4, 0x1400000, 0x220000);
-        errors += verify(0xFFFFF8, 0x1800000, 0x400000);
+        errors += verify(0xFFFFF4, 0x1400000, appl_addr);
+        errors += verify(0xFFFFF8, 0x1800000, fat_addr);
         if(errors) {
             fail_message("Flashing Firmware, board not OK.");
         } else {
