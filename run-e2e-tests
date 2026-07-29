@@ -51,6 +51,11 @@ SUITES=(
   "telnet-stale-session|tools/io/telnet/telnet_stale_session_test.py|-H @HOST@|manual"
   # Benchmark: toggles the temp auto-cleanup device setting while it measures.
   "temp-auto-cleanup-perf|tools/io/temp-auto-cleanup/temp_auto_cleanup_perf_test.py|-H @HOST@ -p @PASS@|manual"
+  # Reproduces #733: with the SID decoder fix, "mirroring off" is the
+  # regression guard. Without it, the same scenario stalls the whole Nios
+  # and needs a JTAG recovery -- do not fold into the auto sweep until the
+  # decoder ack no longer depends on it being firmware.
+  "freeze-menu|tools/io/c64/freeze_menu_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all|manual"
 )
 
 suite_mode() {
