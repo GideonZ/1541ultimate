@@ -26,7 +26,7 @@ timing and buffering behaviour that a BASIC-only test would miss.
 ## How it works
 
 - **REST** (`http.client`, matching the style of
-  `tools/io/temp-auto-cleanup/temp_auto_cleanup_perf_test.py`): reads/writes
+  `tests/e2e/temp-auto-cleanup/temp_auto_cleanup_perf_test.py`): reads/writes
   `Printer Settings` config, pokes a parameter block and polls a status block
   via `machine:writemem` / `machine:readmem`, uploads and runs the assembled
   PRG via `POST /v1/runners:run_prg`, and drives the on-device Tasks menu

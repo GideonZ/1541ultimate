@@ -10,7 +10,7 @@ The validation harness connects to the normal remote-menu session and enters the
 ## Run
 
 ```bash
-python3 tools/developer/machine-code-monitor/monitor_test.py --host u64 --port 23
+python3 tests/e2e/monitor/monitor_test.py --host u64 --port 23
 ```
 
 Optional environment variables:

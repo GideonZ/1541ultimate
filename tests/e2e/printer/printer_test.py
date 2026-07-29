@@ -6,7 +6,7 @@ workload (printer-e2e.asm, assembled with 64tass), captures crash/hang
 behaviour, and verifies the resulting PNG/ASCII output over FTP. Pure REST
 (http.client) + FTP (ftplib); no MCP/bridge dependency.
 
-Style follows tools/io/temp-auto-cleanup/temp_auto_cleanup_perf_test.py:
+Style follows tests/e2e/temp-auto-cleanup/temp_auto_cleanup_perf_test.py:
 argparse CLI, -H/--host, -p/--password, -n/--no-assertions, http.client with
 Connection: close, X-Password only when a password is supplied, capture/
 restore original settings, ftplib for on-device file verification.

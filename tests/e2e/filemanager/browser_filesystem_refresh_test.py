@@ -35,8 +35,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "api"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "developer" / "machine-code-monitor"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitor"))
 
 from menu_screen_test import (
     SCREEN_WIDTH,

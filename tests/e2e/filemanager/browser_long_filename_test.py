@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check, menu_screen_text
 

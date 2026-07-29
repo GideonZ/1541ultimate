@@ -73,7 +73,7 @@ MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
 MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
 DEFAULT_MODEM_OFFLINE_TEXT = "/flash/offline.txt"
-FONT_PATH = Path(__file__).resolve().parents[2] / "roms" / "chars.bin"
+FONT_PATH = Path(__file__).resolve().parents[3] / "roms" / "chars.bin"
 FONT_BYTES = FONT_PATH.read_bytes()[: 256 * 8]
 PRINTABLE_FALLBACK = {
     0x00: " ",
