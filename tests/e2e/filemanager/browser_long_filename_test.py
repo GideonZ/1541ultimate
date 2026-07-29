@@ -399,6 +399,9 @@ def main() -> int:
     session = RestSession(args.host, args.password or None, args.timeout)
 
     try:
+        with check("reset the machine to a clean starting state"):
+            session.reset_to_clean_slate()
+
         with check("seed long-name fixture for rename"):
             stored_name = seed_long_fixture(args.host, args.password, args.test_dir)
 

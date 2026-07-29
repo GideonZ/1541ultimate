@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Red/green E2E for the telnet half-open session leak.
+"""Red/green E2E for the Telnet half-open session leak.
 
 A telnet peer that vanishes at the network level (WiFi drop, powered-off phone,
 AP roam) sends no FIN/RST and never ACKs the device's keepalive probes. Without
@@ -15,10 +15,13 @@ Exit 0 = GREEN (all slots reaped, full capacity recovers); non-zero = RED / setu
 """
 
 import argparse
+import json
 import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 TELNET_PORT = 23
 DEFAULT_MAX_SESSIONS = 4  # mirrors TELNET_MAX_SESSIONS in software/network/socket_gui.cc
@@ -29,6 +32,47 @@ IP_CMD = ["sudo", "-n", "ip"]  # only ip needs root
 
 def log(msg: str) -> None:
     print(f"[telnet-stale-e2e] {msg}", flush=True)
+
+
+def reset_machine(host: str) -> None:
+    for attempt in range(12):
+        try:
+            request = urllib.request.Request(
+                f"http://{host}/v1/machine:menu_screen", method="GET"
+            )
+            with urllib.request.urlopen(request, timeout=5.0):
+                pass
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                break
+            raise
+        key = "run_stop" if attempt % 2 == 0 else "return"
+        body = json.dumps({
+            "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            f"http://{host}/v1/machine:input",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5.0):
+            pass
+        time.sleep(0.25)
+    else:
+        request = urllib.request.Request(
+            f"http://{host}/v1/machine:menu_button", data=b"", method="PUT"
+        )
+        with urllib.request.urlopen(request, timeout=5.0):
+            pass
+        time.sleep(0.5)
+
+    request = urllib.request.Request(
+        f"http://{host}/v1/machine:reset", data=b"", method="PUT"
+    )
+    with urllib.request.urlopen(request, timeout=5.0):
+        pass
+    time.sleep(1.0)
 
 
 def _connect(host: str, *, source_ip: str | None = None, timeout: float = 4.0) -> socket.socket:
@@ -149,6 +193,8 @@ def main() -> int:
         log("ERROR: cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
             f"run under sudo. ({(check.stderr or check.stdout).strip()})")
         return 2
+
+    reset_machine(args.host)
 
     victims: list[socket.socket] = []
     alias_added = False

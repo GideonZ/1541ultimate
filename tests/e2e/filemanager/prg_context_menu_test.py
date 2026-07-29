@@ -1105,6 +1105,10 @@ def main() -> int:
             failures.append((label, str(exc)))
 
     try:
+        with check("reset the machine to a clean starting state"):
+            machine.close_menu()
+            machine.reset()
+
         with check(f"select the {REQUIRED_INTERFACE_TYPE} interface"):
             original_interface_type = machine.get_interface_type()
             if original_interface_type != REQUIRED_INTERFACE_TYPE:

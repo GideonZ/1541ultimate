@@ -220,8 +220,13 @@ class RestInputSession:
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            return response.read()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Failure(f"{method} {path} failed: {format_exception(exc)}") from exc
 
     def json_request(
         self,
@@ -294,6 +299,28 @@ class RestInputSession:
 
     def reset(self) -> None:
         self.put("reset")
+
+    def menu_screen_open(self) -> bool:
+        try:
+            self.request("GET", "/v1/machine:menu_screen")
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
+
+    def close_menu_from_anywhere(self) -> None:
+        self.post_events([{"kind": "release_all"}])
+        for attempt in range(12):
+            if not self.menu_screen_open():
+                return
+            key = "run_stop" if attempt % 2 == 0 else "return"
+            self.post_events([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
+            time.sleep(0.25)
+        self.put("menu_button")
+        time.sleep(0.5)
+        if self.menu_screen_open():
+            raise Failure("could not dismiss active menu UI before reset")
 
     def pause(self) -> None:
         self.put("pause")
@@ -510,9 +537,7 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
 
 
 def reset_to_basic(session: RestInputSession) -> None:
-    session.post_events([{"kind": "release_all"}])
-    session.post_events([{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}])
-    time.sleep(0.3)
+    session.close_menu_from_anywhere()
     session.reset()
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
@@ -1858,6 +1883,7 @@ def run_joystick_tests(session: RestInputSession) -> None:
 
 def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] = None, selected: Optional[List[str]] = None) -> int:
     wait_for_input_ready(session, timeout=15.0)
+    reset_to_basic(session)
     if soak_duration_seconds is not None:
         return run_soak_tests(session, soak_duration_seconds)
     if wants_test(selected, "contract"):

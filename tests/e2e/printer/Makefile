@@ -1,12 +1,12 @@
 # Build/check the virtual-printer E2E harness.
 #
-# The PRG is normally assembled on the fly by printer-e2e.py; this Makefile
+# The PRG is normally assembled on the fly by printer_test.py; this Makefile
 # exists for standalone syntax-checking and for producing a PRG you can load
 # by hand (e.g. via the Ultimate file browser) while debugging.
 
 ASSEMBLER ?= 64tass
-ASM_SRC    = printer-e2e.asm
-PRG_OUT    = printer-e2e.prg
+ASM_SRC    = printer_e2e.asm
+PRG_OUT    = printer_e2e.prg
 
 .PHONY: all assemble check clean
 
@@ -18,8 +18,8 @@ $(PRG_OUT): $(ASM_SRC)
 	$(ASSEMBLER) -q -o $(PRG_OUT) $(ASM_SRC)
 
 check: assemble
-	python3 -m py_compile printer-e2e.py verify-printer-output.py
-	@echo "printer-e2e.asm assembled and Python sources compiled cleanly"
+	python3 -m py_compile printer_test.py verify_printer_output.py
+	@echo "printer_e2e.asm assembled and Python sources compiled cleanly"
 
 clean:
 	rm -f $(PRG_OUT) *.pyc

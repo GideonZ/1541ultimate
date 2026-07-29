@@ -23,10 +23,20 @@ timing and buffering behaviour that a BASIC-only test would miss.
   full-page bitmap coverage checks) needs no third-party packages. OCR-based
   text verification is an optional enhancement - see below.
 
+Run the registered printer scenario from the repository root:
+
+```sh
+./run-e2e-tests -H u64 -s printer
+```
+
+The specialized presets below invoke `printer_test.py` directly because those
+harness-development options are intentionally not part of the repository-wide
+runner interface.
+
 ## How it works
 
 - **REST** (`http.client`, matching the style of
-  `tests/e2e/temp-auto-cleanup/temp_auto_cleanup_perf_test.py`): reads/writes
+  `tests/e2e/filemanager/temp_auto_cleanup_perf_test.py`): reads/writes
   `Printer Settings` config, pokes a parameter block and polls a status block
   via `machine:writemem` / `machine:readmem`, uploads and runs the assembled
   PRG via `POST /v1/runners:run_prg`, and drives the on-device Tasks menu
@@ -45,7 +55,7 @@ timing and buffering behaviour that a BASIC-only test would miss.
   the run and restored after, unless `--no-config-change` is passed. Nothing
   is ever written to flash (`save_flash` is never called).
 
-## The assembly workload (`printer-e2e.asm`)
+## The assembly workload (`printer_e2e.asm`)
 
 A single parametrized PRG, assembled once per run. Runtime parameters are
 written to `$C010` before the PRG is started:
@@ -202,8 +212,8 @@ content. Run structural verification standalone against files left over from
 an earlier run (or produced interactively) with:
 
 ```sh
-./verify-printer-output.py -H u64 --output-base /Usb0/printer/e2e-smoke --pages 1
-./verify-printer-output.py -H u64 --path /Temp/some-page-001.png
+./verify_printer_output.py -H u64 --output-base /Usb0/printer/e2e-smoke --pages 1
+./verify_printer_output.py -H u64 --path /Temp/some-page-001.png
 ```
 
 ## Crash classification

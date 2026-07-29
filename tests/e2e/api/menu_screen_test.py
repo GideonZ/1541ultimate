@@ -198,6 +198,14 @@ class RestSession:
             return
         self.close_menu()
 
+    def reset_to_clean_slate(self) -> None:
+        self.release_all_input()
+        self.close_menu_from_anywhere()
+        status, _, body = self.request("PUT", "/v1/machine:reset")
+        if status != 200:
+            raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
+        time.sleep(0.5)
+
 
 def header_value(headers: Dict[str, str], name: str) -> str:
     wanted = name.lower()
@@ -626,6 +634,7 @@ def main() -> int:
     rest_host = args.rest_host or args.host
     session = RestSession(rest_host, args.password, args.timeout)
     tests = expand_tests(args.test)
+    session.reset_to_clean_slate()
 
     if "contract" in tests:
         run_contract_with_open_menu(session)

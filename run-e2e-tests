@@ -3,7 +3,9 @@
 #
 # Each suite drives the real firmware over REST/FTP/Telnet, so a device has to
 # be reachable and idle. Suites run sequentially; the exit status is non-zero if
-# any of them fails.
+# any of them fails. Each suite is responsible for resetting in its own setup
+# so it remains safe to run by itself. The runner performs one final defensive
+# cleanup/reset after all selected suites.
 
 set -uo pipefail
 
@@ -40,17 +42,17 @@ SUITES=(
   "prg-context-menu|tests/e2e/filemanager/prg_context_menu_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
   "browser-long-filename|tests/e2e/filemanager/browser_long_filename_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
   "browser-filesystem-refresh|tests/e2e/filemanager/browser_filesystem_refresh_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
-  "ftp-client|tests/e2e/filemanager/ftp_client_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
-  "prg-load-path-trim|tests/e2e/api/prg-load-path-trim-test.sh|-H @HOST@ -p @PASS@"
-  "temp-auto-cleanup|tests/e2e/temp-auto-cleanup/temp-auto-cleanup-test.sh|-H @HOST@ -p @PASS@"
+  "ftp-client|tests/e2e/filesystem/ftp_client_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
+  "prg-load-path-trim|tests/e2e/api/prg_load_path_trim_test.sh|-H @HOST@ -p @PASS@"
+  "temp-auto-cleanup|tests/e2e/filemanager/temp_auto_cleanup_test.sh|-H @HOST@ -p @PASS@"
   "printer|tests/e2e/printer/printer_test.py|-H @HOST@ -p @PASS@"
   # Long telnet run; drives the machine-code monitor with its own long flags.
   "machine-code-monitor|tests/e2e/monitor/monitor_test.py|--host @HOST@ --password @PASS@ --timeout @TIMEOUT@|manual"
   # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
   # and waits ~75s for the device to reap the sessions.
-  "telnet-stale-session|tests/e2e/telnet/telnet_stale_session_test.py|-H @HOST@|manual"
+  "telnet-stale-session|tests/e2e/network/telnet_stale_session_test.py|-H @HOST@|manual"
   # Benchmark: toggles the temp auto-cleanup device setting while it measures.
-  "temp-auto-cleanup-perf|tests/e2e/temp-auto-cleanup/temp_auto_cleanup_perf_test.py|-H @HOST@ -p @PASS@|manual"
+  "temp-auto-cleanup-perf|tests/e2e/filemanager/temp_auto_cleanup_perf_test.py|-H @HOST@ -p @PASS@|manual"
   # Reproduces #733: with the SID decoder fix, "mirroring off" is the
   # regression guard. Without it, the same scenario stalls the whole Nios
   # and needs a JTAG recovery -- do not fold into the auto sweep until the
@@ -103,6 +105,85 @@ EOF
 die() {
     echo -e "${C_RED}ERROR: $*${C_NC}" >&2
     exit 2
+}
+
+rest_status() {
+    local method=$1 path=$2
+    shift 2
+    local headers=()
+    if [[ -n "$PASSWORD" ]]; then
+        headers=(-H "X-Password: $PASSWORD")
+    fi
+    curl -sS -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" \
+        -X "$method" "${headers[@]}" "$@" "http://$HOST$path"
+}
+
+menu_status() {
+    rest_status GET "/v1/machine:menu_screen"
+}
+
+release_input() {
+    [[ "$(rest_status POST "/v1/machine:input" \
+        -H "Content-Type: application/json" \
+        --data '{"events":[{"kind":"release_all"}]}')" == 200 ]]
+}
+
+tap_menu_key() {
+    local key=$1
+    [[ "$(rest_status POST "/v1/machine:input" \
+        -H "Content-Type: application/json" \
+        --data "{\"events\":[{\"kind\":\"keyboard\",\"inputs\":[\"$key\"],\"transition\":\"tap\"}]}")" == 200 ]]
+}
+
+close_active_menu() {
+    local status attempt
+    status="$(menu_status)" || return 1
+    [[ "$status" == 404 ]] && return 0
+    [[ "$status" == 200 ]] || return 1
+
+    # A menu-button toggle does not dismiss every nested UI object. In
+    # particular, AssemblySearch owns RUN/STOP itself. Back out through active
+    # editors, popups, and browsers before using the toggle as a last resort.
+    for attempt in {1..12}; do
+        if (( attempt % 2 )); then
+            tap_menu_key run_stop || return 1
+        else
+            tap_menu_key return || return 1
+        fi
+        sleep 0.25
+        status="$(menu_status)" || return 1
+        [[ "$status" == 404 ]] && return 0
+        [[ "$status" == 200 ]] || return 1
+    done
+
+    [[ "$(rest_status PUT "/v1/machine:menu_button")" == 200 ]] || return 1
+    sleep 0.5
+    [[ "$(menu_status)" == 404 ]]
+}
+
+reset_to_clean_slate() {
+    local phase=$1
+    printf '%s: release input ... ' "$phase"
+    if ! release_input; then
+        echo "FAIL"
+        return 1
+    fi
+    echo "OK"
+
+    printf '%s: close active menu UI ... ' "$phase"
+    if ! close_active_menu; then
+        echo "FAIL"
+        return 1
+    fi
+    echo "OK"
+
+    printf '%s: reset machine ... ' "$phase"
+    if [[ "$(rest_status PUT "/v1/machine:reset")" != 200 ]]; then
+        echo "FAIL"
+        return 1
+    fi
+    sleep 0.5
+    echo "OK"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -202,6 +283,12 @@ for entry in "${SUITES[@]}"; do
         fi
     fi
 done
+
+echo
+if ! reset_to_clean_slate "RUN TEARDOWN"; then
+    echo -e "${C_RED}FAIL: overall clean-slate teardown${C_NC}"
+    FAILED+=("run-teardown")
+fi
 
 echo -e "\n${C_YEL}Summary after $((SECONDS - START_ALL))s${C_NC}\n$(printf '%.s-' {1..60})"
 for name in "${PASSED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_GREEN}PASS${C_NC}  $name"; done

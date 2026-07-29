@@ -7,8 +7,8 @@ needing to run a print job first. Useful for re-checking output left behind by
 printer_test.py, or output produced interactively (e.g. via the on-device menu).
 
 Usage:
-    ./verify-printer-output.py -H u64 --output-base /Usb0/printer/e2e-abc --pages 2
-    ./verify-printer-output.py -H u64 --path /Temp/mypage-001.png
+    ./verify_printer_output.py -H u64 --output-base /Usb0/printer/e2e-abc --pages 2
+    ./verify_printer_output.py -H u64 --path /Temp/mypage-001.png
 """
 
 import argparse

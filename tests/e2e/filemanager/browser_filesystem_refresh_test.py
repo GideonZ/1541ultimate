@@ -1611,6 +1611,8 @@ def main() -> int:
 
     ctx = Context(args)
     try:
+        with check("reset the machine to a clean starting state"):
+            ctx.session.reset_to_clean_slate()
         with check("prepare fixture directories"):
             prepare_device(ctx)
         with check("open Menu, Telnet and FTP on the fixture directory"):

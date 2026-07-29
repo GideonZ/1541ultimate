@@ -17,6 +17,9 @@ MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
 WRITEMEM_PATH = "/v1/machine:writemem"
 RESET_PATH = "/v1/machine:reset"
+PAUSE_PATH = "/v1/machine:pause"
+RESUME_PATH = "/v1/machine:resume"
+INPUT_PATH = "/v1/machine:input"
 CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEM = "Interface Type"
 INTERFACE_FREEZE = "Freeze"
@@ -194,6 +197,20 @@ class RestSession:
         if self.menu_screen_open() != want_open:
             raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
 
+    def close_menu_from_anywhere(self) -> None:
+        for _ in range(12):
+            if not self.menu_screen_open():
+                return
+            status, _, body = self.request(
+                "POST",
+                INPUT_PATH,
+                payload={"events": [{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}]},
+            )
+            if status != 200:
+                raise Failure(f"input cleanup failed with HTTP {status}: {body[:160]!r}")
+            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+        self.set_menu_open(False)
+
     def get_config(self, category: str) -> Dict[str, object]:
         status, _, body = self.request("GET", f"/v1/configs/{urllib.parse.quote(category)}")
         if status != 200:
@@ -217,6 +234,16 @@ class RestSession:
         status, _, body = self.request("PUT", RESET_PATH)
         if status != 200:
             raise Failure(f"reset failed with HTTP {status}: {body[:200]!r}")
+
+    def pause(self) -> None:
+        status, _, body = self.request("PUT", PAUSE_PATH)
+        if status != 200:
+            raise Failure(f"pause failed with HTTP {status}: {body[:200]!r}")
+
+    def resume(self) -> None:
+        status, _, body = self.request("PUT", RESUME_PATH)
+        if status != 200:
+            raise Failure(f"resume failed with HTTP {status}: {body[:200]!r}")
 
 
 def make_pattern(xor_value: int) -> bytes:
@@ -248,7 +275,6 @@ def compare(
     noise_addrs: Set[int],
     skip_rom: bool = False,
     session: Optional["RestSession"] = None,
-    max_isolated_live_drift: int = 0,
 ) -> bool:
     ram_mismatches: List[int] = []
     color_mismatches: List[int] = []
@@ -296,23 +322,6 @@ def compare(
                   f"(background activity, not a bug)")
         ram_mismatches = settled
 
-    # Writing+reading tens of KB while the C64 is genuinely running (Overlay mode)
-    # spans several seconds of real 6502 execution, during which a very small
-    # number of isolated bytes can be touched once by ordinary background
-    # activity (and then hold still, so the re-check above won't catch them).
-    # Tolerate a small number of ISOLATED single-byte mismatches only -- any
-    # contiguous run, or a count above the tolerance, still fails: that is no
-    # longer consistent with incidental drift.
-    if ram_mismatches and 0 < len(ram_mismatches) <= max_isolated_live_drift:
-        isolated = all(
-            (addr - 1) not in ram_mismatches and (addr + 1) not in ram_mismatches for addr in ram_mismatches
-        )
-        if isolated:
-            print(f"  [{label}] tolerating {len(ram_mismatches)} isolated single-byte mismatch(es) as ordinary "
-                  f"background CPU activity during a multi-second live write+read "
-                  f"(addresses: {', '.join(f'${a:04X}' for a in ram_mismatches)})")
-            ram_mismatches = []
-
     if skip_rom:
         print(f"  [{label}] ignored ROM mismatches (writes to real ROM are no-ops): {ignored_rom}")
 
@@ -349,10 +358,19 @@ def run_selfcheck(
         session.set_menu_open(True)
 
     pattern = make_pattern(xor_value)
-    with check(f"write full-range pattern ({interface})"):
-        session.write_pattern(pattern)
-    with check(f"read back full range ({interface})"):
-        actual = session.read_full()
+    paused = interface == INTERFACE_OVERLAY
+    if paused:
+        with check(f"pause C64 for exact round trip ({interface})"):
+            session.pause()
+    try:
+        with check(f"write full-range pattern ({interface})"):
+            session.write_pattern(pattern)
+        with check(f"read back full range ({interface})"):
+            actual = session.read_full()
+    finally:
+        if paused:
+            with check(f"resume C64 after exact round trip ({interface})"):
+                session.resume()
     with check(f"menu still open after write+read ({interface})"):
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during self-check read/write")
@@ -363,13 +381,12 @@ def run_selfcheck(
     allow_screen_mismatch = interface == INTERFACE_FREEZE
     print(f"--- {label}: write and read both happen in {interface} "
           f"({'screen RAM excluded, menu redraws it continuously' if allow_screen_mismatch else 'even screen RAM must round-trip'}) ---")
-    # Freeze halts the CPU for the whole write+read, so no drift is possible there;
-    # Overlay keeps the C64 running the entire time, so allow a small, isolated
-    # tolerance for incidental background activity (see compare()'s docstring).
-    max_isolated_live_drift = 0 if interface == INTERFACE_FREEZE else 10
+    # Freeze already halts the CPU. Overlay normally keeps it running (verified by
+    # the live-noise probe), so pause it explicitly around this multi-request
+    # transaction. Otherwise the CPU can legitimately mutate RAM between the
+    # three writes and the read, making an exact round-trip assertion sporadic.
     ok = compare(pattern, actual, label=label, allow_screen_mismatch=allow_screen_mismatch,
-                 noise_addrs=noise_addrs, skip_rom=True, session=session,
-                 max_isolated_live_drift=max_isolated_live_drift)
+                 noise_addrs=set() if paused else noise_addrs, skip_rom=True)
 
     with check(f"close menu ({interface})"):
         session.set_menu_open(False)
@@ -492,10 +509,13 @@ def main() -> int:
     tests = expand_tests(args.test)
 
     original_interface: Optional[str] = None
-    original_menu_open: Optional[bool] = None
     results: Dict[str, bool] = {}
 
     try:
+        session.close_menu_from_anywhere()
+        if not args.no_reset:
+            run_reset(session)
+
         with check("read User Interface Settings config"):
             ui_config = session.get_config(CONFIG_CATEGORY)
         interface_selectable = CONFIG_ITEM in ui_config
@@ -523,13 +543,6 @@ def main() -> int:
             tests = [t for t in tests if t not in OVERLAY_DEPENDENT_TESTS] or FREEZE_ONLY_TESTS
             if skipped_tests:
                 print(f"  skipping (requires Overlay-on-HDMI, unsupported here): {', '.join(skipped_tests)}")
-        original_menu_open = session.menu_screen_open()
-        if original_menu_open:
-            session.set_menu_open(False)
-
-        if not args.no_reset:
-            run_reset(session)
-
         noise_addrs: Set[int] = set()
         if interface_selectable:
             with check("switch to Overlay on HDMI to probe live background activity"):

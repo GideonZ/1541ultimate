@@ -1,8 +1,8 @@
-; printer-e2e.asm - Parametrized virtual-printer E2E workload for Ultimate 64/64e.
+; printer_e2e.asm - Parametrized virtual-printer E2E workload for Ultimate 64/64e.
 ;
 ; Assembled with 64tass (tools/64tass or a system-installed 64tass) into a PRG
 ; that is uploaded and run via POST /v1/runners:run_prg. Runtime parameters are
-; POSTed into RAM at PARAM_BASE (via /v1/machine:writemem) by printer-e2e.py
+; POSTed into RAM at PARAM_BASE (via /v1/machine:writemem) by printer_test.py
 ; *before* the PRG is started. Progress/result are polled from STATUS_BASE via
 ; GET /v1/machine:readmem.
 ;

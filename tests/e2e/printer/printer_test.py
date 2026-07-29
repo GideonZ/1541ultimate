@@ -2,11 +2,11 @@
 """End-to-end virtual-printer harness for a real Ultimate 64 / 64e.
 
 Drives the IEC virtual printer (device 4/5) with a dedicated 6510 assembly
-workload (printer-e2e.asm, assembled with 64tass), captures crash/hang
+workload (printer_e2e.asm, assembled with 64tass), captures crash/hang
 behaviour, and verifies the resulting PNG/ASCII output over FTP. Pure REST
 (http.client) + FTP (ftplib); no MCP/bridge dependency.
 
-Style follows tests/e2e/temp-auto-cleanup/temp_auto_cleanup_perf_test.py:
+Style follows tests/e2e/filemanager/temp_auto_cleanup_perf_test.py:
 argparse CLI, -H/--host, -p/--password, -n/--no-assertions, http.client with
 Connection: close, X-Password only when a password is supplied, capture/
 restore original settings, ftplib for on-device file verification.
@@ -26,7 +26,7 @@ import time
 import zlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_ASM_PATH = os.path.join(SCRIPT_DIR, "printer-e2e.asm")
+DEFAULT_ASM_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.asm")
 ISSUE_717_BASIC = '''10 open 1,4
 20 for i = 1 to 100
 30 print#1,"line no "; i
@@ -256,6 +256,18 @@ class U64Client:
 
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
+
+    def close_menu_from_anywhere(self):
+        self.post_input([{"kind": "release_all"}])
+        for attempt in range(12):
+            if self.get_menu_screen() is None:
+                return
+            self.tap_key("run_stop" if attempt % 2 == 0 else "return")
+            time.sleep(MENU_SETTLE_SECONDS)
+        self.menu_button()
+        time.sleep(0.5)
+        if self.get_menu_screen() is not None:
+            raise Failure("could not dismiss active menu UI before reset")
 
 
 def urlquote(value):
@@ -714,7 +726,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
 
     The dot-matrix "draft" font is not reliably OCRable even after image
     preprocessing (tested: garbage output). Text-mode rows therefore switch
-    the printer into NLQ + bold + double-strike (see printer-e2e.asm), which
+    the printer into NLQ + bold + double-strike (see printer_e2e.asm), which
     OCRs correctly for the parts that matter: the emulation/mode tags and the
     PAGE=/ROW= counters that prove the assembly program's page/row loop and
     decimal-formatting routine are actually working. The fixed decorative
@@ -826,7 +838,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Virtual-printer end-to-end harness for a real Ultimate 64/64e.",
         epilog="Captures original Printer Settings and restores them on exit unless "
-               "--no-config-change is used. Requires printer-e2e.asm alongside this "
+               "--no-config-change is used. Requires printer_e2e.asm alongside this "
                "script and a 64tass binary on PATH (or --assembler).",
     )
     parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
@@ -1050,6 +1062,12 @@ def main():
         return 1
     check_ok()
 
+    check_start("reset before run")
+    client.close_menu_from_anywhere()
+    client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
+    time.sleep(2.0)
+    check_ok()
+
     check_start("tokenize literal issue #717 BASIC" if args.issue_717_basic else
                 f"assemble {os.path.basename(args.asm_path)} with {args.assembler}")
     try:
@@ -1063,12 +1081,6 @@ def main():
     if not args.no_config_change:
         check_start("capture original Printer Settings")
         snapshot = capture_settings(client, assertions_enabled)
-        check_ok()
-
-    if args.reset_before_run:
-        check_start("reset before run")
-        client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
-        time.sleep(2.0)
         check_ok()
 
     results = []

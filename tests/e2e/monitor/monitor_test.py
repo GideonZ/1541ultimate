@@ -561,6 +561,48 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
         pass
 
 
+def reset_rest_machine(host: str, password: Optional[str]) -> None:
+    headers = {"X-Password": password} if password else {}
+    for attempt in range(12):
+        try:
+            request = urllib.request.Request(
+                f"http://{host}/v1/machine:menu_screen", headers=headers, method="GET"
+            )
+            with urllib.request.urlopen(request, timeout=5.0):
+                pass
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                break
+            raise
+        key = "run_stop" if attempt % 2 == 0 else "return"
+        body = json.dumps({
+            "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            f"http://{host}/v1/machine:input",
+            data=body,
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5.0):
+            pass
+        time.sleep(0.25)
+    else:
+        request = urllib.request.Request(
+            f"http://{host}/v1/machine:menu_button", data=b"", headers=headers, method="PUT"
+        )
+        with urllib.request.urlopen(request, timeout=5.0):
+            pass
+        time.sleep(0.5)
+
+    request = urllib.request.Request(
+        f"http://{host}/v1/machine:reset", data=b"", headers=headers, method="PUT"
+    )
+    with urllib.request.urlopen(request, timeout=5.0):
+        pass
+    time.sleep(1.0)
+
+
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -1522,6 +1564,8 @@ def main() -> int:
     args = parser.parse_args()
 
     rest_host = args.rest_host or args.host
+
+    reset_rest_machine(rest_host, args.password)
 
     redeployed = False
     while True:

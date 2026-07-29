@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end harness for the FTP remote filesystem on a real Ultimate 64 / 64e.
+"""End-to-end harness for the remote FTP filesystem on a real Ultimate 64 / 64e.
 
 Drives the real firmware UI entirely through the supported REST APIs
 (machine:menu_button / machine:menu_screen / machine:input) to configure a
@@ -2115,6 +2115,11 @@ def main(argv=None):
     driver = MenuDriver(session, verbose_menu=args.verbose_menu)
     inspector = DeviceFtpInspector(args.host)
 
+    driver.close_menu_from_anywhere()
+    session.release_all()
+    session.require_ok("PUT", "/v1/machine:reset", description="reset")
+    time.sleep(3.0)
+
     print(f"Starting controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
           f"(advertised {args.ftp_advertised_host})")
     try:
@@ -2132,10 +2137,6 @@ def main(argv=None):
     ctx.alias = safe_name(args.alias_prefix)
     crashed = False
     failed = False
-
-    if args.reset_before_run:
-        session.require_ok("PUT", "/v1/machine:reset", description="reset")
-        time.sleep(3.0)
 
     try:
         endpoint_checks(ctx)

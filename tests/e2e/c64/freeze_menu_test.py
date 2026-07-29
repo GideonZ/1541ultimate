@@ -108,12 +108,17 @@ class RestSession:
         method: str,
         path: str,
         params: Optional[Dict[str, object]] = None,
+        payload: Optional[Dict[str, object]] = None,
     ) -> Tuple[int, Dict[str, str], bytes]:
         headers: Dict[str, str] = {}
         if self.password:
             headers["X-Password"] = self.password
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
 
-        request = urllib.request.Request(self.url(path, params), headers=headers, method=method)
+        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
@@ -128,6 +133,32 @@ class RestSession:
         except Failure:
             return False
         return status == 200
+
+    def reset(self) -> None:
+        status, _, body = self.request("PUT", "/v1/machine:reset")
+        if status != 200:
+            raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
+        time.sleep(1.0)
+
+    def close_menu_from_anywhere(self) -> None:
+        for attempt in range(12):
+            status, _, _ = self.request("GET", MENU_SCREEN_PATH)
+            if status == 404:
+                return
+            if status != 200:
+                raise Failure(f"menu-state probe failed with HTTP {status}")
+            key = "run_stop" if attempt % 2 == 0 else "return"
+            status, _, body = self.request(
+                "POST",
+                "/v1/machine:input",
+                payload={"events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]},
+            )
+            if status != 200:
+                raise Failure(f"menu cleanup failed with HTTP {status}: {body[:160]!r}")
+            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+        self.menu_button()
+        if not self.wait_menu_state(want_open=False):
+            raise Failure("could not dismiss active menu UI before reset")
 
     def config_path(self, store: str, item: str) -> str:
         return f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}"
@@ -326,6 +357,8 @@ def main() -> int:
     if not session.responds():
         raise Failure(f"{session.host} is not answering REST requests")
 
+    session.close_menu_from_anywhere()
+    session.reset()
     initial_interface = session.get_config(UI_STORE, UI_ITEM)
     initial_mirroring = session.get_config(SID_STORE, SID_ITEM)
     print(f"-- captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")
