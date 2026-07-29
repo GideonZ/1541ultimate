@@ -2131,6 +2131,7 @@ def main(argv=None):
     ctx = Context(args, session, driver, server, inspector, assertions_enabled)
     ctx.alias = safe_name(args.alias_prefix)
     crashed = False
+    failed = False
 
     if args.reset_before_run:
         session.require_ok("PUT", "/v1/machine:reset", description="reset")
@@ -2152,6 +2153,7 @@ def main(argv=None):
         crashed = True
         print_failure_diagnostics(ctx, f"HARD CRASH: {exc}")
     except Failure as exc:
+        failed = True
         print_failure_diagnostics(ctx, exc)
     except KeyboardInterrupt:
         print("\nInterrupted.")
@@ -2167,7 +2169,7 @@ def main(argv=None):
 
     if crashed:
         return 3
-    return 1 if fails else 0
+    return 1 if failed or fails else 0
 
 
 if __name__ == "__main__":
