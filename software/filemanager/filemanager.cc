@@ -729,6 +729,7 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     fres = fs->file_open(pathInfo.getPathFromLastFS(), flags, file);
     if (fres == FR_OK) {
         open_file_list.append(*file);
+        (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
         note_managed_temp_open(*file);
         if (create) {
@@ -869,6 +870,8 @@ void FileManager::fclose(File *f)
     bool delete_on_last_close = false;
     bool enforce_after_close = false;
     mstring delete_path;
+    bool publish_dir = false;
+    mstring changed_dir;
 
     lock();
     if (f->get_file_system()) {
@@ -878,12 +881,16 @@ void FileManager::fclose(File *f)
         printf("ERR: Closing invalidated file.\n");
     }
 //	printf("CLOSE '%s'\n", f->get_path());
-    /*
-     if (f->was_written_to()) {
-     sendEventToObservers(eNodeUpdated, f->get_path(), "*");
-     }
-     */
     const char *path = f->get_path();
+    if (f->write_intent) {
+        // A file that was created announced itself while it was still empty; its
+        // size only becomes final in the close below. Remember the directory now,
+        // because close() destroys the file object.
+        Path file_path;
+        file_path.cd(path);
+        file_path.getHead(changed_dir);
+        publish_dir = true;
+    }
     if ((managed_temp_entries.get_elements() > 0) && is_path_under_managed_root(path)) {
         ManagedTempEntry *entry = find_managed_temp_entry(path);
         if (entry) {
@@ -902,6 +909,9 @@ void FileManager::fclose(File *f)
     }
     open_file_list.remove(f);
     f->close();
+    if (publish_dir) {
+        sendEventToObservers(eRefreshDirectory, changed_dir.c_str(), "");
+    }
     unlock();
 
     if (delete_on_last_close) {
@@ -1169,7 +1179,10 @@ FRESULT FileManager::create_dir(Path *path, const char *name)
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
         if (fres == FR_OK) {
-            sendEventToObservers(eNodeAdded, path->get_path(), name);
+            // 'name' may carry a whole path, so the entry that was just
+            // created is the one to publish, not the caller's arguments.
+            mstring work;
+            sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
         }
     }
     unlock();
