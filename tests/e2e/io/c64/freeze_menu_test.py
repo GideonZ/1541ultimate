@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies the freezer menu remains responsive across SID-mirroring settings.
+
 """Validate the freezer menu against SID mappings without auto address mirroring.
 
 With "Interface Type" set to "Freeze" the firmware stops the C64 and pokes the SID volume

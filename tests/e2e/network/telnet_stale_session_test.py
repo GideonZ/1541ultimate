@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies half-open Telnet sessions are reaped and listener capacity recovers.
+
 """Red/green E2E for the Telnet half-open session leak.
 
 A telnet peer that vanishes at the network level (WiFi drop, powered-off phone,

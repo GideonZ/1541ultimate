@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies browser actions resolve and operate on long FAT filenames.
+
 """Validate browser actions on a long filename through the real U64 menu UI.
 
 The `/Temp` ingress paths can still be listed through a shortened FTP alias,

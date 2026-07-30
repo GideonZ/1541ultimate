@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hardware end-to-end validator for Temp auto cleanup on the Ultimate 64.
+# E2E: Verifies managed /Temp cleanup across mounted images and uploads.
 
 # --- Defaults (Environment Variables) ---
 U64_HOST="${U64_HOST:-u64}"

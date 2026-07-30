@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hardware validation of boot-cart name trimming in the PRG runner REST endpoints.
+# E2E: Verifies PRG REST runners safely trim long boot-cart display names.
 
 # --- Defaults (Environment Variables) ---
 U64_HOST="${U64_HOST:-u64}"

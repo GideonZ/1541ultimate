@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies managed /Temp uploads and measures cleanup-mode performance.
+
 """Validate and measure managed Temp uploads with cleanup and subfolders toggled.
 
 The benchmark uploads the same small attachment-backed payload via HTTP in two

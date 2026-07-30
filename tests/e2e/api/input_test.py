@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies REST keyboard and joystick injection in the C64 and menu UI.
+
 import argparse
 import http.client
 import json

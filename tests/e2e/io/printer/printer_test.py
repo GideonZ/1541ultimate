@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies virtual IEC printer output and stability using a real C64 workload.
+
 """End-to-end virtual-printer harness for a real Ultimate 64 / 64e.
 
 Drives the IEC virtual printer (device 4/5) with a dedicated 6510 assembly

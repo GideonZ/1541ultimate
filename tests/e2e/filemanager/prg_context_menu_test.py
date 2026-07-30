@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies every PRG browser context-menu action on files and disk images.
+
 """Validate every PRG context-menu action in the real U64 browser.
 
 The fixture is a tiny BASIC+ML program that stores a known signature at

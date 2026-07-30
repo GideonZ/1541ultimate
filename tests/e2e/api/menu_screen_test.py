@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies the REST menu-screen contract and rendering through real menu states.
+
 import argparse
 import hashlib
 import json

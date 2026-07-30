@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies REST memory reads and writes across live and frozen C64 modes.
+
 import argparse
 import io
 import json

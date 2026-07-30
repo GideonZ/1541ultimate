@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies the remote FTP filesystem through the real browser and a controlled server.
+
 """End-to-end harness for the remote FTP filesystem on a real Ultimate 64 / 64e.
 
 Drives the real firmware UI entirely through the supported REST APIs

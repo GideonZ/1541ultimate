@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies machine-code monitor commands and memory views through Telnet.
+
 import argparse
 import difflib
 import json

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# E2E: Verifies open browsers refresh after filesystem changes from every origin.
+
 """Operation x origin x observer matrix for file-system change notification.
 
 Every observer of a directory must converge on the committed file-system state
