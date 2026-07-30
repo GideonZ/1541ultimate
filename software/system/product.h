@@ -16,6 +16,7 @@ bool isEliteBoard(void);
 
 uint8_t getProductId();
 const char *getProductString();
+const char *getProductFamily();
 char *getProductVersionString(char *buf, int sz, bool ascii);
 char *getProductTitleString(char *buf, int sz, bool ascii);
 char *getProductDefaultHostname(char *buf, int sz);

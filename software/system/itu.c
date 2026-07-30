@@ -37,6 +37,16 @@ uint8_t getFpgaVersion()
 #endif
 }
 
+uint8_t getFpgaType()
+{
+#if RUNS_ON_PC
+	return 0x00;
+#else
+    uint32_t cap = getFpgaCapabilities();
+	return (cap & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
+#endif
+}
+
 /*
 -------------------------------------------------------------------------------
 							wait_ms

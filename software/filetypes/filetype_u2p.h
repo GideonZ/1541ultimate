@@ -8,8 +8,11 @@
 class FileTypeUpdate : public FileType
 {
 	BrowsableDirEntry *browsable;
+    static uint32_t load_format_0(SubsysCommand *cmd, File *file, uint32_t remain);
+    static uint32_t load_format_1(SubsysCommand *cmd, File *file, uint32_t remain);
+    int format;
 public:
-	FileTypeUpdate(BrowsableDirEntry *par);
+	FileTypeUpdate(BrowsableDirEntry *par, int);
     ~FileTypeUpdate();
 
     int   fetch_context_items(IndexedList<Action *> &list);

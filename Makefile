@@ -294,6 +294,7 @@ u64ii: esp32_u64ctrl
 	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
+	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
 u64ii_no_esp::
 	@mkdir -p u64ii
@@ -308,6 +309,7 @@ u64ii_no_esp::
 	@cp software/u64ctrl/build/partition_table/partition-table.bin u64ii
 	@cp software/u64ctrl/build/u64ctrl.bin u64ii
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
+	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
 u2pl: esp32_raw_c3
 	@$(MAKE) -C tools

@@ -28,6 +28,16 @@ static const char *product_hostname[] = {
     "Ultimate-64-II",
 };
 
+static const char *product_families[] = {
+    "No Family",       // Default if unknown product
+    "Ultimate_RiscV",
+    "Ultimate_NiosII",
+    "Ultimate RiscV",
+    "U64MK1",
+    "U64MK1",
+    "U64MK2",
+};
+
 #if U64
 const char *getBoardRevision(void)
 {
@@ -92,6 +102,13 @@ const char *getProductString() {
     if (product >= sizeof(product_name) / sizeof(char *))
         product = 0;
     return  product_name[product];
+}
+
+const char *getProductFamily() {
+    uint8_t product = getProductId();
+    if (product >= sizeof(product_families) / sizeof(char *))
+        product = 0;
+    return  product_families[product];
 }
 
 char *getProductVersionString(char *buf, int sz, bool ascii) {

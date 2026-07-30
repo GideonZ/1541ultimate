@@ -209,7 +209,7 @@ int main(int argc, char** argv)
 	int i;
 
     uint32_t bin_offset = 0;
-    uint32_t size       = (1<<23); // 8M default
+    uint32_t size       = (1<<24); // 16M default
     uint32_t highest    = 0;
     int      segment    = -1;
     int      help       = 0;
@@ -220,7 +220,9 @@ int main(int argc, char** argv)
     char     name_out[1024];
     unsigned char *buffer;
     int      records = 0;
-    
+    const char *family = "";
+    const char *product = "";
+    int format = 0;
     FILE     *fi, *fo;
     
     if(argc == 1)
@@ -231,7 +233,7 @@ int main(int argc, char** argv)
         if(argv[i][0] == '-') { // option
             switch(argv[i][1]) {
             case 'o':
-                if(i != (argc-1)) {
+                if(argc >= (i+1)) {
                     bin_offset = strtoul(argv[i+1], 0, 0);
                     i++;
                 } else {
@@ -244,8 +246,12 @@ int main(int argc, char** argv)
                 help = 1;
                 break;
 
+            case '1':
+                format = 1;
+                break;
+
             case 's':
-                if(i != (argc-1)) {
+                if(argc >= (i+1)) {
                     size = strtoul(argv[i+1], 0, 0);
                     size_set = 1;
                     i++;
@@ -256,11 +262,37 @@ int main(int argc, char** argv)
                 break;
 
             case 'f':
-                if(i != (argc-1)) {
+                if(argc >= (i+1)) {
                     fill = strtoul(argv[i+1], 0, 0);
                     i++;
                 } else {
                     printf("-f option: no fill uint8_t given.\n");
+                    exit(1);
+                }
+                break;
+
+            case 'F':
+                if(argc >= (i+1)) {
+                    if (strcmp(argv[i+1], ".") != 0) {
+                        family = argv[i+1];
+                        format = 1;
+                    }
+                    i++;
+                } else {
+                    printf("-F option: family name not specified\n");
+                    exit(1);
+                }
+                break;
+
+            case 'P':
+                if(argc >= (i+1)) {
+                    if (strcmp(argv[i+1], ".") != 0) {
+                        product = argv[i+1];
+                        format = 1;
+                    }
+                    i++;
+                } else {
+                    printf("-P option: product name not specified\n");
                     exit(1);
                 }
                 break;
@@ -309,12 +341,26 @@ int main(int argc, char** argv)
         exit(-1);
     }
 
+    if (format) {
+        const uint32_t fingerprint = 0x4115ADDE;
+        fwrite(&fingerprint, 1, 4, fo);
+        char names[32];
+        memset(names, 0, 32);
+        strncpy(names, family, 16);
+        strncpy(names + 16, product, 16);
+        fwrite(names, 1, 32, fo);
+    }
+
     buffer = malloc(size+64); // some more, because we only check the beginning of a hex line address
     memset(buffer, (fill & 0xFF), size+64);
 
     // load hex file here
     highest = read_hex_file(fi, buffer, bin_offset, size, records, fo);
-    
+    if (!highest) {
+        printf("Reading hex file failed.\n");
+        exit(3);
+    }
+
     if (!records) {
         if(size_set) {
             fwrite(buffer, 1, size, fo);

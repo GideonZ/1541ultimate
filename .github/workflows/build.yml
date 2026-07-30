@@ -135,7 +135,7 @@ jobs:
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2"
 
       - name: Upload User Artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: update_package_${{ env.GIT_VERSION }}
           path: |
@@ -144,9 +144,10 @@ jobs:
             update_${{ env.GIT_VERSION }}.u2l
             update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
+            update_${{ env.GIT_VERSION }}.cfw
 
       - name: Upload Factory Artifacts U2+L
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: factory_package_u2pl_${{ env.GIT_VERSION }}
           path: |
@@ -157,7 +158,7 @@ jobs:
             target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit
 
       - name: Upload Factory Artifacts U64II
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: factory_package_U64e2_${{ env.GIT_VERSION }}
           path: |
