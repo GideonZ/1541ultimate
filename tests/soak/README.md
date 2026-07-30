@@ -10,10 +10,11 @@ they are not a release-gate functional suite.
 
 | Directory | Scope |
 | --- | --- |
-| `network/` | U64 network surfaces: ICMP, UDP/64 identity discovery, the separate TCP/64 DMA command channel, Telnet, FTP, REST, the optional modem listener, and audio/video UDP streams |
+| `network/` | Ultimate network surfaces: ICMP, UDP/64 identity discovery, the separate TCP/64 DMA command channel, Telnet, FTP, REST, the optional modem listener, and audio/video UDP streams |
 
-`network/u64_connection_test.py` is the entry point. The other `u64_*.py`
-files are its protocol drivers and shared runtime. The harness was imported
+`network/connection_test.py` is the entry point. The `*_probe.py` modules,
+`stream_monitor.py`, and `connection_runtime.py` are its protocol drivers and
+shared runtime. The harness was imported
 from ViviPi's `scripts/u64/` at commit `00ca1962ffe4356f7cca0c592bfb6e8519564927`.
 
 ## Running
@@ -24,16 +25,16 @@ library.
 
 ```bash
 # Inspect the complete CLI without contacting a device.
-tests/soak/network/u64_connection_test.py --help
+tests/soak/network/connection_test.py --help
 
 # Twelve-hour, one-runner concurrent soak with read/write probes and streams.
-tests/soak/network/u64_connection_test.py --profile soak -H u64
+tests/soak/network/connection_test.py --profile soak -H u64
 
-# Two-minute, five-runner stress profile with deliberately incomplete sessions.
-tests/soak/network/u64_connection_test.py --profile stress -H u64
+# Two-minute stress profile that saturates the four FTP and Telnet session slots.
+tests/soak/network/connection_test.py --profile stress -H u64
 
 # Short, read-only investigation.
-tests/soak/network/u64_connection_test.py --profile soak -H u64 \
+tests/soak/network/connection_test.py --profile soak -H u64 \
   --duration-s 300 --surface read --stream
 ```
 
@@ -47,7 +48,7 @@ Preserve timestamped output for diagnosis:
 mkdir -p logs/soak
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 set -o pipefail
-tests/soak/network/u64_connection_test.py --profile stress -H u64 2>&1 \
+tests/soak/network/connection_test.py --profile stress -H u64 2>&1 \
   | tee "logs/soak/u64-network-$stamp.log"
 ```
 

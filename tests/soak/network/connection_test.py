@@ -19,15 +19,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import u64_ftp  # noqa: E402
-import u64_http  # noqa: E402
-import u64_ident  # noqa: E402
-import u64_modem  # noqa: E402
-import u64_ping  # noqa: E402
-import u64_dma  # noqa: E402
-import u64_stream  # noqa: E402
-import u64_telnet  # noqa: E402
-from u64_connection_runtime import (  # noqa: E402
+import ftp_probe  # noqa: E402
+import http_probe  # noqa: E402
+import ident_probe  # noqa: E402
+import modem_probe  # noqa: E402
+import ping_probe  # noqa: E402
+import dma_probe  # noqa: E402
+import stream_monitor  # noqa: E402
+import telnet_probe  # noqa: E402
+from connection_runtime import (  # noqa: E402
     ProbeCorrectness,
     ProbeExecutionContext,
     ProbeOutcome,
@@ -61,7 +61,7 @@ PROFILE_SOAK = "soak"
 PROFILE_STRESS = "stress"
 SCHEDULE_SEQUENTIAL = "sequential"
 SCHEDULE_CONCURRENT = "concurrent"
-CONNECTION_STREAM_CHOICES = (u64_stream.StreamKind.AUDIO, u64_stream.StreamKind.VIDEO)
+CONNECTION_STREAM_CHOICES = (stream_monitor.StreamKind.AUDIO, stream_monitor.StreamKind.VIDEO)
 DEFAULT_CONNECTION_STREAMS = tuple(kind.value for kind in CONNECTION_STREAM_CHOICES)
 PROBE_RANDOM_SEED_ENV = "VIVIPI_CONNECTION_TEST_RANDOM_SEED"
 
@@ -131,13 +131,13 @@ HISTORICAL_CORRECTNESS_EVIDENCE = {
 }
 
 PROBE_RUNNERS = {
-    "ping": u64_ping.run_probe,
-    "ident": u64_ident.run_probe,
-    "dma": u64_dma.run_probe,
-    "telnet": u64_telnet.run_probe,
-    "ftp": u64_ftp.run_probe,
-    "http": u64_http.run_probe,
-    "modem": u64_modem.run_probe,
+    "ping": ping_probe.run_probe,
+    "ident": ident_probe.run_probe,
+    "dma": dma_probe.run_probe,
+    "telnet": telnet_probe.run_probe,
+    "ftp": ftp_probe.run_probe,
+    "http": http_probe.run_probe,
+    "modem": modem_probe.run_probe,
 }
 
 
@@ -178,7 +178,7 @@ class ExecutionState:
     shared_resource_registry_lock: threading.Lock = field(default_factory=threading.Lock)
     shared_resource_locks: dict[str, threading.Lock] = field(default_factory=dict)
     shared_resource_values: dict[str, object] = field(default_factory=dict)
-    stream_monitor: u64_stream.StreamMonitor | None = None
+    stream_monitor: stream_monitor.StreamMonitor | None = None
 
     def _derived_seed(self, *parts: object) -> int:
         digest = hashlib.blake2b(digest_size=16)
@@ -273,7 +273,7 @@ class ExecutionState:
             parts.append(f"{protocol}_p90_ms={self.percentile_ms(protocol, 90)}")
             parts.append(f"{protocol}_p99_ms={self.percentile_ms(protocol, 99)}")
         if self.stream_monitor is not None:
-            parts.extend(u64_stream.stream_summary_parts(self.stream_monitor.snapshots()))
+            parts.extend(stream_monitor.stream_summary_parts(self.stream_monitor.snapshots()))
         with self.output_lock:
             try:
                 print(f'{ts()} protocol=iteration result=INFO detail="{' '.join(parts)}"', flush=True)
@@ -379,28 +379,28 @@ def profile_overrides_help() -> str:
         "Profile precedence: if --profile is supplied, explicit --probes, --schedule, --runners, --surface, --mode, --*-surface, and --*-mode values override the profile.\n\n"
         f"{CORRECTNESS_DEGRADATION_HELP}\n\n"
         "Examples:\n"
-        "  ./u64_connection_test.py\n"
-        "  ./u64_connection_test.py --profile soak\n"
-        "  ./u64_connection_test.py --profile stress\n"
-        "  ./u64_connection_test.py --profile soak --duration-s 300\n"
-        f"  ./u64_connection_test.py --surface {ProbeSurface.READWRITE.value}\n"
-        f"  ./u64_connection_test.py --mode {ProbeCorrectness.OPEN.value}\n"
-        f"  ./u64_connection_test.py --mode {ProbeCorrectness.INCOMPLETE.value}\n"
-        "  ./u64_connection_test.py --probes ping,ident,dma,telnet,ftp,http\n"
-        "  ./u64_connection_test.py --schedule concurrent --runners 3\n"
-        f"  ./u64_connection_test.py --http-surface {ProbeSurface.READ.value}\n"
-        f"  ./u64_connection_test.py --ftp-surface {ProbeSurface.READWRITE.value} --telnet-surface {ProbeSurface.READ.value}\n"
-        f"  ./u64_connection_test.py --telnet-mode {ProbeCorrectness.INCOMPLETE.value}\n"
-        f"  ./u64_connection_test.py --schedule concurrent --runners 2 --ftp-mode {ProbeCorrectness.INVALID.value} --telnet-mode {ProbeCorrectness.INCOMPLETE.value}\n"
-        "  ./u64_connection_test.py --profile stress --runners 4\n"
-        "  ./u64_connection_test.py --profile soak --probes ping,http"
+        "  ./connection_test.py\n"
+        "  ./connection_test.py --profile soak\n"
+        "  ./connection_test.py --profile stress\n"
+        "  ./connection_test.py --profile soak --duration-s 300\n"
+        f"  ./connection_test.py --surface {ProbeSurface.READWRITE.value}\n"
+        f"  ./connection_test.py --mode {ProbeCorrectness.OPEN.value}\n"
+        f"  ./connection_test.py --mode {ProbeCorrectness.INCOMPLETE.value}\n"
+        "  ./connection_test.py --probes ping,ident,dma,telnet,ftp,http\n"
+        "  ./connection_test.py --schedule concurrent --runners 3\n"
+        f"  ./connection_test.py --http-surface {ProbeSurface.READ.value}\n"
+        f"  ./connection_test.py --ftp-surface {ProbeSurface.READWRITE.value} --telnet-surface {ProbeSurface.READ.value}\n"
+        f"  ./connection_test.py --telnet-mode {ProbeCorrectness.INCOMPLETE.value}\n"
+        f"  ./connection_test.py --schedule concurrent --runners 2 --ftp-mode {ProbeCorrectness.INVALID.value} --telnet-mode {ProbeCorrectness.INCOMPLETE.value}\n"
+        "  ./connection_test.py --profile stress --runners 4\n"
+        "  ./connection_test.py --profile soak --probes ping,http"
     )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Repeated U64 connectivity checks. Default: 12h soak with concurrent readwrite probes and audio+video streams. "
+            "Repeated Ultimate connectivity checks. Default: 12h soak with concurrent readwrite probes and audio+video streams. "
             "ident targets UDP port 64 JSON discovery; dma targets the DMA-capable TCP port 64 command endpoint."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -519,7 +519,9 @@ def profile_execution_config(profile: str) -> ExecutionConfig:
             profile=PROFILE_STRESS,
             probes=("dma", "ftp", "telnet", "http", "ftp", "telnet", "ping", "ident"),
             schedule=SCHEDULE_CONCURRENT,
-            runners=5,
+            # Two duplicated FTP and Telnet lanes per runner saturate each
+            # firmware service's four-session capacity without exceeding it.
+            runners=2,
             duration_s=DEFAULT_PROFILE_DURATION_S,
             probe_correctness={
                 "ping": ProbeCorrectness.COMPLETE,
@@ -628,13 +630,13 @@ def validate_execution_config(config: ExecutionConfig) -> None:
             )
     if config.schedule != SCHEDULE_CONCURRENT:
         return
-    if config.runners <= u64_http.PROBE_WRITE_RUNNER_SLOT_COUNT:
+    if config.runners <= http_probe.PROBE_WRITE_RUNNER_SLOT_COUNT:
         return
     if config.probe_surfaces.get("http") != ProbeSurface.READWRITE:
         return
     raise ValueError(
         "concurrent HTTP readwrite probing supports at most "
-        f"{u64_http.PROBE_WRITE_RUNNER_SLOT_COUNT} runners; got {config.runners}"
+        f"{http_probe.PROBE_WRITE_RUNNER_SLOT_COUNT} runners; got {config.runners}"
     )
 
 
@@ -811,21 +813,21 @@ def run_extended(config: ExecutionConfig, settings: RuntimeSettings) -> int:
             except BrokenPipeError:
                 raise SystemExit(0)
 
-    stream_monitor = None
+    active_stream_monitor = None
     if config.streams:
-        stream_monitor = u64_stream.StreamMonitor(
-            u64_stream.StreamRuntimeSettings(host=settings.host, network_password=settings.network_password),
-            tuple(u64_stream.StreamKind(stream) for stream in config.streams),
+        active_stream_monitor = stream_monitor.StreamMonitor(
+            stream_monitor.StreamRuntimeSettings(host=settings.host, network_password=settings.network_password),
+            tuple(stream_monitor.StreamKind(stream) for stream in config.streams),
             logger=emit_stream_log,
         )
-        state.stream_monitor = stream_monitor
+        state.stream_monitor = active_stream_monitor
 
     result = 0
     try:
-        if stream_monitor is not None:
-            stream_monitor.start()
+        if active_stream_monitor is not None:
+            active_stream_monitor.start()
         if should_prime_ftp_temp_dir:
-            u64_ftp.try_prime_temp_dir(settings, log_fn=lambda detail: log("ftp", "INFO", detail))
+            ftp_probe.try_prime_temp_dir(settings, log_fn=lambda detail: log("ftp", "INFO", detail))
         if config.runners == 1:
             run_runner_loop(1, config, settings, state, stop_event, deadline_s=deadline_s)
         else:
@@ -843,10 +845,10 @@ def run_extended(config: ExecutionConfig, settings: RuntimeSettings) -> int:
                 for thread in threads:
                     thread.join(timeout=0.2)
     finally:
-        final_stream_snapshots: tuple[u64_stream.StreamSnapshot, ...] = ()
-        if stream_monitor is not None:
-            final_stream_snapshots = stream_monitor.snapshots()
-            stream_monitor.stop()
+        final_stream_snapshots: tuple[stream_monitor.StreamSnapshot, ...] = ()
+        if active_stream_monitor is not None:
+            final_stream_snapshots = active_stream_monitor.snapshots()
+            active_stream_monitor.stop()
         if final_stream_snapshots and any(snapshot.status == "FAIL" or snapshot.packets_received == 0 for snapshot in final_stream_snapshots):
             result = 1
         if state.failure_count:

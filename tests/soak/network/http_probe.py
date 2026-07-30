@@ -10,7 +10,7 @@ import urllib.parse
 from contextlib import nullcontext
 from typing import Any
 
-from u64_connection_runtime import (
+from connection_runtime import (
     ProbeCorrectness,
     ProbeExecutionContext,
     ProbeOutcome,

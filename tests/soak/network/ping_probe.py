@@ -4,7 +4,7 @@ import re
 import subprocess
 import time
 
-from u64_connection_runtime import ProbeOutcome, RuntimeSettings, first_non_empty_line
+from connection_runtime import ProbeOutcome, RuntimeSettings, first_non_empty_line
 
 
 def run_probe(settings: RuntimeSettings, correctness, *, context=None) -> ProbeOutcome:

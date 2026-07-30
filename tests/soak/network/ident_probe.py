@@ -6,7 +6,7 @@ import socket
 import time
 from typing import Callable
 
-from u64_connection_runtime import (
+from connection_runtime import (
     ProbeExecutionContext,
     ProbeOutcome,
     ProbeSurface,

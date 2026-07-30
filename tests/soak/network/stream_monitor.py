@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
-import u64_dma
+import dma_probe
 
 
 DEFAULT_CONTROL_PORT = 64
@@ -20,6 +20,7 @@ AUDIO_START_RETRY_DELAY_S = 0.25
 STREAM_CONTROL_RETRY_DELAYS_S = (0.05, 0.1)
 MAX_ERROR_LOGS = 20
 ERROR_LOG_INTERVAL = 100
+ARP_PRIMER_PAYLOAD = b"\x00\x00"
 VIDEO_PACKET_SIZE = 780
 AUDIO_PACKET_SIZE = 770
 DEBUG_PACKET_SIZE = 1444
@@ -164,7 +165,7 @@ def _send_command(settings: StreamRuntimeSettings, payload: bytes) -> None:
     for delay_s in (*STREAM_CONTROL_RETRY_DELAYS_S, None):
         command_sock = socket.create_connection((settings.host, settings.control_port), timeout=2)
         try:
-            u64_dma.authenticate_socket(command_sock, settings.network_password)
+            dma_probe.authenticate_socket(command_sock, settings.network_password)
             command_sock.sendall(payload)
             return
         except Exception as error:
@@ -420,6 +421,10 @@ class _StreamReceiver(threading.Thread):
                 self.tracker.note_idle()
                 continue
             if self.allowed_sources and address[0] not in self.allowed_sources:
+                continue
+            # DataStreamer sends this probe while resolving the destination's
+            # MAC address, before enabling the actual stream.
+            if payload == ARP_PRIMER_PAYLOAD:
                 continue
             self.tracker.note_packet(payload)
 

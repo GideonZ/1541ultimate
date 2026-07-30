@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Callable
 
-from u64_connection_runtime import (
+from connection_runtime import (
     ProbeCorrectness,
     ProbeExecutionContext,
     ProbeOutcome,

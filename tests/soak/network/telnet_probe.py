@@ -11,8 +11,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-import u64_http
-from u64_connection_runtime import (
+import http_probe
+from connection_runtime import (
     ProbeCorrectness,
     ProbeExecutionContext,
     ProbeOutcome,
@@ -45,6 +45,8 @@ TELNET_KEY_DOWN = b"\x1b[B"
 TELNET_KEY_LEFT = b"\x1b[D"
 TELNET_KEY_RIGHT = b"\x1b[C"
 TELNET_KEY_UP = b"\x1b[A"
+TELNET_KEY_INCREASE = b"+"
+TELNET_KEY_DECREASE = b"-"
 TELNET_KEY_ESC = b"\x1b"
 TELNET_KEY_ENTER = b"\r"
 TELNET_FAILURE_MARKERS = (b"incorrect", b"failed", b"denied", b"invalid")
@@ -605,18 +607,18 @@ def session_extract_audio_mixer_value(session: TelnetRunnerSession, text: str) -
 
 
 def session_read_audio_mixer_item(session: TelnetRunnerSession, *, shared_state: Any | None = None) -> str:
-    with u64_http.audio_mixer_shared_lock(shared_state):
+    with http_probe.audio_mixer_shared_lock(shared_state):
         text = session_refresh_audio_mixer(session)
         _text, current = session_extract_audio_mixer_value(session, text)
-        normalized_current = u64_http.remember_audio_mixer_value(shared_state, current)
+        normalized_current = http_probe.remember_audio_mixer_value(shared_state, current)
         return f"current={normalized_current}"
 
 
 def audio_mixer_write_right_steps(settings: RuntimeSettings, current: str, target: str) -> int:
-    _current_value, values, _body_bytes = u64_http.audio_mixer_item_state(settings)
-    normalized_values = tuple(u64_http.normalize_audio_mixer_value(value) for value in values)
-    normalized_current = u64_http.normalize_audio_mixer_value(current)
-    normalized_target = u64_http.normalize_audio_mixer_value(target)
+    _current_value, values, _body_bytes = http_probe.audio_mixer_item_state(settings)
+    normalized_values = tuple(http_probe.normalize_audio_mixer_value(value) for value in values)
+    normalized_current = http_probe.normalize_audio_mixer_value(current)
+    normalized_target = http_probe.normalize_audio_mixer_value(target)
     if normalized_current not in normalized_values:
         raise RuntimeError(f"unsupported Audio Mixer write current value: {current}")
     if normalized_target not in normalized_values:
@@ -626,11 +628,11 @@ def audio_mixer_write_right_steps(settings: RuntimeSettings, current: str, targe
     return (target_index - current_index) % len(normalized_values)
 
 
-def audio_mixer_picker_sequence(settings: RuntimeSettings, current: str, target: str) -> tuple[bytes, int]:
-    _current_value, values, _body_bytes = u64_http.audio_mixer_item_state(settings)
-    normalized_values = tuple(u64_http.normalize_audio_mixer_value(value) for value in values)
-    normalized_current = u64_http.normalize_audio_mixer_value(current)
-    normalized_target = u64_http.normalize_audio_mixer_value(target)
+def audio_mixer_adjustment_sequence(settings: RuntimeSettings, current: str, target: str) -> tuple[bytes, int]:
+    _current_value, values, _body_bytes = http_probe.audio_mixer_item_state(settings)
+    normalized_values = tuple(http_probe.normalize_audio_mixer_value(value) for value in values)
+    normalized_current = http_probe.normalize_audio_mixer_value(current)
+    normalized_target = http_probe.normalize_audio_mixer_value(target)
     if normalized_current not in normalized_values:
         raise RuntimeError(f"unsupported Audio Mixer write current value: {current}")
     if normalized_target not in normalized_values:
@@ -638,8 +640,8 @@ def audio_mixer_picker_sequence(settings: RuntimeSettings, current: str, target:
     current_index = normalized_values.index(normalized_current)
     target_index = normalized_values.index(normalized_target)
     if target_index < current_index:
-        return TELNET_KEY_UP, current_index - target_index
-    return TELNET_KEY_DOWN, target_index - current_index
+        return TELNET_KEY_DECREASE, current_index - target_index
+    return TELNET_KEY_INCREASE, target_index - current_index
 
 
 def is_save_flash_dialog(text: str) -> bool:
@@ -680,31 +682,30 @@ def session_save_changes_to_flash(session: TelnetRunnerSession) -> str:
 
 
 def authoritative_audio_mixer_value(settings: RuntimeSettings, *, shared_state: Any | None = None) -> str:
-    current, _values, _body_bytes = u64_http.audio_mixer_item_state(settings)
-    return u64_http.remember_audio_mixer_value(shared_state, current)
+    current, _values, _body_bytes = http_probe.audio_mixer_item_state(settings)
+    return http_probe.remember_audio_mixer_value(shared_state, current)
 
 
 def session_write_audio_mixer_item(settings: RuntimeSettings, session: TelnetRunnerSession, target: str, *, shared_state: Any | None = None) -> str:
-    with u64_http.audio_mixer_shared_lock(shared_state):
+    with http_probe.audio_mixer_shared_lock(shared_state):
         text = session_refresh_audio_mixer(session)
         text, current = session_extract_audio_mixer_value(session, text)
-        normalized_current = u64_http.remember_audio_mixer_value(shared_state, current)
-        normalized_target = u64_http.normalize_audio_mixer_value(target)
-        direction_key, steps = audio_mixer_picker_sequence(settings, current, target)
+        # Audio Mixer opens on Vol Master; Vol UltiSid 1 is the next row.
+        text = session_send(session, TELNET_KEY_DOWN, view_state="audio_mixer")
+        normalized_current = http_probe.remember_audio_mixer_value(shared_state, current)
+        normalized_target = http_probe.normalize_audio_mixer_value(target)
+        adjustment_key, steps = audio_mixer_adjustment_sequence(settings, current, target)
         if normalized_current != normalized_target:
-            session_send(session, TELNET_KEY_ENTER, view_state="audio_mixer")
-            session_read(session, max_empty_reads=2, view_state="audio_mixer")
             for _ in range(steps):
-                session_send(session, direction_key, view_state="audio_mixer")
-            text = session_send(session, TELNET_KEY_ENTER, view_state="audio_mixer")
+                text = session_send(session, adjustment_key, view_state="audio_mixer")
             text = session_save_changes_to_flash(session) or text
-            u64_http.stage_audio_mixer_value(shared_state, normalized_target)
-        normalized_authoritative = u64_http.verify_audio_mixer_value(settings, normalized_target, shared_state=shared_state)
+            http_probe.stage_audio_mixer_value(shared_state, normalized_target)
+        normalized_authoritative = http_probe.verify_audio_mixer_value(settings, normalized_target, shared_state=shared_state)
         session.last_text = text
         session.view_state = "unknown"
         session.menu_focus = "unknown"
-        direction = "up" if direction_key == TELNET_KEY_UP else "down"
-        return f"from={normalized_current} to={normalized_authoritative} picker={direction} steps={steps}"
+        adjustment = "increase" if adjustment_key == TELNET_KEY_INCREASE else "decrease"
+        return f"from={normalized_current} to={normalized_authoritative} adjustment={adjustment} steps={steps}"
 
 
 def abort_after_sequence(settings: RuntimeSettings, *payloads: bytes, read_initial: bool = True) -> str:
@@ -830,7 +831,7 @@ def extract_audio_mixer_write_value(text: str) -> str:
     match = AUDIO_MIXER_WRITE_VALUE_PATTERN.search(text)
     if match is None:
         raise RuntimeError("missing Audio Mixer write value")
-    return u64_http.normalize_audio_mixer_value(match.group(1))
+    return http_probe.normalize_audio_mixer_value(match.group(1))
 
 
 def focus_audio_mixer_write_item(sock) -> tuple[str, str]:
@@ -845,12 +846,10 @@ def read_audio_mixer_item(sock) -> str:
 
 def write_audio_mixer_item(settings: RuntimeSettings, sock, target: str) -> str:
     text, current = focus_audio_mixer_write_item(sock)
-    direction_key, steps = audio_mixer_picker_sequence(settings, current, target)
-    send_and_read(sock, TELNET_KEY_ENTER)
-    read_until_idle(sock, max_empty_reads=2)
+    text = send_and_read(sock, TELNET_KEY_DOWN)
+    adjustment_key, steps = audio_mixer_adjustment_sequence(settings, current, target)
     for _ in range(steps):
-        text = send_and_read(sock, direction_key, require_change=True)
-    text = send_and_read(sock, TELNET_KEY_ENTER)
+        text = send_and_read(sock, adjustment_key, require_change=True)
     first_left = send_and_read(sock, TELNET_KEY_LEFT)
     if is_save_flash_dialog(first_left):
         text = send_and_read(sock, TELNET_KEY_ENTER)
@@ -874,10 +873,10 @@ def write_audio_mixer_item(settings: RuntimeSettings, sock, target: str) -> str:
             else:
                 raise RuntimeError("missing telnet text: Save changes to Flash")
     updated = extract_audio_mixer_write_value(text)
-    if updated != u64_http.normalize_audio_mixer_value(target):
+    if updated != http_probe.normalize_audio_mixer_value(target):
         raise RuntimeError(f"verification mismatch expected={target} got={updated}")
-    direction = "up" if direction_key == TELNET_KEY_UP else "down"
-    return f"from={current} to={updated} picker={direction} steps={steps}"
+    adjustment = "increase" if adjustment_key == TELNET_KEY_INCREASE else "decrease"
+    return f"from={current} to={updated} adjustment={adjustment} steps={steps}"
 
 
 def enter_speaker_settings(sock) -> str:
