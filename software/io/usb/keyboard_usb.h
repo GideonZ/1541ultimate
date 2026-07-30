@@ -96,6 +96,7 @@ public:
     bool has_injected_key(int c) const;
     void remove_injected_key(int c);
     void wait_free(void);
+    bool anyKeyPressed(void) const;
     void clear_buffer(void);
 
 	void restPress(uint8_t row, uint8_t col_bit);

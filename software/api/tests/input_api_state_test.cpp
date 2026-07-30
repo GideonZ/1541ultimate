@@ -7,8 +7,29 @@
 
 #include <initializer_list>
 
+// Drives Keyboard_C64::wait_free(), which busy-waits through wait_ms(). Letting
+// the stub count calls and let go of the keys makes the wait deterministic.
+struct WaitFreeProbe {
+    int calls;
+    int release_usb_at;          // 0 = never
+    volatile uint8_t *row_register;
+    int release_row_at;          // 0 = never
+};
+
+static WaitFreeProbe wait_free_probe = { 0, 0, 0, 0 };
+
 extern "C" void wait_ms(int)
 {
+    wait_free_probe.calls++;
+    if (wait_free_probe.release_usb_at && (wait_free_probe.calls >= wait_free_probe.release_usb_at)) {
+        uint8_t release[USB_DATA_SIZE] = { 0 };
+        wait_free_probe.release_usb_at = 0;
+        system_usb_keyboard.process_data(release); // the user lets go of the USB key
+    }
+    if (wait_free_probe.release_row_at && (wait_free_probe.calls >= wait_free_probe.release_row_at)) {
+        wait_free_probe.release_row_at = 0;
+        *wait_free_probe.row_register = 0xFF;      // ... and of the C64 key
+    }
 }
 
 namespace {
@@ -368,6 +389,120 @@ TEST(KeyboardC64StateTest, MatrixLookupTranslatesUiKeyCodes)
     EXPECT_EQ(0x04, Keyboard_C64::matrixModifierFlag(ctrl->row, ctrl->col));
     EXPECT_EQ(0x00, Keyboard_C64::matrixModifierFlag(8, 0));
     EXPECT_EQ(0x00, Keyboard_C64::matrixToKeyCode(8, 0, 0));
+}
+
+// USB HID usage 0x29 (escape) maps to C64 matrix row 7, column 7: RUN/STOP.
+static const uint8_t USB_KEY_ESCAPE = 0x29;
+static const int MATRIX_RUNSTOP_ROW = 7;
+static const uint8_t MATRIX_RUNSTOP_BIT = 0x80;
+
+// Must outlive every test: the global keyboard keeps writing through this
+// pointer once setMatrix() has been handed it.
+static volatile uint8_t menu_exit_matrix[11] = { 0 };
+
+namespace {
+
+class AccessibleHost : public GenericHost
+{
+public:
+    bool exists(void) { return true; }
+    bool is_accessible(void) { return true; }
+};
+
+// system_usb_keyboard is global: never leave keys held for the next test.
+void release_usb_keys(void)
+{
+    uint8_t release[USB_DATA_SIZE] = { 0x00 };
+    system_usb_keyboard.process_data(release);
+}
+
+// The menu owns the keyboard and ESC is still held down: the state the firmware
+// is in at the moment the user leaves the menu.
+void arm_menu_with_escape_held(void)
+{
+    uint8_t escape[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_ESCAPE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+    release_usb_keys();
+    system_usb_keyboard.setMatrix(menu_exit_matrix);
+    system_usb_keyboard.enableMatrix(false);
+    system_usb_keyboard.process_data(escape);
+
+    wait_free_probe.calls = 0;
+    wait_free_probe.release_usb_at = 0;
+    wait_free_probe.row_register = 0;
+    wait_free_probe.release_row_at = 0;
+}
+
+} // namespace
+
+// Why the wait exists: the matrix mirrors the live USB report, so a key that is
+// still held when the menu gives the matrix back lands on the C64 right away.
+// ESC is RUN/STOP, and the SID player returns to the menu on RUN/STOP.
+TEST(KeyboardC64StateTest, HeldUsbEscapeIsRunStopOnTheC64Matrix)
+{
+    arm_menu_with_escape_held();
+    EXPECT_EQ(0x00, menu_exit_matrix[MATRIX_RUNSTOP_ROW]);
+
+    system_usb_keyboard.enableMatrix(true); // menu hands the matrix back
+    EXPECT_EQ(MATRIX_RUNSTOP_BIT, menu_exit_matrix[MATRIX_RUNSTOP_ROW]);
+
+    release_usb_keys();
+}
+
+TEST(KeyboardC64StateTest, MenuExitWaitsForHeldUsbKeyToBeReleased)
+{
+    Keyboard_C64 keyboard(NULL, NULL, NULL, NULL); // no host: only the USB wait runs
+
+    arm_menu_with_escape_held();
+    EXPECT_TRUE(system_usb_keyboard.anyKeyPressed());
+
+    wait_free_probe.release_usb_at = 5;
+    keyboard.wait_free();
+    EXPECT_EQ(5, wait_free_probe.calls); // it really waited the exit key out
+    EXPECT_FALSE(system_usb_keyboard.anyKeyPressed());
+
+    system_usb_keyboard.enableMatrix(true);
+    EXPECT_EQ(0x00, menu_exit_matrix[MATRIX_RUNSTOP_ROW]); // no phantom RUN/STOP
+
+    release_usb_keys();
+}
+
+// Neither keyboard may cut the other's wait short: the added USB wait must not
+// consume the budget the C64 matrix scan has always had.
+TEST(KeyboardC64StateTest, MenuExitWaitsForBothKeyboards)
+{
+    AccessibleHost host;
+    volatile uint8_t row_register = 0x7F; // a C64 key is down too
+    volatile uint8_t col_register = 0xFF;
+    Keyboard_C64 keyboard(&host, &row_register, &col_register, NULL);
+
+    arm_menu_with_escape_held();
+    wait_free_probe.row_register = &row_register;
+    wait_free_probe.release_usb_at = 5;
+    wait_free_probe.release_row_at = 9;
+
+    keyboard.wait_free();
+    EXPECT_EQ(9, wait_free_probe.calls); // waited past the USB release for the matrix
+    EXPECT_EQ(0xFF, col_register);       // rows deselected again
+
+    release_usb_keys();
+}
+
+TEST(KeyboardC64StateTest, MenuExitWaitIsBoundedWhenTheKeysAreNeverReleased)
+{
+    AccessibleHost host;
+    volatile uint8_t row_register = 0x7F;
+    volatile uint8_t col_register = 0xFF;
+    Keyboard_C64 keyboard(&host, &row_register, &col_register, NULL);
+
+    arm_menu_with_escape_held(); // both keys stay down forever
+
+    keyboard.wait_free();
+    // Worst case: each keyboard gets its own full budget, and no more.
+    EXPECT_EQ(2 * KEYBOARD_WAIT_FREE_TIMEOUT_MS, wait_free_probe.calls);
+    EXPECT_EQ(0xFF, col_register);
+
+    release_usb_keys();
 }
 
 TEST(RouteInputMenuTranslationTest, CollectsMenuKeysWithModifiers)

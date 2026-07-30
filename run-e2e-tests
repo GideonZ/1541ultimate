@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# run-e2e-tests — run every hardware end-to-end test against one Ultimate device.
+#
+# Each suite drives the real firmware over REST/FTP/Telnet, so a device has to
+# be reachable and idle. Suites run sequentially; the exit status is non-zero if
+# any of them fails.
+
+set -uo pipefail
+
+SCRIPT_NAME=$(basename "$0")
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+HOST="${U64_HOST:-u64}"
+PASSWORD="${U64_PASS:-}"
+TIMEOUT="30.0"
+SELECTED=()
+LIST_ONLY=false
+STOP_ON_FAIL=false
+
+C_BLUE='\033[1;34m'
+C_GREEN='\033[1;32m'
+C_RED='\033[1;31m'
+C_YEL='\033[1;33m'
+C_NC='\033[0m'
+
+# name|relative path|space separated arguments (@HOST@/@PASS@/@TIMEOUT@ are substituted)
+SUITES=(
+  "readmem-writemem|tools/api/readmem_writemem_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
+  "menu-screen|tools/api/menu_screen_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
+  "input|tools/api/input_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
+  "prg-context-menu|tools/io/filemanager/prg_context_menu_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
+  "browser-long-filename|tools/io/filemanager/browser_long_filename_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
+  "ftp-client|tools/io/filemanager/ftp_client_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
+  "prg-load-path-trim|tools/io/prg-load-path-trim-test.sh|-H @HOST@ -p @PASS@"
+  "temp-auto-cleanup|tools/io/temp-auto-cleanup/temp-auto-cleanup-test.sh|-H @HOST@ -p @PASS@"
+  "printer|tools/io/printer/printer_test.py|-H @HOST@ -p @PASS@"
+)
+
+show_help() {
+    cat << EOF
+Usage: $SCRIPT_NAME [OPTIONS] [HOST]
+
+Run every hardware end-to-end test suite sequentially against one Ultimate
+device and print a pass/fail summary.
+
+Arguments:
+  HOST                      Device host name or IP. May also be given with -H.
+
+Options:
+  -h, --help                Show this help message and exit.
+  -H, --host <host>         Device host name or IP (default: \$U64_HOST or u64).
+  -p, --password <pass>     REST and FTP password (default: \$U64_PASS, empty).
+  -t, --timeout <seconds>   Per-request REST timeout (default: $TIMEOUT).
+  -s, --suite <name>        Run only this suite. Repeatable.
+  -l, --list                List the suite names and exit.
+  -x, --stop-on-fail        Stop at the first failing suite.
+
+Suites:
+$(for entry in "${SUITES[@]}"; do printf '  %-24s %s\n' "${entry%%|*}" "$(echo "$entry" | cut -d'|' -f2)"; done)
+
+Notes:
+  The device must be idle: these suites open the menu, reset the machine and
+  mount disks. Some of them change device settings and restore them on exit.
+
+Examples:
+  $SCRIPT_NAME u64
+  $SCRIPT_NAME -H 192.168.0.64 -p secret
+  $SCRIPT_NAME -H u64 -s prg-context-menu -s menu-screen
+  $SCRIPT_NAME --list
+EOF
+}
+
+die() {
+    echo -e "${C_RED}ERROR: $*${C_NC}" >&2
+    exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help) show_help; exit 0 ;;
+        -H|--host) [[ $# -ge 2 ]] || die "$1 needs a value"; HOST="$2"; shift 2 ;;
+        -p|--password) [[ $# -ge 2 ]] || die "$1 needs a value"; PASSWORD="$2"; shift 2 ;;
+        -t|--timeout) [[ $# -ge 2 ]] || die "$1 needs a value"; TIMEOUT="$2"; shift 2 ;;
+        -s|--suite) [[ $# -ge 2 ]] || die "$1 needs a value"; SELECTED+=("$2"); shift 2 ;;
+        -l|--list) LIST_ONLY=true; shift ;;
+        -x|--stop-on-fail) STOP_ON_FAIL=true; shift ;;
+        -*) die "Unknown option: $1" ;;
+        *) HOST="$1"; shift ;;
+    esac
+done
+
+if [[ "$LIST_ONLY" == true ]]; then
+    for entry in "${SUITES[@]}"; do
+        printf '%-24s %s\n' "${entry%%|*}" "$(echo "$entry" | cut -d'|' -f2)"
+    done
+    exit 0
+fi
+
+selected_wanted() {
+    local name=$1
+    [[ ${#SELECTED[@]} -eq 0 ]] && return 0
+    local want
+    for want in "${SELECTED[@]}"; do
+        [[ "$want" == "$name" ]] && return 0
+    done
+    return 1
+}
+
+for want in "${SELECTED[@]-}"; do
+    [[ -z "$want" ]] && continue
+    found=false
+    for entry in "${SUITES[@]}"; do
+        [[ "${entry%%|*}" == "$want" ]] && found=true
+    done
+    [[ "$found" == true ]] || die "Unknown suite: $want (use --list)"
+done
+
+echo -e "${C_YEL}Ultimate end-to-end test run${C_NC}"
+echo -e "Host:    ${HOST}"
+echo -e "Timeout: ${TIMEOUT}s"
+
+PASSED=()
+FAILED=()
+SKIPPED=()
+START_ALL=$SECONDS
+
+for entry in "${SUITES[@]}"; do
+    name="${entry%%|*}"
+    path="$(echo "$entry" | cut -d'|' -f2)"
+    raw_args="$(echo "$entry" | cut -d'|' -f3-)"
+
+    selected_wanted "$name" || continue
+
+    full_path="$ROOT/$path"
+    if [[ ! -f "$full_path" ]]; then
+        echo -e "\n${C_YEL}SKIP: $name (missing $path)${C_NC}"
+        SKIPPED+=("$name")
+        continue
+    fi
+
+    args=()
+    for token in $raw_args; do
+        token="${token//@HOST@/$HOST}"
+        token="${token//@TIMEOUT@/$TIMEOUT}"
+        if [[ "$token" == "@PASS@" ]]; then
+            args+=("$PASSWORD")
+        else
+            args+=("$token")
+        fi
+    done
+
+    if [[ "$full_path" == *.py ]]; then
+        cmd=(python3 "$full_path" "${args[@]}")
+    else
+        cmd=(bash "$full_path" "${args[@]}")
+    fi
+
+    echo -e "\n${C_BLUE}SUITE: $name${C_NC}\n$(printf '%.s-' {1..60})"
+    start=$SECONDS
+    if "${cmd[@]}"; then
+        echo -e "${C_GREEN}PASS: $name ($((SECONDS - start))s)${C_NC}"
+        PASSED+=("$name")
+    else
+        echo -e "${C_RED}FAIL: $name ($((SECONDS - start))s)${C_NC}"
+        FAILED+=("$name")
+        if [[ "$STOP_ON_FAIL" == true ]]; then
+            break
+        fi
+    fi
+done
+
+echo -e "\n${C_YEL}Summary after $((SECONDS - START_ALL))s${C_NC}\n$(printf '%.s-' {1..60})"
+for name in "${PASSED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_GREEN}PASS${C_NC}  $name"; done
+for name in "${SKIPPED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_YEL}SKIP${C_NC}  $name"; done
+for name in "${FAILED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_RED}FAIL${C_NC}  $name"; done
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    exit 1
+fi
+echo -e "\n${C_GREEN}SUCCESS: all selected suites passed.${C_NC}"

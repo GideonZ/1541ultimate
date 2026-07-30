@@ -235,6 +235,36 @@ TEST(KeyboardUsbMatrixTest, ResetRestoreAndFreezeAreGatedAndNotStale)
 	EXPECT_EQ(0x00, matrix[10]);
 }
 
+TEST(KeyboardUsbMatrixTest, AnyKeyPressedTracksTheLiveReport)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_SPACE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t left_shift[USB_DATA_SIZE] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	EXPECT_FALSE(keyboard.anyKeyPressed());
+
+	keyboard.process_data(press);
+	EXPECT_TRUE(keyboard.anyKeyPressed());
+	keyboard.process_data(release);
+	EXPECT_FALSE(keyboard.anyKeyPressed());
+
+	keyboard.process_data(left_shift); // modifier only still counts as held
+	EXPECT_TRUE(keyboard.anyKeyPressed());
+	keyboard.process_data(release);
+	EXPECT_FALSE(keyboard.anyKeyPressed());
+}
+
+TEST(KeyboardUsbMatrixTest, WaitFreeGivesUpOnAKeyThatIsNeverReleased)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, USB_KEY_SPACE, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	keyboard.process_data(press);
+	keyboard.wait_free(); // must return instead of spinning forever
+	EXPECT_TRUE(keyboard.anyKeyPressed());
+}
+
 TEST(KeyboardUsbQueueTest, RemoveInjectedKeyDropsPendingDirection)
 {
 	Keyboard_USB keyboard;

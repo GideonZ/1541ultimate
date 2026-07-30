@@ -62,6 +62,53 @@ extern "C" void SetVicCrop(int x, int y, int x_size, int y_size)
 void SetInternalPLL(const t_intpll_mode mode);
 void SetExternalPLL(const uint8_t *blob);
 
+const TVideoMode sm_1080p50 =  { 31, 148869856, 1920, 528, 44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 }; // 16:9
+const TVideoMode sm_1080p60 =  { 16, 148069608, 1920, 88,  44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 }; // 16:9
+const TVideoMode sm_576p50  =  { 17,  27067270,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 }; // 4:3
+const TVideoMode sm_480p60  =  {  1,  25126964,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 }; // 4:3
+const TVideoMode sm_720p50  =  { 19,  74434928, 1280, 440, 40, 220, 1,   720,  5, 5, 20, 1, 1, 0 }; // 16:9
+const TVideoMode sm_720p60  =  {  4,  74034804, 1280, 110, 40, 220, 1,   720,  5, 5, 20, 1, 1, 0 }; // 16:9
+
+const TVideoMode sm_800x600x50  =  {  0,  34944000,  800, 40, 112,  88, 1,   600, 30, 5, 37, 1, 1, 0 }; // 4:3  (1040 x 672)
+const TVideoMode sm_800x600x60  =  {  0,  41028000,  800, 40, 124,  88, 1,   600, 20, 5, 25, 1, 1, 0 }; // 4:3  (1052 x 650)
+
+const TVideoMode sm_1024x768x50 =  {  0,  54163200,  1024, 24, 136, 160, 0, 768,  3, 6, 29, 0, 1, 0 }; // 4:3  (1344 x 806)
+const TVideoMode sm_1024x768x60 =  {  0,  64995840,  1024, 24, 136, 160, 0, 768,  3, 6, 29, 0, 1, 0 }; // 4:3  (1344 x 806)
+
+const TVideoMode sm_1280x1024x50 = {  0,  92164800,  1280, 48, 112, 248, 1, 1024, 27, 3, 38, 1, 1, 0 }; // 5:4 Frontporch 1 → 27 lines
+const TVideoMode sm_1280x1024x60 = {  0, 106546560,  1280, 48, 112, 248, 1, 1024,  1, 3, 24, 1, 1, 0 }; // 5:4 Backporch 38 → 24 lines
+
+const uint8_t ext_pll_640x480[]      = { 0x57, 0x00, 0x01, 0x01, 0x20, 0xd7, 0xbb, 0xf1 }; // 525 / 263 (gear 5)
+const uint8_t ext_pll_720x576[]      = { 0x57, 0x00, 0x01, 0x01, 0x07, 0xd1, 0x82, 0x2d }; // 125 / 56 (gear 5)
+const uint8_t ext_pll_800x600x60[]   = { 0x57, 0x00, 0x01, 0x01, 0x00, 0x50, 0x02, 0x8c }; // 5/2 (gear 2)
+const uint8_t ext_pll_800x600x50[]   = { 0x57, 0x00, 0x02, 0x02, 0x02, 0x80, 0x3a, 0x29 }; // 20/9 (gear 2)
+
+// 57 00 03 03 51 66 9a 6b
+// const uint8_t ext_pll_1024x768x60[]  = { 0x57, 0x00, 0x02, 0x02, 0x44, 0x45, 0x02, 0x09 }; // 546 / 263
+const uint8_t ext_pll_1024x768x60[]  = { 0x57, 0x00, 0x03, 0x03, 0x51, 0x66, 0x9a, 0x6b }; // 434 / 263 
+const uint8_t ext_pll_1024x768x50[]  = { 0x57, 0x00, 0x01, 0x01, 0x01, 0xf0, 0x2b, 0x6c }; // 31 / 9 (gear 2)
+
+const uint8_t ext_pll_1280x1024x60[] = { 0x57, 0x00, 0x01, 0x01, 0x0d, 0x31, 0xfb, 0x2c }; // 211 / 65
+const uint8_t ext_pll_1280x1024x50[] = { 0x57, 0x00, 0x01, 0x01, 0x0d, 0x31, 0x02, 0xec }; // 211 / 72
+const uint8_t ext_pll_1920x1280x50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD }; // 250 / 91
+const uint8_t ext_pll_1920x1280x60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 }; // 1375 / 263
+
+#define AVI_4_3   { regs->VID_A = 1; regs->VID_R = 9;  regs->VID_M = 1; regs->VID_Y = 0; }
+#define AVI_16_9  { regs->VID_A = 1; regs->VID_R = 10; regs->VID_M = 2; regs->VID_Y = 1; }
+
+extern "C" void SetVideoModeTester()
+{
+    volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
+    SetInternalPLL(e_INTPLL_45_52);
+    SetExternalPLL(ext_pll_1920x1280x60);
+    regs->gearbox = 2;
+    SetScanModeRegisters(regs, &sm_720p60);
+    SetVicCrop(8, 0, 384, 240);
+    regs->hscaler = 0x09;
+    regs->vscaler = 0x15;
+    regs->x_offset = 160;
+}
+
 extern "C" void SetVideoMode1080p(t_video_mode mode, t_hdmi_mode hdmimode)
 {
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)U64II_HDMI_REGS;
@@ -69,36 +116,6 @@ extern "C" void SetVideoMode1080p(t_video_mode mode, t_hdmi_mode hdmimode)
     const t_video_color_timing *ct = color_timings[(int)mode];
     bool pal = (ct->audio_div == 77);
 
-    const TVideoMode sm_1080p50 =  { 31, 148869856, 1920, 528, 44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 }; // 16:9
-    const TVideoMode sm_1080p60 =  { 16, 148069608, 1920, 88,  44, 148, 1,  1080,  4, 5, 36, 1, 1, 0 }; // 16:9
-    const TVideoMode sm_576p50  =  { 17,  27067270,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 }; // 4:3
-    const TVideoMode sm_480p60  =  {  1,  25126964,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 }; // 4:3
-    const TVideoMode sm_720p50  =  { 19,  74434928, 1280, 440, 40, 220, 1,   720,  5, 5, 20, 1, 1, 0 }; // 16:9
-    const TVideoMode sm_720p60  =  {  4,  74034804, 1280, 110, 40, 220, 1,   720,  5, 5, 20, 1, 1, 0 }; // 16:9
-
-    const TVideoMode sm_800x600x50  =  {  0,  34944000,  800, 40, 112,  88, 1,   600, 30, 5, 37, 1, 1, 0 }; // 4:3  (1040 x 672)
-    const TVideoMode sm_800x600x60  =  {  0,  41028000,  800, 40, 124,  88, 1,   600, 20, 5, 25, 1, 1, 0 }; // 4:3  (1052 x 650)
-
-    const TVideoMode sm_1024x768x50 =  {  0,  54163200,  1024, 24, 136, 160, 0, 768,  3, 6, 29, 0, 1, 0 }; // 4:3  (1344 x 806)
-    const TVideoMode sm_1024x768x60 =  {  0,  64995840,  1024, 24, 136, 160, 0, 768,  3, 6, 29, 0, 1, 0 }; // 4:3  (1344 x 806)
-
-    const TVideoMode sm_1280x1024x50 = {  0,  92164800,  1280, 48, 112, 248, 1, 1024, 27, 3, 38, 1, 1, 0 }; // 5:4 Frontporch 1 → 27 lines
-    const TVideoMode sm_1280x1024x60 = {  0, 106546560,  1280, 48, 112, 248, 1, 1024,  1, 3, 24, 1, 1, 0 }; // 5:4 Backporch 38 → 24 lines
-
-    const uint8_t ext_pll_640x480[]      = { 0x57, 0x00, 0x01, 0x01, 0x20, 0xd7, 0xbb, 0xf1 }; // 525 / 263 (gear 5)
-    const uint8_t ext_pll_720x576[]      = { 0x57, 0x00, 0x01, 0x01, 0x07, 0xd1, 0x82, 0x2d }; // 125 / 56 (gear 5)
-    const uint8_t ext_pll_800x600x60[]   = { 0x57, 0x00, 0x01, 0x01, 0x00, 0x50, 0x02, 0x8c }; // 5/2 (gear 2)
-    const uint8_t ext_pll_800x600x50[]   = { 0x57, 0x00, 0x02, 0x02, 0x02, 0x80, 0x3a, 0x29 }; // 20/9 (gear 2)
-
-    // 57 00 03 03 51 66 9a 6b
-    // const uint8_t ext_pll_1024x768x60[]  = { 0x57, 0x00, 0x02, 0x02, 0x44, 0x45, 0x02, 0x09 }; // 546 / 263
-    const uint8_t ext_pll_1024x768x60[]  = { 0x57, 0x00, 0x03, 0x03, 0x51, 0x66, 0x9a, 0x6b }; // 434 / 263 
-    const uint8_t ext_pll_1024x768x50[]  = { 0x57, 0x00, 0x01, 0x01, 0x01, 0xf0, 0x2b, 0x6c }; // 31 / 9 (gear 2)
-
-    const uint8_t ext_pll_1280x1024x60[] = { 0x57, 0x00, 0x01, 0x01, 0x0d, 0x31, 0xfb, 0x2c }; // 211 / 65
-    const uint8_t ext_pll_1280x1024x50[] = { 0x57, 0x00, 0x01, 0x01, 0x0d, 0x31, 0x02, 0xec }; // 211 / 72
-    const uint8_t ext_pll_1920x1280x50[] = { 0x57, 0x00, 0x01, 0x01, 0x0F, 0xA2, 0xCA, 0xAD }; // 250 / 91
-    const uint8_t ext_pll_1920x1280x60[] = { 0x57, 0x00, 0x01, 0x01, 0x55, 0xf7, 0x82, 0x89 }; // 1375 / 263
 
     // Horizontal Scaler:
     //       384	 400
@@ -135,9 +152,6 @@ extern "C" void SetVideoMode1080p(t_video_mode mode, t_hdmi_mode hdmimode)
     // 1D	1440	1620
     // 1E	1536	1728
     // 1F	1728	1944
-
-#define AVI_4_3   { regs->VID_A = 1; regs->VID_R = 9;  regs->VID_M = 1; regs->VID_Y = 0; }
-#define AVI_16_9  { regs->VID_A = 1; regs->VID_R = 10; regs->VID_M = 2; regs->VID_Y = 1; }
 
     switch(hdmimode) {
     case e_480p_576p:

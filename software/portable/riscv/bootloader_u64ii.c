@@ -108,7 +108,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_pal[i];
+        i2c_regs->data_out = init_ntsc[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
@@ -122,7 +122,7 @@ static void init_ext_pll()
     i2c_regs->data_out = 0x08; // Length
     i2c_spin_busy(i2c_regs);
     for(int i=0; i < 8; i++) {
-        i2c_regs->data_out = init_hdmi_50[i];
+        i2c_regs->data_out = init_hdmi_60[i];
         i2c_spin_busy(i2c_regs);
     }
     i2c_regs->stop = 1;
