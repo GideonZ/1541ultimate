@@ -80,7 +80,7 @@ FileType *FileTypeUpdate :: test_type(BrowsableDirEntry *br)
     }
 
     if (getFpgaType() >= 3) {
-        return; // From 3 onwards, we only support "cfw"
+        return NULL; // From 3 onwards, we only support "cfw"
     }
 
     if(strcmp(inf->extension, getProductUpdateFileExtension())==0)
