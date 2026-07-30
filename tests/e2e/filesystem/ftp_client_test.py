@@ -10,7 +10,7 @@ fixtures and a full command log, so every device-side operation is verified
 against the remote server's real filesystem state and command trace.
 
 Style follows the existing repo E2E tests:
-  * tests/e2e/printer/printer_test.py  - http.client REST client, Connection:
+  * tests/e2e/io/printer/printer_test.py - http.client REST client, Connection:
     close, X-Password only when supplied, numbered [NN] checks, FTP verify,
     hard-crash detection via /v1/version, cleanup in finally.
   * tests/e2e/api/menu_screen_test.py    - 2000-byte menu-screen decode, the

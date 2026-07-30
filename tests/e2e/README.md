@@ -18,16 +18,15 @@ protocol used to drive it:
 | Folder | Primary production owner | Coverage |
 |---|---|---|
 | `api/` | `software/api/` | REST contracts for input, menu screen, memory, and PRG runners |
-| `c64/` | `software/io/c64/` | C64 integration and freezer regressions |
 | `filemanager/` | `software/filemanager/`, `software/userinterface/` | Browser actions, change notification, and managed `/Temp` lifecycle |
 | `filesystem/` | `software/filesystem/` | Filesystem implementations, including the remote FTP filesystem |
+| `io/` | `software/io/` | Device-facing I/O subsystems; nested by production package (`c64/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behavior over the normal Telnet UI |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `printer/` | `software/io/printer/` | Virtual IEC printer workloads and output verification |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Larger subsystem-specific instructions may use a local README, as `monitor/`
-and `printer/` do.
+and `io/printer/` do.
 
 ## First run
 
@@ -79,8 +78,9 @@ Use these conventions so the tree can grow without inventing a new layout for
 each feature:
 
 1. Put the suite under the folder for the production subsystem that owns the
-   behavior. The transport is not the category: a REST-driven printer test
-   still belongs in `printer/`. Add a new top-level folder only for a real
+   behavior. Mirror a meaningful production package boundary where one exists:
+   a REST-driven printer test belongs in `io/printer/`, matching
+   `software/io/printer/`. Add a new top-level folder only for a real
    production subsystem that does not fit an existing one.
 2. Use lowercase snake case for directories and files. Executable suites end
    in `_test.py` or `_test.sh`; put qualifiers before `_test`
