@@ -89,7 +89,7 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
     }
     if (address >= 0xA000 && address <= 0xBFFF) {
         if ((cpu_port & 0x03) == 0x03) {
-            return ((volatile uint8_t *)U64_BASIC_BASE)[address - 0xA000];
+            return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
         }
         return raw;
     }
@@ -97,14 +97,12 @@ static uint8_t read_cpu_mapped_byte(volatile uint8_t *ram, bool freezerMenu, uin
         if ((cpu_port & 0x03) == 0x00) {
             return raw;
         }
-        if (cpu_port & 0x04) {
-            return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
-        }
-        return ((volatile uint8_t *)U64_CHARROM_BASE)[address - 0xD000];
+        // Character ROM or I/O both resolve through the live visible aperture.
+        return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
     }
     if (address >= 0xE000) {
         if (cpu_port & 0x02) {
-            return ((volatile uint8_t *)U64_KERNAL_BASE)[address - 0xE000];
+            return read_visible_byte(ram, freezerMenu, address, screen_backup, ram_backup);
         }
         return raw;
     }
@@ -130,17 +128,19 @@ static void copy_raw_block(volatile uint8_t *ram, bool freezerMenu, uint32_t add
         uint32_t overlap;
         if ((address < 2048) && ((address + len) > 1024)) {
             uint32_t start = (address > 1024) ? address : 1024;
+            uint32_t end = 2048;
             overlap = address + len - start;
-            if (overlap > 1024) {
-                overlap = 1024;
+            if (overlap > (end - start)) {
+                overlap = end - start;
             }
             memcpy(dst + (start - address), ((uint8_t *)screen_backup) + (start - 1024), overlap);
         }
         if ((address < 4096) && ((address + len) > 2048)) {
             uint32_t start = (address > 2048) ? address : 2048;
+            uint32_t end = 4096;
             overlap = address + len - start;
-            if (overlap > 2048) {
-                overlap = 2048;
+            if (overlap > (end - start)) {
+                overlap = end - start;
             }
             memcpy(dst + (start - address), ((uint8_t *)ram_backup) + (start - 2048), overlap);
         }
@@ -176,22 +176,6 @@ void U64Machine :: after_memory_access(uint8_t *pb, bool freezerMenu, bool stopp
     }
 }
 
-bool U64Machine :: begin_stopped_session()
-{
-    bool wasStopped = is_stopped();
-    if (!wasStopped) {
-        stop(false);
-    }
-    return !wasStopped;
-}
-
-void U64Machine :: end_stopped_session(bool stopped_it)
-{
-    if (stopped_it) {
-        resume();
-    }
-}
-
 void U64Machine :: get_all_memory(uint8_t *pb)
 {
     // Match the REST C64_DMA_RAW_READ path: stop the machine and read the visible C64 aperture directly.
@@ -218,11 +202,20 @@ void U64Machine :: read_cpu_block(uint16_t address, uint8_t *dst, uint32_t len, 
     bool freezerMenu = before_memory_access(true, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
     uint8_t saved_serve = C64_SERVE_CONTROL;
+    uint8_t saved_ddr = 0;
+    uint8_t saved_port = 0;
 
     C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    override_cpu_port(ram, freezerMenu, cpu_port, &saved_ddr, &saved_port,
+                      screen_backup, ram_backup);
     for (uint32_t offset = 0; offset < len; offset++) {
-        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu, (uint16_t)(address + offset), cpu_port, screen_backup, ram_backup);
+        dst[offset] = read_cpu_mapped_byte(ram, freezerMenu,
+                                           (uint16_t)(address + offset),
+                                           cpu_port, screen_backup,
+                                           ram_backup);
     }
+    restore_cpu_port(ram, freezerMenu, saved_ddr, saved_port, screen_backup,
+                     ram_backup);
     C64_SERVE_CONTROL = saved_serve;
     after_memory_access(0, freezerMenu, stopped_it);
 }
@@ -266,8 +259,12 @@ uint8_t U64Machine :: get_cpu_port(void)
     bool stopped_it = false;
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
     uint8_t ddr = read_frozen_byte(ram, freezerMenu, 0x0000, screen_backup, ram_backup) & 0x07;
     uint8_t port = read_frozen_byte(ram, freezerMenu, 0x0001, screen_backup, ram_backup) & 0x07;
+    C64_SERVE_CONTROL = saved_serve;
 
     after_memory_access(0, freezerMenu, stopped_it);
     return (uint8_t)(((port & ddr) | ((uint8_t)(~ddr) & 0x07)) & 0x07);
@@ -279,6 +276,21 @@ uint8_t U64Machine :: peek(uint16_t address)
     bool freezerMenu = before_memory_access(isFrozen, &stopped_it);
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
     uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu, stopped_it);
+    return byte;
+}
+
+uint8_t U64Machine :: peek_raw(uint16_t address)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(true, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    uint8_t byte = read_frozen_byte(ram, freezerMenu, address, screen_backup, ram_backup);
+    C64_SERVE_CONTROL = saved_serve;
 
     after_memory_access(0, freezerMenu, stopped_it);
     return byte;
@@ -333,6 +345,36 @@ void U64Machine :: poke(uint16_t address, uint8_t byte)
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
+void U64Machine :: poke_raw(uint16_t address, uint8_t byte)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(true, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+    C64_SERVE_CONTROL = saved_serve;
+
+    after_memory_access(0, freezerMenu, stopped_it);
+}
+
+void U64Machine :: poke_cpu_rom(volatile uint8_t *image_ptr, uint8_t byte)
+{
+    if (!image_ptr) {
+        return;
+    }
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(true, &stopped_it);
+    uint8_t saved_serve = C64_SERVE_CONTROL;
+
+    C64_SERVE_CONTROL = saved_serve | SERVE_WHILE_STOPPED;
+    *image_ptr = byte;
+    C64_SERVE_CONTROL = saved_serve;
+
+    after_memory_access(0, freezerMenu, stopped_it);
+}
+
 void U64Machine :: poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port)
 {
     bool stopped_it = false;
@@ -353,6 +395,22 @@ void U64Machine :: poke_visible(uint16_t address, uint8_t byte)
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
 
     write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
+
+    after_memory_access(0, freezerMenu, stopped_it);
+}
+
+void U64Machine :: poke_visible_preserving_freeze_restore(uint16_t address,
+                                                          uint8_t byte)
+{
+    bool stopped_it = false;
+    bool freezerMenu = before_memory_access(false, &stopped_it);
+    volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
+
+    write_frozen_byte(ram, freezerMenu, address, byte, screen_backup,
+                      ram_backup);
+    if (freezerMenu && address < 0x0400) {
+        ((uint8_t *)ram_backup)[address] = byte;
+    }
 
     after_memory_access(0, freezerMenu, stopped_it);
 }

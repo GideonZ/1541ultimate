@@ -6,6 +6,9 @@
 #include "ui_elements.h"
 #include "memory_backend.h"
 #include "monitor_bookmarks.h"
+#include "monitor_breakpoints.h"
+#include "monitor_debug.h"
+#include "monitor_debug_session.h"
 
 enum MonitorError {
     MONITOR_OK = 0,
@@ -22,6 +25,49 @@ enum MachineMonitorView {
     MONITOR_VIEW_SCREEN,
     MONITOR_VIEW_BINARY
 };
+
+// Central Debug step chooser. Before any Debug execution command runs, the
+// monitor classifies it. With a parked context every step is a direct step:
+// the session completes steps in fetch-lagging banks (RAM under ROM, visible
+// ROM) without releasing the CPU into them (architectural emulation of
+// control flow, plain-RAM trampoline for linear ops), so no bank needs an
+// experimental mode. The only stop left is a Step Into in such a bank without
+// a parked context, where no authoritative register file exists to step from.
+enum DebugStepOp {
+    DEBUG_OP_OVER = 0,    // Step Over (D)
+    DEBUG_OP_TRACE,       // Trace / Step Into (T)
+    DEBUG_OP_OUT,         // Step Out (U)
+    DEBUG_OP_GO,          // Go (G)
+    DEBUG_OP_CURSOR       // Go to cursor (K)
+};
+
+// Memory source the live CPU fetches from at the step site. Reliability of a
+// direct step depends on this and on the UI mode.
+enum DebugStepSource {
+    DEBUG_SRC_RAM = 0,        // plain RAM: direct step is reliable everywhere
+    DEBUG_SRC_VISIBLE_ROM,    // visible BASIC/KERNAL/CHAR ROM image
+    DEBUG_SRC_RAM_UNDER_ROM,  // RAM beneath a ROM window: direct single-step flaky
+    DEBUG_SRC_IO              // I/O space
+};
+
+enum DebugStepPlan {
+    DEBUG_PLAN_DIRECT = 0,    // run the step
+    DEBUG_PLAN_STOP           // no safe way; stop and show the alert
+};
+
+struct DebugStepDecision {
+    DebugStepPlan plan;
+    const char *alert;   // one-line, <=38 chars, or 0 when no alert is shown
+    const char *reason;  // stable reason code for logs/traces
+};
+
+// Pure classifier. Host-testable with no machine access. over_runs_callee is
+// true for Step Over of a JSR: its completion breakpoint at the caller-side
+// fall-through is fetched only after the callee's sustained run, which is
+// what makes that one contextless launch reliable in fetch-lagging banks.
+DebugStepDecision debug_classify_step(DebugStepOp op, DebugStepSource src,
+                                      bool ui_freeze, bool have_parked_context,
+                                      bool over_runs_callee = false);
 
 enum MonitorScreenCharset {
     MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS = 0,
@@ -60,7 +106,7 @@ struct MachineMonitorState
     uint8_t disasm_offset;
     bool illegal_enabled;
     uint8_t screen_charset;
-    uint8_t cpu_port;
+    uint8_t view_cpu_port;
 };
 
 struct Clipboard {
@@ -76,16 +122,25 @@ struct Cursor {
 const char *monitor_error_text(MonitorError error);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
+void monitor_reset_saved_cpu_view(void);
 void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
-void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
+void monitor_format_status_line(char *out, uint8_t view_cpu_port, uint8_t vic_bank);
+void monitor_format_status_line(char *out, uint8_t view_cpu_port, uint8_t live_cpu_port,
+                                uint8_t vic_bank);
+void monitor_format_breakpoint_mismatch(char *out, int out_len,
+                                        MonitorBackingStore target,
+                                        MonitorBackingStore current);
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
 MonitorError monitor_parse_byte_value(const char *text, uint8_t *value);
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value);
 MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
+MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
+                                             uint16_t *dest, bool *relocate,
+                                             uint16_t *reloc_start, uint16_t *reloc_end);
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end, uint8_t *needle, int *needle_len);
 
@@ -96,6 +151,8 @@ uint8_t monitor_screen_code_for_char(char c,
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value);
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest);
+void monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
+                                      uint16_t dest, uint16_t reloc_start, uint16_t reloc_end);
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len);
 int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, char *out, int out_len);
 int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, uint16_t *out_addrs, int max_addrs);
@@ -141,6 +198,8 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
+    bool go_pending_has_context;
+    DebugContext go_pending_context;
     uint8_t memory_bytes_per_row;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
@@ -183,6 +242,16 @@ class MachineMonitor : public UIObject
     const char *hunt_picker_label;
     uint8_t asm_edit_part;
     uint8_t asm_edit_pending;
+    enum { ASM_LANE_MAX_ROWS = 256 };
+    mutable bool asm_lane_valid;
+    mutable uint8_t asm_lane_view_cpu_port;
+    mutable bool asm_lane_illegal_enabled;
+    mutable uint16_t asm_lane_rows[ASM_LANE_MAX_ROWS];
+    mutable uint8_t asm_lane_lengths[ASM_LANE_MAX_ROWS];
+    mutable uint8_t asm_lane_forced_bytes[ASM_LANE_MAX_ROWS];
+    mutable int asm_lane_count;
+    mutable int asm_lane_top;
+    mutable int asm_lane_selected;
     // Per-instruction undo trail used by DEL in ASM edit mode. Each slot
     // captures the byte we are about to overwrite so DEL can restore it.
     enum { ASM_EDIT_HISTORY_MAX = 16 };
@@ -209,6 +278,29 @@ class MachineMonitor : public UIObject
     uint8_t last_live_vic_bank;
     bool vic_bank_override;
     MonitorBookmarks *bookmarks;
+    MonitorDebug debug;
+    MonitorBreakpoints breakpoints;
+    class DebugSession *debug_session;
+    bool debug_cursor_override;
+    bool debug_entry_context_valid;
+    DebugContext debug_entry_context;
+    uint16_t debug_entry_addr;
+    bool debug_run_window_refreeze_enabled;
+    bool reset_exits_monitor;
+    bool reset_exit_pending;
+    bool release_host_after_exit;
+    bool reopen_after_reset;
+    bool reopen_on_debug_reset;
+    bool restore_debug_after_reset;
+    bool deferred_debug_go_pending;
+    DebugContext deferred_debug_go_context;
+    bool breakpoint_popup_active;
+    uint8_t breakpoint_selected;
+    // One-line transient Debug status/alert shown on the bottom row while Debug
+    // is active (refusals, notes). Single line, kept to the 38-column alert
+    // budget. Cleared at the start of the next Debug action.
+    char debug_status_text[40];
+    bool debug_status_visible;
     bool bookmark_popup_active;
     uint8_t bookmark_selected;
     char bookmark_status_text[40];
@@ -248,6 +340,7 @@ class MachineMonitor : public UIObject
     void draw_header();
     void draw_status();
     void draw_help();
+    void draw_popup_overlays();
     void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();
@@ -312,6 +405,56 @@ class MachineMonitor : public UIObject
                         bool template_mode = false, bool uppercase = true);
     bool prompt_hunt_command(const char *title, char *buffer, int max_len);
     void toggle_help();
+    bool debug_active(void) const { return debug.is_active(); }
+    bool debug_input_active(void) const { return debug.is_active() || breakpoint_popup_active; }
+    int  debug_handle_key(int key);
+    bool debug_enter(void);
+    void debug_leave(void);
+    void debug_sync_cursor_to_context(void);
+    bool debug_handle_terminal_result(DebugSession::Result result);
+    void debug_request_over(void);
+    void debug_request_trace(void);
+    void debug_request_out(void);
+    void debug_request_go(void);
+    void debug_request_cursor(void);
+    void debug_show_status(const char *message);
+    void debug_clear_status(void);
+    DebugStepSource debug_step_source(uint16_t pc, uint8_t cpu_port) const;
+    uint8_t debug_exec_cpu_port(const DebugContext *from) const;
+    // Resolve the step chooser for the operation at start_pc. Returns true when
+    // the caller may proceed to run the operation; false when the operation was
+    // stopped with an alert and must not run.
+    bool debug_resolve_step(DebugStepOp op, uint16_t start_pc,
+                            DebugContext *from,
+                            bool over_runs_callee = false);
+    bool debug_has_breakpoint(void) const;
+    bool debug_has_enabled_breakpoint(void) const;
+    MonitorBackingStore breakpoint_target_for_view(uint16_t address) const;
+    MonitorBackingStore breakpoint_target_for_live_cpu(uint16_t address) const;
+    void show_breakpoint_mapping_note(uint16_t address, MonitorBackingStore target);
+    void debug_toggle_breakpoint(void);
+    void debug_open_breakpoint_popup(void);
+    void edit_breakpoint_label(uint8_t slot);
+    int  debug_breakpoint_popup_handle_key(int key);
+    void debug_close_breakpoint_popup(void);
+    void debug_render_breakpoint_popup(void);
+    void ensure_debug_pc_visible(void);
+    void debug_cleanup_session(void);
+    void restore_debug_mode_after_reset(void);
+    DebugSession *ensure_debug_session(void);
+    bool debug_capture_context(DebugContext *out);
+    int  handle_reset_shortcut(void);
+    void clear_pending_go(void);
+    // After a freeze-mode debug step the firmware chrome rows (UI title and
+    // border lines) are overwritten by the live BASIC screen. Call this after
+    // any step that may have been in freeze mode: it re-establishes the chrome
+    // via set_screen_title() and redraws the monitor window via redraw_full()
+    // when the active debug session indicates the render target was invalidated.
+    // No-op in overlay mode because overlay sessions disable freeze/refreeze
+    // run windows.
+    void debug_full_restore_screen(void);
+    void restore_underlying_status_row(void);
+    void draw_debug_footer(void);
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
     void show_bookmark_status(uint8_t slot, const MonitorBookmarkSlot *bookmark, int kind);
@@ -323,7 +466,6 @@ class MachineMonitor : public UIObject
     bool restore_bookmark(uint8_t slot);
     uint8_t return_stack_push_current(void);
     bool return_stack_pop(ReturnStackEntry *entry, uint8_t *index);
-    bool target_visible(uint16_t target) const;
     void follow_to_target(uint16_t target);
     bool follow_target(uint16_t *target);
     bool follow_current(void);
@@ -361,14 +503,29 @@ class MachineMonitor : public UIObject
     uint16_t next_poll_interval_ms(void);
     void reset_poll_deadline(void);
     uint8_t disasm_length(uint16_t address) const;
+    void disasm_lane_invalidate(void);
+    void disasm_lane_reset(uint16_t address);
+    void disasm_lane_ensure(void) const;
+    void disasm_lane_extend_forward_to(int index) const;
+    void disasm_lane_sync_state(void);
+    uint8_t disasm_lane_length_at(int index) const;
+    uint16_t disasm_lane_next_addr_at(int index) const;
+    void disasm_lane_append(uint16_t address, uint8_t forced_length) const;
+    void disasm_lane_prepend(uint16_t address, uint8_t forced_length);
+    bool disasm_lane_prepend_previous(void);
+    void disasm_lane_rebuild_suffix_from_current(void);
+    void disasm_visible_addresses(uint16_t *rows, uint8_t *lengths, int count) const;
+    bool disasm_same_source(uint16_t a, uint16_t b) const;
+    bool disasm_crosses_source_boundary(uint16_t start, uint16_t end) const;
+    bool disasm_is_io_source(uint16_t address) const;
+    bool disasm_explicitly_targets(uint16_t candidate, uint16_t address) const;
+    bool disasm_find_prev_addr(uint16_t address, uint16_t *previous) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
-    uint16_t disasm_next_addr(uint16_t address);
-    uint16_t disasm_prev_addr(uint16_t address);
-    uint16_t disasm_prev_visible_addr(uint16_t address);
+    void disasm_position_current_at_row(int row);
+    uint16_t disasm_next_addr(uint16_t address) const;
+    uint16_t disasm_prev_addr(uint16_t address) const;
     int disasm_visible_row(uint16_t address) const;
-    uint16_t disasm_advance_rows(uint16_t address, int rows);
-    uint16_t disasm_rewind_rows(uint16_t address, int rows);
     void restore_disasm_cursor_row(int row);
     void step_disassembly(int lines);
     void page_disassembly(int lines);
@@ -378,10 +535,25 @@ class MachineMonitor : public UIObject
 
 public:
     MachineMonitor(UserInterface *ui, MemoryBackend *backend);
+    void set_debug_run_window_refreeze_enabled(bool enabled);
+    void set_reset_exits_monitor(bool enabled);
+    bool consume_release_host_after_exit(void);
+    bool has_deferred_debug_go(void) const { return deferred_debug_go_pending; }
+    void dispatch_deferred_debug_go(void);
+    void request_reopen_after_reset(void);
+    void request_debug_reset_cancel(void);
+    void invalidate_live_cpu_port_view(void);
+    bool is_debug_session_active(void) const;
+    // Test/inspection accessor for the transient Debug status line.
+    const char *debug_status_message(void) const {
+        return debug_status_visible ? debug_status_text : "";
+    }
+    bool consume_reopen_after_reset(void);
     void init(Screen *screen, Keyboard *keyboard);
     void deinit(void);
     int poll(int);
-    bool consume_pending_go(uint16_t *address);
+    bool consume_pending_go(uint16_t *address, DebugContext *context = 0,
+                            bool *has_context = 0);
 };
 
 #endif

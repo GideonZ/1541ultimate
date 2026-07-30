@@ -1,4 +1,5 @@
 #include "u64_memory_backend.h"
+#include "monitor_debug_u64.h"
 #include "u64_machine.h"
 #include "u64.h"
 #include "filemanager.h"
@@ -11,11 +12,10 @@ extern uint8_t _default_chars_bin_start[4096];
 
 namespace {
 
-// These buffers are filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page),
-// which writes 32-bit words and therefore requires 4-byte alignment. As plain uint8_t
-// arrays they were only byte-aligned; depending on .bss layout they could land on an
-// unaligned address, causing an unaligned 32-bit store trap on Nios2 when the KERNAL ROM
-// cache is loaded on monitor entry. Force word alignment to keep the DMA target valid.
+// Filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page) via
+// 32-bit word stores, so the buffers must stay 4-byte aligned. As plain byte
+// arrays they could land unaligned in .bss and trap the Nios2 on the first
+// 32-bit store when the ROM cache loads on monitor entry. Keep alignas(4).
 alignas(4) static uint8_t monitor_basic_rom[8192];
 alignas(4) static uint8_t monitor_kernal_rom[8192];
 alignas(4) static uint8_t monitor_char_rom[4096];
@@ -110,11 +110,6 @@ static CpuRegionMapping cpu_region_mapping(uint16_t address, uint8_t cpu_port)
     return MAP_RAM;
 }
 
-static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_port, uint8_t monitor_cpu_port)
-{
-    return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
-}
-
 bool U64MemoryBackend :: freeze_available(void) const
 {
     return machine && !machine->is_accessible();
@@ -169,6 +164,24 @@ void U64MemoryBackend :: set_frozen(bool on)
     }
 }
 
+bool U64MemoryBackend :: reset_machine(void)
+{
+    if (!machine) {
+        return false;
+    }
+    clear_observed_live_cpu_port();
+    if (stopped_machine_for_session) {
+        machine->end_stopped_session(stopped_machine_for_session);
+        stopped_machine_for_session = false;
+    }
+    if (machine->is_accessible()) {
+        machine->unfreeze();
+    }
+    machine->reset();
+    load_monitor_rom_cache(machine);
+    return true;
+}
+
 uint8_t U64MemoryBackend :: read(uint16_t address)
 {
     if (!machine) {
@@ -176,21 +189,15 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
-    bool use_cached_rom = machine->is_accessible() || is_frozen() ||
-            !uses_live_mapping_for_address(address, live_cpu_port, cpu_port);
 
-    if (read_monitor_rom_byte(address, cpu_port, &rom_value) && use_cached_rom) {
+    if (read_monitor_rom_byte(address, cpu_port, &rom_value)) {
         return rom_value;
     }
-    if (machine->is_accessible()) {
-        return machine->peek_cpu(address, cpu_port);
+    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
+        return machine->peek_visible(address);
     }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
-        return machine->peek_cpu(address, cpu_port);
-    }
-    return machine->peek(address);
+    return machine->peek_raw(address);
 }
 
 void U64MemoryBackend :: write(uint16_t address, uint8_t value)
@@ -200,17 +207,12 @@ void U64MemoryBackend :: write(uint16_t address, uint8_t value)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
-    uint8_t live_cpu_port = machine->get_cpu_port();
 
-    if (machine->is_accessible()) {
-        machine->poke_cpu(address, value, cpu_port);
+    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
+        machine->poke_visible(address, value);
         return;
     }
-    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
-        machine->poke_cpu(address, value, cpu_port);
-        return;
-    }
-    machine->poke(address, value);
+    machine->poke_raw(address, value);
 }
 
 void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
@@ -223,7 +225,33 @@ void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len
 
 uint8_t U64MemoryBackend :: get_live_cpu_port(void)
 {
+    // The cpu_port currently in effect for the live machine, in priority order:
+    //  1. the port captured at the last debug stop, while one is held;
+    //  2. when frozen, the monitor's view bank -- the freezer serves memory
+    //     through it and the 6510 is halted, so there is no live fetch and a
+    //     DMA $01 read would add nothing;
+    //  3. otherwise a live DMA read of $00/$01, whose bus access also settles
+    //     the visible-ROM fetch path before a single-step BRK is placed. A
+    //     running single step always lands here, because begin_run_window()
+    //     unfreezes before the step, so the bus-settle behaviour is preserved.
+    if (observed_live_cpu_port_valid) {
+        return observed_live_cpu_port & 0x07;
+    }
+    if (machine && machine->is_accessible()) {
+        return get_monitor_cpu_port();
+    }
     return machine ? machine->get_cpu_port() : 0;
+}
+
+void U64MemoryBackend :: set_observed_live_cpu_port(uint8_t cpu_port)
+{
+    observed_live_cpu_port = cpu_port & 0x07;
+    observed_live_cpu_port_valid = true;
+}
+
+void U64MemoryBackend :: clear_observed_live_cpu_port(void)
+{
+    observed_live_cpu_port_valid = false;
 }
 
 uint8_t U64MemoryBackend :: get_live_vic_bank(void)
@@ -232,11 +260,16 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
         return 0;
     }
 
-    uint8_t dd00 = machine->peek_cpu(0xDD00, 0x07);
+    uint8_t dd00 = machine->peek_visible(0xDD00);
     return (uint8_t)(3 - (dd00 & 0x03));
 }
 
 uint8_t U64MemoryBackend :: monitor_poll_hz(void) const
 {
     return (C64_VIDEOFORMAT & VIDEO_FMT_60_HZ) ? 60 : 50;
+}
+
+DebugSession *U64MemoryBackend :: create_debug_session(void)
+{
+    return create_u64_debug_session(this);
 }

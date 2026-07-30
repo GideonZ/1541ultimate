@@ -1972,12 +1972,17 @@ void U64Config :: SetResampleFilter(t_video_mode m)
 #pragma GCC push_options
 #pragma GCC optimize ("O1")
 
-void U64Config :: DetectSidImpl(uint8_t *buffer)
+bool U64Config :: DetectSidImpl(uint8_t *buffer)
 {
     uint8_t result1, result2, result3, result4;
 
-    while (C64_PEEK(0xD012) != 0xFF)
-        ;
+    uint32_t timeout = 1000000;
+    while (C64_PEEK(0xD012) != 0xFF) {
+        if (!timeout--) {
+            memset(buffer, 0, 64);
+            return false;
+        }
+    }
 
     for(int x = 0; x < 16; x++) {
 
@@ -2036,6 +2041,7 @@ void U64Config :: DetectSidImpl(uint8_t *buffer)
 */
 
 
+    return true;
 }
 
 #pragma GCC pop_options
@@ -2087,8 +2093,13 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
         // Prepare the machine to execute the detection code
 
     	portENTER_CRITICAL();
-        DetectSidImpl(buffer);
+        bool detected = DetectSidImpl(buffer);
         portEXIT_CRITICAL();
+
+        if (!detected) {
+            printf("SID detector timeout waiting for VIC raster\n");
+            break;
+        }
 
         // Now analyze the data
         if ((buffer[17] == 2) && (buffer[1] == 0))  {
