@@ -1136,10 +1136,17 @@ def stage_smoke(ctx):
     ctx.record("smoke", "enter/LIST", "OK", "USER/PASS/TYPE/LIST", alias)
 
     check_start("root listing shows fixture entries")
+    deadline = time.monotonic() + 6.0
     screen = d.screen()
-    have = [n for n in ("README", "DIRA", "SMALL") if screen.find_row_containing(n) >= 0]
+    have = []
+    while time.monotonic() < deadline:
+        have = [n for n in ("README", "DIRA", "SMALL") if screen.find_row_containing(n) >= 0]
+        if len(have) >= 2:
+            break
+        time.sleep(MENU_SETTLE_SECONDS)
+        screen = d.screen()
     assert_or_warn(ctx.assertions_enabled, len(have) >= 2,
-                   f"expected fixture entries in listing, saw rows: {screen.selected_text!r}")
+                   f"expected fixture entries in listing, saw rows: {screen.rows!r}")
     check_ok(",".join(have))
     ctx.record("smoke", "root entries", "OK", "LIST", "README/DIRA/SMALL")
 

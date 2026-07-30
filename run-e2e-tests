@@ -135,6 +135,12 @@ tap_menu_key() {
         --data "{\"events\":[{\"kind\":\"keyboard\",\"inputs\":[\"$key\"],\"transition\":\"tap\"}]}")" == 200 ]]
 }
 
+tap_menu_exit() {
+    [[ "$(rest_status POST "/v1/machine:input" \
+        -H "Content-Type: application/json" \
+        --data '{"events":[{"kind":"keyboard","inputs":["left_shift","f7"],"transition":"tap"}]}')" == 200 ]]
+}
+
 close_active_menu() {
     local status attempt
     status="$(menu_status)" || return 1
@@ -145,7 +151,9 @@ close_active_menu() {
     # particular, AssemblySearch owns RUN/STOP itself. Back out through active
     # editors, popups, and browsers before using the toggle as a last resort.
     for attempt in {1..12}; do
-        if (( attempt % 2 )); then
+        if (( attempt <= 4 )); then
+            tap_menu_exit || return 1
+        elif (( attempt % 2 )); then
             tap_menu_key run_stop || return 1
         else
             tap_menu_key return || return 1

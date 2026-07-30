@@ -363,7 +363,10 @@ class Machine:
             elif "Ok" in rows:
                 self.tap(["o"], POPUP_SETTLE_SECONDS)
             else:
-                self.tap(["run_stop"], MENU_OPEN_SETTLE_SECONDS)
+                # Shift+F7 is F8, the full UI-exit command. RUN/STOP may only
+                # hide a nested config/search stack, which then reappears when
+                # this independently selected suite opens the menu.
+                self.tap(["left_shift", "f7"], MENU_OPEN_SETTLE_SECONDS)
         raise Failure("could not close the menu; screen was:\n" + "\n".join(self.rows()))
 
     def go_to_root(self) -> None:
@@ -373,17 +376,26 @@ class Machine:
             self.tap(["left_shift", "cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
         raise Failure(f"could not return to {ROOT_PATH!r}, now at {self.current_path()!r}")
 
-    def go_to_top(self, count: int = 24) -> None:
-        for _ in range(count):
-            self.tap(["left_shift", "cursor_up_down"], 0.03)
+    def go_to_top(self, page_count: int = 12) -> None:
+        # F1 is PAGE UP in the device UI. Rewinding by pages avoids both the
+        # old 24-entry assumption and dozens of one-line REST key requests.
+        for _ in range(page_count):
+            self.tap(["f1"], 0.05)
 
-    def select_entry(self, prefix: str, max_steps: int = 30) -> None:
+    def select_entry(self, prefix: str, max_steps: int = 128) -> None:
         self.go_to_top()
+        visited = set()
         for _ in range(max_steps):
-            if self.selected().startswith(prefix):
+            current = self.selected()
+            if current.startswith(prefix):
                 return
+            if current in visited:
+                break
+            visited.add(current)
             self.tap(["cursor_up_down"])
-        raise Failure(f"could not select an entry starting with {prefix!r}")
+        raise Failure(
+            f"could not select an entry starting with {prefix!r}; "
+            f"visited {sorted(visited)!r}")
 
     def enter(self) -> None:
         self.tap(["cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
