@@ -188,10 +188,13 @@ int TreeBrowser :: poll(int sub_returned)
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {
                 state->draw();
-            } else {
-                // we lost focus, apparently a new UI element is active
-                state->refresh = true; // refresh as soon as we come back
             }
+            // No events are drained while a context menu is up, because this
+            // branch returns before checkFileManagerEvent(). The queue is short,
+            // so the notification for what the action just did may have been
+            // dropped; re-read the directory instead of trusting the cache.
+            state->refresh = true;
+            state->needs_reload = true;
         }
         return ret;
     }
