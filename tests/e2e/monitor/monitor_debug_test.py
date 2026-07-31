@@ -536,15 +536,50 @@ def _ensure_breakpoint_at(session: "mt.MonitorSession", address: int,
 
 def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
                          context: str) -> None:
+    """Remove every slot holding `address`, whichever bank it was armed against.
+
+    The disassembly `[BRKn]` marker is not a reliable test for "armed here". It
+    is drawn only when the slot's backing store matches the store the current
+    view maps at that address, so a slot armed against BASIC or KERNAL renders
+    without the marker once that address is banked to RAM. Keying the clear off
+    the row therefore skipped the removal silently and left the breakpoint armed
+    for the rest of the run: check "KERNAL $E002 G continues safely to BASIC
+    $BC0F" passed while leaving `0 SET $BC0F BAS` behind, and the leak surfaced
+    only later, in whichever check next entered ROM near that address.
+
+    The breakpoint popup lists every slot with its own address and store, so it
+    is authoritative regardless of the current bank. The `goto` is kept because
+    callers rely on the cursor landing on `address`.
+    """
     session.goto(f"{address:04X}")
-    row = _disassembly_row(session.capture(), address)
-    if "[BRK" not in row:
-        return
-    session.send_char("R")
-    _assert_no_debug_modal(session, context)
-    row = _disassembly_row(session.capture(), address)
-    if "[BRK" in row:
-        raise mt.Failure(f"{context}: breakpoint was not cleared at ${address:04X}: {row!r}")
+    target = f"${address:04X}"
+    session.last_command = "CTRL_R_CLEAR_ONE"
+    session.sock.sendall(b"\x12")
+    snap = session.capture()
+    if "BREAKPOINTS" not in snap.text():
+        raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
+    session.send_key_repeat("UP", 9)
+    for slot in range(10):
+        snap = session.capture()
+        line = next((snap.line(y) for y in range(mt.HEIGHT)
+                     if re.match(rf"^\|{slot} ", snap.line(y))), "")
+        if not line:
+            session.send_key("ESC")
+            raise mt.Failure(
+                f"{context}: slot {slot} missing from breakpoint popup:\n{snap.text()}")
+        if target in line:
+            snap = session.send_key("DEL")
+            if "BREAKPOINTS" not in snap.text():
+                raise mt.Failure(
+                    f"{context}: DEL left the breakpoint popup unexpectedly:\n{snap.text()}")
+        if slot < 9:
+            session.send_key("DOWN")
+    session.send_key("ESC")
+    still_armed = [line for line in _breakpoint_slot_lines(session, context)
+                   if target in line]
+    if still_armed:
+        raise mt.Failure(
+            f"{context}: breakpoint at ${address:04X} still armed: {still_armed}")
 
 
 def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
@@ -571,6 +606,31 @@ def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
     session.send_key("ESC")
 
 
+def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[str]:
+    """Return the ten slot lines from the breakpoint popup, leaving it closed.
+
+    The popup is the only view of the table that does not depend on the bank the
+    monitor currently maps at a breakpoint's address, so both the clear helper
+    and the hygiene assertion read the table through here.
+    """
+    session.last_command = "CTRL_R_SLOTS"
+    session.sock.sendall(b"\x12")
+    snap = session.capture()
+    if "BREAKPOINTS" not in snap.text():
+        raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
+    lines = []
+    for slot in range(10):
+        line = next((snap.line(y) for y in range(mt.HEIGHT)
+                     if re.match(rf"^\|{slot} ", snap.line(y))), "")
+        if not line:
+            session.send_key("ESC")
+            raise mt.Failure(
+                f"{context}: slot {slot} missing from breakpoint popup:\n{snap.text()}")
+        lines.append(line.strip())
+    session.send_key("ESC")
+    return lines
+
+
 def _assert_no_breakpoints_remain(session: "mt.MonitorSession", context: str) -> None:
     """Every slot in the 10-entry breakpoint table must be EMPTY.
 
@@ -580,22 +640,8 @@ def _assert_no_breakpoints_remain(session: "mt.MonitorSession", context: str) ->
     at the innocent check rather than at the one that leaked. Asserting the
     invariant once at the end names the leak directly.
     """
-    session.last_command = "CTRL_R_HYGIENE"
-    session.sock.sendall(b"\x12")
-    snap = session.capture()
-    if "BREAKPOINTS" not in snap.text():
-        raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
-    leaked = []
-    for slot in range(10):
-        line = next((snap.line(y) for y in range(mt.HEIGHT)
-                     if re.match(rf"^\|{slot} ", snap.line(y))), "")
-        if not line:
-            session.send_key("ESC")
-            raise mt.Failure(
-                f"{context}: slot {slot} missing from breakpoint popup:\n{snap.text()}")
-        if "EMPTY" not in line:
-            leaked.append(line.strip())
-    session.send_key("ESC")
+    leaked = [line for line in _breakpoint_slot_lines(session, context)
+              if "EMPTY" not in line]
     if leaked:
         raise mt.Failure(
             f"{context}: {len(leaked)} breakpoint slot(s) still armed after the "
