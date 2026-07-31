@@ -138,7 +138,7 @@ LINKMETHOD = ld
 include ../../../common/rules.mk
 
 
-u64e2_50t.swp: $(FPGA_PATH)/u64_mk2_artix.bit
+u64e2_50t.swp: $(FPGA_PATH)/u64e2_50t.bit
 	cp $< $(OUTPUT)/$(@F)
 
 u64e2_100t.swp: $(FPGA_PATH)/u64e2_100t.bit

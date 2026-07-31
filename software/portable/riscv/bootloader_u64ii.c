@@ -171,6 +171,8 @@ int main()
         jump_run(BOOT_MAGIC_JUMPADDR);
     } else if (!(capabilities & CAPAB_BOOT_FPGA)) {
         uint8_t fpgatype_id = getFpgaType();
+        outbyte('T');
+        hexbyte(fpgatype_id);
         uint32_t flash_addr = (fpgatype_id == 3) ? 0x3C0000 : 0x220000;
         
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
