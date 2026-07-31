@@ -272,7 +272,7 @@ bool TreeBrowserState :: into2(void)
 
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
-    int error;
+    int error = 0;
 	deeper->children = under_cursor->getSubItems(error);
     if(error < 0) {
     	delete deeper;

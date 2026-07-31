@@ -83,6 +83,7 @@ public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
     bool allow_exit;
+    bool allow_tasks;
     bool has_path;
     bool has_border;
     bool use_ui_focus_stack;

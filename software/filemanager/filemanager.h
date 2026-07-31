@@ -209,6 +209,7 @@ public:
     	delete p;
     }
 
+    bool  is_path_valid(const char *p, FileInfo *inf = NULL);
     bool  is_path_valid(Path *p);
     bool  is_path_writable(Path *p);
 
@@ -217,6 +218,7 @@ public:
     FRESULT get_free(Path *path, uint32_t &free, uint32_t &cluster_size);
     FRESULT fs_read_sector(Path *path, uint8_t *buffer, int track, int sector);
     FRESULT fs_write_sector(Path *path, uint8_t *buffer, int track, int sector);
+    FRESULT fs_allocate_sector(Path *path, int track, int sector, bool alloc);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
@@ -250,10 +252,11 @@ public:
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
 
+	FRESULT open_directory(const char *path, Directory **dir, FileInfo *info = NULL);
     FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
     FRESULT print_directory(const char *path);
     FRESULT load_file(const char *path, const char *filename, uint8_t *mem, uint32_t maxlen, uint32_t *transferred);
-    FRESULT save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred);
+    FRESULT save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred);
 
     void registerObserver(ObserverQueue *q) {
     	observers.append(q);

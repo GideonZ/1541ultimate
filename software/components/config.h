@@ -27,6 +27,7 @@
 #include "mystring.h"
 #include "file.h"
 
+#define CFG_FILEPATH "/flash/config"
 // Groups
 #define SORT_ORDER_HDR_AUVID    100
 #define SORT_ORDER_CFG_VIDEO    110 //

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Measure managed Temp upload latency with auto cleanup and subfolders toggled.
+# E2E: Verifies managed /Temp uploads and measures cleanup-mode performance.
+
+"""Validate and measure managed Temp uploads with cleanup and subfolders toggled.
 
 The benchmark uploads the same small attachment-backed payload via HTTP in two
 timed stages against the same Ultimate 64: first with Temp auto cleanup and
@@ -156,6 +158,39 @@ class U64Client:
             return None
 
         raise RuntimeError(message)
+
+    def close_menu_from_anywhere(self):
+        release_body = json.dumps({"events": [{"kind": "release_all"}]}).encode("utf-8")
+        self.require_ok(
+            "POST",
+            "/v1/machine:input",
+            body=release_body,
+            description="release input",
+            extra_headers={"Content-Type": "application/json"},
+        )
+        for attempt in range(12):
+            status, _payload = self.request("GET", "/v1/machine:menu_screen")
+            if status == 404:
+                return
+            if status != 200:
+                raise RuntimeError(f"menu-state probe failed with HTTP {status}")
+            key = "run_stop" if attempt % 2 == 0 else "return"
+            body = json.dumps({
+                "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+            }).encode("utf-8")
+            self.require_ok(
+                "POST",
+                "/v1/machine:input",
+                body=body,
+                description="menu cleanup",
+                extra_headers={"Content-Type": "application/json"},
+            )
+            time.sleep(0.25)
+        self.require_ok("PUT", "/v1/machine:menu_button", description="menu-button cleanup")
+        time.sleep(0.5)
+        status, _payload = self.request("GET", "/v1/machine:menu_screen")
+        if status != 404:
+            raise RuntimeError("could not dismiss active menu UI before reset")
 
 
 class ManagedTempInspector:
@@ -691,6 +726,10 @@ def main():
     print(f"Binary Payload Size: {PAYLOAD_SIZE} bytes")
 
     try:
+        client.close_menu_from_anywhere()
+        client.require_ok("PUT", "/v1/machine:reset", description="machine reset")
+        time.sleep(1.0)
+
         if args.no_config_change:
             print("Skipping initial Temp settings capture because config changes are disabled")
         else:

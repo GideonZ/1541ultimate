@@ -469,6 +469,18 @@ bool FileManager::is_path_valid(Path *p)
     return (res == FR_OK);
 }
 
+bool FileManager::is_path_valid(const char *p, FileInfo *inf)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(p);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if ((res == FR_OK) && (inf != NULL)) {
+        // if success, we can copy the file info to the output to get more info
+        inf->copyfrom(pathInfo.getLastInfo());
+    }
+    return (res == FR_OK);
+}
+
 void FileManager::get_display_string(Path *p, const char *filename, char *buffer, int width)
 {
     CachedTreeNode *n = root;
@@ -486,6 +498,28 @@ void FileManager::get_display_string(Path *p, const char *filename, char *buffer
         return;
     }
     n->get_display_string(buffer, width);
+}
+
+FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo *info)
+{
+    *dir = NULL;
+    lock();
+
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT res = find_pathentry(pathInfo, true);
+    if (res != FR_OK) {
+        unlock();
+        return res;
+    }
+    if (info) {
+        // if info is given, copy the file info to it
+        info->copyfrom(pathInfo.getLastInfo());
+    }
+    FileSystem *fs = pathInfo.getLastInfo()->fs;
+    res = fs->dir_open(pathInfo.getPathFromLastFS(), dir);
+    unlock();
+    return res;
 }
 
 FRESULT FileManager::get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
@@ -695,6 +729,7 @@ FRESULT FileManager::fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
     fres = fs->file_open(pathInfo.getPathFromLastFS(), flags, file);
     if (fres == FR_OK) {
         open_file_list.append(*file);
+        (*file)->write_intent = ((flags & FA_WRITE) != 0);
         pathInfo.workPath.getTail(0, (*file)->get_path_reference());
         note_managed_temp_open(*file);
         if (create) {
@@ -738,6 +773,10 @@ FRESULT FileManager::fs_read_sector(Path *path, uint8_t *buffer, int track, int 
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->read_sector(buffer, track, sector);
     return fres;
 }
@@ -754,7 +793,30 @@ FRESULT FileManager::fs_write_sector(Path *path, uint8_t *buffer, int track, int
     if (!inf || !(inf->fs)) {
         return FR_NO_FILESYSTEM;
     }
+    fres = inf->fs->sync();
+    if (fres != FR_OK) {
+        return fres;
+    }
     fres = inf->fs->write_sector(buffer, track, sector);
+    return fres;
+}
+
+FRESULT FileManager::fs_allocate_sector(Path *path, int track, int sector, bool alloc)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    fres = inf->fs->allocate_sector(track, sector, alloc);
+    if (fres == FR_OK) {
+        fres = inf->fs->sync();
+    }
     return fres;
 }
 
@@ -808,6 +870,8 @@ void FileManager::fclose(File *f)
     bool delete_on_last_close = false;
     bool enforce_after_close = false;
     mstring delete_path;
+    bool publish_dir = false;
+    mstring changed_dir;
 
     lock();
     if (f->get_file_system()) {
@@ -817,12 +881,16 @@ void FileManager::fclose(File *f)
         printf("ERR: Closing invalidated file.\n");
     }
 //	printf("CLOSE '%s'\n", f->get_path());
-    /*
-     if (f->was_written_to()) {
-     sendEventToObservers(eNodeUpdated, f->get_path(), "*");
-     }
-     */
     const char *path = f->get_path();
+    if (f->write_intent) {
+        // A file that was created announced itself while it was still empty; its
+        // size only becomes final in the close below. Remember the directory now,
+        // because close() destroys the file object.
+        Path file_path;
+        file_path.cd(path);
+        file_path.getHead(changed_dir);
+        publish_dir = true;
+    }
     if ((managed_temp_entries.get_elements() > 0) && is_path_under_managed_root(path)) {
         ManagedTempEntry *entry = find_managed_temp_entry(path);
         if (entry) {
@@ -841,6 +909,9 @@ void FileManager::fclose(File *f)
     }
     open_file_list.remove(f);
     f->close();
+    if (publish_dir) {
+        sendEventToObservers(eRefreshDirectory, changed_dir.c_str(), "");
+    }
     unlock();
 
     if (delete_on_last_close) {
@@ -1109,7 +1180,10 @@ FRESULT FileManager::create_dir(Path *path, const char *name)
         FileSystem *fs = pathInfo.getLastInfo()->fs;
         fres = fs->dir_create(pathInfo.getPathFromLastFS());
         if (fres == FR_OK) {
-            sendEventToObservers(eNodeAdded, path->get_path(), name);
+            // 'name' may carry a whole path, so the entry that was just
+            // created is the one to publish, not the caller's arguments.
+            mstring work;
+            sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
         }
     }
     unlock();
@@ -1245,7 +1319,7 @@ FRESULT FileManager :: load_file(const char *path, const char *filename, uint8_t
     return fres;
 }
 
-FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, uint8_t *mem, uint32_t len, uint32_t *transferred)
+FRESULT FileManager :: save_file(bool overwrite, const char *path, const char *filename, const uint8_t *mem, uint32_t len, uint32_t *transferred)
 {
     File *file = 0;
     uint8_t flag = FA_WRITE | (overwrite ? FA_CREATE_ALWAYS : FA_CREATE_NEW);

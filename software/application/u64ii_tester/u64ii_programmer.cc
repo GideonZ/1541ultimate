@@ -55,25 +55,15 @@ extern "C" {
 #define CHARGEN_REGS  ((volatile t_chargen_registers *)U64II_CHARGEN_REGS)
 void initScreen()
 {
-    // const t_video_mode systemMode = e_NTSC_60;
-    // const t_video_color_timing *ct = color_timings[(int)systemMode];
-    // SetVideoPll(systemMode);
-    // SetHdmiPll(systemMode, ct->mode_bits);
-    // SetVideoMode1080p(systemMode);
-    // ResetHdmiPll();
-    // wait_ms(200);
-    printf("Measurement: %08x\n", U64_CLOCK_FREQ);
-
-    //TVideoMode mode = { 01, 25175000,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 };  // VGA 60
-    //SetScanModeRegisters((volatile t_video_timing_regs *)CHARGEN_TIMING, &mode);
+    // SetVideoModeTester(); // should be set correctly by the bootloader
 
     CHARGEN_REGS->TRANSPARENCY     = 0;
     CHARGEN_REGS->CHAR_WIDTH       = 12;
-    CHARGEN_REGS->CHAR_HEIGHT      = 31;
+    CHARGEN_REGS->CHAR_HEIGHT      = 0x5e;
     CHARGEN_REGS->CHARS_PER_LINE   = 100;
     CHARGEN_REGS->ACTIVE_LINES     = 39;
     CHARGEN_REGS->X_ON_HI          = 1;
-    CHARGEN_REGS->X_ON_LO          = 100;
+    CHARGEN_REGS->X_ON_LO          = 104;
     CHARGEN_REGS->Y_ON_HI          = 0;
     CHARGEN_REGS->Y_ON_LO          = 72;
     CHARGEN_REGS->POINTER_HI       = 0;
@@ -92,7 +82,7 @@ void initVGAScreen()
 {
     CHARGEN_VGA->TRANSPARENCY     = 0;
     CHARGEN_VGA->CHAR_WIDTH       = 12;
-    CHARGEN_VGA->CHAR_HEIGHT      = 31;
+    CHARGEN_VGA->CHAR_HEIGHT      = 0x5e;
     CHARGEN_VGA->CHARS_PER_LINE   = 40;
     CHARGEN_VGA->ACTIVE_LINES     = 3;
     CHARGEN_VGA->X_ON_HI          = 0;
@@ -450,13 +440,17 @@ void ultimate_main(void *context)
 
     int errors = 0; // always flash
 
+    uint8_t fpgatype_id = getFpgaType();
+    uint32_t appl_addr = (fpgatype_id == 3) ? 0x3C0000 : 0x220000;
+    uint32_t fat_addr  = (fpgatype_id == 3) ? 0x580000 : 0x400000;
+
     if (errors == 0) {
-        attempt_programming(0xFFFFF8, 0x1800000, 0x400000);
-        attempt_programming(0xFFFFF4, 0x1400000, 0x220000);
+        attempt_programming(0xFFFFF8, 0x1800000, fat_addr);
+        attempt_programming(0xFFFFF4, 0x1400000, appl_addr);
         attempt_programming(0xFFFFF0, 0x1000000, 0x000000);
         errors += verify(0xFFFFF0, 0x1000000, 0x000000);
-        errors += verify(0xFFFFF4, 0x1400000, 0x220000);
-        errors += verify(0xFFFFF8, 0x1800000, 0x400000);
+        errors += verify(0xFFFFF4, 0x1400000, appl_addr);
+        errors += verify(0xFFFFF8, 0x1800000, fat_addr);
         if(errors) {
             fail_message("Flashing Firmware, board not OK.");
         } else {

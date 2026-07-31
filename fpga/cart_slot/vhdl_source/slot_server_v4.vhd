@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : std_logic_vector(27 downto 0) := X"0EF0000"; -- should be on a 64K boundary
     g_rom_base_cart : std_logic_vector(27 downto 0) := X"0F00000"; -- should be on a 1M boundary
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0EA8000"; -- should be on a 32K boundary 
+    g_max_cart_bits : natural := 20; -- 1 MB is standard
     g_register_addr : boolean := false;
     g_timing_meas   : boolean := false;
     g_direct_dma    : boolean := false;
@@ -48,7 +49,7 @@ port (
     -- Cartridge pins
     VCCDET          : in    std_logic := '1';
 
-    dotclk_i        : in    std_logic;
+    dotclk_i        : in    std_logic := '0';
     phi2_i          : in    std_logic;
     io1n_i          : in    std_logic;
     io2n_i          : in    std_logic;
@@ -88,8 +89,8 @@ port (
     sense           : in    std_logic;
 
     buttons         : in    std_logic_vector(2 downto 0);
-    btn_freeze      : in    std_logic;
-    btn_reset       : in    std_logic;
+    btn_freeze      : in    std_logic := '0';
+    btn_reset       : in    std_logic := '0';
     cart_led_n      : out   std_logic;
 
     trigger_1       : out   std_logic;
@@ -759,6 +760,7 @@ begin
         g_eeprom        => g_eeprom,
         g_kernal_base   => g_kernal_base,
         g_georam_base   => g_ram_base_reu,
+        g_max_cart_bits => g_max_cart_bits,
         g_rom_base      => g_rom_base_cart,
         g_ram_base      => g_ram_base_cart )
     port map (

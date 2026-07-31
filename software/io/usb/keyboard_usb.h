@@ -50,6 +50,7 @@ class Keyboard_USB : public Keyboard
     uint8_t last_data[USB_DATA_SIZE];
     uint8_t usb_restore;
     uint8_t usb_freeze;
+    uint8_t usb_reset;
     bool rest_restore;
     uint8_t rest_restore_overlay;
     uint8_t rest_restore_hold;
@@ -95,6 +96,7 @@ public:
     bool has_injected_key(int c) const;
     void remove_injected_key(int c);
     void wait_free(void);
+    bool anyKeyPressed(void) const;
     void clear_buffer(void);
 
 	void restPress(uint8_t row, uint8_t col_bit);

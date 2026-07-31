@@ -1,6 +1,8 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
+#include <stdint.h>
+
 #define CHR_LOWER_RIGHT_CORNER  0x01
 #define CHR_HORIZONTAL_LINE     0x02
 #define CHR_LOWER_LEFT_CORNER   0x03
@@ -53,6 +55,7 @@ public:
 
     // raw
     virtual void output_raw(char c) { }
+    virtual bool copy_matrix(uint8_t *chars, uint8_t *colors, int max_cells, int *width, int *height) { return false; }
 
     // Synchronization
     virtual void sync(void) { }
@@ -74,6 +77,8 @@ class Screen_MemMappedCharMatrix : public Screen
 
 	char *char_base;
     char *color_base;
+    char *cell_colour_codes;
+    int cell_colour_codes_size;
 
 	int size_x;
 	int size_y;
@@ -86,6 +91,9 @@ class Screen_MemMappedCharMatrix : public Screen
 	// private stuff
 	void scroll_up(void);
     void scroll_down(void);
+    void resize_cell_colour_codes(void);
+    Screen_MemMappedCharMatrix(const Screen_MemMappedCharMatrix &);
+    Screen_MemMappedCharMatrix &operator=(const Screen_MemMappedCharMatrix &);
 
 protected:
     // draw mode
@@ -100,7 +108,7 @@ protected:
     void output_raw(char c);
 public:
     Screen_MemMappedCharMatrix(char *, char *, int, int);
-    ~Screen_MemMappedCharMatrix() { }
+    ~Screen_MemMappedCharMatrix();
 
     void backup(void);
     void restore(void);
@@ -123,6 +131,7 @@ public:
     int  output(const char *c);
     void repeat(char c, int rep);
     void output_fixed_length(const char *string, int offset_x, int width);
+    bool copy_matrix(uint8_t *chars, uint8_t *colors, int max_cells, int *width, int *height);
 };
 
 class Window

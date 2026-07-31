@@ -4,10 +4,12 @@
 #include "subsys.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#include "userinterface.h"
 #if U64
 #include "keyboard_usb.h"
 #include "joystick_output.h"
 extern "C" void route_input_note_menu_button(void);
+extern "C" bool push_active_menu_button(void) __attribute__((weak));
 #endif
 
 #define MENU_C64_PAUSE      0x640B
@@ -28,6 +30,10 @@ API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 {
 #if U64
     route_input_note_menu_button();
+    if (push_active_menu_button && push_active_menu_button()) {
+        resp->json_response(HTTP_OK);
+        return;
+    }
 #endif
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, 0);
     SubsysResultCode_t retval = cmd->execute();
@@ -153,20 +159,28 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
     }
 
     TempfileWriter *handler = (TempfileWriter *)body;
-    uint8_t *buffer = new uint8_t[65536];
+    // Use malloc (not new): operator new panics on OOM on this target, so a new[]
+    // result can never be NULL. malloc returns NULL, so this 64 KB request can fail
+    // cleanly with HTTP 500 instead of taking the device down.
+    uint8_t *buffer = (uint8_t *)malloc(65536);
+    if (!buffer) {
+        resp->error("Out of memory");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
     uint32_t datalen = 0;
     FRESULT fres = FileManager::getFileManager()->load_file("", handler->get_filename(0), buffer, 65536, &datalen);
     if (fres != FR_OK) {
         resp->error("Could not read data from attachment");
         resp->json_response(HTTP_NOT_FOUND);
-        delete[] buffer;
+        free(buffer);
         return;
     }
 
     if (address + datalen > 65536) {
         resp->error("Memory write exceeds location $FFFF");
         resp->json_response(HTTP_BAD_REQUEST);
-        delete[] buffer;
+        free(buffer);
         return;
     }
 
@@ -176,7 +190,7 @@ API_CALL(POST, machine, writemem, &attachment_writer, ARRAY( { {"address", P_REQ
 
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_WRITE, address, buffer, datalen);
     SubsysResultCode_t retval = cmd->execute();
-    delete[] buffer;
+    free(buffer);
     resp->error(SubsysCommand::error_string(retval.status));
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
@@ -216,6 +230,23 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
     } else {
         resp->error(SubsysCommand::error_string(retval.status));
         resp->json_response(SubsysCommand::http_response_map(retval.status));
+        delete[] buffer;
+    }
+}
+
+API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))
+{
+    const int screen_size = UserInterface::ACTIVE_SCREEN_MATRIX_BYTES;
+    uint8_t *buffer = new uint8_t[screen_size];
+
+    if (UserInterface::copy_active_screen_matrix(buffer, screen_size)) {
+        StreamRamFile *rf = resp->add_attachment();
+        rf->write(buffer, screen_size);
+        delete[] buffer;
+        resp->binary_response();
+    } else {
+        resp->error("Menu screen unavailable.");
+        resp->json_response(HTTP_NOT_FOUND);
         delete[] buffer;
     }
 }

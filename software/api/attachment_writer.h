@@ -27,6 +27,7 @@ class TempfileWriter
     WriterCallback_t callback;
     const void *context1;
     void *context2;
+    bool aborted;
 public:
     TempfileWriter(HTTPReqMessage *req, HTTPRespMessage *resp, WriterCallback_t cb, const void *c1, void *c2)
         : filenames(4, NULL), filesizes(4, 0), filebuffers(4, NULL) {
@@ -36,7 +37,10 @@ public:
         callback = cb;
         context1 = c1;
         context2 = c2;
+        aborted = false;
     }
+
+    bool is_aborted() const { return aborted; }
 
     ~TempfileWriter()
     {
@@ -156,6 +160,21 @@ public:
                     callback(this, context1, context2);
                 }
                 break;
+            case eAbort:
+                // Connection torn down before the upload finished: close any open
+                // temp file, then reuse writer_complete (via the callback) to free
+                // the request args and this writer. The aborted flag makes
+                // writer_complete skip the (incomplete) API call. Deletion is done
+                // there because ArgsURI is not visible in this header.
+                if (fo) {
+                    FileManager::getFileManager()->fclose(fo);
+                    fo = NULL;
+                }
+                aborted = true;
+                if (callback) {
+                    callback(this, context1, context2);
+                }
+                break;
         }
     }
 
@@ -184,12 +203,17 @@ public:
             return -2; // too large
         }
 
-        uint8_t *buffer = (uint8_t *)malloc(size);
+        // Allocate one extra byte: the JSON parser writes a NUL terminator at
+        // text[token->end], and the outermost token's end can equal 'size' when
+        // the body fills the buffer exactly (e.g. ends in '}' with no trailing
+        // newline). Without the spare byte that is a one-byte heap overflow.
+        uint8_t *buffer = (uint8_t *)malloc(size + 1);
         if (buffer) {
             FILE *f = fopen(filename, "rb");
             if (f) {
                 fread(buffer, size, 1, f);
                 fclose(f);
+                buffer[size] = 0;
                 filebuffers.append(buffer);
                 return 0; // success
             }

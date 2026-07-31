@@ -94,7 +94,7 @@ public:
             size += b[1];
             size -= 1;
         }
-        delete b;
+        delete[] b;
         return size;
     }
 

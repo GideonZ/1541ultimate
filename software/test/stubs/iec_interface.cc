@@ -30,7 +30,7 @@ IecInterface :: ~IecInterface()
 
 void IecInterface :: configure(void)
 {
-    printf("IEC Interface configure.\n");
+    // printf("IEC Interface configure.\n");
 }
 
 int IecInterface :: register_slave(IecSlave *slave)

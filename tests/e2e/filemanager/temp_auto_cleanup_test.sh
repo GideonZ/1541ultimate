@@ -1,5 +1,5 @@
 #!/bin/bash
-# End-to-end validator for Temp auto cleanup on the Ultimate 64.
+# E2E: Verifies managed /Temp cleanup across mounted images and uploads.
 
 # --- Defaults (Environment Variables) ---
 U64_HOST="${U64_HOST:-u64}"
@@ -150,6 +150,49 @@ refresh_managed_paths
 # --- Utility Functions ---
 
 log_stage() { echo -e "\n${C_BLUE}STAGE: $1${C_NC}\n$(printf '%.s-' {1..60})"; }
+
+machine_reset() {
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
+        "http://$U64_HOST/v1/machine:reset")
+    [[ "$code" == "200" ]] || handle_failure "Machine reset failed (HTTP $code)"
+    sleep 1
+}
+
+close_active_menu() {
+    local code
+    local attempt
+    local key
+
+    for attempt in {1..12}; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "$REST_HEADER" \
+            "http://$U64_HOST/v1/machine:menu_screen")
+        [[ "$code" == "404" ]] && return 0
+        [[ "$code" == "200" ]] || handle_failure "Menu-state probe failed (HTTP $code)"
+
+        if (( attempt % 2 )); then
+            key=run_stop
+        else
+            key=return
+        fi
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "$REST_HEADER" \
+            -H "Content-Type: application/json" \
+            --data "{\"events\":[{\"kind\":\"keyboard\",\"inputs\":[\"$key\"],\"transition\":\"tap\"}]}" \
+            "http://$U64_HOST/v1/machine:input")
+        [[ "$code" == "200" ]] || handle_failure "Menu cleanup failed (HTTP $code)"
+        sleep 0.25
+    done
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
+        "http://$U64_HOST/v1/machine:menu_button")
+    [[ "$code" == "200" ]] || handle_failure "Menu-button cleanup failed (HTTP $code)"
+    sleep 0.5
+}
+
+reset_to_clean_slate() {
+    close_active_menu
+    machine_reset
+}
 
 handle_failure() {
     local msg=$1
@@ -484,6 +527,7 @@ echo -e "Target Host: ${U64_HOST}"
 
 trap cleanup_and_restore EXIT
 
+reset_to_clean_slate
 capture_initial_config
 run_config
 run_purge

@@ -41,6 +41,12 @@ uint8_t usb_matrix_lookup(const uint8_t *map, size_t map_size, uint8_t key)
 #if U64 && !RECOVERYAPP
 static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 #endif
+#ifndef NO_FILE_ACCESS
+// vTaskDelay() counts ticks, not milliseconds: at configTICK_RATE_HZ = 200 a
+// tick is 5ms, so the conversion has to be explicit. Never round down to 0.
+static const uint32_t WAIT_FREE_POLL_TICKS =
+	(pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) > 0) ? pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) : 1;
+#endif
 static const uint8_t REST_TAP_GAP_TICKS = 2;
 static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
 static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
@@ -147,6 +153,7 @@ Keyboard_USB :: Keyboard_USB()
 	rest_pending_tap_delay = 0;
 	usb_restore = 0;
 	usb_freeze = 0;
+	usb_reset = 0;
 	rest_restore = false;
 	rest_restore_overlay = 0;
 	rest_restore_hold = 0;
@@ -208,6 +215,7 @@ void Keyboard_USB :: applyMatrixState(void)
 		uint8_t local_state = (matrixEnabled && !rest_control) ? (matrix_state[i] | injected_matrix_state[i]) : 0;
 		matrix[i] = local_state | rest_state;
 	}
+	matrix[8] = matrixEnabled ? usb_reset : 0;
 	matrix[9] = (matrixEnabled ? usb_restore : 0) | (rest_restore ? 1 : 0) | (rest_restore_overlay ? 1 : 0);
 	matrix[10] = matrixEnabled ? usb_freeze : 0;
 }
@@ -354,6 +362,9 @@ bool Keyboard_USB :: PresentInLastData(uint8_t check)
 	return false;
 }
 
+// Only decodes into matrix_state; applyMatrixState() gates it on matrixEnabled.
+// Must stay callable while the matrix is disabled, so that key releases arriving
+// while the menu is open are not lost.
 void Keyboard_USB :: usb2matrix(uint8_t *kd)
 {
 	if (!matrix) {
@@ -373,11 +384,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	const uint8_t key_locations[] = { };
 
 	// reset
-	if (modi == 0x0F) {
-		matrix[8] = 1;
-	} else {
-		matrix[8] = 0;
-	}
+	usb_reset = (modi == 0x0F) ? 1 : 0;
 
 	// Handle the modifiers
 	for(int i=0;i<8;i++) {
@@ -448,9 +455,7 @@ void Keyboard_USB :: S_rest_timer(TimerHandle_t a)
 // called from USB thread
 void Keyboard_USB :: process_data(uint8_t *kbdata)
 {
-	if(matrixEnabled) {
-		usb2matrix(kbdata);
-	}
+	usb2matrix(kbdata);
 
 	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
@@ -624,23 +629,27 @@ void Keyboard_USB :: remove_injected_key(int c)
 	portEXIT_CRITICAL();
 }
 
+// True while the last USB report still holds any key or modifier down.
+bool Keyboard_USB :: anyKeyPressed(void) const
+{
+	for (int i=0; i < USB_DATA_SIZE; i++) {
+		if (last_data[i] != 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Keyboard_USB :: wait_free(void)
 {
-	bool free;
-	do {
-		free = true;
-		for (int i=0; i < USB_DATA_SIZE; i++) {
-			if (last_data[i] != 0) {
-				free = false;
-				break;
-			}
-		}
+	int remaining_ms = KEYBOARD_WAIT_FREE_TIMEOUT_MS;
+
+	while (anyKeyPressed() && (remaining_ms > 0)) {
+		remaining_ms -= KEYBOARD_WAIT_FREE_POLL_MS;
 #ifndef NO_FILE_ACCESS
-		if (!free) {
-			vTaskDelay(10);
-		}
+		vTaskDelay(WAIT_FREE_POLL_TICKS);
 #endif
-	} while(!free);
+	}
 }
 
 void Keyboard_USB :: clear_buffer(void)
@@ -934,6 +943,13 @@ void Keyboard_USB :: setMatrix(volatile uint8_t *matrix)
 
 void Keyboard_USB :: enableMatrix(bool enable)
 {
+	if (enable && !matrixEnabled) {
+		// Keys still queued when the menu hands the keyboard back are menu
+		// navigation; getch() would replay them onto the C64 matrix.
+		portENTER_CRITICAL();
+		injected_tail = injected_head;
+		portEXIT_CRITICAL();
+	}
 	matrixEnabled = enable;
 	if (!enable) {
 		clearInjectedMatrixState();

@@ -100,7 +100,8 @@ void do_update(void)
     Flash *flash2 = get_flash();
     console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());
 
-    const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
+    const char *fpga_types[] = { "5CEBA2", "5CEBA4", "XC7A50T", "XC7A100T" };
+    const char *fpgaType = fpga_types[getFpgaType()];
     console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
 
     /* Extra check on the loaded images */

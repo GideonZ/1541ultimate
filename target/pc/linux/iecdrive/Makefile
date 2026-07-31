@@ -46,13 +46,17 @@ SRCS_CC	 =  small_printf.cc \
 			filesystem_root.cc \
 			filesystem_iso9660.cc \
 			filemanager.cc \
+			embedded_d64.cc \
 			size_str.cc \
 			config.cc \
 			iec_drive.cc \
 			iec_channel.cc \
 			iec_interface.cc \
+			cbmdos_parser.cc \
 			json.cc \
 			init_function.cc \
+			d64.cc \
+			d81.cc \
 			testdrive.cc
 
 SRCS_ASM =  

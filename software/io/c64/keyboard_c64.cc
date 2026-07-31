@@ -343,6 +343,18 @@ void Keyboard_C64 :: push_head(int c)
 
 void Keyboard_C64 :: wait_free(void)
 {
+    // getch() falls back to the USB keyboard, so the menu can be driven - and
+    // left - from there too. Those keys are kept out of the C64 matrix while the
+    // menu owns the keyboard, so the hardware scan below never sees them. Wait
+    // for the USB report as well, or the still-held exit key is handed straight
+    // to the running program the moment the menu gives the matrix back. ESC is
+    // RUN/STOP, which the SID player uses to return to the menu.
+    int usb_timeout = KEYBOARD_WAIT_FREE_TIMEOUT_MS;
+    while (system_usb_keyboard.anyKeyPressed() && usb_timeout) {
+        usb_timeout--;
+        wait_ms(1);
+    }
+
     if(!host) {
         return;
     }
@@ -356,7 +368,7 @@ void Keyboard_C64 :: wait_free(void)
 #endif
     *col_register = 0; // select all rows
 
-    int timeout = 2000;
+    int timeout = KEYBOARD_WAIT_FREE_TIMEOUT_MS;
     while ((*row_register != 0xFF) && (timeout)) {
         timeout--;
         wait_ms(1);

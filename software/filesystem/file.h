@@ -21,11 +21,12 @@ class File
 {
     FileSystem *filesystem;
     mstring pathString;
+    bool write_intent; // opened for writing, so its size is only final on close
 
 	// the following function shall only be called by the file manager
 	friend class FileManager;
 public:
-    File(FileSystem *fs) { filesystem = fs; }
+    File(FileSystem *fs) { filesystem = fs; write_intent = false; }
     virtual ~File() { }
 
     FileSystem *get_file_system() { return filesystem; }

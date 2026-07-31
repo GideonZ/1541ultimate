@@ -31,8 +31,6 @@ extern "C" {
 #include "u64.h"
 #endif
 
-#define CFG_FILEPATH "/flash/config"
-
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
 {
@@ -66,6 +64,7 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
 #ifndef RECOVERYAPP
     // Now, also open the Flash File system!
     init_flash_disk();
+    FileManager :: getFileManager()->create_dir(CFG_FILEPATH); // if it doens't exist, create it
 #endif
 }
 
@@ -428,7 +427,7 @@ void ConfigPage :: read_from_file(File *f)
 {
     uint32_t tr;
     f->read(mem_block, (uint32_t)block_size, &tr);
-    printf("%d bytes read from config file\n", tr);
+    // printf("%d bytes read from config file\n", tr);
 }
 
 void ConfigPage :: read(bool ignoreData)

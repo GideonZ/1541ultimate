@@ -36,6 +36,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
 {
 	// initialize state
     allow_exit = false;
+    allow_tasks = true;
     has_path = true;
 	user_interface = ui; // copy!
 	screen = NULL;
@@ -187,10 +188,13 @@ int TreeBrowser :: poll(int sub_returned)
             contextMenu = NULL;
             if (user_interface->has_focus(this)) {
                 state->draw();
-            } else {
-                // we lost focus, apparently a new UI element is active
-                state->refresh = true; // refresh as soon as we come back
             }
+            // No events are drained while a context menu is up, because this
+            // branch returns before checkFileManagerEvent(). The queue is short,
+            // so the notification for what the action just did may have been
+            // dropped; re-read the directory instead of trusting the cache.
+            state->refresh = true;
+            state->needs_reload = true;
         }
         return ret;
     }
@@ -405,6 +409,7 @@ int TreeBrowser :: handle_key(int c)
 
     switch(c) {
         case KEY_BREAK: // runstop
+        case '`': // left arrow
             ret = (allow_exit) ? MENU_CLOSE : MENU_HIDE;
             break;
         case KEY_MENU:
@@ -430,8 +435,10 @@ int TreeBrowser :: handle_key(int c)
             state->down(window->get_size_y()/2);
             break;
         case KEY_TASKS:
-            reset_quick_seek();
-            task_menu();
+            if (allow_tasks) {
+                reset_quick_seek();
+                task_menu();
+            }
             break;
         case KEY_HELP:
             reset_quick_seek();

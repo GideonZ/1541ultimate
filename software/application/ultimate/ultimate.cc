@@ -50,6 +50,15 @@ C64_Subsys *c64_subsys;
 StreamTextLog textLog(96*1024);
 Syslog syslog;
 
+extern "C" bool push_active_menu_button(void)
+{
+    if (overlay && overlay->is_accessible()) {
+        overlay->setButtonPushed();
+        return true;
+    }
+    return false;
+}
+
 extern "C" void (*custom_outbyte)(int c);
 
 extern "C" {

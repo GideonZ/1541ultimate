@@ -26,14 +26,7 @@ public:
                 IndexedList<JSON *> *values = json->get_values();
                 for(int i=0;i < keys->get_elements(); i++) {
                     JSON *val = (*values)[i];
-                    BrowsableQueryField *field;
-                    if (val->type() == eList) {
-                        field = new BrowsableQueryField((*keys)[i], (JSON_List *)val);
-                    } else if(val->type() == eString) {
-                        field = new BrowsableQueryField((*keys)[i], NULL);
-                        field->setStringValue(((JSON_String *)val)->get_string());
-                    }
-                    children.append(field);
+                    children.append(new BrowsableQueryField((*keys)[i], val));
                 }
             }            
             children.append(new BrowsableStatic(""));
@@ -91,24 +84,5 @@ public:
 
     friend class FormUIState;
 };
-
-
-    // static SubsysResultCode_e new_search(SubsysCommand *cmd)
-    // {
-    //     Browsable *root = (Browsable *)cmd->functionID;
-    //     FormUI *searchBrowser = new FormUI(cmd->user_interface, root);
-    //     searchBrowser->init(cmd->user_interface->screen, cmd->user_interface->keyboard);
-    //     cmd->user_interface->activate_uiobject(searchBrowser);
-    //     // from this moment on, we loose focus.. polls will go directly to config menu!
-    //     return SSRET_OK;
-    // }
-
-    //     FormUI *search_window = new FormUI(cmd_ui, assembly_gui.getRoot());
-    //     search_window->init(cmd_ui->screen, cmd_ui->keyboard);
-    //     search_window->setCleanup();
-    //     cmd_ui->activate_uiobject(search_window); // now we have focus
-    //     return SSRET_OK;
-
-
 
 #endif

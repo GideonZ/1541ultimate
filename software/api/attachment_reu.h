@@ -87,6 +87,15 @@ public:
                 }
                 delete this;
                 break;
+            case eAbort:
+                // Connection torn down before the body finished: release the
+                // request args and this writer without running the incomplete
+                // API call.
+                if (args) {
+                    delete args;
+                }
+                delete this;
+                break;
         }
     }
 };

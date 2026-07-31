@@ -29,6 +29,23 @@ mstring :: mstring(const char *k)
     }
 }
 
+void mstring :: copy(const char *k, int from, int to)
+{
+    if (!k) {
+        return;
+    }
+    int needed = 2 + to - from;
+    if (alloc < needed) {
+        if (cp) {
+            delete[] cp;
+        }
+        cp = new char[needed];
+        alloc = needed;
+    }
+    strncpy(cp, k+from, 1+to-from);
+    cp[needed-1] = 0;
+}
+
 mstring :: mstring(const char *k, int from, int to)
 {
     if (k) {
@@ -88,7 +105,33 @@ const int mstring :: allocated_space(void) const
 {
     return alloc;
 }
-    
+
+bool mstring :: contains_any(const char *c)
+{
+    if (!cp) {
+        return false;
+    }
+    while(*c) {
+        if(strchr(cp, *c) != NULL) {
+            return true;
+        }
+        c++;
+    }
+    return false;
+}
+
+int mstring :: pos(const char c)
+{
+    if (!cp) {
+        return -1;
+    }
+    const char *p = strchr(cp, c);
+    if (!p) {
+        return -1;
+    }
+    return int(p - cp);
+}
+
 mstring& mstring :: operator=(const char *rhs)
 {
 //    printf("Operator = char*rhs=%s. This = %p.\n", rhs, this);
@@ -192,14 +235,22 @@ mstring& mstring :: operator+=(const mstring &rhs)
         alloc = n;
         if (cp) {
             strcpy(new_cp, cp);
-            strcat(new_cp, rhs.cp);
+            if (rhs.cp) {
+                strcat(new_cp, rhs.cp);
+            }
             delete[] cp;
         } else {
-            strcpy(new_cp, rhs.cp);
+            if (rhs.cp) {
+                strcpy(new_cp, rhs.cp);
+            } else {
+                new_cp[0] = 0; // shouldn't happen
+            }
         }
         cp = new_cp;
     } else { // fits
-        strcat(cp, rhs.cp);
+        if (rhs.cp) {
+            strcat(cp, rhs.cp);
+        }
     }
     return *this;
 }
@@ -222,6 +273,11 @@ bool mstring :: operator==(const mstring &rhs)
     return (strcmp(cp, rhs.cp) == 0);
 }
 
+bool mstring :: operator!=(const mstring &rhs)
+{
+    return !(*this == rhs);
+}
+
 bool mstring :: operator==(const char *rhs)
 {
     if(!cp && !rhs)
@@ -231,6 +287,11 @@ bool mstring :: operator==(const char *rhs)
     if(!rhs)
         return false;
     return (strcmp(cp, rhs) == 0);
+}
+
+bool mstring :: operator!=(const char *rhs)
+{
+    return !(*this == rhs);
 }
 
 mstring mstring::operator+(const mstring &right)
@@ -247,6 +308,104 @@ mstring mstring::operator+(const char *right)
     return result;
 }
 
+const char mstring::operator[](int pos)
+{
+    // Python style indexing for the fun of it
+    if (pos < 0) {
+        pos = strlen(cp) + pos;
+    }
+    if (pos < 0) {
+        return 0;
+    }
+    if (pos >= strlen(cp)) {
+        return 0;
+    }
+    return cp[pos];
+}
+
+bool mstring::split(const char c, const char **remaining)
+{
+    char *loc = strchr(cp, c);
+    if (!loc) {
+        return false;
+    }
+    *loc = 0;
+    *remaining = (loc + 1);
+    return true;
+}
+
+int mstring::split(const char c, const char **remaining, int count)
+{
+    char *current = cp;
+    int out = 0;
+    while(count > 0) {
+        char *loc = strchr(current, c);
+        if (!loc) {
+            *remaining = current;
+            out++;
+            return out;
+        }
+        *loc = 0;
+        *remaining = current;
+        remaining++;
+        current = loc + 1;
+        count --;
+        out ++;
+    }
+    return out;
+}
+
+void mstring::replace(const char *rep, const char *with)
+{
+    char *orig = cp;
+    char *result; // the return string
+    char *ins;    // the next insert point
+    char *tmp;    // varies
+    int len_rep;  // length of rep (the string to remove)
+    int len_with; // length of with (the string to replace rep with)
+    int len_front; // distance between rep and end of last rep
+    int count;    // number of replacements
+
+    // sanity checks and initialization
+    if (!cp || !rep || !with)
+        return;
+    len_rep = strlen(rep);
+    if (len_rep == 0)
+        return; // empty rep causes infinite loop during count
+    if (!with)
+        with = "";
+    len_with = strlen(with);
+
+    // count the number of replacements needed
+    ins = cp;
+    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    int new_size = strlen(orig) + (len_with - len_rep) * count + 1;
+    tmp = result = new char[new_size];
+
+    if (!result)
+        return;
+
+    // first time through the loop, all the variable are set correctly
+    // from here on,
+    //    tmp points to the end of the result string
+    //    ins points to the next occurrence of rep in orig
+    //    orig points to the remainder of orig after "end of rep"
+    while (count--) {
+        ins = strstr(orig, rep);
+        len_front = ins - orig;
+        tmp = strncpy(tmp, orig, len_front) + len_front;
+        tmp = strcpy(tmp, with) + len_with;
+        orig += len_front + len_rep; // move to next "end of rep"
+    }
+    strcpy(tmp, orig);
+    delete[] cp;
+    cp = result;
+    alloc = new_size;
+}
+
 void mstring::to_upper(void)
 {
     int len = length();
@@ -260,10 +419,10 @@ void mstring::set(int index, char c)
     if (!cp) {
         return;
     }
-    if (index >= length()) {
-        return;
-    }
     if (index < 0) {
+        index = strlen(cp) + index;
+    }
+    if (index >= length()) {
         return;
     }
     cp[index] = c;

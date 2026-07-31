@@ -22,11 +22,15 @@ void writer_complete(TempfileWriter *writer, const void *context1, void *context
     const ApiCall_t *func = (const ApiCall_t *)context1;
     ArgsURI *args = (ArgsURI *)context2;
     if (func) {
-        ResponseWrapper respw(writer->get_response());
-        if (args->Validate(*func, &respw) != 0) {
-            respw.json_response(HTTP_BAD_REQUEST);
-        } else {
-            func->proc(*args, writer->get_request(), &respw, writer);
+        // On an aborted (interrupted) upload, free the args without running the
+        // incomplete API call.
+        if (!writer->is_aborted()) {
+            ResponseWrapper respw(writer->get_response());
+            if (args->Validate(*func, &respw) != 0) {
+                respw.json_response(HTTP_BAD_REQUEST);
+            } else {
+                func->proc(*args, writer->get_request(), &respw, writer);
+            }
         }
         delete args;
     }
@@ -42,6 +46,13 @@ TempfileWriter *attachment_writer(HTTPReqMessage *req, HTTPRespMessage *resp, co
         }
         TempfileWriter *writer = new TempfileWriter(req, resp, writer_complete, func, args);
         setup_multipart(req, &TempfileWriter::collect_wrapper, writer);
+        if (!req->BodyCB) {
+            // setup_multipart ran out of memory and installed no body callback, so
+            // no terminate/abort will ever run: free the writer here and report
+            // "no body" so execute_api_v1 also frees args (no leak).
+            delete writer;
+            return NULL;
+        }
         return writer;
     }
     return NULL;
@@ -58,6 +69,12 @@ REUWriter *attachment_reu(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiC
         REUWriter *writer = new REUWriter();
         writer->create_callback(req, resp, args, (const ApiCall_t *)func);
         setup_multipart(req, &REUWriter::collect_wrapper, writer);
+        if (!req->BodyCB) {
+            // setup_multipart out of memory: no body callback installed, so free
+            // the writer here and report "no body" (execute_api_v1 frees args).
+            delete writer;
+            return NULL;
+        }
         return writer;
     }
     return NULL;

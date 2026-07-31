@@ -158,20 +158,19 @@ public:
 		return &children;
 	}
 
-	virtual const char *getName() {
-		if (fatname) {
-		    return fatname;
-		}
-	    if (!info) {
-		    return "No info!";
-		}
-		if (info->name_format & NAME_FORMAT_CBM) {
-		    fatname = new char[48];
-		    info->generate_fat_name(fatname, 48);
-		    return fatname;
-		}
-	    return info->lfname;
-	}
+    virtual const char *getName() {
+        if (!info) {
+            return "No info!";
+        }
+        if (!(info->name_format & NAME_FORMAT_CBM)) {
+            return info->lfname;
+        }
+        if (!fatname) {
+            fatname = new char[info->lfsize + 4];
+            info->generate_fat_name(fatname, info->lfsize + 4);
+        }
+        return fatname;
+    }
 
 	int squeezeToDisplayString(char *string_to_squeeze, char *squeezed_string, int max_width, int squeeze_quarter = 0) {
 		int len = strlen(string_to_squeeze);

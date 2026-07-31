@@ -1,5 +1,5 @@
 #!/bin/bash
-# Validate the boot-cart display-name trimming used by PRG runner REST endpoints.
+# E2E: Verifies PRG REST runners safely trim long boot-cart display names.
 
 # --- Defaults (Environment Variables) ---
 U64_HOST="${U64_HOST:-u64}"
@@ -17,7 +17,7 @@ INITIAL_AUTO_CLEANUP=""
 INITIAL_USE_CACHE=""
 CONFIG_RESTORED=false
 UPLOAD_ROOT="/Temp/cache/upload"
-LOCAL_PRG="/tmp/prg-load-path-trim-test.prg"
+LOCAL_PRG="/tmp/prg_load_path_trim_test.prg"
 
 # --- Colors ---
 C_BLUE='\033[1;34m'
@@ -267,6 +267,41 @@ machine_reset() {
     sleep 1
 }
 
+close_active_menu() {
+    local code
+    local attempt
+    local key
+
+    for attempt in {1..12}; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" -H "$REST_HEADER" \
+            "http://$U64_HOST/v1/machine:menu_screen")
+        [[ "$code" == "404" ]] && return 0
+        [[ "$code" == "200" ]] || handle_failure "Menu-state probe failed (HTTP $code)"
+
+        if (( attempt % 2 )); then
+            key=run_stop
+        else
+            key=return
+        fi
+        code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "$REST_HEADER" \
+            -H "Content-Type: application/json" \
+            --data "{\"events\":[{\"kind\":\"keyboard\",\"inputs\":[\"$key\"],\"transition\":\"tap\"}]}" \
+            "http://$U64_HOST/v1/machine:input")
+        [[ "$code" == "200" ]] || handle_failure "Menu cleanup failed (HTTP $code)"
+        sleep 0.25
+    done
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
+        "http://$U64_HOST/v1/machine:menu_button")
+    [[ "$code" == "200" ]] || handle_failure "Menu-button cleanup failed (HTTP $code)"
+    sleep 0.5
+}
+
+reset_to_clean_slate() {
+    close_active_menu
+    machine_reset
+}
+
 read_bootcrt_name() {
     local dump_file
     dump_file=$(mktemp)
@@ -428,6 +463,7 @@ echo -e "POST Upload Name: ${MULTIPART_FILENAME}"
 
 trap cleanup_and_restore EXIT
 
+reset_to_clean_slate
 capture_initial_config
 run_cases
 

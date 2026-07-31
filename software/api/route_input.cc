@@ -110,6 +110,12 @@ public:
             delete this;
             break;
         }
+        case eAbort:
+            // Connection torn down before the body finished: free the request
+            // args and this writer without running the incomplete API call.
+            delete args;
+            delete this;
+            break;
         default:
             break;
         }
@@ -140,6 +146,12 @@ void *input_json_writer(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiCal
         }
         InputJsonWriter *writer = new InputJsonWriter(req, resp, func, args);
         setup_multipart(req, &InputJsonWriter::collect_wrapper, writer);
+        if (!req->BodyCB) {
+            // setup_multipart out of memory: no body callback installed, so free
+            // the writer here and report "no body" (execute_api_v1 frees args).
+            delete writer;
+            return NULL;
+        }
         return writer;
     }
     return NULL;

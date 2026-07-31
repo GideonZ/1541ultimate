@@ -138,6 +138,7 @@
 #define CART_TYPE_BLACKBOX_V8 0x0C
 #define CART_TYPE_ZAXXON      0x0D
 #define CART_TYPE_BLACKBOX_V9 0x0E
+#define CART_TYPE_MEGABYTER   0x0F
 
 #define CART_TYPE_PAGEFOX     0x10
 #define CART_TYPE_EASY_FLASH  0x11 // ?
@@ -332,7 +333,7 @@ class C64 : public GenericHost, ConfigurableObject
     }
     static void init_poll_task(void *a);
     static int setCartPref(ConfigItem *item);
-
+    static int setCartPrefUI(ConfigItem *item);
 #if U64
     bool ConfigureU64SystemBus(void);
     void EnableWriteMirroring(void);
@@ -398,6 +399,7 @@ public:
     bool is_in_reset(void);
     virtual uint8_t peek(uint16_t address);
     virtual void poke(uint16_t address, uint8_t value);
+    void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
 
     static void clear_cart_definition(cart_def *def) {
         def->custom_addr = 0;
@@ -417,6 +419,11 @@ public:
     static uint8_t *get_cartridge_rom_addr(void) {
         extern uint8_t __cart_rom_start[1024*1024];
         return __cart_rom_start;
+    }
+
+    static uint32_t get_cartridge_max_rom(void) {
+        extern uint8_t __cart_rom_limit;
+        return ((uint32_t)&__cart_rom_limit) - (uint32_t)get_cartridge_rom_addr();
     }
 
     static uint8_t *get_cartridge_ram_addr(void) {

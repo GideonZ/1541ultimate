@@ -70,6 +70,16 @@ static void canonicalize_mnem(uint8_t opcode, const char *t, char *m)
     else if (!strcmp(m, "LSE")) strcpy(m, "SRE");
     else if (!strcmp(m, "DCM")) strcpy(m, "DCP");
     else if (!strcmp(m, "INS")) strcpy(m, "ISC");
+    else if (!strcmp(m, "ISB")) strcpy(m, "ISC");
+    else if (!strcmp(m, "KIL")) strcpy(m, "JAM");
+    else if (!strcmp(m, "XAA")) strcpy(m, "ANE");
+    else if (!strcmp(m, "AHX")) strcpy(m, "SHA");
+    else if (!strcmp(m, "AXS")) strcpy(m, "SBX");
+    else if (!strcmp(m, "ASR")) strcpy(m, "ALR");
+    else if (!strcmp(m, "LXA")) strcpy(m, "LAX");
+    else if (!strcmp(m, "SHS")) strcpy(m, "TAS");
+    else if (!strcmp(m, "LAE")) strcpy(m, "LAS");
+    else if (!strcmp(m, "LDS")) strcpy(m, "LAS");
 }
 
 struct ReverseEntry {
@@ -329,6 +339,7 @@ bool monitor_lookup_opcode(const char *mnemonic, AsmAddrMode mode,
     while (mnemonic[n] && n < 3) { m[n] = up(mnemonic[n]); n++; }
     m[n] = 0;
     if (n != 3) return false;
+    canonicalize_mnem(0, m, m);
     int idx = find_mnem(m);
     if (idx < 0) return false;
     const ReverseEntry &e = reverse_table[idx][mode];

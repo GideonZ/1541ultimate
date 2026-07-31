@@ -126,7 +126,7 @@ int FormUI :: handle_key(int c)
             }
     }    
     if (ret == MENU_DONE) {
-        form.read_fields();
+//        form.read_fields();
     }
     return ret;
 }

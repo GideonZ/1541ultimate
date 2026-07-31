@@ -13,7 +13,7 @@ static const char hexchar[] = "0123456789ABCDEF";
 static int
 _cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width, bool signd)
 {
-    char temp[80];
+    char temp[16];
     char *cp = temp;
     int length = 0;
 
@@ -82,7 +82,7 @@ _bin(int val, char *buf, int len)
 extern "C" int
 _my_vnprintf(void (*putc)(char c, void **param), void **param, size_t maxlen, const char *fmt, va_list ap)
 {
-    char buf[128];
+    char buf[32];
     char c;
     const char *cp=buf;
     long long val = 0;
@@ -288,9 +288,24 @@ extern "C" int snprintf(char *str, size_t size, const char *fmt, ...)
 	char *pnt = str;
 	
     va_start(ap, fmt);
-    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size-1, fmt, ap);
-    _string_write_char(0, (void **)&pnt);
+    /* size==0: write nothing (size-1 would underflow to a huge maxlen and the
+       NUL below would write past a zero-length buffer). */
+    ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
     va_end(ap);
+    return (ret);
+}
+
+extern "C" int vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
+{
+    char *pnt = str;
+    /* size==0: write nothing (see snprintf above). */
+    int ret = _my_vnprintf(_string_write_char, (void **)&pnt, size ? size - 1 : 0, fmt, ap);
+    if (size) {
+        _string_write_char(0, (void **)&pnt);
+    }
     return (ret);
 }
 

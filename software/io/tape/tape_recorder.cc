@@ -44,13 +44,13 @@ TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
     }
 	if (getFpgaCapabilities() & CAPAB_C2N_RECORDER) {
 		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, PRIO_REALTIME, &taskHandle );
-        ioWrite8(ITU_IRQ_ENABLE, 0x08);
+        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_TAPE);
 	}
 }
 
 TapeRecorder :: ~TapeRecorder()
 {
-    ioWrite8(ITU_IRQ_DISABLE, 0x08);
+    ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_TAPE);
 	stop(REC_ERR_OK);
     delete[] cache;
 }

@@ -251,6 +251,7 @@ class MachineMonitor : public UIObject
     void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();
+    void refresh_opcode_overlay();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();
@@ -267,7 +268,8 @@ class MachineMonitor : public UIObject
     void hunt_picker_jump();
     int hunt_picker_handle_key(int key);
     void draw_opcode_picker();
-    void opcode_picker_open(char seed);
+    bool opcode_picker_open(char seed);
+    bool opcode_prefix_is_valid(const char *prefix);
     void opcode_picker_close();
     void opcode_picker_refilter();
     void opcode_picker_commit();
