@@ -837,6 +837,27 @@ bool BrkDebugSession :: has_visible_rom_patch(void) const
     return false;
 }
 
+bool BrkDebugSession :: only_visible_rom_patches(void) const
+{
+    // True when every installed BRK sits in a visible-ROM image, so the launch
+    // can only come to rest on a ROM-image breakpoint. A launch that also
+    // carries a RAM patch - a step's predicted next PC, or a RAM breakpoint -
+    // can legitimately stop in RAM, so a timeout there is a plain DBG_TIMEOUT
+    // and must not be reported as the ROM fetch-coherency limit just because
+    // some unrelated ROM breakpoint happens to be armed.
+    bool any = false;
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (!patches[i].used) {
+            continue;
+        }
+        if (!monitor_backing_store_is_visible_rom(patches[i].target)) {
+            return false;
+        }
+        any = true;
+    }
+    return any;
+}
+
 
 bool BrkDebugSession :: begin_clean_stopped_session(void)
 {
@@ -1051,8 +1072,17 @@ void BrkDebugSession :: drop_queued_execution_keys(void)
 
 DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
 {
-    int waited = 0;
-    while (waited < timeout_ms) {
+    // Measure real elapsed time. Counting delay_ms(5) steps under-measures the
+    // wait badly on Telnet: the cancel-key poll below blocks for the session
+    // socket's 200 ms receive timeout, so each nominal 5 ms iteration really
+    // costs ~205 ms. A 5000 ms budget then took over three minutes of wall
+    // clock, which is why a genuine visible-ROM entry miss never reported its
+    // DBG_ROM_ENTRY_UNCOHERENT result within any sane test or user timeout.
+    // Only reached when the sentinel stays clear, so successful runs are
+    // unaffected. getMsTimer() is 16-bit, so timeout_ms must stay below 65535
+    // for the wrap-safe subtraction to hold; the callers use 900 and 5000.
+    const uint16_t start_ms = getMsTimer();
+    while ((uint16_t)(getMsTimer() - start_ms) < (uint16_t)timeout_ms) {
         refresh_debug_ownership();
         if (reset_cancel_requested) {
             restore_patches();
@@ -1088,7 +1118,6 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
             }
         }
         delay_ms(5);
-        waited += 5;
     }
     return DBG_TIMEOUT;
 }
@@ -1523,14 +1552,20 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         // Unlike a parked/context launch, here the CPU sits at its own running PC
         // far from the target, so a sustained fetch-path settle safely clocks
         // that unrelated code to propagate the ROM image into the fetch path
-        // before the NMI redirects execution toward the target. Skipped when a
-        // launch context is present (the CPU is at the launch PC and a settle
-        // could run it past a nearby BRK) - matching release_to_run's gating.
+        // before the NMI redirects execution toward the target.
         // Gate on the installed BREAKPOINT bank (visible ROM), not the launch
         // PC's bank: the bootstrap that the CPU is redirected to lives in RAM, so
         // force_cpu_port (derived from start_pc) is false here even though the
         // target BRK is in a fetch-lagging ROM window.
-        bool rom_entry_settle = (launch_ctx == 0) && has_visible_rom_patch();
+        // Do NOT gate this on launch_ctx: here it is only relaunch metadata, and
+        // the launch is always the NMI redirect below, so the CPU never sits at
+        // start_pc. cleanup_to_context() leaves a resume_context seed behind
+        // after every parked Debug exit, which made launch_ctx non-null - and so
+        // dropped both the settle and the honest DBG_ROM_ENTRY_UNCOHERENT
+        // reporting - for every ROM entry after the first Debug session.
+        // Require ALL patches to be visible ROM: a contextless step also installs
+        // its predicted next PC in RAM and can legitimately stop there.
+        bool rom_entry_settle = only_visible_rom_patches();
         contextless_rom_launch = rom_entry_settle;
         nmi_redirect_to(start_pc, cpu_port,
                         force_cpu_port, staged, rom_entry_settle);
@@ -2811,14 +2846,20 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         // Unlike a parked/context launch, here the CPU sits at its own running PC
         // far from the target, so a sustained fetch-path settle safely clocks
         // that unrelated code to propagate the ROM image into the fetch path
-        // before the NMI redirects execution toward the target. Skipped when a
-        // launch context is present (the CPU is at the launch PC and a settle
-        // could run it past a nearby BRK) - matching release_to_run's gating.
+        // before the NMI redirects execution toward the target.
         // Gate on the installed BREAKPOINT bank (visible ROM), not the launch
         // PC's bank: the bootstrap that the CPU is redirected to lives in RAM, so
         // force_cpu_port (derived from start_pc) is false here even though the
         // target BRK is in a fetch-lagging ROM window.
-        bool rom_entry_settle = (launch_ctx == 0) && has_visible_rom_patch();
+        // Do NOT gate this on launch_ctx: here it is only relaunch metadata, and
+        // the launch is always the NMI redirect below, so the CPU never sits at
+        // start_pc. cleanup_to_context() leaves a resume_context seed behind
+        // after every parked Debug exit, which made launch_ctx non-null - and so
+        // dropped both the settle and the honest DBG_ROM_ENTRY_UNCOHERENT
+        // reporting - for every ROM entry after the first Debug session.
+        // Require ALL patches to be visible ROM: a contextless step also installs
+        // its predicted next PC in RAM and can legitimately stop there.
+        bool rom_entry_settle = only_visible_rom_patches();
         contextless_rom_launch = rom_entry_settle;
         nmi_redirect_to(start_pc, cpu_port,
                         force_cpu_port, staged, rom_entry_settle);

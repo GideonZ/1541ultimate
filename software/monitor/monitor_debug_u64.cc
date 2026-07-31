@@ -178,7 +178,12 @@ protected:
             return;
         }
         machine->end_stopped_session(true);
-        wait_10us(sustained ? 5000 : 50);
+        // Sustained length measured on a U64 Elite, as the contextless
+        // visible-ROM entry hit rate over repeated bp+Go launches:
+        // 33/40 at the original 50 ms, 39/40 at 150 ms, 18/20 at 250 ms.
+        // The refresh saturates around 150 ms, and the cost is paid only on a
+        // launch toward a freshly patched ROM image.
+        wait_10us(sustained ? 15000 : 50);
         machine->begin_stopped_session();
     }
     virtual void request_staged_nmi(void)

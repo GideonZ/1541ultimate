@@ -428,6 +428,9 @@ public:
     int staged_nmi_clears;
     int brk_patch_writes;
     int delay_calls;
+    // Milliseconds the modelled cancel-key poll costs per sentinel poll.
+    // On Telnet the real poll blocks for the socket receive timeout.
+    uint16_t cancel_poll_cost_ms;
     int pokes_at_cancel;
     uint16_t last_brk_patch_addr;
     uint16_t brk_patch_addrs[MAX_RECORDED_BRK_PATCHES];
@@ -464,7 +467,8 @@ public:
           break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
           unfreeze_calls(0), refreeze_calls(0), reset_calls(0), nmi_pulses(0),
           staged_nmi_requests(0), staged_nmi_clears(0),
-          brk_patch_writes(0), delay_calls(0), pokes_at_cancel(0),
+          brk_patch_writes(0), delay_calls(0), cancel_poll_cost_ms(0),
+          pokes_at_cancel(0),
           last_brk_patch_addr(0),
           freeze_restore_pokes(0),
           sentinel_armed(true), stale_sentinel_during_nmi_setup(false),
@@ -576,7 +580,15 @@ protected:
         }
         ram[a] = b;
     }
-    virtual uint8_t peek_visible(uint16_t a) { return ram[a]; }
+    virtual uint8_t peek_visible(uint16_t a)
+    {
+        if (cancel_poll_cost_ms && a == FAKE_SENTINEL_ADDR) {
+            // Model the wall-clock cost the real sentinel loop pays per poll
+            // outside delay_ms() (the blocking cancel-key read on Telnet).
+            advance_fake_ms_timer(cancel_poll_cost_ms);
+        }
+        return ram[a];
+    }
     virtual void poke_visible(uint16_t a, uint8_t b)
     {
         ram[a] = b;
@@ -638,9 +650,13 @@ protected:
     {
         staged_nmi_clears++;
     }
-    virtual void delay_ms(int)
+    virtual void delay_ms(int ms)
     {
         delay_calls++;
+        // wait_for_sentinel() measures real elapsed time via getMsTimer(), so
+        // the fake clock has to move with the fake delay or a timeout loop
+        // would never end here.
+        advance_fake_ms_timer((uint16_t)(ms > 0 ? ms : 1));
         if (monitor_reset_cancel_on_delay && monitor_reset_cancel_target) {
             monitor_reset_cancel_target->request_debug_reset_cancel();
             pokes_at_cancel = freeze_restore_pokes;
@@ -5790,6 +5806,145 @@ static int test_contextless_visible_rom_entry_reports_uncoherent_on_miss()
     return 0;
 }
 
+// Drive one successful contextless bp+Go into visible KERNAL, then leave Debug
+// exactly as MachineMonitor does (cleanup_to_context + forget_context). That
+// hand-off keeps resume_context as a retry seed while dropping last_context, so
+// the session is left in the state a second Debug entry starts from.
+static void fake_leave_debug_after_visible_rom_session(FakeVisibleRomMachine &m)
+{
+    fake_seed_rom_nop_run(m, 0xE000);
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+    m.arm_capture_context(0xE000, 0xF8, 0, 0, 0, 0x24);
+    m.go(from, &bps, 0xC5F0);
+    DebugContext parked;
+    debug_context_reset(&parked);
+    parked.pc = 0xE000;
+    parked.valid = true;
+    m.cleanup_to_context(&parked);
+    m.forget_context();
+}
+
+static int test_contextless_visible_rom_entry_after_prior_session_reports_uncoherent()
+{
+    // Regression for the state that the hardware E2E suite actually hits. After
+    // any Debug session that is left while parked, cleanup_to_context() stores a
+    // resume_context and forget_context() deliberately keeps it (it is a retry
+    // seed). The next contextless bp+Go into visible ROM therefore found
+    // has_resume_context set and adopted it as launch metadata, which used to
+    // clear the "contextless visible-ROM launch" classification. Two things broke
+    // together: the sustained fetch-path settle was skipped, and a genuine miss
+    // was reported as a bare DBG_TIMEOUT instead of DBG_ROM_ENTRY_UNCOHERENT.
+    // The launch itself is an NMI redirect in both cases - the CPU is never at
+    // start_pc here - so the stale seed must not change either behaviour.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+
+    fake_leave_debug_after_visible_rom_session(m);
+
+    // Second entry: same contextless bp+Go, forced to miss.
+    fake_seed_rom_nop_run(m, 0xE000);
+    m.sentinel_armed = false;
+    m.settle_calls = 0;
+    m.sustained_settle_calls = 0;
+    m.saw_sustained_settle = false;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC5F0);
+    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
+               "Contextless visible-ROM miss after a prior session must still "
+               "report DBG_ROM_ENTRY_UNCOHERENT, not a bare DBG_TIMEOUT")) return 1;
+    if (expect(m.sustained_settle_calls >= 1,
+               "Contextless visible-ROM entry after a prior session must still "
+               "settle the fetch path")) return 1;
+    if (expect(m.kernal_rom[0x0000] == 0xEA,
+               "Miss must restore the visible-ROM breakpoint byte (no stale BRK left)")) return 1;
+    return 0;
+}
+
+static int test_ram_launch_with_stale_rom_breakpoint_is_not_reported_as_uncoherent()
+{
+    // A contextless launch that can stop in RAM is not a visible-ROM entry, even
+    // when an unrelated ROM breakpoint is still armed from an earlier operation.
+    // Reporting DBG_ROM_ENTRY_UNCOHERENT there would label a genuine RAM-step
+    // timeout as the documented closed-core limitation, which the E2E suite then
+    // records as a skip instead of a failure.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0x0000] = 0xEA;
+    m.ram[0xC700] = 0xA9;               // LDA #$5A at the RAM launch PC
+    m.ram[0xC701] = 0x5A;
+    m.ram[0xC702] = 0xEA;
+    m.sentinel_armed = false;           // never trap -> forced timeout
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);         // stale visible-KERNAL breakpoint
+    bps.allocate(0xC702, 0x07);         // RAM breakpoint this launch can stop on
+
+    DebugContext from;
+    debug_context_reset(&from);
+    DebugSession::Result r = m.go(from, &bps, 0xC700);
+
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "A launch that can stop in RAM must report DBG_TIMEOUT even when a "
+               "stale visible-ROM breakpoint is armed")) return 1;
+    if (expect(m.kernal_rom[0x0000] == 0xEA,
+               "Timeout must still restore the visible-ROM breakpoint byte")) return 1;
+    return 0;
+}
+
+static int test_sentinel_wait_timeout_tracks_real_elapsed_time()
+{
+    // wait_for_sentinel() used to count its own delay_ms(5) steps instead of
+    // measuring elapsed time. Every iteration also polls the cancel keyboard,
+    // and on a Telnet session that poll blocks for the socket's 200 ms receive
+    // timeout, so an iteration really cost ~205 ms while crediting 5 ms. A
+    // 5000 ms budget therefore ran for over three minutes, and a genuine
+    // visible-ROM entry miss never reported DBG_ROM_ENTRY_UNCOHERENT inside any
+    // usable timeout - the monitor simply went silent. Model that per-poll cost
+    // and require the wait to end after roughly its budget of real time.
+    const uint16_t poll_cost_ms = 200;
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+    m.kernal_rom[0x0000] = 0xEA;
+    m.sentinel_armed = false;           // never trap -> the wait runs its budget
+    m.cancel_poll_cost_ms = poll_cost_ms;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);
+    DebugContext from;
+    debug_context_reset(&from);
+
+    set_fake_ms_timer(0);
+    m.delay_calls = 0;
+    DebugSession::Result r = m.go(from, &bps, 0xC5F0);
+
+    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
+               "A miss must still report DBG_ROM_ENTRY_UNCOHERENT")) return 1;
+    // Each poll costs poll_cost_ms + the 5 ms delay, so an honest wait needs
+    // about budget/205 iterations. The old step-counting wait needed budget/5,
+    // i.e. 40x more. Allow generous slack and still separate the two by far.
+    const int budget_ms = 900;          // HIGH_MEMORY_BREAKPOINT_WAIT_MS
+    const int max_relaunches = 3;       // initial launch + MAX_BREAKPOINT_RELAUNCH
+    const int honest_polls = (budget_ms / (poll_cost_ms + 5) + 2) * max_relaunches;
+    const int step_counted_polls = (budget_ms / 5) * max_relaunches;
+    if (expect(m.delay_calls <= honest_polls,
+               "Sentinel wait must end after its real-time budget, not after "
+               "budget/5 fixed steps")) return 1;
+    if (expect(honest_polls < step_counted_polls / 4,
+               "Test must actually separate real-time from step-counted waiting")) return 1;
+    return 0;
+}
+
 static int test_ram_under_rom_timeout_is_not_reported_as_uncoherent()
 {
     // The precise DBG_ROM_ENTRY_UNCOHERENT is specific to a visible-ROM image
@@ -8735,6 +8890,9 @@ int main()
     RUN(test_kernal_out_hard_vector_installs_and_restores_on_cleanup);
     RUN(test_kernal_out_hard_vector_restores_on_timeout);
     RUN(test_contextless_visible_rom_entry_reports_uncoherent_on_miss);
+    RUN(test_contextless_visible_rom_entry_after_prior_session_reports_uncoherent);
+    RUN(test_ram_launch_with_stale_rom_breakpoint_is_not_reported_as_uncoherent);
+    RUN(test_sentinel_wait_timeout_tracks_real_elapsed_time);
     RUN(test_ram_under_rom_timeout_is_not_reported_as_uncoherent);
     RUN(test_visible_kernal_hard_vector_installs_and_restores);
     RUN(test_stale_visible_kernal_hard_vector_is_recovered);

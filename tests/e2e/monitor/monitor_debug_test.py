@@ -406,7 +406,21 @@ def _bootstrap_hit_rom_breakpoint(rest_host: str, session: "mt.MonitorSession",
     session.send_char("G")
     # Wait out the full firmware go() budget so a miss resolves to the honest
     # RomEntryUncoherent popup rather than a premature timeout misread as a defect.
-    return _wait_rom_entry_outcome(session, address, context)
+    try:
+        return _wait_rom_entry_outcome(session, address, context)
+    except RomEntryUncoherent:
+        # A documented-limitation skip still has to leave the machine as it found
+        # it. The skip propagates out of the enclosing mt.check(), so the caller
+        # never reaches its own breakpoint cleanup, and the entry breakpoint we
+        # armed above would stay in ROM for the rest of the run. A later check
+        # that enters ROM near this address then traps on the leftover BRK
+        # instead of its own target.
+        try:
+            _clear_breakpoint_at(session, address, f"{context}: entry bp clear after skip")
+        except Exception as exc:  # noqa: BLE001 - never hide the documented skip
+            print(f"[info] {context}: could not clear the entry breakpoint after "
+                  f"the skip: {exc}", flush=True)
+        raise
 
 
 def _acquire_rom_context_at(rest_host: str, session: "mt.MonitorSession",
