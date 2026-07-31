@@ -233,6 +233,22 @@ def _assert_no_debug_modal_snapshot(snap: mt.Snapshot, context: str) -> None:
             raise mt.Failure(f"{context}: unexpected {token!r} after {snap.last_command}\n{text}")
 
 
+def _dismiss_modal_if_present(session: "mt.MonitorSession") -> bool:
+    """Close a monitor alert box if one is open. Returns whether there was one.
+
+    Used where the monitor may or may not raise an alert and the test must not
+    depend on its wording. The alert is drawn as a small box INSIDE the monitor
+    frame, so its border appears on a line that already starts with the frame's
+    own `|`; the frame's own border lines start with `+`.
+    """
+    snap = session.capture()
+    boxed = any(re.match(r"^\|.*\+-{8,}\+", snap.line(y)) for y in range(mt.HEIGHT))
+    if not boxed:
+        return False
+    session.send_key("ENTER")
+    return True
+
+
 def _assert_no_debug_modal(session: "mt.MonitorSession", context: str) -> None:
     _assert_no_debug_modal_snapshot(session.capture(), context)
 
@@ -913,6 +929,38 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
 
     with mt.check("Debug: clear stale breakpoint slots before exercising popup flows"):
         _clear_all_breakpoints(session, "suite setup breakpoint cleanup")
+
+    with mt.check("Debug: 11th breakpoint is refused without evicting the other 10"):
+        # The table has MONITOR_BREAKPOINT_SLOT_COUNT (10) slots and allocate()
+        # returns -1 when full. The risk worth testing is not the wording of the
+        # refusal but the silent alternative: dropping or overwriting a
+        # breakpoint the user still relies on. Assert only that, so the check
+        # does not depend on any particular message.
+        base = 0xC900
+        mt.write_rest_memory(rest_host, base, bytes([0xEA] * 11))  # 11 x NOP
+        _clear_all_breakpoints(session, "slot-exhaustion setup")
+        armed = [base + i for i in range(10)]
+        for address in armed:
+            _ensure_breakpoint_at(session, address, f"slot fill ${address:04X}")
+        overflow = base + 10
+        session.goto(f"{overflow:04X}")
+        session.send_char("R")
+        _dismiss_modal_if_present(session)
+        row = _disassembly_row(session.capture(), overflow)
+        if "[BRK" in row:
+            raise mt.Failure(
+                f"11th breakpoint at ${overflow:04X} was accepted into a "
+                f"10-slot table: {row!r}")
+        missing = []
+        for address in armed:
+            session.goto(f"{address:04X}")
+            row = _disassembly_row(session.capture(), address)
+            if "[BRK" not in row:
+                missing.append(f"${address:04X}")
+        if missing:
+            raise mt.Failure(
+                f"refusing the 11th breakpoint evicted existing ones: {missing}")
+        _clear_all_breakpoints(session, "slot-exhaustion cleanup")
 
     with mt.check("Debug: footer rows show CPU labels"):
         labels = _footer_header_line(session)

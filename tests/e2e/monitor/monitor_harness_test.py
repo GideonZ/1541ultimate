@@ -217,6 +217,41 @@ def _run_fixture(fixture):
     return trace, regions, mem
 
 
+class ModalDetectionTest(unittest.TestCase):
+    """`_dismiss_modal_if_present` must tell a monitor alert box apart from the
+    monitor's own frame, without depending on the alert's wording. Both samples
+    are real captures taken from the debug suite."""
+
+    ALERT_SCREEN = [
+        "+----------------------------------------------------------+",
+        "|MONITOR ASM $C700                                 Dbg     |",
+        "|C700 A9 5A     LDA #$5A          [RAM]                    |",
+        "|C70C 80    +------------------------------------+         |",
+        "|C70D 00    |ROM BP ENTRY MISSED - RUN CODE FIRST|         |",
+        "|C70F FF    |                 Ok                 |         |",
+        "|C710 FF    +------------------------------------+         |",
+    ]
+    PLAIN_SCREEN = [
+        "+----------------------------------------------------------+",
+        "|MONITOR ASM $C5F0                                 Dbg     |",
+        "|C5F0 A9 2F     LDA #$2F          [RAM]                    |",
+        "|PC   AC XR YR SP NV-BDIZC IRQ  NMI                        |",
+        "|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000                      |",
+        "+----------------------------------------------------------+",
+    ]
+
+    @staticmethod
+    def _detects(lines):
+        import re as _re
+        return any(_re.match(r"^\|.*\+-{8,}\+", line) for line in lines)
+
+    def test_alert_box_inside_the_frame_is_detected(self) -> None:
+        self.assertTrue(self._detects(self.ALERT_SCREEN))
+
+    def test_plain_monitor_frame_is_not_mistaken_for_an_alert(self) -> None:
+        self.assertFalse(self._detects(self.PLAIN_SCREEN))
+
+
 class BoundaryTraversalFixtureTest(unittest.TestCase):
     """The boundary-traversal fixtures must be valid 6502 that really crosses
     memory regions. A developer debugs their own RAM program and steps into ROM
