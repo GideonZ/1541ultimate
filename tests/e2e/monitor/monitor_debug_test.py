@@ -101,9 +101,17 @@ def _rom_entry_miss_detected(session: "mt.MonitorSession") -> bool:
 
 
 # The firmware go()/continue for a contextless visible-ROM launch blocks for its
-# full breakpoint wait + bounded in-place relaunch budget before it returns and
-# paints the result popup (~15s). A ROM-entry outcome wait must outlast that or it
+# breakpoint wait plus the bounded in-place relaunch budget before it returns and
+# paints the result popup. A ROM-entry outcome wait must outlast that, or it
 # races the popup and misclassifies the documented miss as a genuine defect.
+#
+# The budget is 3 x HIGH_MEMORY_BREAKPOINT_WAIT_MS (900 ms) plus the fetch-path
+# settles, measured at 4.2 s on a U64 Elite for a forced miss. It used to be far
+# longer only because wait_for_sentinel() counted its own delay steps instead of
+# elapsed time, which on Telnet inflated every wait roughly 40x; that is fixed,
+# so this timeout is now a wide margin over the real budget rather than a close
+# fit to a broken one. Keep the margin: it costs nothing on the success path,
+# where the outcome is observed as soon as the footer updates.
 ROM_ENTRY_OUTCOME_TIMEOUT = 22.0
 
 
@@ -408,18 +416,22 @@ def _bootstrap_hit_rom_breakpoint(rest_host: str, session: "mt.MonitorSession",
     # RomEntryUncoherent popup rather than a premature timeout misread as a defect.
     try:
         return _wait_rom_entry_outcome(session, address, context)
-    except RomEntryUncoherent:
-        # A documented-limitation skip still has to leave the machine as it found
-        # it. The skip propagates out of the enclosing mt.check(), so the caller
-        # never reaches its own breakpoint cleanup, and the entry breakpoint we
-        # armed above would stay in ROM for the rest of the run. A later check
-        # that enters ROM near this address then traps on the leftover BRK
+    except BaseException:
+        # Whatever went wrong, this helper must leave the machine as it found it.
+        # The exception propagates out of the enclosing mt.check(), so the caller
+        # never reaches its own breakpoint cleanup, and the entry breakpoint armed
+        # above would stay in the table for the rest of the run. A later check
+        # that enters ROM near this address then traps on that leftover BRK
         # instead of its own target.
+        #
+        # This must cover a plain failure as well as the documented-limitation
+        # skip: mt.check() swallows a failure too whenever --keep-going is set,
+        # and the matrix gate's preflight runs this suite with --keep-going.
         try:
-            _clear_breakpoint_at(session, address, f"{context}: entry bp clear after skip")
-        except Exception as exc:  # noqa: BLE001 - never hide the documented skip
-            print(f"[info] {context}: could not clear the entry breakpoint after "
-                  f"the skip: {exc}", flush=True)
+            _clear_breakpoint_at(session, address, f"{context}: entry bp cleanup")
+        except Exception as exc:  # noqa: BLE001 - never replace the original outcome
+            print(f"[info] {context}: could not clear the entry breakpoint during "
+                  f"cleanup: {exc}", flush=True)
         raise
 
 
@@ -490,6 +502,12 @@ def _contextless_visible_jsr_step_over(rest_host: str, session: "mt.MonitorSessi
 
 def _ensure_breakpoint_at(session: "mt.MonitorSession", address: int,
                           context: str) -> None:
+    # `R` toggles the breakpoint on the CURSOR line, so the cursor has to be on
+    # `address` first. Navigate here rather than relying on the caller having
+    # done it, which is what _clear_breakpoint_at already does: leaving it to the
+    # caller means a stray cursor arms a breakpoint at the wrong address, and the
+    # readback below would then report the failure against the intended address.
+    session.goto(f"{address:04X}")
     row = _disassembly_row(session.capture(), address)
     if "[BRK" in row:
         return
@@ -535,6 +553,37 @@ def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
             session.send_key("DOWN")
 
     session.send_key("ESC")
+
+
+def _assert_no_breakpoints_remain(session: "mt.MonitorSession", context: str) -> None:
+    """Every slot in the 10-entry breakpoint table must be EMPTY.
+
+    Each check is responsible for removing the breakpoints it arms. A leftover
+    entry is not cosmetic: a later check that enters ROM near that address traps
+    on the stale BRK instead of its own target, and the resulting failure points
+    at the innocent check rather than at the one that leaked. Asserting the
+    invariant once at the end names the leak directly.
+    """
+    session.last_command = "CTRL_R_HYGIENE"
+    session.sock.sendall(b"\x12")
+    snap = session.capture()
+    if "BREAKPOINTS" not in snap.text():
+        raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
+    leaked = []
+    for slot in range(10):
+        line = next((snap.line(y) for y in range(mt.HEIGHT)
+                     if re.match(rf"^\|{slot} ", snap.line(y))), "")
+        if not line:
+            session.send_key("ESC")
+            raise mt.Failure(
+                f"{context}: slot {slot} missing from breakpoint popup:\n{snap.text()}")
+        if "EMPTY" not in line:
+            leaked.append(line.strip())
+    session.send_key("ESC")
+    if leaked:
+        raise mt.Failure(
+            f"{context}: {len(leaked)} breakpoint slot(s) still armed after the "
+            f"suite; a check did not remove what it set: {leaked}")
 
 
 def _leave_debug_and_reset(rest_host: str, session: "mt.MonitorSession") -> None:
@@ -3393,6 +3442,17 @@ def main() -> int:
                           u2=False,
                           u2_reason="U64 CPU banking/readability hygiene is required"):
                 _restore_safe_banking_display_hygiene(rest_host, session, "post-suite hygiene")
+
+            # Last, so that a leak reported here cannot prevent the banking
+            # restore above from running.
+            with mt.check("Debug: no breakpoint slot is left armed after the suite"):
+                _reopen_monitor(session)
+                _ensure_no_debug(session)
+                session.goto("C000")
+                session.send_char("A")
+                session.send_char("D")
+                _assert_no_breakpoints_remain(session, "post-suite breakpoint hygiene")
+                _ensure_no_debug(session)
     except mt.Failure as exc:
         aborted = True
         print(exc, file=sys.stderr)
