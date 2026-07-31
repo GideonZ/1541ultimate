@@ -214,7 +214,7 @@ void CommandInterface :: dump_registers(void)
     printf("CMD_IF_STATUS_END      %b\n", CMD_IF_STATUS_END    );
     printf("CMD_IF_STATUS_LENGTH   %b\n", CMD_IF_STATUS_LENGTH );
     printf("CMD_IF_RESPONSE_LEN_L  %b\n", CMD_IF_RESPONSE_LEN_L);
-    printf("CMD_IF_REPSONSE_LEN_H  %b\n", CMD_IF_RESPONSE_LEN_H);
+    printf("CMD_IF_RESPONSE_LEN_H  %b\n", CMD_IF_RESPONSE_LEN_H);
     printf("CMD_IF_COMMAND_LEN_L   %b\n", CMD_IF_COMMAND_LEN_L );
     printf("CMD_IF_COMMAND_LEN_H   %b\n", CMD_IF_COMMAND_LEN_H );
     printf("CMD_IF_IRQMASK         %b\n", CMD_IF_IRQMASK       );

@@ -23,7 +23,12 @@ static Message c_status_invalid_dir         = {  1, true, (uint8_t *)"\x09" };
 SoftIECTarget :: SoftIECTarget(int id)
 {
     command_targets[id] = this;
-    data_message.message = new uint8_t[512];
+    // cmd_get_fatname() fills this with strncpy(..., CMD_MAX_REPLY_LEN), and strncpy
+    // pads the destination all the way to n, so the buffer has to be that size.
+    data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
+    // No command in this target replies in more than one part; direct_message is
+    // the one that does, and it sets its own flag in prepare_data().
+    data_message.last_part = true;
     status_message.message = new uint8_t[80];
     input_channel = NULL;
     input_length = 0;
