@@ -56,7 +56,15 @@ def make_rest(args: argparse.Namespace, timeout: float = 12.0):
     return R.Rest(args.rest_host, timeout=timeout)
 
 
-MEMORY_MODES = ("ram", "ram-under-rom", "rom")
+# "ram-rom-ram" and "ram-rur-rom-ram" are boundary-traversal modes: the
+# session starts with a live context in the developer's own RAM program and
+# steps across a memory-region boundary mid-trace. That is the realistic
+# workflow - a developer debugs RAM code and steps into ROM from there -
+# whereas "rom" and "ram-under-rom" enter their region cold from a bootstrap.
+MEMORY_MODES = ("ram", "ram-under-rom", "rom", "ram-rom-ram", "ram-rur-rom-ram")
+# Modes whose cell is validated by an explicit boundary walk instead of the
+# 32-level Step Into chain.
+TRAVERSAL_MODES = ("ram-rom-ram", "ram-rur-rom-ram")
 INTERFACES = ("telnet", "freeze", "overlay")
 # ROM_ENTRY_UNCOHERENT is a terminal, honest outcome (NOT a pass, NOT a genuine
 # failure): the contextless visible-ROM breakpoint entry missed the 6510's first
@@ -421,6 +429,12 @@ class MatrixFixture:
     chunks: list[tuple[int, bytes]]
     bootstrap: bytes
     bootstrap_addr: int = stress.BOOTSTRAP_ADDR
+    # Boundary-traversal walk: (monitor key, expected PC after the step, region
+    # the CPU is in once it stops). Empty for the non-traversal modes.
+    traversal: list[tuple[str, int, str]] = field(default_factory=list)
+    # Addresses whose fixture bytes live in RAM under ROM, so a readback through
+    # REST would see the ROM image instead of what was written.
+    hidden_ram_chunks: tuple[int, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -435,10 +449,154 @@ class MatrixFixture:
             "sentinel": f"{self.sentinel:04X}",
             "progress": f"{self.progress:04X}",
             "bootstrap_addr": f"{self.bootstrap_addr:04X}",
+            "traversal": [
+                {"key": k, "pc": f"{pc:04X}", "region": region}
+                for k, pc, region in self.traversal
+            ],
         }
 
 
+def _build_ram_rom_ram_fixture() -> MatrixFixture:
+    """RAM -> ROM -> RAM: the developer's own RAM program calls a BASIC routine.
+
+    The session is entered in RAM with a live context, so the visible-ROM
+    breakpoint is reached by stepping into it from RAM rather than by a cold
+    bootstrap jump. $BC0F is the canonical BASIC FAC copy routine, which the
+    "rom" mode already steps through; it only touches BASIC zero-page scratch.
+    """
+    base = 0xC000
+    helper = 0xC100
+    sentinel = 0xC1F0
+    progress = 0xC1F1
+    bootstrap = bytes([
+        0xD8, 0x18, 0x78, 0xB8,           # CLD/CLC/SEI/CLV
+        0xA2, 0xF8, 0x9A,                 # LDX #$F8; TXS
+        0xA9, 0x2F, 0x85, 0x00,           # CPU port DDR
+        0xA9, 0x37, 0x85, 0x01,           # BASIC + KERNAL + I/O visible
+        0xA9, 0x00, 0xA2, 0x00, 0xA0, 0x00,
+        0x4C, base & 0xFF, base >> 8,
+    ])
+    main = bytes([
+        0x20, helper & 0xFF, helper >> 8,          # C000 JSR helper   (RAM)
+        0x20, 0x0F, 0xBC,                          # C003 JSR $BC0F    (BASIC ROM)
+        0xA9, 0x77,                                # C006 LDA #$77
+        0x8D, sentinel & 0xFF, sentinel >> 8,      # C008 STA sentinel
+        0xEE, progress & 0xFF, progress >> 8,      # C00B INC progress
+        # Loop back onto the INC, not onto itself: the Continue phase proves
+        # liveness by watching the progress counter keep moving.
+        0x4C, (base + 0x000B) & 0xFF, (base + 0x000B) >> 8,   # C00E JMP $C00B
+    ])
+    helper_code = bytes([
+        0xA9, 0x42,
+        0x8D, sentinel & 0xFF, sentinel >> 8,
+        0x60,
+    ])
+    return MatrixFixture(
+        memory_mode="ram-rom-ram",
+        base=base, bank=7, source="RAM",
+        entry=base,
+        step_over_return=base + 0x0003,
+        chain_entry=0xBC0F,
+        chain_addrs=[0xBC0F],
+        chain_return_addrs=[base + 0x0006],
+        cursor_target=base + 0x0006,
+        breakpoint_target=base + 0x000B,
+        sentinel=sentinel,
+        progress=progress,
+        chunks=[(base, main), (helper, helper_code),
+                (sentinel, b"\x00"), (progress, b"\x00")],
+        bootstrap=bootstrap,
+        traversal=[
+            ("D", base + 0x0003, "RAM"),    # Step Over the RAM helper
+            ("T", 0xBC0F, "BAS"),           # Step Into BASIC ROM  <- RAM to ROM
+            ("U", base + 0x0006, "RAM"),    # Step Out of ROM      <- ROM to RAM
+            ("D", base + 0x0008, "RAM"),    # keep stepping in RAM afterwards
+        ],
+    )
+
+
+def _build_ram_rur_rom_ram_fixture() -> MatrixFixture:
+    """RAM -> RAM-under-ROM -> RAM -> ROM -> RAM -> RAM-under-ROM -> RAM.
+
+    A bank switch cannot execute from the window it is switching, so a direct
+    RAM-under-ROM -> visible-ROM step is not expressible on a 6510: the `STA $01`
+    that maps KERNAL back in would change the very bytes the CPU is fetching.
+    The traversal therefore returns to RAM between the two banked regions, which
+    is also what real code does.
+    """
+    base = 0xC000
+    hidden = 0xE000                 # RAM under KERNAL
+    sentinel = 0xC1F0
+    progress = 0xC1F1
+    bootstrap = bytes([
+        0xD8, 0x18, 0x78, 0xB8,
+        0xA2, 0xF8, 0x9A,
+        0xA9, 0x2F, 0x85, 0x00,
+        0xA9, 0x37, 0x85, 0x01,
+        0xA9, 0x00, 0xA2, 0x00, 0xA0, 0x00,
+        0x4C, base & 0xFF, base >> 8,
+    ])
+    main = bytes([
+        0xA9, 0x35,                                # C000 LDA #$35
+        0x85, 0x01,                                # C002 STA $01   -> KERNAL out
+        0x20, hidden & 0xFF, hidden >> 8,          # C004 JSR $E000 (RAM under ROM)
+        0xA9, 0x37,                                # C007 LDA #$37
+        0x85, 0x01,                                # C009 STA $01   -> ROM visible
+        0x20, 0x0F, 0xBC,                          # C00B JSR $BC0F (BASIC ROM)
+        0xA9, 0x35,                                # C00E LDA #$35
+        0x85, 0x01,                                # C010 STA $01   -> KERNAL out
+        0x20, hidden & 0xFF, hidden >> 8,          # C012 JSR $E000 (RAM under ROM)
+        0xA9, 0x37,                                # C015 LDA #$37
+        0x85, 0x01,                                # C017 STA $01   -> ROM visible
+        0xA9, 0x77,                                # C019 LDA #$77
+        0x8D, sentinel & 0xFF, sentinel >> 8,      # C01B STA sentinel
+        0xEE, progress & 0xFF, progress >> 8,      # C01E INC progress
+        # Loop back onto the INC (see ram-rom-ram) so Continue observes liveness.
+        0x4C, (base + 0x001E) & 0xFF, (base + 0x001E) >> 8,   # C021 JMP $C01E
+    ])
+    hidden_code = bytes([
+        0xA9, 0x42,
+        0x8D, sentinel & 0xFF, sentinel >> 8,
+        0x60,
+    ])
+    return MatrixFixture(
+        memory_mode="ram-rur-rom-ram",
+        base=base, bank=7, source="RAM",
+        entry=base,
+        step_over_return=base + 0x0002,
+        chain_entry=hidden,
+        chain_addrs=[hidden],
+        chain_return_addrs=[base + 0x0007],
+        cursor_target=base + 0x0019,
+        breakpoint_target=base + 0x001B,
+        sentinel=sentinel,
+        progress=progress,
+        chunks=[(base, main), (hidden, hidden_code),
+                (sentinel, b"\x00"), (progress, b"\x00")],
+        bootstrap=bootstrap,
+        hidden_ram_chunks=(hidden,),
+        traversal=[
+            ("D", base + 0x0002, "RAM"),    # LDA #$35
+            ("D", base + 0x0004, "RAM"),    # STA $01 -> KERNAL banked out
+            ("T", hidden, "RAM"),           # Step Into $E000   <- RAM to RAM-under-ROM
+            ("U", base + 0x0007, "RAM"),    # Step Out          <- RAM-under-ROM to RAM
+            ("D", base + 0x0009, "RAM"),    # LDA #$37
+            ("D", base + 0x000B, "RAM"),    # STA $01 -> ROM visible again
+            ("T", 0xBC0F, "BAS"),           # Step Into BASIC   <- RAM to ROM
+            ("U", base + 0x000E, "RAM"),    # Step Out          <- ROM to RAM
+            ("D", base + 0x0010, "RAM"),    # LDA #$35
+            ("D", base + 0x0012, "RAM"),    # STA $01 -> KERNAL out again
+            ("T", hidden, "RAM"),           # Step Into $E000   <- RAM to RAM-under-ROM
+            ("U", base + 0x0015, "RAM"),    # Step Out          <- RAM-under-ROM to RAM
+        ],
+    )
+
+
 def build_fixture(memory: str, depth: int) -> MatrixFixture:
+    if memory == "ram-rom-ram":
+        return _build_ram_rom_ram_fixture()
+    if memory == "ram-rur-rom-ram":
+        return _build_ram_rur_rom_ram_fixture()
     if memory == "ram":
         base = 0xC000
         bank = 7
@@ -557,6 +715,12 @@ def apply_fixture_entry_side_effects(mem: bytearray, fixture: MatrixFixture) -> 
     elif fixture.memory_mode == "rom":
         mem[0x0000] = 0x37
         mem[0x0001] = 0x37
+    elif fixture.memory_mode in TRAVERSAL_MODES:
+        # The traversal bootstrap sets the canonical all-visible configuration;
+        # the fixture itself then switches $01 as it crosses regions, and the
+        # oracle follows those writes as ordinary memory writes.
+        mem[0x0000] = 0x2F
+        mem[0x0001] = 0x37
 
 
 def source_tag_for(address: int, bank: int) -> str:
@@ -656,24 +820,33 @@ class BaseDriver(DebugInterfaceDriver):
     def contextless_entry(self) -> bool:
         return False
 
+    def capture_live_rom_snapshot(self) -> bytes:
+        """Snapshot BASIC/KERNAL while the machine is still live, for the oracle.
+
+        Once the freezer owns the banking, raw readmem no longer serves
+        BASIC/KERNAL, so the oracle image has to be seeded from this pre-freeze
+        capture rather than from the in-session memory image. Returns the
+        $E000 head so the caller can check the KERNAL is the expected one.
+        """
+        kernal_head = self.read_bytes(0xE000, 16)
+        basic_head = self.read_bytes(0xBC00, 0x40)
+        (self.cell_dir / "live-kernal-e000.bin").write_bytes(kernal_head)
+        (self.cell_dir / "live-basic-bc00.bin").write_bytes(basic_head)
+        basic_full = bytearray()
+        kernal_full = bytearray()
+        for off in range(0, 0x2000, 0x1000):
+            basic_full.extend(self.read_bytes(0xA000 + off, 0x1000))
+            kernal_full.extend(self.read_bytes(0xE000 + off, 0x1000))
+        (self.cell_dir / "live-basic-a000-full.bin").write_bytes(bytes(basic_full))
+        (self.cell_dir / "live-kernal-e000-full.bin").write_bytes(bytes(kernal_full))
+        return kernal_head
+
     def install_fixture(self, fixture: MatrixFixture) -> None:
         self.fixture = fixture
+        if fixture.memory_mode in TRAVERSAL_MODES:
+            self.capture_live_rom_snapshot()
         if fixture.memory_mode == "rom":
-            kernal_head = self.read_bytes(0xE000, 16)
-            basic_head = self.read_bytes(0xBC00, 0x40)
-            (self.cell_dir / "live-kernal-e000.bin").write_bytes(kernal_head)
-            (self.cell_dir / "live-basic-bc00.bin").write_bytes(basic_head)
-            # Capture the FULL ROM regions while the machine is still live:
-            # once the freezer owns the banking, raw readmem no longer serves
-            # BASIC/KERNAL, so the oracle image must be seeded from this
-            # pre-freeze snapshot instead of the in-session memory image.
-            basic_full = bytearray()
-            kernal_full = bytearray()
-            for off in range(0, 0x2000, 0x1000):
-                basic_full.extend(self.read_bytes(0xA000 + off, 0x1000))
-                kernal_full.extend(self.read_bytes(0xE000 + off, 0x1000))
-            (self.cell_dir / "live-basic-a000-full.bin").write_bytes(bytes(basic_full))
-            (self.cell_dir / "live-kernal-e000-full.bin").write_bytes(bytes(kernal_full))
+            kernal_head = self.capture_live_rom_snapshot()
             if kernal_head[:5] != bytes([0x85, 0x56, 0x20, 0x0F, 0xBC]):
                 raise BlockedWithEvidence(
                     "Configured KERNAL at $E000 is not the canonical path "
@@ -691,6 +864,11 @@ class BaseDriver(DebugInterfaceDriver):
             self.write_bytes(address, data)
         self.write_bytes(fixture.bootstrap_addr, fixture.bootstrap)
         for address, data in fixture.chunks[: min(4, len(fixture.chunks))]:
+            if address in fixture.hidden_ram_chunks:
+                self.event("fixture_readback_deferred",
+                           address=f"{address:04X}",
+                           reason="chunk lives in RAM under ROM; REST readmem serves the ROM image")
+                continue
             if fixture.memory_mode == "ram-under-rom" and 0xA000 <= address <= 0xFFFF:
                 self.event("fixture_readback_deferred",
                            address=f"{address:04X}",
@@ -1765,6 +1943,15 @@ class DualOracles:
         self.fixture = fixture
         self.cell_dir = cell_dir
         mem = driver.read_memory_image()
+        if fixture.memory_mode in TRAVERSAL_MODES:
+            # Seed the captured ROM FIRST so the oracle can follow the CPU into
+            # BASIC, then lay the fixture on top. A traversal fixture may own
+            # bytes inside a ROM window ($E000 for the RAM-under-ROM leg), and
+            # the fixture must win there: the oracle image is flat, so each
+            # address has to hold whatever the CPU actually fetches from it, and
+            # the two regions are executed under different $01 settings that
+            # never overlap.
+            apply_captured_rom_heads(mem, cell_dir)
         for address, data in fixture.chunks:
             mem[address:address + len(data)] = data
         mem[fixture.bootstrap_addr:fixture.bootstrap_addr + len(fixture.bootstrap)] = fixture.bootstrap
@@ -2240,7 +2427,73 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                     reason="active-Debug REST readmem is not a proven live target oracle")
             ledger.save()
 
-            if row["memory_mode"] == "rom":
+            if row["memory_mode"] in TRAVERSAL_MODES:
+                # The generic Step Over above already performed traversal[0].
+                log_line(f"{cid}: boundary walk "
+                         f"({len(fixture.traversal)} steps across memory regions)")
+                state = over
+                walk_evidence = []
+                into_count = 0
+                out_count = 0
+                for index, (key, expect_pc, region) in enumerate(fixture.traversal):
+                    if index == 0:
+                        walk_evidence.append({
+                            "index": 0, "key": key, "pc": f"{state.pc:04X}",
+                            "region": region, "note": "generic Step Over"})
+                        continue
+                    label = (f"boundary step {index + 1}/{len(fixture.traversal)} "
+                             f"{key} -> ${expect_pc:04X} ({region})")
+                    log_line(f"{cid}: {label}")
+                    before = state
+                    if key == "D":
+                        action = driver.step_over
+                    elif key == "T":
+                        action = driver.step_into
+                    elif key == "U":
+                        action = driver.step_out
+                    else:
+                        raise HarnessBug(f"unknown traversal key {key!r}")
+                    state = step_and_wait_pc(driver, action, expect_pc, label, before.pc)
+                    if key == "D":
+                        oracles.advance_step_over(label)
+                    elif key == "T":
+                        oracles.advance_one(label)
+                    else:
+                        oracles.advance_until_pc(expect_pc, label)
+                    oracles.compare_state_and_stack(state, label)
+                    assert_state_pc_sp(state, expect_pc, None, label)
+                    if key == "T":
+                        into_count += 1
+                    elif key == "U":
+                        out_count += 1
+                    walk_evidence.append({
+                        "index": index, "key": key, "pc": f"{state.pc:04X}",
+                        "sp": f"{state.sp:02X}", "region": region})
+                    row["opcode_count"] = row.get("opcode_count", 0) + 1
+                    ledger.save()
+                if into_count == 0 or out_count == 0:
+                    raise HarnessBug(
+                        f"{row['memory_mode']} traversal must cross a boundary in "
+                        f"both directions (got {into_count} Step Into, {out_count} Step Out)")
+                # The routine reached across the boundary writes $42 to the
+                # sentinel, so a correct crossing is observable in memory too.
+                if driver.active_debug_readback_allowed():
+                    try:
+                        if driver.read_bytes(fixture.sentinel, 1)[0] == 0x42:
+                            row["memory_writes_validated"] = True
+                    except Exception as exc:  # noqa: BLE001
+                        driver.event("memory_write_validation_deferred",
+                                     stage="boundary_walk", error=str(exc))
+                (cell_dir / "boundary-walk-evidence.json").write_text(
+                    json.dumps(walk_evidence, indent=2) + "\n", encoding="utf-8")
+                row["step_into_depth"] = into_count
+                row["boundary_crossings"] = into_count + out_count
+                mark_op(row, "step_into", "PASS")
+                mark_op(row, "step_out", "PASS")
+                row["stack_validated"] = True
+                row["oracle_validated"] = True
+                ledger.save()
+            elif row["memory_mode"] == "rom":
                 log_line(f"{cid}: Step Into along live ROM path to real JSR")
                 state = over
                 jsr_result: Optional[ORC.StepResult] = None

@@ -37,6 +37,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import mcm6502 as ORC  # noqa: E402
 import monitor_debug_matrix_test as gate  # noqa: E402
 
 # Gate harnesses whose green result must never depend on a hidden reset-retry.
@@ -179,6 +180,94 @@ class AntiMaskingTest(unittest.TestCase):
         for required in ("recovery_reset", "command_retry", "session_replay",
                          "transparent_reset_restore_failure"):
             self.assertIn(required, gate.ResetRetryCounters.PROHIBITED)
+
+
+# Canonical BASIC $BC0F (FAC copy): LDX #$06 / LDA $60,X / STA $68,X / DEX /
+# BNE / STX $70 / RTS. The traversal fixtures call it as their ROM leg.
+CANONICAL_BC0F = bytes([0xA2, 0x06, 0xB5, 0x60, 0x95, 0x68, 0xCA, 0xD0, 0xF9,
+                        0x86, 0x70, 0x60])
+
+
+def _region_of(pc: int) -> str:
+    if 0xA000 <= pc <= 0xBFFF:
+        return "BASIC"
+    if pc >= 0xE000:
+        return "E000"
+    return "RAM"
+
+
+def _run_fixture(fixture):
+    """Execute a fixture in the mcm6502 oracle; return (pc trace, regions, mem)."""
+    mem = bytearray(0x10000)
+    for addr, data in fixture.chunks:
+        mem[addr:addr + len(data)] = data
+    mem[0xBC0F:0xBC0F + len(CANONICAL_BC0F)] = CANONICAL_BC0F
+    mem[0x0000], mem[0x0001] = 0x2F, 0x37
+    cpu = ORC.CPU6502(mem)
+    cpu.set_state(0, 0, 0, 0xF8, fixture.entry, 0x24)
+    trace, regions = [], []
+    for _ in range(4000):
+        trace.append(cpu.pc)
+        region = _region_of(cpu.pc)
+        if not regions or regions[-1] != region:
+            regions.append(region)
+        cpu.step()
+        if mem[fixture.progress] >= 3:
+            break
+    return trace, regions, mem
+
+
+class BoundaryTraversalFixtureTest(unittest.TestCase):
+    """The boundary-traversal fixtures must be valid 6502 that really crosses
+    memory regions. A developer debugs their own RAM program and steps into ROM
+    from there, so these fixtures - not the cold ROM bootstrap - model the
+    realistic workflow. Checking them here catches a broken fixture in under a
+    second instead of halfway through an hour-long hardware matrix run."""
+
+    def test_ram_rom_ram_crosses_into_basic_and_back(self) -> None:
+        fixture = gate.build_fixture("ram-rom-ram", 32)
+        trace, regions, mem = _run_fixture(fixture)
+        self.assertEqual(regions, ["RAM", "BASIC", "RAM"])
+        self.assertEqual(mem[fixture.sentinel], 0x77)
+        self.assertGreaterEqual(mem[fixture.progress], 3,
+                                "Continue liveness needs progress to keep moving")
+
+    def test_ram_rur_rom_ram_crosses_every_region(self) -> None:
+        fixture = gate.build_fixture("ram-rur-rom-ram", 32)
+        trace, regions, mem = _run_fixture(fixture)
+        # A bank switch cannot execute from the window it switches, so the walk
+        # returns to RAM between the RAM-under-ROM and visible-ROM legs.
+        self.assertEqual(regions,
+                         ["RAM", "E000", "RAM", "BASIC", "RAM", "E000", "RAM"])
+        self.assertEqual(mem[fixture.sentinel], 0x77)
+        self.assertGreaterEqual(mem[fixture.progress], 3)
+
+    def test_every_traversal_pc_is_actually_executed_in_order(self) -> None:
+        for mode in gate.TRAVERSAL_MODES:
+            with self.subTest(mode=mode):
+                fixture = gate.build_fixture(mode, 32)
+                trace, _, _ = _run_fixture(fixture)
+                want = [pc for _, pc, _ in fixture.traversal]
+                index = 0
+                for pc in trace:
+                    if index < len(want) and pc == want[index]:
+                        index += 1
+                self.assertEqual(
+                    index, len(want),
+                    f"{mode}: traversal never reached "
+                    f"{[f'${p:04X}' for p in want[index:]]} in order")
+
+    def test_traversal_crosses_a_boundary_in_both_directions(self) -> None:
+        for mode in gate.TRAVERSAL_MODES:
+            with self.subTest(mode=mode):
+                fixture = gate.build_fixture(mode, 32)
+                keys = [k for k, _, _ in fixture.traversal]
+                self.assertIn("T", keys, "must step INTO another region")
+                self.assertIn("U", keys, "must step OUT of it again")
+
+    def test_traversal_modes_are_registered_as_matrix_rows(self) -> None:
+        for mode in gate.TRAVERSAL_MODES:
+            self.assertIn(mode, gate.MEMORY_MODES)
 
 
 class FailFastSchedulingTest(unittest.TestCase):

@@ -84,16 +84,43 @@ orchestrator (Go, Over, Trace, Out), and patch hygiene on cleanup. Its CLI
 options mirror `monitor_test.py` so the same automation hooks work.
 
 `monitor_harness_test.py` needs no device. It runs the structural anti-masking
-check over the gate harnesses plus the matrix suite's own unit checks.
+check over the gate harnesses, the matrix suite's own unit checks, and executes
+the boundary-traversal fixtures through `mcm6502.py` to prove they are valid
+6502 that really crosses the regions their walk claims.
 
 ## Release matrix
 
 `monitor_debug_matrix_test.py` is the release-readiness gate for the debugger.
-It drives the full UI x memory x repetition matrix (`telnet`/`overlay`/`freeze`
-x `ram`/`ram-under-rom`/`rom`) through the documented flow (Step Into -> Step
-Out -> Step Over -> Run to cursor -> Continue-to-breakpoint -> Continue ->
-Reset), validating state and stack against `mcm6502.py`, and writes a coverage
-ledger plus a `FINAL_REPORT.md` per run:
+It drives the full UI x memory x repetition matrix through the documented flow
+(Step Into -> Step Out -> Step Over -> Run to cursor -> Continue-to-breakpoint
+-> Continue -> Reset), validating state and stack against `mcm6502.py`, and
+writes a coverage ledger plus a `FINAL_REPORT.md` per run.
+
+The memory modes fall into two groups. `ram`, `ram-under-rom` and `rom` each
+enter their region cold from a bootstrap and then work inside it. The
+boundary-traversal modes instead start with a live context in the developer's
+own RAM program and step across a region boundary mid-trace, which is what a
+developer actually does: they debug RAM code and step into ROM from there.
+
+| Memory mode | What the cell exercises |
+|---|---|
+| `ram` | Fixture entirely in RAM |
+| `ram-under-rom` | Fixture in the RAM hidden under KERNAL, entered with KERNAL banked out |
+| `rom` | Cold entry into the live KERNAL/BASIC image |
+| `ram-rom-ram` | RAM program calls BASIC `$BC0F`: Step Into crosses RAM -> ROM, Step Out crosses ROM -> RAM |
+| `ram-rur-rom-ram` | RAM -> RAM-under-ROM -> RAM -> ROM -> RAM -> RAM-under-ROM -> RAM, switching `$01` between legs |
+
+A bank switch cannot execute from the window it is switching, so a direct
+RAM-under-ROM to visible-ROM step is not expressible on a 6510: the `STA $01`
+that maps KERNAL back in would change the bytes the CPU is fetching. The
+traversal therefore returns to RAM between the two banked regions, which is what
+real code does as well.
+
+`monitor_harness_test.py` executes both traversal fixtures through `mcm6502.py`
+on the host, so a broken fixture fails in under a second rather than halfway
+through an hour-long hardware run.
+
+With five memory modes and three UI modes a run is 15 cells at one repetition:
 
 ```sh
 python3 tests/e2e/monitor/monitor_debug_matrix_test.py \
