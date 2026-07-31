@@ -30,9 +30,8 @@ static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFF
 
 char *struprt(char *str)
 {
-    char *next = str;
-    while (*str != '\0')
-        *str = toupper((unsigned char)*str);
+    for (char *next = str; *next != '\0'; next++)
+        *next = toupper((unsigned char)*next);
     return str;
 }
 
@@ -299,6 +298,10 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply = &c_message_empty;
             if (command->length >= 5) {
                 *reply  = &data_message;
+                // LoadREU/SaveREU return without writing a status string when the REU is
+                // disabled, so clear it here; otherwise the reply length is taken from
+                // whatever the previous command left in this buffer.
+                data_message.message[4] = 0;
                 if (command->message[1] == CTRL_CMD_LOAD_REU) {
                     retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
                 } else {

@@ -46,6 +46,11 @@ SUITES=(
   "prg-load-path-trim|tests/e2e/api/prg_load_path_trim_test.sh|-H @HOST@ -p @PASS@"
   "temp-auto-cleanup|tests/e2e/filemanager/temp_auto_cleanup_test.sh|-H @HOST@ -p @PASS@"
   "printer|tests/e2e/io/printer/printer_test.py|-H @HOST@ -p @PASS@"
+  # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
+  # A #740 regression leaves the interface stuck in Command Busy for every target
+  # until the firmware restarts, so run it after the suites that drive the menu
+  # and the file system.
+  "uci-targets|tests/e2e/io/command_interface/uci_targets_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
   # Host-side only: structural checks over the monitor harness sources. Needs no
   # device, takes a second, and guards the harnesses the monitor suites use.
   "monitor-harness|tests/e2e/monitor/monitor_harness_test.py|"

@@ -20,7 +20,7 @@ protocol used to drive it:
 | `api/` | `software/api/` | REST contracts for input, menu screen, memory, and PRG runners |
 | `filemanager/` | `software/filemanager/`, `software/userinterface/` | Browser actions, change notification, and managed `/Temp` lifecycle |
 | `filesystem/` | `software/filesystem/` | Filesystem implementations, including the remote FTP filesystem |
-| `io/` | `software/io/` | Device-facing I/O subsystems; nested by production package (`c64/`, `printer/`) |
+| `io/` | `software/io/` | Device-facing I/O subsystems; nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor and its step/breakpoint debugger, over Telnet and the local overlay/freeze UI |
 | `network/` | `software/network/` | Network service and connection lifecycle |
 
