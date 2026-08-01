@@ -219,8 +219,12 @@ def pick_victim_ip(source: str, prefix_len: int, device_ip: str) -> str:
     if network.num_addresses < 8:
         raise SetupError(f"subnet {network} is too small to spare a throwaway address")
     taken = reserved_ipv4_addresses() | {device_ip}
-    for candidate in reversed(list(network.hosts())[-VICTIM_SEARCH_DEPTH:]):
-        address = str(candidate)
+    # Walk down from the last usable address. Materialising network.hosts() would
+    # allocate the whole subnet, which is wasteful on anything larger than a /24.
+    highest = int(network.broadcast_address) - 1
+    lowest = int(network.network_address) + 1
+    for value in range(highest, max(lowest - 1, highest - VICTIM_SEARCH_DEPTH), -1):
+        address = str(ipaddress.IPv4Address(value))
         if address in taken or answers_ping(address):
             continue
         return address

@@ -24,9 +24,9 @@ Checks, all externally visible:
 Runs in about two minutes by default. Use --rounds to lengthen it.
 """
 import argparse
-import json
 import os
 import socket
+import struct
 import statistics
 import sys
 import time
@@ -103,7 +103,7 @@ def abandon(host: str, port: int, count: int) -> int:
             continue  # service at capacity right now; that is what we are measuring
         opened += 1
         try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b"\x01\x00\x00\x00\x00\x00\x00\x00")
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
         except OSError:
             pass
         s.close()

@@ -8,10 +8,11 @@ location and cursor position across them, so a suite that navigates away hands
 the next one a device it did not expect. Ordering around that only moves the
 damage to whoever runs last.
 
-The contract: the menu is closed, opening it shows the root browser at "/" with
-a non-empty listing, and the cursor is on the first entry. The cursor matters
-because RETURN activates whatever is under it, and the first task-menu entry is
-the Assembly 64 form, whose edit field blocks the UI task.
+The contract: the menu is closed, and opening it shows the root browser at "/"
+with a non-empty listing. Cursor position is deliberately not part of it, because
+it cannot be read back from the screen matrix and so could not be verified. A
+suite that needs a known cursor sets it itself; repair() homes it as a
+convenience only.
 
 Exit codes: 0 clean, 1 could not be cleaned (ensure), 2 dirty (verify).
 """
@@ -206,7 +207,7 @@ def unwind(device: Device) -> Optional[List[str]]:
 
 
 def repair(device: Device) -> None:
-    """Bring the UI back to the root browser with the cursor on the first entry.
+    """Bring the UI back to the root browser, cursor homed.
 
     Escalates: unwind with keystrokes, then close and reopen the menu so the
     browser reloads its listing, then reset the machine. A root browser showing
@@ -244,10 +245,11 @@ def repair(device: Device) -> None:
 def verify(device: Device) -> str:
     """Report why the device is dirty, or "" when it satisfies the contract.
 
-    Observing costs one menu open and close, which is idempotent and leaves the
-    contract satisfied either way.
+    Observing costs one menu open and close, and leaves the menu closed on every
+    path.
     """
     if device.menu_is_open():
+        close_menu(device)
         return "the menu was left open"
     device.press_menu_button()
     if not device.wait_menu(want_open=True):
