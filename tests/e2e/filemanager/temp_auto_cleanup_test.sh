@@ -213,8 +213,22 @@ extract_json_field() {
 
 get_config_current() {
     local key=$1
-    curl -s -H "$REST_HEADER" "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key" | \
-        sed -n 's/.*"current"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+    local attempt value
+    # The device serves a small fixed number of HTTP connections, so a read can
+    # fail while it is busy and leave an empty body. Reading a setting is
+    # idempotent, so retry instead of reporting the empty result as the value:
+    # an unretried read of an empty body failed this suite at stage 1.
+    for attempt in 1 2 3; do
+        value=$(curl -s -m 10 -H "$REST_HEADER" \
+            "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key" | \
+            sed -n 's/.*"current"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        if [[ -n "$value" ]]; then
+            echo "$value"
+            return 0
+        fi
+        sleep 0.5
+    done
+    return 1
 }
 
 apply_config_setting() {
