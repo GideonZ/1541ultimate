@@ -481,10 +481,8 @@ int UserInterface :: pollFocussed(void)
 // instead of leaving the nested screen open over a dismissed menu.
 void UserInterface :: discardPendingMenuButton(void)
 {
-    // A press is latched until something reads it. One that arrived before a
-    // modal opened belongs to whatever the user was doing then, not to the
-    // modal, and acting on it would close the modal the instant it appeared.
-    // Drop it here so only a press made while the modal is on screen aborts it.
+    // A press is latched until read. One made before the modal opened is not
+    // meant for it, and would close it the instant it appeared.
     host->checkButton();
     host->buttonPush();
 }

@@ -203,10 +203,8 @@ class RestSession:
         for attempt in range(12):
             if not self.menu_screen_open():
                 return
-            # Shift+F7 is F8, the firmware's full UI exit: it tears down nested
-            # editors, browsers and search stacks. RUN/STOP alone cannot dismiss
-            # a menu editor, so a suite that only sent RUN/STOP could not start
-            # from a clean state when a previous run left one open.
+            # Shift+F7 is F8, the full UI exit; RUN/STOP alone cannot dismiss a
+            # menu editor left open by a previous run.
             keys = ["left_shift", "f7"] if attempt < 6 else ["run_stop"]
             status, _, body = self.request(
                 "POST",

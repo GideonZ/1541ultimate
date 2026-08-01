@@ -266,10 +266,8 @@ void AssemblySearchForm :: send_query(void)
         delete body;
 }
 
-// The query form mixes unselectable BrowsableStatic spacers in with the
-// BrowsableQueryField entries, so these casts are only valid for the fields.
-// Casting a spacer reaches a foreign vtable and dereferences a wild pointer.
-// send_query() already guards its identical cast the same way.
+// The form mixes unselectable spacers in with the query fields, and the cast is
+// only valid for a field. send_query() guards the identical cast this way.
 static BrowsableQueryField *as_query_field(Browsable *under_cursor)
 {
     if (!under_cursor || !under_cursor->isSelectable()) {
@@ -291,16 +289,16 @@ void AssemblySearchForm :: change(void)
         browser->context(0);
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {
-        // The value comes from the Assembly 64 server, so its length is not
-        // ours to assume; an over-long one overran this frame. max_chars must
-        // also be given explicitly, as it otherwise defaults to the window
-        // width, which is unrelated to the size of this buffer.
+        // The value comes from the server, so its length is not ours to assume.
+        // max_chars must be explicit too: it otherwise defaults to the window
+        // width, which is unrelated to this buffer.
+        const int edit_len = 26;
         strncpy(buffer, field->getStringValue(), sizeof(buffer) - 1);
         buffer[sizeof(buffer) - 1] = 0;
         browser->window->set_color(1);
-        int edited = browser->user_interface->string_edit(buffer, 26, browser->window, 10,
-                                                          this->cursor_pos, 26);
-        if (edited > 0) { // a cancelled edit must not overwrite the field
+        int edited = browser->user_interface->string_edit(buffer, edit_len, browser->window,
+                                                          10, this->cursor_pos, edit_len);
+        if (edited > 0) { // an aborted edit must not overwrite the field
             field->setStringValue(buffer);
         }
         // explicit refresh

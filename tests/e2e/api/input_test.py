@@ -225,14 +225,9 @@ class RestInputSession:
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        # A GET carries no state, so a transport failure can be retried without
-        # changing what the test asserts. The device serves a small fixed number
-        # of concurrent HTTP connections, and a single read can exceed the
-        # per-request timeout while it is busy driving the C64. Only the
-        # transport is retried: an HTTP status is a real answer and is raised as
-        # is, and a POST or PUT is never repeated because it would apply its
-        # input twice. Sustained slowness is caught by listener_soak_test.py,
-        # which measures REST latency against its own baseline.
+        # The device serves few concurrent HTTP connections, so a read can time
+        # out while it is busy. Only GET is retried: an HTTP status is a real
+        # answer, and a POST or PUT would apply its input twice.
         attempts = TRANSPORT_RETRIES if method == "GET" else 1
         last_exc = None
         for attempt in range(attempts):
@@ -355,9 +350,8 @@ class RestInputSession:
                     [{"kind": "keyboard", "inputs": ["left_shift", "f7"], "transition": "tap"}]
                 )
             else:
-                # RUN/STOP only. A blind RETURN in a browser activates the entry
-                # under the cursor, and on the Assembly 64 entry that opens a
-                # network-backed form whose edit field parks the UI task.
+                # RUN/STOP only: a blind RETURN activates the entry under the
+                # cursor, which on the Assembly 64 entry opens its form.
                 self.post_events([{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}])
             time.sleep(0.25)
         self.put("menu_button")
@@ -1536,13 +1530,9 @@ def run_contract_tests(session: RestInputSession) -> None:
 
 
 def run_keyboard_tests(session: RestInputSession) -> None:
-    # These checks assert what the live C64 keyboard matrix sees, so the menu has
-    # to be closed for them to mean anything. It also has to be closed for them to
-    # be safe: the special-key sweep below taps F5, which opens the task menu when
-    # the UI has focus. From there the following taps walk that menu, and one of
-    # its entries is the Assembly 64 search form, whose edit field parks the UI
-    # task where no later suite can recover it. None of that shows up here,
-    # because these checks only look at REST key state.
+    # These assert what the live C64 matrix sees, so the menu must be closed. It
+    # must also be closed for safety: the sweep below taps F5, which opens the
+    # task menu onto the Assembly 64 form when the UI has focus.
     session.close_menu_from_anywhere()
 
     with check("keyboard single-tap batch is consumed by BASIC in order"):

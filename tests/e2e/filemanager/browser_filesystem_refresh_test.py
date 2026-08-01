@@ -372,10 +372,8 @@ class Browser:
         self.press_many("up", count)
 
     def select_entry(self, prefix: str, max_steps: int = 30) -> None:
-        # The listing refreshes asynchronously, so a single top-to-bottom scan can
-        # pass the row before it has been added. Rescan until the convergence
-        # budget the matrix already allows is spent, instead of failing on the
-        # first pass; a row that never appears still fails, just not by racing.
+        # The listing refreshes asynchronously, so one scan can pass the row
+        # before it appears. Rescan within the budget the matrix already allows.
         deadline = time.monotonic() + CONVERGE_TIMEOUT_SECONDS
         while True:
             self.go_to_top()

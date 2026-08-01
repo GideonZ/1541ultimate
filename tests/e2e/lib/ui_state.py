@@ -1,39 +1,21 @@
 #!/usr/bin/env python3
 # E2E helper: assert and restore the device's known-good menu UI state.
 
-"""Known-good UI state for the freezer/overlay menu, as a precondition gate.
+"""Known-good UI state for the menu, used by run-e2e-tests as a suite fixture.
 
-The suites share one device, and the firmware keeps its UI object stack, its
-browser location and its cursor position across suites. A suite that leaves any
-of those changed hands the next suite a device it did not expect, and the
-failure surfaces somewhere else entirely. Ordering the suites around that only
-moves the damage to whoever runs last.
+The suites share one device and the firmware keeps its UI object stack, browser
+location and cursor position across them, so a suite that navigates away hands
+the next one a device it did not expect. Ordering around that only moves the
+damage to whoever runs last.
 
-This module defines the state every suite may assume on entry, and is used by
-run-e2e-tests both as a precondition (repair, and refuse to start a suite on a
-device that cannot be cleaned) and as a postcondition (report which suite left
-the device dirty, so contamination is attributed to its source rather than to
-its victim).
+The contract: the menu is closed, opening it shows the root browser at "/" with
+a non-empty listing, and the cursor is on the first entry. The cursor matters
+because RETURN activates whatever is under it, and the first task-menu entry is
+the Assembly 64 form, whose edit field blocks the UI task.
 
-The contract:
-
-  - the menu is closed;
-  - opening the menu shows the root browser, path "/", with a non-empty listing;
-  - the cursor sits on the first entry.
-
-The cursor is part of the contract because RETURN activates whatever is under
-it. The first entry of the task menu is the Assembly 64 search form, whose edit
-field leaves the UI task blocked in Keyboard_C64::getch(); while it is blocked
-machine:menu_screen answers 404, because C64::is_accessible() reports isFrozen,
-so a caller that trusts that 404 concludes the device is idle and never
-recovers it. RUN/STOP unwinds one nested object per press and is the only key
-that reliably backs out of that form.
-
-Exit codes:
-  0  clean
-  1  could not be made clean (ensure only)
-  2  dirty (verify only)
+Exit codes: 0 clean, 1 could not be cleaned (ensure), 2 dirty (verify).
 """
+import argparse
 import argparse
 import json
 import sys

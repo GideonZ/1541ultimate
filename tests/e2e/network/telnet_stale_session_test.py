@@ -57,10 +57,8 @@ def reset_machine(host: str) -> None:
             if exc.code == 404:
                 break
             raise
-        # F8 leaves the menu from any depth; RUN/STOP is the fallback for the
-        # editors it does not reach. Never send RETURN blind: in a browser it
-        # activates the entry under the cursor, and on the Assembly 64 entry that
-        # opens a network-backed form whose edit field parks the UI task.
+        # F8 leaves the menu from any depth; RUN/STOP covers the editors it does
+        # not reach. Never RETURN: it activates the entry under the cursor.
         keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
         body = json.dumps({
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]

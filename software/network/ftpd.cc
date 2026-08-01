@@ -259,12 +259,6 @@ int FTPDaemon::listen_task()
     while (1) {
         clilen = sizeof(cli_addr);
         int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
-        // The control connection idles between commands, so a vanished client
-        // would hold its session slot indefinitely. Shared policy, see
-        // socket_keepalive.h.
-        if (actual_socket >= 0) {
-            net_enable_client_keepalive(actual_socket);
-        }
         if (actual_socket < 0) {
             puts("FTPD: ERROR on accept");
             vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -272,6 +266,8 @@ int FTPDaemon::listen_task()
         }
 
         ftp_set_control_socket_timeouts(actual_socket);
+        // A vanished client would hold its session slot forever.
+        net_enable_client_keepalive(actual_socket);
 
         // Cap concurrent sessions: refuse politely rather than let abandoned
         // connections accumulate and drain the shared netconn pool.

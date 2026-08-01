@@ -273,8 +273,7 @@ class U64Client:
                 # which leaves the device settings as this suite restored them.
                 self.tap_key("n")
             elif attempt < 6:
-                # Shift+F7 is F8, the firmware's full UI exit: it tears down
-                # nested browsers, editors and search stacks.
+                # Shift+F7 is F8, the full UI exit.
                 self.tap_keys(["left_shift", "f7"])
             else:
                 self.tap_key("run_stop")
@@ -558,11 +557,8 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     client.tap_key("return")  # trigger Flush/Eject
     time.sleep(1.0)
 
-    # Close what this function opened. Leaving the root browser open made the
-    # caller's teardown tap its way out, and RETURN in the browser activates the
-    # entry under the cursor: entering "Assembly 64 Database" opens a query form
-    # that owns RUN/STOP, so it stayed on the UI stack and the next menu button
-    # press killed the device.
+    # Close what this function opened, so the caller's teardown does not have to
+    # tap its way out with RETURN, which activates the entry under the cursor.
     client.close_menu_from_anywhere()
 
 

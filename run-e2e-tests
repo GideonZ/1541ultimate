@@ -160,20 +160,7 @@ ui_state_gate() {
 close_active_menu() {
     local status attempt
     status="$(menu_status)" || return 1
-    if [[ "$status" == 404 ]]; then
-        # A 404 does not prove the UI is idle. machine:menu_screen answers for the
-        # C64 host only while it is frozen, so a UI task parked inside a modal
-        # after the host was released reads as "no menu" here, and the next suite
-        # inherits a menu button that does nothing. RUN/STOP unwinds one nested
-        # object per press; two clear the Assembly 64 search form and its edit
-        # field, which is what the task menu opens first. Harmless when the UI
-        # really is idle.
-        tap_menu_key run_stop || return 1
-        sleep 0.25
-        tap_menu_key run_stop || return 1
-        sleep 0.25
-        return 0
-    fi
+    [[ "$status" == 404 ]] && return 0
     [[ "$status" == 200 ]] || return 1
 
     # A menu-button toggle does not dismiss every nested UI object. In
@@ -183,9 +170,7 @@ close_active_menu() {
         if (( attempt <= 4 )); then
             tap_menu_exit || return 1
         else
-            # RUN/STOP only. RETURN in a browser activates the entry under the
-            # cursor, and the first task-menu entry is the Assembly 64 search
-            # form, whose edit field parks the UI task.
+            # RUN/STOP only: RETURN activates the entry under the cursor.
             tap_menu_key run_stop || return 1
         fi
         sleep 0.25
@@ -312,8 +297,8 @@ for entry in "${SUITES[@]}"; do
 
     echo -e "\n${C_BLUE}SUITE: $name${C_NC}\n$(printf '%.s-' {1..60})"
 
-    # Precondition. A suite may assume the documented UI state, so establish it
-    # here rather than leaving each suite to cope with what the last one left.
+    # Precondition: establish the documented state rather than leaving each suite
+    # to cope with what the last one left.
     if ! ui_state_gate ensure ""; then
         echo -e "${C_RED}FAIL: $name (precondition: device UI could not be cleaned)${C_NC}"
         FAILED+=("$name")
@@ -335,11 +320,9 @@ for entry in "${SUITES[@]}"; do
         fi
     fi
 
-    # Postcondition, for attribution only. The precondition above owns the state
-    # every suite starts from, so a suite is free to leave the browser wherever
-    # its work took it. What matters is naming who left what, so that a suite
-    # failing on inherited state can be traced to its source instead of to its
-    # victim. Nothing here changes the run's verdict.
+    # Attribution only: the precondition owns the state, so leaving the browser
+    # elsewhere is not a defect. Naming who left what is what makes an inherited
+    # failure traceable to its cause. Does not change the run's verdict.
     if ! ui_state_gate verify "$name"; then
         echo -e "${C_YEL}DIRTY: $name left the device UI outside the documented state${C_NC}"
         DIRTY+=("$name")

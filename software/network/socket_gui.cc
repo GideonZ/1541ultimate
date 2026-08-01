@@ -58,8 +58,7 @@ static void socket_gui_set_timeouts(int socket_fd)
     send_tv.tv_usec = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&send_tv, sizeof(struct timeval));
 
-    // Reap half-open telnet sessions, which would otherwise poll recv() forever
-    // and leak a TELNET_MAX_SESSIONS slot. Shared policy, see socket_keepalive.h.
+    // Reap half-open sessions, which would otherwise leak a TELNET_MAX_SESSIONS slot.
     net_enable_client_keepalive(socket_fd);
 }
 
