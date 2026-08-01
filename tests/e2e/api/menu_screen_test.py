@@ -34,6 +34,8 @@ MENU_MIN_PRINTABLE_CELLS = 20
 MENU_MAX_DISTINCT_COLOURS = 32
 MENU_MAX_DISTINCT_GLYPHS = 160
 MENU_TOGGLE_SETTLE_SECONDS = 0.25
+TRANSPORT_RETRIES = 3
+TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
 SOAK_NAVIGATION_INTERVAL_SECONDS = 0.20
@@ -92,13 +94,24 @@ class RestSession:
             headers["Content-Type"] = "application/json"
 
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return response.status, dict(response.headers.items()), response.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, dict(exc.headers.items()), exc.read()
-        except (OSError, TimeoutError, urllib.error.URLError) as exc:
-            raise Failure(f"{method} {self.url(path, params)} failed: {format_exception(exc)}") from exc
+        # The device serves few concurrent HTTP connections, so a read can time
+        # out while it is busy. Only GET is retried: an HTTP status is a real
+        # answer, and a POST or PUT would apply its input twice.
+        attempts = TRANSPORT_RETRIES if method == "GET" else 1
+        last_exc: Optional[BaseException] = None
+        for attempt in range(attempts):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    return response.status, dict(response.headers.items()), response.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, dict(exc.headers.items()), exc.read()
+            except (OSError, TimeoutError, urllib.error.URLError) as exc:
+                last_exc = exc
+                if attempt + 1 < attempts:
+                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+        raise Failure(
+            f"{method} {self.url(path, params)} failed: {format_exception(last_exc)}"
+        ) from last_exc
 
     def menu_button(self, label: str) -> None:
         with check(label):

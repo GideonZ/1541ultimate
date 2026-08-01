@@ -22,14 +22,18 @@ import urllib.request
 from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check, menu_screen_text
+from menu import repeat_key, wait_screen_settled
 
 
 FTP_USER = "user"
 FTP_DEFAULT_PASSWORD = "password"
 MENU_SETTLE_SECONDS = 0.12
 MENU_OPEN_SETTLE_SECONDS = 0.25
+# A batched clear drains through the matrix; wait for the screen to go quiet.
+EDITOR_DRAIN_TIMEOUT_SECONDS = 8.0
 MENU_POPUP_SETTLE_SECONDS = 0.50
 ROOT_PATH = "/"
 TEMP_PATH = "/Temp/"
@@ -304,8 +308,11 @@ def move_context_to_item(session: RestSession, label: str) -> None:
 
 
 def clear_editor_field(session: RestSession) -> None:
-    for _ in range(96):
-        tap(session, ["inst_del"], 0.03)
+    # Batched: 96 separate requests cost ~2s in round-trips alone. The batch is
+    # accepted at once but drains through the matrix, so wait for the screen to
+    # go quiet before typing over it.
+    repeat_key(session.post_events, ["inst_del"], 96)
+    wait_screen_settled(session.try_get_menu_screen, EDITOR_DRAIN_TIMEOUT_SECONDS)
 
 
 def type_editor_text(session: RestSession, text: str) -> None:

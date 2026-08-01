@@ -61,6 +61,9 @@ SUITES=(
   "listener-soak|tests/e2e/network/listener_soak_test.py|-H @HOST@ -p @PASS@"
   # Benchmark: toggles the temp auto-cleanup device setting while it measures.
   "temp-auto-cleanup-perf|tests/e2e/filemanager/temp_auto_cleanup_perf_test.py|-H @HOST@ -p @PASS@|manual"
+  # Drives the Assembly 64 UI against the live service, mostly with negative
+  # cases. Skips rather than fails when the service is unreachable.
+  "assembly64|tests/e2e/io/c64/assembly64_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
   # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
   # the regression guard. Runs last, because a device whose core predates that
   # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

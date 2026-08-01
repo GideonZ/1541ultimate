@@ -40,8 +40,10 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
+from menu import repeat_key, wait_screen_settled
 
 
 FTP_USER = "user"
@@ -62,8 +64,8 @@ SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
 
-MENU_SETTLE_SECONDS = 0.15
-MENU_OPEN_SETTLE_SECONDS = 0.35
+MENU_SETTLE_SECONDS = 0.05
+MENU_OPEN_SETTLE_SECONDS = 0.20
 ACTION_SETTLE_SECONDS = 1.0
 RUN_TIMEOUT_SECONDS = 12.0
 REAL_RUN_TIMEOUT_SECONDS = 40.0
@@ -466,8 +468,10 @@ class Machine:
         self.tap(["run_stop"], MENU_OPEN_SETTLE_SECONDS)
 
     def replace_edit_field(self, text: str) -> None:
-        for _ in range(EDIT_FIELD_CLEAR_TAPS):
-            self.tap(["inst_del"], 0.03)
+        # Batched: one request per tap cost ~20ms each before any settle. The
+        # batch drains through the matrix, so wait for the screen to go quiet.
+        repeat_key(self.session.post_events, ["inst_del"], EDIT_FIELD_CLEAR_TAPS)
+        wait_screen_settled(self.session.try_get_menu_screen, SCREEN_TIMEOUT_SECONDS)
         for character in text:
             key = EDITOR_KEYS.get(character)
             if key is None and (character.isalnum()):
