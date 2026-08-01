@@ -52,6 +52,12 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
+from report import (  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+    Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    section, suite_fail, warn)
+
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -94,39 +100,12 @@ CHAR_KEYS = {
 }
 
 
-class Failure(RuntimeError):
-    pass
-
-
-CHECK_COUNT = 0
-LAST_CHECK_LABEL = ""
-
-
-def check_start(label):
-    global CHECK_COUNT, LAST_CHECK_LABEL
-    CHECK_COUNT += 1
-    LAST_CHECK_LABEL = label
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-
-
-def check_ok(extra=""):
-    print("OK" + (f" ({extra})" if extra else ""), flush=True)
-
-
-def check_fail(reason):
-    print(f"FAIL ({reason})", flush=True)
-
-
-def check_warn(reason):
-    print(f"WARNING ({reason})", flush=True)
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return True
     if assertions_enabled:
         raise Failure(message)
-    print(f"    WARNING: {message}", flush=True)
+    warn(message)
     return False
 
 
@@ -615,12 +594,12 @@ class MenuDriver:
     def _dump_on_fail(self, screen, reason):
         if not self.verbose_menu:
             return
-        print(f"\n--- menu dump ({reason}) ---")
+        section(f"menu dump ({reason})")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
-            print(f"{mark}{i:2d}|{r}|")
-        print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
-        print("--- end dump ---")
+            detail(f"{mark}{i:2d}|{r}|")
+        detail(f"selected_row={screen.selected_row} "
+               f"selected_text={screen.selected_text!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -1104,7 +1083,7 @@ def open_file_read(ctx, alias, filename):
 # Stage: smoke
 # ---------------------------------------------------------------------------
 def stage_smoke(ctx):
-    print("\n=== STAGE: smoke ===")
+    section("stage: smoke")
     d, server = ctx.d, ctx.server
     alias = ctx.alias
 
@@ -1195,7 +1174,7 @@ CORE_READ_FILES = [
 
 
 def stage_core(ctx):
-    print("\n=== STAGE: core ===")
+    section("stage: core")
     d, server = ctx.d, ctx.server
     if ctx.alias is None:
         ctx.alias = safe_name(ctx.args.alias_prefix)
@@ -1484,7 +1463,7 @@ def context_actions_present(ctx, expected):
 
 
 def stage_edge(ctx):
-    print("\n=== STAGE: edge ===")
+    section("stage: edge")
     d, s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
 
     # -- multiple simultaneous hosts: with password (IP) + anonymous (no pw) --
@@ -1658,7 +1637,7 @@ def stage_edge(ctx):
 # Stage: matrix
 # ---------------------------------------------------------------------------
 def stage_matrix(ctx):
-    print("\n=== STAGE: matrix ===")
+    section("stage: matrix")
     server = ctx.server
     # Root-path form #1: server root "/". Reuse the already-created host reads.
     for root_path, label in (("/", "root=/"), ("/DIRA", "root=/DIRA")):
@@ -1735,7 +1714,7 @@ def negative_case(ctx, label, alias_suffix, host=None, port=None, password=None,
 
 
 def stage_negative(ctx):
-    print("\n=== STAGE: negative ===")
+    section("stage: negative")
     args = ctx.args
     server = ctx.server
 
@@ -1882,7 +1861,7 @@ SOAK_OPS = [soak_browse, soak_read, soak_edit, soak_mkdir, soak_upload,
 
 
 def stage_soak(ctx):
-    print("\n=== STAGE: soak ===")
+    section("stage: soak")
     s, server = ctx.s, ctx.server
     duration = ctx.args.soak_duration
     if ctx.alias is None:
@@ -1923,7 +1902,7 @@ def stage_soak(ctx):
 # PRG run check (opt-in): run a remote PRG and verify a RAM marker.
 # ---------------------------------------------------------------------------
 def stage_prg(ctx):
-    print("\n=== STAGE: prg (opt-in) ===")
+    section("stage: prg (opt-in)")
     check_start("run remote PRG and verify RAM marker")
     check_warn("PRG-run check not implemented as an automated fixture; "
                "left as UNSUPPORTED to avoid destabilising the machine state. "
@@ -1936,7 +1915,7 @@ def stage_prg(ctx):
 # Cleanup + reporting
 # ---------------------------------------------------------------------------
 def cleanup(ctx, crashed):
-    print("\n=== CLEANUP ===")
+    section("cleanup")
     s, d = ctx.s, ctx.d
     if crashed:
         print("Device hard-crashed; skipping UI cleanup.")
@@ -1966,9 +1945,7 @@ def cleanup(ctx, crashed):
 
 def print_summary(ctx, crashed):
     s, server = ctx.s, ctx.server
-    print("\n" + "=" * 78)
-    print("SUMMARY")
-    print("=" * 78)
+    section("summary")
     header = f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes"
     print(header)
     print("-" * 78)
@@ -1993,10 +1970,9 @@ def print_summary(ctx, crashed):
 
 
 def print_failure_diagnostics(ctx, exc):
-    print("\n" + "!" * 78)
-    print(f"FAILURE: {exc}")
-    print("!" * 78)
-    print(f"Last check          : [{CHECK_COUNT:02d}] {LAST_CHECK_LABEL}")
+    section("failure diagnostics")
+    detail(str(exc))
+    print(f"Last check          : [{check_count():02d}] {last_label()}")
     print(f"Last REST input      : {ctx.d.last_input}")
     print(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
     body = None
@@ -2009,7 +1985,7 @@ def print_failure_diagnostics(ctx, exc):
         print("Decoded menu screen:")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
-            print(f"{mark}{i:2d}|{r}|")
+            detail(f"{mark}{i:2d}|{r}|")
         print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
     print("\nServer log tail:")
     for e in ctx.server.snapshot_log()[-12:]:
@@ -2115,10 +2091,10 @@ def main(argv=None):
     if not args.ftp_advertised_host:
         args.ftp_advertised_host = infer_advertised_host(args.host)
         if not args.ftp_advertised_host:
-            print("ERROR: could not infer --ftp-advertised-host; please pass it explicitly.",
-                  file=sys.stderr)
+            suite_fail("ftp_client_test",
+                       "could not infer --ftp-advertised-host; pass it explicitly")
             return 2
-        print(f"Inferred --ftp-advertised-host {args.ftp_advertised_host}")
+        detail(f"inferred --ftp-advertised-host {args.ftp_advertised_host}")
 
     session = RestSession(args.host, args.password, args.timeout)
     driver = MenuDriver(session, verbose_menu=args.verbose_menu)
@@ -2137,7 +2113,7 @@ def main(argv=None):
             args.ftp_passive_ports, args.ftp_user, args.ftp_password,
             root=args.remote_root, keep_root=args.keep_remote_root)
     except Failure as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        suite_fail("ftp_client_test", str(exc))
         return 2
     server.start()
     print(f"Server root: {server.root} (marker {server.marker})")

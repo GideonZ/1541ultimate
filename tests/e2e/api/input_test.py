@@ -14,13 +14,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-CHECK_COUNT = 0
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
+
 TEST_CHOICES = (
     "all",
     "contract",
@@ -149,29 +152,6 @@ KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
     "q": (7, 6),
     "run_stop": (7, 7),
 }
-
-
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
 
 
 def wants_test(selected: Optional[List[str]], name: str) -> bool:
@@ -1456,7 +1436,7 @@ def run_soak_tests(session: RestInputSession, duration_seconds: float) -> int:
         interleaved_case = interleaved_cases[cycles % len(interleaved_cases)]
         rapid_mix_case = rapid_mix_cases[cycles % len(rapid_mix_cases)]
 
-        print(f"[soak {cycles + 1:03d}] text={text_case} joy{joystick_case[0]}={'+'.join(joystick_case[1])}", flush=True)
+        detail(f"soak {cycles + 1:03d}: text={text_case} joy{joystick_case[0]}={'+'.join(joystick_case[1])}")
         screen_tail = soak_keyboard_basic_case(session, screen_tail, text_case)
         screen_tail = soak_interleaved_case(session, screen_tail, interleaved_case[0], interleaved_case[1], interleaved_case[2])
         screen_tail = soak_rapid_mixed_case(session, screen_tail, rapid_mix_case[0], rapid_mix_case[1])
@@ -2015,24 +1995,24 @@ def main() -> int:
     selected_tests = None if not args.test else args.test
     soak_duration_seconds = parse_duration_seconds(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
-        print("--test cannot be combined with --soak", file=sys.stderr)
+        suite_fail("input_test", "--test cannot be combined with --soak")
         return 2
     try:
         soak_cycles = run_tests(session, soak_duration_seconds=soak_duration_seconds, selected=selected_tests)
     except Failure as exc:
-        print(exc, file=sys.stderr)
+        suite_fail("input_test", str(exc))
         return 1
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
         if device_unavailable(exc):
-            print(f"Connection failure: {format_exception(exc)}", file=sys.stderr)
+            suite_fail("input_test", f"connection failure: {format_exception(exc)}")
         else:
-            print(f"REST failure: {format_exception(exc)}", file=sys.stderr)
+            suite_fail("input_test", f"REST failure: {format_exception(exc)}")
         return 1
 
     if soak_duration_seconds is not None:
-        print(f"input_test: OK ({CHECK_COUNT} checks, {soak_cycles} soak cycles)")
+        suite_ok("input_test", f"{check_count()} checks, {soak_cycles} soak cycles")
     else:
-        print(f"input_test: OK ({CHECK_COUNT} checks)")
+        suite_ok("input_test")
     return 0
 
 

@@ -13,10 +13,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
 
 WIDTH = 40
 HEIGHT = 24
@@ -27,7 +31,6 @@ REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
-CHECK_COUNT = 0
 
 ALT_CHARSET_MAP = {
     "l": "+",
@@ -73,29 +76,6 @@ VIEW_KEYS = {
 }
 
 
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
-
-
 def device_unavailable(exc: BaseException) -> bool:
     text = format_exception(exc).lower()
     markers = (
@@ -135,10 +115,10 @@ def redeploy_u64(host: str, port: int, password: Optional[str], timeout: float) 
     that is still up is the common case, and waiting recovers it.
     """
     if host == "u64" and REDEPLOY_SCRIPT.is_file():
-        print("Device unavailable; redeploying U64 and retrying once", file=sys.stderr)
+        warn("device unavailable; redeploying the U64 and retrying once")
         subprocess.run([str(REDEPLOY_SCRIPT)], cwd=REPO_ROOT, check=True)
     else:
-        print("Device unavailable; waiting for it to return and retrying once", file=sys.stderr)
+        warn("device unavailable; waiting for it to return and retrying once")
     wait_for_port(host, port, timeout=60.0)
     wait_for_monitor_ready(host, port, password, timeout)
 
@@ -1592,32 +1572,32 @@ def main() -> int:
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
-                    print(f"Connection failure: {format_exception(redeploy_exc)}", file=sys.stderr)
+                    suite_fail("monitor_test", format_exception(redeploy_exc))
                     return 1
                 redeployed = True
                 continue
-            print(exc, file=sys.stderr)
+            suite_fail("monitor_test", str(exc))
             if session is not None:
                 snapshot = session.capture()
-                print("\nFinal screen:", file=sys.stderr)
-                print(snapshot.text(), file=sys.stderr)
+                section("final screen")
+                detail(snapshot.text())
             return 1
         except (OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as exc:
             if (not redeployed) and device_unavailable(exc):
                 try:
                     redeploy_u64(args.host, args.port, args.password, args.timeout)
                 except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
-                    print(f"Connection failure: {format_exception(redeploy_exc)}", file=sys.stderr)
+                    suite_fail("monitor_test", format_exception(redeploy_exc))
                     return 1
                 redeployed = True
                 continue
-            print(f"Connection failure: {format_exception(exc)}", file=sys.stderr)
+            suite_fail("monitor_test", format_exception(exc))
             return 1
         finally:
             if session is not None:
                 session.close()
 
-    print(f"monitor_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("monitor_test")
     return 0
 
 

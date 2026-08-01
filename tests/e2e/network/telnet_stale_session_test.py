@@ -31,6 +31,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from report import detail, suite_fail, suite_ok, warn
+
+SUITE = "telnet_stale_session_test"
 
 TELNET_PORT = 23
 DEFAULT_MAX_SESSIONS = 4  # mirrors TELNET_MAX_SESSIONS in software/network/socket_gui.cc
@@ -42,7 +50,12 @@ FALLBACK_PREFIX_LEN = 24  # only used when detection failed and both overrides w
 
 
 def log(msg: str) -> None:
-    print(f"[telnet-stale-e2e] {msg}", flush=True)
+    """Narrate a step of the single scenario this suite runs.
+
+    The suite reports one verdict at the end rather than a numbered check
+    per step, so its progress goes out as detail lines under that verdict.
+    """
+    detail(msg)
 
 
 def reset_machine(host: str) -> None:
@@ -285,17 +298,17 @@ def main() -> int:
     args = parser.parse_args()
 
     # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
-    check = subprocess.run(IP_CMD + ["addr", "show"], capture_output=True, text=True)
-    if check.returncode != 0:
-        log("ERROR: cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
-            f"run under sudo. ({(check.stderr or check.stdout).strip()})")
+    probe = subprocess.run(IP_CMD + ["addr", "show"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        suite_fail(SUITE, "cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
+            f"run under sudo. ({(probe.stderr or probe.stdout).strip()})")
         return 2
 
     # Preflight 2: work out which interface and address the vanishing peer should use.
     try:
         device_ip = socket.gethostbyname(args.host)
     except OSError as exc:
-        log(f"ERROR: cannot resolve device host {args.host!r}: {exc}")
+        suite_fail(SUITE, f"cannot resolve device host {args.host!r}: {exc}")
         return 2
 
     prefix_len = FALLBACK_PREFIX_LEN
@@ -306,10 +319,10 @@ def main() -> int:
         victim_ip = args.victim_ip or pick_victim_ip(source_ip, prefix_len, device_ip)
     except SetupError as exc:
         if not (args.iface and args.victim_ip):
-            log(f"ERROR: {exc}")
+            suite_fail(SUITE, str(exc))
             log("Pass both --iface and --victim-ip to skip this detection.")
             return 2
-        log(f"WARNING: {exc}")
+        warn(str(exc))
         log(f"Using --iface {args.iface} and --victim-ip {args.victim_ip} with a "
             f"/{FALLBACK_PREFIX_LEN} prefix.")
         iface, victim_ip = args.iface, args.victim_ip
@@ -327,7 +340,7 @@ def main() -> int:
         free = measure_capacity(args.host, args.sessions)
         log(f"baseline free session slots: {free} (expected {args.sessions})")
         if free < args.sessions:
-            log("ERROR: listener not fully free at baseline - is another telnet client connected?")
+            suite_fail(SUITE, "listener not fully free at baseline; another telnet client is connected")
             return 3
 
         # Fill every slot with a half-open victim from the throwaway IP.
@@ -338,13 +351,13 @@ def main() -> int:
 
         time.sleep(1.0)
         if probe_is_free(args.host):
-            log("ERROR: listener still free after filling every slot - could not saturate.")
+            suite_fail(SUITE, "listener still free after filling every slot; could not saturate")
             return 4
         log("listener saturated: fresh connections are refused (as expected).")
 
         # Required: if this del fails the peers never vanish (fake RED) - abort.
         if not del_ip_alias(iface, victim_ip, prefix_len):
-            log("ERROR: could not delete victim IP alias - peers would not truly vanish; aborting.")
+            suite_fail(SUITE, "could not delete the victim IP alias; the peers would not truly vanish")
             return 5
         alias_added = False
         log(f"deleted victim IP {victim_ip}: {args.sessions} sessions are now half-open.")
@@ -362,12 +375,12 @@ def main() -> int:
             time.sleep(args.poll_interval)
 
         if recovered_at is not None:
-            log(f"GREEN: all {args.sessions} leaked slots recovered after ~{recovered_at:.0f}s "
-                "(keepalive reaped the half-open sessions).")
+            suite_ok(SUITE, f"all {args.sessions} leaked slots recovered after "
+                            f"~{recovered_at:.0f}s; keepalive reaped the half-open sessions")
             return 0
 
-        log(f"RED: listener still wedged {args.reap_timeout:.0f}s after the peers vanished - "
-            "half-open sessions were never reaped (fix absent or ineffective).")
+        suite_fail(SUITE, f"listener still wedged {args.reap_timeout:.0f}s after the peers "
+                          "vanished; half-open sessions were never reaped")
         return 1
 
     finally:

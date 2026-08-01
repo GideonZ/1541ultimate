@@ -39,6 +39,11 @@ ISSUE_717_BASIC = '''10 open 1,4
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+from report import (  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+    Failure, check_fail, check_ok, check_start, detail, section, warn)
+
 try:
     from PIL import Image, ImageOps
     import pytesseract
@@ -84,6 +89,8 @@ PHASE_NAMES = {
 FTP_USER_DEFAULT = "user"
 FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
+TRANSPORT_RETRIES = 3
+TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 MENU_SETTLE_SECONDS = 0.35
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -125,33 +132,12 @@ def full_page_bitmap_params(emulation, page_height):
     return rows, repeats
 
 
-class Failure(RuntimeError):
-    pass
-
-
-CHECK_COUNT = 0
-
-
-def check_start(label):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-
-
-def check_ok(extra=""):
-    print("OK" + (f" ({extra})" if extra else ""), flush=True)
-
-
-def check_fail(reason):
-    print(f"FAIL ({reason})", flush=True)
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return
     if assertions_enabled:
         raise Failure(message)
-    print(f"WARNING: {message}")
+    warn(message)
 
 
 class U64Client:
@@ -173,23 +159,36 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        connection = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
-        try:
-            connection.request(method, path, body=body, headers=self._headers(body, extra_headers))
-            response = connection.getresponse()
-            payload = response.read()
-            return response.status, dict(response.getheaders()), payload
-        finally:
-            connection.close()
+        # The device serves a small fixed number of HTTP connections, so a
+        # connect can time out while it is busy. This suite runs straight after
+        # temp-auto-cleanup, which fills those slots, and a settings PUT timed
+        # out there. Only requests without a payload are retried: those carry
+        # their arguments in the query string and are idempotent, whereas
+        # resending a body would apply an upload or a PRG run twice.
+        attempts = TRANSPORT_RETRIES if body is None else 1
+        for attempt in range(1, attempts + 1):
+            connection = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
+            try:
+                connection.request(method, path, body=body,
+                                   headers=self._headers(body, extra_headers))
+                response = connection.getresponse()
+                payload = response.read()
+                return response.status, dict(response.getheaders()), payload
+            except (OSError, http.client.HTTPException):
+                if attempt == attempts:
+                    raise
+                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+            finally:
+                connection.close()
 
     def require_ok(self, method, path, body=None, description=None, extra_headers=None, timeout=None):
         status, _headers, payload = self.request(method, path, body=body, extra_headers=extra_headers, timeout=timeout)
         if status != 200:
             message = f"{description or path} failed with HTTP {status}"
             try:
-                detail = json.loads(payload.decode("utf-8"))
-                if detail.get("errors"):
-                    message += f": {detail['errors']}"
+                document = json.loads(payload.decode("utf-8"))
+                if document.get("errors"):
+                    message += f": {document['errors']}"
             except (ValueError, UnicodeDecodeError):
                 message += f": {payload[:160]!r}"
             raise Failure(message)
@@ -575,11 +574,11 @@ def capture_settings(client, assertions_enabled):
 def restore_settings(client, snapshot, assertions_enabled):
     if not snapshot:
         return
-    print("\nRestoring original Printer Settings")
+    section("restoring original Printer Settings")
     for item, value in snapshot.items():
         try:
             client.set_config(CONFIG_CATEGORY, item, value)
-            print(f"  {item}: {value}")
+            detail(f"{item}: {value}")
         except Failure as exc:
             assert_or_warn(assertions_enabled, False, f"could not restore {item}: {exc}")
 
@@ -676,7 +675,7 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         assert_or_warn(assertions_enabled, ok, f"{path}: not a well-formed PNG ({reason})")
         dims = decode_png_dimensions(data)
         assert_or_warn(assertions_enabled, dims is not None, f"{path}: could not read IHDR dimensions")
-        print(f"    {path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
+        detail(f"{path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
 
 
 def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=1):
@@ -754,7 +753,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
     necessary to prove the printed content is correct.
     """
     if not OCR_AVAILABLE:
-        print("    OCR verification skipped: pytesseract/PIL not installed "
+        detail("OCR verification skipped: pytesseract/PIL not installed "
               "(pip install pytesseract, apt install tesseract-ocr)")
         return
 
@@ -770,7 +769,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
             continue
 
         preview = " / ".join(line.strip() for line in text.splitlines() if line.strip())
-        print(f"    {path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
+        detail(f"{path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
 
         assert_or_warn(
             assertions_enabled, expected_tag in text,
@@ -993,7 +992,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if args.full_page_bitmap:
         rows, bim_repeats = full_page_bitmap_params(emulation, args.page_height)
-        print(f"    full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
+        detail(f"full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
               f"(~{rows * (EPSON_BIM_INTERLINE_PX if emulation == 'epson' else CBM_BIM_INTERLINE_PX)}px "
               f"tall, ~{bim_repeats * 16 * (1 if emulation == 'epson' else 4)}px wide)")
     else:
@@ -1007,9 +1006,9 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if classification == "FAIL_CRASH_HARD":
         check_fail("device became unresponsive (FAIL_CRASH_HARD)")
-        print("    REST and ping are both unreachable. This matches the reported crash:")
-        print("    screen off, unresponsive, C64/machine reset will not help.")
-        print("    Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+        detail("REST and ping are both unreachable. This matches the reported crash:\n"
+               "screen off, unresponsive, C64/machine reset will not help.\n"
+               "Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
         return "FAIL_CRASH_HARD", output_base, status
     if classification == "FAIL_TIMEOUT":
         check_fail(f"timed out after {args.timeout_seconds}s, REST still responsive")
@@ -1122,9 +1121,9 @@ def main():
         client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
         check_ok()
 
-    print("\nSummary")
+    section("summary")
     for emulation, mode, classification, output_base in results:
-        print(f"  {emulation:10s} {mode:6s} {classification:20s} {output_base}")
+        detail(f"{emulation:10s} {mode:6s} {classification:20s} {output_base}")
 
     failed = [r for r in results if r[2] not in ("PASS", "PASS_NO_VERIFY")]
     return 1 if failed else 0

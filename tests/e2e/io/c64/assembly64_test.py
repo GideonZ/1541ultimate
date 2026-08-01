@@ -27,14 +27,15 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+from report import Failure, check, section, suite_fail, suite_ok, suite_skip
 from menu import repeat_key, wait_screen_settled, wait_until  # noqa: E402
 
-CHECK_COUNT = 0
 SCREEN_BYTES = 2000
 SCREEN_COLS = 40
 SCREEN_ROWS = 25
@@ -76,25 +77,8 @@ SEARCH_TERM = "turrican"
 MIN_RESULT_ROWS = 3
 
 
-class Failure(RuntimeError):
-    pass
-
-
 class Skip(RuntimeError):
     pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
 
 
 class Device:
@@ -392,7 +376,7 @@ def submit_query(device: Device) -> None:
 # ---------------------------------------------------------------- happy path
 
 def scenario_open_and_leave(device: Device) -> None:
-    print("-- the form opens from the task menu and closes again")
+    section("the form opens from the task menu and closes again")
     with check("open the Assembly 64 query form"):
         open_query_form(device)
     with check("the form leaves cleanly with RUN/STOP"):
@@ -403,7 +387,7 @@ def scenario_open_and_leave(device: Device) -> None:
 
 
 def scenario_query_returns_results(device: Device) -> None:
-    print("-- a real query is sent to the Assembly 64 service")
+    section("a real query is sent to the Assembly 64 service")
     with check("open the form and enter the first field"):
         open_query_form(device)
         before = device.screen()
@@ -441,7 +425,7 @@ def scenario_query_returns_results(device: Device) -> None:
 # ------------------------------------------------------------ misbehaviour
 
 def scenario_menu_button_in_edit_field(device: Device) -> None:
-    print("-- the menu button must work from inside the edit field")
+    section("the menu button must work from inside the edit field")
     with check("open the form and enter the edit field"):
         open_query_form(device)
         enter_field(device, NAME_FIELD)
@@ -467,7 +451,7 @@ def scenario_menu_button_in_edit_field(device: Device) -> None:
 
 
 def scenario_abort_edit(device: Device) -> None:
-    print("-- an aborted edit must not wedge the form")
+    section("an aborted edit must not wedge the form")
     with check("open the form, type into a field, then abort"):
         open_query_form(device)
         enter_field(device, NAME_FIELD)
@@ -480,7 +464,7 @@ def scenario_abort_edit(device: Device) -> None:
 
 
 def scenario_overlong_and_empty(device: Device) -> None:
-    print("-- over-long and empty input")
+    section("over-long and empty input")
     with check("type more than the field accepts"):
         open_query_form(device)
         enter_field(device, NAME_FIELD)
@@ -510,7 +494,7 @@ def scenario_overlong_and_empty(device: Device) -> None:
 
 
 def scenario_key_mashing(device: Device) -> None:
-    print("-- a user mashing keys while the form is busy")
+    section("a user mashing keys while the form is busy")
     with check("submit a query and hammer keys while it runs"):
         open_query_form(device)
         enter_field(device, NAME_FIELD)
@@ -533,7 +517,7 @@ def scenario_key_mashing(device: Device) -> None:
 
 
 def scenario_reopen_repeatedly(device: Device) -> None:
-    print("-- opening and abandoning the form repeatedly")
+    section("opening and abandoning the form repeatedly")
     with check("open and abandon the form three times"):
         for _ in range(3):
             open_query_form(device)
@@ -578,7 +562,7 @@ def main() -> int:
         for name in names:
             SCENARIOS[name](device)
     except Skip as exc:
-        print(f"assembly64_test: SKIP: {exc}", file=sys.stderr)
+        suite_skip("assembly64_test", str(exc))
         try:
             recover(device, "skipping")
         except Exception:
@@ -592,7 +576,7 @@ def main() -> int:
         except Exception:
             pass
 
-    print(f"assembly64_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("assembly64_test")
     return 0
 
 
@@ -600,5 +584,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"assembly64_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("assembly64_test", str(exc))
         raise SystemExit(1)

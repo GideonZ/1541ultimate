@@ -18,11 +18,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from typing import Dict, Optional, Tuple
 
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
 
-CHECK_COUNT = 0
+
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
@@ -53,29 +56,6 @@ WEDGE_HINT = (
     "the device stopped answering REST requests. This is the wedge from issue #733; "
     "hold the menu button for 5 seconds or redeploy over JTAG to recover"
 )
-
-
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
 
 
 def header_value(headers: Dict[str, str], name: str) -> str:
@@ -364,14 +344,14 @@ def prepare(session: RestSession, mirroring: str) -> None:
 
 
 def run_menu_cycle(session: RestSession, mirroring: str) -> None:
-    print(f"-- menu cycle with {SID_ITEM} {mirroring}")
+    section(f"menu cycle with {SID_ITEM} {mirroring}")
     prepare(session, mirroring)
     open_menu(session)
     close_menu(session)
 
 
 def run_toggle_while_open(session: RestSession) -> None:
-    print(f"-- {SID_ITEM} switched off while the menu is open")
+    section(f"{SID_ITEM} switched off while the menu is open")
     prepare(session, ENABLED)
     open_menu(session)
     with check(f"set {SID_ITEM} to {DISABLED} while the menu is open"):
@@ -403,7 +383,7 @@ def run_context_reopen(session: RestSession) -> None:
     run_once() never re-runs appear() and the window is never torn down, which
     is why this needs the Freeze interface selected above.
     """
-    print("-- reopen the freezer menu with a context menu left open")
+    section("reopen the freezer menu with a context menu left open")
     prepare(session, ENABLED)
     open_menu(session)
     with check("open the context menu on the first browser entry"):
@@ -452,7 +432,7 @@ def run_menu_button_in_form(session: RestSession) -> None:
     the modal, otherwise one still latched from opening the menu would close the
     editor before a single character was accepted.
     """
-    print("-- the menu button works inside the Assembly 64 query form")
+    section("the menu button works inside the Assembly 64 query form")
     prepare(session, ENABLED)
     open_menu(session)
     with check("open the task menu"):
@@ -552,12 +532,12 @@ def main() -> int:
     session.reset()
     initial_interface = session.get_config(UI_STORE, UI_ITEM)
     initial_mirroring = session.get_config(SID_STORE, SID_ITEM)
-    print(f"-- captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")
+    detail(f"captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")
 
     try:
         for iteration in range(args.repeat):
             if args.repeat > 1:
-                print(f"-- pass {iteration + 1} of {args.repeat}")
+                section(f"pass {iteration + 1} of {args.repeat}")
             if "mirroring-off" in tests:
                 run_menu_cycle(session, DISABLED)
             if "toggle-open" in tests:
@@ -576,9 +556,9 @@ def main() -> int:
             session.set_config(SID_STORE, SID_ITEM, initial_mirroring)
             session.set_config(UI_STORE, UI_ITEM, initial_interface)
         else:
-            print("-- device is not responding; configuration left as-is", file=sys.stderr)
+            warn("device is not responding; configuration left as-is")
 
-    print(f"freeze_menu_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("freeze_menu_test")
     return 0
 
 
@@ -586,5 +566,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"freeze_menu_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("freeze_menu_test", format_exception(exc))
         raise SystemExit(1)

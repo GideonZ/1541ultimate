@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check, menu_screen_text
 from menu import repeat_key, wait_screen_settled
+from report import suite_fail, suite_ok
 
 
 FTP_USER = "user"
@@ -423,7 +424,7 @@ def main() -> int:
         with check("browser mount on long filename"):
             run_mount_test(args.host, args.password, session, args.test_dir, stored_name)
 
-        print("browser_long_filename_test: OK")
+        suite_ok("browser_long_filename_test")
         return 0
     finally:
         try:
@@ -437,5 +438,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"browser_long_filename_test: FAIL: {exc}")
+        suite_fail("browser_long_filename_test", str(exc))
         raise SystemExit(1)

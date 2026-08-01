@@ -39,6 +39,10 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitor"))
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from report import detail, suite_fail, suite_ok
 
 from menu_screen_test import (
     SCREEN_WIDTH,
@@ -785,15 +789,15 @@ class Matrix:
     def __init__(self) -> None:
         self.cells: List[Tuple[str, str, str, str, str]] = []
 
-    def record(self, operation: str, origin: str, observer: str, verdict: str, detail: str = "") -> None:
-        self.cells.append((operation, origin, observer, verdict, detail))
+    def record(self, operation: str, origin: str, observer: str, verdict: str, note: str = "") -> None:
+        self.cells.append((operation, origin, observer, verdict, note))
 
     def report(self) -> str:
         lines = ["", "operation x origin x observer matrix", "-" * 78]
-        for operation, origin, observer, verdict, detail in self.cells:
+        for operation, origin, observer, verdict, note in self.cells:
             line = f"  {operation:<12} {origin:<7} {observer:<7} {verdict:<5}"
-            if detail:
-                line += f" {detail}"
+            if note:
+                line += f" {note}"
             lines.append(line)
         counts: Dict[str, int] = {}
         for _, _, _, verdict, _ in self.cells:
@@ -868,7 +872,7 @@ class Context:
                 failed.append(observer)
             if problem or record_passes:
                 self.matrix.record(operation, origin, observer.name,
-                                   "FAIL" if problem else "PASS",
+                                   "FAIL" if problem else "OK",
                                    problem or f"{elapsed:.2f}s")
 
         oracle_problem = ""
@@ -889,16 +893,16 @@ class Context:
                     break
         if oracle_problem or record_passes:
             self.matrix.record(operation, origin, "REST",
-                               "FAIL" if oracle_problem else "PASS",
+                               "FAIL" if oracle_problem else "OK",
                                oracle_problem or f"{elapsed:.2f}s")
 
         if failed or oracle_problem:
-            detail = "".join(
+            mismatch = "".join(
                 f"  {observer.name:<7}: {format_snapshot(latest[observer.name])}\n" for observer in observers)
             raw = "".join(f"  raw {observer.name}:\n{observer.raw()}\n" for observer in failed)
             raise Failure(
                 f"{operation} from {origin} did not converge within {elapsed:.2f}s\n"
-                f"  expected: {format_snapshot(expected)}\n{detail}"
+                f"  expected: {format_snapshot(expected)}\n{mismatch}"
                 f"  REST   : {format_snapshot(oracle)}{' -- ' + oracle_problem if oracle_problem else ''}\n{raw}")
 
     def baseline(self, expected: Snapshot, names: Sequence[str]) -> None:
@@ -1109,8 +1113,9 @@ def row_create_ftp(ctx: Context, name: str) -> None:
         data_socket.close()
     ctx.ftp_driver.voidresp()
 
-    print("\n     STOR phase 1 (open, 0 bytes committed): "
-          + "; ".join(f"{who}={format_snapshot(what)}" for who, what in during_open.items()))
+    detail("STOR phase 1 (open, 0 bytes committed): "
+           + "; ".join(f"{who}={format_snapshot(what)}"
+                       for who, what in during_open.items()))
 
     # Phase 4: final metadata notification.
     ctx.converge("create", "FTP", expected_snapshot([(name, SIZE_S2)]), names)
@@ -1180,8 +1185,9 @@ def row_write_ftp(ctx: Context, name: str) -> None:
         data_socket.close()
     ctx.ftp_driver.voidresp()
 
-    print("\n     STOR phase 1 (open, truncated): "
-          + "; ".join(f"{who}={format_snapshot(what)}" for who, what in during_open.items()))
+    detail("STOR phase 1 (open, truncated): "
+           + "; ".join(f"{who}={format_snapshot(what)}"
+                       for who, what in during_open.items()))
 
     ctx.converge("write", "FTP", expected_snapshot([(name, SIZE_S2)]), names)
     drop_names(ctx, names)
@@ -1229,7 +1235,7 @@ def row_copy_browser(ctx: Context, browser: Browser, origin: str, name: str) -> 
             f"{origin} showed a stale destination on arrival after its own copy\n"
             f"  expected: {format_snapshot(expected)}\n"
             f"  {origin:<7}: {format_snapshot(arrival)}\n{browser.screen()}")
-    ctx.matrix.record("copy-arrival", origin, origin, "PASS", "no stale cache on re-entry")
+    ctx.matrix.record("copy-arrival", origin, origin, "OK", "no stale cache on re-entry")
 
     drop_names(ctx, names)
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
@@ -1393,7 +1399,7 @@ def row_short_write(ctx: Context, name: str) -> None:
     if committed is None:
         raise Failure("a short write left no file at all")
     size = int(committed.get("size", -1))
-    print(f"\n     short write committed {size} bytes")
+    detail(f"short write committed {size} bytes")
     ctx.converge("short-write", "FTP", expected_snapshot([(name, size)]), names)
     drop_names(ctx, names)
 
@@ -1644,7 +1650,7 @@ def main() -> int:
             raise Failure(f"{len(problems)} of {len(rows)} matrix rows did not converge; "
                           f"first was: {problems[0]}")
         print(ctx.matrix.report())
-        print("browser_filesystem_refresh_test: OK")
+        suite_ok("browser_filesystem_refresh_test")
         return 0
     except Failure:
         print(ctx.matrix.report())
@@ -1658,5 +1664,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"browser_filesystem_refresh_test: FAIL: {exc}")
+        suite_fail("browser_filesystem_refresh_test", str(exc))
         raise SystemExit(1)

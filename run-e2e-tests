@@ -19,12 +19,11 @@ SELECTED=()
 LIST_ONLY=false
 STOP_ON_FAIL=false
 RUN_MANUAL=false
+JSONL=""
 
-C_BLUE='\033[1;34m'
-C_GREEN='\033[1;32m'
-C_RED='\033[1;31m'
-C_YEL='\033[1;33m'
-C_NC='\033[0m'
+# The reporting rules every e2e suite shares; see tests/e2e/README.md. The
+# harness follows them too, so its lines and the suites' lines read as one log.
+source "$ROOT/tests/e2e/lib/report.sh"
 
 # name|relative path|space separated arguments (@HOST@/@PASS@/@TIMEOUT@ are
 # substituted)|mode, where mode is "auto" (the default when the field is
@@ -96,6 +95,9 @@ Options:
   -a, --all                 Also run the manual suites.
   -l, --list                List the suite names and exit.
   -x, --stop-on-fail        Stop at the first failing suite.
+  -j, --jsonl <path>        Also append one JSON object per check, scenario
+                            and suite result to <path>, for a reader that is
+                            not a person. Truncated at the start of the run.
 
 Suites:
 $(for entry in "${SUITES[@]}"; do printf '  %-26s %-58s %s\n' "${entry%%|*}" "$(echo "$entry" | cut -d'|' -f2)" "$(suite_mode "$entry")"; done)
@@ -189,27 +191,27 @@ close_active_menu() {
 
 reset_to_clean_slate() {
     local phase=$1
-    printf '%s: release input ... ' "$phase"
+    step_start "$phase: release input"
     if ! release_input; then
-        echo "FAIL"
+        check_fail
         return 1
     fi
-    echo "OK"
+    check_ok
 
-    printf '%s: close active menu UI ... ' "$phase"
+    step_start "$phase: close active menu UI"
     if ! close_active_menu; then
-        echo "FAIL"
+        check_fail
         return 1
     fi
-    echo "OK"
+    check_ok
 
-    printf '%s: reset machine ... ' "$phase"
+    step_start "$phase: reset machine"
     if [[ "$(rest_status PUT "/v1/machine:reset")" != 200 ]]; then
-        echo "FAIL"
+        check_fail
         return 1
     fi
     sleep 0.5
-    echo "OK"
+    check_ok
 }
 
 while [[ $# -gt 0 ]]; do
@@ -222,6 +224,7 @@ while [[ $# -gt 0 ]]; do
         -a|--all) RUN_MANUAL=true; shift ;;
         -l|--list) LIST_ONLY=true; shift ;;
         -x|--stop-on-fail) STOP_ON_FAIL=true; shift ;;
+        -j|--jsonl) [[ $# -ge 2 ]] || die "$1 needs a value"; JSONL="$2"; shift 2 ;;
         -*) die "Unknown option: $1" ;;
         *) HOST="$1"; shift ;;
     esac
@@ -256,9 +259,17 @@ for want in "${SELECTED[@]-}"; do
     [[ "$found" == true ]] || die "Unknown suite: $want (use --list)"
 done
 
-echo -e "${C_YEL}Ultimate end-to-end test run${C_NC}"
-echo -e "Host:    ${HOST}"
-echo -e "Timeout: ${TIMEOUT}s"
+# One run, one file: truncate so a reader never sees two runs concatenated.
+if [[ -n "$JSONL" ]]; then
+    : > "$JSONL" || die "cannot write $JSONL"
+    export E2E_JSONL="$JSONL"
+    REPORT_JSONL="$JSONL"
+fi
+
+banner "Ultimate end-to-end test run"
+detail "host:    ${HOST}"
+detail "timeout: ${TIMEOUT}s"
+[[ -n "$JSONL" ]] && detail "jsonl:   ${JSONL}"
 
 PASSED=()
 FAILED=()
@@ -266,6 +277,7 @@ FAILED=()
 DIRTY=()
 SKIPPED=()
 START_ALL=$SECONDS
+RUN_STARTED="$(_report_now)"
 
 for entry in "${SUITES[@]}"; do
     name="${entry%%|*}"
@@ -276,7 +288,8 @@ for entry in "${SUITES[@]}"; do
 
     full_path="$ROOT/$path"
     if [[ ! -f "$full_path" ]]; then
-        echo -e "\n${C_YEL}SKIP: $name (missing $path)${C_NC}"
+        echo
+        suite_skip "$name" "missing $path"
         SKIPPED+=("$name")
         continue
     fi
@@ -298,12 +311,14 @@ for entry in "${SUITES[@]}"; do
         cmd=(bash "$full_path" "${args[@]}")
     fi
 
-    echo -e "\n${C_BLUE}SUITE: $name${C_NC}\n$(printf '%.s-' {1..60})"
+    banner "SUITE  $name"
+    # The suite writes its own records, under the runner's name for it.
+    export E2E_SUITE="$name"
 
     # Precondition: establish the documented state rather than leaving each suite
     # to cope with what the last one left.
     if ! ui_state_gate ensure ""; then
-        echo -e "${C_RED}FAIL: $name (precondition: device UI could not be cleaned)${C_NC}"
+        suite_fail "$name" "precondition: the device UI could not be cleaned"
         FAILED+=("$name")
         if [[ "$STOP_ON_FAIL" == true ]]; then
             break
@@ -311,12 +326,12 @@ for entry in "${SUITES[@]}"; do
         continue
     fi
 
-    start=$SECONDS
+    start="$(_report_now)"
     if "${cmd[@]}"; then
-        echo -e "${C_GREEN}PASS: $name ($((SECONDS - start))s)${C_NC}"
+        suite_ok "$name" "" "$(_report_since "$start")"
         PASSED+=("$name")
     else
-        echo -e "${C_RED}FAIL: $name ($((SECONDS - start))s)${C_NC}"
+        suite_fail "$name" "" "$(_report_since "$start")"
         FAILED+=("$name")
         if [[ "$STOP_ON_FAIL" == true ]]; then
             break
@@ -327,7 +342,7 @@ for entry in "${SUITES[@]}"; do
     # elsewhere is not a defect. Naming who left what is what makes an inherited
     # failure traceable to its cause. Does not change the run's verdict.
     if ! ui_state_gate verify "$name"; then
-        echo -e "${C_YEL}DIRTY: $name left the device UI outside the documented state${C_NC}"
+        suite_warn "$name" "left the device UI outside the documented state"
         DIRTY+=("$name")
         ui_state_gate ensure "$name" >/dev/null || true
     fi
@@ -335,18 +350,24 @@ done
 
 echo
 if ! reset_to_clean_slate "RUN TEARDOWN"; then
-    echo -e "${C_RED}FAIL: overall clean-slate teardown${C_NC}"
+    suite_fail "run-teardown" "overall clean-slate teardown"
     FAILED+=("run-teardown")
 fi
 
-echo -e "\n${C_YEL}Summary after $((SECONDS - START_ALL))s${C_NC}\n$(printf '%.s-' {1..60})"
-for name in "${PASSED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_GREEN}PASS${C_NC}  $name"; done
-for name in "${SKIPPED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_YEL}SKIP${C_NC}  $name"; done
-for name in "${FAILED[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_RED}FAIL${C_NC}  $name"; done
-for name in "${DIRTY[@]-}"; do [[ -n "$name" ]] && echo -e "  ${C_YEL}DIRTY${C_NC} $name (UI left outside the documented state; repaired before the next suite)"; done
+banner "Summary"
+for name in "${PASSED[@]-}"; do [[ -n "$name" ]] && detail "${C_GREEN}OK${C_NC}   $name"; done
+for name in "${SKIPPED[@]-}"; do [[ -n "$name" ]] && detail "${C_YEL}SKIP${C_NC} $name"; done
+for name in "${FAILED[@]-}"; do [[ -n "$name" ]] && detail "${C_RED}FAIL${C_NC} $name"; done
+for name in "${DIRTY[@]-}"; do [[ -n "$name" ]] && detail "${C_YEL}WARN${C_NC} $name (UI left outside the documented state; repaired before the next suite)"; done
+detail "$(format_duration "$(_report_since "$RUN_STARTED")") total"
+
+_report_json kind run verdict "$([[ ${#FAILED[@]} -gt 0 ]] && echo FAIL || echo OK)" \
+    suites "$(( ${#PASSED[@]} + ${#FAILED[@]} ))" passed "${#PASSED[@]}" \
+    failed "${#FAILED[@]}" skipped "${#SKIPPED[@]}" dirty "${#DIRTY[@]}" \
+    seconds "$(_report_since "$RUN_STARTED")"
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     exit 1
 fi
 
-echo -e "\n${C_GREEN}SUCCESS: all selected suites passed.${C_NC}"
+echo -e "\n${C_GREEN}OK${C_NC}  all selected suites passed."

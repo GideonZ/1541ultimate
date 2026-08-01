@@ -49,10 +49,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
-CHECK_COUNT = 0
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+from report import (
+    FAIL, Failure, OK, SKIP, check, detail, format_exception, section, suite_fail, suite_ok, warn)
+
 
 READMEM_PATH = "/v1/machine:readmem"
 WRITEMEM_PATH = "/v1/machine:writemem"
@@ -185,31 +189,8 @@ TESTS = [
 ]
 
 
-class Failure(RuntimeError):
-    pass
-
-
 class Wedged(Failure):
     """The command interface never left Command Busy: issue #740's failure mode."""
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
 
 
 def describe_status(status: int) -> str:
@@ -260,7 +241,7 @@ class RestSession:
                     raise Failure(
                         f"{method} {url} failed after {attempt} attempt(s): {format_exception(exc)}"
                     ) from exc
-                print(f"\n  retrying {method} {url}: {format_exception(exc)}", flush=True)
+                detail(f"retrying {method} {url}: {format_exception(exc)}")
                 time.sleep(CONNECT_RETRY_SECONDS)
         raise Failure(f"{method} {url} failed")  # not reachable, keeps the type checker happy
 
@@ -360,10 +341,10 @@ class FtpFixture:
                     ftp.delete(path)
                     self.created.remove(path)
                 except Exception as exc:
-                    print(f"uci_targets_test: could not delete {path}: {exc}", file=sys.stderr)
+                    warn(f"could not delete {path}: {exc}")
                     ok = False
         except Exception as exc:
-            print(f"uci_targets_test: FTP cleanup failed: {exc}", file=sys.stderr)
+            warn(f"FTP cleanup failed: {exc}")
             return False
         finally:
             if ftp is not None:
@@ -486,7 +467,7 @@ class Uci:
         data, text = self.drain()
         self.control(CTRL_DATA_ACC)
         self.require_idle("after accepting the reply")
-        print(f"  {command.hex(' ') or '<empty>'} -> {elapsed:.2f}s, data {data!r}, status {text!r}")
+        detail(f"{command.hex(' ') or '<empty>'} -> {elapsed:.2f}s, data {data!r}, status {text!r}")
         return data, text
 
 
@@ -804,12 +785,12 @@ def release_interface(uci: Uci) -> bool:
             uci.abort_to_idle()
         status = uci.status()
         if (status & ST_STATE_MASK) != ST_STATE_IDLE or (status & ST_ERROR):
-            print(f"uci_targets_test: command interface left in {describe_status(status)}, "
-                  f"wanted Idle with no error", file=sys.stderr)
+            warn(f"command interface left in {describe_status(status)}, "
+                 f"wanted Idle with no error")
             return False
         return True
     except Exception as exc:
-        print(f"uci_targets_test: could not release the command interface: {exc}", file=sys.stderr)
+        warn(f"could not release the command interface: {exc}")
         return False
 
 
@@ -823,13 +804,12 @@ def restore_settings(session: RestSession, original: Dict[str, str], keep_config
         current = session.get_config(CONFIG_CATEGORY)
         wrong = {k: str(current.get(k)) for k, v in original.items() if str(current.get(k)) != v}
         if wrong:
-            print(f"uci_targets_test: settings not restored, still {wrong}, wanted {original}",
-                  file=sys.stderr)
+            warn(f"settings not restored, still {wrong}, wanted {original}")
             return False
-        print(f"restored {CONFIG_CATEGORY}: {original}")
+        detail(f"restored {CONFIG_CATEGORY}: {original}")
         return True
     except Exception as exc:
-        print(f"uci_targets_test: cleanup failed: {exc}", file=sys.stderr)
+        warn(f"cleanup failed: {exc}")
         return False
 
 
@@ -881,7 +861,7 @@ def main() -> int:
             if missing:
                 raise Failure(f"this device has no {', '.join(missing)} setting; it cannot run this suite")
             original = {k: str(config[k]) for k in OWNED_SETTINGS}
-            print(f"  current: {original}")
+            detail(f"current: {original}")
 
         with check("enable the Command Interface registers at $DF1B-$DF1F"):
             session.set_config(CONFIG_CATEGORY, CFG_CMD_IF, "Enabled")
@@ -905,7 +885,7 @@ def main() -> int:
         run("interface-usable-after", run_interface_usable_after, uci)
 
     except Failure as exc:
-        print(f"uci_targets_test: {exc}", file=sys.stderr)
+        suite_fail("uci_targets_test", format_exception(exc))
     finally:
         # A failed scenario can leave the interface holding a reply, so hand the
         # data back before the settings go home. Both steps have to succeed, and
@@ -915,20 +895,20 @@ def main() -> int:
         removed = ftp.cleanup()
         cleanup_ok = released and restored and removed
 
-    print("\n=== SUMMARY ===")
+    section("summary")
     all_ok = cleanup_ok
     for name in selected:
         outcome = results.get(name)
-        state = "PASS" if outcome else ("FAIL" if outcome is False else "NOT REACHED")
+        state = OK if outcome else (FAIL if outcome is False else SKIP)
         if outcome is not True:
             all_ok = False
-        print(f"  {name}: {state}")
-    print(f"  cleanup: {'OK' if cleanup_ok else 'FAILED'}")
+        detail(f"{name}: {state}")
+    detail(f"cleanup: {OK if cleanup_ok else FAIL}")
 
     if all_ok:
-        print(f"uci_targets_test: OK ({CHECK_COUNT} checks)")
+        suite_ok("uci_targets_test")
         return 0
-    print("uci_targets_test: FAIL", file=sys.stderr)
+    suite_fail("uci_targets_test", "see the summary above")
     return 1
 
 
@@ -936,5 +916,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"uci_targets_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("uci_targets_test", format_exception(exc))
         raise SystemExit(1)

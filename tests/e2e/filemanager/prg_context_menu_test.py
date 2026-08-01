@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 from menu import repeat_key, wait_screen_settled
+from report import detail, section, suite_fail, suite_ok
 
 
 FTP_USER = "user"
@@ -1138,14 +1139,15 @@ def main() -> int:
 
         if args.repeat > 0:
             names = args.scenario or [name for name, _, _, _ in SCENARIOS]
-            print(f"\nRepeating {', '.join(names)} {args.repeat} times")
+            section(f"repeating {', '.join(names)} {args.repeat} times")
             return run_repeat_mode(machine, fixtures, args.host, args.password,
                                    args.repeat, args.scenario or [])
 
         for location in locations:
+            section(f"every context-menu action on {location.label}")
             with check(f"read the context menu of {location.label}"):
                 offered = offered_actions(machine, fixtures, location)
-            print(f"     offers: {', '.join(offered)}")
+            detail(f"offers: {', '.join(offered)}")
 
             run_case(f"{location.label}: every offered action is covered",
                      lambda loc=location, off=offered: run_context_menu_inventory(
@@ -1167,12 +1169,12 @@ def main() -> int:
                  lambda: run_action_run(machine, fixtures, open_long_name_prg))
 
         if failures:
-            print(f"\nprg_context_menu_test: {len(failures)} of {total} actions FAILED")
+            suite_fail("prg_context_menu_test", f"{len(failures)} of {total} actions")
             for label, message in failures:
-                print(f"  - {label}: {message}")
+                detail(f"{label}: {message}")
             return 1
 
-        print(f"prg_context_menu_test: OK ({total} actions)")
+        suite_ok("prg_context_menu_test", f"{total} actions")
         return 0
     finally:
         try:
@@ -1200,5 +1202,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"prg_context_menu_test: FAIL: {exc}")
+        suite_fail("prg_context_menu_test", str(exc))
         raise SystemExit(1)

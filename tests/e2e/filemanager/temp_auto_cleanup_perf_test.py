@@ -20,8 +20,14 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
+from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
+
+SUITE = "temp_auto_cleanup_perf_test"
 CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEMS = (
     ("Temp%20Auto%20Cleanup", "Temp Auto Cleanup"),
@@ -84,7 +90,7 @@ def assert_or_warn(assertions_enabled, condition, message):
         return
     if assertions_enabled:
         raise RuntimeError(message)
-    print(f"WARNING: {message}")
+    warn(message)
 
 
 @dataclass
@@ -146,15 +152,15 @@ class U64Client:
         message = f"{description or path} failed with HTTP {status}"
         if payload:
             try:
-                detail = json.loads(payload.decode("utf-8"))
-                errors = detail.get("errors")
+                document = json.loads(payload.decode("utf-8"))
+                errors = document.get("errors")
                 if errors:
                     message += f": {errors}"
             except (ValueError, UnicodeDecodeError):
                 message += f": {payload[:160]!r}"
 
         if allow_warning and not self.assertions_enabled:
-            print(f"WARNING: {message}")
+            warn(message)
             return None
 
         raise RuntimeError(message)
@@ -392,7 +398,7 @@ def restore_initial_settings(client, snapshot):
     if not snapshot:
         return
 
-    print("\nRestoring initial Temp settings")
+    section("restoring initial Temp settings")
     for encoded_key, _ in CONFIG_ITEMS:
         value = snapshot[encoded_key]
         client.require_ok(
@@ -401,7 +407,7 @@ def restore_initial_settings(client, snapshot):
             description=f"restore {encoded_key}",
             allow_warning=not client.assertions_enabled,
         )
-        print(f"  {encoded_key}: {value}")
+        detail(f"{encoded_key}: {value}")
 
 
 def build_frame_payload(frame_number):
@@ -434,11 +440,9 @@ def post_screen_memory_write(client, frame_counter):
 
 def emit_progress(prefix, current, total=None, elapsed=None):
     if total is not None:
-        message = f"\r{prefix}: {current}/{total}"
+        progress(f"{prefix}: {current}/{total}")
     else:
-        message = f"\r{prefix}: {current} samples in {elapsed:.2f}s"
-    sys.stdout.write(message)
-    sys.stdout.flush()
+        progress(f"{prefix}: {current} samples in {elapsed:.2f}s")
 
 
 def emit_rolling_window_stats(total_uploads, elapsed, window_latencies_ms):
@@ -525,7 +529,7 @@ def wait_for_expected_file_count(inspector, directories, predicate, description,
 def prepare_stage(inspector, upload_dirs, stage_name, assertions_enabled):
     removed = inspector.purge_all()
     if removed:
-        print(f"  Purged {removed} existing managed temp files")
+        detail(f"purged {removed} existing managed temp files")
 
     leftovers = []
     for directory in MANAGED_UPLOAD_PATHS:
@@ -594,18 +598,18 @@ def run_stage(
     clear_screen(client)
     prepare_stage(inspector, upload_dirs, name, client.assertions_enabled)
 
-    print(f"\n{name}: cleanup {cleanup}, subfolders {subfolder}")
-    print(f"  Upload target: {upload_dir}")
-    print(f"  Memory write: ${MEMORY_START_ADDRESS:04X}-${MEMORY_START_ADDRESS + PAYLOAD_SIZE - 1:04X}")
+    section(f"{name}: cleanup {cleanup}, subfolders {subfolder}")
+    detail(f"upload target: {upload_dir}")
+    detail(f"memory write: ${MEMORY_START_ADDRESS:04X}-${MEMORY_START_ADDRESS + PAYLOAD_SIZE - 1:04X}")
     if max_total_uploads is not None:
-        print(f"  Max total uploads this stage: {max_total_uploads}")
+        detail(f"max total uploads this stage: {max_total_uploads}")
 
     for warmup_index in range(warmup_count):
         post_screen_memory_write(client, frame_counter)
         if ((warmup_index + 1) % WARMUP_PROGRESS_INTERVAL) == 0 or (warmup_index + 1) == warmup_count:
             emit_progress("Warmup", warmup_index + 1, total=warmup_count)
     if warmup_count:
-        sys.stdout.write("\n")
+        progress_done()
 
     latencies_ms = []
     stage_started = time.perf_counter()
@@ -643,19 +647,19 @@ def run_stage(
 
 
 def print_stage_summary(result):
-    print(f"\n{result.name} summary")
-    print(f"  Warmup uploads: {result.warmup_count}")
-    print(f"  Measured uploads: {result.sample_count}")
-    print(f"  Total uploads: {result.total_uploads}")
-    print(f"  Managed files after stage: {result.managed_file_count}")
-    print(f"  Duration: {result.duration_seconds:.3f} s")
-    print(f"  Throughput: {format_rps(result.rps)}")
-    print(f"  P50: {format_ms(result.p50_ms)}")
-    print(f"  P90: {format_ms(result.p90_ms)}")
-    print(f"  P99: {format_ms(result.p99_ms)}")
-    print(f"  Avg: {format_ms(result.avg_ms)}")
-    print(f"  Min: {format_ms(result.min_ms)}")
-    print(f"  Max: {format_ms(result.max_ms)}")
+    section(f"{result.name} summary")
+    detail(f"warmup uploads: {result.warmup_count}")
+    detail(f"measured uploads: {result.sample_count}")
+    detail(f"total uploads: {result.total_uploads}")
+    detail(f"managed files after stage: {result.managed_file_count}")
+    detail(f"duration: {result.duration_seconds:.3f} s")
+    detail(f"throughput: {format_rps(result.rps)}")
+    detail(f"p50: {format_ms(result.p50_ms)}")
+    detail(f"p90: {format_ms(result.p90_ms)}")
+    detail(f"p99: {format_ms(result.p99_ms)}")
+    detail(f"avg: {format_ms(result.avg_ms)}")
+    detail(f"min: {format_ms(result.min_ms)}")
+    detail(f"max: {format_ms(result.max_ms)}")
 
 
 def print_comparison(enabled, disabled):
@@ -669,7 +673,7 @@ def print_comparison(enabled, disabled):
     p99_delta = enabled.p99_ms - disabled.p99_ms
     rps_delta = enabled.rps - disabled.rps
 
-    print("\nDelta (enabled - disabled)")
+    section("delta (enabled - disabled)")
     print(
         f"  P50: {format_ms(p50_delta)} "
         f"({format_percent(percent_delta(enabled.p50_ms, disabled.p50_ms)) if percent_delta(enabled.p50_ms, disabled.p50_ms) is not None else 'n/a'})"
@@ -764,17 +768,18 @@ def main():
             print_stage_summary(result)
         if len(results) == 2:
             print_comparison(results[0], results[1])
+        suite_ok(SUITE, f"{len(results)} stage(s) measured")
         return 0
     except KeyboardInterrupt:
-        print("\nStopped.")
+        suite_fail(SUITE, "interrupted")
         return 130
     except Exception as exc:
-        print(f"ERROR: {exc}")
+        suite_fail(SUITE, str(exc))
         return 1
     finally:
         try:
             if args.no_config_change:
-                print("\nLeaving Temp settings unchanged")
+                section("leaving Temp settings unchanged")
             else:
                 restore_initial_settings(client, initial_settings)
         finally:

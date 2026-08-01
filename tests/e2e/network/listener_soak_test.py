@@ -32,11 +32,14 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from contextlib import contextmanager
 from typing import List, Optional
 
+# tests/e2e/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from report import Failure, check, check_ok, check_start, suite_fail, suite_ok
 
-CHECK_COUNT = 0
+
 TELNET_PORT = 23
 FTP_PORT = 21
 # Each service caps concurrent sessions; abandon more than the cap per round so a
@@ -49,23 +52,6 @@ REST_SAMPLES_PER_ROUND = 5
 # catches a device whose listeners are draining the netconn pool.
 REST_BUDGET_SECONDS = 5.0
 DEGRADATION_FACTOR = 4.0
-
-
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
 
 
 def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
@@ -131,10 +117,10 @@ def main() -> int:
                         help=f"churn rounds (default {DEFAULT_ROUNDS}, about two minutes)")
     args = parser.parse_args()
 
-    with check("REST baseline latency"):
-        baseline = sample_rest(args.host, args.password, REST_SAMPLES_PER_ROUND, args.timeout)
-        base_median = statistics.median(baseline)
-        print(f"median {base_median * 1000:.0f} ms ... ", end="")
+    check_start("REST baseline latency")
+    baseline = sample_rest(args.host, args.password, REST_SAMPLES_PER_ROUND, args.timeout)
+    base_median = statistics.median(baseline)
+    check_ok(f"median {base_median * 1000:.0f} ms")
 
     with check("telnet and FTP accept a connection before the soak"):
         if not accepts_connection(args.host, TELNET_PORT):
@@ -143,14 +129,13 @@ def main() -> int:
             raise Failure(f"FTP {args.host}:{FTP_PORT} refused a connection at baseline")
 
     for round_index in range(1, args.rounds + 1):
-        with check(f"round {round_index}/{args.rounds}: abandon connections, REST stays responsive"):
-            opened_telnet = abandon(args.host, TELNET_PORT, ABANDON_PER_ROUND)
-            opened_ftp = abandon(args.host, FTP_PORT, ABANDON_PER_ROUND)
-            latencies = sample_rest(args.host, args.password, REST_SAMPLES_PER_ROUND, args.timeout)
-            worst = max(latencies)
-            print(f"telnet={opened_telnet} ftp={opened_ftp} worst REST {worst * 1000:.0f} ms ... ",
-                  end="")
-            time.sleep(ROUND_PAUSE_SECONDS)
+        check_start(f"round {round_index}/{args.rounds}: abandon connections, REST stays responsive")
+        opened_telnet = abandon(args.host, TELNET_PORT, ABANDON_PER_ROUND)
+        opened_ftp = abandon(args.host, FTP_PORT, ABANDON_PER_ROUND)
+        latencies = sample_rest(args.host, args.password, REST_SAMPLES_PER_ROUND, args.timeout)
+        worst = max(latencies)
+        check_ok(f"telnet={opened_telnet} ftp={opened_ftp} worst REST {worst * 1000:.0f} ms")
+        time.sleep(ROUND_PAUSE_SECONDS)
 
     with check("both listeners still accept a connection after the soak"):
         if not accepts_connection(args.host, TELNET_PORT):
@@ -167,7 +152,6 @@ def main() -> int:
     with check("REST latency has not degraded against the baseline"):
         final = sample_rest(args.host, args.password, REST_SAMPLES_PER_ROUND, args.timeout)
         final_median = statistics.median(final)
-        print(f"median {final_median * 1000:.0f} ms vs {base_median * 1000:.0f} ms ... ", end="")
         ceiling = max(base_median * DEGRADATION_FACTOR, 0.5)
         if final_median > ceiling:
             raise Failure(
@@ -175,7 +159,7 @@ def main() -> int:
                 f"{final_median * 1000:.0f} ms, past the {ceiling * 1000:.0f} ms ceiling"
             )
 
-    print(f"listener_soak_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("listener_soak_test")
     return 0
 
 
@@ -183,5 +167,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"listener_soak_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("listener_soak_test", str(exc))
         raise SystemExit(1)

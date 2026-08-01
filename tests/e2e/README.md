@@ -93,6 +93,116 @@ set -o pipefail
 ./run-e2e-tests -H <host> 2>&1 | tee "run-e2e-tests-$stamp.log"
 ```
 
+## Logging rules
+
+A run is one log written by many processes, so every suite reports through the
+shared library rather than formatting its own lines: `tests/e2e/lib/report.py`
+for Python, `tests/e2e/lib/report.sh` for shell. `run-e2e-tests` uses the shell
+one too. Do not hand-roll a check counter, a verdict word, an indent or a colour
+code; if something is missing, add it to the library.
+
+**One check, one line.** A check prints `[NN] <label> ... <verdict>` and nothing
+else. `check(label)` in Python and `check_start`/`check_ok` in shell own that
+line. Two things could otherwise split it, and the library handles both:
+
+- Checks nest. Helpers such as `open_menu` are themselves checks and are also
+  called from inside scenario checks, so only the outermost one prints. A nested
+  check produces no output and no number, and its failure still propagates with
+  its own message.
+- A check body may call `detail`. Those lines are held back until the check has
+  printed its verdict, so narrating mid-check cannot push the verdict onto the
+  next line.
+
+**The verdict vocabulary is closed:** `OK`, `FAIL`, `WARN`, `SKIP`. Never
+`PASS`, `SUCCESS`, `VERIFIED`, `WARNING` or a bracketed form such as `[OK]`.
+Extra information goes in parentheses after the verdict: `OK (20 rows)`,
+`FAIL (HTTP 500)`. A suite that builds a results table uses the same four words
+in its verdict column.
+
+**Colour is the library's job.** Green `OK`, red `FAIL`, yellow `WARN` and
+`SKIP`, blue headings. Only the verdict word is coloured, never the label.
+Setting `NO_COLOR` turns colour off for the whole run, harness included, so a
+captured log looks like what was on screen.
+
+Headings have two levels, so a reader can see structure without reading text. The
+runner draws a `banner` for each suite: a title between two rules, which is the
+one heavy marker in the log and marks where a new suite starts. A suite draws a
+`section` for each scenario inside itself, which is a single blue line.
+
+**Every result carries its own elapsed time**, formatted by `format_duration`
+with fewer decimals as the number grows: `0.020s`, `1.002s`, `23.5s`, `264s`. At
+a second the milliseconds separate a round trip from a redraw; at a minute they
+are noise.
+
+**A scenario reports its own verdict.** `section` opens one; the library closes
+it when the next scenario, the next banner or the suite's closing line arrives,
+and prints the worst verdict any of its checks produced together with the check
+count and elapsed time. A heading that grouped no checks prints nothing, because
+a verdict on nothing is noise.
+
+```
+
+============================================================
+SUITE  assembly64
+============================================================
+
+--- a real query is sent to the Assembly 64 service
+[03] open the form and enter the first field ... OK (2.100s)
+[04] the typed term lands in the Name field ... OK (0.412s)
+[05] the service answers and the results match ... OK (12.031s)
+--- OK (3 checks, 14.6s)
+
+assembly64_test: OK (16 checks, 35.2s)
+```
+
+| Purpose | Python | Shell | Output |
+|---|---|---|---|
+| A numbered check | `check(label)` or `check_start` | `check_start` | `[07] label ... OK` |
+| An unnumbered step, for the harness's own gates | `step_start` | `step_start` | `label ... OK` |
+| A verdict | `check_ok` / `check_fail` / `check_warn` / `check_skip` | same names | `OK (3 rows)` |
+| A continuation line under a check | `detail` | `detail` | five-space indent |
+| A group heading inside a suite | `section` | `section` | blank line, blue title |
+| A top-level heading, for the runner | `banner` | `banner` | blank line, blue title, rule |
+| A warning belonging to no check | `warn` | `warn` | `WARN <message>` |
+| A suite's closing line | `suite_ok` / `suite_fail` / `suite_skip` / `suite_warn` | same names | `input_test: OK (48 checks)` |
+| A live progress line | `progress` / `progress_done` | n/a | terminal only |
+
+Three further rules:
+
+- **Never clear the terminal.** A suite that runs `clear`, or emits an erase
+  sequence, destroys the output of every suite before it.
+- **Everything goes to stdout, flushed.** Sending results to stderr lets them
+  arrive out of order relative to stdout when the run is piped, which is how a
+  verdict ends up under the wrong check.
+- **Rewriting a line is for terminals only.** `progress` overwrites the current
+  line on a TTY and prints nothing when the output is captured, so a carriage
+  return never lands in a log file.
+
+### Structured results
+
+`run-e2e-tests -j <path>` writes the same run as JSONL, one object per line, for
+a reader that is not a person. The file is truncated at the start of the run, so
+it always describes exactly one run. The runner passes the path to each suite in
+`E2E_JSONL` and the suite's own name in `E2E_SUITE`, so both libraries append to
+one file; records are short and written with O_APPEND, so lines from concurrent
+suites do not interleave.
+
+Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
+
+| `kind` | Fields |
+|---|---|
+| `check` | `index`, `label`, `verdict`, `extra`, `seconds`, `scenario` |
+| `scenario` | `title`, `verdict`, `checks`, `seconds` |
+| `suite` | `name`, `verdict`, `note`, `checks`, `seconds` |
+| `warning` | `message` |
+| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds` |
+
+```sh
+./run-e2e-tests -H u64 -j run.jsonl
+jq -r 'select(.kind=="check" and .verdict!="OK") | "\(.suite) \(.label) \(.verdict)"' run.jsonl
+jq -r 'select(.kind=="check") | [.seconds, .suite, .label] | @tsv' run.jsonl | sort -rn | head
+```
+
 ## Adding or changing a suite
 
 Use these conventions so the tree can grow without inventing a new layout for
@@ -113,7 +223,9 @@ each feature:
    next to the runner entry.
 4. Keep the default scenario deterministic and bounded. Assert externally
    visible outcomes rather than private implementation timing, and print
-   enough numbered context to identify the exact failing operation.
+   enough numbered context to identify the exact failing operation. Report
+   through `tests/e2e/lib/report.py` or `report.sh`; see the logging rules
+   above.
 5. Return non-zero for every failed assertion, setup failure, lost device, or
    incomplete cleanup. Do not turn firmware failures into skips or passes.
    Retries must represent an explicit protocol allowance, remain bounded, and

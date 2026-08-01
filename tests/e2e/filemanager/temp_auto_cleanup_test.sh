@@ -31,12 +31,10 @@ INITIAL_AUTO_CLEANUP=""
 INITIAL_USE_CACHE=""
 CONFIG_RESTORED=false
 
-# Colors
-C_BLUE='\033[1;34m'
-C_GREEN='\033[1;32m'
-C_RED='\033[1;31m'
-C_YEL='\033[1;33m'
-C_NC='\033[0m'
+# The reporting rules every e2e suite shares; see tests/e2e/README.md.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/report.sh"
+
+SUITE="temp_auto_cleanup_test"
 
 # --- Help Function ---
 
@@ -149,7 +147,7 @@ refresh_managed_paths
 
 # --- Utility Functions ---
 
-log_stage() { echo -e "\n${C_BLUE}STAGE: $1${C_NC}\n$(printf '%.s-' {1..60})"; }
+log_stage() { section "$1"; }
 
 machine_reset() {
     local code
@@ -196,13 +194,12 @@ reset_to_clean_slate() {
 
 handle_failure() {
     local msg=$1
-    echo -e "\n${C_RED}FAILURE: $msg${C_NC}"
+    check_fail "$msg"
     if [ "$ASSERTIONS_ENABLED" = true ]; then
         exit 1
-    else
-        echo -e "${C_YEL}[ASSERTIONS DISABLED] Continuing...${C_NC}"
-        return 0
     fi
+    warn "assertions disabled; continuing"
+    return 0
 }
 
 extract_json_field() {
@@ -236,26 +233,26 @@ apply_config_setting() {
     local value=$2
     local mode=${3:-strict}
 
-    echo -ne "  Setting $key to $value... "
+    check_start "set $key to $value"
     local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
         "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key?value=$value")
 
     if [[ "$code" == "200" ]]; then
-        echo -e "${C_GREEN}OK${C_NC}"
+        check_ok
         return 0
     fi
 
     if [[ "$mode" == "strict" && "$ASSERTIONS_ENABLED" = true ]]; then
-        echo -e "${C_RED}FAIL ($code)${C_NC}"
-        echo -e "  Error: Category 'User Interface Settings' not found. Firmware may be too old."
+        check_fail "HTTP $code"
+        detail "category 'User Interface Settings' not found; the firmware may be too old"
         exit 1
     fi
 
-    echo -e "${C_YEL}WARNING ($code)${C_NC}"
+    check_warn "HTTP $code"
     if [[ "$mode" == "restore" ]]; then
-        echo -e "  Could not restore '$key' to '$value'."
+        detail "could not restore '$key' to '$value'"
     else
-        echo -e "  [ASSERTIONS DISABLED] Skipping config '$key' due to category absence."
+        detail "assertions disabled; skipping config '$key'"
     fi
     return 1
 }
@@ -268,8 +265,8 @@ capture_initial_config() {
     require_toggle_value "captured Temp Auto Cleanup" "$INITIAL_AUTO_CLEANUP"
     require_toggle_value "captured Temp Subfolders" "$INITIAL_USE_CACHE"
 
-    echo -e "  Temp Auto Cleanup: ${C_GREEN}${INITIAL_AUTO_CLEANUP}${C_NC}"
-    echo -e "  Temp Subfolders:   ${C_GREEN}${INITIAL_USE_CACHE}${C_NC}"
+    detail "Temp Auto Cleanup: ${INITIAL_AUTO_CLEANUP}"
+    detail "Temp Subfolders:   ${INITIAL_USE_CACHE}"
 }
 
 restore_initial_config() {
@@ -280,7 +277,7 @@ restore_initial_config() {
         return
     fi
 
-    echo -e "\n${C_BLUE}RESTORE: User Interface Settings${C_NC}\n$(printf '%.s-' {1..60})"
+    section "restore User Interface Settings"
     apply_config_setting "Temp%20Auto%20Cleanup" "$INITIAL_AUTO_CLEANUP" restore
     apply_config_setting "Temp%20Subfolders" "$INITIAL_USE_CACHE" restore
 }
@@ -295,7 +292,7 @@ verify_managed_temp_path() {
     local mounted_path=$1
     local context=$2
     case "$mounted_path" in
-        "$UPLOAD_DIR"/*) echo -e " ${C_GREEN}[VERIFIED]${C_NC}" ;;
+        "$UPLOAD_DIR"/*) check_ok ;;
         *) handle_failure "$context\n  Unexpected path: $mounted_path" ;;
     esac
 }
@@ -318,7 +315,7 @@ verify_remote_file_exists() {
     if [[ "$code" != "226" && "$code" != "200" ]]; then
         handle_failure "$2\n  Missing path: $1"
     else
-        echo -e " ${C_GREEN}[VERIFIED]${C_NC}"
+        check_ok
     fi
 }
 
@@ -327,7 +324,7 @@ verify_remote_file_missing() {
     if [[ "$code" == "226" || "$code" == "200" ]]; then
         handle_failure "$2\n  Unexpected path: $1"
     else
-        echo -e " ${C_GREEN}[VERIFIED]${C_NC}"
+        check_ok
     fi
 }
 
@@ -341,7 +338,7 @@ verify_file_size() {
     if [[ "$remote_size" != "$expected_size" ]]; then
         handle_failure "$3\n  Path: $remote_path\n  Expected: $expected_size\n  Actual: ${remote_size:-0}"
     else
-        echo -e " ${C_GREEN}[VERIFIED]${C_NC}"
+        check_ok
     fi
 }
 
@@ -366,11 +363,11 @@ verify_user_files_untouched() {
         local path="$FTP_URL/base_$i.bin"
         local code=$(curl -s --ftp-pasv $FTP_CRED -o /dev/null -w "%{http_code}" "$path")
         if [[ "$code" != "226" && "$code" != "200" ]]; then
-            echo -e "  ${C_RED}Missing user file:${C_NC} base_$i.bin"
+            detail "missing user file: base_$i.bin"
             failures=1
         fi
     done
-    [[ "$failures" -eq 0 ]] && echo -e "  ${C_GREEN}User files intact${C_NC}"
+    [[ "$failures" -eq 0 ]] && detail "user files intact"
     [[ "$failures" -eq 0 ]]
 }
 
@@ -378,7 +375,7 @@ upload_rest_managed_temp() {
     local label=$1
     local before_cache=$(list_cache_files | sort)
     head -c $MANAGED_SIZE /dev/urandom > "/tmp/${label}.bin"
-    echo -ne "  [REST] Uploading ${label}.bin..."
+    check_start "upload ${label}.bin over REST"
     curl -s -o /dev/null -X POST -H "$REST_HEADER" --data-binary "@/tmp/${label}.bin" "http://$U64_HOST/v1/runners:run_prg"
     sleep 1.5
     local after_cache=$(list_cache_files | sort)
@@ -395,7 +392,7 @@ upload_until_removed() {
         [[ -n "$4" ]] && verify_remote_file_exists "ftp://$U64_HOST$4" "$5"
         local code=$(curl -s --ftp-pasv $FTP_CRED -o /dev/null -w "%{http_code}" "ftp://$U64_HOST$1")
         if [[ "$code" != "226" && "$code" != "200" ]]; then
-            echo -e "    ${C_GREEN}Removed after ${attempt} uploads.${C_NC}"; return 0
+            detail "removed after ${attempt} uploads"; return 0
         fi
     done
     handle_failure "$3\n  Path remained: ftp://$U64_HOST$1"
@@ -419,7 +416,7 @@ run_purge() {
         local managed_files=$(curl -s --ftp-pasv $FTP_CRED "$managed_url/" | awk '/^-/ {print $9}')
         for f in $managed_files; do [[ -n "$f" ]] && curl -s --ftp-pasv $FTP_CRED "$managed_url/" -X "DELE $f" > /dev/null; done
     done
-    echo -e "  ${C_GREEN}Purge Complete${C_NC}"
+    detail "purge complete"
 }
 
 run_mount_setup() {
@@ -427,20 +424,20 @@ run_mount_setup() {
     for spec in "$MOUNT_SOURCE_8|Drive8|$MOUNT_LOCAL_8|a|MOUNTED_PATH_8|MOUNTED_BASE_8" "$MOUNT_SOURCE_9|Drive9|$MOUNT_LOCAL_9|b|MOUNTED_PATH_9|MOUNTED_BASE_9"; do
         IFS='|' read remote_path diskname local_path drive path_var base_var <<< "$spec"
 
-        echo -ne "  Creating $remote_path... "
+        check_start "create $remote_path"
         local create_code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
             "http://$U64_HOST/v1/files${remote_path}:create_d64?diskname=$diskname")
-        [[ "$create_code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "D64 creation failed ($create_code)"
+        [[ "$create_code" == "200" ]] && check_ok || handle_failure "D64 creation failed ($create_code)"
 
-        echo -ne "  Downloading $(basename "$remote_path") for upload mount... "
+        check_start "download $(basename "$remote_path") for the upload mount"
         curl -s --ftp-pasv $FTP_CRED -o "$local_path" "ftp://$U64_HOST${remote_path}"
         verify_file_size "ftp://$U64_HOST${remote_path}" 174848 "Source image $(basename "$remote_path")"
 
-        echo -ne "  Removing staging source $(basename "$remote_path")... "
+        check_start "remove staging source $(basename "$remote_path")"
         curl -s --ftp-pasv $FTP_CRED "$FTP_URL/" -X "DELE $(basename "$remote_path")" > /dev/null
-        echo -e "${C_GREEN}OK${C_NC}"
+        check_ok
 
-        echo -ne "  Mounting drive ${drive^^}... "
+        check_start "mount drive ${drive^^}"
         local response=$(curl -s -X POST -H "$REST_HEADER" --data-binary "@$local_path" \
             "http://$U64_HOST/v1/drives/$drive:mount?type=d64&mode=readwrite")
         local m_path=$(extract_json_field "$response" "file")
@@ -449,7 +446,7 @@ run_mount_setup() {
         else
             printf -v "$path_var" '%s' "$m_path"
             printf -v "$base_var" '%s' "$(basename "$m_path")"
-            echo -e "${C_GREEN}OK${C_NC}"
+            check_ok
             verify_managed_temp_path "$m_path" "Drive ${drive^^} mount"
         fi
     done
@@ -459,7 +456,7 @@ run_seed() {
     log_stage "5. Seeding Baseline ($SEED_COUNT files)"
     for i in $(seq 1 "$SEED_COUNT"); do
         head -c 768000 /dev/urandom > "/tmp/base_$i.bin"
-        echo -ne "  Uploading base_$i.bin..."
+        check_start "upload base_$i.bin"
         curl -s --ftp-pasv $FTP_CRED -T "/tmp/base_$i.bin" "$FTP_URL/base_$i.bin"
         verify_file_size "$FTP_URL/base_$i.bin" 768000 "Baseline $i"
     done
@@ -479,7 +476,7 @@ run_count_limit_test() {
             last_managed="$UPLOAD_CACHE_URL/$latest"
         fi
         IFS='|' read r_sz c_cnt c_sz p_cnt m_cnt <<< "$(get_stats)"
-        printf "    Stats: Managed Count=%d (Limit=%d)\n" "$m_cnt" "$MANAGED_LIMIT"
+        detail "$(printf 'managed count=%d (limit=%d)' "$m_cnt" "$MANAGED_LIMIT")"
         if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
             [[ "$m_cnt" -gt "$MANAGED_LIMIT" ]] && handle_failure "Limit exceeded ($m_cnt > $MANAGED_LIMIT)"
         fi
@@ -498,9 +495,9 @@ run_count_limit_test() {
 
 run_unmount_cleanup_test() {
     log_stage "7. Unmounted Uploads Rejoin Cleanup"
-    echo -ne "  Removing drive A... "
+    check_start "remove drive A"
     local code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/a:remove")
-    [[ "$code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "Drive A removal failed"
+    [[ "$code" == "200" ]] && check_ok || handle_failure "Drive A removal failed"
 
     if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
         upload_until_removed "$MOUNTED_PATH_8" "post_a" "Drive 8 removed" "$MOUNTED_PATH_9" "Drive 9 remains"
@@ -509,9 +506,9 @@ run_unmount_cleanup_test() {
         verify_remote_file_exists "ftp://$U64_HOST$MOUNTED_PATH_9" "Cleanup disabled should retain drive 9 while still mounted"
     fi
 
-    echo -ne "  Removing drive B... "
+    check_start "remove drive B"
     code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" "http://$U64_HOST/v1/drives/b:remove")
-    [[ "$code" == "200" ]] && echo -e "${C_GREEN}OK${C_NC}" || handle_failure "Drive B removal failed"
+    [[ "$code" == "200" ]] && check_ok || handle_failure "Drive B removal failed"
 
     if [[ "$CFG_AUTO_CLEANUP" == "Enabled" ]]; then
         upload_until_removed "$MOUNTED_PATH_9" "post_b" "Drive 9 removed" "" ""
@@ -530,14 +527,13 @@ run_final_integrity() {
         [[ "$m_cnt" -lt "$TEST_COUNT" ]] && handle_failure "Cleanup disabled should not remove managed uploads ($m_cnt < $TEST_COUNT)"
     fi
     verify_user_files_untouched || handle_failure "User files under /Temp were modified"
-    echo -e "${C_GREEN}SUCCESS: Validation Passed.${C_NC}"
+    suite_ok "$SUITE"
 }
 
 # --- Execution ---
-clear
-echo -e "${C_YEL}Ultimate 64 Temp Auto Cleanup E2E Validator${C_NC}"
-echo -e "Target Host: ${U64_HOST}"
-[[ "$ASSERTIONS_ENABLED" = false ]] && echo -e "${C_RED}!! ASSERTIONS DISABLED !!${C_NC}"
+section "Ultimate 64 Temp auto cleanup"
+detail "host: ${U64_HOST}"
+[[ "$ASSERTIONS_ENABLED" = false ]] && warn "assertions disabled"
 
 trap cleanup_and_restore EXIT
 

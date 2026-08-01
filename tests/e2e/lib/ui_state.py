@@ -181,29 +181,62 @@ def close_menu(device: Device) -> None:
             raise Unrecoverable("the menu will not close")
 
 
-def unwind(device: Device) -> Optional[List[str]]:
-    """Back out of nested objects with RUN/STOP; return the screen, or None if closed.
+def describe_open_menu(device: Device) -> str:
+    """Why the open menu is not the root browser, or "" when it is.
+
+    Costs one RUN/STOP press, and leaves the menu closed either way, which is
+    the state the contract asks for.
+
+    The screen cannot answer this on its own. The Assembly 64 query form prints
+    the same "/" status row as the root browser and leaves the listing area
+    filled with its own fields, so describe() calls it clean and the gate hands
+    the next suite a modal instead of a browser. RUN/STOP leaves the menu only
+    once the root browser has focus, so the menu closing is what proves nothing
+    is stacked on top of it.
+    """
+    rows = device.screen()
+    if rows is None:
+        return "the menu reported open but returned no screen"
+    problem = describe(rows)
+    if problem:
+        close_menu(device)
+        return problem
+    device.tap(["run_stop"])
+    if device.menu_is_open():
+        close_menu(device)
+        return "the root browser is not on top; a nested object still holds the UI"
+    return ""
+
+
+def unwind(device: Device) -> None:
+    """Back out of nested objects and directories until the menu closes.
 
     RUN/STOP leaves one nested object, or one directory level, per press, and
-    leaves the menu entirely once the root browser has focus. Never RETURN or F5
-    here: RETURN activates the entry under the cursor, and F5 opens the task menu
-    onto the Assembly 64 entry, which is what creates this mess in the first place.
+    leaves the menu entirely once the root browser has focus, so the menu
+    closing is the signal that the object stack is empty. Stopping on what the
+    screen shows instead would stop on the Assembly 64 query form, which reports
+    the root browser's own "/" path.
+
+    Never RETURN or F5 here: RETURN activates the entry under the cursor, and F5
+    opens the task menu onto the Assembly 64 entry, which is what creates this
+    mess in the first place.
     """
     for _ in range(UNWIND_PRESSES):
         rows = device.screen()
-        if rows is None or not describe(rows):
-            return rows
+        if rows is None:
+            return
         before = rows[PATH_ROW]
         # LEFT leaves a directory or disk, which is what the menu's own help
         # calls "go one level up". RUN/STOP leaves the menu or backs out of a
         # nested object, so it cannot walk the path.
         device.tap(["left_shift", "cursor_left_right"])
         after = device.screen()
-        if after is not None and after[PATH_ROW] == before:
+        if after is None:
+            return
+        if after[PATH_ROW] == before:
             # The path did not move, so this is a nested object rather than a
             # directory. Back out of it instead.
             device.tap(["run_stop"])
-    return device.screen()
 
 
 def repair(device: Device) -> None:
@@ -215,28 +248,41 @@ def repair(device: Device) -> None:
     of; only a reload repopulates it.
     """
     for round_index in range(REPAIR_ROUNDS):
-        rows = open_menu(device)
-        if not describe(rows):
-            break
+        open_menu(device)
+        if not describe_open_menu(device):
+            home_cursor(device)
+            return
+        open_menu(device)
         unwind(device)
-        rows = open_menu(device)
-        if not describe(rows):
-            break
+        open_menu(device)
+        if not describe_open_menu(device):
+            home_cursor(device)
+            return
         # Reopening runs appear(), which re-inits the root browser and reloads it.
+        open_menu(device)
         close_menu(device)
-        rows = open_menu(device)
-        if not describe(rows):
-            break
+        open_menu(device)
+        if not describe_open_menu(device):
+            home_cursor(device)
+            return
         if round_index >= 1:
             # Last resort: release the host and restart the machine, then reload.
-            close_menu(device)
             device.reset_machine()
 
-    rows = open_menu(device)
-    problem = describe(rows)
+    open_menu(device)
+    problem = describe_open_menu(device)
     if problem:
-        close_menu(device)
         raise Unrecoverable(f"could not reach the root browser: {problem}")
+    home_cursor(device)
+
+
+def home_cursor(device: Device) -> None:
+    """Put the browser cursor on the first entry, and leave the menu closed.
+
+    A convenience, not part of the contract: the cursor cannot be read back from
+    the screen matrix, so it could not be verified.
+    """
+    open_menu(device)
     for _ in range(HOME_PRESSES):
         device.tap(["left_shift", "cursor_up_down"])
     close_menu(device)
@@ -254,12 +300,7 @@ def verify(device: Device) -> str:
     device.press_menu_button()
     if not device.wait_menu(want_open=True):
         return "the menu will not open; the UI task is blocked in a modal"
-    rows = device.screen()
-    if rows is None:
-        return "the menu reported open but returned no screen"
-    problem = describe(rows)
-    close_menu(device)
-    return problem
+    return describe_open_menu(device)
 
 
 def main() -> int:

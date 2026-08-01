@@ -19,12 +19,10 @@ CONFIG_RESTORED=false
 UPLOAD_ROOT="/Temp/cache/upload"
 LOCAL_PRG="/tmp/prg_load_path_trim_test.prg"
 
-# --- Colors ---
-C_BLUE='\033[1;34m'
-C_GREEN='\033[1;32m'
-C_RED='\033[1;31m'
-C_YEL='\033[1;33m'
-C_NC='\033[0m'
+# The reporting rules every e2e suite shares; see tests/e2e/README.md.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/report.sh"
+
+SUITE="prg_load_path_trim_test"
 
 show_help() {
     cat << EOF
@@ -130,16 +128,16 @@ FTP_CRED="-u user:${U64_PASS:-password}"
 refresh_upload_root
 
 log_stage() {
-    echo -e "\n${C_BLUE}STAGE: $1${C_NC}\n$(printf '%.s-' {1..60})"
+    section "$1"
 }
 
 handle_failure() {
     local msg=$1
-    echo -e "\n${C_RED}FAILURE: $msg${C_NC}"
+    check_fail "$msg"
     if [[ "$ASSERTIONS_ENABLED" == true ]]; then
         exit 1
     fi
-    echo -e "${C_YEL}[ASSERTIONS DISABLED] Continuing...${C_NC}"
+    warn "assertions disabled; continuing"
 }
 
 get_config_current() {
@@ -154,21 +152,21 @@ apply_config_setting() {
     local mode=${3:-strict}
     local code
 
-    echo -ne "  Setting $key to $value... "
+    check_start "set $key to $value"
     code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "$REST_HEADER" \
         "http://$U64_HOST/v1/configs/User%20Interface%20Settings/$key?value=$value")
 
     if [[ "$code" == "200" ]]; then
-        echo -e "${C_GREEN}OK${C_NC}"
+        check_ok
         return 0
     fi
 
     if [[ "$mode" == "strict" && "$ASSERTIONS_ENABLED" == true ]]; then
-        echo -e "${C_RED}FAIL ($code)${C_NC}"
+        check_fail "HTTP $code"
         exit 1
     fi
 
-    echo -e "${C_YEL}WARNING ($code)${C_NC}"
+    check_warn "HTTP $code"
     return 1
 }
 
@@ -178,8 +176,8 @@ capture_initial_config() {
     INITIAL_USE_CACHE=$(get_config_current "Temp%20Subfolders")
     require_toggle_value "captured Temp Auto Cleanup" "$INITIAL_AUTO_CLEANUP"
     require_toggle_value "captured Temp Subfolders" "$INITIAL_USE_CACHE"
-    echo -e "  Temp Auto Cleanup: ${C_GREEN}${INITIAL_AUTO_CLEANUP}${C_NC}"
-    echo -e "  Temp Subfolders:   ${C_GREEN}${INITIAL_USE_CACHE}${C_NC}"
+    detail "Temp Auto Cleanup: ${INITIAL_AUTO_CLEANUP}"
+    detail "Temp Subfolders:   ${INITIAL_USE_CACHE}"
 }
 
 restore_initial_config() {
@@ -188,7 +186,7 @@ restore_initial_config() {
     if [[ -z "$INITIAL_AUTO_CLEANUP" || -z "$INITIAL_USE_CACHE" ]]; then
         return
     fi
-    echo -e "\n${C_BLUE}RESTORE: User Interface Settings${C_NC}\n$(printf '%.s-' {1..60})"
+    section "restore User Interface Settings"
     apply_config_setting "Temp%20Auto%20Cleanup" "$INITIAL_AUTO_CLEANUP" restore
     apply_config_setting "Temp%20Subfolders" "$INITIAL_USE_CACHE" restore
 }
@@ -247,12 +245,12 @@ create_test_prg() {
 }
 
 upload_put_fixture() {
-    echo -ne "  Uploading PUT fixture $(basename "$REMOTE_PUT_FILE")... "
+    check_start "upload PUT fixture $(basename "$REMOTE_PUT_FILE")"
     cleanup_matching_names "/Temp" "$(basename "$REMOTE_PUT_FILE")"
     local code
     code=$(curl -s --ftp-pasv $FTP_CRED -T "$LOCAL_PRG" -o /dev/null -w "%{http_code}" "ftp://$U64_HOST$REMOTE_PUT_FILE")
     if [[ "$code" == "226" || "$code" == "200" ]]; then
-        echo -e "${C_GREEN}OK${C_NC}"
+        check_ok
         return
     fi
     handle_failure "Could not upload PUT fixture (FTP $code)"
@@ -349,7 +347,7 @@ wait_for_expected_displays() {
         actual=$(read_bootcrt_name)
         for item in "${expected[@]}"; do
             if [[ "$actual" == "$item" ]]; then
-                echo -e "  ${C_GREEN}${description}: $actual${C_NC}"
+                detail "${description}: $actual"
                 return 0
             fi
         done
@@ -392,15 +390,15 @@ run_put_case() {
 
     machine_reset
     expected=$(display_from_path "$REMOTE_PUT_FILE")
-    echo -ne "  Exercising $endpoint... "
+    check_start "exercise $endpoint"
     code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -G -H "$REST_HEADER" \
         --data-urlencode "file=$REMOTE_PUT_FILE" "http://$U64_HOST$endpoint")
     if [[ "$code" != "200" ]]; then
-        echo -e "${C_RED}FAIL ($code)${C_NC}"
+        check_fail "HTTP $code"
         handle_failure "$label failed (HTTP $code)"
         return
     fi
-    echo -e "${C_GREEN}OK${C_NC}"
+    check_ok
     wait_for_expected_displays "$label boot-cart name" "$expected"
 }
 
@@ -417,15 +415,15 @@ run_post_case() {
     machine_reset
     before_names=$(ftp_list_names "$UPLOAD_ROOT")
 
-    echo -ne "  Exercising $endpoint... "
+    check_start "exercise $endpoint"
     code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "$REST_HEADER" \
         -F "file=@$LOCAL_PRG;filename=$MULTIPART_FILENAME" "http://$U64_HOST$endpoint")
     if [[ "$code" != "200" ]]; then
-        echo -e "${C_RED}FAIL ($code)${C_NC}"
+        check_fail "HTTP $code"
         handle_failure "$label failed (HTTP $code)"
         return
     fi
-    echo -e "${C_GREEN}OK${C_NC}"
+    check_ok
 
     new_paths=$(wait_for_new_upload_paths "$before_names") || return
     while IFS= read -r path; do
@@ -454,12 +452,11 @@ run_cases() {
     run_post_case "/v1/runners:run_prg" "POST run_prg"
 }
 
-clear
-echo -e "${C_YEL}Ultimate 64 PRG Load Path Trim Validator${C_NC}"
-echo -e "Target Host: ${U64_HOST}"
-echo -e "PUT File Path: ${REMOTE_PUT_FILE}"
-echo -e "POST Upload Name: ${MULTIPART_FILENAME}"
-[[ "$ASSERTIONS_ENABLED" == false ]] && echo -e "${C_RED}!! ASSERTIONS DISABLED !!${C_NC}"
+section "Ultimate 64 PRG load path trim"
+detail "host: ${U64_HOST}"
+detail "PUT file path: ${REMOTE_PUT_FILE}"
+detail "POST upload name: ${MULTIPART_FILENAME}"
+[[ "$ASSERTIONS_ENABLED" == false ]] && warn "assertions disabled"
 
 trap cleanup_and_restore EXIT
 
@@ -467,4 +464,4 @@ reset_to_clean_slate
 capture_initial_config
 run_cases
 
-echo -e "\n${C_GREEN}SUCCESS: PRG runner REST path trimming validated.${C_NC}"
+suite_ok "$SUITE"
