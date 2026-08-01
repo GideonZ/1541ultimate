@@ -49,6 +49,11 @@ class ContextMenu : public UIObject
     int corner;
     int when_done; // what to do when done with this menu (MENU_CLOSE, MENU_EXIT, MENU_HIDE)
     int indent;
+    // Geometry measured once, when context_state is e_new. init(Window *,
+    // Keyboard *) reuses it when it runs again for a rebuild, so it must
+    // outlive the first call.
+    int rows;
+    int max_len;
 
     void page_up(void);
     void page_down(void);
@@ -66,6 +71,10 @@ public:
 
     void appendAction(Action *a) { actions.append(a); }
     virtual int get_items();
+    // appear() rebuilds the object stack through this one after a host
+    // release; without it the UIObject no-op would run and leave the window
+    // deinit() freed as NULL for the redraw() that follows.
+    virtual void init(void);
     virtual void init(Window *pwin, Keyboard *keyb);
     virtual void deinit(void);
     virtual int poll(int);

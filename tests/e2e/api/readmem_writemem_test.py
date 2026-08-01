@@ -200,13 +200,18 @@ class RestSession:
             raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
 
     def close_menu_from_anywhere(self) -> None:
-        for _ in range(12):
+        for attempt in range(12):
             if not self.menu_screen_open():
                 return
+            # Shift+F7 is F8, the firmware's full UI exit: it tears down nested
+            # editors, browsers and search stacks. RUN/STOP alone cannot dismiss
+            # a menu editor, so a suite that only sent RUN/STOP could not start
+            # from a clean state when a previous run left one open.
+            keys = ["left_shift", "f7"] if attempt < 6 else ["run_stop"]
             status, _, body = self.request(
                 "POST",
                 INPUT_PATH,
-                payload={"events": [{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}]},
+                payload={"events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]},
             )
             if status != 200:
                 raise Failure(f"input cleanup failed with HTTP {status}: {body[:160]!r}")

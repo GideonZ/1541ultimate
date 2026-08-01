@@ -180,6 +180,11 @@ void TreeBrowserState :: update_selected(void)
 {
     if(!under_cursor)
         return;
+    // release_host() deletes the window while this object stays alive, so the
+    // caller can reach us with nothing to draw on. draw() and do_refresh()
+    // already return here for the same reason.
+    if(!browser->window)
+        return;
 
     char buffer[96];
 
@@ -376,6 +381,12 @@ void TreeBrowserState :: move_to_index(int idx)
 
 //	if((first_item_on_screen + selected_line)==idx) // duh!
 //        return;
+	// Same reason as draw() above: once release_host() has torn the UI down
+	// there is no geometry to lay the cursor out against. init() recomputes
+	// the position when the window comes back.
+	if(!browser->window)
+		return;
+
 	int previous_first_item_on_screen = first_item_on_screen;
 	int previous_selected = selected_line;
 

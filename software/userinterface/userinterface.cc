@@ -479,6 +479,16 @@ int UserInterface :: pollFocussed(void)
 // (machine monitor / help) owns the loop. The push is re-armed so that the
 // outer run_once() loop also tears the menu down, closing both layers at once
 // instead of leaving the nested screen open over a dismissed menu.
+void UserInterface :: discardPendingMenuButton(void)
+{
+    // A press is latched until something reads it. One that arrived before a
+    // modal opened belongs to whatever the user was doing then, not to the
+    // modal, and acting on it would close the modal the instant it appeared.
+    // Drop it here so only a press made while the modal is on screen aborts it.
+    host->checkButton();
+    host->buttonPush();
+}
+
 bool UserInterface :: pollMenuButtonPush(void)
 {
     host->checkButton();
@@ -589,8 +599,12 @@ int UserInterface :: activate_uiobject(UIObject *obj)
 int UserInterface :: uiobject_modal(UIObject *obj)
 {
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = obj->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     if (obj->needCleanup()) {
         obj->deinit();
@@ -636,8 +650,12 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
     pop->init();
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = pop->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     pop->deinit();
     if ((ret > 0) && keyboard) {
@@ -652,8 +670,12 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
     UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
     pop->init();
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = pop->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     pop->deinit();
     if ((ret > 0) && keyboard) {
@@ -680,8 +702,12 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
     box->init();
     screen->cursor_visible(1);
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = box->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     screen->cursor_visible(0);
     box->deinit();
@@ -698,8 +724,12 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = edit->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     screen->cursor_visible(0);
     delete edit;
@@ -712,8 +742,12 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     box->init();
     screen->cursor_visible(0);
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = box->poll(0);
+        if (!ret && pollMenuButtonPush()) {
+            break;
+        }
     }
     delete box;
     // Return values are 1 based, unless it's an error
@@ -744,6 +778,7 @@ void UserInterface :: run_editor(Editor *editor)
 {
     editor->init(screen, keyboard);
     int ret = 0;
+    discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = editor->poll(0);
         if (!ret && pollMenuButtonPush()) {

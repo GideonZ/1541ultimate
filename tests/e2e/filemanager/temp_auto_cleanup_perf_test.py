@@ -174,9 +174,13 @@ class U64Client:
                 return
             if status != 200:
                 raise RuntimeError(f"menu-state probe failed with HTTP {status}")
-            key = "run_stop" if attempt % 2 == 0 else "return"
+            # F8 leaves the menu from any depth. RUN/STOP is the fallback for the
+            # editors F8 does not reach. Never send RETURN blind: in a browser it
+            # activates the entry under the cursor, and on the Assembly 64 entry
+            # that opens a network-backed form whose edit field parks the UI task.
+            keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
             body = json.dumps({
-                "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+                "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
             }).encode("utf-8")
             self.require_ok(
                 "POST",

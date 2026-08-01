@@ -259,12 +259,25 @@ class U64Client:
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
 
+    def tap_keys(self, keys):
+        self.post_input([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+
     def close_menu_from_anywhere(self):
         self.post_input([{"kind": "release_all"}])
         for attempt in range(12):
-            if self.get_menu_screen() is None:
+            body = self.get_menu_screen()
+            if body is None:
                 return
-            self.tap_key("run_stop" if attempt % 2 == 0 else "return")
+            if any("Save changes to Flash?" in row for row in menu_screen_text(body)):
+                # The popup answers to its button hotkeys directly. 'n' is No,
+                # which leaves the device settings as this suite restored them.
+                self.tap_key("n")
+            elif attempt < 6:
+                # Shift+F7 is F8, the firmware's full UI exit: it tears down
+                # nested browsers, editors and search stacks.
+                self.tap_keys(["left_shift", "f7"])
+            else:
+                self.tap_key("run_stop")
             time.sleep(MENU_SETTLE_SECONDS)
         self.menu_button()
         time.sleep(0.5)
@@ -544,6 +557,13 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
 
     client.tap_key("return")  # trigger Flush/Eject
     time.sleep(1.0)
+
+    # Close what this function opened. Leaving the root browser open made the
+    # caller's teardown tap its way out, and RETURN in the browser activates the
+    # entry under the cursor: entering "Assembly 64 Database" opens a query form
+    # that owns RUN/STOP, so it stayed on the UI stack and the next menu button
+    # press killed the device.
+    client.close_menu_from_anywhere()
 
 
 def capture_settings(client, assertions_enabled):

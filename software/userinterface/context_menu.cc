@@ -25,6 +25,8 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
     corner = y;
     first = 0;
     hook_y = 0;
+    rows = 0;
+    max_len = 0;
     indent = ind;
     quick_seek_length = 0;
     item_index = initial;
@@ -61,11 +63,26 @@ int ContextMenu :: get_items(void)
     return actions.get_elements();
 }
 
+void ContextMenu :: init(void)
+{
+    // appear() walks the stack from the bottom up, so the browser that owns
+    // us has already rebuilt its own window by the time we get here. Ours was
+    // destroyed by deinit(); rebuild it from the parent's current window,
+    // never from a stored pointer, because that one was freed with it.
+    // Only an active menu is worth restoring: e_new was never measured and
+    // e_finished is on its way out, and both would rebuild with a zero size.
+    if (window || (context_state != e_active) ||
+        !state || !state->browser || !state->browser->window) {
+        return;
+    }
+    init(state->browser->window, keyb);
+}
+
 void ContextMenu :: init(Window *parwin, Keyboard *key)
 {
 	Screen *scr = parwin->getScreen();
-	int len, max_len;
-    int rows, size_y;
+	int len;
+    int size_y;
 
     keyb = key;
 
@@ -391,6 +408,11 @@ void ContextMenu :: reset_quick_seek(void)
 
 void ContextMenu :: redraw()
 {
+    // A menu with no items never got a window, and deinit() clears it. Either
+    // way appear() still calls redraw(), so there is nothing to draw here.
+    if (!window) {
+        return;
+    }
     window->set_color(user_interface->color_fg);
     //window->set_background(user_interface->color_bg);
 

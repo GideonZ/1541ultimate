@@ -1,4 +1,5 @@
 #include "ftpd.h"
+#include "socket_keepalive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -258,6 +259,12 @@ int FTPDaemon::listen_task()
     while (1) {
         clilen = sizeof(cli_addr);
         int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
+        // The control connection idles between commands, so a vanished client
+        // would hold its session slot indefinitely. Shared policy, see
+        // socket_keepalive.h.
+        if (actual_socket >= 0) {
+            net_enable_client_keepalive(actual_socket);
+        }
         if (actual_socket < 0) {
             puts("FTPD: ERROR on accept");
             vTaskDelay(100 / portTICK_PERIOD_MS);

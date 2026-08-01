@@ -126,13 +126,19 @@ def wait_for_port(host: str, port: int, timeout: float) -> None:
 
 
 def redeploy_u64(host: str, port: int, password: Optional[str], timeout: float) -> None:
-    if host != "u64":
-        raise Failure(f"Auto-redeploy is only supported for host 'u64', not {host!r}")
-    if not REDEPLOY_SCRIPT.is_file():
-        raise Failure(f"Missing redeploy helper: {REDEPLOY_SCRIPT}")
+    """Recover an unavailable device once, then wait for the monitor to answer.
 
-    print("Device unavailable; redeploying U64 and retrying once", file=sys.stderr)
-    subprocess.run([str(REDEPLOY_SCRIPT)], cwd=REPO_ROOT, check=True)
+    The JTAG redeploy helper is a developer convenience that lives outside the
+    repository, so it cannot be required: a clean checkout has no tooling/
+    directory. When it is absent, or the host is not the JTAG-attached u64, wait
+    for the device to come back instead. A dropped telnet session on a device
+    that is still up is the common case, and waiting recovers it.
+    """
+    if host == "u64" and REDEPLOY_SCRIPT.is_file():
+        print("Device unavailable; redeploying U64 and retrying once", file=sys.stderr)
+        subprocess.run([str(REDEPLOY_SCRIPT)], cwd=REPO_ROOT, check=True)
+    else:
+        print("Device unavailable; waiting for it to return and retrying once", file=sys.stderr)
     wait_for_port(host, port, timeout=60.0)
     wait_for_monitor_ready(host, port, password, timeout)
 
@@ -576,9 +582,13 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             if exc.code == 404:
                 break
             raise
-        key = "run_stop" if attempt % 2 == 0 else "return"
+        # F8 leaves the menu from any depth; RUN/STOP is the fallback for the
+        # editors it does not reach. Never send RETURN blind: in a browser it
+        # activates the entry under the cursor, and on the Assembly 64 entry that
+        # opens a network-backed form whose edit field parks the UI task.
+        keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
         body = json.dumps({
-            "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+            "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
             f"http://{host}/v1/machine:input",
@@ -990,7 +1000,10 @@ def run_memory_bookmark_width_test(session: MonitorSession, rest_host: str) -> N
 
 
 def run_binary_bookmark_width_test(session: MonitorSession, rest_host: str) -> None:
-    write_rest_memory(rest_host, 0x3100, bytes((0x12, 0x34, 0x56, 0x78)))
+    # Widths 3 and 4 align their rows down to $30FF, so the row the checks below read
+    # starts one byte before the sentinel. Seed that byte too: leaving it to whatever
+    # an earlier suite left in RAM made this test pass or fail depending on run order.
+    write_rest_memory(rest_host, 0x30FF, bytes((0x00, 0x12, 0x34, 0x56, 0x78)))
 
     screen = session.send_key("CTRL_B")
     screen.find_line_containing("BOOKMARKS")

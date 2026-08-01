@@ -37,6 +37,27 @@ device through `-H`/`--host` and an optional REST/FTP password through
 configuration; check their local README or source before selecting a manual
 suite.
 
+### Device configuration
+
+The suites expect a device in its default configuration with the Commodore
+ROMs installed: `kernal.901227-03.bin`, `basic.901226-01.bin` and
+`characters.901225-01.bin` under `C64 and Cartridge Settings`. Several suites
+rely on the C64 reaching the BASIC prompt with KERNAL interrupts running.
+
+Deviations from the default that the suites tolerate:
+
+| Setting | Tolerated because |
+|---|---|
+| `U64 Specific Settings / System Mode` | No suite asserts on the video standard. Validated on NTSC. |
+| `User Interface Settings / Auto Save Config` | Suites change settings over REST, not through the config menu, so they never reach the exit path that raises the save acknowledgement. Validated with `Ask`. |
+| `User Interface Settings / Interface Type` | Suites that care set `Freeze` themselves and restore the original. |
+| `Command Interface`, `RAM Expansion Unit`, `Printer Settings` | `uci-targets` and `printer` enable what they need and restore it on exit. |
+
+`freeze-menu` additionally needs an FPGA core carrying the SID decoder fix for
+issue #733. On an older core it stalls the whole Nios and needs a JTAG
+recovery, or a full power removal if `nios2-download` can no longer pause the
+CPU.
+
 The repository-root runner is the supported entry point:
 
 ```sh

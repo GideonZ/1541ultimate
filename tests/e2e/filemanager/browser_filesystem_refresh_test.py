@@ -372,11 +372,19 @@ class Browser:
         self.press_many("up", count)
 
     def select_entry(self, prefix: str, max_steps: int = 30) -> None:
-        self.go_to_top()
-        for _ in range(max_steps):
-            if self.selected_text().startswith(prefix):
-                return
-            self.press("down")
+        # The listing refreshes asynchronously, so a single top-to-bottom scan can
+        # pass the row before it has been added. Rescan until the convergence
+        # budget the matrix already allows is spent, instead of failing on the
+        # first pass; a row that never appears still fails, just not by racing.
+        deadline = time.monotonic() + CONVERGE_TIMEOUT_SECONDS
+        while True:
+            self.go_to_top()
+            for _ in range(max_steps):
+                if self.selected_text().startswith(prefix):
+                    return
+                self.press("down")
+            if time.monotonic() >= deadline:
+                break
         raise Failure(
             f"{self.name}: could not select an entry starting with {prefix!r}; screen was:\n{self.screen()}")
 
