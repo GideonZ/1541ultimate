@@ -205,10 +205,23 @@ class RestInputSession:
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        # The device serves few concurrent HTTP connections, so a read can time
-        # out while it is busy. Only GET is retried: an HTTP status is a real
-        # answer, and a POST or PUT would apply its input twice.
-        attempts = TRANSPORT_RETRIES if method == "GET" else 1
+        # The device serves few concurrent HTTP connections, so a request can
+        # fail while it is busy. What may be retried depends on how far it got,
+        # and urllib distinguishes the two cases: a failure before any response
+        # was seen surfaces as URLError, while a timeout waiting for the
+        # response body raises TimeoutError directly.
+        #
+        #   GET       always. An HTTP status is a real answer, and reading a
+        #             value twice changes nothing.
+        #   POST/PUT  only on URLError, where no response was seen. A response
+        #             that timed out mid-read may well have applied its input,
+        #             and resending would apply it twice.
+        #
+        # Retrying a POST cannot hide a double application: every check here
+        # asserts the exact resulting keyboard or joystick state, so a duplicate
+        # keystroke fails that assertion rather than passing unnoticed. The
+        # retry can only turn a transport failure into a real result.
+        attempts = TRANSPORT_RETRIES
         last_exc = None
         for attempt in range(attempts):
             try:
@@ -218,8 +231,11 @@ class RestInputSession:
                 raise
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
-                if attempt + 1 < attempts:
+                retryable = method == "GET" or isinstance(exc, urllib.error.URLError)
+                if retryable and attempt + 1 < attempts:
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                    continue
+                break
         raise Failure(f"{method} {path} failed: {format_exception(last_exc)}") from last_exc
 
     def json_request(
