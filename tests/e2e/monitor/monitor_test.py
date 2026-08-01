@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
-# E2E: Verifies machine-code monitor commands and memory views through Telnet.
+# E2E: Verifies machine-code monitor commands and memory views, driven
+# through the shared ui_backend.py facade (REST/Overlay by default, Telnet
+# for the few checks that are genuinely about the Telnet transport).
 
 import argparse
 import difflib
 import json
 import os
 import re
-import select
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/e2e/lib holds the reporting rules and the shared UI backend every
+# suite can share.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
+from ui_backend import Backend, RestBackend, Snapshot, TelnetBackend
 
-WIDTH = 40
-HEIGHT = 24
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
@@ -32,40 +32,10 @@ STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
-ALT_CHARSET_MAP = {
-    "l": "+",
-    "k": "+",
-    "m": "+",
-    "j": "+",
-    "q": "-",
-    "x": "|",
-    "t": "+",
-    "u": "+",
-    "v": "+",
-    "w": "+",
-    "n": "+",
-}
 
-KEYS = {
-    "UP": b"\x1b[A",
-    "DOWN": b"\x1b[B",
-    "RIGHT": b"\x1b[C",
-    "LEFT": b"\x1b[D",
-    "PGUP": b"\x1b[5~",
-    "PGDN": b"\x1b[6~",
-    "F5": b"\x1b[15~",
-    "F3": b"\x1b[13~",
-    "RUNSTOP": b"\x11",
-    "CTRL_B": b"\x02",
-    "CTRL_E": b"\x05",
-    "CTRL_O": b"\x0f",
-    "CBM_B": b"\x1bb",
-    "CBM_1": b"\x1b1",
-    "ESC": b"\x1bx",
-    "ENTER": b"\r",
-    "DEL": b"\x7f",
-    "BACKSPACE": b"\x08",
-}
+def find_status_line(snapshot: Snapshot) -> int:
+    return snapshot.find_line_matching(STATUS_LINE_RE)
+
 
 VIEW_KEYS = {
     "HEX ": "M",
@@ -123,245 +93,40 @@ def redeploy_u64(host: str, port: int, password: Optional[str], timeout: float) 
     wait_for_monitor_ready(host, port, password, timeout)
 
 
-@dataclass
-class Snapshot:
-    lines: List[str]
-    reverse_cells: List[Tuple[int, int]]
-    last_command: str
-
-    def line(self, index: int) -> str:
-        return self.lines[index]
-
-    def text(self) -> str:
-        return "\n".join(self.lines)
-
-    def find_line_containing(self, expected: str) -> int:
-        for index, line in enumerate(self.lines):
-            if expected in line:
-                return index
-        raise Failure(
-            f"Snapshot mismatch after {self.last_command}: expected any line to contain\n"
-            f"  {expected!r}\n"
-            f"actual:\n{self.text()}"
-        )
-
-    def find_status_line(self) -> int:
-        for index, line in enumerate(self.lines):
-            if STATUS_LINE_RE.search(line):
-                return index
-        raise Failure(
-            f"Snapshot mismatch after {self.last_command}: no CPU/VIC status line found\n{self.text()}"
-        )
-
-
-class VT100Screen:
-    def __init__(self, width: int = WIDTH, height: int = HEIGHT) -> None:
-        self.width = width
-        self.height = height
-        self.reset()
-
-    def reset(self) -> None:
-        self.lines = [[" "] * self.width for _ in range(self.height)]
-        self.reverse = [[False] * self.width for _ in range(self.height)]
-        self.x = 0
-        self.y = 0
-        self.reverse_mode = False
-        self.alt_charset = False
-        self._esc = False
-        self._csi: Optional[str] = None
-        self._charset: Optional[str] = None
-        self._password_seen = False
-        self._text_tail = ""
-
-    def feed(self, data: bytes) -> None:
-        i = 0
-        while i < len(data):
-            byte = data[i]
-            if byte == 0xFF:
-                i = self._skip_telnet_iac(data, i)
-                continue
-            self._feed_byte(byte)
-            i += 1
-
-    def snapshot(self, last_command: str) -> Snapshot:
-        reverse_cells = []
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.reverse[y][x]:
-                    reverse_cells.append((x, y))
-        return Snapshot(["".join(row) for row in self.lines], reverse_cells, last_command)
-
-    def saw_password_prompt(self) -> bool:
-        return self._password_seen
-
-    def _skip_telnet_iac(self, data: bytes, index: int) -> int:
-        if index + 1 >= len(data):
-            return index + 1
-        command = data[index + 1]
-        if command in (0xFB, 0xFC, 0xFD, 0xFE):
-            return min(index + 3, len(data))
-        if command == 0xFA:
-            end = data.find(b"\xff\xf0", index + 2)
-            return len(data) if end == -1 else end + 2
-        return min(index + 2, len(data))
-
-    def _feed_byte(self, byte: int) -> None:
-        ch = chr(byte)
-        self._text_tail = (self._text_tail + ch)[-32:]
-        if "Password:" in self._text_tail:
-            self._password_seen = True
-
-        if self._csi is not None:
-            if 0x40 <= byte <= 0x7E:
-                self._handle_csi(self._csi, ch)
-                self._csi = None
-            else:
-                self._csi += ch
-            return
-
-        if self._charset is not None:
-            if ch == "0":
-                self.alt_charset = True
-            elif ch == "B":
-                self.alt_charset = False
-            self._charset = None
-            return
-
-        if self._esc:
-            self._esc = False
-            if ch == "[":
-                self._csi = ""
-            elif ch == "(":
-                self._charset = ""
-            elif ch == "c":
-                self.reset()
-            return
-
-        if byte == 0x1B:
-            self._esc = True
-            return
-        if ch == "\r":
-            self.x = 0
-            return
-        if ch == "\n":
-            self.x = 0
-            self.y = min(self.height - 1, self.y + 1)
-            return
-        if ch == "\b":
-            self.x = max(0, self.x - 1)
-            return
-
-        if self.alt_charset:
-            ch = ALT_CHARSET_MAP.get(ch, ch)
-        self._put(ch)
-
-    def _handle_csi(self, params: str, final: str) -> None:
-        if final == "H":
-            parts = [part for part in params.split(";") if part]
-            row = int(parts[0]) if parts else 1
-            col = int(parts[1]) if len(parts) > 1 else 1
-            self.y = max(0, min(self.height - 1, row - 1))
-            self.x = max(0, min(self.width - 1, col - 1))
-            return
-        if final == "m":
-            values = [int(part) for part in params.split(";") if part]
-            if not values:
-                values = [0]
-            for value in values:
-                if value in (0, 27):
-                    self.reverse_mode = False
-                elif value == 7:
-                    self.reverse_mode = True
-            return
-        if final == "J":
-            if params in ("", "2"):
-                self.lines = [[" "] * self.width for _ in range(self.height)]
-                self.reverse = [[False] * self.width for _ in range(self.height)]
-                self.x = 0
-                self.y = 0
-            return
-        if final == "r":
-            return
-
-    def _put(self, ch: str) -> None:
-        if not (0 <= self.x < self.width and 0 <= self.y < self.height):
-            return
-        self.lines[self.y][self.x] = ch
-        self.reverse[self.y][self.x] = self.reverse_mode
-        self.x += 1
-        if self.x >= self.width:
-            self.x = self.width - 1
-
-
 class MonitorSession:
-    def __init__(self, host: str, port: int, password: Optional[str], timeout: float) -> None:
-        self.sock = self._connect_with_retry(host, port, timeout)
-        self.sock.setblocking(False)
-        self.timeout = timeout
-        self.password = password
-        self.screen = VT100Screen()
-        self.last_command = "<connect>"
-        self._drain_until_idle(timeout=timeout)
-        if self.screen.saw_password_prompt():
-            if password is None:
-                raise Failure("Telnet password prompt received but no password was provided")
-            self.send_text(password + "\r", "password")
-            self._drain_until_idle(timeout=timeout)
+    """Domain-level machine-monitor operations, built on any ui_backend.Backend.
+
+    Every scenario function in this file talks to a MonitorSession, never to
+    a transport directly, so the exact same scenario code runs unchanged
+    against RestBackend (Overlay/Freeze, the fast default) and TelnetBackend
+    (kept for the few checks that are genuinely about the Telnet transport).
+    """
+
+    def __init__(self, backend: Backend) -> None:
+        self.backend = backend
         self.enter_monitor()
 
     def close(self) -> None:
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    @staticmethod
-    def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
-        deadline = time.time() + max(timeout, 15.0)
-        last_error: Optional[BaseException] = None
-
-        while time.time() < deadline:
-            try:
-                return socket.create_connection((host, port), timeout=timeout)
-            except (OSError, TimeoutError) as exc:
-                last_error = exc
-                time.sleep(0.5)
-
-        if last_error is not None:
-            raise last_error
-        raise TimeoutError(f"Timed out connecting to {host}:{port}")
+        self.backend.close()
 
     def capture(self) -> Snapshot:
-        self._drain_until_idle(timeout=self.timeout)
-        return self.screen.snapshot(self.last_command)
+        return self.backend.capture()
 
     def send_key(self, key: str) -> Snapshot:
-        payload = KEYS[key]
-        self.last_command = key
-        self.sock.sendall(payload)
-        return self.capture()
+        return self.backend.send_key(key)
 
     def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
-        """Send a key and return (snapshot, bytes_received_during_redraw).
+        """Telnet-only: see TelnetBackend.send_key_count."""
+        return self.backend.send_key_count(key)
 
-        Used to measure per-keystroke output volume so a flood-on-scroll
-        regression (full-screen redraw per keystroke on telnet) is observable."""
-        payload = KEYS[key]
-        self.last_command = key
-        self.sock.sendall(payload)
-        self._last_drain_bytes = 0
-        self._drain_until_idle(timeout=self.timeout)
-        return self.screen.snapshot(self.last_command), self._last_drain_bytes
+    def send_key_repeat(self, key: str, count: int) -> Snapshot:
+        return self.backend.send_key_repeat(key, count)
 
     def send_char(self, ch: str) -> Snapshot:
-        self.last_command = ch
-        self.sock.sendall(ch.encode("ascii"))
-        return self.capture()
+        return self.backend.send_char(ch)
 
     def send_text(self, text: str, label: str) -> Snapshot:
-        self.last_command = label
-        self.sock.sendall(text.encode("ascii"))
-        return self.capture()
+        return self.backend.send_text(text, label)
 
     def goto(self, address: str) -> Snapshot:
         self.send_char("J")
@@ -382,7 +147,7 @@ class MonitorSession:
     def enter_monitor(self) -> Snapshot:
         snapshot = self.send_key("CTRL_O")
         try:
-            snapshot.find_status_line()
+            find_status_line(snapshot)
             return snapshot
         except Failure:
             pass
@@ -392,29 +157,8 @@ class MonitorSession:
         snapshot = self.send_key("ENTER")
         snapshot = self.send_key("DOWN")
         snapshot = self.send_key("ENTER")
-        snapshot.find_status_line()
+        find_status_line(snapshot)
         return snapshot
-
-    def _drain_until_idle(self, timeout: float) -> None:
-        end = time.time() + timeout
-        last_data = time.time()
-        drained = 0
-        while time.time() < end:
-            wait = min(0.5, max(0.0, end - time.time()))
-            ready, _, _ = select.select([self.sock], [], [], wait)
-            if not ready:
-                if time.time() - last_data >= 0.5:
-                    self._last_drain_bytes = drained
-                    return
-                continue
-            chunk = self.sock.recv(65536)
-            if not chunk:
-                self._last_drain_bytes = drained
-                return
-            drained += len(chunk)
-            self.screen.feed(chunk)
-            last_data = time.time()
-        raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
 
 
 def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeout: float) -> None:
@@ -424,11 +168,11 @@ def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeou
     while time.time() < deadline:
         session = None
         try:
-            session = MonitorSession(host, port, password, timeout)
+            session = MonitorSession(TelnetBackend(host, port, password, timeout))
             before_snapshot = session.capture()
-            before = before_snapshot.line(before_snapshot.find_status_line())
+            before = before_snapshot.line(find_status_line(before_snapshot))
             after_snapshot = session.send_char("O")
-            after = after_snapshot.line(after_snapshot.find_status_line())
+            after = after_snapshot.line(find_status_line(after_snapshot))
             if before != after:
                 return
         except (Failure, OSError, TimeoutError, urllib.error.URLError) as exc:
@@ -459,7 +203,7 @@ def assert_contains(snapshot: Snapshot, line_index: int, expected: str) -> None:
 
 
 def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
-    line_index = snapshot.find_status_line()
+    line_index = find_status_line(snapshot)
     assert_contains(snapshot, line_index, expected)
 
 
@@ -664,14 +408,14 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     screen = session.capture()
     for _ in range(8):
         try:
-            line_index = screen.find_status_line()
+            line_index = find_status_line(screen)
         except Failure:
             line_index = -1
         if line_index >= 0 and expected in screen.line(line_index):
             return screen
         screen = session.send_char("o")
     raise Failure(
-        f"Unable to reach expected CPU/VIC status {expected!r}; last status line was {screen.line(screen.find_status_line())!r}"
+        f"Unable to reach expected CPU/VIC status {expected!r}; last status line was {screen.line(find_status_line(screen))!r}"
     )
 
 
@@ -1206,7 +950,7 @@ def run_telnet_dropdown_scroll_flood_test(session: MonitorSession, rest_host: st
     screen = session.send_key("ESC")  # close the dropdown (stays in edit mode)
     screen.find_line_containing("MONITOR ASM")
     screen = session.send_key("ESC")  # leave edit mode
-    screen.find_status_line()
+    find_status_line(screen)
 
 
 def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
@@ -1253,12 +997,27 @@ def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
 def picker_path(snapshot: Snapshot) -> str:
     """Return the directory path the file picker currently shows.
 
-    The picker prints the active path on the bottom line, below its border."""
-    for line in reversed(snapshot.lines):
-        text = line.strip()
-        if text and not text.startswith("+"):
-            return text
-    return ""
+    The picker prints the active path on the line directly below its bottom
+    border. Anchoring on the border rather than "last non-blank line" matters
+    over REST/Overlay: the on-device Overlay screen is the full 25-row
+    physical screen and the monitor's box is inset within it, so the root
+    browser's own footer row is still visible one row below the picker's
+    path row -- an extra row Telnet's 24-row remote-session model never
+    fills. The path row itself also renders differently: REST/Overlay
+    appends a "-F3=HELP-" hint after the padding that Telnet's rendering
+    omits, so only the first whitespace-delimited token is the path -- a
+    filesystem path never contains a space."""
+    border_rows = [
+        index for index, line in enumerate(snapshot.lines)
+        if line.strip() and set(line.strip()) <= {"+", "-"}
+    ]
+    if not border_rows:
+        return ""
+    path_row = border_rows[-1] + 1
+    if path_row >= len(snapshot.lines):
+        return ""
+    tokens = snapshot.lines[path_row].split()
+    return tokens[0] if tokens else ""
 
 
 def picker_to_root(session: MonitorSession) -> Snapshot:
@@ -1287,8 +1046,7 @@ def clear_prompt_field(session: MonitorSession) -> None:
     The monitor's "Save as" prompt is pre-filled with the last-used name and
     does not auto-clear on the first keystroke, so we delete it first. The
     field is at most 35 characters, hence the generous count."""
-    session.sock.sendall(KEYS["BACKSPACE"] * 40)
-    session.capture()
+    session.send_key_repeat("BACKSPACE", 40)
 
 
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
@@ -1396,9 +1154,6 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
 
     with check("initial CPU7/KERNAL monitor status"):
         ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
-
-    with check("telnet blocks poll mode"):
-        run_telnet_poll_guard_test(session)
 
     with check("KERNAL $E000 hex view and REST match"):
         ensure_hex_width(session, 8)
@@ -1532,9 +1287,6 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
     with check("asm edit mnemonic validation and Return advance"):
         run_asm_edit_validation_test(session, rest_host)
 
-    with check("telnet opcode dropdown scroll does not flood the connection"):
-        run_telnet_dropdown_scroll_flood_test(session, rest_host)
-
     with check("number popup arithmetic"):
         run_number_arithmetic_test(session, rest_host)
 
@@ -1547,8 +1299,25 @@ def run_tests(session: MonitorSession, rest_host: str) -> None:
         run_save_load_d64_test(session, rest_host, save_load_token)
 
 
+def run_telnet_smoke_checks(host: str, port: int, password: Optional[str], timeout: float, rest_host: str) -> None:
+    """The few checks that are genuinely about the Telnet transport itself.
+
+    The full battery in run_tests() runs once, fast, over REST/Overlay; these
+    two checks cover behaviour with no REST equivalent -- a concurrent
+    poll-mode connection, and Telnet's own per-keystroke output volume."""
+    section("Telnet transport smoke checks")
+    session = MonitorSession(TelnetBackend(host, port, password, timeout))
+    try:
+        with check("telnet blocks poll mode"):
+            run_telnet_poll_guard_test(session)
+        with check("telnet opcode dropdown scroll does not flood the connection"):
+            run_telnet_dropdown_scroll_flood_test(session, rest_host)
+    finally:
+        session.close()
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over the standard telnet service")
+    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over REST/Overlay, with a few Telnet transport smoke checks")
     parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
@@ -1564,8 +1333,11 @@ def main() -> int:
     while True:
         session = None
         try:
-            session = MonitorSession(args.host, args.port, args.password, args.timeout)
+            session = MonitorSession(RestBackend(rest_host, args.password, args.timeout))
             run_tests(session, rest_host)
+            session.close()
+            session = None
+            run_telnet_smoke_checks(args.host, args.port, args.password, args.timeout, rest_host)
             break
         except Failure as exc:
             if (not redeployed) and device_unavailable(exc):

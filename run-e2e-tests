@@ -35,6 +35,11 @@ source "$ROOT/tests/e2e/lib/report.sh"
 #   find tests/e2e -type f \( -name '*test*.py' -o -name '*test*.sh' \) \
 #     -not -path '*/__pycache__/*'
 SUITES=(
+  # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
+  # REST/Overlay) before any suite built on it runs, so a broken shared
+  # facade fails here with a clear cause instead of as confusing failures
+  # scattered across every suite that depends on it.
+  "ui-backend-smoke|tests/e2e/lib/ui_backend_smoke_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
   "readmem-writemem|tests/e2e/api/readmem_writemem_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
   "menu-screen|tests/e2e/api/menu_screen_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
   "input|tests/e2e/api/input_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@"
@@ -50,8 +55,10 @@ SUITES=(
   # until the firmware restarts, so run it after the suites that drive the menu
   # and the file system.
   "uci-targets|tests/e2e/io/command_interface/uci_targets_test.py|-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"
-  # Long telnet run; drives the machine-code monitor with its own long flags.
-  "machine-code-monitor|tests/e2e/monitor/monitor_test.py|--host @HOST@ --password @PASS@ --timeout @TIMEOUT@|manual"
+  # Drives the machine-code monitor over REST/Overlay via the shared
+  # ui_backend.py facade; a few checks that are genuinely about the Telnet
+  # transport itself run separately against a real Telnet session.
+  "machine-code-monitor|tests/e2e/monitor/monitor_test.py|--host @HOST@ --password @PASS@ --timeout @TIMEOUT@"
   # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
   # and waits ~75s for the device to reap the sessions.
   "telnet-stale-session|tests/e2e/network/telnet_stale_session_test.py|-H @HOST@|manual"

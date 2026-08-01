@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitor"))
 # tests/e2e/lib holds the reporting rules every suite shares.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
@@ -52,7 +51,7 @@ from menu_screen_test import (
     check,
     menu_screen_text,
 )
-from monitor_test import VT100Screen
+from ui_backend import VT100Screen
 
 
 FTP_USER = "user"
@@ -104,7 +103,7 @@ EMPTY_DIRECTORY_MARKER = "< No Items >"
 
 # Box glyphs: the C64 screen draws them below 0x20 so the menu snapshot renders
 # them as spaces, while Screen_VT100 draws them in the alternate character set,
-# which monitor_test's screen model folds onto + - |.
+# which ui_backend's screen model folds onto + - |.
 FRAME_CHARS = " |+-"
 
 EDITOR_KEYS = {".": "period", "-": "minus", " ": "space"}

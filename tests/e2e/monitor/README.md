@@ -1,11 +1,39 @@
-# Monitor Telnet Validation
+# Monitor Validation
 
 This directory contains the real-device machine monitor validation harness.
 
 ## Service
 
-The firmware exposes the machine monitor through the standard telnet session on port `23`.
-The validation harness connects to the normal remote-menu session and enters the monitor with `Ctrl+O`.
+The firmware exposes the machine monitor from the root browser: press `Ctrl+O` (or
+`CBM+O`) with the on-device menu open, and leave it the same way, or with
+`RUN/STOP`. Two paths reach the same `UserInterface` object that draws it:
+
+- **REST/Overlay** (the harness default): `tests/e2e/lib/ui_backend.py`'s
+  `RestBackend` opens the on-device menu, switches `Interface Type` to
+  `Overlay on HDMI` for the duration (restored on close), injects `Ctrl+O` via
+  `machine:input`, and reads the rendered screen via `machine:menu_screen` --
+  one HTTP round trip per screen, no protocol to parse.
+- **Telnet**: the standard remote-menu session on port `23`. `TelnetBackend`
+  parses the VT100 stream into the same `40x25` screen model. Kept for the
+  handful of checks that are about the Telnet transport itself (a concurrent
+  poll-mode connection, and Telnet's own per-keystroke output volume) --
+  everything else runs through REST/Overlay, which is markedly faster since
+  it skips Telnet's per-byte stream and its fixed post-keystroke quiet-window
+  wait.
+
+Both transports render the same UI content from the same row downward (the
+firmware draws the monitor into whichever `UserInterface` screen object owns
+the session), but they are not pixel-identical: the on-device Overlay/Freeze
+screen is the full 25-row physical screen, while the Telnet remote session
+only ever fills 24 of those rows, so a REST capture can show one extra memory
+row at the bottom of a box. Assertions in `monitor_test.py` locate content by
+searching rather than assuming a fixed row count, so the same check logic
+holds against either transport.
+
+`tests/e2e/lib/ui_backend_smoke_test.py` (suite `ui-backend-smoke`) validates
+the shared facade itself -- Telnet, REST/Freeze, REST/Overlay -- independently
+of this suite, so a broken facade fails there with a clear cause instead of as
+confusing failures scattered across every suite built on it.
 
 ## Run
 
