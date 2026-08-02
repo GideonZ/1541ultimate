@@ -1,13 +1,16 @@
-"""Console reporting shared by every e2e suite.
+"""Console reporting shared by every test suite and by `run-tests`.
 
-The rules this implements are written down in `tests/e2e/README.md`. This module
-is the only implementation of them, so a suite reports by calling it rather than
-by formatting its own lines.
+Used by `tests/e2e/`, `tests/perf/` and `tests/soak/` alike: nothing here is
+specific to any one category. The rules it implements are written down in
+`tests/lib/README.md`, and this is their only implementation, so a suite
+reports by calling it rather than by formatting its own lines. The harness is
+Python for the same reason: one implementation of the rules, not one per
+language.
 
 Three properties are built in rather than left to each caller:
 
-- A check occupies exactly one line. Helpers such as `RestSession.open_menu` are
-  themselves written as checks and are also called from inside scenario checks.
+- A check occupies exactly one line. A suite's own helpers are frequently
+  written as checks and are also called from inside larger scenario checks.
   Without a guard the inner check prints its own numbered line in the middle of
   the outer one, which splits the outer line in two and numbers a step that is
   not a result of its own. Only the outermost check prints, and a `detail` call
@@ -18,6 +21,9 @@ Three properties are built in rather than left to each caller:
 - Everything reported here is also available as JSONL. Set `E2E_JSONL` to a path
   and every check, scenario and suite result is appended to it as one object per
   line, which is what makes a run consumable by something other than a reader.
+  That variable and `E2E_SUITE` keep the names they were introduced with,
+  because `run-tests` and the documented workflows already set them; both
+  are read by every category, not only by the E2E suites.
 """
 
 from __future__ import annotations
@@ -29,8 +35,9 @@ import time
 from contextlib import contextmanager
 from typing import Iterable, Iterator, List, Optional
 
-# The four colours run-e2e-tests uses, so suite lines and harness lines read as
-# one log rather than as two conventions.
+# One colour set for the whole tree, so that a suite run on its own and the same
+# suite run under a harness produce the same log, and harness lines and suite
+# lines read as one convention rather than two.
 BLUE = "\033[1;34m"
 GREEN = "\033[1;32m"
 RED = "\033[1;31m"
@@ -53,12 +60,16 @@ _VERDICT_COLOUR = {OK: GREEN, FAIL: RED, WARN: YELLOW, SKIP: YELLOW}
 _SEVERITY = [FAIL, WARN, SKIP, OK]
 
 # Colour is on or off for the whole run, so a captured log looks like what was on
-# screen. Deciding per stream would colour the harness and not the suites.
+# screen. Deciding per stream would colour a harness's own lines but not the
+# suite lines it wraps, or the other way round.
 _USE_COLOUR = not os.environ.get("NO_COLOR")
 
-# Set by run-e2e-tests so every suite's records carry the same suite name.
+# A harness sets E2E_SUITE so that every record a suite writes carries the name
+# the harness knows it by; run-tests does this for each suite it starts. A
+# suite started directly, which is how the perf and soak suites are normally
+# run, falls back to its own script name.
 SUITE_NAME = os.environ.get("E2E_SUITE") or os.path.splitext(
-    os.path.basename(sys.argv[0] or "e2e"))[0]
+    os.path.basename(sys.argv[0] or "test"))[0]
 JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 
 _count = 0
@@ -97,9 +108,9 @@ def format_duration(seconds: float) -> str:
 def _record(**fields) -> None:
     """Append one JSONL object, when a path was asked for.
 
-    Opened per record and in append mode: the suites are separate processes
-    writing the same file, and a single short line under O_APPEND is not
-    interleaved with another.
+    Opened per record and in append mode: under a harness the suites are
+    separate processes writing one file, and a single short line under O_APPEND
+    is not interleaved with another.
     """
     if not JSONL_PATH:
         return
@@ -138,7 +149,7 @@ def check_start(label: str) -> None:
 def step_start(label: str) -> None:
     """Open an unnumbered line, for a step that is not a check of its own.
 
-    The harness's precondition and teardown gates run around the suites rather
+    A harness's precondition and teardown gates run around the suites rather
     than inside one, so numbering them would interleave two counters.
     """
     global _depth, _check_started, _last_label
@@ -279,7 +290,7 @@ def section(title: str) -> None:
 def banner(title: str) -> None:
     """A top-level heading: a rule above and below the title.
 
-    For the runner's suite headings and its summary. Heavier than a scenario
+    For a harness's suite headings and its summary. Heavier than a scenario
     heading on purpose: this is where a reader looks to see a new suite start.
     """
     _close_scenario()
@@ -295,8 +306,14 @@ def warn(message: str) -> None:
 
 def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float]) -> None:
     _close_scenario()
+    # An explicit `seconds` means a harness is timing a suite it ran as a child
+    # process, so this process's own check counter describes nothing and is left
+    # out. A suite closing its own line passes no seconds and gets the count.
+    own_closing_line = seconds is None
     elapsed = time.monotonic() - _suite_started if seconds is None else seconds
-    parts = [extra or f"{_count} checks", format_duration(elapsed)]
+    parts = [part for part in
+             (extra or (f"{_count} checks" if own_closing_line else ""),
+              format_duration(elapsed)) if part]
     print(f"{name}: {colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})",
           flush=True)
     _record(kind="suite", name=name, verdict=verdict, note=extra,
@@ -321,6 +338,17 @@ def suite_skip(name: str, reason: str, seconds: Optional[float] = None) -> None:
 def suite_warn(name: str, reason: str, seconds: Optional[float] = None) -> None:
     """A suite that passed but left something behind. Not a failure."""
     _suite_line(name, WARN, reason, seconds)
+
+
+def run_result(verdict: str, suites: int, passed: int, failed: int,
+               skipped: int, dirty: int, seconds: float) -> None:
+    """The JSONL record for a whole run, written by a harness rather than a suite.
+
+    Record shapes belong to this module, so a harness reports its own result
+    through here instead of formatting a JSON object of its own.
+    """
+    _record(kind="run", verdict=verdict, suites=suites, passed=passed,
+            failed=failed, skipped=skipped, dirty=dirty, seconds=round(seconds, 4))
 
 
 def die(message: str) -> None:

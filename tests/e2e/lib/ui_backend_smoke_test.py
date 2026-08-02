@@ -20,13 +20,24 @@ other suite relies on it.
 import argparse
 import os
 import sys
+from typing import Sequence
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+# tests/lib holds the reporting rules every suite shares; ui_backend sits
+# in this directory.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import Backend, RestBackend, TelnetBackend, Snapshot
 
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
+
+# Root-browser entry rows, by transport: REST's menu_screen is the full
+# 25-row physical screen (row 24 is the status/help line); Telnet's remote
+# session only ever fills 24 of those rows (row 23 is the status line).
+ROOT_ENTRY_ROWS_REST = range(2, 24)
+ROOT_ENTRY_ROWS_TELNET = range(2, 23)
 
 
 def device_unavailable(exc: BaseException) -> bool:
@@ -59,7 +70,7 @@ def path_row(snapshot: Snapshot) -> str:
     raise Failure(f"no path row found after {snapshot.last_command}\n{snapshot.text()}")
 
 
-def run_backend_smoke(backend: Backend) -> None:
+def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
     with check("root browser is visible on connect"):
         snapshot = backend.capture()
         assert_looks_like_root_browser(snapshot)
@@ -94,11 +105,28 @@ def run_backend_smoke(backend: Backend) -> None:
         if left_path != "/":
             raise Failure(f"LEFT did not return to the root path: {left_path!r}")
 
+    with check("selected_row() reports the colour-marked cursor row"):
+        # path_row() above proves the browser's own path indicator moved to
+        # the right place, but every migrated suite navigates via
+        # Browser.select_entry()/selected_row(), which reads the cursor row
+        # by its colour marker (tree_browser_state.cc marks the selection by
+        # colour, not by the reverse-video bit) -- a different code path
+        # that REST and Telnet implement with different colour encodings.
+        # This must be checked directly: it can regress while every check
+        # above stays green, since none of them call selected_row().
+        snapshot = backend.send_char("t")
+        row = backend.selected_row(entry_rows)
+        if "Temp" not in snapshot.line(row):
+            raise Failure(
+                f"selected_row() returned row {row} ({snapshot.line(row)!r}) after quick-seeking to 't'; "
+                f"expected the Temp row"
+            )
+
 
 def run_telnet_smoke(host: str, port: int, password: str, timeout: float) -> None:
     backend = TelnetBackend(host, port, password or None, timeout)
     try:
-        run_backend_smoke(backend)
+        run_backend_smoke(backend, ROOT_ENTRY_ROWS_TELNET)
     finally:
         backend.close()
 
@@ -106,7 +134,7 @@ def run_telnet_smoke(host: str, port: int, password: str, timeout: float) -> Non
 def run_rest_smoke(host: str, password: str, timeout: float, interface_type: str) -> None:
     backend = RestBackend(host, password or None, timeout, interface_type=interface_type)
     try:
-        run_backend_smoke(backend)
+        run_backend_smoke(backend, ROOT_ENTRY_ROWS_REST)
     finally:
         backend.close()
 

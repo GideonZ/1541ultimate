@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# E2E: Verifies managed /Temp uploads and measures cleanup-mode performance.
+# PERF: Verifies managed /Temp uploads and measures cleanup-mode performance.
 
 """Validate and measure managed Temp uploads with cleanup and subfolders toggled.
 
@@ -22,9 +22,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
+import ftp as ftp_lib
 from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
 
 SUITE = "temp_auto_cleanup_perf_test"
@@ -203,74 +204,24 @@ class U64Client:
 
 
 class ManagedTempInspector:
+    """The managed Temp upload area, over FTP."""
+
     def __init__(self, host, password):
         self.host = host
-        self.password = password or FTP_DEFAULT_PASSWORD
-
-    def _open(self):
-        ftp = ftplib.FTP(self.host, timeout=FTP_TIMEOUT_SECONDS)
-        ftp.login(FTP_USER, self.password)
-        return ftp
-
-    def _close(self, ftp):
-        try:
-            ftp.quit()
-        except (OSError, EOFError, ftplib.Error):
-            ftp.close()
-
-    def _list_current_directory(self, ftp):
-        lines = []
-        try:
-            ftp.dir(lines.append)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return []
-            raise
-
-        names = []
-        for line in lines:
-            parts = line.split(maxsplit=8)
-            if len(parts) < 9:
-                continue
-            if parts[0].startswith("d"):
-                continue
-            name = parts[8]
-            if name not in (".", ".."):
-                names.append(name)
-        return sorted(names)
+        self.password = password
 
     def list_files(self, directory):
-        ftp = self._open()
-        try:
-            ftp.cwd(directory)
-            return self._list_current_directory(ftp)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return []
-            raise RuntimeError(f"FTP list failed for {directory}: {exc}") from exc
-        finally:
-            self._close(ftp)
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return ftp_lib.file_names(ftp, directory)
 
     def purge_directory(self, directory):
-        ftp = self._open()
-        try:
-            ftp.cwd(directory)
-            names = self._list_current_directory(ftp)
-            for name in names:
-                ftp.delete(name)
-            return len(names)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return 0
-            raise RuntimeError(f"FTP purge failed for {directory}: {exc}") from exc
-        finally:
-            self._close(ftp)
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return ftp_lib.purge_directory(ftp, directory)
 
     def purge_all(self):
-        removed = 0
-        for directory in MANAGED_UPLOAD_PATHS:
-            removed += self.purge_directory(directory)
-        return removed
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return sum(ftp_lib.purge_directory(ftp, directory)
+                       for directory in MANAGED_UPLOAD_PATHS)
 
 
 def parse_args():
@@ -778,6 +729,15 @@ def main():
         return 1
     finally:
         try:
+            # The measured stages upload hundreds of small files and the
+            # purge only runs before each stage, so without this the last
+            # stage's uploads stay in the managed Temp area and every later
+            # run of any suite reads a directory listing that much longer.
+            section("clearing the managed Temp upload area")
+            try:
+                detail(f"removed {inspector.purge_all()} managed temp files")
+            except Exception as exc:
+                warn(f"could not clear the managed Temp area: {exc}")
             if args.no_config_change:
                 section("leaving Temp settings unchanged")
             else:

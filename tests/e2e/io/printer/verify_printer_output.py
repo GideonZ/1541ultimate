@@ -12,19 +12,20 @@ Usage:
 """
 
 import argparse
-import ftplib
-import io
 import struct
 import sys
 import zlib
+from pathlib import Path
 
-FTP_USER_DEFAULT = "user"
-FTP_PASSWORD_DEFAULT = "password"
+# tests/lib holds the shared FTP and reporting helpers.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+
+import ftp as ftp_lib
+from report import Failure
+
+FTP_USER_DEFAULT = ftp_lib.FTP_USER
+FTP_PASSWORD_DEFAULT = ftp_lib.FTP_DEFAULT_PASSWORD
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-
-class Failure(RuntimeError):
-    pass
 
 
 class FtpInspector:
@@ -35,18 +36,9 @@ class FtpInspector:
         self.timeout = timeout
 
     def download(self, path):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        try:
-            ftp.login(self.user, self.password)
-            buf = io.BytesIO()
-            ftp.retrbinary(f"RETR {path}", buf.write)
-            return buf.getvalue()
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with ftp_lib.session(self.host, self.password, self.timeout,
+                             user=self.user) as ftp:
+            return ftp_lib.retrieve(ftp, path)
 
 
 def decode_png_dimensions(data):
@@ -87,7 +79,7 @@ def png_is_well_formed(data):
 def verify_one(inspector, path, is_ascii):
     try:
         data = inspector.download(path)
-    except ftplib.Error as exc:
+    except Failure as exc:
         print(f"  {path}: FAIL (download error: {exc})")
         return False
 

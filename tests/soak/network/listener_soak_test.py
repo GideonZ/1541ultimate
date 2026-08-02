@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# E2E: Verifies listeners reap abandoned connections and stay responsive under churn.
+# SOAK: Verifies listeners reap abandoned connections and stay responsive under churn.
 
 """Short soak over the network listeners, checking capacity is not lost.
 
@@ -34,9 +34,9 @@ import urllib.error
 import urllib.request
 from typing import List, Optional
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 from report import Failure, check, check_ok, check_start, suite_fail, suite_ok
 
 

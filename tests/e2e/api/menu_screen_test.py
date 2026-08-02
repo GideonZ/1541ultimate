@@ -12,10 +12,11 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional, Tuple
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 from report import Failure, check, check_skip, check_start, format_exception, suite_fail, suite_ok, warn
+from rest import RestClient
 
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
@@ -37,8 +38,6 @@ MENU_MIN_PRINTABLE_CELLS = 20
 MENU_MAX_DISTINCT_COLOURS = 32
 MENU_MAX_DISTINCT_GLYPHS = 160
 MENU_TOGGLE_SETTLE_SECONDS = 0.25
-TRANSPORT_RETRIES = 3
-TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
 SOAK_NAVIGATION_INTERVAL_SECONDS = 0.20
@@ -46,52 +45,12 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 SOAK_TOP_LEVEL_SECTION_LIMIT = 64
 
 
-class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
-        self.password = password
-        self.timeout = timeout
+class RestSession(RestClient):
+    """The device's REST API plus the menu-specific calls this suite adds.
 
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = ""
-        if params:
-            query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-        use_password: bool = True,
-    ) -> Tuple[int, Dict[str, str], bytes]:
-        body = None if payload is None else json.dumps(payload).encode("utf-8")
-        headers: Dict[str, str] = {}
-        if self.password and use_password:
-            headers["X-Password"] = self.password
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-
-        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        # The device serves few concurrent HTTP connections, so a read can time
-        # out while it is busy. Only GET is retried: an HTTP status is a real
-        # answer, and a POST or PUT would apply its input twice.
-        attempts = TRANSPORT_RETRIES if method == "GET" else 1
-        last_exc: Optional[BaseException] = None
-        for attempt in range(attempts):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return response.status, dict(response.headers.items()), response.read()
-            except urllib.error.HTTPError as exc:
-                return exc.code, dict(exc.headers.items()), exc.read()
-            except (OSError, TimeoutError, urllib.error.URLError) as exc:
-                last_exc = exc
-                if attempt + 1 < attempts:
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
-        raise Failure(
-            f"{method} {self.url(path, params)} failed: {format_exception(last_exc)}"
-        ) from last_exc
+    Transport, the X-Password rule and the retry policy come from
+    tests/lib/rest.py; only the menu helpers below are specific to this suite.
+    """
 
     def menu_button(self, label: str) -> None:
         with check(label):

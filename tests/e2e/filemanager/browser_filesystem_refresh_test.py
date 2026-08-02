@@ -27,8 +27,6 @@ import ftplib
 import io
 import json
 import os
-import select
-import socket
 import sys
 import time
 import urllib.error
@@ -38,20 +36,21 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
+# holds the shared UI backend.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
+import ftp as ftp_lib
 from report import detail, suite_fail, suite_ok
 
 from menu_screen_test import (
     SCREEN_WIDTH,
     Failure,
-    MenuScreenInfo,
     RestSession,
     check,
-    menu_screen_text,
 )
-from ui_backend import VT100Screen
+import ui_backend
 
 
 FTP_USER = "user"
@@ -73,12 +72,6 @@ REST_IMAGE_SIZES = {
     "create_dnp": 4 * 65536,
 }
 
-MENU_SETTLE_SECONDS = 0.12
-MENU_OPEN_SETTLE_SECONDS = 0.25
-POPUP_SETTLE_SECONDS = 0.50
-ACTION_SETTLE_SECONDS = 0.60
-SCREEN_TIMEOUT_SECONDS = 8.0
-
 # Convergence is event driven, so this is only a settling allowance. It matches
 # the 2 s mount wait in browser_long_filename_test plus the second a Telnet
 # full-screen repaint needs to arrive and go quiet.
@@ -93,10 +86,6 @@ TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 TELNET_ENTRY_ROWS = range(2, 23)
 TELNET_STATUS_ROW = 23
-# Telnet always uses schemes[3] (userinterface.cc:202-218), whose selected
-# colour is 13, which Screen_VT100::set_color emits as ESC [ 0;32;1 m.
-TELNET_SELECTED_SGR = "0;32;1"
-
 PICKER_TITLE = "Select Path"
 PICKER_SELECT_ENTRY = "<< Select Current Dir >>"
 EMPTY_DIRECTORY_MARKER = "< No Items >"
@@ -105,9 +94,6 @@ EMPTY_DIRECTORY_MARKER = "< No Items >"
 # them as spaces, while Screen_VT100 draws them in the alternate character set,
 # which ui_backend's screen model folds onto + - |.
 FRAME_CHARS = " |+-"
-
-EDITOR_KEYS = {".": "period", "-": "minus", " ": "space"}
-
 
 # --------------------------------------------------------------------------
 # Canonical snapshot
@@ -259,17 +245,10 @@ class FtpObserver:
         self.last_raw: List[str] = []
 
     def close(self) -> None:
-        try:
-            self.ftp.quit()
-        except Exception:
-            try:
-                self.ftp.close()
-            except Exception:
-                pass
+        ftp_lib.close(self.ftp)
 
     def snapshot(self, names: Sequence[str]) -> Snapshot:
-        lines: List[str] = []
-        self.ftp.retrlines("LIST", lines.append)
+        lines = ftp_lib.listing(self.ftp)
         self.last_raw = lines
         wanted = set(names)
         result: Snapshot = {}
@@ -294,7 +273,7 @@ class FtpObserver:
 class BrowserObserver:
     """Push observer: a TreeBrowser holding a cached child list."""
 
-    def __init__(self, browser: "Browser") -> None:
+    def __init__(self, browser: "FilesystemRefreshBrowser") -> None:
         self.browser = browser
         self.name = browser.name
 
@@ -310,434 +289,29 @@ class BrowserObserver:
 # --------------------------------------------------------------------------
 
 
-def strip_frame(text: str) -> str:
-    return text.strip(FRAME_CHARS)
+class FilesystemRefreshBrowser(ui_backend.Browser):
+    """Suite-specific browser snapshot parser over the shared UI facade."""
 
-
-class Browser:
-    """Keys and screen reading shared by the Menu and the Telnet browser."""
-
-    name = "browser"
-    width = 40
-    entry_rows: Sequence[int] = ()
-    status_row = 0
-
-    # ---- transport ----
-    def raw_rows(self) -> List[str]:
-        raise NotImplementedError
-
-    def press(self, key: str, settle: Optional[float] = None) -> None:
-        raise NotImplementedError
-
-    def press_many(self, key: str, count: int) -> None:
-        for _ in range(count):
-            self.press(key, 0.03)
-
-    def type_char(self, character: str, settle: Optional[float] = None) -> None:
-        raise NotImplementedError
-
-    def selected_row(self) -> int:
-        raise NotImplementedError
-
-    # ---- screen reading ----
-    def rows(self) -> List[str]:
-        return [row.rstrip() for row in self.raw_rows()]
-
-    def screen(self) -> str:
-        return "\n".join(self.rows())
-
-    def current_path(self) -> str:
-        fields = self.rows()[self.status_row].split()
-        return fields[0] if fields else ""
+    def __init__(
+        self,
+        backend: ui_backend.Backend,
+        name: str,
+        entry_rows: Sequence[int],
+        status_row: int,
+        width: int,
+    ) -> None:
+        super().__init__(backend, entry_rows, status_row)
+        self.name = name
+        self.width = width
 
     def entries(self) -> Snapshot:
         result: Snapshot = {}
-        raw = self.raw_rows()
+        rows = self.capture().lines
         for index in self.entry_rows:
-            entry = parse_browser_row(raw[index], self.width)
+            entry = parse_browser_row(rows[index], self.width)
             if entry:
                 result[entry.name] = entry
         return result
-
-    def selected_text(self) -> str:
-        return strip_frame(self.raw_rows()[self.selected_row()])
-
-    # ---- navigation ----
-    def go_to_root(self) -> None:
-        for _ in range(12):
-            if self.current_path() == ROOT_PATH:
-                return
-            self.press("left", MENU_OPEN_SETTLE_SECONDS)
-        raise Failure(f"{self.name}: could not return to {ROOT_PATH!r}, now at {self.current_path()!r}")
-
-    def go_to_top(self, count: int = 14) -> None:
-        # Deeper than any listing this test builds, and than the root menu.
-        self.press_many("up", count)
-
-    def select_entry(self, prefix: str, max_steps: int = 30) -> None:
-        # The listing refreshes asynchronously, so one scan can pass the row
-        # before it appears. Rescan within the budget the matrix already allows.
-        deadline = time.monotonic() + CONVERGE_TIMEOUT_SECONDS
-        while True:
-            self.go_to_top()
-            for _ in range(max_steps):
-                if self.selected_text().startswith(prefix):
-                    return
-                self.press("down")
-            if time.monotonic() >= deadline:
-                break
-        raise Failure(
-            f"{self.name}: could not select an entry starting with {prefix!r}; screen was:\n{self.screen()}")
-
-    def enter(self) -> None:
-        self.press("right", MENU_OPEN_SETTLE_SECONDS)
-
-    def descend(self, directory: str) -> None:
-        for part in [p for p in directory.strip("/").split("/") if p]:
-            self.select_entry(part)
-            self.enter()
-        expected = "/" + directory.strip("/") + "/"
-        if self.current_path() != expected:
-            raise Failure(f"{self.name}: expected {expected!r}, got {self.current_path()!r}")
-
-    def go_to_directory(self, directory: str) -> None:
-        self.go_to_root()
-        self.descend(directory)
-
-    # ---- overlays ----
-    def overlay_items(self, before: List[str]) -> List[str]:
-        """Labels an overlay added on top of `before`, top to bottom.
-
-        Both menus are drawn straight over the browser, so on every row the
-        characters that changed are the overlay's own cell. Rows that only
-        gained a border strip to nothing and drop out.
-        """
-        labels = []
-        for old, new in zip(before, self.rows()):
-            if old == new:
-                continue
-            label = strip_frame(new[len(os.path.commonprefix([old, new])) :])
-            if label:
-                labels.append(label)
-        return labels
-
-    def open_context_menu(self) -> List[str]:
-        before = self.rows()
-        self.press("return", MENU_OPEN_SETTLE_SECONDS)
-        labels = self.overlay_items(before)
-        if not labels:
-            raise Failure(f"{self.name}: no context menu appeared; screen was:\n{self.screen()}")
-        return labels
-
-    def choose_overlay_item(self, labels: List[str], label: str, settle: float = ACTION_SETTLE_SECONDS) -> None:
-        if label not in labels:
-            raise Failure(f"{self.name}: overlay has no {label!r}; it offers {labels}")
-        self.press_many("down", labels.index(label))
-        self.press("return", settle)
-
-    def invoke_context_action(self, label: str) -> None:
-        self.choose_overlay_item(self.open_context_menu(), label)
-
-    def invoke_task_action(self, category: str, item: str) -> None:
-        before = self.rows()
-        self.press("tasks", MENU_OPEN_SETTLE_SECONDS)
-        categories = self.overlay_items(before)
-        if not categories:
-            raise Failure(f"{self.name}: no task menu appeared; screen was:\n{self.screen()}")
-        if category not in categories:
-            raise Failure(f"{self.name}: task menu has no {category!r}; it offers {categories}")
-        self.press_many("down", categories.index(category))
-        before = self.rows()
-        self.press("return", MENU_OPEN_SETTLE_SECONDS)
-        self.choose_overlay_item(self.overlay_items(before), item)
-
-    def press_popup_button(self, key: str, settle: float = POPUP_SETTLE_SECONDS) -> None:
-        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel."""
-        self.type_char(key, settle)
-
-    def wait_for_text(self, text: str, timeout: float = SCREEN_TIMEOUT_SECONDS) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if text in self.screen():
-                return
-            time.sleep(0.15)
-        raise Failure(f"{self.name}: {text!r} never appeared; screen was:\n{self.screen()}")
-
-    def wait_until_gone(self, text: str, timeout: float = SCREEN_TIMEOUT_SECONDS) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if text not in self.screen():
-                return
-            time.sleep(0.15)
-        raise Failure(f"{self.name}: {text!r} never went away; screen was:\n{self.screen()}")
-
-    def fill_edit_field(self, text: str, clear_taps: int = 0) -> None:
-        self.press_many("back", clear_taps)
-        for character in text:
-            self.type_char(character, 0.08)
-        self.press("return", ACTION_SETTLE_SECONDS)
-
-    def recover_to(self, directory: str) -> None:
-        """Unwind popups and nested screens until the browser is back in `directory`."""
-        wanted = "/" + directory.strip("/") + "/"
-        for _ in range(20):
-            rows = [strip_frame(row) for row in self.rows()]
-            # A popup ignores everything except its own button keys.
-            if "Yes  No" in rows:
-                self.press_popup_button("n")
-                continue
-            if "Ok" in rows:
-                self.press_popup_button("o")
-                continue
-            if self.current_path() == wanted:
-                return
-            self.press("left", MENU_OPEN_SETTLE_SECONDS)
-        self.go_to_directory(directory)
-        if self.current_path() != wanted:
-            raise Failure(f"{self.name}: could not be returned to {wanted!r}")
-
-    def pick_directory(self, directory: str) -> None:
-        """Drive the 'Select Path' browser onto `directory` and pick it."""
-        self.wait_for_text(PICKER_TITLE)
-        if self.current_path() != ROOT_PATH:
-            raise Failure(f"{self.name}: path picker opened at {self.current_path()!r}, expected the root")
-        self.descend(directory)
-        self.select_entry(PICKER_SELECT_ENTRY)
-        self.press("return", ACTION_SETTLE_SECONDS)
-
-
-class MenuBrowser(Browser):
-    name = "Menu"
-    width = SCREEN_WIDTH
-    entry_rows = MENU_ENTRY_ROWS
-    status_row = MENU_STATUS_ROW
-
-    KEYS = {
-        "up": ["left_shift", "cursor_up_down"],
-        "down": ["cursor_up_down"],
-        "left": ["left_shift", "cursor_left_right"],
-        "right": ["cursor_left_right"],
-        "return": ["return"],
-        "back": ["inst_del"],
-        "tasks": ["f5"],
-        "stop": ["run_stop"],
-        "copy": ["ctrl", "c"],
-        "paste": ["ctrl", "v"],
-        "select_all": ["ctrl", "a"],
-        "delete_selected": ["left_shift", "inst_del"],
-    }
-
-    def __init__(self, session: RestSession) -> None:
-        self.session = session
-
-    def screen_body(self) -> bytes:
-        # The device serves only a handful of HTTP connections, so one request
-        # can time out under load. Retry once: a dropped snapshot would be
-        # reported as a firmware failure.
-        try:
-            return self.session.get_menu_screen()
-        except Failure:
-            time.sleep(1.0)
-            return self.session.get_menu_screen()
-
-    def raw_rows(self) -> List[str]:
-        return menu_screen_text(self.screen_body()).split("\n")
-
-    def selected_text(self) -> str:
-        # One snapshot for both the rows and the cursor row: walking a listing
-        # is the hot path of this test and the screen is fetched per step.
-        body = self.screen_body()
-        return strip_frame(menu_screen_text(body).split("\n")[MenuScreenInfo(body).selected_row])
-
-    def tap(self, inputs: List[str], settle: float) -> None:
-        # The device serves few HTTP connections, so a single request can time
-        # out under load. Retry once: a lost keystroke would be reported as a
-        # firmware failure.
-        try:
-            self.session.tap_keyboard(inputs)
-        except Failure:
-            time.sleep(1.0)
-            self.session.tap_keyboard(inputs)
-        time.sleep(settle)
-
-    def press(self, key: str, settle: Optional[float] = None) -> None:
-        self.tap(self.KEYS[key], MENU_SETTLE_SECONDS if settle is None else settle)
-
-    def type_char(self, character: str, settle: Optional[float] = None) -> None:
-        name = EDITOR_KEYS.get(character)
-        if name is None and character.isalnum():
-            name = character.lower()
-        if name is None:
-            raise Failure(f"Menu: cannot type {character!r} through the REST keyboard")
-        self.tap([name], MENU_SETTLE_SECONDS if settle is None else settle)
-
-    def selected_row(self) -> int:
-        return MenuScreenInfo(self.screen_body()).selected_row
-
-    def open(self) -> None:
-        if not self.session.menu_screen_unavailable():
-            return
-        self.session.open_menu()
-        time.sleep(MENU_OPEN_SETTLE_SECONDS)
-
-    def close(self) -> None:
-        for _ in range(24):
-            if self.session.menu_screen_unavailable():
-                return
-            rows = [row.strip() for row in self.rows()]
-            # RUN/STOP backs out of browsers and editors but does nothing to a
-            # popup: those only listen for their own button keys.
-            if "Yes  No" in rows:
-                self.press_popup_button("n")
-            elif "Ok" in rows:
-                self.press_popup_button("o")
-            else:
-                self.press("stop", MENU_OPEN_SETTLE_SECONDS)
-        raise Failure("could not close the menu; screen was:\n" + self.screen())
-
-
-class ColourVT100Screen(VT100Screen):
-    """VT100Screen that also records the SGR colour each cell was drawn with.
-
-    The browser marks the cursor row with a colour rather than with reverse
-    video (tree_browser_state.cc:150-163), and Screen_VT100::set_color emits
-    that colour just before switching reverse video off, so the plain screen
-    model cannot tell which row is selected.
-    """
-
-    def reset(self) -> None:
-        super().reset()
-        self.colours = [[""] * self.width for _ in range(self.height)]
-        self.sgr = ""
-
-    def _handle_csi(self, params: str, final: str) -> None:
-        if final == "m":
-            values = [value for value in params.split(";") if value]
-            if values and values not in (["7"], ["27"]):
-                self.sgr = params
-        if final == "J" and params in ("", "2"):
-            self.colours = [[""] * self.width for _ in range(self.height)]
-        super()._handle_csi(params, final)
-
-    def _put(self, ch: str) -> None:
-        if 0 <= self.x < self.width and 0 <= self.y < self.height:
-            self.colours[self.y][self.x] = self.sgr
-        super()._put(ch)
-
-    def rows(self) -> List[str]:
-        return ["".join(row) for row in self.lines]
-
-
-class TelnetBrowser(Browser):
-    name = "Telnet"
-    width = TELNET_WIDTH
-    entry_rows = TELNET_ENTRY_ROWS
-    status_row = TELNET_STATUS_ROW
-
-    # keyboard_vt100.cc:12-93: cursor keys arrive as ESC [ A/B/C/D, RETURN as
-    # \r, backspace as 0x08 and F5, which opens the task menu, as ESC [ 15 ~.
-    KEYS = {
-        "up": b"\x1b[A",
-        "down": b"\x1b[B",
-        "left": b"\x1b[D",
-        "right": b"\x1b[C",
-        "return": b"\r",
-        "back": b"\x08",
-        "tasks": b"\x1b[15~",
-        "copy": b"\x03",
-        "paste": b"\x16",
-        "select_all": b"\x01",
-        "delete_selected": b"\x1b[2~",
-    }
-
-    def __init__(self, host: str, password: str, timeout: float) -> None:
-        self.sock = socket.create_connection((host, 23), timeout=max(timeout, 5.0))
-        self.sock.setblocking(False)
-        self.screen_model = ColourVT100Screen(width=TELNET_WIDTH, height=TELNET_HEIGHT)
-        self.drain(timeout=max(timeout, 5.0))
-        if self.screen_model.saw_password_prompt():
-            if not password:
-                raise Failure("Telnet asked for a password but none was supplied")
-            self.sock.sendall((password + "\r").encode("ascii"))
-            self.drain(timeout=max(timeout, 5.0))
-
-    def close(self) -> None:
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def drain(self, timeout: float = 4.0, idle: float = 0.20) -> int:
-        """Read until the browser has been quiet for `idle` seconds.
-
-        The browser only writes when it repaints, so silence is the signal that
-        the screen is settled. Bytes are never asserted on: only the parsed
-        screen is.
-        """
-        end = time.monotonic() + timeout
-        last = time.monotonic()
-        received = 0
-        while time.monotonic() < end:
-            wait = min(0.10, max(0.0, end - time.monotonic()))
-            ready, _, _ = select.select([self.sock], [], [], wait)
-            if not ready:
-                if time.monotonic() - last >= idle:
-                    return received
-                continue
-            chunk = self.sock.recv(65536)
-            if not chunk:
-                raise Failure("Telnet session closed by the device")
-            received += len(chunk)
-            self.screen_model.feed(chunk)
-            last = time.monotonic()
-        return received
-
-    def settle(self) -> None:
-        self.drain(timeout=1.5, idle=0.20)
-
-    def raw_rows(self) -> List[str]:
-        self.drain(timeout=0.6, idle=0.12)
-        return self.screen_model.rows()
-
-    # `settle` is ignored on this transport: the browser tells us when it is
-    # done by going quiet, which is stricter than any fixed delay.
-    def press(self, key: str, settle: Optional[float] = None) -> None:
-        self.sock.sendall(self.KEYS[key])
-        self.drain(timeout=5.0, idle=0.20)
-
-    def press_many(self, key: str, count: int) -> None:
-        if count <= 0:
-            return
-        # The browser polls its keyboard every 3 ticks, so a batch of repeats
-        # is consumed one key per poll and only repaints when it has to.
-        self.sock.sendall(self.KEYS[key] * count)
-        self.drain(timeout=8.0, idle=0.25)
-
-    def type_char(self, character: str, settle: Optional[float] = None) -> None:
-        self.sock.sendall(character.encode("ascii"))
-        self.drain(timeout=5.0, idle=0.20)
-
-    def selected_text(self) -> str:
-        self.drain(timeout=0.6, idle=0.12)
-        return strip_frame(self.screen_model.rows()[self._selected_row_nodrain()])
-
-    def selected_row(self) -> int:
-        self.drain(timeout=0.6, idle=0.12)
-        return self._selected_row_nodrain()
-
-    def _selected_row_nodrain(self) -> int:
-        rows = self.screen_model.rows()
-        # A blank line is padded with whatever colour was last set, so only
-        # rows that actually carry an entry can be the cursor row. Inside the
-        # bordered path picker a blank line still has its two frame glyphs.
-        marked = [row for row in self.entry_rows
-                  if strip_frame(rows[row])
-                  and TELNET_SELECTED_SGR in (self.screen_model.colours[row][0],
-                                              self.screen_model.colours[row][1])]
-        if len(marked) != 1:
-            raise Failure(
-                f"Telnet: expected exactly one selected row, found {marked}; screen was:\n{self.screen()}")
-        return marked[0]
 
 
 # --------------------------------------------------------------------------
@@ -746,37 +320,12 @@ class TelnetBrowser(Browser):
 
 
 def ftp_connect(host: str, password: str, timeout: float = 30.0) -> ftplib.FTP:
-    ftp = ftplib.FTP(host, timeout=timeout)
-    ftp.login(FTP_USER, password or FTP_DEFAULT_PASSWORD)
-    return ftp
+    return ftp_lib.connect(host, password, timeout)
 
 
-def ftp_try(action: Callable[[], object]) -> None:
-    try:
-        action()
-    except ftplib.all_errors:
-        pass
-
-
-def ftp_store(ftp: ftplib.FTP, path: str, payload: bytes) -> None:
-    ftp.storbinary(f"STOR {path}", io.BytesIO(payload))
-
-
-def remove_tree(ftp: ftplib.FTP, directory: str) -> None:
-    try:
-        names = ftp.nlst(directory)
-    except ftplib.all_errors:
-        return
-    for name in names:
-        leaf = name.rsplit("/", 1)[-1]
-        if leaf in ("", ".", ".."):
-            continue
-        target = f"{directory}/{leaf}"
-        try:
-            ftp.delete(target)
-        except ftplib.all_errors:
-            remove_tree(ftp, target)
-    ftp_try(lambda: ftp.rmd(directory))
+ftp_try = ftp_lib.quietly
+ftp_store = ftp_lib.store
+remove_tree = ftp_lib.remove_tree
 
 
 # --------------------------------------------------------------------------
@@ -818,14 +367,14 @@ class Context:
         self.matrix = Matrix()
 
         self.session = RestSession(self.host, self.password or None, self.timeout)
-        self.menu = MenuBrowser(self.session)
-        self.telnet: Optional[TelnetBrowser] = None
+        self.menu: Optional[FilesystemRefreshBrowser] = None
+        self.telnet: Optional[FilesystemRefreshBrowser] = None
         self.ftp_observer: Optional[FtpObserver] = None
         self.ftp_driver: Optional[ftplib.FTP] = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
 
     def observers(self, exclude: Sequence[str] = ()) -> List[object]:
-        assert self.telnet is not None and self.ftp_observer is not None
+        assert self.menu is not None and self.telnet is not None and self.ftp_observer is not None
         every = [BrowserObserver(self.menu), BrowserObserver(self.telnet), self.ftp_observer]
         return [observer for observer in every if observer.name not in exclude]
 
@@ -940,7 +489,7 @@ def drop_names(ctx: Context, names: Sequence[str]) -> None:
 # --------------------------------------------------------------------------
 
 
-def row_rename_browser(ctx: Context, browser: Browser, origin: str, old: str, new: str) -> None:
+def row_rename_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, old: str, new: str) -> None:
     names = [old, new]
     seed_files(ctx, [(old, SIZE_S1)])
     ctx.baseline(expected_snapshot([(old, SIZE_S1)]), names)
@@ -967,7 +516,7 @@ def row_rename_ftp(ctx: Context, old: str, new: str) -> None:
     drop_names(ctx, names)
 
 
-def row_rename_under_event_pressure(ctx: Context, browser: Browser, origin: str,
+def row_rename_under_event_pressure(ctx: Context, browser: FilesystemRefreshBrowser, origin: str,
                                     old: str, new: str, noise: Sequence[str]) -> None:
     """Rename while the observer queue is being filled behind the context menu.
 
@@ -1008,7 +557,7 @@ def row_rename_under_event_pressure(ctx: Context, browser: Browser, origin: str,
     drop_names(ctx, names)
 
 
-def row_rename_dir_browser(ctx: Context, browser: Browser, origin: str, old: str, new: str) -> None:
+def row_rename_dir_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, old: str, new: str) -> None:
     """Rename a directory, not a file: the entry keeps no size but must still move."""
     assert ctx.ftp_driver is not None
     names = [old, new]
@@ -1026,7 +575,7 @@ def row_rename_dir_browser(ctx: Context, browser: Browser, origin: str, old: str
     drop_names(ctx, names)
 
 
-def row_delete_dir_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_delete_dir_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     """Delete a non-empty directory, which goes through delete_recursive."""
     assert ctx.ftp_driver is not None
     names = [name]
@@ -1042,7 +591,7 @@ def row_delete_dir_browser(ctx: Context, browser: Browser, origin: str, name: st
     ctx.converge("delete-dir", origin, expected_snapshot([]), names)
 
 
-def row_delete_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_delete_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     names = [name]
     seed_files(ctx, [(name, SIZE_S1)])
     ctx.baseline(expected_snapshot([(name, SIZE_S1)]), names)
@@ -1075,7 +624,7 @@ def row_delete_ftp(ctx: Context, name: str) -> None:
     ctx.converge("delete", "FTP", expected_snapshot([]), names)
 
 
-def row_create_dir_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_create_dir_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     """Create > Directory adds an entry to the directory the browser is in."""
     names = [name]
     ctx.baseline(expected_snapshot([]), names)
@@ -1148,7 +697,7 @@ def row_create_rest(ctx: Context, name: str, endpoint: str) -> None:
     drop_names(ctx, names)
 
 
-def row_write_browser(ctx: Context, browser: Browser, origin: str, disk_name: str) -> None:
+def row_write_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, disk_name: str) -> None:
     """Create > D64 Image writes 174848 bytes into the directory being watched.
 
     It is the writable-close case that keeps the origin browser in place: the
@@ -1192,7 +741,7 @@ def row_write_ftp(ctx: Context, name: str) -> None:
     drop_names(ctx, names)
 
 
-def row_copy_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_copy_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     """Copy to... over an existing name, answering 'File exists. Overwrite?'.
 
     S_copyTo keeps the source filename and picks the destination through an
@@ -1210,7 +759,7 @@ def row_copy_browser(ctx: Context, browser: Browser, origin: str, name: str) -> 
     browser.go_to_directory(f"Temp/{ctx.source_dir}")
     browser.select_entry(name)
     browser.invoke_context_action("Copy to...")
-    browser.pick_directory(f"Temp/{ctx.test_dir}")
+    browser.pick_directory(f"Temp/{ctx.test_dir}", PICKER_TITLE, PICKER_SELECT_ENTRY)
     browser.wait_for_text("File exists. Overwrite?")
     browser.press_popup_button("y")
     browser.wait_for_text("Copy complete.")
@@ -1240,7 +789,7 @@ def row_copy_browser(ctx: Context, browser: Browser, origin: str, name: str) -> 
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
 
 
-def row_move_out_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_move_out_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     """Move to... an entry out of the directory every observer is watching.
 
     Unlike Copy to..., the source is the watched directory, so the browser that
@@ -1255,7 +804,7 @@ def row_move_out_browser(ctx: Context, browser: Browser, origin: str, name: str)
 
     browser.select_entry(name)
     browser.invoke_context_action("Move to...")
-    browser.pick_directory(f"Temp/{ctx.source_dir}")
+    browser.pick_directory(f"Temp/{ctx.source_dir}", PICKER_TITLE, PICKER_SELECT_ENTRY)
     browser.wait_for_text("Move complete.")
     browser.press_popup_button("o")
 
@@ -1266,13 +815,13 @@ def row_move_out_browser(ctx: Context, browser: Browser, origin: str, name: str)
     ftp_try(lambda: ctx.ftp_driver.delete(f"{ctx.source_path}/{name}"))
 
 
-def row_bulk_delete_browser(ctx: Context, browser: Browser, origin: str, names: Sequence[str]) -> None:
+def row_bulk_delete_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, names: Sequence[str]) -> None:
     """Select all, then SHIFT+INST/DEL: TreeBrowser::delete_selected on many entries."""
     seed_files(ctx, [(name, SIZE_S1) for name in names])
     ctx.baseline(expected_snapshot([(name, SIZE_S1) for name in names]), names)
 
-    browser.press("select_all", MENU_OPEN_SETTLE_SECONDS)
-    browser.press("delete_selected", MENU_OPEN_SETTLE_SECONDS)
+    browser.press("SELECT_ALL")
+    browser.press("SHIFT_DEL")
     browser.wait_for_text("Delete ")
     browser.press_popup_button("y")
     browser.wait_until_gone("Deleting...")
@@ -1292,7 +841,7 @@ def row_rmdir_ftp(ctx: Context, name: str) -> None:
     ctx.converge("delete-dir", "FTP/rmd", expected_snapshot([]), names)
 
 
-def row_paste_browser(ctx: Context, browser: Browser, origin: str, name: str) -> None:
+def row_paste_browser(ctx: Context, browser: FilesystemRefreshBrowser, origin: str, name: str) -> None:
     """Ctrl-C in the source directory, Ctrl-V in the directory being watched.
 
     Unlike Copy to..., paste writes into the directory the browser is already
@@ -1307,14 +856,14 @@ def row_paste_browser(ctx: Context, browser: Browser, origin: str, name: str) ->
 
     browser.go_to_directory(f"Temp/{ctx.source_dir}")
     browser.select_entry(name)
-    browser.press("copy", MENU_OPEN_SETTLE_SECONDS)
+    browser.press("COPY")
     browser.wait_for_text("clipboard")
     browser.press_popup_button("o")
     browser.go_to_directory(f"Temp/{ctx.test_dir}")
 
     ctx.baseline(expected_snapshot([]), names)
 
-    browser.press("paste", ACTION_SETTLE_SECONDS)
+    browser.press("PASTE")
     browser.wait_until_gone("Copying...")
 
     ctx.converge("paste-write", origin, expected_snapshot([(name, SIZE_S2)]), names)
@@ -1371,7 +920,8 @@ def row_failed_write(ctx: Context, blocking_dir: str) -> None:
 
     try:
         ftp_store(ctx.ftp_driver, f"{ctx.fixture_path}/{blocking_dir}", b"X" * SIZE_S1)
-    except ftplib.all_errors:
+    except ftplib.all_errors + (Failure,):
+        # The refusal is the point of this row; ftp.store reports it as Failure.
         pass
     else:
         raise Failure(f"STOR over the directory {blocking_dir!r} was accepted")
@@ -1567,11 +1117,41 @@ def open_observers(ctx: Context) -> None:
     # Always start from a closed menu: a half-finished action can leave a
     # nested screen on the UI stack that looks enough like the browser to
     # silently swallow the whole run.
-    ctx.menu.close()
-    ctx.menu.open()
+    ctx.session.close_menu_from_anywhere()
+
+    # RestBackend opens the menu from its constructor, so it is built only
+    # after the stack above has been unwound. interface_type=None leaves User
+    # Interface Settings / Interface Type alone: this suite watches one
+    # directory through the menu, a Telnet session and FTP at the same time,
+    # and it has never owned that setting.
+    ctx.menu = FilesystemRefreshBrowser(
+        ui_backend.RestBackend(
+            ctx.host,
+            ctx.password or None,
+            ctx.timeout,
+            interface_type=None,
+        ),
+        "Menu",
+        MENU_ENTRY_ROWS,
+        MENU_STATUS_ROW,
+        SCREEN_WIDTH,
+    )
     ctx.menu.go_to_directory(f"Temp/{ctx.test_dir}")
 
-    ctx.telnet = TelnetBrowser(ctx.host, ctx.password, ctx.timeout)
+    ctx.telnet = FilesystemRefreshBrowser(
+        ui_backend.TelnetBackend(
+            ctx.host,
+            23,
+            ctx.password,
+            ctx.timeout,
+            width=TELNET_WIDTH,
+            height=TELNET_HEIGHT,
+        ),
+        "Telnet",
+        TELNET_ENTRY_ROWS,
+        TELNET_STATUS_ROW,
+        TELNET_WIDTH,
+    )
     ctx.telnet.go_to_directory(f"Temp/{ctx.test_dir}")
 
     ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)

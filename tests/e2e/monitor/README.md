@@ -38,7 +38,7 @@ confusing failures scattered across every suite built on it.
 ## Run
 
 ```bash
-./run-e2e-tests -H u64 -s machine-code-monitor
+./run-tests -H u64 -s machine-code-monitor
 ```
 
 Optional environment variables:

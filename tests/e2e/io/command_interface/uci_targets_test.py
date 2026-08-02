@@ -51,9 +51,10 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional, Tuple
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+import ftp as ftp_lib
 from report import (
     FAIL, Failure, OK, SKIP, check, detail, format_exception, section, suite_fail, suite_ok, warn)
 
@@ -306,22 +307,15 @@ class FtpFixture:
         self.created: List[str] = []
 
     def _open(self) -> ftplib.FTP:
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        # Any user name is accepted; the password is the device's network password.
-        ftp.login("user", self.password)
-        return ftp
+        return ftp_lib.connect(self.host, self.password, self.timeout)
 
     def _close(self, ftp: ftplib.FTP) -> None:
-        try:
-            ftp.quit()
-        except Exception:
-            ftp.close()
+        ftp_lib.close(ftp)
 
     def upload(self, path: str, data: bytes) -> None:
         ftp = self._open()
         try:
-            ftp.storbinary(f"STOR {path}", io.BytesIO(data))
+            ftp_lib.store(ftp, path, data)
             self.created.append(path)
         except Exception as exc:
             raise Failure(f"FTP upload of {path!r} failed: {exc}") from exc

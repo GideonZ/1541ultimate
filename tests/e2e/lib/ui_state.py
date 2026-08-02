@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # E2E helper: assert and restore the device's known-good menu UI state.
 
-"""Known-good UI state for the menu, used by run-e2e-tests as a suite fixture.
+"""Known-good UI state for the menu, used by run-tests as a suite fixture.
 
 The suites share one device and the firmware keeps its UI object stack, browser
 location and cursor position across them, so a suite that navigates away hands
@@ -308,7 +308,10 @@ def main() -> int:
     parser.add_argument("-H", "--host", required=True)
     parser.add_argument("-p", "--password", default=None)
     parser.add_argument("-t", "--timeout", type=float, default=10.0)
-    parser.add_argument("--mode", choices=("verify", "ensure"), required=True)
+    # Named --action, not --mode: every suite uses --mode for the UI transport
+    # (telnet/freeze/overlay), and one flag name meaning two unrelated things
+    # across the same test tree is a trap for anyone reading a command line.
+    parser.add_argument("--action", choices=("verify", "ensure"), required=True)
     parser.add_argument("--label", default="", help="suite name, used in messages")
     args = parser.parse_args()
 
@@ -316,7 +319,7 @@ def main() -> int:
     who = f" after {args.label}" if args.label else ""
 
     try:
-        if args.mode == "verify":
+        if args.action == "verify":
             problem = verify(device)
             if problem:
                 print(f"UI state dirty{who}: {problem}")

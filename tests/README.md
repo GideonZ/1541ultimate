@@ -1,17 +1,30 @@
 # Tests
 
-This tree contains tests that exercise a built firmware image on real hardware.
-They complement the fast host-side unit tests kept next to their owning code,
-such as `software/api/tests/`, `software/filemanager/tests/`, and
-`software/io/usb/tests/`.
+Tests that exercise a built firmware image on real hardware. Fast host-side
+unit tests live next to their owning code, such as `software/api/tests/`,
+`software/filemanager/tests/` and `software/io/usb/tests/`.
 
-| Suite | Purpose |
+| Directory | Purpose |
 | --- | --- |
-| [E2E](e2e/) | Deterministic functional and regression checks across complete device workflows. These are the hardware release gate. |
-| [Soak and stress](soak/) | Time- and load-based checks for leaks, exhaustion, races, and transport degradation. These are diagnostic endurance tests, not the E2E gate. |
+| [`e2e/`](e2e/) | Deterministic functional and regression checks across complete device workflows. The hardware release gate. |
+| [`perf/`](perf/) | Timing and throughput benchmarks that measure a number rather than assert a pass/fail outcome. Not the gate. |
+| [`soak/`](soak/) | Time- and load-based checks for leaks, exhaustion, races and transport degradation. Not the gate. |
+| [`lib/`](lib/) | Support code shared by all three categories. Not a suite. |
 
-Put a test in the narrowest matching suite. Keep isolated logic tests beside
-the production component; use E2E only when the behavior requires a real
-device or crosses subsystem boundaries, and use soak/stress when duration or
-repetition is essential to the result. Each linked README contains the
-authoritative running and extension guidance for that suite.
+`./run-tests -H <host>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
+to run more, and `-m` to repeat the E2E suites in more than one UI profile:
+`./run-tests --all -m all` runs everything. See `./run-tests --help`.
+
+## Rules
+
+- Put a test in the narrowest matching category. Keep isolated logic tests
+  beside the production component. Use `e2e/` only when the behaviour requires
+  a real device or crosses subsystem boundaries, `soak/` when duration or
+  repetition is essential to the result, and `perf/` when the result is a
+  measurement rather than a verdict.
+- Everything under `tests/` is Python. Do not add shell scripts.
+- Report through `tests/lib/report.py`. Do not format result lines by hand.
+- Shared support code goes in `lib/` only once a second category needs it.
+  Until then it belongs with the category that uses it.
+
+Each linked README is authoritative for running and extending that category.

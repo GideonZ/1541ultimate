@@ -33,8 +33,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# tests/e2e/lib holds the reporting rules every suite shares.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
 from report import detail, suite_fail, suite_ok, warn
 

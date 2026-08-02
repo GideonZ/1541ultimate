@@ -52,9 +52,9 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# tests/e2e/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
-from report import (  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, warn)
 

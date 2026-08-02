@@ -39,9 +39,10 @@ ISSUE_717_BASIC = '''10 open 1,4
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
-# tests/e2e/lib holds the reporting rules every suite shares.
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
-from report import (  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section, warn)
 
 try:
@@ -308,23 +309,12 @@ class FtpInspector:
         self.password = password
         self.timeout = timeout
 
-    def _open(self):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        ftp.login(self.user, self.password)
-        return ftp
+    def _session(self):
+        return ftp_lib.session(self.host, self.password, self.timeout, user=self.user)
 
     def list_dir(self, directory):
-        ftp = self._open()
-        try:
-            entries = []
-            ftp.retrlines(f"LIST {directory}", entries.append)
-            return entries
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.listing(ftp, directory)
 
     def printer_root(self):
         """Use the first mounted USB volume; Temp is the last resort."""
@@ -335,38 +325,19 @@ class FtpInspector:
         return "/Temp"
 
     def file_size(self, path):
-        ftp = self._open()
-        try:
-            return ftp.size(path)
-        except ftplib.Error:
-            return None
-        finally:
+        with self._session() as ftp:
             try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                return ftp.size(path)
+            except ftplib.Error:
+                return None
 
     def download(self, path):
-        ftp = self._open()
-        try:
-            buf = io.BytesIO()
-            ftp.retrbinary(f"RETR {path}", buf.write)
-            return buf.getvalue()
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.retrieve(ftp, path)
 
     def upload_bytes(self, path, data):
-        ftp = self._open()
-        try:
-            ftp.storbinary(f"STOR {path}", io.BytesIO(data))
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            ftp_lib.store(ftp, path, data)
 
     def ensure_directory(self, directory):
         """Create `directory` (and its parents) if it doesn't already exist.
@@ -374,21 +345,11 @@ class FtpInspector:
         Output file pointed at one silently fails to save anything."""
         if directory in ("", "/"):
             return
-        ftp = self._open()
-        try:
-            parts = [p for p in directory.split("/") if p]
+        with self._session() as ftp:
             path = ""
-            for part in parts:
+            for part in [p for p in directory.split("/") if p]:
                 path += "/" + part
-                try:
-                    ftp.mkd(path)
-                except ftplib.error_perm:
-                    pass  # already exists
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                ftp_lib.make_dir(ftp, path)
 
 
 def assemble_prg(asm_path, assembler):

@@ -249,11 +249,10 @@ static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
     if (st->hr > 23)
         st->hr = 23;
 
-    char buffer[64];
-    char *unified = inf->generate_fat_name(buffer, 64);
+    char buffer[VFS_NAME_MAX];
+    char *unified = inf->generate_fat_name(buffer, sizeof(buffer));
     strncpy(st->name, unified, sizeof(st->name) - 1);
     st->name[sizeof(st->name) - 1] = 0; // ensure NUL-termination (strncpy may not)
-    // > 31 is not possible
     return 0;
 }
 
@@ -266,7 +265,9 @@ int  vfs_stat_dirent(vfs_dirent_t *ent, vfs_stat_t *st)
 int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
     dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    FileInfo localInfo(32);
+    // Sized like the listing path, so SIZE and MDTM report the same name a
+    // listing does.
+    FileInfo localInfo(VFS_NAME_MAX);
     if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK) {
         return vfs_stat_impl(&localInfo, st);
     }

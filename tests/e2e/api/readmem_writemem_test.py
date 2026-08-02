@@ -12,9 +12,9 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional, Set, Tuple
 
-# tests/e2e/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 from report import (
     FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
     suite_ok, warn)
