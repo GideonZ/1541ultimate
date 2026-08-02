@@ -326,6 +326,15 @@ class Machine:
             self.session.tap_keyboard(inputs)
         time.sleep(settle)
 
+    def wait_menu_closed(self, timeout: float = 5.0) -> bool:
+        """Wait for the on-device menu to be gone, so the C64 has its keyboard."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.session.menu_screen_unavailable():
+                return True
+            time.sleep(0.2)
+        return False
+
     def type_basic_line(self, text: str) -> None:
         """Type a direct-mode line, making sure every character really landed.
 
@@ -335,8 +344,13 @@ class Machine:
         """
         for attempt in range(5):
             # The menu disables the C64 keyboard matrix while it is up and only
-            # re-enables it after the browser task has fully unwound, so give
-            # the machine its keyboard back before typing.
+            # re-enables it after the browser task has fully unwound, so wait
+            # for it to be gone and give the machine its keyboard back before
+            # typing. Without the wait, an action that hands control back by
+            # closing the menu can be followed by typing into a machine whose
+            # keyboard is still disabled, which produces no characters at all.
+            if not self.wait_menu_closed():
+                continue
             try:
                 self.session.release_all_input()
             except Failure:
@@ -351,7 +365,11 @@ class Machine:
             # Wipe whatever did land and try again.
             for _ in range(len(text) + 2):
                 self.tap(["inst_del"], 0.06)
-        raise Failure(f"could not type {text!r} on the C64:\n{self.c64_screen()}")
+        still_open = not self.session.menu_screen_unavailable()
+        raise Failure(
+            f"could not type {text!r} on the C64"
+            f"{' (the menu never closed, so the keyboard stayed disabled)' if still_open else ''}:"
+            f"\n{self.c64_screen()}")
 
     # ---- Browser navigation ---------------------------------------------
     def close_menu(self) -> None:

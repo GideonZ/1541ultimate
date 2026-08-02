@@ -632,8 +632,15 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
         ensure_view(session, "HEX ")
         before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
         if before != sentinel:
+            # The sentinel is known to be in memory: wait_for_rest_byte above
+            # would have failed otherwise. Report what REST sees now as well,
+            # so the message says whether memory changed under the test or the
+            # monitor's view simply did not follow it.
+            rest_now = read_rest_memory(rest_host, 0x2000, 1)[0]
             raise Failure(
-                f"G precondition failed for ${value:02X}: expected ${sentinel:02X} at $2000, got ${before:02X}"
+                f"G precondition failed for ${value:02X}: expected ${sentinel:02X} at $2000, "
+                f"monitor view shows ${before:02X}, REST reads ${rest_now:02X} "
+                f"({'monitor view is stale' if rest_now == sentinel else 'memory changed'})"
             )
 
         session.goto_run("0810")

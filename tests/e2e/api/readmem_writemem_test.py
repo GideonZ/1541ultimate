@@ -265,7 +265,7 @@ def compare(
 ) -> bool:
     ram_mismatches: List[int] = []
     color_mismatches: List[int] = []
-    screen_mismatches = 0
+    screen_mismatches: List[int] = []
     ignored_noise = 0
     ignored_rom = 0
 
@@ -276,7 +276,7 @@ def compare(
         if expected[addr] == actual[addr]:
             continue
         if cls == "screen":
-            screen_mismatches += 1
+            screen_mismatches.append(addr)
             continue
         if cls == "rom" and skip_rom:
             ignored_rom += 1
@@ -312,7 +312,7 @@ def compare(
     if skip_rom:
         detail(f"[{label}] ignored ROM mismatches (writes to real ROM are no-ops): {ignored_rom}")
 
-    detail(f"[{label}] screen ($0400-$07FF) mismatches: {screen_mismatches} "
+    detail(f"[{label}] screen ($0400-$07FF) mismatches: {len(screen_mismatches)} "
           f"({'expected, menu owns this range while frozen' if allow_screen_mismatch else 'expected 0 in same-mode round trip'})")
     detail(f"[{label}] ignored known-live-noise mismatches: {ignored_noise}")
     detail(f"[{label}] color RAM (low nibble) mismatches: {len(color_mismatches)}")
@@ -322,6 +322,22 @@ def compare(
     if not allow_screen_mismatch and screen_mismatches:
         ok = False
         detail(f"[{label}] UNEXPECTED: screen mismatched but this comparison stays within one mode")
+        # Report what the screen actually held, not just how much of it differed:
+        # a contiguous run points at a transfer that did not land, a scattered
+        # one at something writing the range, and the read values name the
+        # writer.
+        detail(f"[{label}] screen mismatch ranges:")
+        for line in summarize_ranges(screen_mismatches):
+            detail(line)
+        seen: Dict[int, int] = {}
+        for addr in screen_mismatches:
+            seen[actual[addr]] = seen.get(actual[addr], 0) + 1
+        common = sorted(seen.items(), key=lambda kv: -kv[1])[:4]
+        detail(f"[{label}] most common values read back: "
+               + ", ".join(f"${v:02X} x{n}" for v, n in common))
+        sample = ", ".join(f"${a:04X} wrote ${expected[a]:02X} read ${actual[a]:02X}"
+                           for a in screen_mismatches[:6])
+        detail(f"[{label}] first mismatches: {sample}")
 
     if ram_mismatches:
         detail(f"[{label}] RAM mismatch ranges:")
@@ -362,12 +378,17 @@ def run_selfcheck(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during self-check read/write")
 
-    # While frozen, the menu continuously redraws $0400-$07FF for its own display
-    # (even within a single session), so screen RAM is excluded there too; the
-    # Overlay UI never touches that range, so it is expected to round-trip.
-    allow_screen_mismatch = interface == INTERFACE_FREEZE
+    # The on-device browser repaints its entry rows into the C64 screen while
+    # the menu is open, on its own drive-status refresh rather than in response
+    # to a keypress. Measured during a failing Overlay round trip: the read-back
+    # of $0400-$07FF held the browser listing from $0450 to $07DE, which is row 2
+    # onward, while rows 0 and 1 still held the written pattern. That is true in
+    # Overlay as well as Freeze, so the screen range is not comparable while the
+    # menu is open in either mode. run_screen_round_trip below asserts it with
+    # the menu closed, where nothing else draws.
+    allow_screen_mismatch = True
     section(f"{label}: write and read both happen in {interface} "
-          f"({'screen RAM excluded, menu redraws it continuously' if allow_screen_mismatch else 'even screen RAM must round-trip'})")
+          f"(screen RAM excluded, the menu redraws its entry rows while open)")
     # Freeze already halts the CPU. Overlay normally keeps it running (verified by
     # the live-noise probe), so pause it explicitly around this multi-request
     # transaction. Otherwise the CPU can legitimately mutate RAM between the
@@ -378,6 +399,41 @@ def run_selfcheck(
     with check(f"close menu ({interface})"):
         session.set_menu_open(False)
     return ok
+
+
+def run_screen_round_trip(session: RestSession, interface: str, xor_value: int) -> bool:
+    """Screen RAM must round-trip exactly while no menu is drawing over it.
+
+    This is the assertion run_selfcheck cannot make with the menu open. The menu
+    is closed here, so $0400-$07FF belongs to the C64 alone and an exact match is
+    the right expectation over the whole range.
+    """
+    label = f"screen-round-trip-{interface.lower().replace(' ', '-')}"
+    with check(f"close menu for the screen round trip ({interface})"):
+        session.set_menu_open(False)
+    with check(f"pause C64 for the screen round trip ({interface})"):
+        session.pause()
+    lo, hi = SCREEN_RANGE
+    pattern = make_pattern(xor_value)
+    try:
+        with check(f"write and read back $0400-$07FF ({interface})"):
+            session.writemem(lo, pattern[lo:hi])
+            actual = session.readmem(lo, hi - lo)
+    finally:
+        with check(f"resume C64 after the screen round trip ({interface})"):
+            session.resume()
+
+    section(f"{label}: screen RAM round-trips exactly with no menu open")
+    mismatches = [a for a in range(lo, hi) if pattern[a] != actual[a - lo]]
+    detail(f"[{label}] screen ($0400-$07FF) mismatches: {len(mismatches)} (expected 0)")
+    if mismatches:
+        detail(f"[{label}] mismatch ranges:")
+        for line in summarize_ranges(mismatches):
+            detail(line)
+        sample = ", ".join(f"${a:04X} wrote ${pattern[a]:02X} read ${actual[a - lo]:02X}"
+                           for a in mismatches[:6])
+        detail(f"[{label}] first mismatches: {sample}")
+    return not mismatches
 
 
 def run_cross_mode(
@@ -440,11 +496,13 @@ def run_reset(session: RestSession) -> None:
 
 
 FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
-OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
+OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
+                           "overlay-to-freeze", "freeze-to-overlay"]
 
 
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
-    all_tests = ["selfcheck-freeze", "selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
+    all_tests = ["selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+                 "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
         return all_tests
     expanded: List[str] = []
@@ -477,7 +535,8 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "selfcheck-freeze", "selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"),
+        choices=("all", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+                 "overlay-to-freeze", "freeze-to-overlay"),
     )
     parser.add_argument(
         "--keep-config",
@@ -548,6 +607,9 @@ def main() -> int:
             )
         if "selfcheck-overlay" in tests:
             results["selfcheck-overlay"] = run_selfcheck(session, INTERFACE_OVERLAY, 0x66, noise_addrs)
+        if "screen-round-trip" in tests:
+            results["screen-round-trip"] = run_screen_round_trip(
+                session, INTERFACE_OVERLAY, 0x3C)
         if "overlay-to-freeze" in tests:
             results["overlay-to-freeze"] = run_cross_mode(session, INTERFACE_OVERLAY, INTERFACE_FREEZE, 0x55, noise_addrs)
         if "freeze-to-overlay" in tests:
