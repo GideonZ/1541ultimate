@@ -31,6 +31,23 @@ TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 Response = Tuple[int, Dict[str, str], bytes]
 
 
+def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
+    """A single-file multipart/form-data body, and the Content-Type for it.
+
+    The device's upload endpoints (machine:writemem, the runners, drive images)
+    take a file part rather than a raw body.
+    """
+    boundary = "----ultimatetestsuite0123456789"
+    body = b"".join((
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'.encode(),
+        b"Content-Type: application/octet-stream\r\n\r\n",
+        payload,
+        f"\r\n--{boundary}--\r\n".encode(),
+    ))
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
 def header_value(headers: Dict[str, str], name: str) -> str:
     """Look a header up without depending on the case the device sent."""
     lowered = name.lower()

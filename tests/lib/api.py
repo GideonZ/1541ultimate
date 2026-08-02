@@ -23,12 +23,15 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, Tuple
 
 from report import Failure
-from rest import DEFAULT_TIMEOUT, RestClient, Response
+from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
 DRIVE_SLOTS = ("a", "b")
 MAX_ADDRESS = 0xFFFF
 MAX_READ_LENGTH = 65536
 MAX_INPUT_EVENTS = 64
+# PUT /v1/machine:writemem takes at most this many bytes as a hex string;
+# anything longer has to go through the POST upload form.
+MAX_WRITEMEM_HEX_BYTES = 128
 MAX_KEYBOARD_INPUTS = 8
 D64_TRACKS = (35, 41)
 DNP_TRACKS = (1, 255)
@@ -133,14 +136,31 @@ class MachineApi:
     def writemem(self, address: int, data: bytes, idempotent: bool = False) -> None:
         """Write `data` at `address`.
 
+        The API offers two forms and they are not interchangeable: PUT carries
+        the bytes as a hex query string and takes at most
+        MAX_WRITEMEM_HEX_BYTES, while POST uploads them as a file part. The
+        right one is chosen from the length here, because a PUT that exceeds
+        the limit does not come back as an error: the request simply never
+        completes and the caller waits out its whole timeout.
+
         `idempotent` opts into the transport retry, for a write that applies
         the same state however many times it arrives. See rest.RestClient.
         """
-        code, _, body = self._rest.request(
-            "PUT", "/v1/machine:writemem", idempotent=idempotent,
-            params={"address": _hex_address(address), "data": data.hex()})
+        if not data:
+            return
+        if len(data) <= MAX_WRITEMEM_HEX_BYTES:
+            code, _, body = self._rest.request(
+                "PUT", "/v1/machine:writemem", idempotent=idempotent,
+                params={"address": _hex_address(address), "data": data.hex()})
+        else:
+            payload, content_type = multipart_body("file", "data.bin", data)
+            code, _, body = self._rest.request(
+                "POST", "/v1/machine:writemem", idempotent=idempotent,
+                params={"address": _hex_address(address)}, body=payload,
+                headers={"Content-Type": content_type})
         if code != 200:
-            raise Failure(f"writemem ${address:04X} returned HTTP {code}: {body[:160]!r}")
+            raise Failure(f"writemem ${address:04X} ({len(data)} bytes) returned "
+                          f"HTTP {code}: {body[:160]!r}")
 
     def menu_screen(self) -> Optional[bytes]:
         """The rendered menu screen, or None when no menu is open (HTTP 404)."""
