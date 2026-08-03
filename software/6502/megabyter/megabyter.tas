@@ -1,0 +1,746 @@
+;=============================================================================
+;
+; MEGABYTER 256-BANK TEST CARTRIDGE
+;
+; Target hardware : Protovision Megabyter cartridge (256 x 8 KiB ROM banks)
+; Assembler       : 64tass (Turbo Assembler Macro)
+; Output          : flat 2,097,152 byte ROM image (256 x $2000), later wrapped
+;                    into a Megabyter .crt by make_crt.py
+;
+; Purpose: manufacturing / bring-up self test.
+;   1. Bring the C64 to a known state and run standard KERNAL init.
+;   2. Copy the bank-switch test routine into RAM (it must keep running
+;      while the cartridge ROM window underneath it is being swapped).
+;   3. Verify the Ultimate Command Interface (UCI) is invisible, unlock it,
+;      verify it becomes visible.
+;   4. Walk all 256 Megabyter banks, verifying a per-bank identification
+;      structure at a fixed offset in every bank.
+;   5. Signal PASS (green border, $D7FF=$00) or FAIL (red border,
+;      $D7FF=$01) and halt.
+;
+;=============================================================================
+
+; -----------------------------------------------------------------------
+; Megabyter cartridge hardware registers
+; -----------------------------------------------------------------------
+; $DE00 : bank-select register. Writing $00-$FF selects one of the 256
+;         8 KiB ROM banks, which is then mapped into the C64 at $8000-$9FFF.
+; $DE02 : control register. Only bits 1:0 are hardware-connected.
+;           bit 1 -> /EXROM   0 = /EXROM active   1 = /EXROM inactive
+;           bit 0 -> /GAME    (through an inverter) 1 = /GAME active
+;                                                    0 = /GAME inactive
+;         All other bits must be preserved/cleared explicitly; this cart
+;         always writes a full, known byte, so "preserve" reduces to
+;         "always write $00" here (see CTRL_8K_ROM_MODE below).
+;
+; 8 KiB ROM mapping: /EXROM active (0) + /GAME inactive (1) is the
+; standard C64 "8K game" configuration: ROML is mapped at $8000-$9FFF and
+; nothing is mapped at $A000-$BFFF. Both control bits are 0 for this
+; state (0 -> EXROM active, 0 -> GAME inactive), which is also the
+; documented Megabyter power-on default, so CTRL_8K_ROM_MODE = $00.
+; -----------------------------------------------------------------------
+MB_BANK_SELECT          = $DE00
+MB_CONTROL              = $DE02
+CTRL_8K_ROM_MODE        = $00          ; EXROM active, GAME inactive -> 8K ROM mode
+
+; -----------------------------------------------------------------------
+; C64 processor port (bank-switches BASIC/KERNAL ROM and I/O, NOT the
+; cartridge - the cartridge ROM window is controlled purely by MB_CONTROL
+; above). We need I/O and KERNAL ROM visible to do the KERNAL init calls
+; and to reach $DE00/$DE02/$D0xx/$DF1x.
+; -----------------------------------------------------------------------
+PROC_PORT_DDR           = $00
+PROC_PORT_DATA          = $01
+PROC_PORT_DDR_DEFAULT   = $2F          ; standard power-up direction register
+PROC_PORT_IO_KRNL_BASIC = $37          ; LORAM=1,HIRAM=1,CHAREN=1: BASIC+KERNAL+I/O visible
+
+; -----------------------------------------------------------------------
+; VIC-II / diagnostic hardware
+; -----------------------------------------------------------------------
+BORDER_COLOR            = $D020
+COLOR_GREEN             = $05
+COLOR_RED               = $02
+
+DEBUG_REG               = $D7FF
+RESULT_PASS             = $00
+RESULT_FAIL             = $01
+
+; -----------------------------------------------------------------------
+; Ultimate Command Interface (UCI) unlock
+; -----------------------------------------------------------------------
+UCI_UNLOCK_KEY1_REG     = $D038
+UCI_UNLOCK_KEY1_VAL     = $AB
+UCI_UNLOCK_KEY2_REG     = $D036
+UCI_UNLOCK_KEY2_VAL     = $CD
+UCI_ID_REG              = $DF1D        ; readable once unlocked ($DF1B-$DF1F range)
+UCI_ID_VALUE            = $C9
+
+; -----------------------------------------------------------------------
+; Documented KERNAL jump-table entry points (stable across KERNAL
+; revisions - never call the underlying raw addresses directly).
+; Required calling order after SEI/stack init, before CLI:
+;   IOINIT -> RAMTAS -> RESTOR -> CINT
+; (this is the same order the KERNAL's own RESET routine uses)
+; -----------------------------------------------------------------------
+KERNAL_CINT             = $FF81        ; init screen editor + VIC-II
+KERNAL_IOINIT           = $FF84        ; init CIA I/O chips / timers
+KERNAL_RAMTAS           = $FF87        ; RAM test, init memory pointers
+KERNAL_RESTOR           = $FF8A        ; restore default KERNAL indirect vectors
+KERNAL_CHROUT           = $FFD2        ; output one character
+
+; -----------------------------------------------------------------------
+; Zero-page scratch. $FB-$FE are not used by BASIC or the KERNAL (free
+; user zero page per the standard C64 memory map) and are used here only
+; transiently: first as the ROM->RAM copy pointers (during ROM init,
+; before any bank switching), then reused as the 16-bit checksum
+; accumulator (during the RAM-resident bank test, long after the copy is
+; done). They are always initialized before use.
+; -----------------------------------------------------------------------
+ZP_SRC_LO               = $FB
+ZP_SRC_HI               = $FC
+ZP_DST_LO               = $FD
+ZP_DST_HI               = $FE
+ZP_SUM_LO                = ZP_SRC_LO   ; reused after the copy phase
+ZP_SUM_HI                = ZP_SRC_HI
+
+; -----------------------------------------------------------------------
+; RAM-resident test routine location. $C000-$CFFF is free RAM on a
+; stock C64 regardless of processor-port setting (not shadowed by BASIC
+; or KERNAL ROM, not screen/zero-page/stack/tape-buffer), so it is safe
+; to run code from there while the cartridge ROM window is switched.
+; -----------------------------------------------------------------------
+RAM_TEST_BASE           = $C000
+RAM_SAFE_LIMIT           = $D000       ; exclusive upper bound of the safe RAM area
+
+; -----------------------------------------------------------------------
+; Bank geometry
+;
+; BANK_COUNT and SKIP_UCI_TEST are declared .weak so they can be overridden
+; from the 64tass command line without editing this file, e.g. to build a
+; VICE-testable image (VICE only emulates up to 1 MiB / 128 banks of
+; Megabyter ROM, and has no UCI hardware at all):
+;
+;   64tass -b -X -D BANK_COUNT=128 -D SKIP_UCI_TEST=1 -o megabyter_vice.bin megabyter.tas
+;
+; The bank-test loop below is driven by BANK_COUNT (not a hardcoded 256),
+; so the generated ROM and the runtime test always agree on how many banks
+; actually exist - building a reduced-bank ROM without also overriding
+; BANK_COUNT would otherwise leave the runtime loop trying to select banks
+; that were never generated, and failing for reasons that have nothing to
+; do with the hardware under test.
+; -----------------------------------------------------------------------
+        .weak
+BANK_COUNT               = 256
+SKIP_UCI_TEST             = 0
+        .endweak
+
+BANK_SIZE                = $2000       ; 8 KiB per bank
+ID_OFFSET                = $1FE0       ; fixed offset of the ID structure within every bank
+ID_ADDR                  = $8000 + ID_OFFSET   ; = $9FE0, CPU address once a bank is mapped in
+
+        .cerror BANK_COUNT < 1 || BANK_COUNT > 256, "BANK_COUNT must be between 1 and 256"
+
+; Bank-identification structure (14 bytes, same fixed offset in every bank):
+;   +0..+3  "MBID"                  4-byte fixed signature
+;   +4      bank number
+;   +5      bank number EOR $FF     (bitwise inverse)
+;   +6      bank number EOR $5A     (16-bit derived value, low byte)
+;   +7      (bank number + $3C)     (16-bit derived value, high byte)
+;   +8..+11 4 data bytes: data[i] = bank EOR (i * $11)   for i = 0..3
+;   +12,+13 16-bit checksum (LE): sum with carry of the 12 bytes at +0..+11
+ID_STRUCT_SIZE            = 14
+
+; -----------------------------------------------------------------------
+; Diagnostics / test-stage identifiers
+; -----------------------------------------------------------------------
+STAGE_UCI_PRE             = 2
+STAGE_UCI_UNLOCK          = 3
+STAGE_BANKTEST            = 4
+STAGE_DONE                = 5
+
+; Six distinct internal failure subcodes, one per required failure class
+FAIL_UCI_VISIBLE_EARLY    = 1          ; UCI unexpectedly visible before unlock
+FAIL_UCI_NOT_VISIBLE      = 2          ; UCI not visible after unlock
+FAIL_BANK_SIGNATURE       = 3          ; bank signature mismatch
+FAIL_BANK_NUMBER          = 4          ; bank-number mismatch
+FAIL_BANK_INVERSE         = 5          ; inverse-bank-number mismatch
+FAIL_BANK_DERIVED_CKSUM   = 6          ; derived value / checksum mismatch
+
+;=============================================================================
+; Compile-time helper functions: the exact formulas used to build every
+; bank's ID structure at assembly time. The RAM-resident verification code
+; below recomputes these same formulas at runtime from the bank number it
+; just selected, and compares the result byte-for-byte against what was
+; actually read back from ROM.
+;=============================================================================
+id_inv          .function b
+                .endf b ^ $FF
+
+id_der_a        .function b
+                .endf b ^ $5A
+
+id_der_b        .function b
+                .endf (b + $3C) & $FF
+
+id_data         .function b, i
+                .endf b ^ (i * $11)
+
+id_cksum        .function b
+                .endf ($4D + $42 + $49 + $44 + b + id_inv(b) + id_der_a(b) + id_der_b(b) + id_data(b,0) + id_data(b,1) + id_data(b,2) + id_data(b,3)) & $FFFF
+
+;=============================================================================
+; Macro: emit the 14-byte bank-identification structure for bank number \1.
+; Used identically for bank 0 and for every generated bank, so the
+; structure is guaranteed to have the same layout everywhere it is used.
+;=============================================================================
+bank_id_struct  .macro bnk
+                .text "MBID"
+                .byte \bnk
+                .byte id_inv(\bnk)
+                .byte id_der_a(\bnk)
+                .byte id_der_b(\bnk)
+                .byte id_data(\bnk,0), id_data(\bnk,1), id_data(\bnk,2), id_data(\bnk,3)
+                .word id_cksum(\bnk)
+                .endm
+
+;=============================================================================
+; Macro: fill \1 bytes with a deterministic, non-constant, bank-specific
+; pattern (never plain $00 or $FF). \2 = bank number, \3 = region seed
+; (used only to make the "before" and "after" filler regions differ).
+;=============================================================================
+bank_filler     .macro count, bnk, seed
+                .fill \count, [ (\bnk ^ ($11 + \seed)) & $FF, (\bnk ^ ($22 + \seed)) & $FF, (\bnk ^ ($33 + \seed)) & $FF, (\bnk ^ ($44 + \seed)) & $FF ]
+                .endm
+
+;=============================================================================
+; BANK 0 : cartridge startup, self test driver, ID structure
+;=============================================================================
+                *= $8000
+
+; --- standard $8000 cartridge header -----------------------------------
+                .word start                    ; cold-start vector
+                .word nmi_start                ; NMI (RESTORE key) vector
+                .byte "C"|$80, "B"|$80, "M"|$80, "8", "0"   ; "CBM80" autostart signature
+
+                .text 0, "MEGABYTER 256-BANK TEST CARTRIDGE", 0
+
+;-----------------------------------------------------------------------------
+; start: cartridge cold-start entry
+;-----------------------------------------------------------------------------
+start:
+                sei                             ; disable maskable interrupts for the whole test
+                cld                             ; known, documented decimal-mode state
+                ldx #$FF
+                txs                             ; known stack pointer
+
+                lda #CTRL_8K_ROM_MODE
+                sta MB_CONTROL                  ; establish/confirm 8K ROM mapping;
+                                                 ; code keeps executing from the same
+                                                 ; $8000-$9FFF window, so the cart is
+                                                 ; never banked out from under itself
+
+                lda #PROC_PORT_IO_KRNL_BASIC
+                sta PROC_PORT_DATA              ; KERNAL ROM + I/O visible before any KERNAL call
+                lda #PROC_PORT_DDR_DEFAULT
+                sta PROC_PORT_DDR
+
+                jsr KERNAL_IOINIT               ; 1: I/O chips / CIA timers
+                jsr KERNAL_RAMTAS               ; 2: RAM test, memory pointers
+                jsr KERNAL_RESTOR               ; 3: default KERNAL indirect vectors
+                jsr KERNAL_CINT                 ; 4: screen editor + VIC-II, clears screen
+
+                lda #<test_msg
+                ldy #>test_msg
+                jsr print_string                ; secondary: optional status message
+
+; --- copy the RAM-resident test routine into RAM ---------------------------
+; Generic page-based copy: works for any routine size up to RAM_COPY_PAGES
+; whole 256-byte pages, using standard (zp),Y indirect-indexed addressing.
+                lda #<ram_test_rom_src
+                sta ZP_SRC_LO
+                lda #>ram_test_rom_src
+                sta ZP_SRC_HI
+                lda #<RAM_TEST_BASE
+                sta ZP_DST_LO
+                lda #>RAM_TEST_BASE
+                sta ZP_DST_HI
+
+                ldx #RAM_COPY_PAGES
+copy_page:
+                ldy #$00
+copy_byte:
+                lda (ZP_SRC_LO),y
+                sta (ZP_DST_LO),y
+                iny
+                bne copy_byte
+                inc ZP_SRC_HI
+                inc ZP_DST_HI
+                dex
+                bne copy_page
+
+                jmp RAM_TEST_BASE               ; enter RAM; execution never returns to ROM
+
+;-----------------------------------------------------------------------------
+; print_string: prints a null-terminated string via KERNAL CHROUT.
+; A = <addr, Y = >addr on entry.
+;-----------------------------------------------------------------------------
+print_string    .proc
+                sta ZP_SRC_LO
+                sty ZP_SRC_HI
+                ldy #$00
+-               lda (ZP_SRC_LO),y
+                beq +
+                jsr KERNAL_CHROUT
+                iny
+                bne -
++               rts
+                .pend
+
+test_msg:       .text "MEGABYTER SELF TEST RUNNING", 13, 0
+
+;-----------------------------------------------------------------------------
+; nmi_start: RESTORE-key / NMI handler while bank 0 (with this valid
+; header) is mapped in. Just acknowledges and returns; the test never
+; re-enables interrupts, so this only matters for an NMI arriving during
+; the short ROM-resident init above.
+;-----------------------------------------------------------------------------
+nmi_start:
+                pla
+                tay
+                pla
+                tax
+                pla
+                rti
+
+;=============================================================================
+; RAM-resident test routine source. Assembled with .logical so every label
+; inside resolves to its RAM execution address ($C000+), while the actual
+; bytes are still emitted into bank 0's ROM image at the current (real)
+; position - ram_test_rom_src captures that real ROM address for the copy
+; loop above.
+;=============================================================================
+ram_test_rom_src:
+                .logical RAM_TEST_BASE
+
+ram_test_start:
+                .if SKIP_UCI_TEST == 0
+; ---- Step 4: verify the UCI is NOT visible before unlocking ---------------
+                lda #STAGE_UCI_PRE
+                sta DIAG_STAGE
+                lda #<msg_testing_uci
+                ldy #>msg_testing_uci
+                jsr print_string_ram
+                lda UCI_ID_REG
+                cmp #UCI_ID_VALUE
+                bne uci_pre_ok
+                lda #FAIL_UCI_VISIBLE_EARLY
+                sta DIAG_SUBCODE
+                jmp common_fail
+uci_pre_ok:
+
+; ---- Step 5: UCI unlock sequence (exact order, nothing in between) --------
+                lda #STAGE_UCI_UNLOCK
+                sta DIAG_STAGE
+                lda #UCI_UNLOCK_KEY1_VAL
+                sta UCI_UNLOCK_KEY1_REG
+                lda #UCI_UNLOCK_KEY2_VAL
+                sta UCI_UNLOCK_KEY2_REG
+
+; ---- Step 6: verify the UCI is now visible ---------------------------------
+                lda UCI_ID_REG
+                cmp #UCI_ID_VALUE
+                beq uci_post_ok
+                lda #FAIL_UCI_NOT_VISIBLE
+                sta DIAG_SUBCODE
+                jmp common_fail
+uci_post_ok:
+                .else
+; SKIP_UCI_TEST=1: emulator/test-jig build with no UCI hardware present -
+; the UCI unlock/verify above is skipped entirely rather than hacked around
+; at runtime, so this is a clean, re-buildable, clearly-labelled variant.
+                lda #<msg_uci_skipped
+                ldy #>msg_uci_skipped
+                jsr print_string_ram
+                .fi
+
+; ---- Step 7: walk all BANK_COUNT Megabyter banks ---------------------------
+                lda #STAGE_BANKTEST
+                sta DIAG_STAGE
+                ldx #$00
+bank_loop:
+                stx MB_BANK_SELECT              ; select bank X ($00-$FF)
+                nop                              ; hardware-settling cycle before reading
+                stx DIAG_BANK
+
+                lda #<msg_testing_bank
+                ldy #>msg_testing_bank
+                jsr print_string_ram
+                txa
+                jsr print_hex_byte_ram
+                jsr print_newline_ram
+
+; -- 4-byte fixed signature "MBID" --
+                lda ID_ADDR+0
+                cmp #'M'
+                beq +
+                jmp fail_sig
++               lda ID_ADDR+1
+                cmp #'B'
+                beq +
+                jmp fail_sig
++               lda ID_ADDR+2
+                cmp #'I'
+                beq +
+                jmp fail_sig
++               lda ID_ADDR+3
+                cmp #'D'
+                beq +
+                jmp fail_sig
++
+
+; -- bank number must equal the register value we just wrote (X) --
+                lda ID_ADDR+4
+                sta DIAG_ACTUAL
+                stx DIAG_EXPECTED
+                cpx ID_ADDR+4
+                beq +
+                jmp fail_num
++
+
+; -- inverse bank number --
+                lda ID_ADDR+5
+                sta DIAG_ACTUAL
+                txa
+                eor #$FF
+                sta DIAG_EXPECTED
+                cmp ID_ADDR+5
+                beq +
+                jmp fail_inv
++
+
+; -- 16-bit derived value (low byte: bank EOR $5A) --
+                lda ID_ADDR+6
+                sta DIAG_ACTUAL
+                txa
+                eor #$5A
+                sta DIAG_EXPECTED
+                cmp ID_ADDR+6
+                beq +
+                jmp fail_der
++
+
+; -- 16-bit derived value (high byte: bank + $3C) --
+                lda ID_ADDR+7
+                sta DIAG_ACTUAL
+                txa
+                clc
+                adc #$3C
+                sta DIAG_EXPECTED
+                cmp ID_ADDR+7
+                beq +
+                jmp fail_der
++
+
+; -- 4-byte data block: data[i] = bank EOR (i * $11) --
+                ldy #$00
+data_check:
+                txa
+                eor data_mult_table,y
+                sta DIAG_EXPECTED
+                lda ID_ADDR+8,y
+                sta DIAG_ACTUAL
+                cmp DIAG_EXPECTED
+                beq +
+                jmp fail_der
++               iny
+                cpy #$04
+                bne data_check
+
+; -- 16-bit checksum over the 12 preceding bytes --
+                jsr verify_checksum
+                bcc bank_ok
+                jmp fail_der
+
+bank_ok:
+                inx
+                .if BANK_COUNT == 256
+                beq bank_test_done              ; X wrapped 255->0: all 256 banks verified
+                .else
+                cpx #BANK_COUNT
+                beq bank_test_done
+                .fi
+                jmp bank_loop
+bank_test_done:
+                jmp test_success
+
+fail_sig:
+                lda #FAIL_BANK_SIGNATURE
+                sta DIAG_SUBCODE
+                jmp common_fail
+fail_num:
+                lda #FAIL_BANK_NUMBER
+                sta DIAG_SUBCODE
+                jmp common_fail
+fail_inv:
+                lda #FAIL_BANK_INVERSE
+                sta DIAG_SUBCODE
+                jmp common_fail
+fail_der:
+                lda #FAIL_BANK_DERIVED_CKSUM
+                sta DIAG_SUBCODE
+                jmp common_fail
+
+;-----------------------------------------------------------------------------
+; verify_checksum: sums the 12 bytes at ID_ADDR+0..+11 as a 16-bit value
+; (with carry propagation) and compares against the stored checksum at
+; ID_ADDR+12/+13. Returns carry clear = match, carry set = mismatch.
+; Only touches A and Y, so X (the bank loop counter) is left intact.
+;-----------------------------------------------------------------------------
+verify_checksum .proc
+                lda #$00
+                sta ZP_SUM_LO
+                sta ZP_SUM_HI
+                ldy #$00
+-               clc
+                lda ZP_SUM_LO
+                adc ID_ADDR,y
+                sta ZP_SUM_LO
+                bcc +
+                inc ZP_SUM_HI
++               iny
+                cpy #12
+                bne -
+
+                lda ZP_SUM_LO
+                sta DIAG_EXPECTED
+                cmp ID_ADDR+12
+                bne bad
+                lda ZP_SUM_HI
+                cmp ID_ADDR+13
+                bne bad
+                clc
+                rts
+bad:
+                lda ID_ADDR+12
+                sta DIAG_ACTUAL
+                sec
+                rts
+                .pend
+
+data_mult_table: .byte $00, $11, $22, $33
+
+;-----------------------------------------------------------------------------
+; Screen-output helpers (debug/progress reporting). Screen output is
+; secondary to the border/$D7FF signalling and never replaces it - see
+; test_success/common_fail below, which still do the required writes in
+; the required order regardless of what was printed. Every helper here
+; preserves X, since X is the live bank counter whenever these are called
+; from inside bank_loop.
+;-----------------------------------------------------------------------------
+
+; print_string_ram: A = <addr, Y = >addr of a null-terminated string.
+print_string_ram .proc
+                sta ZP_SUM_LO
+                sty ZP_SUM_HI
+                txa
+                pha
+                ldy #$00
+-               lda (ZP_SUM_LO),y
+                beq +
+                jsr KERNAL_CHROUT
+                iny
+                bne -
++               pla
+                tax
+                rts
+                .pend
+
+; print_hex_byte_ram: A = byte to print as two upper-case hex digits.
+print_hex_byte_ram .proc
+                sta hex_byte_val
+                txa
+                pha
+                lda hex_byte_val
+                lsr
+                lsr
+                lsr
+                lsr
+                tay
+                lda hex_digits,y
+                jsr KERNAL_CHROUT
+                lda hex_byte_val
+                and #$0F
+                tay
+                lda hex_digits,y
+                jsr KERNAL_CHROUT
+                pla
+                tax
+                rts
+hex_byte_val:   .byte 0
+                .pend
+
+; print_newline_ram: prints a carriage return.
+print_newline_ram .proc
+                txa
+                pha
+                lda #13
+                jsr KERNAL_CHROUT
+                pla
+                tax
+                rts
+                .pend
+
+hex_digits:      .text "0123456789ABCDEF"
+
+msg_testing_uci:   .text "TESTING UCI UNLOCK", 13, 0
+msg_uci_skipped:   .text "SKIP_UCI_TEST=1: UCI TEST SKIPPED", 13, 0
+msg_testing_bank:  .text "TESTING BANK $", 0
+
+;-----------------------------------------------------------------------------
+; print_failure_ram: prints a one-line, human-readable description of the
+; failure using the diagnostic fields common_fail's callers already
+; populated (DIAG_BANK/DIAG_SUBCODE/DIAG_EXPECTED/DIAG_ACTUAL), e.g.:
+;   FAIL BANK $05 CODE $04 BAD BANK NUMBER EXP=$05 GOT=$04
+;-----------------------------------------------------------------------------
+print_failure_ram .proc
+                lda #<msg_fail_bank
+                ldy #>msg_fail_bank
+                jsr print_string_ram
+                lda DIAG_BANK
+                jsr print_hex_byte_ram
+
+                lda #<msg_fail_code
+                ldy #>msg_fail_code
+                jsr print_string_ram
+                lda DIAG_SUBCODE
+                jsr print_hex_byte_ram
+
+                lda DIAG_SUBCODE
+                sec
+                sbc #1
+                asl
+                tay
+                lda subcode_name_lo,y
+                sta ZP_SUM_LO
+                lda subcode_name_hi,y
+                sta ZP_SUM_HI
+                lda ZP_SUM_LO
+                ldy ZP_SUM_HI
+                jsr print_string_ram
+
+                lda #<msg_fail_exp
+                ldy #>msg_fail_exp
+                jsr print_string_ram
+                lda DIAG_EXPECTED
+                jsr print_hex_byte_ram
+
+                lda #<msg_fail_got
+                ldy #>msg_fail_got
+                jsr print_string_ram
+                lda DIAG_ACTUAL
+                jsr print_hex_byte_ram
+
+                jsr print_newline_ram
+                rts
+                .pend
+
+msg_fail_bank:   .text "FAIL BANK $", 0
+msg_fail_code:   .text " CODE $", 0
+msg_fail_exp:    .text " EXP=$", 0
+msg_fail_got:    .text " GOT=$", 0
+
+name_uci_early:  .text " UCI VISIBLE BEFORE UNLOCK", 0
+name_uci_miss:   .text " UCI NOT VISIBLE AFTER UNLOCK", 0
+name_bad_sig:    .text " BAD SIGNATURE", 0
+name_bad_num:    .text " BAD BANK NUMBER", 0
+name_bad_inv:    .text " BAD INVERSE", 0
+name_bad_der:    .text " BAD DERIVED/CHECKSUM", 0
+
+; indexed by (DIAG_SUBCODE - 1) * 2 - order must match FAIL_* constants above
+subcode_name_lo: .byte <name_uci_early, <name_uci_miss, <name_bad_sig, <name_bad_num, <name_bad_inv, <name_bad_der
+subcode_name_hi: .byte >name_uci_early, >name_uci_miss, >name_bad_sig, >name_bad_num, >name_bad_inv, >name_bad_der
+
+;-----------------------------------------------------------------------------
+; test_success / common_fail: the two converged, terminal outcomes. Both
+; live entirely in RAM so they remain valid no matter which cartridge
+; bank happens to be selected when they run.
+;-----------------------------------------------------------------------------
+test_success:
+                lda #STAGE_DONE
+                sta DIAG_STAGE
+                lda #<msg_all_passed
+                ldy #>msg_all_passed
+                jsr print_string_ram
+                lda #COLOR_GREEN
+                sta BORDER_COLOR                ; success order: border...
+                lda #RESULT_PASS
+                sta DEBUG_REG                   ; ...then debug register
+success_halt:
+                jmp success_halt
+
+msg_all_passed:  .text "ALL BANKS PASSED", 13, 0
+
+common_fail:
+                jsr print_failure_ram
+                lda #COLOR_RED
+                sta BORDER_COLOR                ; failure order: border...
+                lda #RESULT_FAIL
+                sta DEBUG_REG                   ; ...then debug register
+fail_halt:
+                jmp fail_halt
+
+ram_test_end:
+                .here
+; ram_test_rom_src .. here is real-address space again; ram_test_end is a
+; compile-time constant equal to the RAM address one byte past the routine.
+
+RAM_TEST_SIZE    = ram_test_end - ram_test_start
+RAM_COPY_PAGES    = (RAM_TEST_SIZE + 255) / 256
+
+; Diagnostics block: 5 bytes, placed immediately after the copied routine.
+; Not part of the copy (nothing needs to be pre-initialized there), and not
+; part of the ROM image at all - these are plain RAM addresses.
+DIAG_STAGE        = ram_test_end + 0
+DIAG_BANK         = ram_test_end + 1
+DIAG_EXPECTED     = ram_test_end + 2
+DIAG_ACTUAL       = ram_test_end + 3
+DIAG_SUBCODE      = ram_test_end + 4
+DIAG_SIZE         = 5
+
+; --- compile-time assertions on the RAM-resident routine -------------------
+        .cerror RAM_COPY_PAGES > 255, "RAM test routine needs more than 255 pages (", RAM_COPY_PAGES, "), the page-copy loop's X counter can't hold that"
+        .cerror RAM_TEST_BASE + (RAM_COPY_PAGES * 256) > RAM_SAFE_LIMIT, "RAM test routine copy would overrun safe RAM area ($C000-$CFFF)"
+        .cerror ram_test_end + DIAG_SIZE > RAM_SAFE_LIMIT, "RAM test routine + diagnostics overrun safe RAM area ($C000-$CFFF)"
+        .cerror ram_test_rom_src + (RAM_COPY_PAGES * 256) > $8000 + BANK_SIZE, "RAM test routine source bytes would run past the end of bank 0"
+
+; --- bank 0 ID structure (bank 0 is tested exactly like every other bank) --
+                #bank_filler (ID_OFFSET - (* - $8000)), 0, $00
+id0_marker:
+                #bank_id_struct 0
+        .cerror (id0_marker != ID_ADDR), "bank 0 ID structure is not at the fixed offset"
+        .cerror ((* - id0_marker) != ID_STRUCT_SIZE), "bank 0 ID structure has the wrong size"
+
+                #bank_filler (BANK_SIZE - (* - $8000)), 0, $80
+
+        .cerror (* != $8000 + BANK_SIZE), "bank 0 is not exactly BANK_SIZE bytes"
+
+;=============================================================================
+; BANKS 1-255 : filler + bank-identification structure only.
+; Each bank is compiled with .logical $8000 so its ID structure lands at
+; the same ID_ADDR ($9FE0) as every other bank once mapped in, while the
+; underlying compile offset keeps advancing, producing a contiguous
+; 256 x 8192-byte flat ROM image.
+;=============================================================================
+                .for bnk = 1, bnk < BANK_COUNT, bnk += 1
+                .logical $8000
+                .block
+                #bank_filler ID_OFFSET, bnk, $00
+idn_marker:
+                #bank_id_struct bnk
+        .cerror (idn_marker != ID_ADDR), "bank ID structure is not at the fixed offset"
+        .cerror ((* - idn_marker) != ID_STRUCT_SIZE), "bank ID structure has the wrong size"
+                #bank_filler (BANK_SIZE - ID_OFFSET - ID_STRUCT_SIZE), bnk, $80
+        .cerror (* != $8000 + BANK_SIZE), "generated bank is not exactly BANK_SIZE bytes"
+                .bend
+                .here
+                .next
