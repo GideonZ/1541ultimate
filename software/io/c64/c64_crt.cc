@@ -16,9 +16,6 @@ extern uint8_t _eapi_65_start[768];
 #define CRTCHP_LOAD    0x0C
 #define CRTCHP_SIZE    0x0E
 
-extern uint8_t __cart_rom_start;
-extern uint8_t __cart_rom_limit;
-
 const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     {  0, 0xFF, CART_NORMAL,    "Normal cartridge" },
     {  1, 0xFF, CART_ACTION,    "Action Replay" }, // max 4 banks of 8K
