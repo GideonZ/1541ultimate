@@ -1,0 +1,233 @@
+"""The device's REST API over HTTP.
+
+Every suite that speaks REST to the device goes through this: one place for the
+`X-Password` rule, JSON encoding, and the retry policy.
+
+The retry policy lives in `may_retry`, and nothing outside this module decides
+it. The device serves only a few concurrent HTTP connections, so a request can
+fail while it is busy, and whether it may be repeated depends on one thing:
+whether the device can already have acted on it.
+
+  request never went out   nothing was applied, so any method may be resent.
+  request went out         the device may have acted, so only GET and calls the
+                           caller declares idempotent may be resent.
+  an HTTP status came back That is an answer, error status included, and never
+                           a reason to retry.
+
+This was rediscovered independently in seven suites, each with its own HTTP
+client and each getting it wrong differently: some never retried a POST at all,
+some retried nothing, and one keyed the decision on whether the request carried
+a body rather than on whether it had been sent. `check_transport_usage.py`
+fails the gate if a suite reaches for urllib or http.client directly again.
+
+Two entry points, because the tree uses two HTTP libraries:
+`retrying_urlopen` for urllib, `retrying_http_request` for http.client.
+"""
+
+from __future__ import annotations
+
+import http.client
+import json
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Dict, Optional, Tuple
+
+from report import Failure, format_exception
+
+DEFAULT_TIMEOUT = 10.0
+TRANSPORT_RETRIES = 3
+TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
+
+Response = Tuple[int, Dict[str, str], bytes]
+
+
+def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
+    """Whether a failed attempt may be repeated. The only copy of this rule.
+
+    `request_sent` is what makes the answer knowable: until the request has left
+    the client, the device cannot have acted on it, so repeating it is safe
+    whatever the method. Once it has gone out, repeating it can apply it twice,
+    so only a GET or a call the caller declares idempotent may go again.
+    """
+    if not request_sent:
+        return True
+    return method.upper() == "GET" or idempotent
+
+
+def retrying_urlopen(request: "urllib.request.Request", timeout: float,
+                     idempotent: bool = False):
+    """urlopen under the shared retry policy, for callers not using RestClient.
+
+    urllib reports how far the request got: a failure before any response was
+    seen surfaces as URLError, while a timeout waiting for the response body
+    raises TimeoutError directly.
+
+    Returns the open response, which the caller closes; HTTPError is left to
+    propagate, because an HTTP status is an answer rather than a failure.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(TRANSPORT_RETRIES):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            last_exc = exc
+            sent = not isinstance(exc, urllib.error.URLError)
+            if may_retry(request.get_method(), sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                continue
+            break
+    raise last_exc
+
+
+def retrying_http_request(host: str, method: str, path: str, *,
+                          body: Optional[bytes] = None,
+                          headers: Optional[Dict[str, str]] = None,
+                          timeout: float = DEFAULT_TIMEOUT,
+                          idempotent: bool = False) -> Response:
+    """One http.client request under the shared retry policy.
+
+    http.client does not distinguish how far a request got, so connecting is
+    done as its own step: a failure there cannot have been applied, whatever the
+    request carries. Returns (status, headers, payload), with an HTTP status of
+    any value returned rather than raised.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(TRANSPORT_RETRIES):
+        connection = http.client.HTTPConnection(host, timeout=timeout)
+        sent = False
+        try:
+            connection.connect()
+            sent = True
+            connection.request(method, path, body=body, headers=headers or {})
+            response = connection.getresponse()
+            payload = response.read()
+            return response.status, dict(response.getheaders()), payload
+        except (OSError, http.client.HTTPException) as exc:
+            last_exc = exc
+            if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                continue
+            raise
+        finally:
+            connection.close()
+    raise last_exc
+
+
+def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
+    """A single-file multipart/form-data body, and the Content-Type for it.
+
+    The device's upload endpoints (machine:writemem, the runners, drive images)
+    take a file part rather than a raw body.
+    """
+    boundary = "----ultimatetestsuite0123456789"
+    body = b"".join((
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'.encode(),
+        b"Content-Type: application/octet-stream\r\n\r\n",
+        payload,
+        f"\r\n--{boundary}--\r\n".encode(),
+    ))
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+def header_value(headers: Dict[str, str], name: str) -> str:
+    """Look a header up without depending on the case the device sent."""
+    lowered = name.lower()
+    for key, value in headers.items():
+        if key.lower() == lowered:
+            return value
+    return ""
+
+
+class RestClient:
+    """One device's REST API.
+
+    `request` returns `(status, headers, body)` rather than raising on an HTTP
+    error status, because several suites assert on 403, 404 and 500 as the
+    behaviour under test. It raises `Failure` only when no answer arrived at
+    all.
+    """
+
+    def __init__(self, host: str, password: Optional[str] = None,
+                 timeout: float = DEFAULT_TIMEOUT) -> None:
+        self.host = host
+        self.password = password or ""
+        self.timeout = timeout
+
+    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+        query = "?" + urllib.parse.urlencode(params) if params else ""
+        return f"http://{self.host}{path}{query}"
+
+    def request(self, method: str, path: str,
+                params: Optional[Dict[str, object]] = None,
+                payload: Optional[object] = None,
+                body: Optional[bytes] = None,
+                headers: Optional[Dict[str, str]] = None,
+                use_password: bool = True,
+                idempotent: bool = False,
+                timeout: Optional[float] = None) -> Response:
+        if payload is not None and body is not None:
+            raise Failure("request takes payload or body, not both")
+
+        sent_headers: Dict[str, str] = dict(headers or {})
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            sent_headers.setdefault("Content-Type", "application/json")
+        if self.password and use_password:
+            sent_headers["X-Password"] = self.password
+
+        target = self.url(path, params)
+        request = urllib.request.Request(target, data=body, headers=sent_headers,
+                                         method=method)
+        # `idempotent` lets a caller opt a non-GET call into the same retry,
+        # for a request that applies the same state however many times it
+        # arrives. machine:writemem of a fixed block is the motivating case:
+        # the device can be busy enough running a program to miss a 30 second
+        # window, and rewriting the same bytes is indistinguishable from
+        # writing them once.
+        # Retryability is decided by may_retry, the one copy of that rule.
+        last_exc: Optional[BaseException] = None
+        for attempt in range(TRANSPORT_RETRIES):
+            try:
+                with urllib.request.urlopen(
+                        request, timeout=self.timeout if timeout is None else timeout) as response:
+                    return response.status, dict(response.headers.items()), response.read()
+            except urllib.error.HTTPError as exc:
+                return exc.code, dict(exc.headers.items()), exc.read()
+            except (OSError, TimeoutError, urllib.error.URLError) as exc:
+                last_exc = exc
+                sent = not isinstance(exc, urllib.error.URLError)
+                if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                    continue
+                break
+        raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
+
+    # -- shorthands for the shapes suites actually use --
+
+    def status(self, method: str, path: str, **kwargs) -> int:
+        """Just the status code, for a call made for its effect."""
+        code, _, _ = self.request(method, path, **kwargs)
+        return code
+
+    def json(self, path: str, **kwargs) -> object:
+        """GET and decode a JSON body, failing on a non-200 or unparsable answer."""
+        code, _, body = self.request("GET", path, **kwargs)
+        if code != 200:
+            raise Failure(f"GET {self.url(path)} returned HTTP {code}: {body[:160]!r}")
+        try:
+            return json.loads(body.decode("utf-8", "replace"))
+        except ValueError as exc:
+            raise Failure(f"GET {self.url(path)} returned unparsable JSON: {exc}") from exc
+
+    def expect(self, method: str, path: str, expected: int = 200, **kwargs) -> bytes:
+        """Make a call that has to succeed, returning its body."""
+        code, _, body = self.request(method, path, **kwargs)
+        if code != expected:
+            raise Failure(f"{method} {self.url(path)} returned HTTP {code}, "
+                          f"expected {expected}: {body[:160]!r}")
+        return body

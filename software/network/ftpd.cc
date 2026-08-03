@@ -1,4 +1,5 @@
 #include "ftpd.h"
+#include "socket_keepalive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -265,6 +266,8 @@ int FTPDaemon::listen_task()
         }
 
         ftp_set_control_socket_timeouts(actual_socket);
+        // A vanished client would hold its session slot forever.
+        net_enable_client_keepalive(actual_socket);
 
         // Cap concurrent sessions: refuse politely rather than let abandoned
         // connections accumulate and drain the shared netconn pool.

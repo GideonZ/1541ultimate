@@ -10,11 +10,16 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+from report import Failure, check, check_skip, check_start, format_exception, suite_fail, suite_ok, warn
+from rest import RestClient
 
-CHECK_COUNT = 0
+
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 INPUT_PATH = "/v1/machine:input"
@@ -33,7 +38,8 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_MIN_PRINTABLE_CELLS = 20
 MENU_MAX_DISTINCT_COLOURS = 32
 MENU_MAX_DISTINCT_GLYPHS = 160
-MENU_TOGGLE_SETTLE_SECONDS = 0.25
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
 SOAK_NAVIGATION_INTERVAL_SECONDS = 0.20
@@ -41,64 +47,12 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 SOAK_TOP_LEVEL_SECTION_LIMIT = 64
 
 
-class Failure(RuntimeError):
-    pass
+class RestSession(RestClient):
+    """The device's REST API plus the menu-specific calls this suite adds.
 
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
-
-
-class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
-        self.password = password
-        self.timeout = timeout
-
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = ""
-        if params:
-            query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-        use_password: bool = True,
-    ) -> Tuple[int, Dict[str, str], bytes]:
-        body = None if payload is None else json.dumps(payload).encode("utf-8")
-        headers: Dict[str, str] = {}
-        if self.password and use_password:
-            headers["X-Password"] = self.password
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-
-        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return response.status, dict(response.headers.items()), response.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, dict(exc.headers.items()), exc.read()
-        except (OSError, TimeoutError, urllib.error.URLError) as exc:
-            raise Failure(f"{method} {self.url(path, params)} failed: {format_exception(exc)}") from exc
+    Transport, the X-Password rule and the retry policy come from
+    tests/lib/rest.py; only the menu helpers below are specific to this suite.
+    """
 
     def menu_button(self, label: str) -> None:
         with check(label):
@@ -320,7 +274,8 @@ def run_unavailable(session: RestSession) -> None:
 
 def run_auth(session: RestSession) -> None:
     if not session.password:
-        print("menu_screen_test: SKIP auth (--password not supplied)", file=sys.stderr)
+        check_start("GET menu_screen auth")
+        check_skip("--password not supplied")
         return
     with check("GET menu_screen auth"):
         status, headers, body = session.request("GET", MENU_SCREEN_PATH, use_password=False)
@@ -576,7 +531,7 @@ def run_soak(session: RestSession, stages: List[float], navigation_interval: flo
         try:
             session.release_all_input()
         except Exception as exc:
-            print(f"menu_screen_test: soak cleanup release_all failed: {exc}", file=sys.stderr)
+            warn(f"soak cleanup release_all failed: {exc}")
         session.close_menu_from_anywhere()
 
 
@@ -647,7 +602,7 @@ def main() -> int:
     if "soak" in tests:
         run_soak(session, args.soak_stages, args.soak_key_interval)
 
-    print(f"menu_screen_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("menu_screen_test")
     return 0
 
 
@@ -655,5 +610,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"menu_screen_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("menu_screen_test", format_exception(exc))
         raise SystemExit(1)

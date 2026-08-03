@@ -52,14 +52,23 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+    Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
+    section, suite_fail, warn)
+
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
 SCREEN_PLANES = 2
 SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 
-MENU_SETTLE_SECONDS = 0.10
-KEY_SETTLE_SECONDS = 0.045
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
+# Shared with every suite; see tests/lib/pacing.py.
+KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
 # Typing needs no per-key wait: the device buffers keystrokes and the string
 # editor drains them. Measured on hardware, per-key POSTs stay character-perfect
 # (including consecutive duplicates) with zero settle at ~49 keys/s, which is
@@ -94,39 +103,12 @@ CHAR_KEYS = {
 }
 
 
-class Failure(RuntimeError):
-    pass
-
-
-CHECK_COUNT = 0
-LAST_CHECK_LABEL = ""
-
-
-def check_start(label):
-    global CHECK_COUNT, LAST_CHECK_LABEL
-    CHECK_COUNT += 1
-    LAST_CHECK_LABEL = label
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-
-
-def check_ok(extra=""):
-    print("OK" + (f" ({extra})" if extra else ""), flush=True)
-
-
-def check_fail(reason):
-    print(f"FAIL ({reason})", flush=True)
-
-
-def check_warn(reason):
-    print(f"WARNING ({reason})", flush=True)
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return True
     if assertions_enabled:
         raise Failure(message)
-    print(f"    WARNING: {message}", flush=True)
+    warn(message)
     return False
 
 
@@ -166,14 +148,17 @@ class RestSession:
             headers.update(extra)
         return headers
 
+    # This suite keeps its own attempt loop, unlike the rest of the tree, because
+    # it is the one that hammers the device's connection pool and has to pace
+    # itself between attempts: a fixed pause would pile churn onto an already
+    # saturated pool, which is the wedge this suite exists to stay clear of.
+    # The *decision* still comes from rest.may_retry, so there is no second copy
+    # of the rule -- only a second loop around it.
+    ATTEMPTS = 6
+
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        # A reset while reusing a kept-alive socket is expected occasionally;
-        # reconnect and retry. GET is idempotent so we retry freely; writes get
-        # a single reconnect-retry (a reset almost always means the request was
-        # dropped before the device acted on it).
-        attempts = 6 if method == "GET" else 5
         last_exc = None
-        for attempt in range(attempts):
+        for attempt in range(self.ATTEMPTS):
             # Pace requests to keep httpd connection churn below the wedge point.
             gap = self.MIN_REQUEST_INTERVAL - (time.monotonic() - self._last_request_at)
             if gap > 0:
@@ -181,7 +166,10 @@ class RestSession:
             self.rest_requests += 1
             self._last_request_at = time.monotonic()
             conn = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
+            sent = False
             try:
+                conn.connect()
+                sent = True
                 conn.request(method, path, body=body, headers=self._headers(body, extra_headers))
                 resp = conn.getresponse()
                 payload = resp.read()
@@ -189,7 +177,7 @@ class RestSession:
             except (ConnectionError, http.client.HTTPException, OSError) as exc:
                 last_exc = exc
                 self.reset_events += 1
-                if attempt + 1 < attempts:
+                if rest_lib.may_retry(method, sent) and attempt + 1 < self.ATTEMPTS:
                     # Escalating cooldown lets a briefly-saturated connection
                     # pool drain instead of piling on more churn.
                     time.sleep(min(0.5 * (attempt + 1), 2.0))
@@ -615,12 +603,12 @@ class MenuDriver:
     def _dump_on_fail(self, screen, reason):
         if not self.verbose_menu:
             return
-        print(f"\n--- menu dump ({reason}) ---")
+        section(f"menu dump ({reason})")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
-            print(f"{mark}{i:2d}|{r}|")
-        print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
-        print("--- end dump ---")
+            detail(f"{mark}{i:2d}|{r}|")
+        detail(f"selected_row={screen.selected_row} "
+               f"selected_text={screen.selected_text!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -1104,7 +1092,7 @@ def open_file_read(ctx, alias, filename):
 # Stage: smoke
 # ---------------------------------------------------------------------------
 def stage_smoke(ctx):
-    print("\n=== STAGE: smoke ===")
+    section("stage: smoke")
     d, server = ctx.d, ctx.server
     alias = ctx.alias
 
@@ -1195,7 +1183,7 @@ CORE_READ_FILES = [
 
 
 def stage_core(ctx):
-    print("\n=== STAGE: core ===")
+    section("stage: core")
     d, server = ctx.d, ctx.server
     if ctx.alias is None:
         ctx.alias = safe_name(ctx.args.alias_prefix)
@@ -1484,7 +1472,7 @@ def context_actions_present(ctx, expected):
 
 
 def stage_edge(ctx):
-    print("\n=== STAGE: edge ===")
+    section("stage: edge")
     d, s, server, args = ctx.d, ctx.s, ctx.server, ctx.args
 
     # -- multiple simultaneous hosts: with password (IP) + anonymous (no pw) --
@@ -1658,7 +1646,7 @@ def stage_edge(ctx):
 # Stage: matrix
 # ---------------------------------------------------------------------------
 def stage_matrix(ctx):
-    print("\n=== STAGE: matrix ===")
+    section("stage: matrix")
     server = ctx.server
     # Root-path form #1: server root "/". Reuse the already-created host reads.
     for root_path, label in (("/", "root=/"), ("/DIRA", "root=/DIRA")):
@@ -1735,7 +1723,7 @@ def negative_case(ctx, label, alias_suffix, host=None, port=None, password=None,
 
 
 def stage_negative(ctx):
-    print("\n=== STAGE: negative ===")
+    section("stage: negative")
     args = ctx.args
     server = ctx.server
 
@@ -1882,7 +1870,7 @@ SOAK_OPS = [soak_browse, soak_read, soak_edit, soak_mkdir, soak_upload,
 
 
 def stage_soak(ctx):
-    print("\n=== STAGE: soak ===")
+    section("stage: soak")
     s, server = ctx.s, ctx.server
     duration = ctx.args.soak_duration
     if ctx.alias is None:
@@ -1923,7 +1911,7 @@ def stage_soak(ctx):
 # PRG run check (opt-in): run a remote PRG and verify a RAM marker.
 # ---------------------------------------------------------------------------
 def stage_prg(ctx):
-    print("\n=== STAGE: prg (opt-in) ===")
+    section("stage: prg (opt-in)")
     check_start("run remote PRG and verify RAM marker")
     check_warn("PRG-run check not implemented as an automated fixture; "
                "left as UNSUPPORTED to avoid destabilising the machine state. "
@@ -1936,7 +1924,7 @@ def stage_prg(ctx):
 # Cleanup + reporting
 # ---------------------------------------------------------------------------
 def cleanup(ctx, crashed):
-    print("\n=== CLEANUP ===")
+    section("cleanup")
     s, d = ctx.s, ctx.d
     if crashed:
         print("Device hard-crashed; skipping UI cleanup.")
@@ -1946,6 +1934,15 @@ def cleanup(ctx, crashed):
             if ctx.alias and not ctx.args.preserve_ftp_host:
                 d.remove_ftp_host(ctx.alias)
                 print(f"Removed test host '{ctx.alias}'.")
+            # run-tests' UI-state gate (tests/e2e/lib/ui_state.py) requires the
+            # next suite to find the root browser at "/" with a non-empty
+            # listing. This suite works inside /ftp, and removing its own test
+            # host leaves that view listing "< No Items >", so closing the menu
+            # from where the last check left it hands the next suite an empty
+            # browser (confirmed live: the suite ended at '/ftp/' showing
+            # "< No Items >"). Backing out to the top-level browser first is
+            # what makes the state the gate's own.
+            d.goto_top_browser()
             d.close_menu_from_anywhere()
             s.release_all()
         except Exception as exc:
@@ -1966,9 +1963,7 @@ def cleanup(ctx, crashed):
 
 def print_summary(ctx, crashed):
     s, server = ctx.s, ctx.server
-    print("\n" + "=" * 78)
-    print("SUMMARY")
-    print("=" * 78)
+    section("summary")
     header = f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes"
     print(header)
     print("-" * 78)
@@ -1993,10 +1988,9 @@ def print_summary(ctx, crashed):
 
 
 def print_failure_diagnostics(ctx, exc):
-    print("\n" + "!" * 78)
-    print(f"FAILURE: {exc}")
-    print("!" * 78)
-    print(f"Last check          : [{CHECK_COUNT:02d}] {LAST_CHECK_LABEL}")
+    section("failure diagnostics")
+    detail(str(exc))
+    print(f"Last check          : [{check_count():02d}] {last_label()}")
     print(f"Last REST input      : {ctx.d.last_input}")
     print(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
     body = None
@@ -2009,7 +2003,7 @@ def print_failure_diagnostics(ctx, exc):
         print("Decoded menu screen:")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
-            print(f"{mark}{i:2d}|{r}|")
+            detail(f"{mark}{i:2d}|{r}|")
         print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
     print("\nServer log tail:")
     for e in ctx.server.snapshot_log()[-12:]:
@@ -2115,10 +2109,10 @@ def main(argv=None):
     if not args.ftp_advertised_host:
         args.ftp_advertised_host = infer_advertised_host(args.host)
         if not args.ftp_advertised_host:
-            print("ERROR: could not infer --ftp-advertised-host; please pass it explicitly.",
-                  file=sys.stderr)
+            suite_fail("ftp_client_test",
+                       "could not infer --ftp-advertised-host; pass it explicitly")
             return 2
-        print(f"Inferred --ftp-advertised-host {args.ftp_advertised_host}")
+        detail(f"inferred --ftp-advertised-host {args.ftp_advertised_host}")
 
     session = RestSession(args.host, args.password, args.timeout)
     driver = MenuDriver(session, verbose_menu=args.verbose_menu)
@@ -2137,7 +2131,7 @@ def main(argv=None):
             args.ftp_passive_ports, args.ftp_user, args.ftp_password,
             root=args.remote_root, keep_root=args.keep_remote_root)
     except Failure as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        suite_fail("ftp_client_test", str(exc))
         return 2
     server.start()
     print(f"Server root: {server.root} (marker {server.marker})")

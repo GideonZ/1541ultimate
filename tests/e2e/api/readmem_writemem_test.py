@@ -10,10 +10,17 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from typing import Dict, List, Optional, Set, Tuple
 
-CHECK_COUNT = 0
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (
+    FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
+    suite_ok, warn)
+
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
@@ -26,7 +33,8 @@ CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEM = "Interface Type"
 INTERFACE_FREEZE = "Freeze"
 INTERFACE_OVERLAY = "Overlay on HDMI"
-MENU_TOGGLE_SETTLE_SECONDS = 0.3
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 RESET_SETTLE_SECONDS = 5.0
 MEM_SIZE = 65536
 MAX_POST_CHUNK = 65536
@@ -50,29 +58,6 @@ IO_EXCLUDED_RANGES = [(0xD000, 0xD800), (0xDC00, 0xE000)]
 ROM_RANGES = [(0xA000, 0xC000), (0xE000, 0x10000)]
 # Everything we actually write: the full 64KB minus the I/O window above.
 WRITE_SEGMENTS = [(0x0000, 0xD800), (0xD800, 0xDC00), (0xE000, 0x10000)]
-
-
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
 
 
 def classify(addr: int) -> str:
@@ -153,7 +138,7 @@ class RestSession:
 
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()
@@ -200,13 +185,16 @@ class RestSession:
             raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
 
     def close_menu_from_anywhere(self) -> None:
-        for _ in range(12):
+        for attempt in range(12):
             if not self.menu_screen_open():
                 return
+            # Shift+F7 is F8, the full UI exit; RUN/STOP alone cannot dismiss a
+            # menu editor left open by a previous run.
+            keys = ["left_shift", "f7"] if attempt < 6 else ["run_stop"]
             status, _, body = self.request(
                 "POST",
                 INPUT_PATH,
-                payload={"events": [{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}]},
+                payload={"events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]},
             )
             if status != 200:
                 raise Failure(f"input cleanup failed with HTTP {status}: {body[:160]!r}")
@@ -280,7 +268,7 @@ def compare(
 ) -> bool:
     ram_mismatches: List[int] = []
     color_mismatches: List[int] = []
-    screen_mismatches = 0
+    screen_mismatches: List[int] = []
     ignored_noise = 0
     ignored_rom = 0
 
@@ -291,7 +279,7 @@ def compare(
         if expected[addr] == actual[addr]:
             continue
         if cls == "screen":
-            screen_mismatches += 1
+            screen_mismatches.append(addr)
             continue
         if cls == "rom" and skip_rom:
             ignored_rom += 1
@@ -320,32 +308,48 @@ def compare(
             else:
                 settled.append(addr)
         if transient:
-            print(f"  [{label}] re-check: {transient} mismatch(es) had already changed again on their own "
+            detail(f"[{label}] re-check: {transient} mismatch(es) had already changed again on their own "
                   f"(background activity, not a bug)")
         ram_mismatches = settled
 
     if skip_rom:
-        print(f"  [{label}] ignored ROM mismatches (writes to real ROM are no-ops): {ignored_rom}")
+        detail(f"[{label}] ignored ROM mismatches (writes to real ROM are no-ops): {ignored_rom}")
 
-    print(f"  [{label}] screen ($0400-$07FF) mismatches: {screen_mismatches} "
+    detail(f"[{label}] screen ($0400-$07FF) mismatches: {len(screen_mismatches)} "
           f"({'expected, menu owns this range while frozen' if allow_screen_mismatch else 'expected 0 in same-mode round trip'})")
-    print(f"  [{label}] ignored known-live-noise mismatches: {ignored_noise}")
-    print(f"  [{label}] color RAM (low nibble) mismatches: {len(color_mismatches)}")
-    print(f"  [{label}] RAM mismatches: {len(ram_mismatches)}")
+    detail(f"[{label}] ignored known-live-noise mismatches: {ignored_noise}")
+    detail(f"[{label}] color RAM (low nibble) mismatches: {len(color_mismatches)}")
+    detail(f"[{label}] RAM mismatches: {len(ram_mismatches)}")
 
     ok = (len(ram_mismatches) == 0) and (len(color_mismatches) == 0)
     if not allow_screen_mismatch and screen_mismatches:
         ok = False
-        print(f"  [{label}] UNEXPECTED: screen mismatched but this comparison stays within one mode")
+        detail(f"[{label}] UNEXPECTED: screen mismatched but this comparison stays within one mode")
+        # Report what the screen actually held, not just how much of it differed:
+        # a contiguous run points at a transfer that did not land, a scattered
+        # one at something writing the range, and the read values name the
+        # writer.
+        detail(f"[{label}] screen mismatch ranges:")
+        for line in summarize_ranges(screen_mismatches):
+            detail(line)
+        seen: Dict[int, int] = {}
+        for addr in screen_mismatches:
+            seen[actual[addr]] = seen.get(actual[addr], 0) + 1
+        common = sorted(seen.items(), key=lambda kv: -kv[1])[:4]
+        detail(f"[{label}] most common values read back: "
+               + ", ".join(f"${v:02X} x{n}" for v, n in common))
+        sample = ", ".join(f"${a:04X} wrote ${expected[a]:02X} read ${actual[a]:02X}"
+                           for a in screen_mismatches[:6])
+        detail(f"[{label}] first mismatches: {sample}")
 
     if ram_mismatches:
-        print(f"  [{label}] RAM mismatch ranges:")
+        detail(f"[{label}] RAM mismatch ranges:")
         for line in summarize_ranges(ram_mismatches):
-            print(line)
+            detail(line)
     if color_mismatches:
-        print(f"  [{label}] color RAM mismatch ranges:")
+        detail(f"[{label}] color RAM mismatch ranges:")
         for line in summarize_ranges(color_mismatches):
-            print(line)
+            detail(line)
     return ok
 
 
@@ -377,12 +381,17 @@ def run_selfcheck(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during self-check read/write")
 
-    # While frozen, the menu continuously redraws $0400-$07FF for its own display
-    # (even within a single session), so screen RAM is excluded there too; the
-    # Overlay UI never touches that range, so it is expected to round-trip.
-    allow_screen_mismatch = interface == INTERFACE_FREEZE
-    print(f"--- {label}: write and read both happen in {interface} "
-          f"({'screen RAM excluded, menu redraws it continuously' if allow_screen_mismatch else 'even screen RAM must round-trip'}) ---")
+    # The on-device browser repaints its entry rows into the C64 screen while
+    # the menu is open, on its own drive-status refresh rather than in response
+    # to a keypress. Measured during a failing Overlay round trip: the read-back
+    # of $0400-$07FF held the browser listing from $0450 to $07DE, which is row 2
+    # onward, while rows 0 and 1 still held the written pattern. That is true in
+    # Overlay as well as Freeze, so the screen range is not comparable while the
+    # menu is open in either mode. run_screen_round_trip below asserts it with
+    # the menu closed, where nothing else draws.
+    allow_screen_mismatch = True
+    section(f"{label}: write and read both happen in {interface} "
+          f"(screen RAM excluded, the menu redraws its entry rows while open)")
     # Freeze already halts the CPU. Overlay normally keeps it running (verified by
     # the live-noise probe), so pause it explicitly around this multi-request
     # transaction. Otherwise the CPU can legitimately mutate RAM between the
@@ -393,6 +402,41 @@ def run_selfcheck(
     with check(f"close menu ({interface})"):
         session.set_menu_open(False)
     return ok
+
+
+def run_screen_round_trip(session: RestSession, interface: str, xor_value: int) -> bool:
+    """Screen RAM must round-trip exactly while no menu is drawing over it.
+
+    This is the assertion run_selfcheck cannot make with the menu open. The menu
+    is closed here, so $0400-$07FF belongs to the C64 alone and an exact match is
+    the right expectation over the whole range.
+    """
+    label = f"screen-round-trip-{interface.lower().replace(' ', '-')}"
+    with check(f"close menu for the screen round trip ({interface})"):
+        session.set_menu_open(False)
+    with check(f"pause C64 for the screen round trip ({interface})"):
+        session.pause()
+    lo, hi = SCREEN_RANGE
+    pattern = make_pattern(xor_value)
+    try:
+        with check(f"write and read back $0400-$07FF ({interface})"):
+            session.writemem(lo, pattern[lo:hi])
+            actual = session.readmem(lo, hi - lo)
+    finally:
+        with check(f"resume C64 after the screen round trip ({interface})"):
+            session.resume()
+
+    section(f"{label}: screen RAM round-trips exactly with no menu open")
+    mismatches = [a for a in range(lo, hi) if pattern[a] != actual[a - lo]]
+    detail(f"[{label}] screen ($0400-$07FF) mismatches: {len(mismatches)} (expected 0)")
+    if mismatches:
+        detail(f"[{label}] mismatch ranges:")
+        for line in summarize_ranges(mismatches):
+            detail(line)
+        sample = ", ".join(f"${a:04X} wrote ${pattern[a]:02X} read ${actual[a - lo]:02X}"
+                           for a in mismatches[:6])
+        detail(f"[{label}] first mismatches: {sample}")
+    return not mismatches
 
 
 def run_cross_mode(
@@ -427,8 +471,8 @@ def run_cross_mode(
         if not session.menu_screen_open():
             raise Failure("menu closed unexpectedly during cross-mode read")
 
-    print(f"--- {label}: bytes written while {write_interface} must read back the same while {read_interface}, "
-          f"except screen RAM (menu-owned while frozen) ---")
+    section(f"{label}: bytes written while {write_interface} must read back the same while {read_interface}, "
+          f"except screen RAM (menu-owned while frozen)")
     ok = compare(ground_truth, actual, label=label, allow_screen_mismatch=True, noise_addrs=noise_addrs, session=session)
 
     with check(f"close menu ({read_interface})"):
@@ -444,7 +488,7 @@ def wait_for_stable_zero_page(session: RestSession, attempts: int, interval: flo
         if current == previous:
             return
         previous = current
-    print("  warning: zero page did not settle; proceeding anyway", file=sys.stderr)
+    warn("zero page did not settle; proceeding anyway")
 
 
 def run_reset(session: RestSession) -> None:
@@ -455,11 +499,13 @@ def run_reset(session: RestSession) -> None:
 
 
 FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
-OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
+OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
+                           "overlay-to-freeze", "freeze-to-overlay"]
 
 
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
-    all_tests = ["selfcheck-freeze", "selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"]
+    all_tests = ["selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+                 "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
         return all_tests
     expanded: List[str] = []
@@ -492,7 +538,8 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "selfcheck-freeze", "selfcheck-overlay", "overlay-to-freeze", "freeze-to-overlay"),
+        choices=("all", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+                 "overlay-to-freeze", "freeze-to-overlay"),
     )
     parser.add_argument(
         "--keep-config",
@@ -523,12 +570,12 @@ def main() -> int:
         interface_selectable = CONFIG_ITEM in ui_config
         if interface_selectable:
             original_interface = str(ui_config[CONFIG_ITEM])
-            print(f"  current Interface Type: {original_interface}")
+            detail(f"current Interface Type: {original_interface}")
         else:
             # Freeze-only hardware (e.g. U2/U2+/U2+L cartridges without HDMI output)
             # has no "Interface Type" setting at all -- there is no Overlay mode to
             # switch to, so restrict to the tests that only need Freeze.
-            print("  no 'Interface Type' setting on this device -- freeze-only hardware, "
+            detail("no 'Interface Type' setting on this device -- freeze-only hardware, "
                   "restricting to freeze-mode tests")
             # Only a test named individually (not via the "all" wildcard, and not the
             # implicit default-to-everything when --test is omitted) is an explicit,
@@ -544,18 +591,18 @@ def main() -> int:
             skipped_tests = [t for t in tests if t in OVERLAY_DEPENDENT_TESTS]
             tests = [t for t in tests if t not in OVERLAY_DEPENDENT_TESTS] or FREEZE_ONLY_TESTS
             if skipped_tests:
-                print(f"  skipping (requires Overlay-on-HDMI, unsupported here): {', '.join(skipped_tests)}")
+                detail(f"skipping (requires Overlay-on-HDMI, unsupported here): {', '.join(skipped_tests)}")
         noise_addrs: Set[int] = set()
         if interface_selectable:
             with check("switch to Overlay on HDMI to probe live background activity"):
                 session.set_interface_type(INTERFACE_OVERLAY)
             with check("probe addresses that change on their own while the C64 runs"):
                 noise_addrs = probe_live_noise(session, samples=8, interval=0.6)
-            print(f"  {len(noise_addrs)} address(es) treated as expected live background noise: "
+            detail(f"{len(noise_addrs)} address(es) treated as expected live background noise: "
                   f"{', '.join(f'${a:04X}' for a in sorted(noise_addrs)[:20])}"
                   f"{' ...' if len(noise_addrs) > 20 else ''}")
         else:
-            print("  skipping live-noise probe: Freeze halts the CPU entirely, no drift is possible")
+            detail("skipping live-noise probe: Freeze halts the CPU entirely, no drift is possible")
 
         if "selfcheck-freeze" in tests:
             results["selfcheck-freeze"] = run_selfcheck(
@@ -563,6 +610,9 @@ def main() -> int:
             )
         if "selfcheck-overlay" in tests:
             results["selfcheck-overlay"] = run_selfcheck(session, INTERFACE_OVERLAY, 0x66, noise_addrs)
+        if "screen-round-trip" in tests:
+            results["screen-round-trip"] = run_screen_round_trip(
+                session, INTERFACE_OVERLAY, 0x3C)
         if "overlay-to-freeze" in tests:
             results["overlay-to-freeze"] = run_cross_mode(session, INTERFACE_OVERLAY, INTERFACE_FREEZE, 0x55, noise_addrs)
         if "freeze-to-overlay" in tests:
@@ -576,23 +626,23 @@ def main() -> int:
                 time.sleep(2.0)
             if not args.keep_config and original_interface:
                 session.set_interface_type(original_interface)
-                print(f"restored Interface Type to {original_interface!r}")
+                detail(f"restored Interface Type to {original_interface!r}")
         except Exception as exc:
-            print(f"readmem_writemem_test: cleanup failed: {exc}", file=sys.stderr)
+            warn(f"cleanup failed: {exc}")
 
-    print("\n=== SUMMARY ===")
+    section("summary")
     all_ok = True
     for name in tests:
         outcome = results.get(name)
-        status = "PASS" if outcome else ("FAIL" if outcome is False else "SKIPPED")
+        status = OK if outcome else (FAIL if outcome is False else SKIP)
         if outcome is not True:
             all_ok = False
-        print(f"  {name}: {status}")
+        detail(f"{name}: {status}")
 
     if all_ok:
-        print(f"readmem_writemem_test: OK ({CHECK_COUNT} checks)")
+        suite_ok("readmem_writemem_test")
         return 0
-    print("readmem_writemem_test: FAIL", file=sys.stderr)
+    suite_fail("readmem_writemem_test", "see the summary above")
     return 1
 
 
@@ -600,5 +650,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"readmem_writemem_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("readmem_writemem_test", format_exception(exc))
         raise SystemExit(1)

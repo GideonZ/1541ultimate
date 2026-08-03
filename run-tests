@@ -1,0 +1,635 @@
+#!/usr/bin/env python3
+# run-tests - hardware test runner for one Ultimate device.
+#
+# Runs the E2E gate by default, and can additionally or instead run the perf
+# benchmarks and the soak tests. Every suite drives the real firmware over
+# REST/FTP/Telnet, so a device has to be reachable and idle. Suites run
+# sequentially; the exit status is non-zero if any of them fails.
+#
+# Reports through tests/lib/report.py, the same module every suite calls, so
+# harness lines and suite lines follow one set of rules.
+
+import argparse
+import os
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from typing import Dict, List, Sequence
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+
+import report  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402
+from report import Failure  # noqa: E402
+
+CATEGORIES = ("e2e", "perf", "soak")
+MODES = ("overlay", "freeze", "telnet")
+DEFAULT_MODE = "overlay"
+
+DEFAULT_HOST = os.environ.get("U64_HOST", "u64")
+DEFAULT_PASSWORD = os.environ.get("U64_PASS", "")
+DEFAULT_TIMEOUT = "30.0"
+
+UI_STATE_TOOL = os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py")
+
+# How long a device gets to come back before the run gives up on it, and how
+# often to ask. Comfortably past the roughly 18 seconds the device needs to
+# free an abandoned HTTP connection, so being busy is not mistaken for gone.
+DEVICE_RECOVERY_BUDGET_SECONDS = 60.0
+DEVICE_RECOVERY_POLL_SECONDS = 2.0
+# The recovery probe gets its own short per-request timeout rather than the
+# run's --timeout. The shared client retries a GET three times, so at the
+# 30 second default one probe could outlast the whole budget on a device that
+# accepts connections but never answers, and the budget would mean nothing.
+DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS = 5.0
+
+
+@dataclass(frozen=True)
+class Suite:
+    """One registered suite.
+
+    `args` is a template: @HOST@, @PASS@, @TIMEOUT@, @MODE@ and @SOAKPROFILE@
+    are substituted before the suite is started. @MODE@ appears only in the
+    argument string of suites that accept --mode: whether a suite can drive the
+    on-device UI through Telnet as well as REST/Freeze/Overlay, or only works
+    one way, is a per-suite call documented next to its entry below.
+
+    `manual` marks a suite that needs an operator decision, extra privileges, a
+    long wall-clock wait, or a device setting it changes, so it runs only when
+    named with -s or when --manual is given.
+    """
+
+    category: str
+    name: str
+    path: str
+    args: str
+    manual: bool = False
+
+
+# Every executable test under tests/ is listed here; there is no exception.
+#   find tests -name '*_test.py' -not -path '*/__pycache__/*'
+SUITES: Sequence[Suite] = (
+    # ---------------------------------------------------------------- e2e --
+    # Needs no device: it reads the tree and fails if a suite has grown its own
+    # HTTP client again. Seven had, each with the retry rule wrong in its own
+    # way, and each was found only when a transient timeout failed a whole run.
+    # First, so that lands as a clear message rather than as a flaky suite.
+    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", ""),
+    # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
+    # REST/Overlay) before any suite built on it runs, so a broken shared
+    # facade fails here with a clear cause instead of as confusing failures
+    # scattered across every suite that depends on it.
+    Suite("e2e", "ui-backend-smoke", "tests/e2e/lib/ui_backend_smoke_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    Suite("e2e", "input", "tests/e2e/api/input_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Drives the menu, a Telnet session and FTP at once to check they converge
+    # on the same filesystem state, so it is not mode-switchable by design.
+    Suite("e2e", "browser-filesystem-refresh",
+          "tests/e2e/filemanager/browser_filesystem_refresh_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("e2e", "ftp-client", "tests/e2e/filesystem/ftp_client_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    Suite("e2e", "prg-load-path-trim", "tests/e2e/api/prg_load_path_trim_test.py",
+          "-H @HOST@ -p @PASS@ --mode @MODE@"),
+    Suite("e2e", "temp-auto-cleanup", "tests/e2e/filemanager/temp_auto_cleanup_test.py",
+          "-H @HOST@ -p @PASS@ --mode @MODE@"),
+    Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
+    # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
+    # A #740 regression leaves the interface stuck in Command Busy for every target
+    # until the firmware restarts, so run it after the suites that drive the menu
+    # and the file system.
+    Suite("e2e", "uci-targets", "tests/e2e/io/command_interface/uci_targets_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # Two checks that are genuinely about the Telnet transport itself (a
+    # concurrent poll-mode connection, per-keystroke output volume) only run
+    # under --mode telnet.
+    Suite("e2e", "machine-code-monitor", "tests/e2e/monitor/monitor_test.py",
+          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@"),
+    # The device's own FTP server: a name it reports in a listing has to be a
+    # name it accepts back for SIZE and DELE.
+    Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
+    # and waits ~75s for the device to reap the sessions.
+    Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
+          "-H @HOST@", manual=True),
+    # Drives the Assembly 64 UI against the live service, mostly with negative
+    # cases. Skips rather than fails when the service is unreachable.
+    Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
+    # the regression guard. Runs last, because a device whose core predates that
+    # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
+    Suite("e2e", "freeze-menu", "tests/e2e/io/c64/freeze_menu_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+
+    # --------------------------------------------------------------- perf --
+    Suite("perf", "temp-auto-cleanup-perf", "tests/perf/temp_auto_cleanup_perf_test.py",
+          "-H @HOST@ -p @PASS@"),
+
+    # --------------------------------------------------------------- soak --
+    Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # The stress profile is the bounded one, at about two minutes. The soak
+    # profile runs for twelve hours, so it is opt-in through --soak-profile.
+    Suite("soak", "network-connection", "tests/soak/network/connection_test.py",
+          "--profile @SOAKPROFILE@ -H @HOST@"),
+)
+
+
+@dataclass
+class Result:
+    category: str
+    mode: str
+    name: str
+    verdict: str
+    seconds: float
+    # Set when the device itself has gone, so the remaining suites would each
+    # fail for the same reason and tell nobody anything new.
+    device_lost: bool = False
+
+
+@dataclass
+class Options:
+    host: str
+    password: str
+    timeout: str
+    soak_profile: str
+    jsonl_dir: str
+    stop_on_fail: bool
+
+
+def die(message: str) -> None:
+    print(report.colour(f"ERROR: {message}", report.RED), file=sys.stderr, flush=True)
+    raise SystemExit(2)
+
+
+class Device:
+    """The few device calls the harness itself makes, outside any suite."""
+
+    def __init__(self, host: str, password: str, timeout: float) -> None:
+        self.api = UltimateApi(host, password, timeout)
+        self.probe = UltimateApi(host, password,
+                                 DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
+
+    def release_input(self) -> bool:
+        try:
+            self.api.machine.release_all()
+            return True
+        except Failure:
+            return False
+
+    def reset(self) -> bool:
+        try:
+            self.api.machine.reset()
+            return True
+        except Failure:
+            return False
+
+    def wait_until_reachable(self, budget: float) -> bool:
+        """Whether the device answers within `budget`, polling until it does.
+
+        The UI-state gate cannot tell "the menu will not come clean" from "the
+        device is no longer answering", and reported both as the former. One
+        dead device then produced a precondition failure for every suite left
+        in the run, each naming the UI, which is not where the problem was.
+
+        The budget has to be generous, because most of the time the answer is
+        that the device is busy rather than gone: it serves few HTTP
+        connections at once and frees an abandoned one after about 18 seconds.
+        A short probe turns that into a false verdict, and this one abandons
+        the whole run, so being impatient here is worse than not checking at
+        all. Observed live: a probe of three seconds called the device lost
+        while it was answering again moments later.
+
+        UltimateApi.reachable() is the probe, and it catches Failure only. A
+        blanket except here would report a coding mistake in the probe itself
+        as an unreachable device, and abandon the whole run for it.
+        """
+        deadline = time.monotonic() + budget
+        while True:
+            if self.probe.reachable():
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(DEVICE_RECOVERY_POLL_SECONDS)
+
+    def close_active_menu(self) -> bool:
+        """Back out of whatever the last suite left on the UI object stack.
+
+        A menu-button toggle does not dismiss every nested UI object. In
+        particular, AssemblySearch owns RUN/STOP itself. Back out through
+        active editors, popups and browsers before using the toggle as a last
+        resort.
+        """
+        try:
+            if not self.api.machine.menu_open():
+                return True
+            for attempt in range(1, 13):
+                # F8 (shift+F7) leaves the menu; from attempt 5 fall back to
+                # RUN/STOP only, because RETURN would activate the entry under
+                # the cursor rather than backing out of it.
+                if attempt <= 4:
+                    self.api.machine.press("left_shift", "f7")
+                else:
+                    self.api.machine.press("run_stop")
+                time.sleep(0.25)
+                if not self.api.machine.menu_open():
+                    return True
+            self.api.machine.menu_button()
+            time.sleep(0.5)
+            return not self.api.machine.menu_open()
+        except Failure:
+            return False
+
+
+def reset_to_clean_slate(device: Device, phase: str) -> bool:
+    for label, action in (
+        (f"{phase}: release input", device.release_input),
+        (f"{phase}: close active menu UI", device.close_active_menu),
+        (f"{phase}: reset machine", device.reset),
+    ):
+        report.step_start(label)
+        if not action():
+            report.check_fail()
+            return False
+        report.check_ok()
+    time.sleep(0.5)
+    return True
+
+
+def ui_state_gate(action: str, options: Options, label: str = "",
+                  quiet: bool = False) -> bool:
+    """Shared UI-state gate. See tests/e2e/lib/ui_state.py for the contract."""
+    command = [sys.executable, UI_STATE_TOOL, "-H", options.host, "--action", action]
+    if options.password:
+        command += ["-p", options.password]
+    if label:
+        command += ["--label", label]
+    result = subprocess.run(command, stdout=subprocess.DEVNULL if quiet else None)
+    return result.returncode == 0
+
+
+def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
+    command = [sys.executable, os.path.join(ROOT, suite.path)]
+    for token in suite.args.split():
+        if token == "@PASS@":
+            command.append(options.password)
+            continue
+        token = token.replace("@HOST@", options.host)
+        token = token.replace("@TIMEOUT@", options.timeout)
+        token = token.replace("@MODE@", mode)
+        token = token.replace("@SOAKPROFILE@", options.soak_profile)
+        command.append(token)
+    return command
+
+
+def run_suite(suite: Suite, device: Device, options: Options, mode: str, label: str) -> Result:
+    """Run one suite as a child process and report its own closing line."""
+    full_path = os.path.join(ROOT, suite.path)
+    if not os.path.isfile(full_path):
+        print()
+        report.suite_skip(suite.name, f"missing {suite.path}", 0.0)
+        return Result(suite.category, mode, suite.name, report.SKIP, 0.0)
+
+    report.banner(f"{suite.category.upper()}  {suite.name}"
+                  + (f"  ({mode})" if suite.category == "e2e" else ""))
+
+    environment = dict(os.environ)
+    environment["E2E_SUITE"] = suite.name
+    if options.jsonl_dir:
+        path = os.path.join(options.jsonl_dir, f"{label}-{suite.name}.jsonl")
+        open(path, "w").close()
+        environment["E2E_JSONL"] = path
+
+    # E2E suites share one device and one UI object stack, so each starts from
+    # the documented state rather than from whatever the last one left.
+    if suite.category == "e2e" and not ui_state_gate("ensure", options):
+        # Say which of the two it is. A device that has gone for good fails
+        # every remaining suite for the same reason, and calling that a
+        # UI-state problem sends the reader to the wrong place. A device that
+        # is merely busy comes back, and must not end the run.
+        if not device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
+            report.suite_fail(suite.name, "precondition: the device is unreachable", 0.0)
+            return Result(suite.category, mode, suite.name, report.FAIL, 0.0, device_lost=True)
+        # It is answering after all, so the gate deserves another go: the first
+        # attempt may have failed only because the device was busy. The line
+        # below does not claim the device went away, because the probe cannot
+        # tell "it came back" from "it never left"; it only says the gate
+        # needed two attempts, which is the part worth noticing in a log.
+        if ui_state_gate("ensure", options):
+            report.detail(f"{suite.name}: the UI-state gate failed once and "
+                          "came clean on a second attempt")
+        else:
+            report.suite_fail(suite.name, "precondition: the device UI could not be cleaned", 0.0)
+            return Result(suite.category, mode, suite.name, report.FAIL, 0.0)
+
+    started = time.monotonic()
+    completed = subprocess.run(build_command(suite, options, mode), env=environment)
+    elapsed = time.monotonic() - started
+
+    if completed.returncode == 0:
+        report.suite_ok(suite.name, "", elapsed)
+        verdict = report.OK
+    else:
+        report.suite_fail(suite.name, "", elapsed)
+        verdict = report.FAIL
+
+    # Attribution only: the precondition owns the state, so leaving the browser
+    # elsewhere is not a defect. Naming who left what is what makes an
+    # inherited failure traceable to its cause; it does not change the verdict.
+    if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name):
+        # `elapsed` is passed for the same reason the OK/FAIL lines above pass
+        # it: report._suite_line falls back to the time since the harness
+        # process started when it is given no duration, so a WARN printed an
+        # hour into a run read as an hour-long suite.
+        report.suite_warn(suite.name, "left the device UI outside the documented state", elapsed)
+        ui_state_gate("ensure", options, suite.name, quiet=True)
+        if verdict == report.OK:
+            verdict = report.WARN
+
+    return Result(suite.category, mode, suite.name, verdict, elapsed)
+
+
+def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite]:
+    chosen = []
+    for suite in SUITES:
+        if suite.category != category:
+            continue
+        if names:
+            if suite.name in names:
+                chosen.append(suite)
+        elif not suite.manual or manual:
+            chosen.append(suite)
+    return chosen
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="run-tests",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage="run-tests [OPTIONS] [HOST]",
+        description=(
+            "Run hardware tests against one Ultimate device.\n"
+            "\n"
+            "By default this runs the E2E suites once, in the overlay profile.\n"
+            "Add --perf, --soak, or --all to run more, and -m to repeat the E2E\n"
+            "suites in more than one UI profile."),
+        epilog=(
+            "Examples:\n"
+            "  run-tests                          E2E suites, overlay profile\n"
+            "  run-tests -H 192.168.0.64          the same, against another device\n"
+            "  run-tests -m all                   E2E suites in all three profiles\n"
+            "  run-tests -m telnet,freeze         E2E suites in two chosen profiles\n"
+            "  run-tests --all -m all             everything: E2E in every profile,\n"
+            "                                     then perf, then soak\n"
+            "  run-tests --perf --soak            perf and soak only, no E2E\n"
+            "  run-tests -s prg-context-menu      one E2E suite\n"
+            "  run-tests --list                   show every registered suite\n"
+            "\n"
+            "Notes:\n"
+            "  The device must be idle: these suites open the menu, reset the\n"
+            "  machine and mount disks. Some change device settings and restore\n"
+            "  them on exit. A full --all -m all run takes hours.\n"))
+
+    parser.add_argument("host_positional", nargs="?", metavar="HOST",
+                        help="Device host name or IP. May also be given with -H.")
+
+    what = parser.add_argument_group(
+        "what to run", "With none of these, the E2E suites run on their own.")
+    what.add_argument("--e2e", action="store_true",
+                      help="Run the E2E suites (the release gate). This is the default.")
+    what.add_argument("--perf", action="store_true",
+                      help="Run the perf benchmarks.")
+    what.add_argument("--soak", action="store_true",
+                      help="Run the soak tests.")
+    what.add_argument("--all", action="store_true",
+                      help="Run all three categories: e2e, perf and soak.")
+
+    e2e = parser.add_argument_group("E2E options")
+    e2e.add_argument("-m", "--modes", default=DEFAULT_MODE, metavar="LIST",
+                     help="UI profile(s) to run the E2E suites in: overlay, freeze, "
+                          "telnet, a comma-separated combination, or all "
+                          f"(default: {DEFAULT_MODE}). Suites that only work one way "
+                          "ignore this.")
+    e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
+                     help="Run only this suite. Repeatable. Also selects manual suites.")
+    e2e.add_argument("--manual", action="store_true",
+                     help="Also run the manual suites, which need an operator "
+                          "decision, elevated privileges or a long wall-clock wait.")
+
+    device = parser.add_argument_group("device")
+    device.add_argument("-H", "--host", default=DEFAULT_HOST,
+                        help="Device host name or IP (default: $U64_HOST or u64).")
+    device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
+                        help="REST and FTP password (default: $U64_PASS, empty).")
+    device.add_argument("-t", "--timeout", default=DEFAULT_TIMEOUT,
+                        help=f"Per-request REST timeout (default: {DEFAULT_TIMEOUT}).")
+    device.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
+                        help="Profile for the network connection soak. stress is about "
+                             "two minutes; soak runs for twelve hours (default: stress).")
+
+    output = parser.add_argument_group("output")
+    output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                        help="Colour the output: auto colours a terminal and writes plain "
+                             "text when redirected, which is what keeps a saved log "
+                             "readable (default: auto).")
+    output.add_argument("-l", "--list", action="store_true",
+                        help="List every registered suite and exit.")
+    output.add_argument("-x", "--stop-on-fail", action="store_true",
+                        help="Stop at the first failing suite.")
+    output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
+                        help="Write one JSONL file per suite run into DIR, for a "
+                             "reader that is not a person.")
+    return parser
+
+
+def resolve_modes(raw: str) -> List[str]:
+    if raw.strip() == "all":
+        return list(MODES)
+    modes = [m.strip() for m in raw.split(",") if m.strip()]
+    for mode in modes:
+        if mode not in MODES:
+            die(f"unknown profile: {mode} (expected {', '.join(MODES)} or all)")
+    return modes or [DEFAULT_MODE]
+
+
+def print_listing() -> None:
+    for category in CATEGORIES:
+        print(f"\n{category}:")
+        for suite in SUITES:
+            if suite.category == category:
+                print("  %-28s %-58s %s"
+                      % (suite.name, suite.path, "manual" if suite.manual else "auto"))
+
+
+def summarise(results: List[Result], started: float) -> int:
+    report.banner("Summary")
+
+    groups: Dict[str, List[Result]] = {}
+    for result in results:
+        key = f"{result.category} {result.mode}".strip() if result.category == "e2e" \
+            else result.category
+        groups.setdefault(key, []).append(result)
+
+    for key, group in groups.items():
+        counts = {verdict: sum(1 for r in group if r.verdict == verdict)
+                  for verdict in (report.OK, report.WARN, report.FAIL, report.SKIP)}
+        seconds = sum(r.seconds for r in group)
+        worst = (report.FAIL if counts[report.FAIL] else
+                 report.WARN if counts[report.WARN] else report.OK)
+        parts = [f"{counts[report.OK]} ok"]
+        for verdict, label in ((report.FAIL, "failed"), (report.WARN, "dirty"),
+                               (report.SKIP, "skipped")):
+            if counts[verdict]:
+                parts.append(f"{counts[verdict]} {label}")
+        report.detail("%s %-14s %s (%s)"
+                      % (report.colour(worst.ljust(4), report._VERDICT_COLOUR[worst]),
+                         key, report.format_duration(seconds), ", ".join(parts)))
+
+    for result in results:
+        if result.verdict in (report.FAIL, report.WARN, report.SKIP):
+            note = {report.FAIL: "failed",
+                    report.WARN: "left the device UI outside the documented state",
+                    report.SKIP: "skipped"}[result.verdict]
+            where = f"{result.category} {result.mode}".strip() \
+                if result.category == "e2e" else result.category
+            report.detail("%s %s %s: %s"
+                          % (report.colour(result.verdict.ljust(4),
+                                           report._VERDICT_COLOUR[result.verdict]),
+                             where, result.name, note))
+
+    total = time.monotonic() - started
+    report.detail(f"{report.format_duration(total)} total")
+
+    failed = [r for r in results if r.verdict == report.FAIL]
+    report.run_result(
+        verdict=report.FAIL if failed else report.OK,
+        suites=len(results),
+        passed=sum(1 for r in results if r.verdict == report.OK),
+        failed=len(failed),
+        skipped=sum(1 for r in results if r.verdict == report.SKIP),
+        dirty=sum(1 for r in results if r.verdict == report.WARN),
+        seconds=total)
+
+    if failed:
+        print(f"\n{report.colour('FAIL', report.RED)}  "
+              f"{len(failed)} of {len(results)} suite runs failed.")
+        return 1
+    print(f"\n{report.colour('OK', report.GREEN)}  "
+          f"all {len(results)} suite runs passed.")
+    return 0
+
+
+def apply_colour_choice(choice: str) -> None:
+    """Honour --color here and in every suite this process starts.
+
+    The suites are child processes, so the choice is exported rather than only
+    applied locally: NO_COLOR and FORCE_COLOR are the conventional names and
+    report.py reads both.
+    """
+    if choice == "always":
+        os.environ["FORCE_COLOR"] = "1"
+        os.environ.pop("NO_COLOR", None)
+        report.set_colour(True)
+    elif choice == "never":
+        os.environ["NO_COLOR"] = "1"
+        os.environ.pop("FORCE_COLOR", None)
+        report.set_colour(False)
+    # auto: the suites share this stdout, so they reach the same answer.
+
+
+def main(argv: List[str]) -> int:
+    args = build_parser().parse_args(argv)
+    apply_colour_choice(args.color)
+
+    if args.list:
+        print_listing()
+        return 0
+
+    categories = [c for c in CATEGORIES
+                  if args.all or getattr(args, c.replace("-", "_"))]
+    if not categories:
+        categories = ["e2e"]
+
+    modes = resolve_modes(args.modes)
+
+    known = {suite.name for suite in SUITES}
+    for wanted in args.suite:
+        if wanted not in known:
+            die(f"unknown suite: {wanted} (use --list)")
+    if args.suite:
+        # Naming suites selects exactly those, whichever category they are in.
+        categories = [c for c in CATEGORIES
+                      if any(s.category == c and s.name in args.suite for s in SUITES)]
+
+    if args.jsonl_dir:
+        os.makedirs(args.jsonl_dir, exist_ok=True)
+
+    options = Options(host=args.host_positional or args.host, password=args.password,
+                      timeout=args.timeout, soak_profile=args.soak_profile,
+                      jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail)
+
+    report.banner("Ultimate hardware test run")
+    report.detail(f"host:       {options.host}")
+    report.detail(f"categories: {', '.join(categories)}")
+    if "e2e" in categories:
+        report.detail(f"profiles:   {', '.join(modes)}")
+    if "soak" in categories:
+        report.detail(f"soak:       {options.soak_profile} profile")
+    report.detail(f"timeout:    {options.timeout}s")
+    if options.jsonl_dir:
+        report.detail(f"jsonl:      {options.jsonl_dir}/")
+
+    device = Device(options.host, options.password, float(options.timeout))
+    results: List[Result] = []
+    started = time.monotonic()
+    stopped = False
+    device_lost = False
+
+    for category in categories:
+        suites = selected_suites(category, args.suite, args.manual)
+        if not suites:
+            continue
+        passes = modes if category == "e2e" else [""]
+        for mode in passes:
+            for suite in suites:
+                result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
+                results.append(result)
+                if result.device_lost:
+                    print()
+                    report.detail("the device stopped answering; abandoning the run "
+                                  "rather than failing every suite left for the same reason")
+                    stopped = True
+                    device_lost = True
+                    break
+                if result.verdict == report.FAIL and options.stop_on_fail:
+                    stopped = True
+                    break
+            # Teardown still runs after --stop-on-fail, where the device is
+            # there to be cleaned; it is only pointless once the device is gone.
+            if category == "e2e" and not device_lost:
+                print()
+                if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
+                    results.append(Result(category, mode, "teardown", report.FAIL, 0.0))
+            if stopped:
+                break
+        if stopped:
+            break
+
+    return summarise(results, started)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

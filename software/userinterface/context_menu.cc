@@ -391,6 +391,11 @@ void ContextMenu :: reset_quick_seek(void)
 
 void ContextMenu :: redraw()
 {
+    // A menu with no items never got a window, and deinit() clears it, but
+    // appear() calls redraw() regardless.
+    if (!window) {
+        return;
+    }
     window->set_color(user_interface->color_fg);
     //window->set_background(user_interface->color_bg);
 

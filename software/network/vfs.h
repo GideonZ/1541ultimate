@@ -55,6 +55,14 @@ typedef struct vfs_file   vfs_file_t;
 typedef struct vfs_dir    vfs_dir_t;   
 typedef struct vfs_dirent vfs_dirent_t;
 
+// Longest file name the VFS reports. Must be at least as large as INFO_SIZE
+// in software/filemanager/filemanager.h, which is what the file system
+// allocates for a long name: a smaller buffer here truncates the name in a
+// directory listing, and the device then rejects DELE, SIZE and MDTM for the
+// truncated name. Since every FTP client works from the listing, that would
+// leave the file impossible to address at all.
+#define VFS_NAME_MAX 128
+
 typedef struct _vfs_stat_t {
     int st_size;
     int st_mode;
@@ -64,7 +72,7 @@ typedef struct _vfs_stat_t {
     uint8_t hr;
     uint8_t min;
     uint8_t sec;
-    char name[64];
+    char name[VFS_NAME_MAX];
 } vfs_stat_t;
 
 EXTERNC void   vfs_load_plugin();

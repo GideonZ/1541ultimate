@@ -7,30 +7,35 @@ The `/Temp` ingress paths can still be listed through a shortened FTP alias,
 but after the fix the browser actions resolve and act on the real long FAT
 filename. This test seeds that `/Temp` fixture and verifies Rename and Mount
 against the full requested name on real firmware.
+
+Drives the on-device browser through tests/e2e/lib/ui_backend.py's Browser,
+so --mode selects telnet, freeze or overlay the same way every other
+migrated suite does.
 """
 
 import argparse
 import ftplib
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
 import urllib.parse
 import urllib.request
-from typing import Dict, List
+from pathlib import Path
+from typing import Dict, List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-
-from menu_screen_test import Failure, MenuScreenInfo, RestSession, check, menu_screen_text
-
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
+# holds the shared UI backend.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import ftp as ftp_lib
+import rest as rest_lib
+from report import Failure, check, format_exception, suite_fail, suite_ok
+from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
 FTP_USER = "user"
 FTP_DEFAULT_PASSWORD = "password"
-MENU_SETTLE_SECONDS = 0.12
-MENU_OPEN_SETTLE_SECONDS = 0.25
-MENU_POPUP_SETTLE_SECONDS = 0.50
 ROOT_PATH = "/"
 TEMP_PATH = "/Temp/"
 TEST_DIR_PREFIX = "zlfn-"
@@ -44,9 +49,20 @@ FIXTURE_PREFIX = "zzzz_long_filename_browser_regression"
 MIN_BROWSER_LONG_NAME_LENGTH = 64
 VALID_D64_SIZE = 174848
 
+# The root browser's own listing geometry. REST/Overlay/Freeze render at the
+# full physical 40x25; Telnet's remote session is not constrained to the
+# 40-column display and renders this listing at 60 columns instead (more
+# room for exactly the long filenames this suite exists to test), with one
+# fewer row than REST/Overlay's 25-row physical screen (see ui_backend.py's
+# module docstring for why).
+ENTRY_ROWS = range(2, 24)
+STATUS_ROW = 24
+TELNET_ENTRY_ROWS = range(2, 23)
+TELNET_STATUS_ROW = 23
+TELNET_WIDTH = 60
+TELNET_HEIGHT = 24
 
-def ftp_password(password: str) -> str:
-    return password or FTP_DEFAULT_PASSWORD
+EDITOR_CHARS = {".": "period"}
 
 
 def rest_headers(password: str) -> Dict[str, str]:
@@ -63,7 +79,7 @@ def rest_json(host: str, password: str, method: str, path: str) -> Dict[str, obj
         headers=rest_headers(password),
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=10.0) as response:
+    with rest_lib.retrying_urlopen(request, 10.0) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -89,7 +105,8 @@ def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str
 
 
 def get_drive_a_image(host: str) -> Dict[str, object]:
-    with urllib.request.urlopen(f"http://{host}/v1/drives", timeout=10.0) as response:
+    with rest_lib.retrying_urlopen(
+            urllib.request.Request(f"http://{host}/v1/drives"), 10.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
     for entry in payload.get("drives", []):
         if "a" in entry:
@@ -97,44 +114,15 @@ def get_drive_a_image(host: str) -> Dict[str, object]:
     raise Failure(f"Drive A info missing from {payload}")
 
 
-def ftp_connect(host: str, password: str) -> ftplib.FTP:
-    ftp = ftplib.FTP(host, timeout=20)
-    ftp.login(FTP_USER, ftp_password(password))
-    return ftp
-
-
-def ftp_dir_entries(ftp: ftplib.FTP, directory: str) -> List[str]:
-    ftp.cwd(directory)
-    return ftp.nlst()
-
-
-def ftp_delete_if_present(ftp: ftplib.FTP, path: str) -> None:
-    try:
-        ftp.delete(path)
-    except ftplib.error_perm:
-        pass
-
-
-def ftp_rmdir_if_present(ftp: ftplib.FTP, path: str) -> None:
-    try:
-        ftp.rmd(path)
-    except ftplib.error_perm:
-        pass
-
-
 def cleanup_fixture_files(ftp: ftplib.FTP, test_dir: str) -> None:
     directory = f"/Temp/{test_dir}"
-    try:
-        entries = ftp_dir_entries(ftp, directory)
-    except ftplib.error_perm:
-        return
-    for name in entries:
+    for name in ftp_lib.names(ftp, directory):
         if (
             name == TEMP_SEED_NAME
             or name == RENAMED_NAME
             or name.startswith(FIXTURE_PREFIX)
         ):
-            ftp_delete_if_present(ftp, f"{directory}/{name}")
+            ftp_lib.delete_quietly(ftp, f"{directory}/{name}")
 
 
 def cleanup_remote_state(host: str, password: str, test_dir: str) -> None:
@@ -143,28 +131,25 @@ def cleanup_remote_state(host: str, password: str, test_dir: str) -> None:
     except Exception:
         pass
 
-    ftp = ftp_connect(host, password)
+    ftp = ftp_lib.connect(host, password, timeout=20)
     try:
         cleanup_fixture_files(ftp, test_dir)
-        ftp_rmdir_if_present(ftp, f"/Temp/{test_dir}")
+        ftp_lib.delete_quietly(ftp, f"/Temp/{test_dir}")
     finally:
-        ftp.quit()
+        ftp_lib.close(ftp)
 
 
 def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
-    ftp = ftp_connect(host, password)
+    ftp = ftp_lib.connect(host, password, timeout=20)
     try:
-        try:
-            ftp.mkd(f"/Temp/{test_dir}")
-        except ftplib.error_perm:
-            pass
+        ftp_lib.quietly(lambda: ftp.mkd(f"/Temp/{test_dir}"))
         cleanup_fixture_files(ftp, test_dir)
     finally:
-        ftp.quit()
+        ftp_lib.close(ftp)
 
     create_seed_d64(host, password, test_dir)
 
-    ftp = ftp_connect(host, password)
+    ftp = ftp_lib.connect(host, password, timeout=20)
     try:
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             local_path = temp_file.name
@@ -178,10 +163,10 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
         finally:
             os.unlink(local_path)
 
-        entries = ftp_dir_entries(ftp, f"/Temp/{test_dir}")
-        ftp_delete_if_present(ftp, f"/Temp/{test_dir}/{TEMP_SEED_NAME}")
+        entries = ftp_lib.names(ftp, f"/Temp/{test_dir}")
+        ftp_lib.delete_quietly(ftp, f"/Temp/{test_dir}/{TEMP_SEED_NAME}")
     finally:
-        ftp.quit()
+        ftp_lib.close(ftp)
 
     candidates = [name for name in entries if name.startswith(FIXTURE_PREFIX)]
     if len(candidates) != 1:
@@ -197,146 +182,61 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
     return candidates[0]
 
 
-def current_path(session: RestSession) -> str:
-    return menu_screen_text(session.get_menu_screen()).splitlines()[-1].split()[0]
-
-
-def current_selection(session: RestSession) -> str:
-    return MenuScreenInfo(session.get_menu_screen()).selected_text
-
-
-def tap(session: RestSession, inputs: List[str], settle: float = MENU_SETTLE_SECONDS) -> None:
-    session.tap_keyboard(inputs)
-    time.sleep(settle)
-
-
-def quick_seek(session: RestSession, text: str, settle: float = MENU_OPEN_SETTLE_SECONDS) -> None:
+def type_editor_text(browser: Browser, text: str) -> None:
     for ch in text:
-        tap(session, [ch.lower()], settle)
-
-
-def move_to_root(session: RestSession) -> None:
-    for _ in range(12):
-        if current_path(session) == ROOT_PATH:
-            return
-        tap(session, ["left_shift", "cursor_left_right"])
-    raise Failure(f"Could not return to {ROOT_PATH!r}; now at {current_path(session)!r}")
-
-
-def move_to_path(session: RestSession, path: str) -> None:
-    for _ in range(12):
-        if current_path(session) == path:
-            return
-        tap(session, ["left_shift", "cursor_left_right"])
-    raise Failure(f"Could not return to {path!r}; now at {current_path(session)!r}")
-
-
-def move_to_top(session: RestSession, count: int = 20) -> None:
-    for _ in range(count):
-        tap(session, ["left_shift", "cursor_up_down"], 0.03)
-
-
-def move_selection_to_prefix(session: RestSession, prefix: str, max_steps: int = 24) -> None:
-    for _ in range(max_steps):
-        if current_selection(session).startswith(prefix):
-            return
-        tap(session, ["cursor_up_down"])
-    raise Failure(f"Could not find selection starting with {prefix!r}")
-
-
-def force_close_menu(session: RestSession) -> None:
-    try:
-        session.close_menu_from_anywhere()
-        return
-    except Exception:
-        pass
-
-    for _ in range(16):
-        body = session.try_get_menu_screen()
-        if body is None:
-            return
-        text = menu_screen_text(body)
-        if (
-            "Opening disk file failed." in text
-            or "Error: FILE DOESN'T EXIST" in text
-            or "Give a new name.." in text
-        ):
-            tap(session, ["return"], 0.20)
-            continue
-        tap(session, ["run_stop"], 0.20)
-
-    if not session.menu_screen_unavailable():
-        raise Failure("Could not close menu cleanly")
-
-
-def open_fixture_directory(session: RestSession, test_dir: str) -> None:
-    if not session.menu_screen_unavailable():
-        force_close_menu(session)
-    session.open_menu()
-    move_to_root(session)
-    move_to_top(session)
-    move_selection_to_prefix(session, "Temp")
-    tap(session, ["cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
-    move_to_path(session, TEMP_PATH)
-    move_to_top(session)
-    quick_seek(session, test_dir[:2])
-    move_selection_to_prefix(session, test_dir)
-    tap(session, ["cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
-    expected_path = f"/Temp/{test_dir}/"
-    if current_path(session) != expected_path:
-        raise Failure(f"Expected fixture directory {expected_path!r}, got {current_path(session)!r}")
-
-
-def open_fixture_context_menu(session: RestSession) -> None:
-    move_to_top(session)
-    quick_seek(session, "zz")
-    if "D64" not in current_selection(session):
-        raise Failure(f"Expected D64 fixture selected, got {current_selection(session)!r}")
-    tap(session, ["return"], MENU_OPEN_SETTLE_SECONDS)
-
-
-def move_context_to_item(session: RestSession, label: str) -> None:
-    for _ in range(16):
-        if current_selection(session) == label:
-            return
-        tap(session, ["cursor_up_down"])
-    raise Failure(f"Could not find context item {label!r}")
-
-
-def clear_editor_field(session: RestSession) -> None:
-    for _ in range(96):
-        tap(session, ["inst_del"], 0.03)
-
-
-def type_editor_text(session: RestSession, text: str) -> None:
-    keymap = {
-        ".": "period",
-    }
-    for ch in text:
-        if ch.isalpha():
-            key = ch.lower()
-        elif ch.isdigit():
-            key = ch
+        if ch.isalnum():
+            browser.type_char(ch.lower())
+        elif ch in EDITOR_CHARS:
+            browser.type_char(ch)
         else:
-            key = keymap.get(ch)
-        if not key:
-            raise Failure(f"Unsupported editor character {ch!r}")
-        tap(session, [key], 0.08)
+            raise Failure(f"cannot type {ch!r} through the browser keyboard")
 
 
-def run_rename_test(host: str, password: str, session: RestSession, test_dir: str, stored_name: str) -> None:
-    open_fixture_directory(session, test_dir)
-    open_fixture_context_menu(session)
-    move_context_to_item(session, "Rename")
-    tap(session, ["return"], MENU_OPEN_SETTLE_SECONDS)
+def open_fixture_directory(browser: Browser, test_dir: str) -> None:
+    browser.go_to_directory(f"Temp/{test_dir}")
 
-    body = session.get_menu_screen()
-    if "Give a new name.." not in menu_screen_text(body):
+
+def open_fixture_context_menu(browser: Browser) -> List[str]:
+    browser.select_entry("zz")
+    if "D64" not in browser.selected_text():
+        raise Failure(f"Expected D64 fixture selected, got {browser.selected_text()!r}")
+    return browser.open_context_menu()
+
+
+def clear_rename_field(browser: Browser, batch: int = 20, max_batches: int = 8) -> None:
+    """Empty the rename prompt, which is pre-filled with the current name.
+
+    The prompt holds the full name, not just the ~38-character window it
+    renders (REQUESTED_NAME is 85 characters), so a single fixed backspace
+    count tuned for a short name silently under-clears a long one. Checking
+    for the absence of a distinctive substring of the original name is not
+    reliable either: backspacing deletes from the end, so a substring can be
+    reduced to an unmatched prefix (and so appear "gone") while a
+    substantial remainder is still in the field. Read the field's own row
+    directly and clear in batches until it is genuinely blank."""
+    title_row = next((i for i, row in enumerate(browser.rows()) if "Give a new name.." in row), None)
+    if title_row is None:
+        raise Failure("Rename prompt title not found; cannot locate its field row")
+    field_row = title_row + 2
+    for _ in range(max_batches):
+        if not strip_frame(browser.rows()[field_row]).strip():
+            return
+        browser.press_many("BACKSPACE", batch)
+    remaining = strip_frame(browser.rows()[field_row])
+    raise Failure(f"could not clear the rename field; still shows {remaining!r}")
+
+
+def run_rename_test(host: str, password: str, browser: Browser, test_dir: str) -> None:
+    open_fixture_directory(browser, test_dir)
+    labels = open_fixture_context_menu(browser)
+    browser.choose_overlay_item(labels, "Rename")
+
+    if "Give a new name.." not in browser.screen():
         raise Failure("Rename prompt did not appear")
 
-    clear_editor_field(session)
-    type_editor_text(session, RENAMED_NAME)
-    tap(session, ["return"], MENU_POPUP_SETTLE_SECONDS)
+    clear_rename_field(browser)
+    type_editor_text(browser, RENAMED_NAME)
+    browser.press("ENTER")
 
     try:
         rest_json(host, password, "GET", f"/v1/files/Temp/{test_dir}/{REQUESTED_NAME}:info")
@@ -349,20 +249,18 @@ def run_rename_test(host: str, password: str, session: RestSession, test_dir: st
     if renamed_info.get("filename") == RENAMED_NAME:
         return
 
-    body = session.get_menu_screen()
-    text = menu_screen_text(body)
+    text = browser.screen()
     if "Error: FILE DOESN'T EXIST" in text:
         raise Failure("Browser rename failed with FILE DOESN'T EXIST")
     raise Failure(f"Rename did not produce {RENAMED_NAME!r}; info={renamed_info!r}")
 
 
-def run_mount_test(host: str, password: str, session: RestSession, test_dir: str, stored_name: str) -> None:
+def run_mount_test(host: str, password: str, browser: Browser, test_dir: str) -> None:
     rest_json(host, password, "PUT", "/v1/drives/a:remove")
 
-    open_fixture_directory(session, test_dir)
-    open_fixture_context_menu(session)
-    move_context_to_item(session, "Mount Disk")
-    tap(session, ["return"], MENU_POPUP_SETTLE_SECONDS)
+    open_fixture_directory(browser, test_dir)
+    labels = open_fixture_context_menu(browser)
+    browser.choose_overlay_item(labels, "Mount Disk")
 
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:
@@ -374,11 +272,24 @@ def run_mount_test(host: str, password: str, session: RestSession, test_dir: str
             return
         time.sleep(0.10)
 
-    body = session.get_menu_screen()
-    text = menu_screen_text(body)
+    text = browser.screen()
     if "Opening disk file failed." in text:
         raise Failure("Browser mount failed with 'Opening disk file failed.'")
     raise Failure(f"Drive A did not mount fixture; drive_a={get_drive_a_image(host)!r}")
+
+
+def reset_machine(host: str, password: str) -> None:
+    headers = rest_headers(password)
+    request = urllib.request.Request(
+        f"http://{host}/v1/machine:input",
+        data=json.dumps({"events": [{"kind": "release_all"}]}).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with rest_lib.retrying_urlopen(request, 10.0, idempotent=True):
+        pass
+    rest_json(host, password, "PUT", "/v1/machine:reset")
+    time.sleep(0.5)
 
 
 def main() -> int:
@@ -395,40 +306,49 @@ def main() -> int:
         type=float,
         default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
     )
+    parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("--test-dir", default=default_test_dir())
+    add_mode_argument(parser)
     args = parser.parse_args()
 
-    session = RestSession(args.host, args.password or None, args.timeout)
+    with check("reset the machine to a clean starting state"):
+        reset_machine(args.host, args.password)
+
+    browser = make_browser(
+        args.mode, args.host, args.password or None, args.timeout,
+        entry_rows=ENTRY_ROWS, status_row=STATUS_ROW,
+        telnet_port=args.telnet_port, telnet_width=TELNET_WIDTH, telnet_height=TELNET_HEIGHT,
+        telnet_entry_rows=TELNET_ENTRY_ROWS, telnet_status_row=TELNET_STATUS_ROW,
+    )
 
     try:
-        with check("reset the machine to a clean starting state"):
-            session.reset_to_clean_slate()
-
         with check("seed long-name fixture for rename"):
-            stored_name = seed_long_fixture(args.host, args.password, args.test_dir)
+            seed_long_fixture(args.host, args.password, args.test_dir)
 
         with check("browser rename on long filename"):
-            run_rename_test(args.host, args.password, session, args.test_dir, stored_name)
+            run_rename_test(args.host, args.password, browser, args.test_dir)
 
         with check("reseed long-name fixture for mount"):
-            stored_name = seed_long_fixture(args.host, args.password, args.test_dir)
+            seed_long_fixture(args.host, args.password, args.test_dir)
 
         with check("browser mount on long filename"):
-            run_mount_test(args.host, args.password, session, args.test_dir, stored_name)
+            run_mount_test(args.host, args.password, browser, args.test_dir)
 
-        print("browser_long_filename_test: OK")
+        suite_ok("browser_long_filename_test")
         return 0
+    except Failure as exc:
+        suite_fail("browser_long_filename_test", str(exc))
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        suite_fail("browser_long_filename_test", format_exception(exc))
+        return 1
     finally:
         try:
-            force_close_menu(session)
+            browser.close()
         except Exception:
             pass
         cleanup_remote_state(args.host, args.password, args.test_dir)
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Failure as exc:
-        print(f"browser_long_filename_test: FAIL: {exc}")
-        raise SystemExit(1)
+    raise SystemExit(main())

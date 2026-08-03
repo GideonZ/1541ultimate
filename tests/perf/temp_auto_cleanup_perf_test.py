@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# E2E: Verifies managed /Temp uploads and measures cleanup-mode performance.
+# PERF: Verifies managed /Temp uploads and measures cleanup-mode performance.
 
 """Validate and measure managed Temp uploads with cleanup and subfolders toggled.
 
@@ -20,8 +20,16 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
+import ftp as ftp_lib
+import rest as rest_lib
+from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
+
+SUITE = "temp_auto_cleanup_perf_test"
 CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEMS = (
     ("Temp%20Auto%20Cleanup", "Temp Auto Cleanup"),
@@ -84,7 +92,7 @@ def assert_or_warn(assertions_enabled, condition, message):
         return
     if assertions_enabled:
         raise RuntimeError(message)
-    print(f"WARNING: {message}")
+    warn(message)
 
 
 @dataclass
@@ -124,19 +132,17 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, retry=True, extra_headers=None):
-        connection = http.client.HTTPConnection(self.host, timeout=10)
-        try:
-            connection.request(method, path, body=body, headers=self._headers(body, extra_headers))
-            response = connection.getresponse()
-            payload = response.read()
-            return response.status, payload
-        except (OSError, http.client.HTTPException):
-            connection.close()
-            if retry and (body is None):
-                return self.request(method, path, body=body, retry=False, extra_headers=extra_headers)
-            raise
-        finally:
-            connection.close()
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry. A request without a payload carries its arguments in
+        # the query string, so applying it twice is the same as once.
+        status, _headers, payload = rest_lib.retrying_http_request(
+            self.host, method, path,
+            body=body,
+            headers=self._headers(body, extra_headers),
+            timeout=10,
+            idempotent=retry and body is None,
+        )
+        return status, payload
 
     def require_ok(self, method, path, body=None, description=None, allow_warning=False, extra_headers=None):
         status, payload = self.request(method, path, body=body, extra_headers=extra_headers)
@@ -146,15 +152,15 @@ class U64Client:
         message = f"{description or path} failed with HTTP {status}"
         if payload:
             try:
-                detail = json.loads(payload.decode("utf-8"))
-                errors = detail.get("errors")
+                document = json.loads(payload.decode("utf-8"))
+                errors = document.get("errors")
                 if errors:
                     message += f": {errors}"
             except (ValueError, UnicodeDecodeError):
                 message += f": {payload[:160]!r}"
 
         if allow_warning and not self.assertions_enabled:
-            print(f"WARNING: {message}")
+            warn(message)
             return None
 
         raise RuntimeError(message)
@@ -174,9 +180,12 @@ class U64Client:
                 return
             if status != 200:
                 raise RuntimeError(f"menu-state probe failed with HTTP {status}")
-            key = "run_stop" if attempt % 2 == 0 else "return"
+            # F8 leaves the menu from any depth; RUN/STOP covers the editors it
+            # does not reach. Never RETURN: it activates the entry under the
+            # cursor, which on the Assembly 64 entry opens its form.
+            keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
             body = json.dumps({
-                "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+                "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
             }).encode("utf-8")
             self.require_ok(
                 "POST",
@@ -194,74 +203,24 @@ class U64Client:
 
 
 class ManagedTempInspector:
+    """The managed Temp upload area, over FTP."""
+
     def __init__(self, host, password):
         self.host = host
-        self.password = password or FTP_DEFAULT_PASSWORD
-
-    def _open(self):
-        ftp = ftplib.FTP(self.host, timeout=FTP_TIMEOUT_SECONDS)
-        ftp.login(FTP_USER, self.password)
-        return ftp
-
-    def _close(self, ftp):
-        try:
-            ftp.quit()
-        except (OSError, EOFError, ftplib.Error):
-            ftp.close()
-
-    def _list_current_directory(self, ftp):
-        lines = []
-        try:
-            ftp.dir(lines.append)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return []
-            raise
-
-        names = []
-        for line in lines:
-            parts = line.split(maxsplit=8)
-            if len(parts) < 9:
-                continue
-            if parts[0].startswith("d"):
-                continue
-            name = parts[8]
-            if name not in (".", ".."):
-                names.append(name)
-        return sorted(names)
+        self.password = password
 
     def list_files(self, directory):
-        ftp = self._open()
-        try:
-            ftp.cwd(directory)
-            return self._list_current_directory(ftp)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return []
-            raise RuntimeError(f"FTP list failed for {directory}: {exc}") from exc
-        finally:
-            self._close(ftp)
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return ftp_lib.file_names(ftp, directory)
 
     def purge_directory(self, directory):
-        ftp = self._open()
-        try:
-            ftp.cwd(directory)
-            names = self._list_current_directory(ftp)
-            for name in names:
-                ftp.delete(name)
-            return len(names)
-        except ftplib.error_perm as exc:
-            if str(exc).startswith("550"):
-                return 0
-            raise RuntimeError(f"FTP purge failed for {directory}: {exc}") from exc
-        finally:
-            self._close(ftp)
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return ftp_lib.purge_directory(ftp, directory)
 
     def purge_all(self):
-        removed = 0
-        for directory in MANAGED_UPLOAD_PATHS:
-            removed += self.purge_directory(directory)
-        return removed
+        with ftp_lib.session(self.host, self.password, FTP_TIMEOUT_SECONDS) as ftp:
+            return sum(ftp_lib.purge_directory(ftp, directory)
+                       for directory in MANAGED_UPLOAD_PATHS)
 
 
 def parse_args():
@@ -389,7 +348,7 @@ def restore_initial_settings(client, snapshot):
     if not snapshot:
         return
 
-    print("\nRestoring initial Temp settings")
+    section("restoring initial Temp settings")
     for encoded_key, _ in CONFIG_ITEMS:
         value = snapshot[encoded_key]
         client.require_ok(
@@ -398,7 +357,7 @@ def restore_initial_settings(client, snapshot):
             description=f"restore {encoded_key}",
             allow_warning=not client.assertions_enabled,
         )
-        print(f"  {encoded_key}: {value}")
+        detail(f"{encoded_key}: {value}")
 
 
 def build_frame_payload(frame_number):
@@ -431,11 +390,9 @@ def post_screen_memory_write(client, frame_counter):
 
 def emit_progress(prefix, current, total=None, elapsed=None):
     if total is not None:
-        message = f"\r{prefix}: {current}/{total}"
+        progress(f"{prefix}: {current}/{total}")
     else:
-        message = f"\r{prefix}: {current} samples in {elapsed:.2f}s"
-    sys.stdout.write(message)
-    sys.stdout.flush()
+        progress(f"{prefix}: {current} samples in {elapsed:.2f}s")
 
 
 def emit_rolling_window_stats(total_uploads, elapsed, window_latencies_ms):
@@ -522,7 +479,7 @@ def wait_for_expected_file_count(inspector, directories, predicate, description,
 def prepare_stage(inspector, upload_dirs, stage_name, assertions_enabled):
     removed = inspector.purge_all()
     if removed:
-        print(f"  Purged {removed} existing managed temp files")
+        detail(f"purged {removed} existing managed temp files")
 
     leftovers = []
     for directory in MANAGED_UPLOAD_PATHS:
@@ -591,18 +548,18 @@ def run_stage(
     clear_screen(client)
     prepare_stage(inspector, upload_dirs, name, client.assertions_enabled)
 
-    print(f"\n{name}: cleanup {cleanup}, subfolders {subfolder}")
-    print(f"  Upload target: {upload_dir}")
-    print(f"  Memory write: ${MEMORY_START_ADDRESS:04X}-${MEMORY_START_ADDRESS + PAYLOAD_SIZE - 1:04X}")
+    section(f"{name}: cleanup {cleanup}, subfolders {subfolder}")
+    detail(f"upload target: {upload_dir}")
+    detail(f"memory write: ${MEMORY_START_ADDRESS:04X}-${MEMORY_START_ADDRESS + PAYLOAD_SIZE - 1:04X}")
     if max_total_uploads is not None:
-        print(f"  Max total uploads this stage: {max_total_uploads}")
+        detail(f"max total uploads this stage: {max_total_uploads}")
 
     for warmup_index in range(warmup_count):
         post_screen_memory_write(client, frame_counter)
         if ((warmup_index + 1) % WARMUP_PROGRESS_INTERVAL) == 0 or (warmup_index + 1) == warmup_count:
             emit_progress("Warmup", warmup_index + 1, total=warmup_count)
     if warmup_count:
-        sys.stdout.write("\n")
+        progress_done()
 
     latencies_ms = []
     stage_started = time.perf_counter()
@@ -640,19 +597,19 @@ def run_stage(
 
 
 def print_stage_summary(result):
-    print(f"\n{result.name} summary")
-    print(f"  Warmup uploads: {result.warmup_count}")
-    print(f"  Measured uploads: {result.sample_count}")
-    print(f"  Total uploads: {result.total_uploads}")
-    print(f"  Managed files after stage: {result.managed_file_count}")
-    print(f"  Duration: {result.duration_seconds:.3f} s")
-    print(f"  Throughput: {format_rps(result.rps)}")
-    print(f"  P50: {format_ms(result.p50_ms)}")
-    print(f"  P90: {format_ms(result.p90_ms)}")
-    print(f"  P99: {format_ms(result.p99_ms)}")
-    print(f"  Avg: {format_ms(result.avg_ms)}")
-    print(f"  Min: {format_ms(result.min_ms)}")
-    print(f"  Max: {format_ms(result.max_ms)}")
+    section(f"{result.name} summary")
+    detail(f"warmup uploads: {result.warmup_count}")
+    detail(f"measured uploads: {result.sample_count}")
+    detail(f"total uploads: {result.total_uploads}")
+    detail(f"managed files after stage: {result.managed_file_count}")
+    detail(f"duration: {result.duration_seconds:.3f} s")
+    detail(f"throughput: {format_rps(result.rps)}")
+    detail(f"p50: {format_ms(result.p50_ms)}")
+    detail(f"p90: {format_ms(result.p90_ms)}")
+    detail(f"p99: {format_ms(result.p99_ms)}")
+    detail(f"avg: {format_ms(result.avg_ms)}")
+    detail(f"min: {format_ms(result.min_ms)}")
+    detail(f"max: {format_ms(result.max_ms)}")
 
 
 def print_comparison(enabled, disabled):
@@ -666,7 +623,7 @@ def print_comparison(enabled, disabled):
     p99_delta = enabled.p99_ms - disabled.p99_ms
     rps_delta = enabled.rps - disabled.rps
 
-    print("\nDelta (enabled - disabled)")
+    section("delta (enabled - disabled)")
     print(
         f"  P50: {format_ms(p50_delta)} "
         f"({format_percent(percent_delta(enabled.p50_ms, disabled.p50_ms)) if percent_delta(enabled.p50_ms, disabled.p50_ms) is not None else 'n/a'})"
@@ -761,17 +718,27 @@ def main():
             print_stage_summary(result)
         if len(results) == 2:
             print_comparison(results[0], results[1])
+        suite_ok(SUITE, f"{len(results)} stage(s) measured")
         return 0
     except KeyboardInterrupt:
-        print("\nStopped.")
+        suite_fail(SUITE, "interrupted")
         return 130
     except Exception as exc:
-        print(f"ERROR: {exc}")
+        suite_fail(SUITE, str(exc))
         return 1
     finally:
         try:
+            # The measured stages upload hundreds of small files and the
+            # purge only runs before each stage, so without this the last
+            # stage's uploads stay in the managed Temp area and every later
+            # run of any suite reads a directory listing that much longer.
+            section("clearing the managed Temp upload area")
+            try:
+                detail(f"removed {inspector.purge_all()} managed temp files")
+            except Exception as exc:
+                warn(f"could not clear the managed Temp area: {exc}")
             if args.no_config_change:
-                print("\nLeaving Temp settings unchanged")
+                section("leaving Temp settings unchanged")
             else:
                 restore_initial_settings(client, initial_settings)
         finally:

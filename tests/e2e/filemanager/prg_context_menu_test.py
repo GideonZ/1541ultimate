@@ -11,8 +11,8 @@ launched from both sides of the disk boundary.
 
 For each of those two locations the test reads what the context menu offers
 and then drives every single entry, failing if the browser grows an action
-that nothing here covers. Everything is driven with `machine:input` key
-injection and verified from outside the browser - C64 memory and screen for
+that nothing here covers. Browser input uses the shared transport facade,
+while verification remains outside the browser - C64 memory and screen for
 the loaders, FTP and the raw D64 directory for the file operations:
 
   Run          the program executed -> signature present and output on screen
@@ -37,18 +37,25 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib
+# holds the shared UI backend.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
+import ftp as ftp_lib
+import pacing
+from report import check_skip, detail, section, suite_fail, suite_ok
+from ui_backend import Browser, MODE_TELNET, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
 FTP_USER = "user"
 FTP_DEFAULT_PASSWORD = "password"
 
 TEMP_PATH = "/Temp/"
-ROOT_PATH = "/"
 FIXTURE_PREFIX = "prgmenu"
 # 16 characters: the longest name a CBM directory entry can hold. Together with
 # the ".prg" the browser appends this is the longest name the boot-cart loader
@@ -62,29 +69,31 @@ SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
 
-MENU_SETTLE_SECONDS = 0.15
-MENU_OPEN_SETTLE_SECONDS = 0.35
-ACTION_SETTLE_SECONDS = 1.0
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
 RUN_TIMEOUT_SECONDS = 12.0
 REAL_RUN_TIMEOUT_SECONDS = 40.0
 BOOT_TIMEOUT_SECONDS = 15.0
-POPUP_SETTLE_SECONDS = 0.6
 SCREEN_TIMEOUT_SECONDS = 6.0
 EDIT_FIELD_CLEAR_TAPS = 64
 
 HEX_VIEW_FIRST_LINE = "0000 01 08 0B 08"
-# Pin the interface so a run does not depend on how the device happens to be
-# configured, and on whether a monitor is plugged in.
-INTERFACE_TYPE_PATH = "/v1/configs/User%20Interface%20Settings/Interface%20Type"
-REQUIRED_INTERFACE_TYPE = "Freeze"
 
 PICKER_TITLE = "Select Path"
 PICKER_SELECT_ENTRY = "<< Select Current Dir >>"
-EDITOR_KEYS = {".": "period"}
+
+ENTRY_ROWS = range(2, 24)
+STATUS_ROW = 24
+TELNET_ENTRY_ROWS = range(2, 23)
+TELNET_STATUS_ROW = 23
 
 # Offered entries this test knowingly does not drive, with the reason why.
 UNEXERCISED_ACTIONS = {
     "Run with App": "only offered when /Flash/apps/<ext>.prg is installed",
+    # Confirmed live, consistently, on a D64-contained file's context menu
+    # under --mode telnet only: REST/Overlay and REST/Freeze never offer it
+    # for the same fixture and location.
+    "Select": "offered only over telnet, for a file inside a D64; no REST/Freeze/Overlay equivalent seen",
 }
 
 # 10 SYS 2064 ; the machine code stores SIGNATURE at $C000 and prints MESSAGE.
@@ -189,11 +198,35 @@ def screencode_to_ascii(code: int) -> str:
     return "."
 
 
-class Machine:
-    """C64-side observation and the browser navigation built on top of it."""
+def _at_plain_root(rows: List[str], path: str) -> bool:
+    """The unobstructed root listing, with no overlay (menu, popup, viewer)
+    drawn over any part of it.
 
-    def __init__(self, session: RestSession) -> None:
+    The path the browser reports has to be "/" itself: every directory this
+    suite descends into is under /Temp, whose own status row still contains
+    "Temp", so the entry check below matches inside /Temp just as it does at
+    the root (confirmed live: the /Temp listing was read as the root).
+
+    Every overlay this suite drives is boxed in "+"/"|" border characters
+    the plain listing never uses on its own (the same signal
+    assembly64_test.py's at_root_browser uses for the same purpose); "Temp"
+    alone is not enough, since text from behind a narrower overlay can still
+    show through on rows it does not reach.
+    """
+    if path != "/":
+        return False
+    text = "\n".join(rows)
+    if "+" in text or "|" in text:
+        return False
+    return "Temp" in text
+
+
+class Machine:
+    """REST C64 observations alongside transport-agnostic browser navigation."""
+
+    def __init__(self, session: RestSession, browser: Browser) -> None:
         self.session = session
+        self.browser = browser
 
     # ---- REST helpers ---------------------------------------------------
     def readmem(self, address: int, length: int) -> bytes:
@@ -205,8 +238,12 @@ class Machine:
         return body
 
     def writemem(self, address: int, data: bytes) -> None:
+        # Only ever used to blank a fixed block (the signature area, the load
+        # area), so the same bytes arriving twice is the same outcome as once.
+        # The device can be busy enough running a program to miss the request
+        # window, which is a timeout rather than an answer.
         status, _, body = self.session.request(
-            "PUT", "/v1/machine:writemem",
+            "PUT", "/v1/machine:writemem", idempotent=True,
             params={"address": f"{address:04X}", "data": data.hex()})
         if status != 200:
             raise Failure(f"writemem ${address:04X} failed with HTTP {status}: {body[:120]!r}")
@@ -218,12 +255,15 @@ class Machine:
         # Wait for the BASIC cold start to finish. Freezing before it has run
         # its NEW leaves the boot sequence to wipe the program area and the
         # BASIC pointers the moment the machine is released again.
+        # Polled at the shared interval rather than every 0.25s: the boot takes
+        # about 2.4s and this runs before every load/run action, so a coarse
+        # poll added up to a fifth of a second an action for nothing.
         deadline = time.monotonic() + BOOT_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.readmem(0x002B, 2) == b"\x01\x08" and "READY." in self.c64_screen():
                 time.sleep(0.3)
                 return
-            time.sleep(0.25)
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
         raise Failure(f"C64 did not reach the BASIC prompt:\n{self.c64_screen()}")
 
     def drive_a(self) -> Dict[str, object]:
@@ -237,19 +277,6 @@ class Machine:
 
     def remove_drive_a(self) -> None:
         self.session.request("PUT", "/v1/drives/a:remove")
-
-    def get_interface_type(self) -> str:
-        status, _, body = self.session.request("GET", INTERFACE_TYPE_PATH)
-        if status != 200:
-            raise Failure(f"reading the interface type failed with HTTP {status}")
-        setting = json.loads(body.decode("utf-8"))["User Interface Settings"]["Interface Type"]
-        return setting["current"]
-
-    def set_interface_type(self, value: str) -> None:
-        status, _, body = self.session.request(
-            "PUT", INTERFACE_TYPE_PATH, params={"value": value})
-        if status != 200:
-            raise Failure(f"setting the interface type to {value!r} failed: {body[:120]!r}")
 
     # ---- C64 observation ------------------------------------------------
     def signature(self) -> bytes:
@@ -299,7 +326,7 @@ class Machine:
             f"program was never placed at ${LOAD_ADDRESS:04X}; "
             f"screen was:\n{self.visible_text()}")
 
-    # ---- Menu navigation ------------------------------------------------
+    # ---- Native C64 keyboard input --------------------------------------
     def tap(self, inputs: List[str], settle: float = MENU_SETTLE_SECONDS) -> None:
         # The device serves a small number of HTTP connections, so a single
         # request can time out under load. Retry once: losing a keystroke here
@@ -311,6 +338,15 @@ class Machine:
             self.session.tap_keyboard(inputs)
         time.sleep(settle)
 
+    def wait_menu_closed(self, timeout: float = 5.0) -> bool:
+        """Wait for the on-device menu to be gone, so the C64 has its keyboard."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.session.menu_screen_unavailable():
+                return True
+            time.sleep(0.2)
+        return False
+
     def type_basic_line(self, text: str) -> None:
         """Type a direct-mode line, making sure every character really landed.
 
@@ -320,8 +356,13 @@ class Machine:
         """
         for attempt in range(5):
             # The menu disables the C64 keyboard matrix while it is up and only
-            # re-enables it after the browser task has fully unwound, so give
-            # the machine its keyboard back before typing.
+            # re-enables it after the browser task has fully unwound, so wait
+            # for it to be gone and give the machine its keyboard back before
+            # typing. Without the wait, an action that hands control back by
+            # closing the menu can be followed by typing into a machine whose
+            # keyboard is still disabled, which produces no characters at all.
+            if not self.wait_menu_closed():
+                continue
             try:
                 self.session.release_all_input()
             except Failure:
@@ -336,165 +377,146 @@ class Machine:
             # Wipe whatever did land and try again.
             for _ in range(len(text) + 2):
                 self.tap(["inst_del"], 0.06)
-        raise Failure(f"could not type {text!r} on the C64:\n{self.c64_screen()}")
+        still_open = not self.session.menu_screen_unavailable()
+        raise Failure(
+            f"could not type {text!r} on the C64"
+            f"{' (the menu never closed, so the keyboard stayed disabled)' if still_open else ''}:"
+            f"\n{self.c64_screen()}")
 
-    def rows(self) -> List[str]:
-        return MenuScreenInfo(self.session.get_menu_screen()).rows
-
-    def current_path(self) -> str:
-        return self.rows()[24].split()[0]
-
-    def selected(self) -> str:
-        return MenuScreenInfo(self.session.get_menu_screen()).selected_text
-
-    def open_menu(self) -> None:
-        if not self.session.menu_screen_unavailable():
-            return
-        self.session.open_menu()
-        time.sleep(MENU_OPEN_SETTLE_SECONDS)
-
+    # ---- Browser navigation ---------------------------------------------
     def close_menu(self) -> None:
+        # Under Telnet the root browser is where this has to stop; under
+        # REST/Overlay and REST/Freeze it is not, because there the root
+        # browser is still the on-device menu being up, and while it is up
+        # the C64's keyboard stays disabled. Stopping at the root under REST
+        # left the menu open, so a later type_basic_line() produced no
+        # characters at all (confirmed live: the DMA action failed with "the
+        # menu never closed, so the keyboard stayed disabled" while the
+        # browser sat in /Temp).
+        telnet = isinstance(self.browser.backend, TelnetBackend)
         for _ in range(20):
-            if self.session.menu_screen_unavailable():
+            try:
+                raw = self.browser.rows()
+            except Failure:
                 return
-            # RUN/STOP backs out of browsers and editors but does nothing to a
-            # popup: those only listen for their button keys.
-            rows = [row.strip() for row in self.rows()]
+            rows = [strip_frame(row) for row in raw]
+            fields = raw[self.browser.status_row].split()
+            path = fields[0] if fields else ""
             if "Yes  No" in rows:
-                self.tap(["n"], POPUP_SETTLE_SECONDS)
+                self.browser.press_popup_button("n")
             elif "Ok" in rows:
-                self.tap(["o"], POPUP_SETTLE_SECONDS)
+                self.browser.press_popup_button("o")
+            elif telnet and _at_plain_root(rows, path):
+                # Nothing left to close over Telnet: its remote session never
+                # closes on its own, so without this check the loop would keep
+                # pressing F8 at the plain root forever. Pressing F8 there is
+                # not a harmless no-op either: confirmed live, it closes the
+                # whole Telnet UI session, breaking the socket on the very
+                # next keypress. REST needs no such check -- its menu_screen
+                # 404s once F8 has backed all the way out, which the Failure
+                # branch above catches.
+                return
             else:
                 # Shift+F7 is F8, the full UI-exit command. RUN/STOP may only
                 # hide a nested config/search stack, which then reappears when
                 # this independently selected suite opens the menu.
-                self.tap(["left_shift", "f7"], MENU_OPEN_SETTLE_SECONDS)
-        raise Failure("could not close the menu; screen was:\n" + "\n".join(self.rows()))
-
-    def go_to_root(self) -> None:
-        for _ in range(12):
-            if self.current_path() == ROOT_PATH:
-                return
-            self.tap(["left_shift", "cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
-        raise Failure(f"could not return to {ROOT_PATH!r}, now at {self.current_path()!r}")
-
-    def go_to_top(self, page_count: int = 12) -> None:
-        # F1 is PAGE UP in the device UI. Rewinding by pages avoids both the
-        # old 24-entry assumption and dozens of one-line REST key requests.
-        for _ in range(page_count):
-            self.tap(["f1"], 0.05)
+                try:
+                    self.browser.press("F8")
+                except Failure:
+                    return
+        try:
+            screen = "\n".join(self.browser.rows())
+        except Failure:
+            return
+        raise Failure("could not close the menu; screen was:\n" + screen)
 
     def select_entry(self, prefix: str, max_steps: int = 128) -> None:
-        self.go_to_top()
-        visited = set()
-        for _ in range(max_steps):
-            current = self.selected()
-            if current.startswith(prefix):
-                return
-            if current in visited:
-                break
-            visited.add(current)
-            self.tap(["cursor_up_down"])
-        raise Failure(
-            f"could not select an entry starting with {prefix!r}; "
-            f"visited {sorted(visited)!r}")
+        # Browser.select_entry's default timeout (3s) assumes its own
+        # default max_steps (30); /Temp accumulates fixtures across every
+        # run of this suite, so a genuine scan here can need most of the 128
+        # steps this suite asks for, each a real keypress-and-settle round
+        # trip. The root browser also refreshes drive status on its own,
+        # independent of any keypress (confirmed live: an identical select
+        # for a root-level entry failed once, then succeeded on an
+        # otherwise-identical retry a moment later), so a scan can race a
+        # background redraw -- the budget needs to be generous enough for a
+        # few retries to clear that, not just long enough for one full walk.
+        self.browser.select_entry(prefix, max_steps=max_steps, timeout=45.0)
 
     def enter(self) -> None:
-        self.tap(["cursor_left_right"], MENU_OPEN_SETTLE_SECONDS)
+        self.browser.enter()
+
+    def rows(self) -> List[str]:
+        return self.browser.rows()
+
+    def current_path(self) -> str:
+        return self.browser.current_path()
 
     def open_temp(self) -> None:
-        # Always start from a closed menu: a half-finished action can leave a
-        # nested screen (a path picker, an editor) on the UI stack, and that
-        # looks enough like the browser to silently swallow the whole test.
-        self.close_menu()
-        self.open_menu()
-        self.go_to_root()
-        self.select_entry("Temp")
-        self.enter()
-        if self.current_path() != TEMP_PATH:
-            raise Failure(f"expected {TEMP_PATH!r}, got {self.current_path()!r}")
-
-    def context_menu_items(self, before: List[str]) -> List[Tuple[int, str]]:
-        """Map the context-menu overlay to (screen row, label) pairs."""
-        after = self.rows()
-        items = []
-        for index, (old, new) in enumerate(zip(before, after)):
-            if old == new:
-                continue
-            label = new[len(os.path.commonprefix([old, new])) :].strip()
-            if label:
-                items.append((index, label))
-        if not items:
-            raise Failure(f"no context menu appeared; screen was:\n" + "\n".join(after))
-        return items
+        # The root browser refreshes drive status independently of any
+        # keypress (the same behaviour documented for the task menu in
+        # assembly64_test.py), so a scan can occasionally race a background
+        # redraw -- confirmed live: identical reset+reopen+scan sequences
+        # run back to back are not equally reliable right after a full-screen
+        # overlay (View, Hex View) was open, though a fresh cycle in
+        # isolation reliably succeeds. Retrying the whole sequence from a
+        # clean reopen, not just the inner scan, is what proved reliable.
+        last_exc: Optional[Failure] = None
+        for _ in range(3):
+            try:
+                self.browser.backend.ensure_ready()
+                self.browser.go_to_root()
+                self.select_entry("Temp")
+                self.enter()
+                if self.current_path() != TEMP_PATH:
+                    raise Failure(f"expected {TEMP_PATH!r}, got {self.current_path()!r}")
+                return
+            except Failure as exc:
+                last_exc = exc
+        raise last_exc
 
     def invoke_context_action(self, label: str) -> None:
-        before = self.rows()
-        self.tap(["return"], MENU_OPEN_SETTLE_SECONDS)
-        items = self.context_menu_items(before)
-        labels = [text for _, text in items]
-        if label not in labels:
-            raise Failure(f"context menu has no {label!r}; it offers {labels}")
-        for _ in range(labels.index(label)):
-            self.tap(["cursor_up_down"])
-        self.tap(["return"], ACTION_SETTLE_SECONDS)
+        # Run, Mount & Run, Real Run and DMA hand control to a running
+        # program as a direct effect of the ENTER that confirms them, which
+        # closes the menu before Browser can settle-capture a post-action
+        # screen (Backend.send_key() raises "menu screen unavailable" in
+        # that case -- the same class of thing assembly64_test.py hit for
+        # RUN/STOP; see its Device.send_key()). Every caller here verifies
+        # the actual outcome independently afterward (a REST memory read, a
+        # popup's own text, or the browser being reachable again), so a menu
+        # closing here is not itself a failure to report.
+        try:
+            self.browser.invoke_context_action(label)
+        except Failure as exc:
+            if not str(exc).startswith("menu screen unavailable after"):
+                raise
 
     def context_labels(self) -> List[str]:
         """Open the context menu of the selected entry and close it again."""
-        before = self.rows()
-        self.tap(["return"], MENU_OPEN_SETTLE_SECONDS)
-        labels = [text for _, text in self.context_menu_items(before)]
-        self.tap(["run_stop"], MENU_OPEN_SETTLE_SECONDS)
+        labels = self.browser.open_context_menu()
+        self.browser.press("RUNSTOP")
         return labels
 
     # ---- Nested screens the actions open --------------------------------
     def wait_for_text(self, text: str, timeout: float = SCREEN_TIMEOUT_SECONDS) -> str:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            screen = "\n".join(self.rows())
-            if text in screen:
-                return screen
-            time.sleep(0.15)
-        raise Failure(f"{text!r} never appeared; screen was:\n" + "\n".join(self.rows()))
+        self.browser.wait_for_text(text, timeout)
+        return "\n".join(self.browser.rows())
 
-    def press_popup_button(self, key: str, settle: float = POPUP_SETTLE_SECONDS) -> None:
-        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel."""
-        self.tap([key], settle)
+    def press_popup_button(self, key: str) -> None:
+        self.browser.press_popup_button(key)
 
     def leave_nested_screen(self) -> None:
         """RUN/STOP backs out of the editors and of the path picker."""
-        self.tap(["run_stop"], MENU_OPEN_SETTLE_SECONDS)
+        self.browser.press("RUNSTOP")
 
     def replace_edit_field(self, text: str) -> None:
-        for _ in range(EDIT_FIELD_CLEAR_TAPS):
-            self.tap(["inst_del"], 0.03)
-        for character in text:
-            key = EDITOR_KEYS.get(character)
-            if key is None and (character.isalnum()):
-                key = character.lower()
-            if key is None:
-                raise Failure(f"cannot type {character!r} through the REST keyboard")
-            self.tap([key], 0.08)
-        self.tap(["return"], POPUP_SETTLE_SECONDS)
+        self.browser.fill_edit_field(text, clear_taps=EDIT_FIELD_CLEAR_TAPS)
 
     def pick_directory(self, directory: str) -> None:
-        """Drive the 'Select Path' browser onto `directory` and pick it."""
-        self.wait_for_text(PICKER_TITLE)
-        parts = [part for part in directory.strip("/").split("/") if part]
-        for part in parts:
-            self.select_entry(part)
-            self.enter()
-        if self.current_path().rstrip("/") != directory.rstrip("/"):
-            raise Failure(
-                f"path picker is at {self.current_path()!r}, expected {directory!r}")
-        self.select_entry(PICKER_SELECT_ENTRY)
-        self.tap(["return"], ACTION_SETTLE_SECONDS)
+        self.browser.pick_directory(directory, PICKER_TITLE, PICKER_SELECT_ENTRY)
 
-
-def ftp_connect(host: str, password: str) -> ftplib.FTP:
-    ftp = ftplib.FTP(host, timeout=30)
-    ftp.login(FTP_USER, password or FTP_DEFAULT_PASSWORD)
-    return ftp
+    def close(self) -> None:
+        self.browser.close()
 
 
 def default_fixture_token() -> str:
@@ -544,95 +566,57 @@ class Fixtures:
             self.long_prg: PRG_BYTES,
             self.d64: build_d64(DISK_NAME, CBM_FILE_NAME, PRG_BYTES),
         }
-        ftp = ftp_connect(host, password)
-        try:
-            try:
-                ftp.mkd(f"{TEMP_PATH}{self.target_dir}")
-            except ftplib.error_perm:
-                pass
+        with ftp_lib.session(host, password, timeout=30) as ftp:
+            ftp_lib.make_dir(ftp, f"{TEMP_PATH}{self.target_dir}")
             for name, blob in payload.items():
                 self._store(ftp, name, blob)
             # Overlong names come back through a shortened FTP alias, so match
             # on the leading run that survives instead of the whole name.
-            listing = ftp.nlst(TEMP_PATH)
+            listing = ftp_lib.names(ftp, TEMP_PATH)
             for name in payload:
                 stem = name[:20]
                 if not any(entry.startswith(stem) for entry in listing):
                     raise Failure(f"fixture {name} was not stored in {TEMP_PATH}: {listing}")
-        finally:
-            ftp.quit()
 
     @staticmethod
     def _store(ftp: ftplib.FTP, name: str, blob: bytes) -> None:
-        try:
-            ftp.delete(f"{TEMP_PATH}{name}")
-        except ftplib.error_perm:
-            pass
-        ftp.storbinary(f"STOR {TEMP_PATH}{name}", io.BytesIO(blob))
+        ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{name}")
+        ftp_lib.store(ftp, f"{TEMP_PATH}{name}", blob)
 
     def reseed_prg(self, host: str, password: str) -> None:
-        ftp = ftp_connect(host, password)
-        try:
+        with ftp_lib.session(host, password, timeout=30) as ftp:
             self._store(ftp, self.prg, PRG_BYTES)
-        finally:
-            ftp.quit()
 
     def new_disk(self, host: str, password: str) -> None:
         """A fresh image name: the browser caches a disk directory per path."""
         self.disk_serial += 1
         self.d64 = f"{FIXTURE_PREFIX}{self.token}d{self.disk_serial}.d64"
-        ftp = ftp_connect(host, password)
-        try:
+        with ftp_lib.session(host, password, timeout=30) as ftp:
             self._store(ftp, self.d64, build_d64(DISK_NAME, CBM_FILE_NAME, PRG_BYTES))
-        finally:
-            ftp.quit()
 
     def temp_listing(self, host: str, password: str, directory: str = "") -> List[str]:
-        ftp = ftp_connect(host, password)
-        try:
-            return ftp.nlst(f"{TEMP_PATH}{directory}")
-        finally:
-            ftp.quit()
+        with ftp_lib.session(host, password, timeout=30) as ftp:
+            return ftp_lib.names(ftp, f"{TEMP_PATH}{directory}")
 
     def disk_listing(self, host: str, password: str) -> List[str]:
         """Read the fixture image back over FTP and decode its directory."""
-        ftp = ftp_connect(host, password)
-        try:
-            buffer = io.BytesIO()
-            ftp.retrbinary(f"RETR {TEMP_PATH}{self.d64}", buffer.write)
-        finally:
-            ftp.quit()
-        return parse_d64_directory(buffer.getvalue())
+        with ftp_lib.session(host, password, timeout=30) as ftp:
+            image = ftp_lib.retrieve(ftp, f"{TEMP_PATH}{self.d64}")
+        return parse_d64_directory(image)
 
     def remove(self, host: str, password: str) -> None:
         try:
-            ftp = ftp_connect(host, password)
-        except Exception:
-            return
-        try:
-            for directory in (f"{self.target_dir}/", ""):
-                try:
-                    entries = ftp.nlst(f"{TEMP_PATH}{directory}")
-                except Exception:
-                    continue
-                for name in entries:
-                    if not name.startswith(FIXTURE_PREFIX) and directory == "":
-                        continue
-                    try:
-                        ftp.delete(f"{TEMP_PATH}{directory}{name}")
-                    except ftplib.error_perm:
-                        pass
-            try:
-                ftp.rmd(f"{TEMP_PATH}{self.target_dir}")
-            except ftplib.error_perm:
-                pass
-        except Exception:
+            with ftp_lib.session(host, password, timeout=30) as ftp:
+                for directory in (f"{self.target_dir}/", ""):
+                    for name in ftp_lib.names(ftp, f"{TEMP_PATH}{directory}"):
+                        if not name.startswith(FIXTURE_PREFIX) and directory == "":
+                            continue
+                        ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{directory}{name}")
+                ftp_lib.delete_quietly(ftp, f"{TEMP_PATH}{self.target_dir}")
+        except Failure:
+            # Best effort cleanup: a device that will not answer here is
+            # reported by whatever runs next, not by teardown.
             pass
-        finally:
-            try:
-                ftp.quit()
-            except Exception:
-                pass
 
 
 def remove_leftovers_via_browser(machine: Machine, host: str, password: str) -> None:
@@ -642,11 +626,8 @@ def remove_leftovers_via_browser(machine: Machine, host: str, password: str) -> 
     that alias fails, so the long-named fixture has to go out the same way it
     came in view: through the browser, which resolves the real name.
     """
-    ftp = ftp_connect(host, password)
-    try:
-        remaining = [n for n in ftp.nlst(TEMP_PATH) if n.startswith(FIXTURE_PREFIX)]
-    finally:
-        ftp.quit()
+    with ftp_lib.session(host, password, timeout=30) as ftp:
+        remaining = ftp_lib.names(ftp, TEMP_PATH, prefix=FIXTURE_PREFIX)
     if not remaining:
         return
 
@@ -759,10 +740,20 @@ def run_action_real_run(machine: Machine, fixtures: Fixtures) -> None:
 
 
 def assert_disk_mounted(machine: Machine, fixtures: Fixtures, action: str) -> None:
-    drive_a = machine.drive_a()
-    mounted = f"{drive_a.get('image_path', '')}{drive_a.get('image_file', '')}"
-    if fixtures.d64 not in mounted:
-        raise Failure(f"{action} did not mount the D64 on drive A: {drive_a!r}")
+    # Mount & Run's own caller already waited out RUN_TIMEOUT_SECONDS for
+    # the program's signature before checking this, by which point the
+    # mount is long since finished; Real Run's caller checks immediately
+    # after triggering the action, with nothing else to wait on first, and
+    # can genuinely race the mount actually registering in /v1/drives.
+    deadline = time.monotonic() + 5.0
+    drive_a: Dict[str, object] = {}
+    while time.monotonic() < deadline:
+        drive_a = machine.drive_a()
+        mounted = f"{drive_a.get('image_path', '')}{drive_a.get('image_file', '')}"
+        if fixtures.d64 in mounted:
+            return
+        time.sleep(0.25)
+    raise Failure(f"{action} did not mount the D64 on drive A: {drive_a!r}")
 
 
 class PlainLocation:
@@ -843,11 +834,39 @@ def action_hex_view(machine: Machine, fixtures: Fixtures, location, host: str, p
     machine.select_entry(location.entry_name(fixtures))
 
 
+def invoke_action_and_pick_directory(
+    machine: Machine, fixtures: Fixtures, location, action_label: str, attempts: int = 5,
+) -> None:
+    # The "Select Path" picker marks its own selected row with a different
+    # colour convention than the tree browser and every other overlay this
+    # suite drives (confirmed live: none of its cells carry the tree
+    # browser's marker SGR, at any column), which TelnetBackend.selected_row()
+    # has no way to know to look for -- a transport-level gap, not something
+    # fixable by retrying. Callers check the mode themselves and skip before
+    # reaching here rather than retry a walk that cannot succeed under Telnet.
+    directory = f"{TEMP_PATH}{fixtures.target_dir}"
+    last_exc: Optional[Failure] = None
+    for _ in range(attempts):
+        try:
+            location.open(machine, fixtures)
+            machine.invoke_context_action(action_label)
+            machine.pick_directory(directory)
+            return
+        except Failure as exc:
+            last_exc = exc
+            try:
+                machine.close_menu()
+            except Failure:
+                pass
+    raise last_exc
+
+
 def action_copy_to(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
+    if isinstance(machine.browser.backend, TelnetBackend):
+        check_skip("the 'Select Path' picker's own selection marker is not detectable over telnet")
+        return
     clear_target_dir(host, password, fixtures)
-    location.open(machine, fixtures)
-    machine.invoke_context_action("Copy to...")
-    machine.pick_directory(f"{TEMP_PATH}{fixtures.target_dir}")
+    invoke_action_and_pick_directory(machine, fixtures, location, "Copy to...")
     machine.wait_for_text("Copy complete.")
     machine.press_popup_button("o")
 
@@ -861,11 +880,12 @@ def action_copy_to(machine: Machine, fixtures: Fixtures, location, host: str, pa
 
 
 def action_move_to(machine: Machine, fixtures: Fixtures, location, host: str, password: str) -> None:
+    if isinstance(machine.browser.backend, TelnetBackend):
+        check_skip("the 'Select Path' picker's own selection marker is not detectable over telnet")
+        return
     clear_target_dir(host, password, fixtures)
     location.refresh(host, password, fixtures)
-    location.open(machine, fixtures)
-    machine.invoke_context_action("Move to...")
-    machine.pick_directory(f"{TEMP_PATH}{fixtures.target_dir}")
+    invoke_action_and_pick_directory(machine, fixtures, location, "Move to...")
     machine.wait_for_text("Move complete.")
     machine.press_popup_button("o")
 
@@ -1004,25 +1024,15 @@ def run_repeat_mode(machine: Machine, fixtures: Fixtures, host: str, password: s
 
 
 def fetch_temp_file(host: str, password: str, relative: str) -> bytes:
-    ftp = ftp_connect(host, password)
-    try:
-        buffer = io.BytesIO()
-        ftp.retrbinary(f"RETR {TEMP_PATH}{relative}", buffer.write)
-        return buffer.getvalue()
-    finally:
-        ftp.quit()
+    with ftp_lib.session(host, password, timeout=30) as ftp:
+        return ftp_lib.retrieve(ftp, f"{TEMP_PATH}{relative}")
 
 
 def clear_target_dir(host: str, password: str, fixtures: Fixtures) -> None:
-    ftp = ftp_connect(host, password)
-    try:
-        for name in ftp.nlst(f"{TEMP_PATH}{fixtures.target_dir}/"):
-            try:
-                ftp.delete(f"{TEMP_PATH}{fixtures.target_dir}/{name}")
-            except ftplib.error_perm:
-                pass
-    finally:
-        ftp.quit()
+    directory = f"{TEMP_PATH}{fixtures.target_dir}"
+    with ftp_lib.session(host, password, timeout=30) as ftp:
+        for name in ftp_lib.names(ftp, f"{directory}/"):
+            ftp_lib.delete_quietly(ftp, f"{directory}/{name}")
 
 
 # Every action the browser offers for a PRG, in the order the test drives them:
@@ -1081,6 +1091,8 @@ def main() -> int:
     parser.add_argument(
         "-t", "--timeout", type=float,
         default=float(os.environ.get("U64_INPUT_TIMEOUT", "15.0")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
     parser.add_argument(
         "--keep-fixtures", action="store_true",
         help="Leave the seeded /Temp fixtures in place for manual inspection.")
@@ -1095,12 +1107,33 @@ def main() -> int:
     parser.add_argument(
         "--fixture-token", default=default_fixture_token(),
         help="Suffix that makes this run's /Temp fixture names unique.")
+    add_mode_argument(parser)
     args = parser.parse_args()
 
-    session = RestSession(args.host, args.password or None, args.timeout)
-    machine = Machine(session)
+    rest_host = args.rest_host or args.host
+    session = RestSession(rest_host, args.password or None, args.timeout)
+    browser = make_browser(
+        args.mode,
+        rest_host,
+        args.password or None,
+        args.timeout,
+        entry_rows=ENTRY_ROWS,
+        status_row=STATUS_ROW,
+        telnet_host=args.host,
+        telnet_port=args.port,
+        # The context menu box is not drawn against the physical 40-column
+        # edge the way REST/Overlay's is; at the standard width its own
+        # labels render truncated to a stray character or two per row,
+        # breaking overlay_items()'s before/after diff (confirmed live:
+        # "Run"/"Load"/etc came back as ".", " ", "n"). The other two
+        # migrated suites (assembly64_test.py's form, browser_long_filename
+        # _test.py's file browser) both needed the same wider session.
+        telnet_width=60,
+        telnet_entry_rows=TELNET_ENTRY_ROWS,
+        telnet_status_row=TELNET_STATUS_ROW,
+    )
+    machine = Machine(session, browser)
     fixtures = Fixtures(args.fixture_token)
-    original_interface_type = None
 
     locations = [PlainLocation(), DiskLocation()]
 
@@ -1123,25 +1156,20 @@ def main() -> int:
             machine.close_menu()
             machine.reset()
 
-        with check(f"select the {REQUIRED_INTERFACE_TYPE} interface"):
-            original_interface_type = machine.get_interface_type()
-            if original_interface_type != REQUIRED_INTERFACE_TYPE:
-                machine.set_interface_type(REQUIRED_INTERFACE_TYPE)
-                machine.close_menu()
-
         with check(f"seed /Temp with {fixtures.prg}, {fixtures.d64} and a long-named PRG"):
-            fixtures.seed(args.host, args.password)
+            fixtures.seed(rest_host, args.password)
 
         if args.repeat > 0:
             names = args.scenario or [name for name, _, _, _ in SCENARIOS]
-            print(f"\nRepeating {', '.join(names)} {args.repeat} times")
-            return run_repeat_mode(machine, fixtures, args.host, args.password,
+            section(f"repeating {', '.join(names)} {args.repeat} times")
+            return run_repeat_mode(machine, fixtures, rest_host, args.password,
                                    args.repeat, args.scenario or [])
 
         for location in locations:
+            section(f"every context-menu action on {location.label}")
             with check(f"read the context menu of {location.label}"):
                 offered = offered_actions(machine, fixtures, location)
-            print(f"     offers: {', '.join(offered)}")
+            detail(f"offers: {', '.join(offered)}")
 
             run_case(f"{location.label}: every offered action is covered",
                      lambda loc=location, off=offered: run_context_menu_inventory(
@@ -1155,7 +1183,7 @@ def main() -> int:
                     run_case(
                         f"{label} on {location.label}",
                         lambda h=handler, loc=location: h(
-                            machine, fixtures, loc, args.host, args.password))
+                            machine, fixtures, loc, rest_host, args.password))
 
         # Last on purpose: on firmware without the boot-cart name fix this one
         # takes the whole device down, which would mask every earlier result.
@@ -1163,12 +1191,12 @@ def main() -> int:
                  lambda: run_action_run(machine, fixtures, open_long_name_prg))
 
         if failures:
-            print(f"\nprg_context_menu_test: {len(failures)} of {total} actions FAILED")
+            suite_fail("prg_context_menu_test", f"{len(failures)} of {total} actions")
             for label, message in failures:
-                print(f"  - {label}: {message}")
+                detail(f"{label}: {message}")
             return 1
 
-        print(f"prg_context_menu_test: OK ({total} actions)")
+        suite_ok("prg_context_menu_test", f"{total} actions")
         return 0
     finally:
         try:
@@ -1180,21 +1208,20 @@ def main() -> int:
         except Exception:
             pass
         if not args.keep_fixtures:
-            fixtures.remove(args.host, args.password)
+            fixtures.remove(rest_host, args.password)
             try:
-                remove_leftovers_via_browser(machine, args.host, args.password)
+                remove_leftovers_via_browser(machine, rest_host, args.password)
             except Exception:
                 pass
-        if original_interface_type and original_interface_type != REQUIRED_INTERFACE_TYPE:
-            try:
-                machine.set_interface_type(original_interface_type)
-            except Exception:
-                pass
+        try:
+            machine.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"prg_context_menu_test: FAIL: {exc}")
+        suite_fail("prg_context_menu_test", str(exc))
         raise SystemExit(1)

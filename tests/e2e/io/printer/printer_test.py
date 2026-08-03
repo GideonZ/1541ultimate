@@ -39,6 +39,14 @@ ISSUE_717_BASIC = '''10 open 1,4
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+    Failure, check_fail, check_ok, check_start, detail, section, warn)
+
 try:
     from PIL import Image, ImageOps
     import pytesseract
@@ -84,7 +92,10 @@ PHASE_NAMES = {
 FTP_USER_DEFAULT = "user"
 FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
-MENU_SETTLE_SECONDS = 0.35
+TRANSPORT_RETRIES = 3
+TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -125,33 +136,12 @@ def full_page_bitmap_params(emulation, page_height):
     return rows, repeats
 
 
-class Failure(RuntimeError):
-    pass
-
-
-CHECK_COUNT = 0
-
-
-def check_start(label):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-
-
-def check_ok(extra=""):
-    print("OK" + (f" ({extra})" if extra else ""), flush=True)
-
-
-def check_fail(reason):
-    print(f"FAIL ({reason})", flush=True)
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return
     if assertions_enabled:
         raise Failure(message)
-    print(f"WARNING: {message}")
+    warn(message)
 
 
 class U64Client:
@@ -173,23 +163,27 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        connection = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
-        try:
-            connection.request(method, path, body=body, headers=self._headers(body, extra_headers))
-            response = connection.getresponse()
-            payload = response.read()
-            return response.status, dict(response.getheaders()), payload
-        finally:
-            connection.close()
+        # Transport and retry policy come from tests/lib/rest.py, the one place
+        # that decides them. A request without a payload carries its arguments
+        # in the query string, so applying it twice is the same as applying it
+        # once; one with a payload would run a PRG or upload a file again, and
+        # so is only resent when it never left the client.
+        return rest_lib.retrying_http_request(
+            self.host, method, path,
+            body=body,
+            headers=self._headers(body, extra_headers),
+            timeout=timeout or self.timeout,
+            idempotent=body is None,
+        )
 
     def require_ok(self, method, path, body=None, description=None, extra_headers=None, timeout=None):
         status, _headers, payload = self.request(method, path, body=body, extra_headers=extra_headers, timeout=timeout)
         if status != 200:
             message = f"{description or path} failed with HTTP {status}"
             try:
-                detail = json.loads(payload.decode("utf-8"))
-                if detail.get("errors"):
-                    message += f": {detail['errors']}"
+                document = json.loads(payload.decode("utf-8"))
+                if document.get("errors"):
+                    message += f": {document['errors']}"
             except (ValueError, UnicodeDecodeError):
                 message += f": {payload[:160]!r}"
             raise Failure(message)
@@ -259,12 +253,24 @@ class U64Client:
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
 
+    def tap_keys(self, keys):
+        self.post_input([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+
     def close_menu_from_anywhere(self):
         self.post_input([{"kind": "release_all"}])
         for attempt in range(12):
-            if self.get_menu_screen() is None:
+            body = self.get_menu_screen()
+            if body is None:
                 return
-            self.tap_key("run_stop" if attempt % 2 == 0 else "return")
+            if any("Save changes to Flash?" in row for row in menu_screen_text(body)):
+                # The popup answers to its button hotkeys directly. 'n' is No,
+                # which leaves the device settings as this suite restored them.
+                self.tap_key("n")
+            elif attempt < 6:
+                # Shift+F7 is F8, the full UI exit.
+                self.tap_keys(["left_shift", "f7"])
+            else:
+                self.tap_key("run_stop")
             time.sleep(MENU_SETTLE_SECONDS)
         self.menu_button()
         time.sleep(0.5)
@@ -297,23 +303,12 @@ class FtpInspector:
         self.password = password
         self.timeout = timeout
 
-    def _open(self):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        ftp.login(self.user, self.password)
-        return ftp
+    def _session(self):
+        return ftp_lib.session(self.host, self.password, self.timeout, user=self.user)
 
     def list_dir(self, directory):
-        ftp = self._open()
-        try:
-            entries = []
-            ftp.retrlines(f"LIST {directory}", entries.append)
-            return entries
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.listing(ftp, directory)
 
     def printer_root(self):
         """Use the first mounted USB volume; Temp is the last resort."""
@@ -324,38 +319,19 @@ class FtpInspector:
         return "/Temp"
 
     def file_size(self, path):
-        ftp = self._open()
-        try:
-            return ftp.size(path)
-        except ftplib.Error:
-            return None
-        finally:
+        with self._session() as ftp:
             try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                return ftp.size(path)
+            except ftplib.Error:
+                return None
 
     def download(self, path):
-        ftp = self._open()
-        try:
-            buf = io.BytesIO()
-            ftp.retrbinary(f"RETR {path}", buf.write)
-            return buf.getvalue()
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.retrieve(ftp, path)
 
     def upload_bytes(self, path, data):
-        ftp = self._open()
-        try:
-            ftp.storbinary(f"STOR {path}", io.BytesIO(data))
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            ftp_lib.store(ftp, path, data)
 
     def ensure_directory(self, directory):
         """Create `directory` (and its parents) if it doesn't already exist.
@@ -363,21 +339,11 @@ class FtpInspector:
         Output file pointed at one silently fails to save anything."""
         if directory in ("", "/"):
             return
-        ftp = self._open()
-        try:
-            parts = [p for p in directory.split("/") if p]
+        with self._session() as ftp:
             path = ""
-            for part in parts:
+            for part in [p for p in directory.split("/") if p]:
                 path += "/" + part
-                try:
-                    ftp.mkd(path)
-                except ftplib.error_perm:
-                    pass  # already exists
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                ftp_lib.make_dir(ftp, path)
 
 
 def assemble_prg(asm_path, assembler):
@@ -489,12 +455,24 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
 
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
-    body = client.get_menu_screen()
-    if body is None:
-        # Builds before the menu-screen REST endpoint still accept synthetic
-        # input. Printer is the preselected Tasks entry on those builds.
-        client.menu_button()
+    if client.get_menu_screen() is not None:
+        client.menu_button()  # close whatever is open
         time.sleep(settle)
+
+    client.menu_button()  # open root browser
+    time.sleep(settle)
+
+    if client.get_menu_screen() is None:
+        # No menu-screen endpoint on this build: the menu button has just been
+        # pressed, so the menu is open, yet nothing can be read back. Drive the
+        # Tasks menu blind, with Printer as the preselected entry.
+        #
+        # Which build this is has to be decided with the menu open. The check
+        # used to run before the menu was opened, where the endpoint answers 404
+        # on every build because there is no menu to return, so every run took
+        # this branch: the step verified nothing, and its two RETURN presses
+        # landed on the Tasks menu's real first entry, Assembly 64, whose query
+        # form was then left open for the next suite (confirmed live).
         client.tap_key("f5")
         time.sleep(settle)
         client.tap_key("return")
@@ -502,12 +480,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         client.tap_key("return")
         time.sleep(1.0)
         return
-    if body is not None:
-        client.menu_button()  # close whatever is open
-        time.sleep(settle)
 
-    client.menu_button()  # open root browser
-    time.sleep(settle)
     client.tap_key("f5")  # open Tasks (context menu) for the current selection
     time.sleep(settle)
 
@@ -527,7 +500,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     downs = printer_row - 8
     for _ in range(downs):
         client.tap_key("cursor_up_down")
-        time.sleep(0.2)
+        time.sleep(pacing.KEY_SETTLE_SECONDS)
 
     client.tap_key("return")  # expand Printer category (Flush/Eject preselected)
     time.sleep(settle)
@@ -545,6 +518,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     client.tap_key("return")  # trigger Flush/Eject
     time.sleep(1.0)
 
+    # Close what this function opened, so the caller's teardown does not have to
+    # tap its way out with RETURN, which activates the entry under the cursor.
+    client.close_menu_from_anywhere()
+
 
 def capture_settings(client, assertions_enabled):
     snapshot = {}
@@ -559,11 +536,11 @@ def capture_settings(client, assertions_enabled):
 def restore_settings(client, snapshot, assertions_enabled):
     if not snapshot:
         return
-    print("\nRestoring original Printer Settings")
+    section("restoring original Printer Settings")
     for item, value in snapshot.items():
         try:
             client.set_config(CONFIG_CATEGORY, item, value)
-            print(f"  {item}: {value}")
+            detail(f"{item}: {value}")
         except Failure as exc:
             assert_or_warn(assertions_enabled, False, f"could not restore {item}: {exc}")
 
@@ -660,7 +637,7 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         assert_or_warn(assertions_enabled, ok, f"{path}: not a well-formed PNG ({reason})")
         dims = decode_png_dimensions(data)
         assert_or_warn(assertions_enabled, dims is not None, f"{path}: could not read IHDR dimensions")
-        print(f"    {path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
+        detail(f"{path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
 
 
 def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=1):
@@ -738,7 +715,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
     necessary to prove the printed content is correct.
     """
     if not OCR_AVAILABLE:
-        print("    OCR verification skipped: pytesseract/PIL not installed "
+        detail("OCR verification skipped: pytesseract/PIL not installed "
               "(pip install pytesseract, apt install tesseract-ocr)")
         return
 
@@ -754,7 +731,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
             continue
 
         preview = " / ".join(line.strip() for line in text.splitlines() if line.strip())
-        print(f"    {path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
+        detail(f"{path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
 
         assert_or_warn(
             assertions_enabled, expected_tag in text,
@@ -977,7 +954,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if args.full_page_bitmap:
         rows, bim_repeats = full_page_bitmap_params(emulation, args.page_height)
-        print(f"    full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
+        detail(f"full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
               f"(~{rows * (EPSON_BIM_INTERLINE_PX if emulation == 'epson' else CBM_BIM_INTERLINE_PX)}px "
               f"tall, ~{bim_repeats * 16 * (1 if emulation == 'epson' else 4)}px wide)")
     else:
@@ -991,9 +968,9 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if classification == "FAIL_CRASH_HARD":
         check_fail("device became unresponsive (FAIL_CRASH_HARD)")
-        print("    REST and ping are both unreachable. This matches the reported crash:")
-        print("    screen off, unresponsive, C64/machine reset will not help.")
-        print("    Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+        detail("REST and ping are both unreachable. This matches the reported crash:\n"
+               "screen off, unresponsive, C64/machine reset will not help.\n"
+               "Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
         return "FAIL_CRASH_HARD", output_base, status
     if classification == "FAIL_TIMEOUT":
         check_fail(f"timed out after {args.timeout_seconds}s, REST still responsive")
@@ -1106,9 +1083,9 @@ def main():
         client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
         check_ok()
 
-    print("\nSummary")
+    section("summary")
     for emulation, mode, classification, output_base in results:
-        print(f"  {emulation:10s} {mode:6s} {classification:20s} {output_base}")
+        detail(f"{emulation:10s} {mode:6s} {classification:20s} {output_base}")
 
     failed = [r for r in results if r[2] not in ("PASS", "PASS_NO_VERIFY")]
     return 1 if failed else 0

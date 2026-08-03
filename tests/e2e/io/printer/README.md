@@ -26,7 +26,7 @@ timing and buffering behaviour that a BASIC-only test would miss.
 Run the registered printer scenario from the repository root:
 
 ```sh
-./run-e2e-tests -H u64 -s printer
+./run-tests -H u64 -s printer
 ```
 
 The specialized presets below invoke `printer_test.py` directly because those
