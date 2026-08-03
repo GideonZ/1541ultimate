@@ -61,9 +61,17 @@ ROOT_PATH = "/"
 TEST_DIR_PREFIX = "zbfr"
 
 # Rendered sizes have to differ, and size_to_string_bytes rounds hard: 1000 and
-# 1400 both render as "   1K". 100 renders " 100 ", 200000 renders " 195K".
+# 1400 both render as "   1K". 100 renders " 100 ", 4096 renders "   4K".
+#
+# Only the rendering has to differ; nothing here depends on the second size
+# being large. The partial-write checks snapshot the observers before any data
+# is sent, so what they see is the same whatever follows, and the subject of
+# this suite is change notification rather than transfer throughput. It was
+# 200000, which sent 200KB over FTP and had the device copy it again for every
+# row that used it, and the two copy rows were the most expensive checks in the
+# whole gate at 20.6s and 35.6s.
 SIZE_S1 = 100
-SIZE_S2 = 200000
+SIZE_S2 = 4096
 # BinImage(35 tracks) is 683 sectors of 256 bytes, written by Create > D64 Image.
 SIZE_D64 = 174848
 REST_IMAGE_SIZES = {

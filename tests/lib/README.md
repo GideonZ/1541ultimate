@@ -100,6 +100,18 @@ module is designed around, not a violation of it.
 | A whole run's result, for a harness | `run_result` | JSONL only |
 | A live progress line | `progress` / `progress_done` | terminal only |
 
+## How long a check may take
+
+`report` marks a check's duration `SLOW`, in yellow, once it passes
+`SLOW_CHECK_SECONDS` (ten seconds). That is feedback, not a verdict: the run
+still passes. It exists so a check that has quietly become slow is visible
+while the run is happening, rather than only to someone reading a log
+afterwards. The word is printed as well as the colour, so the mark survives a
+redirected log and can be grepped for.
+
+The guidance for what to do about one is in
+[tests/e2e/README.md](../e2e/README.md), under the rules for adding a suite.
+
 ## Structured results
 
 Set `E2E_JSONL` to a path to append the run as JSONL, one object per line.

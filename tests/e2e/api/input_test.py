@@ -762,6 +762,25 @@ def keyboard_echo_byte_name(value: int) -> str:
     return f"${value:02X}"
 
 
+# How much text the keyboard echo stress cases send, and so how long they take:
+# the rate is the subject, so the duration is length/rate and nothing else.
+#
+# mixed_alphabet_text repeats every 26 characters, so 26 already contains every
+# character it can produce; 52 sends each of them twice, which is what shows the
+# delivery holding up rather than merely starting. It was 200, which was the
+# same 26 characters seven more times over and cost 20s of a run that people
+# wait for. Sustained delivery over a long train has its own check, "keyboard
+# long repeated tap train drains fully without sticky state".
+ECHO_ALPHABET_LENGTH = 52
+# alternating_text produces only two distinct characters, so length buys
+# repetition rather than coverage. 60 is chosen for the time it takes at the
+# fastest rate this file drives: three seconds at 20 Hz, which is long enough
+# for a rate the device cannot keep up with to drop something. It was 100,
+# which was five seconds for the same evidence. The 5 Hz case keeps its own
+# smaller count, because 60 there would be twelve seconds on its own.
+ECHO_ALTERNATING_LENGTH = 60
+
+
 def mixed_alphabet_text(length: int) -> str:
     return "".join(
         chr(ord("a") + (index % 26)) if (index % 2) == 0 else chr(ord("A") + (index % 26))
@@ -1525,10 +1544,10 @@ def run_keyboard_tests(session: RestInputSession) -> None:
 
     echo_offset = prepare_keyboard_echo_program(session)
     with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
-        echo_offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0, echo_offset)
+        echo_offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(ECHO_ALPHABET_LENGTH), 10.0, echo_offset)
 
     with check("keyboard 20 Hz alternating ab echo has no missed presses"):
-        echo_offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0, echo_offset)
+        echo_offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_ALTERNATING_LENGTH), 20.0, echo_offset)
 
     with check("keyboard 5 Hz alternating ab echo has no missed presses"):
         run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0, echo_offset)
@@ -1687,11 +1706,11 @@ def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[s
 
     if wants_test(selected, "keyboard-echo-alphabet"):
         with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
-            offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0, offset)
+            offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(ECHO_ALPHABET_LENGTH), 10.0, offset)
 
     if wants_test(selected, "keyboard-echo-ab-20hz"):
         with check("keyboard 20 Hz alternating ab echo has no missed presses"):
-            offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0, offset)
+            offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_ALTERNATING_LENGTH), 20.0, offset)
 
     if wants_test(selected, "keyboard-echo-ab-5hz"):
         with check("keyboard 5 Hz alternating ab echo has no missed presses"):

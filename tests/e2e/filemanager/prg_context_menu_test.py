@@ -255,12 +255,15 @@ class Machine:
         # Wait for the BASIC cold start to finish. Freezing before it has run
         # its NEW leaves the boot sequence to wipe the program area and the
         # BASIC pointers the moment the machine is released again.
+        # Polled at the shared interval rather than every 0.25s: the boot takes
+        # about 2.4s and this runs before every load/run action, so a coarse
+        # poll added up to a fifth of a second an action for nothing.
         deadline = time.monotonic() + BOOT_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.readmem(0x002B, 2) == b"\x01\x08" and "READY." in self.c64_screen():
                 time.sleep(0.3)
                 return
-            time.sleep(0.25)
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
         raise Failure(f"C64 did not reach the BASIC prompt:\n{self.c64_screen()}")
 
     def drive_a(self) -> Dict[str, object]:

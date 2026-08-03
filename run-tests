@@ -34,6 +34,17 @@ DEFAULT_TIMEOUT = "30.0"
 
 UI_STATE_TOOL = os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py")
 
+# How long a device gets to come back before the run gives up on it, and how
+# often to ask. Comfortably past the roughly 18 seconds the device needs to
+# free an abandoned HTTP connection, so being busy is not mistaken for gone.
+DEVICE_RECOVERY_BUDGET_SECONDS = 60.0
+DEVICE_RECOVERY_POLL_SECONDS = 2.0
+# The recovery probe gets its own short per-request timeout rather than the
+# run's --timeout. The shared client retries a GET three times, so at the
+# 30 second default one probe could outlast the whole budget on a device that
+# accepts connections but never answers, and the budget would mean nothing.
+DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS = 5.0
+
 
 @dataclass(frozen=True)
 class Suite:
@@ -144,6 +155,9 @@ class Result:
     name: str
     verdict: str
     seconds: float
+    # Set when the device itself has gone, so the remaining suites would each
+    # fail for the same reason and tell nobody anything new.
+    device_lost: bool = False
 
 
 @dataclass
@@ -166,6 +180,8 @@ class Device:
 
     def __init__(self, host: str, password: str, timeout: float) -> None:
         self.api = UltimateApi(host, password, timeout)
+        self.probe = UltimateApi(host, password,
+                                 DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
 
     def release_input(self) -> bool:
         try:
@@ -180,6 +196,34 @@ class Device:
             return True
         except Failure:
             return False
+
+    def wait_until_reachable(self, budget: float) -> bool:
+        """Whether the device answers within `budget`, polling until it does.
+
+        The UI-state gate cannot tell "the menu will not come clean" from "the
+        device is no longer answering", and reported both as the former. One
+        dead device then produced a precondition failure for every suite left
+        in the run, each naming the UI, which is not where the problem was.
+
+        The budget has to be generous, because most of the time the answer is
+        that the device is busy rather than gone: it serves few HTTP
+        connections at once and frees an abandoned one after about 18 seconds.
+        A short probe turns that into a false verdict, and this one abandons
+        the whole run, so being impatient here is worse than not checking at
+        all. Observed live: a probe of three seconds called the device lost
+        while it was answering again moments later.
+
+        UltimateApi.reachable() is the probe, and it catches Failure only. A
+        blanket except here would report a coding mistake in the probe itself
+        as an unreachable device, and abandon the whole run for it.
+        """
+        deadline = time.monotonic() + budget
+        while True:
+            if self.probe.reachable():
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(DEVICE_RECOVERY_POLL_SECONDS)
 
     def close_active_menu(self) -> bool:
         """Back out of whatever the last suite left on the UI object stack.
@@ -251,7 +295,7 @@ def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
     return command
 
 
-def run_suite(suite: Suite, options: Options, mode: str, label: str) -> Result:
+def run_suite(suite: Suite, device: Device, options: Options, mode: str, label: str) -> Result:
     """Run one suite as a child process and report its own closing line."""
     full_path = os.path.join(ROOT, suite.path)
     if not os.path.isfile(full_path):
@@ -272,8 +316,24 @@ def run_suite(suite: Suite, options: Options, mode: str, label: str) -> Result:
     # E2E suites share one device and one UI object stack, so each starts from
     # the documented state rather than from whatever the last one left.
     if suite.category == "e2e" and not ui_state_gate("ensure", options):
-        report.suite_fail(suite.name, "precondition: the device UI could not be cleaned", 0.0)
-        return Result(suite.category, mode, suite.name, report.FAIL, 0.0)
+        # Say which of the two it is. A device that has gone for good fails
+        # every remaining suite for the same reason, and calling that a
+        # UI-state problem sends the reader to the wrong place. A device that
+        # is merely busy comes back, and must not end the run.
+        if not device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
+            report.suite_fail(suite.name, "precondition: the device is unreachable", 0.0)
+            return Result(suite.category, mode, suite.name, report.FAIL, 0.0, device_lost=True)
+        # It is answering after all, so the gate deserves another go: the first
+        # attempt may have failed only because the device was busy. The line
+        # below does not claim the device went away, because the probe cannot
+        # tell "it came back" from "it never left"; it only says the gate
+        # needed two attempts, which is the part worth noticing in a log.
+        if ui_state_gate("ensure", options):
+            report.detail(f"{suite.name}: the UI-state gate failed once and "
+                          "came clean on a second attempt")
+        else:
+            report.suite_fail(suite.name, "precondition: the device UI could not be cleaned", 0.0)
+            return Result(suite.category, mode, suite.name, report.FAIL, 0.0)
 
     started = time.monotonic()
     completed = subprocess.run(build_command(suite, options, mode), env=environment)
@@ -381,6 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "two minutes; soak runs for twelve hours (default: stress).")
 
     output = parser.add_argument_group("output")
+    output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                        help="Colour the output: auto colours a terminal and writes plain "
+                             "text when redirected, which is what keeps a saved log "
+                             "readable (default: auto).")
     output.add_argument("-l", "--list", action="store_true",
                         help="List every registered suite and exit.")
     output.add_argument("-x", "--stop-on-fail", action="store_true",
@@ -468,8 +532,27 @@ def summarise(results: List[Result], started: float) -> int:
     return 0
 
 
+def apply_colour_choice(choice: str) -> None:
+    """Honour --color here and in every suite this process starts.
+
+    The suites are child processes, so the choice is exported rather than only
+    applied locally: NO_COLOR and FORCE_COLOR are the conventional names and
+    report.py reads both.
+    """
+    if choice == "always":
+        os.environ["FORCE_COLOR"] = "1"
+        os.environ.pop("NO_COLOR", None)
+        report.set_colour(True)
+    elif choice == "never":
+        os.environ["NO_COLOR"] = "1"
+        os.environ.pop("FORCE_COLOR", None)
+        report.set_colour(False)
+    # auto: the suites share this stdout, so they reach the same answer.
+
+
 def main(argv: List[str]) -> int:
     args = build_parser().parse_args(argv)
+    apply_colour_choice(args.color)
 
     if args.list:
         print_listing()
@@ -513,6 +596,7 @@ def main(argv: List[str]) -> int:
     results: List[Result] = []
     started = time.monotonic()
     stopped = False
+    device_lost = False
 
     for category in categories:
         suites = selected_suites(category, args.suite, args.manual)
@@ -521,12 +605,21 @@ def main(argv: List[str]) -> int:
         passes = modes if category == "e2e" else [""]
         for mode in passes:
             for suite in suites:
-                result = run_suite(suite, options, mode or DEFAULT_MODE, mode or category)
+                result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
                 results.append(result)
+                if result.device_lost:
+                    print()
+                    report.detail("the device stopped answering; abandoning the run "
+                                  "rather than failing every suite left for the same reason")
+                    stopped = True
+                    device_lost = True
+                    break
                 if result.verdict == report.FAIL and options.stop_on_fail:
                     stopped = True
                     break
-            if category == "e2e":
+            # Teardown still runs after --stop-on-fail, where the device is
+            # there to be cleaned; it is only pointless once the device is gone.
+            if category == "e2e" and not device_lost:
                 print()
                 if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
                     results.append(Result(category, mode, "teardown", report.FAIL, 0.0))

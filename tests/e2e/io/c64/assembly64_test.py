@@ -457,13 +457,30 @@ def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]
 
 
 def select_row(device: Device, target: int, what: str) -> None:
-    """Walk the selection onto a known row, checking each step.
+    """Put the selection on a known row.
 
-    The cursor is only visible in the colour half of the screen, so a fixed number
-    of key presses cannot be verified. This reads the position back instead, which
-    also removes the assumption that the form clamps rather than wraps at its
-    ends.
+    The distance is read off the screen and covered in one batched run of
+    keys, the way Browser.select_entry moves a file listing, rather than one
+    request and one settle per row. Walking cost about a fifth of a second a
+    row, which is what made moving between form fields visibly slow.
+
+    The move is confirmed afterwards rather than assumed, because the cursor
+    lives only in the colour half of the screen and a form that wraps at its
+    ends would land somewhere else. Two batched attempts are made, so that a
+    run which only partly landed is corrected in one more request. If the
+    cursor is still not on the target row, the walk below takes over: it is
+    slower, but it reads the position back after every single step.
     """
+    for _ in range(2):
+        current = device.cursor_row()
+        if current is None:
+            raise Failure(f"{what}: the menu closed while moving the cursor")
+        if current == target:
+            return
+        device.send_key_repeat("DOWN" if current < target else "UP",
+                               abs(target - current))
+
+    # The jump did not land: fall back to one verified step at a time.
     for _ in range(FIELD_WALK_LIMIT):
         current = device.cursor_row()
         if current is None:

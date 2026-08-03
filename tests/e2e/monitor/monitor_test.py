@@ -24,9 +24,11 @@ sys.path.insert(0, os.path.join(
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib
+from api import UltimateApi
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok, warn
 from ui_backend import (
     Backend,
+    MODE_FREEZE,
     MODE_TELNET,
     RestBackend,
     Snapshot,
@@ -38,6 +40,10 @@ from ui_backend import (
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
+
+# Per-request timeout for this suite's own REST calls, which are all small
+# reads and writes against a device that is otherwise idle.
+REST_TIMEOUT_SECONDS = 5.0
 
 STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
@@ -296,15 +302,42 @@ def read_rest_memory(host: str, address: int, length: int) -> bytes:
         return response.read()
 
 
+_REST_CLIENTS: Dict[str, UltimateApi] = {}
+
+
+def rest_api(host: str) -> UltimateApi:
+    """One API client per host, at the timeout the raw calls here already use.
+
+    This suite threads a host string rather than a client, so the clients are
+    kept here instead of being rebuilt per request. No password is sent,
+    because the raw calls beside this one never sent one either.
+    """
+    client = _REST_CLIENTS.get(host)
+    if client is None:
+        client = UltimateApi(host, None, REST_TIMEOUT_SECONDS)
+        _REST_CLIENTS[host] = client
+    return client
+
+
 def write_rest_memory(host: str, address: int, data: bytes) -> None:
+    """Write bytes to C64 memory, through the library so the size is routed.
+
+    The API has two writemem forms and they are not interchangeable: PUT
+    carries the bytes as a hex query string and refuses more than
+    api.MAX_WRITEMEM_HEX_BYTES of them, while POST uploads them as a file
+    part. This used to build the query form by hand at any length, which was
+    fine only because every caller happened to be writing a handful of bytes;
+    the ASCII view check below writes 608. api.MachineApi.writemem picks the
+    form from the length, and its docstring records what the over-long PUT
+    actually does, which is either an HTTP 400 or no answer at all depending
+    on how far over it is.
+
+    Writing the same bytes twice is the same as writing them once, so the
+    transport may retry.
+    """
     if not data:
         raise Failure("write_rest_memory requires at least one byte")
-
-    url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
-    request = urllib.request.Request(url, data=b"", method="PUT")
-    # Writing the same bytes twice is the same as writing them once.
-    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
-        pass
+    rest_api(host).machine.writemem(address, data, idempotent=True)
 
 
 def reset_rest_machine(host: str, password: Optional[str]) -> None:
@@ -612,11 +645,72 @@ def goto_and_read_byte(
     return value
 
 
-def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
+def machine_runs_behind_the_ui(mode: str) -> bool:
+    """Whether the C64 keeps executing while this mode's monitor UI is up.
+
+    Under Overlay and Telnet it does: the menu is drawn without stopping the
+    machine, so a program launched by an earlier G is still running while the
+    next one is being set up. Under Freeze the menu stops the machine as it
+    opens, so nothing is running and there is nothing to stop.
+    """
+    return mode != MODE_FREEZE
+
+
+def stop_running_program(rest_host: str) -> None:
+    """Halt whatever the C64 is executing, without relying on a BRK.
+
+    A BRK placed in memory by DMA is not reliably honoured by the running
+    6510. A test that launches a program and then assumes it stopped at its
+    trailing BRK is therefore racing the machine: the program can still be
+    executing, and whatever the test writes next is overwritten by it.
+    Observed as "Memory at $2000 did not become $5A", with $2000 holding the
+    value the previous iteration's program writes, in one run out of three.
+
+    Pausing stops the machine outright, which is one of the three things that
+    reliably do: pause, reset, or having the BRK in memory before the program
+    is launched. Reset is not used here because the monitor holds the machine
+    while its UI is up, and releasing it from under the UI is what takes the
+    device off the network.
+
+    Only call this where machine_runs_behind_the_ui() is true, and always with
+    the matching resume_machine(). The rule being followed is the firmware's
+    own: C64_Subsys::dma_load_raw_buffer stops the C64 only when it finds it
+    running, and resumes it only if it was the one that stopped it. Under
+    Freeze this pair would break that rule and resume a machine the freeze
+    stopped. MENU_C64_PAUSE runs C64::stop(), which overwrites the raster and
+    VIC interrupt registers C64::freeze() saved for the eventual unfreeze, and
+    MENU_C64_RESUME runs C64::resume(), which sets C64_MODE back to
+    MODE_NORMAL and releases the CPU while isFrozen is still set and the UI's
+    own I/O is still installed.
+
+    Where it is called, it composes with the DMA path rather than fighting it:
+    dma_load_raw_buffer sees an already-stopped machine, so the writes that
+    follow leave it stopped instead of resuming it between them.
+    """
+    request = urllib.request.Request(
+        f"http://{rest_host}/v1/machine:pause", data=b"", method="PUT")
+    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
+        pass
+
+
+def resume_machine(rest_host: str) -> None:
+    """Undo stop_running_program, so G starts from the normal running state."""
+    request = urllib.request.Request(
+        f"http://{rest_host}/v1/machine:resume", data=b"", method="PUT")
+    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
+        pass
+
+
+def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> None:
     sentinel = 0x5A
     values = (0x42, 0x37, 0x99)
+    stop_first = machine_runs_behind_the_ui(mode)
 
     for value in values:
+        # Whatever ran before this, stop it outright rather than trusting its
+        # trailing BRK to have done so; see stop_running_program.
+        if stop_first:
+            stop_running_program(rest_host)
         write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
         write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
         # Confirm the sentinel is actually in memory before asking the monitor
@@ -625,6 +719,9 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str) -> None:
         # this read has come back with the previous iteration's value.
         wait_for_rest_byte(rest_host, 0x2000, sentinel)
 
+        # Back to the normal running state before G, which does its own resume.
+        if stop_first:
+            resume_machine(rest_host)
         ensure_view(session, "HEX ")
         before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
         if before != sentinel:
@@ -1252,11 +1349,15 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
     with check("ASCII view width and scrolling"):
+        # 19 rows of 0x20 bytes, each row a distinct character, so the view has
+        # something identifiable on every line. Written in one go rather than
+        # by 19 monitor fill commands: this is setup for the view, not a test
+        # of F, which "compare reports differing rows" and three other checks
+        # already cover. Typing the fills cost about 15s of the 20s this check
+        # took. The write happens before the goto so the view is built from it.
+        write_rest_memory(rest_host, 0xC000,
+                          b"".join(bytes((0x41 + row,)) * 0x20 for row in range(19)))
         session.goto("C000")
-        for row_index in range(19):
-            start = 0xC000 + row_index * 0x20
-            end = start + 0x1F
-            session.fill(f"{start:04X}-{end:04X},{0x41 + row_index:02X}")
 
         screen = ensure_view(session, "ASC ")
         content_rows = find_memory_rows(screen)
@@ -1323,7 +1424,7 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         session.enter_monitor()
 
     with check("G repeated execution updates RAM sentinel"):
-        run_go_repeat_test(session, rest_host)
+        run_go_repeat_test(session, rest_host, mode)
 
     with check("G handoff preserves stable VIC state"):
         if mode != MODE_TELNET:

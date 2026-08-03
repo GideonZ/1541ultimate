@@ -128,6 +128,28 @@ class Device:
         time.sleep(KEY_SETTLE_SECONDS)
 
     def reset_machine(self) -> None:
+        """Reset the machine, closing the menu first where that is possible.
+
+        MENU_C64_RESET releases the machine from whichever UserInterface holds
+        it (c64_subsys.cc), and that teardown is what takes the device off the
+        network when the UI it releases is not the one now active. Closing the
+        menu first means there is nothing holding the machine to release.
+        Reproduced live: resetting with the menu up, after the Interface Type
+        had been switched during an open session, killed the device within a
+        few cycles and needed a JTAG recovery.
+
+        The close is a safety margin rather than a precondition, so a menu that
+        will not shut does not cancel the reset: this is repair()'s last resort
+        for a UI that keystrokes could not fix, and refusing to reset there
+        would leave the device dirty for every suite that follows. The stale
+        client the reset has to survive is created by switching the Interface
+        Type under an open menu, which ui_backend.RestBackend no longer does.
+        """
+        for _ in range(2):
+            if not self.menu_is_open():
+                break
+            self.press_menu_button()
+            self.wait_menu(want_open=False)
         try:
             self._request("PUT", "/v1/machine:reset")
         except Unrecoverable:

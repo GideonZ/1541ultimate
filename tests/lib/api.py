@@ -139,9 +139,21 @@ class MachineApi:
         The API offers two forms and they are not interchangeable: PUT carries
         the bytes as a hex query string and takes at most
         MAX_WRITEMEM_HEX_BYTES, while POST uploads them as a file part. The
-        right one is chosen from the length here, because a PUT that exceeds
-        the limit does not come back as an error: the request simply never
-        completes and the caller waits out its whole timeout.
+        right one is chosen from the length here, because an over-long PUT
+        fails in two different ways and neither is useful to a caller.
+
+        Measured on a U64 Elite, firmware 3.15, writing to $C800:
+
+        - up to 128 bytes: HTTP 200.
+        - 129 to about 900 bytes: HTTP 400 from route_machine.cc, promptly.
+        - from about 950 bytes: no answer at all. The request grows past what
+          the httpd will accumulate for one request, so it never reaches the
+          handler and the caller waits out its whole timeout. 2000 bytes was
+          refused earlier still, with the connection reset.
+
+        The boundary between the last two is not a constant to rely on: it
+        depends on the whole request rather than the data alone, which is why
+        the routing here keys off MAX_WRITEMEM_HEX_BYTES and not off it.
 
         `idempotent` opts into the transport retry, for a write that applies
         the same state however many times it arrives. See rest.RestClient.

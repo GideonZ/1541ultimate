@@ -415,6 +415,24 @@ class RestBackend(Backend):
         if interface_type is not None:
             current = self.get_config(UI_STORE, UI_ITEM)
             if current != interface_type:
+                # Change it only with the menu closed. Which UserInterface owns
+                # the machine is decided when the menu opens, so switching the
+                # setting under an open one leaves the firmware holding a
+                # client that is no longer the active interface. A machine
+                # reset then tears that stale one down and takes the device off
+                # the network, needing a JTAG recovery. Reproduced directly:
+                # toggling the type with the menu up and then resetting killed
+                # the device within a few cycles, while the same open-and-reset
+                # without the toggle survived every attempt.
+                #
+                # _close_menu is best effort, so the result is checked here
+                # rather than assumed: writing the setting anyway would be the
+                # exact sequence this is meant to avoid. A session that cannot
+                # get the menu shut refuses to start instead.
+                self._close_menu()
+                if self._menu_open():
+                    raise Failure("the on-device menu would not close, so the "
+                                  f"Interface Type cannot be set to {interface_type!r}")
                 self._original_interface_type = current
                 self.set_config(UI_STORE, UI_ITEM, interface_type)
                 # Matches MENU_TOGGLE_SETTLE_SECONDS in freeze_menu_test.py: a
@@ -678,11 +696,21 @@ class RestBackend(Backend):
                             min_drain=len(events) * pacing.KEY_DRAIN_SECONDS)
 
     def close(self) -> None:
+        # Same rule on the way out as on the way in: the menu is closed before
+        # the setting is put back, never while a session still owns the machine.
+        # Teardown must not raise over the failure it is cleaning up after, so
+        # a menu that will not close skips the restore rather than writing the
+        # setting under an open one. What that leaves behind is the Interface
+        # Type this session already set, which the next session reads as
+        # current and does not toggle; run-tests' ui_state gate recovers the
+        # menu itself before the next suite starts.
+        closed = False
         try:
             self._close_menu()
+            closed = not self._menu_open()
         except Failure:
             pass
-        if self._original_interface_type is not None:
+        if closed and self._original_interface_type is not None:
             try:
                 self.set_config(UI_STORE, UI_ITEM, self._original_interface_type)
             except Failure:
@@ -1462,9 +1490,26 @@ class Browser:
         self.press("ENTER")
 
     def recover_to(self, directory: str) -> None:
-        """Unwind popups and nested screens until the browser is back in `directory`."""
+        """Dismiss whatever is open and end up in `directory`.
+
+        Popups go first, because nothing else responds while one is up. Then
+        the browser goes straight there rather than walking: LEFT only moves
+        towards the root, so a target that is not an ancestor of where the
+        browser stands cannot be reached that way at all, and the walk was
+        guaranteed to spend its whole budget before falling back to the same
+        descent that is now tried first. Measured after a "Copy to...", which
+        leaves the browser in the source directory and so always hit that case:
+        12.6s over REST and 27.3s over Telnet, against about two seconds to
+        descend. go_to_directory returns to the root itself, which is what
+        unwinds a nested view such as an opened disk image.
+
+        The loop bound counts popups rather than directory levels now, which
+        is why it is smaller than the 20 it replaces: popups are modal and
+        appear one at a time, and one that will not go away should fail the
+        suite rather than be spun on.
+        """
         wanted = "/" + directory.strip("/") + "/"
-        for _ in range(20):
+        for _ in range(8):
             rows = [strip_frame(row) for row in self.rows()]
             # A popup ignores everything except its own button keys.
             if "Yes  No" in rows:
@@ -1473,9 +1518,9 @@ class Browser:
             if "Ok" in rows:
                 self.press_popup_button("o")
                 continue
-            if self.current_path() == wanted:
-                return
-            self.press("LEFT")
+            break
+        if self.current_path() == wanted:
+            return
         self.go_to_directory(directory)
         if self.current_path() != wanted:
             raise Failure(f"could not be returned to {wanted!r}")

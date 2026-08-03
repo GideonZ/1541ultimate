@@ -89,6 +89,33 @@ fails the run.
    copying it. Keep support code local until a second suite needs it.
 8. State supported targets and unusual dependencies in the suite docstring.
    Keep this file structural; do not copy per-suite CLI help into it.
+9. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
+   the duration `SLOW` in yellow, which is a prompt to look rather than a
+   failure. The whole gate is run repeatedly by people waiting for it, so a
+   slow check has to earn its time.
+
+   Ten is the threshold because some checks cannot go below a few seconds
+   whatever they do: one that resets the C64 pays about 2.4s for the machine's
+   cold start before it does anything of its own. Aim well under the threshold
+   anyway; most checks finish in under a second.
+
+   Before accepting a slow check, establish that it is slow for a reason that
+   cannot be removed:
+
+   - Waiting on a fixed sleep where the outcome could be observed instead. Poll
+     for the state the check is actually waiting for.
+   - Sending keystrokes one at a time. The batched paths in
+     `lib/ui_backend.py` send a whole string or run of keys in one request;
+     `Browser.select_entry` uses the browser's own quick-seek rather than
+     walking the listing.
+   - Moving more data than the assertion needs. Size a fixture for what is
+     being proved: if only the rendered size has to differ, a few kilobytes
+     does that as well as a few hundred.
+   - Repeating setup an earlier check already established.
+
+   Some checks are legitimately slow, and those keep their time: a key repeat
+   rate, a drive reaping a session, a real 1541 load. Say so in a comment next
+   to the wait, so the next reader does not have to rediscover it.
 
 Before submitting a structural or test-only change:
 

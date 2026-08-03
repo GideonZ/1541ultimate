@@ -56,13 +56,65 @@ WARN = "WARN"
 SKIP = "SKIP"
 
 _VERDICT_COLOUR = {OK: GREEN, FAIL: RED, WARN: YELLOW, SKIP: YELLOW}
+
+# A check that takes longer than this has its duration marked SLOW in yellow,
+# so a slow one is visible while the run is happening rather than only in a
+# later reading of the log. It is a prompt to look, not a failure.
+#
+# Ten seconds, not five, because five sat below what a whole class of checks
+# can achieve rather than above it. Every context-menu action resets the C64
+# and waits for its cold start, which is 2.4s of the machine's own time, and
+# then loads and runs a program: measured at 3.1s to prepare, 1.5s to navigate,
+# 0.6s to invoke and 1.8s for the program to report itself. None of those steps
+# can be dropped, and removing the reset would let one action's running program
+# corrupt the next. A threshold that every such check trips teaches people to
+# ignore the mark, which costs more than it finds.
+SLOW_CHECK_SECONDS = 10.0
 # Worst first: a scenario reports the worst verdict any of its checks produced.
 _SEVERITY = [FAIL, WARN, SKIP, OK]
 
-# Colour is on or off for the whole run, so a captured log looks like what was on
-# screen. Deciding per stream would colour a harness's own lines but not the
-# suite lines it wraps, or the other way round.
-_USE_COLOUR = not os.environ.get("NO_COLOR")
+
+def _colour_enabled() -> bool:
+    """Colour on a terminal, plain text when redirected. The usual convention.
+
+    Writing escapes into a redirected stream is what makes a saved log awkward
+    to read afterwards: `less` sees the escape bytes and asks whether the file
+    really is binary, and `grep` has to match around them.
+
+    - NO_COLOR turns colour off even on a terminal. Any non-empty value counts,
+      which is what no-color.org specifies.
+    - FORCE_COLOR turns it on even when redirected, for a pager such as
+      `less -R` or a CI viewer that renders escapes itself. FORCE_COLOR=0 means
+      off, the way the npm ecosystem that introduced the variable reads it, so
+      a value of "0" is not treated as "force it on".
+
+    Decided once for the whole run rather than per stream: run-tests and the
+    suites it starts share this stdout, so they agree with each other, and a
+    captured log is either all plain or all coloured rather than a mixture.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    forced = os.environ.get("FORCE_COLOR")
+    if forced:
+        return forced != "0"
+    try:
+        return sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+_USE_COLOUR = _colour_enabled()
+
+
+def set_colour(enabled: bool) -> None:
+    """Override the automatic choice, for a `--color` flag.
+
+    A harness that takes the flag also exports NO_COLOR or FORCE_COLOR, so the
+    suites it starts as child processes make the same choice it did.
+    """
+    global _USE_COLOUR
+    _USE_COLOUR = enabled
+
 
 # A harness sets E2E_SUITE so that every record a suite writes carries the name
 # the harness knows it by; run-tests does this for each suite it starts. A
@@ -168,7 +220,14 @@ def _close(verdict: str, extra: str = "") -> None:
         return
     elapsed = time.monotonic() - _check_started
     parts = [extra] if extra else []
-    parts.append(format_duration(elapsed))
+    duration = format_duration(elapsed)
+    if elapsed >= SLOW_CHECK_SECONDS:
+        # The word as well as the colour: a captured log is read with less or
+        # grep, where colour is either absent or the reason the file is taken
+        # for a binary one, and the point of flagging a slow check is lost if
+        # it only survives on a live terminal.
+        duration = colour(duration + " SLOW", YELLOW)
+    parts.append(duration)
     print(f"{colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})", flush=True)
     if _pending:
         _emit_detail(_pending)
