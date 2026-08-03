@@ -420,6 +420,11 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
                 strlen(destination) + 1);
         command->length = 2 + strlen(destination) + 1;
         cd(command, reply, status);
+        if (*status != &c_status_ok) {
+            // The home directory could not be entered. Report that, rather than
+            // falling through and overwriting the status with "00,OK".
+            break;
+        }
         // fallthrough
 
     case DOS_CMD_GET_PATH:
