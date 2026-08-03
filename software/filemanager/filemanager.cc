@@ -1241,8 +1241,10 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 char dest_name[100];
                 strncpy(dest_name, dest_filename, 100);
                 // This may look odd, but files inside a D64 for instance, do not have the extension in the filename anymore
-                // so we add it here.
-                set_extension(dest_name, info->extension, 100);
+                // so we add it here. It is only added when the name does not already carry it, because on FAT the
+                // extension is derived from (and truncated out of) the name itself; rewriting it there would turn
+                // "foo.bar1234" into "foo.bar" and make distinct files collide.
+                ensure_extension(dest_name, info->extension, 100);
                 uint8_t writeflags = (overwrite)? (FA_WRITE|FA_CREATE_ALWAYS) : (FA_WRITE|FA_CREATE_NEW);
                 ret = fopen(dp, dest_name, writeflags, &fo);
                 if (fo) {

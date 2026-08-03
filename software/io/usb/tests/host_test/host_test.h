@@ -2,6 +2,7 @@
 #define TESTS_HOST_TEST_HOST_TEST_H
 
 #include <exception>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -54,6 +55,9 @@ inline void record_failure(const std::string& message, bool fatal)
 	if (fatal) {
 		throw TestFailure(message);
 	}
+	// Non-fatal failures do not unwind, so report them here; otherwise only the
+	// failure count would survive and the assertion would be undiagnosable.
+	std::cerr << message << std::endl;
 }
 
 template<typename Left, typename Right>

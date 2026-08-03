@@ -3,7 +3,22 @@ name: Build
 on: [push, pull_request]
 
 jobs:
+  # Host tests build firmware sources with the native compiler. They need no
+  # FPGA toolchain and no submodules, so they finish in seconds and gate the
+  # much slower hardware builds below.
+  test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Run host tests
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make test"
+
   build:
+    needs: test
     runs-on: self-hosted
     steps:
       - name: Checkout repository

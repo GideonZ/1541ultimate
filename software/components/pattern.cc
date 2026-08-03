@@ -1,5 +1,6 @@
 #include "pattern.h"
 #include <string.h>
+#include <strings.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <cctype>
@@ -329,6 +330,31 @@ int fix_filename(char *buffer)
         }
     }
     return replacements;
+}
+
+// Appends 'ext' to the name, but only if the name does not already end in it.
+// FileInfo::extension has two different meanings: on FAT it is derived from the
+// filename itself (and truncated to three chars by get_extension), while on
+// CBM filesystems it is the file type ("PRG", "SEQ", ...) which is not part of
+// the name. Rewriting the extension unconditionally therefore truncates long
+// FAT extensions, which loses information and makes distinct names collide.
+void ensure_extension(char *buffer, const char *ext, int buf_size)
+{
+    // skip leading dots of extension to set
+    while(*ext == '.') {
+        ext++;
+    }
+    if (!(*ext)) { // no extension to apply
+        return;
+    }
+
+    char current[4];
+    get_extension(buffer, current);
+    if (strcasecmp(current, ext) == 0) { // name already carries this extension
+        return;
+    }
+
+    add_extension(buffer, ext, buf_size);
 }
 
 int get_extension(const char *name, char *ext, bool caps)

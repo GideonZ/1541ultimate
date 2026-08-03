@@ -1,6 +1,26 @@
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 
+# Host tests. These build firmware sources with the native compiler and need no
+# FPGA or cross toolchain, so they run anywhere.
+HOST_TEST_DIRS = software/api/tests \
+                 software/components/tests \
+                 software/filemanager/tests \
+                 software/io/usb/tests
+
+.PHONY: test test_clean
+
+test:
+	@for dir in $(HOST_TEST_DIRS); do \
+		echo "==> $$dir"; \
+		$(MAKE) -C $$dir || exit 1; \
+	done
+
+test_clean:
+	@for dir in $(HOST_TEST_DIRS); do \
+		$(MAKE) -C $$dir clean || exit 1; \
+	done
+
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
 esp32_clean: esp32_raw_u64_clean esp32_raw_c3_clean esp32_u64ctrl_clean
