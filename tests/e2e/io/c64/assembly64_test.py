@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import rest as rest_lib
 from report import (
     Failure,
     check,
@@ -206,7 +207,7 @@ def device_is_alive(host: str, password: Optional[str], timeout: float) -> bool:
         headers["X-Password"] = password
     request = urllib.request.Request(f"http://{host}/v1/version", headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
             return response.status == 200
     except (OSError, TimeoutError, urllib.error.URLError):
         return False
@@ -224,7 +225,7 @@ def press_menu_button(device: Device) -> None:
         method="PUT",
     )
     try:
-        with urllib.request.urlopen(request, timeout=device.timeout) as response:
+        with rest_lib.retrying_urlopen(request, device.timeout) as response:
             status = response.status
             body = response.read()
     except urllib.error.HTTPError as exc:

@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
+import rest as rest_lib
 from report import detail, suite_fail, suite_ok
 
 from menu_screen_test import (
@@ -193,7 +194,7 @@ def rest_json(host: str, password: str, method: str, path: str, timeout: float =
         headers=headers,
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with rest_lib.retrying_urlopen(request, timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

@@ -17,13 +17,19 @@ convenience only.
 Exit codes: 0 clean, 1 could not be cleaned (ensure), 2 dirty (verify).
 """
 import argparse
-import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from typing import List, Optional
+
+# tests/lib holds the pacing every suite shares.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 
 SCREEN_BYTES = 2000
 SCREEN_COLS = 40
@@ -32,8 +38,10 @@ PATH_ROW = SCREEN_ROWS - 1
 ROOT_PATH = "/"
 EMPTY_MARKER = "< No Items >"
 
-MENU_SETTLE_SECONDS = 0.35
-MENU_TOGGLE_TIMEOUT_SECONDS = 6.0
+# Pacing is shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
+KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
+MENU_TOGGLE_TIMEOUT_SECONDS = pacing.MENU_TOGGLE_TIMEOUT_SECONDS
 # One press per nested object, plus room for directory levels.
 UNWIND_PRESSES = 14
 # Deeper than any listing the suites build.
@@ -68,20 +76,18 @@ class Device:
         request = urllib.request.Request(
             f"http://{self.host}{path}", data=body, headers=headers, method=method
         )
-        last = None
-        for attempt in range(max(1, retries)):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return response.read()
-            except urllib.error.HTTPError as exc:
-                if exc.code == 404:
-                    return None
-                raise Unrecoverable(f"{method} {path} returned HTTP {exc.code}") from exc
-            except (OSError, TimeoutError, urllib.error.URLError) as exc:
-                last = exc
-                if attempt + 1 < max(1, retries):
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
-        raise Unrecoverable(f"{method} {path} failed: {last}")
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry. `retries` is kept in the signature because callers
+        # read as though they choose it, but the shared policy decides.
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise Unrecoverable(f"{method} {path} returned HTTP {exc.code}") from exc
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Unrecoverable(f"{method} {path} failed: {exc}") from exc
 
     def screen(self) -> Optional[List[str]]:
         """Menu screen as text rows, or None when the menu is closed."""
@@ -119,7 +125,7 @@ class Device:
             # A dropped keystroke just means one less unwind step; the caller
             # loops on the observed state.
             pass
-        time.sleep(MENU_SETTLE_SECONDS)
+        time.sleep(KEY_SETTLE_SECONDS)
 
     def reset_machine(self) -> None:
         try:
@@ -133,7 +139,7 @@ class Device:
         while time.monotonic() < deadline:
             if self.menu_is_open() == want_open:
                 return True
-            time.sleep(MENU_SETTLE_SECONDS)
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return False
 
 

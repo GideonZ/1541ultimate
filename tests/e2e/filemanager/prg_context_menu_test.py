@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
+import pacing
 from report import check_skip, detail, section, suite_fail, suite_ok
 from ui_backend import Browser, MODE_TELNET, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
@@ -68,7 +69,8 @@ SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
 
-MENU_SETTLE_SECONDS = 0.05
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
 RUN_TIMEOUT_SECONDS = 12.0
 REAL_RUN_TIMEOUT_SECONDS = 40.0
 BOOT_TIMEOUT_SECONDS = 15.0
@@ -196,9 +198,14 @@ def screencode_to_ascii(code: int) -> str:
     return "."
 
 
-def _at_plain_root(rows: List[str]) -> bool:
+def _at_plain_root(rows: List[str], path: str) -> bool:
     """The unobstructed root listing, with no overlay (menu, popup, viewer)
     drawn over any part of it.
+
+    The path the browser reports has to be "/" itself: every directory this
+    suite descends into is under /Temp, whose own status row still contains
+    "Temp", so the entry check below matches inside /Temp just as it does at
+    the root (confirmed live: the /Temp listing was read as the root).
 
     Every overlay this suite drives is boxed in "+"/"|" border characters
     the plain listing never uses on its own (the same signal
@@ -206,6 +213,8 @@ def _at_plain_root(rows: List[str]) -> bool:
     alone is not enough, since text from behind a narrower overlay can still
     show through on rows it does not reach.
     """
+    if path != "/":
+        return False
     text = "\n".join(rows)
     if "+" in text or "|" in text:
         return False
@@ -373,24 +382,36 @@ class Machine:
 
     # ---- Browser navigation ---------------------------------------------
     def close_menu(self) -> None:
+        # Under Telnet the root browser is where this has to stop; under
+        # REST/Overlay and REST/Freeze it is not, because there the root
+        # browser is still the on-device menu being up, and while it is up
+        # the C64's keyboard stays disabled. Stopping at the root under REST
+        # left the menu open, so a later type_basic_line() produced no
+        # characters at all (confirmed live: the DMA action failed with "the
+        # menu never closed, so the keyboard stayed disabled" while the
+        # browser sat in /Temp).
+        telnet = isinstance(self.browser.backend, TelnetBackend)
         for _ in range(20):
             try:
-                rows = [strip_frame(row) for row in self.browser.rows()]
+                raw = self.browser.rows()
             except Failure:
                 return
+            rows = [strip_frame(row) for row in raw]
+            fields = raw[self.browser.status_row].split()
+            path = fields[0] if fields else ""
             if "Yes  No" in rows:
                 self.browser.press_popup_button("n")
             elif "Ok" in rows:
                 self.browser.press_popup_button("o")
-            elif _at_plain_root(rows):
-                # Nothing left to close. REST's menu_screen 404s once F8 has
-                # backed all the way out, which the Failure branch above
-                # catches; Telnet has no such signal (its remote session
-                # never closes on its own), so without this check the loop
-                # would keep pressing F8 at the plain root forever. Pressing
-                # F8 there is not a harmless no-op either: confirmed live, it
-                # closes the whole Telnet UI session, breaking the socket on
-                # the very next keypress.
+            elif telnet and _at_plain_root(rows, path):
+                # Nothing left to close over Telnet: its remote session never
+                # closes on its own, so without this check the loop would keep
+                # pressing F8 at the plain root forever. Pressing F8 there is
+                # not a harmless no-op either: confirmed live, it closes the
+                # whole Telnet UI session, breaking the socket on the very
+                # next keypress. REST needs no such check -- its menu_screen
+                # 404s once F8 has backed all the way out, which the Failure
+                # branch above catches.
                 return
             else:
                 # Shift+F7 is F8, the full UI-exit command. RUN/STOP may only

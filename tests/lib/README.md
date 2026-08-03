@@ -11,6 +11,7 @@ repository-root `run-tests` all use it.
 | `api.py` | The device's REST API as typed calls, built on `rest.py` |
 | `ftp.py` | FTP sessions, listings, transfers, deletion and purging |
 | `wait.py` | Bounded polling and retry |
+| `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
 
 Put this directory on `sys.path` before importing:
 
@@ -48,6 +49,29 @@ with ftp.session(host, password) as client:
 
 Use `wait.wait_until` rather than a bare sleep or a hand-rolled deadline, so a
 timeout says what it was waiting for.
+
+## Driving the UI at a consistent speed
+
+Take settle and poll values from `pacing`, never from a fresh constant in the
+suite. Before this module the same idea appeared at 0.0, 0.045, 0.05, 0.10,
+0.25, 0.30 and 0.35 seconds across the tree, so a suite that walked a file
+listing was several times slower than one typing into a field for no reason
+other than which constant it had inherited.
+
+```python
+import pacing
+time.sleep(pacing.KEY_SETTLE_SECONDS)
+```
+
+Every value can be overridden for one run without editing code:
+
+```
+U64_UI_POLL_INTERVAL=0.03 ./run-tests u64
+```
+
+A suite whose subject *is* timing - key repeat, a modal that must not be raced -
+passes its own number at the call site and says why. That is the exception the
+module is designed around, not a violation of it.
 
 ## Reporting rules
 

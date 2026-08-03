@@ -30,6 +30,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import ftp as ftp_lib
+import rest as rest_lib
 from report import Failure, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
@@ -78,7 +79,7 @@ def rest_json(host: str, password: str, method: str, path: str) -> Dict[str, obj
         headers=rest_headers(password),
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=10.0) as response:
+    with rest_lib.retrying_urlopen(request, 10.0) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -104,7 +105,8 @@ def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str
 
 
 def get_drive_a_image(host: str) -> Dict[str, object]:
-    with urllib.request.urlopen(f"http://{host}/v1/drives", timeout=10.0) as response:
+    with rest_lib.retrying_urlopen(
+            urllib.request.Request(f"http://{host}/v1/drives"), 10.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
     for entry in payload.get("drives", []):
         if "a" in entry:
@@ -284,7 +286,7 @@ def reset_machine(host: str, password: str) -> None:
         headers={**headers, "Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=10.0):
+    with rest_lib.retrying_urlopen(request, 10.0, idempotent=True):
         pass
     rest_json(host, password, "PUT", "/v1/machine:reset")
     time.sleep(0.5)

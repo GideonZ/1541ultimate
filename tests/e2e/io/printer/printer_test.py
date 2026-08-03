@@ -42,6 +42,8 @@ import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section, warn)
 
@@ -92,7 +94,8 @@ FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
-MENU_SETTLE_SECONDS = 0.35
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -160,27 +163,18 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        # The device serves a small fixed number of HTTP connections, so a
-        # connect can time out while it is busy. This suite runs straight after
-        # temp-auto-cleanup, which fills those slots, and a settings PUT timed
-        # out there. Only requests without a payload are retried: those carry
-        # their arguments in the query string and are idempotent, whereas
-        # resending a body would apply an upload or a PRG run twice.
-        attempts = TRANSPORT_RETRIES if body is None else 1
-        for attempt in range(1, attempts + 1):
-            connection = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
-            try:
-                connection.request(method, path, body=body,
-                                   headers=self._headers(body, extra_headers))
-                response = connection.getresponse()
-                payload = response.read()
-                return response.status, dict(response.getheaders()), payload
-            except (OSError, http.client.HTTPException):
-                if attempt == attempts:
-                    raise
-                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
-            finally:
-                connection.close()
+        # Transport and retry policy come from tests/lib/rest.py, the one place
+        # that decides them. A request without a payload carries its arguments
+        # in the query string, so applying it twice is the same as applying it
+        # once; one with a payload would run a PRG or upload a file again, and
+        # so is only resent when it never left the client.
+        return rest_lib.retrying_http_request(
+            self.host, method, path,
+            body=body,
+            headers=self._headers(body, extra_headers),
+            timeout=timeout or self.timeout,
+            idempotent=body is None,
+        )
 
     def require_ok(self, method, path, body=None, description=None, extra_headers=None, timeout=None):
         status, _headers, payload = self.request(method, path, body=body, extra_headers=extra_headers, timeout=timeout)
@@ -461,12 +455,24 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
 
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
-    body = client.get_menu_screen()
-    if body is None:
-        # Builds before the menu-screen REST endpoint still accept synthetic
-        # input. Printer is the preselected Tasks entry on those builds.
-        client.menu_button()
+    if client.get_menu_screen() is not None:
+        client.menu_button()  # close whatever is open
         time.sleep(settle)
+
+    client.menu_button()  # open root browser
+    time.sleep(settle)
+
+    if client.get_menu_screen() is None:
+        # No menu-screen endpoint on this build: the menu button has just been
+        # pressed, so the menu is open, yet nothing can be read back. Drive the
+        # Tasks menu blind, with Printer as the preselected entry.
+        #
+        # Which build this is has to be decided with the menu open. The check
+        # used to run before the menu was opened, where the endpoint answers 404
+        # on every build because there is no menu to return, so every run took
+        # this branch: the step verified nothing, and its two RETURN presses
+        # landed on the Tasks menu's real first entry, Assembly 64, whose query
+        # form was then left open for the next suite (confirmed live).
         client.tap_key("f5")
         time.sleep(settle)
         client.tap_key("return")
@@ -474,12 +480,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         client.tap_key("return")
         time.sleep(1.0)
         return
-    if body is not None:
-        client.menu_button()  # close whatever is open
-        time.sleep(settle)
 
-    client.menu_button()  # open root browser
-    time.sleep(settle)
     client.tap_key("f5")  # open Tasks (context menu) for the current selection
     time.sleep(settle)
 
@@ -499,7 +500,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     downs = printer_row - 8
     for _ in range(downs):
         client.tap_key("cursor_up_down")
-        time.sleep(0.2)
+        time.sleep(pacing.KEY_SETTLE_SECONDS)
 
     client.tap_key("return")  # expand Printer category (Flush/Eject preselected)
     time.sleep(settle)

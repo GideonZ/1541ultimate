@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 from report import Failure, check, check_skip, check_start, format_exception, suite_fail, suite_ok, warn
 from rest import RestClient
 
@@ -37,7 +38,8 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_MIN_PRINTABLE_CELLS = 20
 MENU_MAX_DISTINCT_COLOURS = 32
 MENU_MAX_DISTINCT_GLYPHS = 160
-MENU_TOGGLE_SETTLE_SECONDS = 0.25
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
 SOAK_NAVIGATION_INTERVAL_SECONDS = 0.20

@@ -22,6 +22,7 @@ from PIL import Image
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import rest as rest_lib
 from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
 
 TEST_CHOICES = (
@@ -205,38 +206,19 @@ class RestInputSession:
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        # The device serves few concurrent HTTP connections, so a request can
-        # fail while it is busy. What may be retried depends on how far it got,
-        # and urllib distinguishes the two cases: a failure before any response
-        # was seen surfaces as URLError, while a timeout waiting for the
-        # response body raises TimeoutError directly.
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry, which this suite's own policy became.
         #
-        #   GET       always. An HTTP status is a real answer, and reading a
-        #             value twice changes nothing.
-        #   POST/PUT  only on URLError, where no response was seen. A response
-        #             that timed out mid-read may well have applied its input,
-        #             and resending would apply it twice.
-        #
-        # Retrying a POST cannot hide a double application: every check here
-        # asserts the exact resulting keyboard or joystick state, so a duplicate
-        # keystroke fails that assertion rather than passing unnoticed. The
-        # retry can only turn a transport failure into a real result.
-        attempts = TRANSPORT_RETRIES
-        last_exc = None
-        for attempt in range(attempts):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return response.read()
-            except urllib.error.HTTPError:
-                raise
-            except (OSError, TimeoutError, urllib.error.URLError) as exc:
-                last_exc = exc
-                retryable = method == "GET" or isinstance(exc, urllib.error.URLError)
-                if retryable and attempt + 1 < attempts:
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
-                    continue
-                break
-        raise Failure(f"{method} {path} failed: {format_exception(last_exc)}") from last_exc
+        # Retrying a POST cannot hide a double application here: every check
+        # asserts the exact resulting keyboard or joystick state, so a
+        # duplicated keystroke fails that assertion rather than passing.
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Failure(f"{method} {path} failed: {format_exception(exc)}") from exc
 
     def json_request(
         self,
@@ -282,12 +264,11 @@ class RestInputSession:
             headers["X-Password"] = self.password
         connection = None
         try:
-            connection = http.client.HTTPConnection(self.host, timeout=self.timeout)
-            connection.request("POST", "/v1/machine:input", body=b"", headers=headers)
-            response = connection.getresponse()
-            body = response.read()
-            if response.status != expected_code:
-                raise Failure(f"Expected HTTP {expected_code}, got HTTP {response.status}")
+            status, _headers, body = rest_lib.retrying_http_request(
+                self.host, "POST", "/v1/machine:input", body=b"", headers=headers,
+                timeout=self.timeout)
+            if status != expected_code:
+                raise Failure(f"Expected HTTP {expected_code}, got HTTP {status}")
             return json.loads(body.decode("utf-8"))
         except http.client.HTTPException as exc:
             raise Failure(f"HTTP client failure: {exc}") from exc

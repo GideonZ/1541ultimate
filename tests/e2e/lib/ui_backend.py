@@ -44,6 +44,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import pacing
+import rest as rest_lib
 from report import Failure
 from menu import wait_screen_changes, wait_screen_settled
 
@@ -61,8 +63,9 @@ UI_ITEM = "Interface Type"
 OVERLAY_MODE = "Overlay on HDMI"
 
 INPUT_MAX_EVENTS = 60  # software/api/route_input.cc rejects a larger batch with HTTP 400.
-POLL_INTERVAL_SECONDS = 0.05
-SETTLE_TIMEOUT_SECONDS = 6.0
+# How fast this facade drives the UI is not decided here; see tests/lib/pacing.py.
+POLL_INTERVAL_SECONDS = pacing.POLL_INTERVAL_SECONDS
+SETTLE_TIMEOUT_SECONDS = pacing.SETTLE_TIMEOUT_SECONDS
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
@@ -149,6 +152,13 @@ class Backend:
     request; Telnet writes one socket buffer).
     """
 
+    # Whether the last key sent changed the screen. A caller walking a listing
+    # uses this to notice it has reached the end instead of pressing into a
+    # wall for the rest of its step budget. It defaults to True so a transport
+    # that cannot tell (Telnet reads a stream, not a frame) keeps the previous
+    # behaviour of walking the full budget rather than stopping early.
+    last_key_changed: bool = True
+
     def capture(self) -> Snapshot:
         raise NotImplementedError
 
@@ -170,6 +180,17 @@ class Backend:
         for _ in range(count):
             snapshot = self.send_key(key)
         return snapshot
+
+    def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
+        """One key followed by a string, as a single batch where possible.
+
+        Used for the browser's quick-seek, where the leading key is what
+        clears any search string left from a previous seek. Sending the two
+        separately would settle twice and, worse, leave a window in which the
+        reset has landed but the search has not.
+        """
+        self.send_key(key)
+        return self.send_text(text, label)
 
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
@@ -207,6 +228,18 @@ class Backend:
         browser: selected_row() correctly reported row 2 while the separately
         fetched row 2 came back empty mid-redraw, which made a caller scanning
         for that entry miss an entry that was plainly present.
+        """
+        raise NotImplementedError
+
+    def selection_and_rows(
+        self, entry_rows: Optional[Sequence[int]] = None
+    ) -> Tuple[int, List[str]]:
+        """The cursor row and the whole screen, from one capture.
+
+        Same rule as selected_text: a caller that wants to find an entry on
+        screen and then work out how far the cursor is from it needs both
+        halves to describe the same screen, or the distance it computes is
+        against a screen that no longer exists.
         """
         raise NotImplementedError
 
@@ -407,22 +440,19 @@ class RestBackend(Backend):
         if body is not None:
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(self._url(path, params), data=body, headers=headers, method=method)
-        # The device serves few concurrent HTTP connections. GET is retried
-        # since an HTTP status is a real answer either way; POST/PUT are not,
-        # since resending keyboard input could apply it twice.
-        attempts = TRANSPORT_RETRIES if method == "GET" else 1
-        last_exc: Optional[BaseException] = None
-        for attempt in range(attempts):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return response.status, response.read()
-            except urllib.error.HTTPError as exc:
-                return exc.code, exc.read()
-            except (OSError, TimeoutError, urllib.error.URLError) as exc:
-                last_exc = exc
-                if attempt + 1 < attempts:
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
-        raise Failure(f"{method} {self._url(path, params)} failed: {last_exc}")
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry for the rule and why there is only one copy of it.
+        #
+        # Retrying cannot hide a double application here: the callers read the
+        # cursor or the resulting name back, so a duplicated keystroke fails
+        # that check rather than passing unnoticed.
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Failure(f"{method} {self._url(path, params)} failed: {exc}")
 
     # -- config --
     def get_config(self, store: str, item: str) -> str:
@@ -546,6 +576,12 @@ class RestBackend(Backend):
         body, index = self._settled_selection(entry_rows)
         return strip_frame(self._decode(body).lines[index].rstrip())
 
+    def selection_and_rows(
+        self, entry_rows: Optional[Sequence[int]] = None
+    ) -> Tuple[int, List[str]]:
+        body, index = self._settled_selection(entry_rows)
+        return index, [line.rstrip() for line in self._decode(body).lines]
+
     # -- input --
     def _post_events(self, events: List[dict]) -> None:
         for start in range(0, len(events), INPUT_MAX_EVENTS):
@@ -554,7 +590,9 @@ class RestBackend(Backend):
             if status != 200:
                 raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")
 
-    def _settle(self, before: Optional[bytes]) -> Snapshot:
+    def _settle(self, before: Optional[bytes],
+                change_timeout: Optional[float] = None,
+                min_drain: float = 0.0) -> Snapshot:
         # A batch is accepted by REST immediately but drains through the C64
         # matrix over time (see tests/e2e/lib/menu.py), so the first poll or
         # two can land before the firmware has started applying it -- reading
@@ -564,8 +602,29 @@ class RestBackend(Backend):
         # the screen, so this can legitimately time out) avoids that false
         # settle; wait_screen_settled below still catches multi-frame
         # redraws once a change has started.
-        wait_screen_changes(self._menu_screen_body, before, timeout=SETTLE_TIMEOUT_SECONDS)
+        #
+        # The two waits have different jobs and so different budgets. This one
+        # only has to cover the delay before the first changed pixel, so it
+        # uses the much shorter KEY_CHANGE_TIMEOUT_SECONDS: it is the wait that
+        # runs to full length on every keypress that cannot do anything, such
+        # as DOWN on the last row of a listing. Sharing the settle timeout made
+        # each of those cost 6 seconds.
+        if change_timeout is None:
+            change_timeout = pacing.KEY_CHANGE_TIMEOUT_SECONDS
+        started = time.monotonic()
+        self.last_key_changed = wait_screen_changes(
+            self._menu_screen_body, before, timeout=change_timeout,
+            min_samples=pacing.KEY_CHANGE_MIN_SAMPLES,
+            hard_timeout=SETTLE_TIMEOUT_SECONDS)
         wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+        # A batch is still draining through the matrix after the screen has
+        # gone quiet once: a gap between two of its keystrokes looks exactly
+        # like the end of it. Give the rest of the batch the time it needs to
+        # arrive, then settle whatever did.
+        remaining = min_drain - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)
+            wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
         return self.capture()
 
     def send_combo(self, matrix_keys: Sequence[str]) -> Snapshot:
@@ -589,7 +648,7 @@ class RestBackend(Backend):
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]
         self._post_events(events)
-        return self._settle(before)
+        return self._settle(before, min_drain=len(events) * pacing.KEY_DRAIN_SECONDS)
 
     def send_key_repeat(self, key: str, count: int) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -599,7 +658,24 @@ class RestBackend(Backend):
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"} for _ in range(count)]
         self._post_events(events)
-        return self._settle(before)
+        return self._settle(before, min_drain=count * pacing.KEY_DRAIN_SECONDS)
+
+    def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
+        combo = KEY_ALIASES.get(key)
+        if combo is None:
+            raise Failure(f"Unknown key alias {key!r} for RestBackend")
+        self.last_command = label
+        before = self._menu_screen_body()
+        events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"}]
+        events += [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"}
+                   for ch in text]
+        self._post_events(events)
+        # The seek's own short budget: its caller confirms the result by
+        # reading the cursor back, so an early "nothing changed" here is free,
+        # and a seek onto the entry already under the cursor changes nothing at
+        # all. See pacing.SEEK_CHANGE_TIMEOUT_SECONDS.
+        return self._settle(before, change_timeout=pacing.SEEK_CHANGE_TIMEOUT_SECONDS,
+                            min_drain=len(events) * pacing.KEY_DRAIN_SECONDS)
 
     def close(self) -> None:
         try:
@@ -845,6 +921,12 @@ class TelnetBackend(Backend):
             raise last_error
         raise TimeoutError(f"Timed out connecting to {host}:{port}")
 
+    # Set by every send, cleared by the drain that follows it: it tells
+    # _drain_until_idle whether a redraw is actually expected, so a bare
+    # capture does not sit through the first-byte wait for one that was
+    # never triggered.
+    _expect_redraw = False
+
     def close(self) -> None:
         try:
             self.sock.close()
@@ -881,11 +963,21 @@ class TelnetBackend(Backend):
         rows = self.screen.rows()
         return strip_frame(rows[self._marked_row(entry_rows, rows)])
 
+    def selection_and_rows(
+        self, entry_rows: Optional[Sequence[int]] = None
+    ) -> Tuple[int, List[str]]:
+        if entry_rows is None:
+            raise Failure("TelnetBackend.selection_and_rows requires entry_rows")
+        self._drain_until_idle(timeout=self.timeout)
+        rows = self.screen.rows()
+        return self._marked_row(entry_rows, rows), [row.rstrip() for row in rows]
+
     def send_key(self, key: str) -> Snapshot:
         payload = TELNET_KEY_BYTES.get(key)
         if payload is None:
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = key
+        self._expect_redraw = True
         self.sock.sendall(payload)
         return self.capture()
 
@@ -900,6 +992,7 @@ class TelnetBackend(Backend):
         if payload is None:
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = key
+        self._expect_redraw = True
         self.sock.sendall(payload)
         self._last_drain_bytes = 0
         self._drain_until_idle(timeout=self.timeout)
@@ -907,12 +1000,23 @@ class TelnetBackend(Backend):
 
     def send_char(self, ch: str) -> Snapshot:
         self.last_command = ch
+        self._expect_redraw = True
         self.sock.sendall(ch.encode("ascii"))
         return self.capture()
 
     def send_text(self, text: str, label: str) -> Snapshot:
         self.last_command = label
+        self._expect_redraw = True
         self.sock.sendall(text.encode("ascii"))
+        return self.capture()
+
+    def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
+        payload = TELNET_KEY_BYTES.get(key)
+        if payload is None:
+            raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
+        self.last_command = label
+        self._expect_redraw = True
+        self.sock.sendall(payload + text.encode("ascii"))
         return self.capture()
 
     def send_key_repeat(self, key: str, count: int) -> Snapshot:
@@ -920,18 +1024,40 @@ class TelnetBackend(Backend):
         if payload is None:
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = f"{key} x{count}"
+        self._expect_redraw = True
         self.sock.sendall(payload * count)
         return self.capture()
 
     def _drain_until_idle(self, timeout: float) -> None:
-        end = time.time() + timeout
-        last_data = time.time()
+        """Read until the redraw is over, or until it is clear none is coming.
+
+        Two waits, not one. Before the first byte the question is "has the
+        redraw started yet", and the answer has to allow for a device that is
+        busy; after it, the question is "has it finished", and a redraw's own
+        byte gaps are far shorter. One threshold for both was wrong in both
+        directions: it returned a stale screen when a redraw took longer than
+        the threshold to start, and it charged that same threshold to every
+        capture once the redraw had plainly finished.
+        """
+        started = time.time()
+        end = started + timeout
+        expecting = self._expect_redraw
+        self._expect_redraw = False
+        first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
+                      else pacing.TELNET_QUIET_CHECK_SECONDS)
+        last_data: Optional[float] = None
         drained = 0
         while time.time() < end:
-            wait = min(0.5, max(0.0, end - time.time()))
+            wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
             ready, _, _ = select.select([self.sock], [], [], wait)
+            now = time.time()
             if not ready:
-                if time.time() - last_data >= 0.5:
+                if last_data is None:
+                    if now - started >= first_wait:
+                        self._last_drain_bytes = drained
+                        return
+                    continue
+                if now - last_data >= pacing.TELNET_IDLE_GAP_SECONDS:
                     self._last_drain_bytes = drained
                     return
                 continue
@@ -1016,6 +1142,28 @@ class Browser:
         self.status_row = status_row
 
     def close(self) -> None:
+        # run-tests hands the next suite a device that has to satisfy the
+        # UI-state contract in tests/e2e/lib/ui_state.py: the menu closed, and
+        # the root browser at "/" when it is next opened. The firmware keeps
+        # the browser's location across a menu close, so a suite that finishes
+        # inside a directory is reported as having left the device dirty and
+        # is downgraded to WARN, even when every one of its checks passed.
+        # Observed on hardware: prg-context-menu, browser-long-filename and
+        # browser-filesystem-refresh each ended inside /Temp.
+        #
+        # Failures on the way out are not this method's to report: the suite
+        # has already produced its verdict, and the gate re-checks the state
+        # afterwards either way. backend.close() still has to run, because it
+        # is what restores the device's Interface Type setting.
+        # Two attempts, because one transient on the way out would otherwise
+        # hand the next suite a dirty device for no better reason than timing.
+        for _ in range(2):
+            try:
+                self.backend.ensure_ready()
+                self.go_to_root()
+                break
+            except Exception:  # noqa: BLE001
+                continue
         self.backend.close()
 
     # -- screen reading --
@@ -1051,6 +1199,17 @@ class Browser:
     def type_char(self, character: str) -> None:
         self.backend.send_char(character)
 
+    def type_text(self, text: str) -> None:
+        """Type a whole string through the transport's batched path.
+
+        One request for the whole string, settled once, instead of a request
+        and a settle per character. The firmware drains a batch through the
+        same matrix path as separate requests, so the machine sees the same
+        keys. A suite that needs the keys spaced out in time (key repeat,
+        racing a redraw) calls type_char in its own loop and says why.
+        """
+        self.backend.send_text(text, f"type {text!r}")
+
     # -- navigation --
     def go_to_root(self) -> None:
         for _ in range(12):
@@ -1063,13 +1222,15 @@ class Browser:
                 # root, can also close the whole overlay as a side effect
                 # (confirmed live under REST/Overlay) -- the same class of
                 # thing RUN/STOP does at the root under Telnet elsewhere in
-                # this codebase. That closing is itself the signal we have
-                # arrived, so reopen and treat it as success rather than
-                # letting the settle-capture's Failure propagate.
+                # this codebase. Reopen and let the loop read the path back,
+                # rather than treating the close as proof of where we are:
+                # the overlay can also go away for reasons that have nothing
+                # to do with having arrived, and this used to return as though
+                # it had. Observed as browser-long-filename leaving the
+                # browser in /Temp while reporting that it had gone home.
                 if not str(exc).startswith("menu screen unavailable after"):
                     raise
                 self.backend.ensure_ready()
-                return
         raise Failure(f"could not return to '/'; now at {self.current_path()!r}")
 
     def go_to_top(self, count: int = 14) -> None:
@@ -1077,34 +1238,124 @@ class Browser:
         self.press_many("UP", count)
 
     def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0) -> None:
-        """Walk the listing until the cursor sits on an entry starting with `prefix`.
+        """Put the cursor on the listing entry starting with `prefix`.
 
-        `max_steps` bounds one downward pass; `timeout` bounds how long we keep
-        starting fresh passes after one has failed. The two are deliberately
-        separate, and the deadline is only tested between passes.
+        The listing is already on the screen, so the row the entry is on is
+        read rather than searched for, and the cursor is moved there with one
+        batched keypress run. This is the same thing choose_overlay_item does
+        for a context menu, and it is why picking a menu item always looked
+        instant while picking a file did not: stepping sends one request and
+        waits out one settle per row, which measured about 206ms a row, or
+        roughly six rows a second.
 
-        Testing it per step instead would abort a pass that is still making
-        progress, because a step is a real keypress-and-settle round trip and
-        the budget is far smaller than one pass. Measured on hardware against
-        a 12-entry listing: over Telnet go_to_top is 1.13s and a single
-        selected_text is 1.00s, so a 3.0s budget expires after roughly one row
-        compared, and a full 30-step pass needs 47.6s; over REST a full pass
-        needs 8.1s. Per-step checking therefore failed entries that were
-        present and only a few rows down. Letting each pass finish keeps the
-        scan bounded by max_steps, which is the caller's own limit, while the
-        deadline still stops the rescan loop from running indefinitely when
-        the entry genuinely is not there.
+        `max_steps` bounds how far into the listing to look, and `timeout`
+        bounds how long to keep starting fresh attempts. The two are
+        deliberately separate: an attempt is only abandoned between screens,
+        never part-way through one, so a listing that is still being scrolled
+        through is not cut off mid-pass.
         """
         deadline = time.monotonic() + timeout
+        visible = len(self.entry_rows)
+        # One screen is scanned per iteration, plus one to land on.
+        screens = max(1, -(-max_steps // visible) + 1)
+        # Quick-seek searches the whole listing, so it does not care where the
+        # cursor is and needs no rewind first. Rewinding anyway cost more than
+        # the seek itself: go_to_top is a 14 key burst for the firmware to
+        # drain, against one key per character of the prefix.
+        if self._seek_entry(prefix):
+            return
         while True:
+            # This also clears any quick-seek string a previous search left
+            # behind, which is the one thing that can make the attempt above
+            # miss: KEY_UP and KEY_DOWN both call reset_quick_seek()
+            # (software/userinterface/tree_browser.cc), so the retry below
+            # starts from an empty one.
             self.go_to_top()
-            for _ in range(max_steps):
-                if self.selected_text().startswith(prefix):
+            if self._seek_entry(prefix):
+                return
+            for _ in range(screens):
+                if self._select_visible(prefix):
                     return
-                self.press("DOWN")
+                # Not on this screen. Move a screenful further in, in one
+                # request, and look again.
+                self.press_many("DOWN", visible - 1)
+                if not self.backend.last_key_changed:
+                    # Nothing moved, so this is the end of the listing and the
+                    # entry is not in it.
+                    break
             if time.monotonic() >= deadline:
                 raise Failure(
                     f"could not select an entry starting with {prefix!r}; screen was:\n{self.screen()}")
+
+    # A quick-seek character is anything the browser routes to seek_char():
+    # printable and above space (software/userinterface/tree_browser.cc's
+    # default case tests c >= '!'). Space must never be sent, because the
+    # browser binds it to select_one(), which toggles the selection mark on the
+    # entry under the cursor instead of searching.
+    def _seekable(self, prefix: str) -> bool:
+        if not prefix:
+            return False
+        # A seek costs the firmware one keystroke per character, and a jump
+        # within the visible listing costs at most one per row, so a prefix
+        # longer than the screen can never be the cheaper of the two.
+        if len(prefix) > len(self.entry_rows):
+            return False
+        if any(not ("!" <= ch < "\x7f") for ch in prefix):
+            return False
+        try:
+            for ch in prefix:
+                char_to_combo(ch)
+        except Failure:
+            return False
+        return True
+
+    def _seek_entry(self, prefix: str) -> bool:
+        """Jump to `prefix` using the browser's own quick-seek, if it can.
+
+        The browser matches the typed string against every child with a
+        trailing wildcard and moves the cursor to the first hit
+        (TreeBrowser::perform_quick_seek), so this is one request whatever the
+        listing's size, where stepping is one per row and even a batched jump
+        is one keypress per row for the firmware to drain.
+
+        The leading UP is what makes the seek independent of what ran before
+        it: a quick-seek string persists until a cursor key clears it, and
+        every further character is dropped while it has no match, so a search
+        started on top of a previous one silently does nothing. UP costs one
+        keystroke in the same batch, against a whole failed seek and a rewind
+        to recover from it.
+
+        The firmware's match is case-insensitive and this method's contract is
+        not, so the landing is always confirmed by reading the cursor back.
+        Returning False just means the caller falls through to the scan, which
+        is also what happens when nothing matched: the browser drops
+        characters that would leave it with no hit, so the cursor stays put.
+        """
+        if not self._seekable(prefix):
+            return False
+        try:
+            self.backend.send_key_then_text("UP", prefix, f"seek {prefix!r}")
+        except Failure:
+            return False
+        return self.selected_text().startswith(prefix)
+
+    def _select_visible(self, prefix: str) -> bool:
+        """Move the cursor onto a matching entry on the current screen.
+
+        Returns False when no visible row matches, or when the cursor did not
+        end up where the screen said it should, which a repaint between the
+        jump and the check can cause. The caller retries rather than trusting
+        the move, so the result is confirmed by reading the cursor back.
+        """
+        row, rows = self.backend.selection_and_rows(self.entry_rows)
+        for index in self.entry_rows:
+            if index < len(rows) and strip_frame(rows[index]).startswith(prefix):
+                if index > row:
+                    self.press_many("DOWN", index - row)
+                elif index < row:
+                    self.press_many("UP", row - index)
+                return self.selected_text().startswith(prefix)
+        return False
 
     def enter(self) -> None:
         self.press("RIGHT")
@@ -1138,10 +1389,26 @@ class Browser:
                 labels.append(label)
         return labels
 
+    def wait_for_overlay(self, before: List[str]) -> List[str]:
+        """Labels of an overlay drawn over `before`, waiting for it to appear.
+
+        Reading the screen once after the key that opens the overlay cannot
+        tell "not drawn yet" from "no overlay": settling only establishes that
+        the screen stopped changing, and an overlay whose draw begins after
+        that window reads as absent. Returns the labels as soon as there are
+        any, or an empty list once the wait is out, which the callers report.
+        """
+        deadline = time.monotonic() + pacing.OVERLAY_DRAW_TIMEOUT_SECONDS
+        while True:
+            labels = self.overlay_items(before)
+            if labels or time.monotonic() >= deadline:
+                return labels
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+
     def open_context_menu(self) -> List[str]:
         before = self.rows()
         self.press("ENTER")
-        labels = self.overlay_items(before)
+        labels = self.wait_for_overlay(before)
         if not labels:
             raise Failure(f"no context menu appeared; screen was:\n{self.screen()}")
         return labels
@@ -1158,7 +1425,7 @@ class Browser:
     def invoke_task_action(self, category: str, item: str) -> None:
         before = self.rows()
         self.press("F5")
-        categories = self.overlay_items(before)
+        categories = self.wait_for_overlay(before)
         if not categories:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")
         if category not in categories:
@@ -1166,7 +1433,7 @@ class Browser:
         self.press_many("DOWN", categories.index(category))
         before = self.rows()
         self.press("ENTER")
-        self.choose_overlay_item(self.overlay_items(before), item)
+        self.choose_overlay_item(self.wait_for_overlay(before), item)
 
     def press_popup_button(self, key: str) -> None:
         """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel."""
@@ -1191,8 +1458,7 @@ class Browser:
     def fill_edit_field(self, text: str, clear_taps: int = 0) -> None:
         if clear_taps:
             self.press_many("BACKSPACE", clear_taps)
-        for character in text:
-            self.type_char(character)
+        self.type_text(text)
         self.press("ENTER")
 
     def recover_to(self, directory: str) -> None:

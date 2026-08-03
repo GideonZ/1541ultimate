@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Set, Tuple
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
     FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
     suite_ok, warn)
@@ -31,7 +33,8 @@ CONFIG_CATEGORY = "User Interface Settings"
 CONFIG_ITEM = "Interface Type"
 INTERFACE_FREEZE = "Freeze"
 INTERFACE_OVERLAY = "Overlay on HDMI"
-MENU_TOGGLE_SETTLE_SECONDS = 0.3
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 RESET_SETTLE_SECONDS = 5.0
 MEM_SIZE = 65536
 MAX_POST_CHUNK = 65536
@@ -135,7 +138,7 @@ class RestSession:
 
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()

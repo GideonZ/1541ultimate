@@ -55,6 +55,7 @@ from typing import Dict, List, Optional, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 import ftp as ftp_lib
+import rest as rest_lib
 from report import (
     FAIL, Failure, OK, SKIP, check, detail, format_exception, section, suite_fail, suite_ok, warn)
 
@@ -217,34 +218,23 @@ class RestSession:
             url += "?" + urllib.parse.urlencode(params)
         headers = {"X-Password": self.password} if self.password else {}
         request = urllib.request.Request(url, headers=headers, method=method)
-        attempts = CONNECT_ATTEMPTS if repeatable else 1
-        for attempt in range(1, attempts + 1):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    return response.status, response.read()
-            except urllib.error.HTTPError as exc:
-                # An HTTP status is an answer, not a transport failure, so it is never
-                # retried. HTTPError also holds the connection open until it is
-                # collected, and this suite opens one per register access, so close it
-                # here rather than later.
-                with exc:
-                    return exc.code, exc.read()
-            except (OSError, TimeoutError, urllib.error.URLError) as exc:
-                # The device serves about four HTTP connections at a time and reaps a
-                # stuck one after roughly 15 seconds, so a request can be refused or
-                # time out while the pool is momentarily full. That is a property of
-                # the device, not a firmware failure, and it shows up here because this
-                # suite opens a connection per register access. Only requests that can
-                # be repeated without changing device state are retried; a write to the
-                # command queue or a read that pops a response FIFO is not, because a
-                # timeout does not say whether the first one landed.
-                if attempt == attempts:
-                    raise Failure(
-                        f"{method} {url} failed after {attempt} attempt(s): {format_exception(exc)}"
-                    ) from exc
-                detail(f"retrying {method} {url}: {format_exception(exc)}")
-                time.sleep(CONNECT_RETRY_SECONDS)
-        raise Failure(f"{method} {url} failed")  # not reachable, keeps the type checker happy
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry. `repeatable` is this suite's word for idempotent: a
+        # register read applies nothing, so it may go again after the request
+        # was sent, while a register write may not.
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout,
+                                           idempotent=repeatable) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            # An HTTP status is an answer, not a transport failure, so it is never
+            # retried. HTTPError also holds the connection open until it is
+            # collected, and this suite opens one per register access, so close it
+            # here rather than later.
+            with exc:
+                return exc.code, exc.read()
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Failure(f"{method} {url} failed: {format_exception(exc)}") from exc
 
     def peek(self, address: int, repeatable: bool = False) -> int:
         status, body = self.request(

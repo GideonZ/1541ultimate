@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import rest as rest_lib
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok, warn
 from ui_backend import (
     Backend,
@@ -290,20 +291,9 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
 
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
     url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
-    deadline = time.time() + 15.0
-    last_error: Optional[BaseException] = None
-
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=5.0) as response:
-                return response.read()
-        except (OSError, TimeoutError, urllib.error.URLError) as exc:
-            last_error = exc
-            time.sleep(0.5)
-
-    if last_error is not None:
-        raise last_error
-    raise TimeoutError(f"Timed out reading REST memory from {url}")
+    # Transport and retry policy come from tests/lib/rest.py; see rest.may_retry.
+    with rest_lib.retrying_urlopen(urllib.request.Request(url), 5.0) as response:
+        return response.read()
 
 
 def write_rest_memory(host: str, address: int, data: bytes) -> None:
@@ -312,7 +302,8 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
 
     url = f"http://{host}/v1/machine:writemem?address={address:04X}&data={data.hex().upper()}"
     request = urllib.request.Request(url, data=b"", method="PUT")
-    with urllib.request.urlopen(request, timeout=5.0):
+    # Writing the same bytes twice is the same as writing them once.
+    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
         pass
 
 
@@ -323,7 +314,7 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             request = urllib.request.Request(
                 f"http://{host}/v1/machine:menu_screen", headers=headers, method="GET"
             )
-            with urllib.request.urlopen(request, timeout=5.0):
+            with rest_lib.retrying_urlopen(request, 5.0):
                 pass
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
@@ -341,21 +332,26 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             headers={**headers, "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=5.0):
+        # menu_button is a toggle, so it is never declared idempotent: sending
+        # it twice puts the menu back where it started. The default policy only
+        # resends when no response was seen at all, which means it was not
+        # applied.
+        with rest_lib.retrying_urlopen(request, 5.0):
             pass
         time.sleep(0.25)
     else:
         request = urllib.request.Request(
             f"http://{host}/v1/machine:menu_button", data=b"", headers=headers, method="PUT"
         )
-        with urllib.request.urlopen(request, timeout=5.0):
+        with rest_lib.retrying_urlopen(request, 5.0):
             pass
         time.sleep(0.5)
 
     request = urllib.request.Request(
         f"http://{host}/v1/machine:reset", data=b"", headers=headers, method="PUT"
     )
-    with urllib.request.urlopen(request, timeout=5.0):
+    # Resetting twice leaves the same machine as resetting once.
+    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
         pass
     time.sleep(1.0)
 
@@ -1110,13 +1106,15 @@ def clear_prompt_field(session: MonitorSession) -> None:
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
     url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
     request = urllib.request.Request(url, data=b"", method="PUT")
-    with urllib.request.urlopen(request, timeout=15.0):
+    # Creating the same image twice leaves the same image.
+    with rest_lib.retrying_urlopen(request, 15.0, idempotent=True):
         pass
 
 
 def rest_file_exists(host: str, path: str) -> bool:
     try:
-        with urllib.request.urlopen(f"http://{host}/v1/files{path}:info", timeout=5.0) as response:
+        with rest_lib.retrying_urlopen(
+                urllib.request.Request(f"http://{host}/v1/files{path}:info"), 5.0) as response:
             return response.status == 200
     except urllib.error.HTTPError:
         return False

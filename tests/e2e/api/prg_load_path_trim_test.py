@@ -22,6 +22,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
 sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
 
 import ftp as ftp_lib
+import rest as rest_lib
 from report import Failure, check_fail, check_ok, check_start, check_warn, detail, section, suite_ok, warn
 from ui_backend import add_mode_argument, make_backend
 
@@ -43,7 +44,7 @@ class RestSession:
         request = urllib.request.Request(f"http://{self.host}{path}{query}", data=data,
                                          headers=request_headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with rest_lib.retrying_urlopen(request, 10) as response:
                 return response.status, response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read()

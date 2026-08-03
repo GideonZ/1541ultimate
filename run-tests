@@ -61,6 +61,11 @@ class Suite:
 #   find tests -name '*_test.py' -not -path '*/__pycache__/*'
 SUITES: Sequence[Suite] = (
     # ---------------------------------------------------------------- e2e --
+    # Needs no device: it reads the tree and fails if a suite has grown its own
+    # HTTP client again. Seven had, each with the retry rule wrong in its own
+    # way, and each was found only when a transient timeout failed a whole run.
+    # First, so that lands as a clear message rather than as a flaky suite.
+    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", ""),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
@@ -251,7 +256,7 @@ def run_suite(suite: Suite, options: Options, mode: str, label: str) -> Result:
     full_path = os.path.join(ROOT, suite.path)
     if not os.path.isfile(full_path):
         print()
-        report.suite_skip(suite.name, f"missing {suite.path}")
+        report.suite_skip(suite.name, f"missing {suite.path}", 0.0)
         return Result(suite.category, mode, suite.name, report.SKIP, 0.0)
 
     report.banner(f"{suite.category.upper()}  {suite.name}"
@@ -267,7 +272,7 @@ def run_suite(suite: Suite, options: Options, mode: str, label: str) -> Result:
     # E2E suites share one device and one UI object stack, so each starts from
     # the documented state rather than from whatever the last one left.
     if suite.category == "e2e" and not ui_state_gate("ensure", options):
-        report.suite_fail(suite.name, "precondition: the device UI could not be cleaned")
+        report.suite_fail(suite.name, "precondition: the device UI could not be cleaned", 0.0)
         return Result(suite.category, mode, suite.name, report.FAIL, 0.0)
 
     started = time.monotonic()
@@ -285,7 +290,11 @@ def run_suite(suite: Suite, options: Options, mode: str, label: str) -> Result:
     # elsewhere is not a defect. Naming who left what is what makes an
     # inherited failure traceable to its cause; it does not change the verdict.
     if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name):
-        report.suite_warn(suite.name, "left the device UI outside the documented state")
+        # `elapsed` is passed for the same reason the OK/FAIL lines above pass
+        # it: report._suite_line falls back to the time since the harness
+        # process started when it is given no duration, so a WARN printed an
+        # hour into a run read as an hour-long suite.
+        report.suite_warn(suite.name, "left the device UI outside the documented state", elapsed)
         ui_state_gate("ensure", options, suite.name, quiet=True)
         if verdict == report.OK:
             verdict = report.WARN

@@ -3,18 +3,30 @@
 Every suite that speaks REST to the device goes through this: one place for the
 `X-Password` rule, JSON encoding, and the retry policy.
 
-The retry policy. The device serves only a few
-concurrent HTTP connections, so a read can time out while it is busy. A GET is
-retried because it has no effect on the device and a timeout says nothing about
-whether it was served. A POST or PUT is not retried by default, because it
-applies its input, and an HTTP status, including an error status, is a real
-answer rather than a reason to try again. A caller that knows its own request
-applies the same state however many times it arrives can opt in with
-`idempotent=True`.
+The retry policy lives in `may_retry`, and nothing outside this module decides
+it. The device serves only a few concurrent HTTP connections, so a request can
+fail while it is busy, and whether it may be repeated depends on one thing:
+whether the device can already have acted on it.
+
+  request never went out   nothing was applied, so any method may be resent.
+  request went out         the device may have acted, so only GET and calls the
+                           caller declares idempotent may be resent.
+  an HTTP status came back That is an answer, error status included, and never
+                           a reason to retry.
+
+This was rediscovered independently in seven suites, each with its own HTTP
+client and each getting it wrong differently: some never retried a POST at all,
+some retried nothing, and one keyed the decision on whether the request carried
+a body rather than on whether it had been sent. `check_transport_usage.py`
+fails the gate if a suite reaches for urllib or http.client directly again.
+
+Two entry points, because the tree uses two HTTP libraries:
+`retrying_urlopen` for urllib, `retrying_http_request` for http.client.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -29,6 +41,80 @@ TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
 Response = Tuple[int, Dict[str, str], bytes]
+
+
+def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
+    """Whether a failed attempt may be repeated. The only copy of this rule.
+
+    `request_sent` is what makes the answer knowable: until the request has left
+    the client, the device cannot have acted on it, so repeating it is safe
+    whatever the method. Once it has gone out, repeating it can apply it twice,
+    so only a GET or a call the caller declares idempotent may go again.
+    """
+    if not request_sent:
+        return True
+    return method.upper() == "GET" or idempotent
+
+
+def retrying_urlopen(request: "urllib.request.Request", timeout: float,
+                     idempotent: bool = False):
+    """urlopen under the shared retry policy, for callers not using RestClient.
+
+    urllib reports how far the request got: a failure before any response was
+    seen surfaces as URLError, while a timeout waiting for the response body
+    raises TimeoutError directly.
+
+    Returns the open response, which the caller closes; HTTPError is left to
+    propagate, because an HTTP status is an answer rather than a failure.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(TRANSPORT_RETRIES):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            last_exc = exc
+            sent = not isinstance(exc, urllib.error.URLError)
+            if may_retry(request.get_method(), sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                continue
+            break
+    raise last_exc
+
+
+def retrying_http_request(host: str, method: str, path: str, *,
+                          body: Optional[bytes] = None,
+                          headers: Optional[Dict[str, str]] = None,
+                          timeout: float = DEFAULT_TIMEOUT,
+                          idempotent: bool = False) -> Response:
+    """One http.client request under the shared retry policy.
+
+    http.client does not distinguish how far a request got, so connecting is
+    done as its own step: a failure there cannot have been applied, whatever the
+    request carries. Returns (status, headers, payload), with an HTTP status of
+    any value returned rather than raised.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(TRANSPORT_RETRIES):
+        connection = http.client.HTTPConnection(host, timeout=timeout)
+        sent = False
+        try:
+            connection.connect()
+            sent = True
+            connection.request(method, path, body=body, headers=headers or {})
+            response = connection.getresponse()
+            payload = response.read()
+            return response.status, dict(response.getheaders()), payload
+        except (OSError, http.client.HTTPException) as exc:
+            last_exc = exc
+            if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                continue
+            raise
+        finally:
+            connection.close()
+    raise last_exc
 
 
 def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
@@ -103,9 +189,9 @@ class RestClient:
         # the device can be busy enough running a program to miss a 30 second
         # window, and rewriting the same bytes is indistinguishable from
         # writing them once.
-        attempts = TRANSPORT_RETRIES if method == "GET" or idempotent else 1
+        # Retryability is decided by may_retry, the one copy of that rule.
         last_exc: Optional[BaseException] = None
-        for attempt in range(attempts):
+        for attempt in range(TRANSPORT_RETRIES):
             try:
                 with urllib.request.urlopen(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
@@ -114,8 +200,11 @@ class RestClient:
                 return exc.code, dict(exc.headers.items()), exc.read()
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
-                if attempt + 1 < attempts:
+                sent = not isinstance(exc, urllib.error.URLError)
+                if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                    continue
+                break
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
 
     # -- shorthands for the shapes suites actually use --

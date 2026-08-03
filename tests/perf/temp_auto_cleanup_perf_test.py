@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
+import rest as rest_lib
 from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
 
 SUITE = "temp_auto_cleanup_perf_test"
@@ -131,19 +132,17 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, retry=True, extra_headers=None):
-        connection = http.client.HTTPConnection(self.host, timeout=10)
-        try:
-            connection.request(method, path, body=body, headers=self._headers(body, extra_headers))
-            response = connection.getresponse()
-            payload = response.read()
-            return response.status, payload
-        except (OSError, http.client.HTTPException):
-            connection.close()
-            if retry and (body is None):
-                return self.request(method, path, body=body, retry=False, extra_headers=extra_headers)
-            raise
-        finally:
-            connection.close()
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry. A request without a payload carries its arguments in
+        # the query string, so applying it twice is the same as once.
+        status, _headers, payload = rest_lib.retrying_http_request(
+            self.host, method, path,
+            body=body,
+            headers=self._headers(body, extra_headers),
+            timeout=10,
+            idempotent=retry and body is None,
+        )
+        return status, payload
 
     def require_ok(self, method, path, body=None, description=None, allow_warning=False, extra_headers=None):
         status, payload = self.request(method, path, body=body, extra_headers=extra_headers)

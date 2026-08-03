@@ -23,6 +23,8 @@ from typing import Dict, Optional, Tuple
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
 
 
@@ -43,7 +45,8 @@ DISABLED = "Disabled"
 JIFFY_ADDRESS = 0x00A2
 JIFFY_SAMPLE_SECONDS = 0.5
 JIFFY_SETTLE_SECONDS = 5.0
-MENU_TOGGLE_SETTLE_SECONDS = 0.25
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_TOGGLE_TIMEOUT_SECONDS = 5.0
 # The form is fetched from the Assembly 64 server, so it is slower than a redraw.
 FORM_TITLE = "Assembly 64 Query Form"
@@ -105,7 +108,7 @@ class RestSession:
 
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()

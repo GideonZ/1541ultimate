@@ -54,6 +54,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, warn)
@@ -64,8 +65,10 @@ SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
 SCREEN_PLANES = 2
 SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 
-MENU_SETTLE_SECONDS = 0.10
-KEY_SETTLE_SECONDS = 0.045
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
+# Shared with every suite; see tests/lib/pacing.py.
+KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
 # Typing needs no per-key wait: the device buffers keystrokes and the string
 # editor drains them. Measured on hardware, per-key POSTs stay character-perfect
 # (including consecutive duplicates) with zero settle at ~49 keys/s, which is
@@ -145,14 +148,17 @@ class RestSession:
             headers.update(extra)
         return headers
 
+    # This suite keeps its own attempt loop, unlike the rest of the tree, because
+    # it is the one that hammers the device's connection pool and has to pace
+    # itself between attempts: a fixed pause would pile churn onto an already
+    # saturated pool, which is the wedge this suite exists to stay clear of.
+    # The *decision* still comes from rest.may_retry, so there is no second copy
+    # of the rule -- only a second loop around it.
+    ATTEMPTS = 6
+
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        # A reset while reusing a kept-alive socket is expected occasionally;
-        # reconnect and retry. GET is idempotent so we retry freely; writes get
-        # a single reconnect-retry (a reset almost always means the request was
-        # dropped before the device acted on it).
-        attempts = 6 if method == "GET" else 5
         last_exc = None
-        for attempt in range(attempts):
+        for attempt in range(self.ATTEMPTS):
             # Pace requests to keep httpd connection churn below the wedge point.
             gap = self.MIN_REQUEST_INTERVAL - (time.monotonic() - self._last_request_at)
             if gap > 0:
@@ -160,7 +166,10 @@ class RestSession:
             self.rest_requests += 1
             self._last_request_at = time.monotonic()
             conn = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
+            sent = False
             try:
+                conn.connect()
+                sent = True
                 conn.request(method, path, body=body, headers=self._headers(body, extra_headers))
                 resp = conn.getresponse()
                 payload = resp.read()
@@ -168,7 +177,7 @@ class RestSession:
             except (ConnectionError, http.client.HTTPException, OSError) as exc:
                 last_exc = exc
                 self.reset_events += 1
-                if attempt + 1 < attempts:
+                if rest_lib.may_retry(method, sent) and attempt + 1 < self.ATTEMPTS:
                     # Escalating cooldown lets a briefly-saturated connection
                     # pool drain instead of piling on more churn.
                     time.sleep(min(0.5 * (attempt + 1), 2.0))
@@ -1925,6 +1934,15 @@ def cleanup(ctx, crashed):
             if ctx.alias and not ctx.args.preserve_ftp_host:
                 d.remove_ftp_host(ctx.alias)
                 print(f"Removed test host '{ctx.alias}'.")
+            # run-tests' UI-state gate (tests/e2e/lib/ui_state.py) requires the
+            # next suite to find the root browser at "/" with a non-empty
+            # listing. This suite works inside /ftp, and removing its own test
+            # host leaves that view listing "< No Items >", so closing the menu
+            # from where the last check left it hands the next suite an empty
+            # browser (confirmed live: the suite ended at '/ftp/' showing
+            # "< No Items >"). Backing out to the top-level browser first is
+            # what makes the state the gate's own.
+            d.goto_top_browser()
             d.close_menu_from_anywhere()
             s.release_all()
         except Exception as exc:
