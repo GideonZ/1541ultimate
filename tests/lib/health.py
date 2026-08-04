@@ -22,14 +22,21 @@ What it covers, and why each one is here:
            is what makes a log readable weeks later.
 - `dma`    the control port, 64. It is a separate listener from the HTTP server
            and has wedged on its own.
-- `jiffy`  `$00A2` moves, so the KERNAL interrupt is running.
-- `raster` `$D012` moves, so the VIC is scanning.
+- `raster` `$D012` moves, so the VIC is scanning. This is the one that says
+           the machine is alive: a C64 stopped in Ultimax mode still serves
+           REST perfectly well.
+- `jiffy`  `$00A2` moves, so the KERNAL interrupt is running as well.
 
-The last two are what separate "the services answer" from "the machine under
-them is alive": a C64 stopped in Ultimax mode still serves REST perfectly well.
-They are skipped rather than failed when the menu is open, because the menu
-legitimately stops the machine under Freeze, and reported as failed only when
-the machine should be running and is not.
+Both are skipped rather than failed while the menu is open, because under
+Freeze the menu has stopped the machine on purpose.
+
+A static jiffy on its own is **not** a degraded device, and treating it as one
+cost a healthy device a JTAG redeploy during a real run. The KERNAL stops
+ticking `$00A2` for several ordinary reasons: for about 2.4s after a reset,
+while a suite has the machine paused, and while a program with its own
+interrupt handler is running. In every one of those the VIC is still scanning.
+So the raster decides whether the machine is alive, and a static jiffy under a
+moving raster is reported as an observation rather than a fault.
 """
 
 from __future__ import annotations
@@ -225,12 +232,13 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
     # The machine checks need the menu shut: under Freeze the open menu has
     # stopped the C64 on purpose, and calling that a degraded device would send
     # the runner off to recover hardware that is doing exactly what was asked.
+    # The raster comes first because it is the one that decides: a jiffy
+    # failure is only meaningful once the raster has said the machine is dead.
     machine_checks = (
-        ("jiffy", JIFFY_ADDRESS,
-         "the KERNAL interrupt is not running, so the C64 is held in reset, "
-         "stopped, or running with interrupts masked"),
         ("raster", RASTER_ADDRESS,
          "the VIC is not scanning, so the C64 is not running at all"),
+        ("jiffy", JIFFY_ADDRESS,
+         "the KERNAL interrupt is not ticking"),
     )
     if any(not skip(name) for name, _, _ in machine_checks):
         menu_open = None
@@ -248,6 +256,21 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
             else:
                 checks.append(_timed(
                     name, lambda a=address, m=means: _moves(api, a, m)))
+
+        # A static jiffy under a moving raster is an ordinary state, not a
+        # fault: the machine is running, its KERNAL interrupt is not ticking.
+        # Downgrading rather than dropping the check keeps the reason visible
+        # in the line without it making the device unfit.
+        states = {c.name: c.state for c in checks}
+        if states.get("raster") == OK and states.get("jiffy") == FAIL:
+            checks = [
+                Check(c.name, SKIP, c.ms,
+                      "the VIC is scanning, so the machine is alive; the KERNAL "
+                      "interrupt is not ticking (a recent reset, a paused "
+                      "machine, or a program with its own interrupt)")
+                if c.name == "jiffy" else c
+                for c in checks
+            ]
     return Health(tuple(checks))
 
 
