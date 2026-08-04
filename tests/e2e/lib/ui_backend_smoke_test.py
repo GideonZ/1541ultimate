@@ -27,7 +27,8 @@ from typing import Sequence
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok
+import rest as rest_lib
+from report import Failure, check, format_exception, section, suite_fail, suite_ok
 from ui_backend import Backend, RestBackend, TelnetBackend, Snapshot
 
 MIN_PRINTABLE_CELLS = 20
@@ -38,15 +39,6 @@ MAX_DISTINCT_GLYPHS = 160
 # session only ever fills 24 of those rows (row 23 is the status line).
 ROOT_ENTRY_ROWS_REST = range(2, 24)
 ROOT_ENTRY_ROWS_TELNET = range(2, 23)
-
-
-def device_unavailable(exc: BaseException) -> bool:
-    text = format_exception(exc).lower()
-    markers = (
-        "no route to host", "network is unreachable", "connection refused",
-        "timed out", "temporary failure in name resolution",
-    )
-    return any(marker in text for marker in markers)
 
 
 def assert_looks_like_root_browser(snapshot: Snapshot) -> None:
@@ -163,7 +155,7 @@ def main() -> int:
         suite_fail("ui_backend_smoke_test", str(exc))
         return 1
     except Exception as exc:  # noqa: BLE001 - report any transport error through the shared library
-        if device_unavailable(exc):
+        if rest_lib.looks_unreachable(exc):
             suite_fail("ui_backend_smoke_test", f"device unavailable: {format_exception(exc)}")
         else:
             suite_fail("ui_backend_smoke_test", format_exception(exc))

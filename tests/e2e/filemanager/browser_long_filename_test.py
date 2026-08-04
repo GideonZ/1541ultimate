@@ -22,8 +22,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
@@ -294,17 +293,17 @@ def reset_machine(host: str, password: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate long-filename browser actions on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD", "")),
+        default=os.environ.get("U64_PASS", ""),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("--test-dir", default=default_test_dir())

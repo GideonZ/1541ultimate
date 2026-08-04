@@ -110,7 +110,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Soak the network listeners with abandoned connections."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float, default=REST_BUDGET_SECONDS)
     parser.add_argument("-r", "--rounds", type=int, default=DEFAULT_ROUNDS,

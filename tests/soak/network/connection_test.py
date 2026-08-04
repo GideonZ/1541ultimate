@@ -36,7 +36,10 @@ from connection_runtime import (  # noqa: E402
 )
 
 
-HOST = os.getenv("HOST", "192.168.1.13")
+# Named the same way as every other suite; U64_HOST is what run-tests exports
+# and what tests/README.md documents. The old default was one developer's
+# device address, which any other machine had to notice and override.
+HOST = os.getenv("U64_HOST", "u64")
 HTTP_PATH = os.getenv("HTTP_PATH", "v1/version")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "80"))
 TELNET_PORT = int(os.getenv("TELNET_PORT", "23"))

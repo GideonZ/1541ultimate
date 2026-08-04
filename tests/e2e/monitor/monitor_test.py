@@ -8,8 +8,6 @@ import difflib
 import json
 import os
 import re
-import socket
-import subprocess
 import sys
 import time
 import urllib.error
@@ -25,21 +23,17 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib
 from api import UltimateApi
-from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok, warn
+from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
     MODE_FREEZE,
     MODE_TELNET,
-    RestBackend,
     Snapshot,
-    TelnetBackend,
     add_mode_argument,
     make_backend,
 )
 
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
-REPO_ROOT = Path(__file__).resolve().parents[3]
-REDEPLOY_SCRIPT = REPO_ROOT / "tooling" / "build_and_deploy_u64.sh"
 
 # Per-request timeout for this suite's own REST calls, which are all small
 # reads and writes against a device that is otherwise idle.
@@ -61,53 +55,6 @@ VIEW_KEYS = {
     "SCR ": "V",
     "BIN ": "B",
 }
-
-
-def device_unavailable(exc: BaseException) -> bool:
-    text = format_exception(exc).lower()
-    markers = (
-        "no route to host",
-        "network is unreachable",
-        "connection refused",
-        "timed out",
-        "temporary failure in name resolution",
-    )
-    return any(marker in text for marker in markers)
-
-
-def wait_for_port(host: str, port: int, timeout: float) -> None:
-    deadline = time.time() + timeout
-    last_error: Optional[BaseException] = None
-
-    while time.time() < deadline:
-        try:
-            with socket.create_connection((host, port), timeout=2.0):
-                return
-        except (OSError, TimeoutError) as exc:
-            last_error = exc
-            time.sleep(1.0)
-
-    if last_error is not None:
-        raise last_error
-    raise TimeoutError(f"Timed out waiting for {host}:{port} to become reachable")
-
-
-def redeploy_u64(host: str, port: int, password: Optional[str], timeout: float) -> None:
-    """Recover an unavailable device once, then wait for the monitor to answer.
-
-    The JTAG redeploy helper is a developer convenience that lives outside the
-    repository, so it cannot be required: a clean checkout has no tooling/
-    directory. When it is absent, or the host is not the JTAG-attached u64, wait
-    for the device to come back instead. A dropped telnet session on a device
-    that is still up is the common case, and waiting recovers it.
-    """
-    if host == "u64" and REDEPLOY_SCRIPT.is_file():
-        warn("device unavailable; redeploying the U64 and retrying once")
-        subprocess.run([str(REDEPLOY_SCRIPT)], cwd=REPO_ROOT, check=True)
-    else:
-        warn("device unavailable; waiting for it to return and retrying once")
-    wait_for_port(host, port, timeout=60.0)
-    wait_for_monitor_ready(host, port, password, timeout)
 
 
 class MonitorSession:
@@ -189,32 +136,6 @@ class MonitorSession:
         snapshot = self.send_key("ENTER")
         find_status_line(snapshot)
         return snapshot
-
-
-def wait_for_monitor_ready(host: str, port: int, password: Optional[str], timeout: float) -> None:
-    deadline = time.time() + 90.0
-    last_error: Optional[BaseException] = None
-
-    while time.time() < deadline:
-        session = None
-        try:
-            session = MonitorSession(TelnetBackend(host, port, password, timeout))
-            before_snapshot = session.capture()
-            before = before_snapshot.line(find_status_line(before_snapshot))
-            after_snapshot = session.send_char("O")
-            after = after_snapshot.line(find_status_line(after_snapshot))
-            if before != after:
-                return
-        except (Failure, OSError, TimeoutError, urllib.error.URLError) as exc:
-            last_error = exc
-        finally:
-            if session is not None:
-                session.close()
-        time.sleep(2.0)
-
-    if last_error is not None:
-        raise last_error
-    raise TimeoutError(f"Timed out waiting for {host}:{port} monitor readiness")
 
 
 def load_snapshots() -> Dict[str, Dict[str, Dict[str, str]]]:
@@ -1489,58 +1410,39 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over REST/Overlay (default), REST/Freeze or Telnet")
-    parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
-    parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
-    parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
-    parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))
-    add_mode_argument(parser, default=os.environ.get("U64_MONITOR_MODE", "overlay"))
+    parser.add_argument("--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("--password", default=os.environ.get("U64_PASS"))
+    parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
     rest_host = args.rest_host or args.host
 
     reset_rest_machine(rest_host, args.password)
 
-    redeployed = False
-    while True:
-        session = None
-        try:
-            backend = make_backend(
-                args.mode, rest_host, args.password, args.timeout,
-                telnet_host=args.host, telnet_port=args.port,
-            )
-            session = MonitorSession(backend)
-            run_tests(session, rest_host, args.mode)
-            break
-        except Failure as exc:
-            if (not redeployed) and device_unavailable(exc):
-                try:
-                    redeploy_u64(args.host, args.port, args.password, args.timeout)
-                except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
-                    suite_fail("monitor_test", format_exception(redeploy_exc))
-                    return 1
-                redeployed = True
-                continue
-            suite_fail("monitor_test", str(exc))
-            if session is not None:
-                snapshot = session.capture()
-                section("final screen")
-                detail(snapshot.text())
-            return 1
-        except (OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as exc:
-            if (not redeployed) and device_unavailable(exc):
-                try:
-                    redeploy_u64(args.host, args.port, args.password, args.timeout)
-                except (Failure, OSError, TimeoutError, urllib.error.URLError, subprocess.CalledProcessError) as redeploy_exc:
-                    suite_fail("monitor_test", format_exception(redeploy_exc))
-                    return 1
-                redeployed = True
-                continue
-            suite_fail("monitor_test", format_exception(exc))
-            return 1
-        finally:
-            if session is not None:
-                session.close()
+    session = None
+    try:
+        backend = make_backend(
+            args.mode, rest_host, args.password, args.timeout,
+            telnet_host=args.host, telnet_port=args.port,
+        )
+        session = MonitorSession(backend)
+        run_tests(session, rest_host, args.mode)
+    except Failure as exc:
+        suite_fail("monitor_test", str(exc))
+        if session is not None:
+            snapshot = session.capture()
+            section("final screen")
+            detail(snapshot.text())
+        return 1
+    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        suite_fail("monitor_test", format_exception(exc))
+        return 1
+    finally:
+        if session is not None:
+            session.close()
 
     suite_ok("monitor_test")
     return 0

@@ -55,6 +55,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, warn)
@@ -128,6 +129,9 @@ class RestSession:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
         self.rest_requests = 0
         self.menu_snapshots = 0
         self.key_events = 0
@@ -381,29 +385,16 @@ class MenuDriver:
         raise Failure("menu did not open after repeated menu_button")
 
     def close_menu_from_anywhere(self):
-        for i in range(18):
-            body = self.s.get_menu_screen()
-            if body is None:
-                return
-            screen = MenuScreen(body)
-            if "Save changes to Flash?" in screen.text:
-                self.tap(K_LEFT)
-                self.tap(K_RETURN)
-                continue
-            # An OK/confirmation popup (e.g. "N files placed on clipboard",
-            # "Are you sure?", an error box) is dismissed with RETURN, not
-            # RUN/STOP. Alternate the two so teardown clears popups and then
-            # backs out of the browser levels.
-            if i % 2 == 0:
-                self.tap(K_RETURN)
-            else:
-                self.tap(K_RUNSTOP)
-        # last resort: toggle the menu button
-        if self.s.get_menu_screen() is not None:
-            self.s.menu_button()
-            time.sleep(MENU_SETTLE_SECONDS)
-        if self.s.get_menu_screen() is not None:
-            raise Failure("menu could not be closed from anywhere")
+        # confirm_key: this suite leaves OK popups behind of its own ("N files
+        # placed on clipboard", an error box), which UIPopup answers only with
+        # RETURN, SPACE or its own button hotkey. Without it the teardown would
+        # spend every attempt on a popup that neither F8 nor RUN/STOP dismisses.
+        #
+        # The copy this replaced answered "Save changes to Flash?" with LEFT
+        # then RETURN. LEFT clamps at the first button, which is Yes, so that
+        # wrote whatever the suite had changed into the device's flash. The
+        # shared implementation presses the No hotkey instead.
+        self.s.api.machine.close_menu_from_anywhere(confirm_key="return")
 
     # -- selection navigation ---------------------------------------------
     def select_row_text(self, text, max_steps=40, require=True):
@@ -1927,13 +1918,13 @@ def cleanup(ctx, crashed):
     section("cleanup")
     s, d = ctx.s, ctx.d
     if crashed:
-        print("Device hard-crashed; skipping UI cleanup.")
-        print("Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+        detail("device hard-crashed; skipping UI cleanup")
+        detail("recover by redeploying the firmware over JTAG, or by power-cycling the device")
     else:
         try:
             if ctx.alias and not ctx.args.preserve_ftp_host:
                 d.remove_ftp_host(ctx.alias)
-                print(f"Removed test host '{ctx.alias}'.")
+                detail(f"removed test host {ctx.alias!r}")
             # run-tests' UI-state gate (tests/e2e/lib/ui_state.py) requires the
             # next suite to find the root browser at "/" with a non-empty
             # listing. This suite works inside /ftp, and removing its own test
@@ -1946,7 +1937,7 @@ def cleanup(ctx, crashed):
             d.close_menu_from_anywhere()
             s.release_all()
         except Exception as exc:
-            print(f"UI cleanup warning: {exc}")
+            warn(f"UI cleanup: {exc}")
     # Remove any files staged on the device's local FS.
     for path in ctx.host_staged:
         try:
@@ -1958,41 +1949,40 @@ def cleanup(ctx, crashed):
         preserved.append(f"FTP host '{ctx.alias}'")
     if ctx.server.keep_root:
         preserved.append(f"server root {ctx.server.root}")
-    print("Preserved: " + (", ".join(preserved) if preserved else "nothing"))
+    detail("preserved: " + (", ".join(preserved) if preserved else "nothing"))
 
 
 def print_summary(ctx, crashed):
     s, server = ctx.s, ctx.server
     section("summary")
-    header = f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes"
-    print(header)
-    print("-" * 78)
+    detail(f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes")
+    detail("-" * 78)
     for phase, op, result, cmds, fixture, notes in ctx.results:
         fx = fixture if not notes else f"{fixture} {notes}".strip()
-        print(f"{phase:8} {op:22.22} {result:18.18} {cmds:14.14} {fx}")
-    print("-" * 78)
-    print(f"Total REST requests   : {s.rest_requests}")
-    print(f"Total menu snapshots  : {s.menu_snapshots}")
-    print(f"Total keyboard events : {s.key_events}")
-    print(f"Total FTP commands    : {server.log_len()}")
-    print(f"Created host alias    : {ctx.alias if ctx.args.preserve_ftp_host else '(removed)'}")
-    print(f"Remote root path      : {server.root}")
-    print(f"Cleanup status        : {'CRASH - manual recovery needed' if crashed else 'clean'}")
+        detail(f"{phase:8} {op:22.22} {result:18.18} {cmds:14.14} {fx}")
+    detail("-" * 78)
+    detail(f"Total REST requests   : {s.rest_requests}")
+    detail(f"Total menu snapshots  : {s.menu_snapshots}")
+    detail(f"Total keyboard events : {s.key_events}")
+    detail(f"Total FTP commands    : {server.log_len()}")
+    detail(f"Created host alias    : {ctx.alias if ctx.args.preserve_ftp_host else '(removed)'}")
+    detail(f"Remote root path      : {server.root}")
+    detail(f"Cleanup status        : {'CRASH - manual recovery needed' if crashed else 'clean'}")
     fails = [r for r in ctx.results if r[2] not in ("OK", "WARN", "SKIP", "UNSUPPORTED_BY_UI")]
     unsupported = [r for r in ctx.results if r[2] == "UNSUPPORTED_BY_UI"]
     if unsupported:
-        print("\nUNSUPPORTED_BY_UI (source-backed):")
+        detail("UNSUPPORTED_BY_UI (source-backed):")
         for r in unsupported:
-            print(f"  - {r[0]}/{r[1]}: {r[5]}")
+            detail(f"  - {r[0]}/{r[1]}: {r[5]}")
     return fails
 
 
 def print_failure_diagnostics(ctx, exc):
     section("failure diagnostics")
     detail(str(exc))
-    print(f"Last check          : [{check_count():02d}] {last_label()}")
-    print(f"Last REST input      : {ctx.d.last_input}")
-    print(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
+    detail(f"Last check           : [{check_count():02d}] {last_label()}")
+    detail(f"Last REST input      : {ctx.d.last_input}")
+    detail(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
     body = None
     try:
         body = ctx.s.get_menu_screen()
@@ -2000,14 +1990,14 @@ def print_failure_diagnostics(ctx, exc):
         pass
     if body is not None:
         screen = MenuScreen(body)
-        print("Decoded menu screen:")
+        detail("Decoded menu screen:")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
             detail(f"{mark}{i:2d}|{r}|")
-        print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
-    print("\nServer log tail:")
+        detail(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
+    detail("Server log tail:")
     for e in ctx.server.snapshot_log()[-12:]:
-        print(f"  {e[1]:6} {str(e[2])[:32]:32} -> {e[3]} {e[4][:40]}")
+        detail(f"  {e[1]:6} {str(e[2])[:32]:32} -> {e[3]} {e[4][:40]}")
 
 
 # ---------------------------------------------------------------------------
@@ -2123,8 +2113,8 @@ def main(argv=None):
     session.require_ok("PUT", "/v1/machine:reset", description="reset")
     time.sleep(3.0)
 
-    print(f"Starting controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
-          f"(advertised {args.ftp_advertised_host})")
+    detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
+           f"(advertised {args.ftp_advertised_host})")
     try:
         server = ControlledFtpServer(
             args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
@@ -2134,7 +2124,7 @@ def main(argv=None):
         suite_fail("ftp_client_test", str(exc))
         return 2
     server.start()
-    print(f"Server root: {server.root} (marker {server.marker})")
+    detail(f"server root: {server.root} (marker {server.marker})")
 
     ctx = Context(args, session, driver, server, inspector, assertions_enabled)
     ctx.alias = safe_name(args.alias_prefix)
@@ -2160,12 +2150,12 @@ def main(argv=None):
         failed = True
         print_failure_diagnostics(ctx, exc)
     except KeyboardInterrupt:
-        print("\nInterrupted.")
+        warn("interrupted")
     finally:
         try:
             cleanup(ctx, crashed)
         except Exception as exc:
-            print(f"cleanup error: {exc}")
+            warn(f"cleanup error: {exc}")
         if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
             session.require_ok("PUT", "/v1/machine:reset", description="reset")
         fails = print_summary(ctx, crashed)

@@ -3,21 +3,18 @@
 
 import argparse
 import hashlib
-import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Dict, List, Optional, Tuple
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+from api import MachineApi
 from report import Failure, check, check_skip, check_start, format_exception, suite_fail, suite_ok, warn
-from rest import RestClient
+from rest import RestClient, header_value, json_object
 
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
@@ -51,8 +48,14 @@ class RestSession(RestClient):
     """The device's REST API plus the menu-specific calls this suite adds.
 
     Transport, the X-Password rule and the retry policy come from
-    tests/lib/rest.py; only the menu helpers below are specific to this suite.
+    tests/lib/rest.py; the typed calls come from tests/lib/api.py; only the
+    menu helpers below are specific to this suite.
     """
+
+    def __init__(self, host: str, password: Optional[str] = None,
+                 timeout: float = 10.0) -> None:
+        super().__init__(host, password, timeout)
+        self.machine = MachineApi(self)
 
     def menu_button(self, label: str) -> None:
         with check(label):
@@ -128,7 +131,7 @@ class RestSession(RestClient):
         content_type = header_value(headers, "Content-Type")
         if "application/json" not in content_type:
             raise Failure(f"expected application/json from input event, got {content_type!r}")
-        return parse_json("input event", body)
+        return json_object("input event", body)
 
     def tap_keyboard(self, inputs: List[str]) -> None:
         self.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
@@ -137,22 +140,7 @@ class RestSession(RestClient):
         self.post_events([{"kind": "release_all"}])
 
     def close_menu_from_anywhere(self) -> None:
-        for _ in range(12):
-            body = self.try_get_menu_screen()
-            if body is None:
-                return
-            if "Save changes to Flash?" in menu_screen_text(body):
-                self.tap_keyboard(["cursor_left_right"])
-                time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-                self.tap_keyboard(["return"])
-                time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-                continue
-            self.tap_keyboard(["run_stop"])
-            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-
-        if self.menu_screen_unavailable():
-            return
-        self.close_menu()
+        self.machine.close_menu_from_anywhere()
 
     def reset_to_clean_slate(self) -> None:
         self.release_all_input()
@@ -163,26 +151,8 @@ class RestSession(RestClient):
         time.sleep(0.5)
 
 
-def header_value(headers: Dict[str, str], name: str) -> str:
-    wanted = name.lower()
-    for key, value in headers.items():
-        if key.lower() == wanted:
-            return value
-    return ""
-
-
-def parse_json(label: str, body: bytes) -> Dict[str, object]:
-    try:
-        data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Failure(f"{label}: response body is not valid JSON: {body[:160]!r}") from exc
-    if not isinstance(data, dict):
-        raise Failure(f"{label}: expected JSON object, got {data!r}")
-    return data
-
-
 def require_error(label: str, body: bytes, message: str) -> None:
-    data = parse_json(label, body)
+    data = json_object(label, body)
     errors = data.get("errors")
     if not isinstance(errors, list) or message not in errors:
         raise Failure(f"{label}: expected errors to contain {message!r}, got {data!r}")
@@ -234,18 +204,6 @@ def verify_menu_content(body: bytes) -> None:
             f"snapshot character plane is not menu-like: {distinct_glyphs} distinct "
             f"glyphs (expected <= {MENU_MAX_DISTINCT_GLYPHS})"
         )
-
-
-def menu_screen_text(body: bytes) -> str:
-    chars = body[:SCREEN_CELLS]
-    rows = []
-    for row in range(SCREEN_HEIGHT):
-        row_chars = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-        rows.append("".join(
-            chr(ch & 0x7F) if 0x20 <= (ch & 0x7F) <= 0x7E else " "
-            for ch in row_chars
-        ))
-    return "\n".join(rows)
 
 
 def run_contract(session: RestSession) -> None:
@@ -521,12 +479,9 @@ def run_soak(session: RestSession, stages: List[float], navigation_interval: flo
                 rate = count / elapsed if elapsed > 0.0 else 0.0
                 if len(snapshot_hashes) < 2:
                     raise Failure("soak did not observe changing menu snapshots during navigation")
-                print(
+                detail(
                     f"{count} snapshots, {navigation_count} keys, "
-                    f"{len(snapshot_hashes)} variants, {reopened_count} reopens, {rate:.1f}/s ",
-                    end="",
-                    flush=True,
-                )
+                    f"{len(snapshot_hashes)} variants, {reopened_count} reopens, {rate:.1f}/s")
     finally:
         try:
             session.release_all_input()
@@ -549,18 +504,18 @@ def expand_tests(selected: Optional[List[str]]) -> List[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate /v1/machine:menu_screen on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")),
+        default=os.environ.get("U64_PASS"),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument(
         "--test",

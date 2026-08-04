@@ -229,27 +229,13 @@ class Device:
         """Back out of whatever the last suite left on the UI object stack.
 
         A menu-button toggle does not dismiss every nested UI object. In
-        particular, AssemblySearch owns RUN/STOP itself. Back out through
-        active editors, popups and browsers before using the toggle as a last
-        resort.
+        particular, AssemblySearch owns RUN/STOP itself. The shared
+        implementation in tests/lib/api.py backs out through active editors,
+        popups and browsers before using the toggle as a last resort.
         """
         try:
-            if not self.api.machine.menu_open():
-                return True
-            for attempt in range(1, 13):
-                # F8 (shift+F7) leaves the menu; from attempt 5 fall back to
-                # RUN/STOP only, because RETURN would activate the entry under
-                # the cursor rather than backing out of it.
-                if attempt <= 4:
-                    self.api.machine.press("left_shift", "f7")
-                else:
-                    self.api.machine.press("run_stop")
-                time.sleep(0.25)
-                if not self.api.machine.menu_open():
-                    return True
-            self.api.machine.menu_button()
-            time.sleep(0.5)
-            return not self.api.machine.menu_open()
+            self.api.machine.close_menu_from_anywhere()
+            return True
         except Failure:
             return False
 

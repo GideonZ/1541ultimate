@@ -41,13 +41,10 @@ confusing failures scattered across every suite built on it.
 ./run-tests -H u64 -s machine-code-monitor
 ```
 
-Optional environment variables:
-
-- `U64_MONITOR_HOST`
-- `U64_MONITOR_PORT`
-- `U64_MONITOR_REST_HOST`
-- `U64_MONITOR_PASSWORD`
-- `U64_MONITOR_TIMEOUT`
+This suite takes its defaults from the same environment variables as every
+other one; see [tests/README.md](../../README.md). `U64_TELNET_PORT` and
+`U64_REST_HOST` matter here because the Telnet mode drives port 23 while the
+REST calls can go to a second address on a dual-NIC device.
 
 ## What It Checks
 

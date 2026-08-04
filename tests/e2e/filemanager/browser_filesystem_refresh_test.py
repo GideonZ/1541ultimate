@@ -24,7 +24,6 @@ to the operation itself.
 
 import argparse
 import ftplib
-import io
 import json
 import os
 import sys
@@ -1183,17 +1182,17 @@ def close_observers(ctx: Context) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify that every browser converges on the committed file system.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD", "")),
+        default=os.environ.get("U64_PASS", ""),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument("--test-dir", default=default_test_dir())
     parser.add_argument(

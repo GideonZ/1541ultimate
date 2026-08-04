@@ -19,9 +19,13 @@ assert on, and those want the raw response rather than a decoded object.
 
 from __future__ import annotations
 
+import json
+import time
+import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
+import pacing
 from report import Failure
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
@@ -36,6 +40,18 @@ MAX_KEYBOARD_INPUTS = 8
 D64_TRACKS = (35, 41)
 DNP_TRACKS = (1, 255)
 INPUT_TRANSITIONS = ("press", "release", "tap")
+
+# The menu screen is a 40x25 matrix of character and colour planes.
+SCREEN_COLS = 40
+SCREEN_ROWS = 25
+SCREEN_CELLS = SCREEN_COLS * SCREEN_ROWS
+
+# config_menu.cc asks this before it leaves a config page with unsaved changes.
+SAVE_TO_FLASH_PROMPT = "Save changes to Flash?"
+# How many keystrokes close_menu_from_anywhere sends before it gives up on
+# keys and toggles the menu button, and where it switches from F8 to RUN/STOP.
+MENU_CLOSE_ATTEMPTS = 12
+MENU_CLOSE_RUN_STOP_FROM = 8
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +229,68 @@ class MachineApi:
     def release_all(self) -> None:
         self.send_input([{"kind": "release_all"}])
 
+    def menu_rows(self) -> List[str]:
+        """The open menu as 25 rows of text, or an empty list when it is closed.
+
+        Only the character plane is decoded, and only its printable range;
+        everything else becomes a space, so a search for a label finds it
+        wherever the firmware drew it.
+        """
+        body = self.menu_screen()
+        if body is None:
+            return []
+        chars = "".join(chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " "
+                        for c in body[:SCREEN_CELLS])
+        return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
+
+    def close_menu_from_anywhere(self, confirm_key: Optional[str] = None) -> None:
+        """Back out of the whole UI object stack until the menu is closed.
+
+        Every step here is one that a separate copy of this got wrong, and the
+        copies diverged in ways that changed what the device was left holding:
+
+        - Injected input is released first, so a key still held down by an
+          earlier check does not fight the keys sent below.
+        - "Save changes to Flash?" is answered No, using the popup's own 'n'
+          hotkey. The popup's first button is Yes and RETURN takes whichever
+          button is active, so answering it blind writes whatever the suite
+          had changed into the device's flash.
+        - F8 (shift+F7) is the firmware's full UI exit. It destroys nested
+          config and search objects instead of hiding them for the next suite
+          to reopen, which RUN/STOP alone does not do.
+        - RUN/STOP takes over for the last few attempts, for the editors F8
+          does not reach. Never RETURN by default: it activates the entry
+          under the cursor, and on the Assembly 64 entry that opens its form.
+        - The menu button is the last resort rather than the first, because it
+          is a toggle and does not leave a nested object.
+
+        `confirm_key` is pressed on every other attempt when it is given. It is
+        for a suite that leaves OK popups of its own behind, such as "N files
+        placed on clipboard": UIPopup::poll answers only RETURN, SPACE and its
+        own button hotkeys, so neither F8 nor RUN/STOP dismisses one and the
+        loop would spend every attempt on a popup that is not going anywhere.
+
+        Raises Failure if the menu is still open at the end.
+        """
+        self.release_all()
+        for attempt in range(MENU_CLOSE_ATTEMPTS):
+            rows = self.menu_rows()
+            if not rows:
+                return
+            if any(SAVE_TO_FLASH_PROMPT in row for row in rows):
+                self.press("n")
+            elif confirm_key is not None and attempt % 2:
+                self.press(confirm_key)
+            elif attempt < MENU_CLOSE_RUN_STOP_FROM:
+                self.press("left_shift", "f7")
+            else:
+                self.press("run_stop")
+            time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
+        self.menu_button()
+        time.sleep(pacing.MENU_TOGGLE_SETTLE_SECONDS)
+        if self.menu_open():
+            raise Failure("the menu could not be closed from where the last check left it")
+
 
 class DrivesApi:
     """/v1/drives - the emulated 1541/1571/1581 slots."""
@@ -308,7 +386,36 @@ class ConfigsApi:
         return value
 
     def get(self, category: str, item: str) -> object:
+        """One item's value, out of the whole category in one request.
+
+        The two config endpoints answer in different shapes, which is worth
+        knowing before choosing between them. The category listing maps each
+        item straight to its current value, so this returns that value. The
+        per-item endpoint, `item()` below, returns an object carrying
+        `current`, `values` and `default`.
+        """
         return self.category(category).get(item)
+
+    def item(self, category: str, item: str) -> Dict[str, object]:
+        """One item's full description: its current value, range and default."""
+        path = f"/v1/configs/{_quote(category)}/{_quote(item)}"
+        payload = _errors(self._rest.json(path), f"configs/{category}/{item}")
+        entry = payload.get(category)
+        if isinstance(entry, dict):
+            entry = entry.get(item)
+        if not isinstance(entry, dict):
+            raise Failure(f"configs/{category}/{item}: item missing from the answer")
+        return entry
+
+    def current(self, category: str, item: str) -> str:
+        """The item's current value, or "" when the device did not report one.
+
+        Returning "" rather than raising for a missing or non-string value is
+        what a caller restoring a setting needs: it has to tell "the device did
+        not say" from a real value without deciding whether that is a failure.
+        """
+        value = self.item(category, item).get("current")
+        return value if isinstance(value, str) else ""
 
     def set(self, category: str, item: str, value: object) -> None:
         path = f"/v1/configs/{_quote(category)}/{_quote(item)}"
@@ -495,7 +602,6 @@ class UltimateApi:
 
 
 def _json(body: bytes, what: str) -> object:
-    import json
     try:
         return json.loads(body.decode("utf-8", "replace"))
     except ValueError as exc:
@@ -503,13 +609,11 @@ def _json(body: bytes, what: str) -> object:
 
 
 def _quote(value: str) -> str:
-    import urllib.parse
     return urllib.parse.quote(value, safe="")
 
 
 def _quote_path(value: str) -> str:
     # A file path keeps its separators; only the segments are escaped.
-    import urllib.parse
     return urllib.parse.quote(value.lstrip("/"), safe="/")
 
 

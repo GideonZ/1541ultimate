@@ -47,12 +47,6 @@ UNWIND_PRESSES = 14
 # Deeper than any listing the suites build.
 HOME_PRESSES = 16
 REPAIR_ROUNDS = 4
-# The device serves a small fixed number of HTTP connections, so a request can
-# time out while it is busy. Reads are idempotent and simply retried. Writes are
-# not resent blindly: the menu button is a toggle, so a lost press is detected by
-# re-reading the state and pressing again only if nothing changed.
-TRANSPORT_RETRIES = 3
-TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
 
 class Unrecoverable(RuntimeError):
@@ -65,7 +59,7 @@ class Device:
         self.password = password
         self.timeout = timeout
 
-    def _request(self, method: str, path: str, payload=None, retries: int = 1) -> Optional[bytes]:
+    def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
@@ -77,8 +71,10 @@ class Device:
             f"http://{self.host}{path}", data=body, headers=headers, method=method
         )
         # Transport and retry policy come from tests/lib/rest.py; see
-        # rest.may_retry. `retries` is kept in the signature because callers
-        # read as though they choose it, but the shared policy decides.
+        # rest.may_retry. The device serves few concurrent HTTP connections, so
+        # a read can time out while it is busy and is simply retried. The menu
+        # button is a toggle and is never resent blindly: a lost press is found
+        # by re-reading the state and pressing again only if nothing changed.
         try:
             with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.read()
@@ -91,7 +87,7 @@ class Device:
 
     def screen(self) -> Optional[List[str]]:
         """Menu screen as text rows, or None when the menu is closed."""
-        body = self._request("GET", "/v1/machine:menu_screen", retries=TRANSPORT_RETRIES)
+        body = self._request("GET", "/v1/machine:menu_screen")
         if body is None:
             return None
         if len(body) != SCREEN_BYTES:

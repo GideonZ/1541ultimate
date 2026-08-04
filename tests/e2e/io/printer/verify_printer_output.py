@@ -6,108 +6,71 @@ that they are well-formed (PNG chunk/CRC structure, or non-blank text) without
 needing to run a print job first. Useful for re-checking output left behind by
 printer_test.py, or output produced interactively (e.g. via the on-device menu).
 
+This is a diagnostic tool rather than a registered suite: it asserts nothing
+about a print job, only about files that already exist.
+
 Usage:
     ./verify_printer_output.py -H u64 --output-base /Usb0/printer/e2e-abc --pages 2
     ./verify_printer_output.py -H u64 --path /Temp/mypage-001.png
 """
 
 import argparse
-import struct
+import os
 import sys
-import zlib
 from pathlib import Path
 
-# tests/lib holds the shared FTP and reporting helpers.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
-import ftp as ftp_lib
-from report import Failure
+# tests/lib holds the shared FTP and reporting helpers.
+sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "lib"))
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+    Failure, check_fail, check_ok, check_start, section, suite_fail, suite_ok)
 
 FTP_USER_DEFAULT = ftp_lib.FTP_USER
 FTP_PASSWORD_DEFAULT = ftp_lib.FTP_DEFAULT_PASSWORD
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-class FtpInspector:
-    def __init__(self, host, user, password, timeout=15):
-        self.host = host
-        self.user = user
-        self.password = password
-        self.timeout = timeout
-
-    def download(self, path):
-        with ftp_lib.session(self.host, self.password, self.timeout,
-                             user=self.user) as ftp:
-            return ftp_lib.retrieve(ftp, path)
+def download(host, user, password, path, timeout=15):
+    with ftp_lib.session(host, password, timeout, user=user) as ftp:
+        return ftp_lib.retrieve(ftp, path)
 
 
-def decode_png_dimensions(data):
-    if data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR":
-        return None
-    return struct.unpack(">II", data[16:24])
-
-
-def png_is_well_formed(data):
-    if data[:8] != PNG_SIGNATURE:
-        return False, "missing PNG signature"
-    offset = 8
-    saw_ihdr = False
-    saw_iend = False
-    while offset + 8 <= len(data):
-        length = struct.unpack(">I", data[offset:offset + 4])[0]
-        chunk_type = data[offset + 4:offset + 8]
-        chunk_data = data[offset + 8:offset + 8 + length]
-        if offset + 12 + length > len(data):
-            return False, f"truncated chunk {chunk_type!r}"
-        crc_stored = struct.unpack(">I", data[offset + 8 + length:offset + 12 + length])[0]
-        crc_calc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
-        if crc_calc != crc_stored:
-            return False, f"bad CRC in chunk {chunk_type!r}"
-        if chunk_type == b"IHDR":
-            saw_ihdr = True
-        if chunk_type == b"IEND":
-            saw_iend = True
-            break
-        offset += 12 + length
-    if not saw_ihdr:
-        return False, "no IHDR chunk"
-    if not saw_iend:
-        return False, "no IEND chunk (truncated file)"
-    return True, "ok"
-
-
-def verify_one(inspector, path, is_ascii):
+def verify_one(host, user, password, path, is_ascii):
+    check_start(os.path.basename(path))
     try:
-        data = inspector.download(path)
+        data = download(host, user, password, path)
     except Failure as exc:
-        print(f"  {path}: FAIL (download error: {exc})")
+        check_fail(f"download error: {exc}")
         return False
 
-    if len(data) == 0:
-        print(f"  {path}: FAIL (empty file)")
+    if not data:
+        check_fail("empty file")
         return False
 
     if is_ascii:
         text = data.decode("ascii", errors="replace")
         non_blank_lines = [line for line in text.splitlines() if line.strip()]
         if not non_blank_lines:
-            print(f"  {path}: FAIL ({len(data)} bytes, but no non-blank text)")
+            check_fail(f"{len(data)} bytes, but no non-blank text")
             return False
-        print(f"  {path}: PASS ({len(data)} bytes, {len(non_blank_lines)} non-blank lines)")
+        check_ok(f"{len(data)} bytes, {len(non_blank_lines)} non-blank lines")
         return True
 
-    ok, reason = png_is_well_formed(data)
+    ok, reason = png_lite.png_is_well_formed(data)
     if not ok:
-        print(f"  {path}: FAIL ({len(data)} bytes, {reason})")
+        check_fail(f"{len(data)} bytes, {reason}")
         return False
-    dims = decode_png_dimensions(data)
-    print(f"  {path}: PASS ({len(data)} bytes, {dims[0]}x{dims[1]}px)")
+    width, height = png_lite.decode_png_dimensions(data)
+    check_ok(f"{len(data)} bytes, {width}x{height}px")
     return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-H", "--host", default="u64")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
     parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
     parser.add_argument("--output-base", help="Printer output file base, e.g. /Usb0/printer/e2e-abc")
@@ -119,22 +82,25 @@ def main():
     if not args.output_base and not args.path:
         parser.error("specify --output-base or one or more --path")
 
-    inspector = FtpInspector(args.host, args.ftp_user, args.ftp_password)
-
     paths = list(args.path)
     if args.output_base:
         if args.ascii:
             paths.append(f"{args.output_base}.txt")
         else:
-            for page in range(1, args.pages + 1):
-                paths.append(f"{args.output_base}-{page:03d}.png")
+            paths.extend(f"{args.output_base}-{page:03d}.png"
+                         for page in range(1, args.pages + 1))
 
-    print(f"Verifying {len(paths)} file(s) on {args.host}")
-    results = [verify_one(inspector, path, args.ascii or path.endswith(".txt")) for path in paths]
+    section(f"{len(paths)} printer output file(s) on {args.host}")
+    results = [verify_one(args.host, args.ftp_user, args.ftp_password, path,
+                          args.ascii or path.endswith(".txt"))
+               for path in paths]
 
-    passed = sum(1 for r in results if r)
-    print(f"\n{passed}/{len(results)} passed")
-    return 0 if all(results) else 1
+    failed = len(results) - sum(results)
+    if failed:
+        suite_fail("verify_printer_output", f"{failed} of {len(results)} files are not well-formed")
+        return 1
+    suite_ok("verify_printer_output", f"{len(results)} files")
+    return 0
 
 
 if __name__ == "__main__":

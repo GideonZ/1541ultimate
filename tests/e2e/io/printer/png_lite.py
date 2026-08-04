@@ -38,6 +38,31 @@ def parse_chunks(data):
     return chunks
 
 
+def decode_png_dimensions(data):
+    """(width, height) from the IHDR header, or None if this is not a PNG."""
+    if data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR":
+        return None
+    return struct.unpack(">II", data[16:24])
+
+
+def png_is_well_formed(data):
+    """(ok, reason) for the file's chunk structure and CRCs.
+
+    Structural only: it says the bytes are a complete, uncorrupted PNG, not what
+    the image contains. `parse_chunks` does the walking, so the signature, CRC
+    and truncation rules have one implementation rather than one per caller.
+    """
+    try:
+        chunk_types = [chunk_type for chunk_type, _ in parse_chunks(data)]
+    except PngError as exc:
+        return False, str(exc)
+    if b"IHDR" not in chunk_types:
+        return False, "no IHDR chunk"
+    if b"IEND" not in chunk_types:
+        return False, "no IEND chunk (truncated file)"
+    return True, "ok"
+
+
 def _paeth(a, b, c):
     p = a + b - c
     pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)

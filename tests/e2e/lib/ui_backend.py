@@ -27,7 +27,6 @@ already does almost everywhere.
 
 import json
 import os
-import re
 import select
 import socket
 import sys

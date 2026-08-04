@@ -4,7 +4,7 @@
 """End-to-end virtual-printer harness for a real Ultimate 64 / 64e.
 
 Drives the IEC virtual printer (device 4/5) with a dedicated 6510 assembly
-workload (printer_e2e.asm, assembled with 64tass), captures crash/hang
+workload (the committed printer_e2e.prg, built from printer_e2e.asm), captures crash/hang
 behaviour, and verifies the resulting PNG/ASCII output over FTP. Pure REST
 (http.client) + FTP (ftplib); no MCP/bridge dependency.
 
@@ -20,22 +20,16 @@ import http.client
 import io
 import json
 import os
-import subprocess
-import struct
 import sys
-import tempfile
 import time
-import zlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_ASM_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.asm")
-ISSUE_717_BASIC = '''10 open 1,4
-20 for i = 1 to 100
-30 print#1,"line no "; i
-35 print#1, chr$(13)
-40 next i
-50 end
-'''
+# The two C64 programs this suite runs are committed as assembled PRGs, so the
+# suite needs no assembler and no BASIC tokenizer to run. Their sources sit
+# beside them and the Makefile in this directory regenerates them; see the
+# README for when that is needed.
+WORKLOAD_PRG_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.prg")
+ISSUE_717_PRG_PATH = os.path.join(SCRIPT_DIR, "issue_717_basic.prg")
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
 
@@ -44,6 +38,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section, warn)
 
@@ -92,8 +87,6 @@ PHASE_NAMES = {
 FTP_USER_DEFAULT = "user"
 FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
-TRANSPORT_RETRIES = 3
-TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 SCREEN_WIDTH = 40
@@ -151,6 +144,9 @@ class U64Client:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def _headers(self, body, extra_headers=None):
         headers = {"Connection": "close"}
@@ -257,23 +253,7 @@ class U64Client:
         self.post_input([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
 
     def close_menu_from_anywhere(self):
-        self.post_input([{"kind": "release_all"}])
-        for attempt in range(12):
-            body = self.get_menu_screen()
-            if body is None:
-                return
-            if any("Save changes to Flash?" in row for row in menu_screen_text(body)):
-                # The popup answers to its button hotkeys directly. 'n' is No,
-                # which leaves the device settings as this suite restored them.
-                self.tap_key("n")
-            elif attempt < 6:
-                # Shift+F7 is F8, the full UI exit.
-                self.tap_keys(["left_shift", "f7"])
-            else:
-                self.tap_key("run_stop")
-            time.sleep(MENU_SETTLE_SECONDS)
-        self.menu_button()
-        time.sleep(0.5)
+        self.api.machine.close_menu_from_anywhere()
         if self.get_menu_screen() is not None:
             raise Failure("could not dismiss active menu UI before reset")
 
@@ -346,33 +326,16 @@ class FtpInspector:
                 ftp_lib.make_dir(ftp, path)
 
 
-def assemble_prg(asm_path, assembler):
-    out_path = asm_path + ".out.prg"
-    result = subprocess.run(
-        [assembler, "-q", "-o", out_path, asm_path],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise Failure(f"assembler failed: {result.stdout}\n{result.stderr}")
-    with open(out_path, "rb") as handle:
-        data = handle.read()
-    os.remove(out_path)
+def load_prg(path):
+    """Read one of this directory's committed PRG fixtures."""
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        raise Failure(f"could not read {os.path.basename(path)}: {exc}") from exc
+    if not data:
+        raise Failure(f"{os.path.basename(path)} is empty")
     return data
-
-
-def issue_717_basic_prg():
-    """Tokenize the issue reporter's BASIC program verbatim as BASIC V2."""
-    with tempfile.TemporaryDirectory() as directory:
-        source = os.path.join(directory, "issue-717.bas")
-        output = os.path.join(directory, "issue-717.prg")
-        with open(source, "w", encoding="ascii") as handle:
-            handle.write(ISSUE_717_BASIC)
-        result = subprocess.run(["petcat", "-w2", "-o", output, source], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Failure(f"petcat failed: {result.stdout}\n{result.stderr}")
-        with open(output, "rb") as handle:
-            return handle.read()
 
 
 def decode_status(payload):
@@ -567,46 +530,6 @@ def apply_settings(client, output_base, output_type, ink_density, page_top_margi
             assert_or_warn(assertions_enabled, False, f"could not set {item}={value}: {exc}")
 
 
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-
-def decode_png_dimensions(data):
-    if data[:8] != PNG_SIGNATURE:
-        return None
-    if data[12:16] != b"IHDR":
-        return None
-    width, height = struct.unpack(">II", data[16:24])
-    return width, height
-
-
-def png_is_well_formed(data):
-    """Validate PNG chunk structure and CRCs without needing a real decoder."""
-    if data[:8] != PNG_SIGNATURE:
-        return False, "missing PNG signature"
-    offset = 8
-    saw_ihdr = False
-    saw_iend = False
-    while offset + 8 <= len(data):
-        length = struct.unpack(">I", data[offset:offset + 4])[0]
-        chunk_type = data[offset + 4:offset + 8]
-        chunk_data = data[offset + 8:offset + 8 + length]
-        crc_stored = struct.unpack(">I", data[offset + 8 + length:offset + 12 + length])[0]
-        crc_calc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
-        if crc_calc != crc_stored:
-            return False, f"bad CRC in chunk {chunk_type!r}"
-        if chunk_type == b"IHDR":
-            saw_ihdr = True
-        if chunk_type == b"IEND":
-            saw_iend = True
-            break
-        offset += 12 + length
-    if not saw_ihdr:
-        return False, "no IHDR chunk"
-    if not saw_iend:
-        return False, "no IEND chunk (truncated file)"
-    return True, "ok"
-
-
 def download_with_retry(inspector, path, timeout_seconds=10.0, interval_seconds=0.5):
     """The device writes the PNG asynchronously after Flush/Eject returns, so
     the file may not be visible over FTP for a moment; poll briefly."""
@@ -633,9 +556,9 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         path = page_output_path(output_base, page)
         data = download_with_retry(inspector, path)
         assert_or_warn(assertions_enabled, len(data) > 0, f"{path}: file is empty")
-        ok, reason = png_is_well_formed(data)
+        ok, reason = png_lite.png_is_well_formed(data)
         assert_or_warn(assertions_enabled, ok, f"{path}: not a well-formed PNG ({reason})")
-        dims = decode_png_dimensions(data)
+        dims = png_lite.decode_png_dimensions(data)
         assert_or_warn(assertions_enabled, dims is not None, f"{path}: could not read IHDR dimensions")
         detail(f"{path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
 
@@ -660,11 +583,10 @@ def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_
     height_fraction = bbox_height / height
     ink_fraction = ink_count / (bbox_width * bbox_height)
 
-    print(
-        f"    {path}: ink spans {bbox_width}x{bbox_height}px at ({min_x},{min_y}) "
+    detail(
+        f"{path}: ink spans {bbox_width}x{bbox_height}px at ({min_x},{min_y}) "
         f"= {width_fraction:.0%} of page width, {height_fraction:.0%} of page height, "
-        f"{ink_fraction:.0%} ink density within that area ({ink_count} ink pixels)"
-    )
+        f"{ink_fraction:.0%} ink density within that area ({ink_count} ink pixels)")
     assert_or_warn(
         assertions_enabled, width_fraction >= FULL_PAGE_MIN_WIDTH_FRACTION,
         f"{path}: bitmap only spans {width_fraction:.0%} of page width "
@@ -817,8 +739,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Virtual-printer end-to-end harness for a real Ultimate 64/64e.",
         epilog="Captures original Printer Settings and restores them on exit unless "
-               "--no-config-change is used. Requires printer_e2e.asm alongside this "
-               "script and a 64tass binary on PATH (or --assembler).",
+               "--no-config-change is used. Runs the committed printer_e2e.prg "
+               "fixture alongside this script; no assembler is needed.",
     )
     parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
     parser.add_argument("-p", "--password", default="", help="U64 REST password")
@@ -878,8 +800,6 @@ def parse_args():
     parser.add_argument("--stop-on-crash", action="store_true", default=True)
     parser.add_argument("--limit", type=int, default=10, help=argparse.SUPPRESS)
     parser.add_argument("--preset", choices=list(PRESETS.keys()), default=None)
-    parser.add_argument("--asm-path", default=DEFAULT_ASM_PATH)
-    parser.add_argument("--assembler", default="64tass")
     args = parser.parse_args()
 
     if args.preset:
@@ -970,7 +890,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
         check_fail("device became unresponsive (FAIL_CRASH_HARD)")
         detail("REST and ping are both unreachable. This matches the reported crash:\n"
                "screen off, unresponsive, C64/machine reset will not help.\n"
-               "Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+               "Recover by redeploying the firmware over JTAG, or by power-cycling the device.")
         return "FAIL_CRASH_HARD", output_base, status
     if classification == "FAIL_TIMEOUT":
         check_fail(f"timed out after {args.timeout_seconds}s, REST still responsive")
@@ -1047,10 +967,10 @@ def main():
     time.sleep(2.0)
     check_ok()
 
-    check_start("tokenize literal issue #717 BASIC" if args.issue_717_basic else
-                f"assemble {os.path.basename(args.asm_path)} with {args.assembler}")
+    prg_path = ISSUE_717_PRG_PATH if args.issue_717_basic else WORKLOAD_PRG_PATH
+    check_start(f"load {os.path.basename(prg_path)}")
     try:
-        prg_bytes = issue_717_basic_prg() if args.issue_717_basic else assemble_prg(args.asm_path, args.assembler)
+        prg_bytes = load_prg(prg_path)
     except Failure as exc:
         check_fail(str(exc))
         return 1

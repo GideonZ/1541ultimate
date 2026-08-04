@@ -15,6 +15,23 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
 
+## Naming the device
+
+The runner passes the device to every suite explicitly, so these matter only
+when a suite is started by hand. One name each, used by every suite:
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `U64_HOST` | Device host name or IP | `u64` |
+| `U64_PASS` | REST and FTP password | empty |
+| `U64_TIMEOUT` | Per-request REST timeout, in seconds | per suite |
+| `U64_REST_HOST` | REST address, when it differs from `U64_HOST` | `U64_HOST` |
+| `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
+| `U64_MODE` | Default UI profile: `overlay`, `freeze` or `telnet` | `overlay` |
+
+`tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
+the suites drive the on-device UI.
+
 ## Rules
 
 - Put a test in the narrowest matching category. Keep isolated logic tests
