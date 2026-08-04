@@ -17,10 +17,13 @@ Neither needs a device, so this runs at the start of the gate next to
 `check_transport_usage.py` and costs nothing.
 """
 
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import health  # noqa: E402
@@ -58,6 +61,10 @@ class ScriptedProbe:
 
 
 def device(runner, answers, **kwargs):
+    # Fitness is reachability alone unless a check stubs the sweep: these
+    # fixtures have no device, so a real sweep would fail every time and tell
+    # us nothing about the decision under test.
+    kwargs.setdefault("health_check", False)
     kwargs.setdefault("recover_max_per_suite", 1)
     kwargs.setdefault("recover_max_total", 1)
     made = runner.Device("device.invalid", "", 1.0, **kwargs)
@@ -74,8 +81,8 @@ def expect(label, actual, wanted):
 def run_exit_status_checks(runner):
     passed = runner.Result("e2e", "overlay", "passed", runner.report.OK, 1.0)
     failed = runner.Result("e2e", "overlay", "failed", runner.report.FAIL, 1.0)
-    lost = runner.Result("e2e", "overlay", "lost", runner.report.FAIL, 1.0,
-                         device_lost=True)
+    unfit = runner.Result("e2e", "overlay", "unfit", runner.report.FAIL, 1.0,
+                          device_unfit=True)
 
     with check("a clean run exits 0"):
         expect("clean", runner.exit_code_for([passed], 0), runner.EXIT_OK)
@@ -91,37 +98,40 @@ def run_exit_status_checks(runner):
         expect("failure and recovery", runner.exit_code_for([passed, failed], 1),
                runner.EXIT_SUITE_FAILED)
 
-    with check("a lost device exits 4, outranking a failure"):
-        expect("lost", runner.exit_code_for([failed, lost], 1), runner.EXIT_DEVICE_LOST)
+    with check("a device that cannot be made fit exits 4, outranking a failure"):
+        expect("unfit", runner.exit_code_for([failed, unfit], 1), runner.EXIT_DEVICE_UNFIT)
 
 
 def run_recovery_gating_checks(runner):
+    """When the recovery command may run. Fitness is reachability here."""
     with check("a device that answers is never recovered"):
         made = device(runner, [True], recover_command="true")
-        expect("reachable", made.ensure_reachable(0.0), True)
+        expect("fit", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 0)
 
     with check("recovery runs only once the ordinary wait has given up"):
-        made = device(runner, [False, True], recover_command="true")
-        expect("reachable", made.ensure_reachable(0.0), True)
+        # Three answers: the wait that gives up, the probe inside the recovery
+        # command, and the re-check that decides whether it worked.
+        made = device(runner, [False, True, True], recover_command="true")
+        expect("fit", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery that does not bring the device back reports so"):
         made = device(runner, [], recover_command="true")
-        expect("reachable", made.ensure_reachable(0.0), False)
+        expect("fit", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery command that exits non-zero is still followed by a probe"):
         # Some recovery tools report a failure the device has already come back
         # from, so the probe decides rather than the exit status.
-        made = device(runner, [False, True], recover_command="false")
-        expect("reachable", made.ensure_reachable(0.0), True)
+        made = device(runner, [False, True, True], recover_command="false")
+        expect("fit", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery command that hangs is bounded by --recover-timeout"):
         made = device(runner, [False, True], recover_command="sleep 30",
                       recover_timeout=0.2)
-        expect("reachable", made.ensure_reachable(0.0), False)
+        expect("fit", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery command the shell cannot find is a failed recovery"):
@@ -130,12 +140,12 @@ def run_recovery_gating_checks(runner):
         # here only to keep this check to one line; a real run wants to see it.
         made = device(runner, [],
                       recover_command="/definitely/not/a/command 2>/dev/null")
-        expect("reachable", made.ensure_reachable(0.0), False)
+        expect("fit", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("no recovery command means no recovery"):
         made = device(runner, [])
-        expect("reachable", made.ensure_reachable(0.0), False)
+        expect("fit", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 0)
 
 
@@ -144,14 +154,14 @@ def run_recovery_limit_checks(runner):
         made = device(runner, [], recover_command="true",
                       recover_max_per_suite=2, recover_max_total=10)
         for _ in range(4):
-            made.ensure_reachable(0.0)
+            made.make_fit('fixture:', patient=False)
         expect("recoveries", made.recoveries, 2)
         expect("blocked", made.may_recover()[0], False)
 
     with check("the per-suite budget starts again at the next suite"):
         made = device(runner, [], recover_command="true",
                       recover_max_per_suite=1, recover_max_total=10)
-        made.ensure_reachable(0.0)
+        made.make_fit('fixture:', patient=False)
         expect("blocked within the suite", made.may_recover()[0], False)
         made.start_suite()
         expect("allowed in the next suite", made.may_recover()[0], True)
@@ -160,7 +170,7 @@ def run_recovery_limit_checks(runner):
         made = device(runner, [], recover_command="true",
                       recover_max_per_suite=10, recover_max_total=2)
         for _ in range(4):
-            made.ensure_reachable(0.0)
+            made.make_fit('fixture:', patient=False)
         expect("recoveries", made.recoveries, 2)
         made.start_suite()
         expect("a new suite does not reset the run budget",
@@ -169,7 +179,7 @@ def run_recovery_limit_checks(runner):
     with check("the refusal says which ceiling was reached"):
         made = device(runner, [], recover_command="true",
                       recover_max_per_suite=1, recover_max_total=9)
-        made.ensure_reachable(0.0)
+        made.make_fit('fixture:', patient=False)
         allowed, why = made.may_recover()
         expect("blocked", allowed, False)
         if "this suite" not in why:
@@ -183,6 +193,7 @@ def run_degraded_recovery_checks(runner):
                               health.Check("ftp", health.FAIL, 2000.0, "refused")))
 
     def with_sweeps(sweeps, **kwargs):
+        kwargs.setdefault("health_check", True)
         made = device(runner, [True] * 8, recover_command="true", **kwargs)
         remaining = list(sweeps)
         made.health = lambda: remaining.pop(0) if remaining else healthy
@@ -190,25 +201,25 @@ def run_degraded_recovery_checks(runner):
 
     with check("a healthy sweep after a failed suite recovers nothing"):
         made = with_sweeps([healthy])
-        expect("healthy", made.recover_if_degraded("suite:"), True)
+        expect("fit", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 0)
 
     with check("a degraded but reachable device is recovered"):
         # A reachability probe alone would call this device fine, which is the
         # gap this path exists to close.
         made = with_sweeps([degraded, healthy])
-        expect("healthy afterwards", made.recover_if_degraded("suite:"), True)
+        expect("fit afterwards", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 1)
 
     with check("a device still degraded after recovering is reported, not retried"):
         made = with_sweeps([degraded, degraded])
-        expect("healthy afterwards", made.recover_if_degraded("suite:"), False)
+        expect("fit afterwards", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("a degraded device is not recovered past its ceiling"):
         made = with_sweeps([degraded, degraded, degraded], recover_max_per_suite=1)
-        made.recover_if_degraded("suite:")
-        expect("blocked second time", made.recover_if_degraded("suite:"), False)
+        made.make_fit('fixture:', patient=False)
+        expect("blocked second time", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("--no-health-check takes the sweep out of the decision"):
@@ -217,13 +228,90 @@ def run_degraded_recovery_checks(runner):
         # with a listener deliberately off would otherwise be recovered before
         # every suite for the rest of the run.
         made = with_sweeps([degraded, degraded], health_check=False)
-        expect("treated as fit", made.recover_if_degraded("suite:"), True)
+        expect("fit", made.make_fit('fixture:', patient=False), True)
         expect("recoveries", made.recoveries, 0)
 
     with check("--no-health-check still recovers a device that has gone"):
         made = device(runner, [], recover_command="true", health_check=False)
-        expect("unreachable", made.ensure_reachable(0.0), False)
+        expect("unfit", made.make_fit('fixture:', patient=False), False)
         expect("recoveries", made.recoveries, 1)
+
+
+def run_retry_checks(runner, tmpdir):
+    """The loop that decides whether a failed suite is run again.
+
+    Driven through run_suite with a real child process, because the rule is
+    about what the loop does with a verdict rather than about any one call.
+    """
+    failing = os.path.join(tmpdir, "always_fails.py")
+    with open(failing, "w", encoding="utf-8") as handle:
+        handle.write("import sys\nsys.exit(1)\n")
+    suite = runner.Suite("perf", "fixture-suite",
+                         os.path.relpath(failing, runner.ROOT), "")
+
+    def options(**kwargs):
+        base = dict(host="device.invalid", password="", timeout="1.0",
+                    soak_profile="stress", jsonl_dir="", stop_on_fail=False,
+                    health_check=False, retry=True, recover_command="true",
+                    recover_max_per_suite=2, recover_max_total=10,
+                    recover_timeout=5.0)
+        base.update(kwargs)
+        return runner.Options(**base)
+
+    def quietly(action):
+        """Run `action`, holding its output back unless it is needed.
+
+        run_suite prints a banner and a suite line of its own, which would land
+        in the middle of the check line reporting on it. The output is kept and
+        replayed only when the check fails, where it is the diagnostic.
+        """
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                return action()
+        except BaseException:
+            detail(captured.getvalue().rstrip())
+            raise
+
+    def device_that(fit_answers, **kwargs):
+        made = device(runner, [True] * 20, recover_command="true", **kwargs)
+        answers = list(fit_answers)
+        made.attempts = 0
+
+        def make_fit(label, patient=True, extra=None):
+            fit, recovered = answers.pop(0) if answers else (True, False)
+            if recovered:
+                made.recoveries += 1
+                made.suite_recoveries += 1
+            return fit
+        made.make_fit = make_fit
+        return made
+
+    with check("a suite that fails on a fit device is not run again"):
+        made = device_that([(True, False)])
+        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        expect("verdict", result.verdict, runner.report.FAIL)
+        expect("recoveries", result.recoveries, 0)
+
+    with check("a suite that fails on an unfit device runs again after recovery"):
+        # Two recoveries are allowed, so it attempts, recovers, attempts,
+        # recovers, attempts, and then the ceiling stops it.
+        made = device_that([(True, True), (True, True), (True, False)])
+        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        expect("verdict", result.verdict, runner.report.FAIL)
+        expect("recoveries", result.recoveries, 2)
+
+    with check("--no-retry keeps the recovery and drops the extra attempt"):
+        made = device_that([(True, True)])
+        result = quietly(lambda: runner.run_suite(suite, made, options(retry=False), "", "fixture"))
+        expect("verdict", result.verdict, runner.report.FAIL)
+        expect("recoveries", result.recoveries, 0)
+
+    with check("a device that cannot be made fit ends the run"):
+        made = device_that([(False, True)])
+        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        expect("verdict", result.verdict, runner.report.FAIL)
+        expect("device unfit", result.device_unfit, True)
 
 
 def run_health_checks():
@@ -265,6 +353,8 @@ def main():
         run_recovery_gating_checks(runner)
         run_recovery_limit_checks(runner)
         run_degraded_recovery_checks(runner)
+        with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
+            run_retry_checks(runner, tmpdir)
         run_health_checks()
     except Failure as exc:
         suite_fail("runner_policy_test", str(exc))

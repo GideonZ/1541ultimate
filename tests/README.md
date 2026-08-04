@@ -37,10 +37,38 @@ the suites drive the on-device UI.
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
 
-### The health sweep
+Everything else the runner does when things go badly follows from one idea.
 
-Before each E2E suite, and again after one fails, the runner sweeps the device
-and logs the result as one line:
+### Fitness
+
+Before each E2E suite, and again after one fails, the runner establishes that
+the device is **fit**:
+
+- **it answers** - polled patiently, because a device that is briefly busy is
+  far more common than one that has gone;
+- **it is usable** - its UI reaches the documented state. A device can answer
+  every request and still be impossible to drive: seen live, a browser stuck in
+  a directory a killed run had deleted, with the UI task no longer reading
+  injected keys, while REST, FTP, telnet and the DMA port all answered
+  normally;
+- **it is well** - a health sweep of every listener the suites need and of the
+  C64 underneath them.
+
+They are checked in that order, because reaching the documented state shuts the
+menu, and the jiffy and raster checks are skipped while it is open.
+
+From that, three rules, and there are no others:
+
+| Situation | What happens |
+| --- | --- |
+| A suite fails on a fit device | It found something. The failure stands. |
+| A suite fails on an unfit device | It showed nothing. Recover, run it again. |
+| The device cannot be made fit | Abandon the run rather than fail every remaining suite for the same reason. |
+
+An unfit device is the **only** thing that triggers recovery. A failing suite
+never triggers it on its own.
+
+### The health sweep
 
 ```
 prg-context-menu: health: ping=4ms rest=9ms ftp=8ms telnet=34ms ident=29ms \
@@ -48,54 +76,54 @@ prg-context-menu: health: ping=4ms rest=9ms ftp=8ms telnet=34ms ident=29ms \
 ```
 
 `ping`, `rest`, `ftp`, `telnet`, `ident` and `dma` are the listeners the suites
-depend on; `dma` is the control port on 64, which is a separate listener from
-the HTTP server and has wedged on its own. `jiffy` (`$00A2`) and `raster`
-(`$D012`) are read until they change, which is what separates "the services
-answer" from "the machine under them is alive": a C64 stopped in Ultimax mode
-still serves REST perfectly well. Those two are skipped, not failed, while the
-menu is open, because under Freeze the menu has stopped the machine on purpose.
-The whole sweep costs about 150ms and is on by default. `--no-health-check`
-turns it off, which is worth doing when a listener is deliberately off on a
-particular device and would otherwise read as degraded before every suite.
-Turning it off also takes away what recovery decides on, so recovery then acts
-only on a device that has stopped answering altogether.
+depend on; `dma` is the control port on 64, a separate listener from the HTTP
+server that has wedged on its own. `jiffy` (`$00A2`) and `raster` (`$D012`) are
+read until they change, which is what separates "the services answer" from "the
+machine under them is alive": a C64 stopped in Ultimax mode still serves REST
+perfectly well. Those two are skipped, not failed, while the menu is open,
+because under Freeze the menu has stopped the machine on purpose.
+
+The sweep costs about 150ms and is on by default. `--no-health-check` reduces
+fitness to "it answers", which is what you want when a listener is deliberately
+off on a particular device and would otherwise read as unfit before every
+suite.
 
 `tests/lib/health.py` runs the sweep on its own, and takes `-c/--check` to run
-only some of it:
+only part of it:
 
 ```sh
 python3 tests/lib/health.py -H u64
 python3 tests/lib/health.py -H u64 -c rest -c dma
 ```
 
-### Recovery
+### Recovery and repetition
 
-A suite that fails is a result, not a problem with the run. A degraded device
-is different: every suite after it fails for the same reason and says nothing
-new. Recovery therefore acts on what the sweep found, never on a suite that
-merely failed, and it also runs when the device is still unreachable after the
-ordinary wait for it to come back.
+Recovering the device is the operator's command, because what brings one back
+differs per setup - a JTAG download, a power switch, a flash tool - and none of
+that belongs in this repository. Nothing here has a default, so recovery is off
+until you ask for it:
 
 ```sh
 ./run-tests -H u64 --recover-command 'build u64'
 ```
 
-The command is the operator's. What brings a device back differs per setup - a
-JTAG download, a power switch, a flash tool - and none of that belongs in this
-repository, which is why nothing here has a default.
-
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `--recover-command` | The command to run | none, so recovery is off |
-| `--recover-max-per-suite` | Recoveries around one suite before giving up on it | 3 |
-| `--recover-max-total` | Recoveries in the whole run before giving up | 10 |
+| `--recover-command` | What to run when the device is unfit | none, so recovery is off |
+| `--recover-max-per-suite` | Recoveries for one suite, which is also its extra attempts | 3 |
+| `--recover-max-total` | Recoveries in the whole run | 10 |
 | `--recover-timeout` | How long the command may take | 900s |
+| `--no-retry` | Recover, but do not run the suite again | off, so it does retry |
+| `--no-health-check` | Fitness means "it answers", nothing more | off, so the sweep runs |
 
-After a successful recovery the suite is retried once, so its failure is only
-believed once it has had a run on a healthy device. **Recovering is not free:**
-every recovery counts against the run, and a run that needed one exits 3 rather
-than 0 even when every suite passed. A device that had to be brought back is
-not the same result as one that did not, and the exit status says so.
+A suite is repeated only while the device is what failed it, so repetition
+needs no count of its own: `--recover-max-per-suite` is both how many times a
+suite may have its device brought back and how many extra attempts it gets.
+
+**Recovering is not free.** Every recovery counts against the run, and a run
+that needed one exits 3 rather than 0 even when every suite passed afterwards.
+A device that had to be brought back is not the same result as one that did
+not, and the exit status says so.
 
 ## Reading the result
 
@@ -108,7 +136,7 @@ console output:
 | `1` | At least one suite failed |
 | `2` | The command line was wrong |
 | `3` | Every suite passed, but the device had to be recovered |
-| `4` | The device stopped answering and could not be recovered |
+| `4` | The device could not be made fit, and the run was abandoned |
 
 `-j DIR` writes the same thing as JSONL: one file per suite run, plus
 `run.jsonl` holding the run's own `run` record with `passed`, `failed`,
