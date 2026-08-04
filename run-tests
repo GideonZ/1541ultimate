@@ -16,12 +16,13 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
-import report  # noqa: E402  (needs tests/lib on sys.path first)
+import health  # noqa: E402  (needs tests/lib on sys.path first)
+import report  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -49,7 +50,12 @@ DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS = 5.0
 # so it gets its own longer budget to come back in.
 POST_RECOVERY_BUDGET_SECONDS = 180.0
 DEFAULT_RECOVER_TIMEOUT_SECONDS = 900.0
-DEFAULT_RECOVER_ATTEMPTS = 1
+# Two ceilings, because they answer different questions. The per-suite one
+# stops a single suite that reliably takes the device down from consuming the
+# whole run's budget on its own. The run-wide one stops a device that is failing
+# for a reason no amount of recovering will fix.
+DEFAULT_RECOVER_MAX_PER_SUITE = 3
+DEFAULT_RECOVER_MAX_TOTAL = 10
 
 # Exit statuses. Documented in --help and in tests/README.md, because a
 # programmatic caller reads these rather than the console output.
@@ -191,7 +197,8 @@ class Options:
     jsonl_dir: str
     stop_on_fail: bool
     recover_command: str
-    recover_attempts: int
+    recover_max_per_suite: int
+    recover_max_total: int
     recover_timeout: float
 
 
@@ -204,15 +211,40 @@ class Device:
     """The few device calls the harness itself makes, outside any suite."""
 
     def __init__(self, host: str, password: str, timeout: float,
-                 recover_command: str = "", recover_attempts: int = 0,
+                 recover_command: str = "",
+                 recover_max_per_suite: int = 0, recover_max_total: int = 0,
                  recover_timeout: float = DEFAULT_RECOVER_TIMEOUT_SECONDS) -> None:
+        self.host = host
+        self.password = password
         self.api = UltimateApi(host, password, timeout)
         self.probe = UltimateApi(host, password,
                                  DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
         self.recover_command = recover_command
-        self.recover_attempts_left = recover_attempts if recover_command else 0
+        self.recover_max_per_suite = recover_max_per_suite if recover_command else 0
+        self.recover_max_total = recover_max_total if recover_command else 0
         self.recover_timeout = recover_timeout
         self.recoveries = 0
+        self.suite_recoveries = 0
+
+    def start_suite(self) -> None:
+        """Reset the per-suite recovery budget. Called once per suite run."""
+        self.suite_recoveries = 0
+
+    def may_recover(self) -> Tuple[bool, str]:
+        """Whether another recovery is allowed, and why not when it is not."""
+        if not self.recover_command:
+            return False, "no --recover-command was given"
+        if self.recoveries >= self.recover_max_total:
+            return False, (f"the run has already used its {self.recover_max_total} "
+                           "recoveries")
+        if self.suite_recoveries >= self.recover_max_per_suite:
+            return False, (f"this suite has already used its "
+                           f"{self.recover_max_per_suite} recoveries")
+        return True, ""
+
+    def health(self) -> health.Health:
+        """One health sweep, using this run's own short-timeout client."""
+        return health.probe(self.host, self.password, api=self.probe)
 
     def release_input(self) -> bool:
         try:
@@ -271,8 +303,8 @@ class Device:
         failure the device has already recovered from.
         """
         report.step_start(f"recovery: {self.recover_command}")
-        self.recover_attempts_left -= 1
         self.recoveries += 1
+        self.suite_recoveries += 1
         try:
             completed = subprocess.run(self.recover_command, shell=True,
                                        timeout=self.recover_timeout)
@@ -303,9 +335,42 @@ class Device:
         """
         if self.wait_until_reachable(budget):
             return True
-        if self.recover_attempts_left <= 0:
+        allowed, why = self.may_recover()
+        if not allowed:
+            report.detail(f"not recovering: {why}")
             return False
         return self.run_recovery_command()
+
+    def check_health(self, label: str) -> "health.Health":
+        """Sweep the device and log the result as one line."""
+        sweep = self.health()
+        report.detail(f"{label} {sweep.one_line()}")
+        for name in sweep.failed:
+            note = sweep.detail_for(name)
+            if note:
+                report.detail(f"    {name}: {note}")
+        return sweep
+
+    def recover_if_degraded(self, label: str) -> bool:
+        """Sweep the device; recover it when the sweep says it is degraded.
+
+        The sweep is the whole decision. A suite that merely failed leaves a
+        healthy device and nothing happens here. One that took a listener down
+        with it, or left the C64 stopped, shows up even though REST still
+        answers, which a reachability probe alone would call fine.
+
+        Returns whether the device is healthy now.
+        """
+        sweep = self.check_health(label)
+        if sweep.ok:
+            return True
+        allowed, why = self.may_recover()
+        if not allowed:
+            report.detail(f"not recovering: {why}")
+            return False
+        if not self.run_recovery_command():
+            return False
+        return self.check_health(f"{label} after recovery,").ok
 
     def close_active_menu(self) -> bool:
         """Back out of whatever the last suite left on the UI object stack.
@@ -387,6 +452,8 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         environment["E2E_JSONL"] = path
 
     recoveries_before = device.recoveries
+    if not retried:
+        device.start_suite()
 
     # E2E suites share one device and one UI object stack, so each starts from
     # the documented state rather than from whatever the last one left.
@@ -413,6 +480,16 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
             return Result(suite.category, mode, suite.name, report.FAIL, 0.0,
                           recoveries=device.recoveries - recoveries_before)
 
+    # The sanity sweep runs after the gate rather than before it, so the menu
+    # is already shut and the jiffy and raster checks mean what they say. One
+    # line per suite, latencies included: it is what tells a later reader
+    # whether the device was fit to be tested at the moment it mattered.
+    if suite.category == "e2e" and not device.recover_if_degraded(f"{suite.name}:"):
+        report.suite_fail(suite.name, "precondition: the device is degraded", 0.0)
+        return Result(suite.category, mode, suite.name, report.FAIL, 0.0,
+                      device_lost=not device.probe.reachable(),
+                      recoveries=device.recoveries - recoveries_before)
+
     started = time.monotonic()
     completed = subprocess.run(build_command(suite, options, mode), env=environment)
     elapsed = time.monotonic() - started
@@ -423,24 +500,25 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
     else:
         report.suite_fail(suite.name, "", elapsed)
         verdict = report.FAIL
-        # A failing suite is not a reason to recover the device; a device that
-        # stopped answering is. Probing only after a failure keeps the healthy
-        # path free of an extra request, and separates "this suite found a
-        # defect" from "this suite took the device down with it".
-        if not device.probe.reachable():
-            report.detail(f"{suite.name}: the device stopped answering during the suite")
-            if device.ensure_reachable():
-                if retried:
-                    report.detail(f"{suite.name}: already retried once after a "
-                                  "recovery; not retrying again")
-                else:
-                    result = run_suite(suite, device, options, mode, label, retried=True)
-                    result.recoveries += device.recoveries - recoveries_before
-                    return result
+        # A failing suite is not itself a reason to recover the device; a
+        # degraded one is. The sweep separates "this suite found a defect" from
+        # "this suite took the device down with it", and only the second is
+        # something recovering can help with.
+        recoveries_at_failure = device.recoveries
+        if not device.recover_if_degraded(f"{suite.name}: after failure,"):
+            return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
+                          device_lost=not device.probe.reachable(),
+                          recoveries=device.recoveries - recoveries_before)
+        if device.recoveries > recoveries_at_failure:
+            # The device really had degraded and is back. The suite deserves a
+            # run on a healthy device before its failure is believed.
+            if retried:
+                report.detail(f"{suite.name}: already retried once after a "
+                              "recovery; not retrying again")
             else:
-                return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
-                              device_lost=True,
-                              recoveries=device.recoveries - recoveries_before)
+                result = run_suite(suite, device, options, mode, label, retried=True)
+                result.recoveries += device.recoveries - recoveries_before
+                return result
 
     # Attribution only: the precondition owns the state, so leaving the browser
     # elsewhere is not a defect. Naming who left what is what makes an
@@ -550,18 +628,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     recovery = parser.add_argument_group(
         "recovery",
-        "What to do when the device stops answering. Off unless "
-        "--recover-command is given.")
+        "A health sweep runs before each E2E suite and again after one fails: "
+        "ping, REST, FTP, telnet, ident and the DMA port, plus the jiffy clock "
+        "and raster line to show the C64 itself is running. It is logged as one "
+        "line with latencies. Recovery acts on what that sweep finds, and is off "
+        "unless --recover-command is given.")
     recovery.add_argument("--recover-command", default="", metavar="CMD",
                           help="Shell command that brings the device back, e.g. "
-                               "'build u64'. Run only when the device is still "
-                               "unreachable after the ordinary wait; a suite that "
-                               "merely fails never triggers it. The suite that lost "
-                               "the device is retried once afterwards.")
-    recovery.add_argument("--recover-attempts", type=int,
-                          default=DEFAULT_RECOVER_ATTEMPTS, metavar="N",
-                          help="How many times the recovery command may run in one "
-                               f"run (default: {DEFAULT_RECOVER_ATTEMPTS}).")
+                               "'build u64'. Run when a health sweep says the device "
+                               "has degraded - a listener down, or the C64 no longer "
+                               "running - and when it is unreachable after the "
+                               "ordinary wait. A suite that merely fails does not "
+                               "trigger it. The suite is retried once afterwards, and "
+                               "every recovery counts against the run: a run that "
+                               "needed one exits 3 rather than 0.")
+    recovery.add_argument("--recover-max-per-suite", type=int,
+                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
+                          help="How many times the device may be recovered around "
+                               "one suite before that suite is given up on "
+                               f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
+    recovery.add_argument("--recover-max-total", type=int,
+                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
+                          help="How many times the device may be recovered in the "
+                               "whole run before the runner gives up on it "
+                               f"(default: {DEFAULT_RECOVER_MAX_TOTAL}).")
     recovery.add_argument("--recover-timeout", type=float,
                           default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SEC",
                           help="How long the recovery command may take "
@@ -748,8 +838,10 @@ def main(argv: List[str]) -> int:
         categories = [c for c in CATEGORIES
                       if any(s.category == c and s.name in args.suite for s in SUITES)]
 
-    if args.recover_attempts < 0:
-        die("--recover-attempts cannot be negative")
+    if args.recover_max_per_suite < 0:
+        die("--recover-max-per-suite cannot be negative")
+    if args.recover_max_total < 0:
+        die("--recover-max-total cannot be negative")
     if args.recover_timeout <= 0:
         die("--recover-timeout must be positive")
     if args.recover_command:
@@ -772,7 +864,8 @@ def main(argv: List[str]) -> int:
                       timeout=args.timeout, soak_profile=args.soak_profile,
                       jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail,
                       recover_command=args.recover_command,
-                      recover_attempts=args.recover_attempts,
+                      recover_max_per_suite=args.recover_max_per_suite,
+                      recover_max_total=args.recover_max_total,
                       recover_timeout=args.recover_timeout)
 
     report.banner("Ultimate hardware test run")
@@ -786,23 +879,38 @@ def main(argv: List[str]) -> int:
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
     if options.recover_command:
         report.detail(f"recovery:   {options.recover_command} "
-                      f"(up to {options.recover_attempts}x)")
+                      f"(up to {options.recover_max_per_suite} per suite, "
+                      f"{options.recover_max_total} in the run)")
     if options.jsonl_dir:
         report.detail(f"jsonl:      {options.jsonl_dir}/")
 
     device = Device(options.host, options.password, float(options.timeout),
                     recover_command=options.recover_command,
-                    recover_attempts=options.recover_attempts,
+                    recover_max_per_suite=options.recover_max_per_suite,
+                    recover_max_total=options.recover_max_total,
                     recover_timeout=options.recover_timeout)
     results: List[Result] = []
     started = time.monotonic()
     stopped = False
     device_lost = False
 
-    for category in categories:
+    for index, category in enumerate(categories):
         suites = selected_suites(category, args.suite, args.manual)
         if not suites:
             continue
+        # The device needs a moment between categories. The perf benchmark
+        # leaves the httpd saturated: measured live, listener-soak's first REST
+        # call timed out at 30 seconds when it started straight after one, while
+        # the same suite passes on its own. The device frees an abandoned HTTP
+        # connection after about 18 seconds, so waiting for it to answer again
+        # is what makes --all mean anything. It costs nothing when it is idle.
+        if index:
+            print()
+            report.step_start(f"settle: device answers before {category}")
+            if device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
+                report.check_ok()
+            else:
+                report.check_warn("still busy; starting anyway")
         passes = modes if category == "e2e" else [""]
         for mode in passes:
             for suite in suites:

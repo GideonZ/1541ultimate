@@ -23,6 +23,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import health  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -57,8 +58,11 @@ class ScriptedProbe:
 
 
 def device(runner, answers, **kwargs):
+    kwargs.setdefault("recover_max_per_suite", 1)
+    kwargs.setdefault("recover_max_total", 1)
     made = runner.Device("device.invalid", "", 1.0, **kwargs)
     made.probe = ScriptedProbe(answers)
+    made.start_suite()
     return made
 
 
@@ -93,37 +97,30 @@ def run_exit_status_checks(runner):
 
 def run_recovery_gating_checks(runner):
     with check("a device that answers is never recovered"):
-        made = device(runner, [True], recover_command="true", recover_attempts=1)
+        made = device(runner, [True], recover_command="true")
         expect("reachable", made.ensure_reachable(0.0), True)
         expect("recoveries", made.recoveries, 0)
 
     with check("recovery runs only once the ordinary wait has given up"):
-        made = device(runner, [False, True], recover_command="true", recover_attempts=1)
+        made = device(runner, [False, True], recover_command="true")
         expect("reachable", made.ensure_reachable(0.0), True)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery that does not bring the device back reports so"):
-        made = device(runner, [], recover_command="true", recover_attempts=1)
+        made = device(runner, [], recover_command="true")
         expect("reachable", made.ensure_reachable(0.0), False)
-        expect("recoveries", made.recoveries, 1)
-        expect("attempts left", made.recover_attempts_left, 0)
-
-    with check("attempts are spent rather than retried forever"):
-        made = device(runner, [], recover_command="true", recover_attempts=1)
-        made.ensure_reachable(0.0)
-        expect("second call recovers again", made.ensure_reachable(0.0), False)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery command that exits non-zero is still followed by a probe"):
         # Some recovery tools report a failure the device has already come back
         # from, so the probe decides rather than the exit status.
-        made = device(runner, [False, True], recover_command="false", recover_attempts=1)
+        made = device(runner, [False, True], recover_command="false")
         expect("reachable", made.ensure_reachable(0.0), True)
         expect("recoveries", made.recoveries, 1)
 
     with check("a recovery command that hangs is bounded by --recover-timeout"):
         made = device(runner, [False, True], recover_command="sleep 30",
-                      recover_attempts=1, recover_timeout=0.2)
+                      recover_timeout=0.2)
         expect("reachable", made.ensure_reachable(0.0), False)
         expect("recoveries", made.recoveries, 1)
 
@@ -131,7 +128,7 @@ def run_recovery_gating_checks(runner):
         # The command is run through a shell, so an unrunnable one comes back
         # as exit 127 rather than as an exception. Its own stderr is silenced
         # here only to keep this check to one line; a real run wants to see it.
-        made = device(runner, [], recover_attempts=1,
+        made = device(runner, [],
                       recover_command="/definitely/not/a/command 2>/dev/null")
         expect("reachable", made.ensure_reachable(0.0), False)
         expect("recoveries", made.recoveries, 1)
@@ -142,6 +139,108 @@ def run_recovery_gating_checks(runner):
         expect("recoveries", made.recoveries, 0)
 
 
+def run_recovery_limit_checks(runner):
+    with check("a suite gives up after --recover-max-per-suite recoveries"):
+        made = device(runner, [], recover_command="true",
+                      recover_max_per_suite=2, recover_max_total=10)
+        for _ in range(4):
+            made.ensure_reachable(0.0)
+        expect("recoveries", made.recoveries, 2)
+        expect("blocked", made.may_recover()[0], False)
+
+    with check("the per-suite budget starts again at the next suite"):
+        made = device(runner, [], recover_command="true",
+                      recover_max_per_suite=1, recover_max_total=10)
+        made.ensure_reachable(0.0)
+        expect("blocked within the suite", made.may_recover()[0], False)
+        made.start_suite()
+        expect("allowed in the next suite", made.may_recover()[0], True)
+
+    with check("the run gives up after --recover-max-total recoveries"):
+        made = device(runner, [], recover_command="true",
+                      recover_max_per_suite=10, recover_max_total=2)
+        for _ in range(4):
+            made.ensure_reachable(0.0)
+        expect("recoveries", made.recoveries, 2)
+        made.start_suite()
+        expect("a new suite does not reset the run budget",
+               made.may_recover()[0], False)
+
+    with check("the refusal says which ceiling was reached"):
+        made = device(runner, [], recover_command="true",
+                      recover_max_per_suite=1, recover_max_total=9)
+        made.ensure_reachable(0.0)
+        allowed, why = made.may_recover()
+        expect("blocked", allowed, False)
+        if "this suite" not in why:
+            raise Failure(f"expected the per-suite ceiling to be named, got {why!r}")
+
+
+def run_degraded_recovery_checks(runner):
+    """The path that fires on a device which answers but is not fit to test."""
+    healthy = health.Health((health.Check("rest", health.OK, 9.0),))
+    degraded = health.Health((health.Check("rest", health.OK, 9.0),
+                              health.Check("ftp", health.FAIL, 2000.0, "refused")))
+
+    def with_sweeps(sweeps, **kwargs):
+        made = device(runner, [True] * 8, recover_command="true", **kwargs)
+        remaining = list(sweeps)
+        made.health = lambda: remaining.pop(0) if remaining else healthy
+        return made
+
+    with check("a healthy sweep after a failed suite recovers nothing"):
+        made = with_sweeps([healthy])
+        expect("healthy", made.recover_if_degraded("suite:"), True)
+        expect("recoveries", made.recoveries, 0)
+
+    with check("a degraded but reachable device is recovered"):
+        # A reachability probe alone would call this device fine, which is the
+        # gap this path exists to close.
+        made = with_sweeps([degraded, healthy])
+        expect("healthy afterwards", made.recover_if_degraded("suite:"), True)
+        expect("recoveries", made.recoveries, 1)
+
+    with check("a device still degraded after recovering is reported, not retried"):
+        made = with_sweeps([degraded, degraded])
+        expect("healthy afterwards", made.recover_if_degraded("suite:"), False)
+        expect("recoveries", made.recoveries, 1)
+
+    with check("a degraded device is not recovered past its ceiling"):
+        made = with_sweeps([degraded, degraded, degraded], recover_max_per_suite=1)
+        made.recover_if_degraded("suite:")
+        expect("blocked second time", made.recover_if_degraded("suite:"), False)
+        expect("recoveries", made.recoveries, 1)
+
+
+def run_health_checks():
+    ok = health.Check("rest", health.OK, 12.0)
+    bad = health.Check("ftp", health.FAIL, 2000.0, "connection refused")
+    skipped = health.Check("jiffy", health.SKIP, 0.0, "the menu is open")
+
+    with check("a sweep with every check passing is healthy"):
+        expect("ok", health.Health((ok,)).ok, True)
+        expect("failed", health.Health((ok,)).failed, ())
+
+    with check("a failed check makes the sweep degraded and names it"):
+        sweep = health.Health((ok, bad))
+        expect("ok", sweep.ok, False)
+        expect("failed", sweep.failed, ("ftp",))
+        expect("detail", sweep.detail_for("ftp"), "connection refused")
+
+    with check("a skipped check never makes the sweep degraded"):
+        # The jiffy and raster checks are skipped while the menu is open,
+        # because under Freeze the menu has stopped the C64 on purpose.
+        expect("ok", health.Health((ok, skipped)).ok, True)
+
+    with check("the one-line summary carries every latency and the verdict"):
+        line = health.Health((ok, bad, skipped)).one_line()
+        for fragment in ("rest=12ms", "ftp=FAIL", "jiffy=skip", "DEGRADED (ftp)"):
+            if fragment not in line:
+                raise Failure(f"{fragment!r} missing from {line!r}")
+        if "\n" in line:
+            raise Failure("the health summary has to be one line")
+
+
 def main():
     if not os.path.isfile(RUNNER_PATH):
         suite_fail("runner_policy_test", f"missing {RUNNER_PATH}")
@@ -150,12 +249,15 @@ def main():
         runner = load_runner()
         run_exit_status_checks(runner)
         run_recovery_gating_checks(runner)
+        run_recovery_limit_checks(runner)
+        run_degraded_recovery_checks(runner)
+        run_health_checks()
     except Failure as exc:
         suite_fail("runner_policy_test", str(exc))
         return 1
 
-    detail("the recovery command runs only on an unreachable device, never on a "
-           "failed suite")
+    detail("the recovery command runs on a degraded or unreachable device, "
+           "never on a suite that merely failed")
     suite_ok("runner_policy_test")
     return 0
 

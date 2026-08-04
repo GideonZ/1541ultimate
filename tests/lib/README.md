@@ -12,6 +12,7 @@ repository-root `run-tests` all use it.
 | `ftp.py` | FTP sessions, listings, transfers, deletion and purging |
 | `wait.py` | Bounded polling and retry |
 | `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
+| `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
 
 Two registered suites live here as well, because both check the test tree
 itself rather than the device and so need no hardware. They run first, where a

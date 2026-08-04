@@ -37,11 +37,36 @@ the suites drive the on-device UI.
 By default the run continues through every selected suite, so one failure does
 not hide the rest. `-x/--stop-on-fail` stops at the first one.
 
-A suite that fails is a result, not a problem with the run. A device that stops
-answering is different: every suite after it fails for the same reason and says
-nothing new. The runner waits for it to come back first, because the usual
-cause is a device that is briefly busy rather than gone. If it is still not
-answering after that wait, and only then, `--recover-command` runs:
+### The health sweep
+
+Before each E2E suite, and again after one fails, the runner sweeps the device
+and logs the result as one line:
+
+```
+prg-context-menu: health: ping=4ms rest=9ms ftp=8ms telnet=34ms ident=29ms \
+    dma=6ms jiffy=20ms raster=20ms -> OK
+```
+
+`ping`, `rest`, `ftp`, `telnet`, `ident` and `dma` are the listeners the suites
+depend on; `dma` is the control port on 64, which is a separate listener from
+the HTTP server and has wedged on its own. `jiffy` (`$00A2`) and `raster`
+(`$D012`) are read until they change, which is what separates "the services
+answer" from "the machine under them is alive": a C64 stopped in Ultimax mode
+still serves REST perfectly well. Those two are skipped, not failed, while the
+menu is open, because under Freeze the menu has stopped the machine on purpose.
+The whole sweep costs about 150ms. `tests/lib/health.py` runs it on its own:
+
+```sh
+python3 tests/lib/health.py -H u64
+```
+
+### Recovery
+
+A suite that fails is a result, not a problem with the run. A degraded device
+is different: every suite after it fails for the same reason and says nothing
+new. Recovery therefore acts on what the sweep found, never on a suite that
+merely failed, and it also runs when the device is still unreachable after the
+ordinary wait for it to come back.
 
 ```sh
 ./run-tests -H u64 --recover-command 'build u64'
@@ -49,10 +74,20 @@ answering after that wait, and only then, `--recover-command` runs:
 
 The command is the operator's. What brings a device back differs per setup - a
 JTAG download, a power switch, a flash tool - and none of that belongs in this
-repository, which is why nothing here has a default. `--recover-attempts` caps
-how many times it may run in one run, and `--recover-timeout` how long it may
-take. The suite that lost the device is retried once after a successful
-recovery. A failing suite never triggers the command.
+repository, which is why nothing here has a default.
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `--recover-command` | The command to run | none, so recovery is off |
+| `--recover-max-per-suite` | Recoveries around one suite before giving up on it | 3 |
+| `--recover-max-total` | Recoveries in the whole run before giving up | 10 |
+| `--recover-timeout` | How long the command may take | 900s |
+
+After a successful recovery the suite is retried once, so its failure is only
+believed once it has had a run on a healthy device. **Recovering is not free:**
+every recovery counts against the run, and a run that needed one exits 3 rather
+than 0 even when every suite passed. A device that had to be brought back is
+not the same result as one that did not, and the exit status says so.
 
 ## Reading the result
 
