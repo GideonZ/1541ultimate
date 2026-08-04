@@ -4,8 +4,9 @@
 """End-to-end virtual-printer harness for a real Ultimate 64 / 64e.
 
 Drives the IEC virtual printer (device 4/5) with a dedicated 6510 assembly
-workload (the committed printer_e2e.prg, built from printer_e2e.asm), captures crash/hang
-behaviour, and verifies the resulting PNG/ASCII output over FTP. Pure REST
+workload, captures crash/hang behaviour, and verifies the resulting PNG/ASCII
+output over FTP. The workload is the committed printer_e2e.prg, assembled from
+printer_e2e.asm beside it, so running this needs no assembler. Pure REST
 (http.client) + FTP (ftplib); no MCP/bridge dependency.
 
 Style follows tests/e2e/filemanager/temp_auto_cleanup_perf_test.py:

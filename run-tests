@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Sequence
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
@@ -197,7 +197,7 @@ class Options:
 
 def die(message: str) -> None:
     print(report.colour(f"ERROR: {message}", report.RED), file=sys.stderr, flush=True)
-    raise SystemExit(2)
+    raise SystemExit(EXIT_USAGE)
 
 
 class Device:
