@@ -561,7 +561,10 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         assert_or_warn(assertions_enabled, ok, f"{path}: not a well-formed PNG ({reason})")
         dims = png_lite.decode_png_dimensions(data)
         assert_or_warn(assertions_enabled, dims is not None, f"{path}: could not read IHDR dimensions")
-        detail(f"{path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
+        # assert_or_warn only warns under --no-assertions, so this line still
+        # runs with dims unset; indexing it there would abort the whole run.
+        size = f"{dims[0]}x{dims[1]}px" if dims else "size unreadable"
+        detail(f"{path}: {len(data)} bytes, {size}, {'valid' if ok else 'INVALID'} PNG")
 
 
 def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=1):

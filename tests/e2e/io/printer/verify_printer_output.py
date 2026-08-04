@@ -63,8 +63,13 @@ def verify_one(host, user, password, path, is_ascii):
     if not ok:
         check_fail(f"{len(data)} bytes, {reason}")
         return False
-    width, height = png_lite.decode_png_dimensions(data)
-    check_ok(f"{len(data)} bytes, {width}x{height}px")
+    size = png_lite.decode_png_dimensions(data)
+    if size is None:
+        # png_is_well_formed proves IHDR is first, so this should not happen;
+        # reporting it beats an unpack that aborts the whole verification run.
+        check_fail(f"{len(data)} bytes, well formed but no readable IHDR")
+        return False
+    check_ok(f"{len(data)} bytes, {size[0]}x{size[1]}px")
     return True
 
 

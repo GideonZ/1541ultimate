@@ -56,8 +56,14 @@ def png_is_well_formed(data):
         chunk_types = [chunk_type for chunk_type, _ in parse_chunks(data)]
     except PngError as exc:
         return False, str(exc)
-    if b"IHDR" not in chunk_types:
-        return False, "no IHDR chunk"
+    if not chunk_types:
+        return False, "no chunks"
+    # IHDR must be the first chunk, not merely present. The spec requires it,
+    # and decode_png_dimensions reads it from a fixed offset on that basis, so
+    # accepting it anywhere let the two disagree about the same file: one
+    # calling it well formed while the other could not find its dimensions.
+    if chunk_types[0] != b"IHDR":
+        return False, f"first chunk is {chunk_types[0]!r}, not IHDR"
     if b"IEND" not in chunk_types:
         return False, "no IEND chunk (truncated file)"
     return True, "ok"
