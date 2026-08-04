@@ -196,6 +196,7 @@ class Options:
     soak_profile: str
     jsonl_dir: str
     stop_on_fail: bool
+    health_check: bool
     recover_command: str
     recover_max_per_suite: int
     recover_max_total: int
@@ -211,9 +212,10 @@ class Device:
     """The few device calls the harness itself makes, outside any suite."""
 
     def __init__(self, host: str, password: str, timeout: float,
-                 recover_command: str = "",
+                 recover_command: str = "", health_check: bool = True,
                  recover_max_per_suite: int = 0, recover_max_total: int = 0,
                  recover_timeout: float = DEFAULT_RECOVER_TIMEOUT_SECONDS) -> None:
+        self.health_check = health_check
         self.host = host
         self.password = password
         self.api = UltimateApi(host, password, timeout)
@@ -359,8 +361,15 @@ class Device:
         with it, or left the C64 stopped, shows up even though REST still
         answers, which a reachability probe alone would call fine.
 
+        With --no-health-check there is no sweep and so nothing to decide on:
+        the device is taken as fit, and recovery is left to the unreachable
+        path in ensure_reachable. A device whose FTP server is deliberately off
+        would otherwise be recovered before every suite, forever.
+
         Returns whether the device is healthy now.
         """
+        if not self.health_check:
+            return True
         sweep = self.check_health(label)
         if sweep.ok:
             return True
@@ -633,6 +642,15 @@ def build_parser() -> argparse.ArgumentParser:
         "and raster line to show the C64 itself is running. It is logged as one "
         "line with latencies. Recovery acts on what that sweep finds, and is off "
         "unless --recover-command is given.")
+    recovery.add_argument("--no-health-check", dest="health_check",
+                          action="store_false", default=True,
+                          help="Skip the health sweep. It is on by default and "
+                               "costs about 150ms per suite. Turning it off also "
+                               "takes away what recovery decides on, so recovery "
+                               "then acts only on a device that has stopped "
+                               "answering altogether. Worth it when a listener is "
+                               "deliberately off on this device, which would "
+                               "otherwise read as degraded before every suite.")
     recovery.add_argument("--recover-command", default="", metavar="CMD",
                           help="Shell command that brings the device back, e.g. "
                                "'build u64'. Run when a health sweep says the device "
@@ -863,6 +881,7 @@ def main(argv: List[str]) -> int:
     options = Options(host=args.host_positional or args.host, password=args.password,
                       timeout=args.timeout, soak_profile=args.soak_profile,
                       jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail,
+                      health_check=args.health_check,
                       recover_command=args.recover_command,
                       recover_max_per_suite=args.recover_max_per_suite,
                       recover_max_total=args.recover_max_total,
@@ -877,6 +896,7 @@ def main(argv: List[str]) -> int:
         report.detail(f"soak:       {options.soak_profile} profile")
     report.detail(f"timeout:    {options.timeout}s")
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
+    report.detail(f"health:     {'sweep before each suite' if options.health_check else 'off'}")
     if options.recover_command:
         report.detail(f"recovery:   {options.recover_command} "
                       f"(up to {options.recover_max_per_suite} per suite, "
@@ -885,6 +905,7 @@ def main(argv: List[str]) -> int:
         report.detail(f"jsonl:      {options.jsonl_dir}/")
 
     device = Device(options.host, options.password, float(options.timeout),
+                    health_check=options.health_check,
                     recover_command=options.recover_command,
                     recover_max_per_suite=options.recover_max_per_suite,
                     recover_max_total=options.recover_max_total,

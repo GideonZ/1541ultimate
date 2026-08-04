@@ -54,10 +54,18 @@ the HTTP server and has wedged on its own. `jiffy` (`$00A2`) and `raster`
 answer" from "the machine under them is alive": a C64 stopped in Ultimax mode
 still serves REST perfectly well. Those two are skipped, not failed, while the
 menu is open, because under Freeze the menu has stopped the machine on purpose.
-The whole sweep costs about 150ms. `tests/lib/health.py` runs it on its own:
+The whole sweep costs about 150ms and is on by default. `--no-health-check`
+turns it off, which is worth doing when a listener is deliberately off on a
+particular device and would otherwise read as degraded before every suite.
+Turning it off also takes away what recovery decides on, so recovery then acts
+only on a device that has stopped answering altogether.
+
+`tests/lib/health.py` runs the sweep on its own, and takes `-c/--check` to run
+only some of it:
 
 ```sh
 python3 tests/lib/health.py -H u64
+python3 tests/lib/health.py -H u64 -c rest -c dma
 ```
 
 ### Recovery

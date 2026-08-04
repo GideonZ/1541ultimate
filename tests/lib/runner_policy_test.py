@@ -211,6 +211,20 @@ def run_degraded_recovery_checks(runner):
         expect("blocked second time", made.recover_if_degraded("suite:"), False)
         expect("recoveries", made.recoveries, 1)
 
+    with check("--no-health-check takes the sweep out of the decision"):
+        # Without a sweep there is nothing to judge the device by, so it is
+        # taken as fit and recovery is left to the unreachable path. A device
+        # with a listener deliberately off would otherwise be recovered before
+        # every suite for the rest of the run.
+        made = with_sweeps([degraded, degraded], health_check=False)
+        expect("treated as fit", made.recover_if_degraded("suite:"), True)
+        expect("recoveries", made.recoveries, 0)
+
+    with check("--no-health-check still recovers a device that has gone"):
+        made = device(runner, [], recover_command="true", health_check=False)
+        expect("unreachable", made.ensure_reachable(0.0), False)
+        expect("recoveries", made.recoveries, 1)
+
 
 def run_health_checks():
     ok = health.Check("rest", health.OK, 12.0)
