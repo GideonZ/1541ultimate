@@ -624,7 +624,7 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
                 i++;
             busyMode = (temp > 0);
             keepConnection = false;
-            connectionStateChange = 1 + (busyMode) ? 2 : 0; // if busy mode is selected, return 3
+            connectionStateChange = busyMode ? 3 : 1; // if busy mode is selected, return 3
             break;
         case 'A': // answer
             if (keepConnection) {
