@@ -27,6 +27,11 @@ incomplete. Without that control a screen scan that silently matched nothing
 would report both real strategies as perfect, which is exactly how the earlier
 attempts at this went wrong.
 
+The needle cannot exceed the field's render window: the prompt keeps the whole
+value but only shows part of it, so a longer needle reads as lost whatever
+typed it. --length refuses to go past it rather than producing that result and
+letting someone mistake it for a device fault.
+
 Run it against a device you can spare; it renames nothing, cancelling the
 dialog on every path.
 """
@@ -58,6 +63,12 @@ DEFAULT_REPEATS = 4
 # Long enough for the per-request overhead to show against the drain, short
 # enough to fit a rename field.
 NEEDLE_LENGTH = 12
+# The prompt holds the whole value but renders only about this much of it at
+# once, so a needle longer than the window cannot be found by a screen scan
+# however it was typed. Measured: at 60 characters both strategies report
+# incomplete, which says nothing about either of them. 36 characters, the
+# longest string any suite types, sits inside the window and arrives whole.
+FIELD_RENDER_WINDOW = 38
 FIXTURE_DIR = "/Temp"
 FIXTURE_NAME = "typingbench.prg"
 # A minimal PRG, so the browser has a real entry to rename.
@@ -161,6 +172,12 @@ def main() -> int:
                              f"(default: {NEEDLE_LENGTH}).")
     add_mode_argument(parser)
     args = parser.parse_args()
+    if args.length > FIELD_RENDER_WINDOW:
+        raise SystemExit(
+            f"--length {args.length} exceeds the field's ~{FIELD_RENDER_WINDOW}"
+            "-character render window, so the screen scan cannot confirm arrival "
+            "and every strategy would report incomplete. Nothing in the tree "
+            "types that much into one field.")
 
     section("Typing into a menu field")
     detail(f"host: {args.host}, mode: {args.mode}, "
