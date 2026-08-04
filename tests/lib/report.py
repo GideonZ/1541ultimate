@@ -399,15 +399,33 @@ def suite_warn(name: str, reason: str, seconds: Optional[float] = None) -> None:
     _suite_line(name, WARN, reason, seconds)
 
 
+def set_jsonl_path(path: str) -> None:
+    """Send this process's records to `path`, for a harness taking a flag.
+
+    The suites a harness starts are told through E2E_JSONL, which is read at
+    import. A harness parses its own arguments after importing this module, so
+    it needs a way to say the same thing afterwards.
+    """
+    global JSONL_PATH
+    JSONL_PATH = path
+
+
 def run_result(verdict: str, suites: int, passed: int, failed: int,
-               skipped: int, dirty: int, seconds: float) -> None:
+               skipped: int, dirty: int, seconds: float,
+               recoveries: int = 0, exit_code: Optional[int] = None) -> None:
     """The JSONL record for a whole run, written by a harness rather than a suite.
 
     Record shapes belong to this module, so a harness reports its own result
     through here instead of formatting a JSON object of its own.
+
+    `recoveries` is how many times the device had to be brought back during the
+    run, and `exit_code` is the status the harness is about to exit with, so a
+    caller reading only the JSONL sees the same verdict as one reading `$?`.
     """
     _record(kind="run", verdict=verdict, suites=suites, passed=passed,
-            failed=failed, skipped=skipped, dirty=dirty, seconds=round(seconds, 4))
+            failed=failed, skipped=skipped, dirty=dirty,
+            seconds=round(seconds, 4), recoveries=recoveries,
+            exit_code=exit_code)
 
 
 def die(message: str) -> None:

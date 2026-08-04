@@ -13,6 +13,15 @@ repository-root `run-tests` all use it.
 | `wait.py` | Bounded polling and retry |
 | `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
 
+Two registered suites live here as well, because both check the test tree
+itself rather than the device and so need no hardware. They run first, where a
+failure lands as a clear message instead of as a confusing one later:
+
+| Suite | Checks |
+| --- | --- |
+| `check_transport_usage.py` | No suite has grown its own HTTP client again |
+| `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
+
 Put this directory on `sys.path` before importing:
 
 ```python
@@ -116,7 +125,10 @@ The guidance for what to do about one is in
 
 Set `E2E_JSONL` to a path to append the run as JSONL, one object per line.
 `E2E_SUITE` names the suite in those records. `run-tests -j DIR` sets both for
-every suite it starts, writing one file per suite run into DIR.
+every suite it starts, writing one file per suite run into DIR, and writes its
+own `run` record to `DIR/run.jsonl` through `set_jsonl_path`. A harness that
+parses its arguments after importing this module needs that setter, because
+`E2E_JSONL` is read at import.
 
 Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
 
@@ -126,7 +138,7 @@ Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
 | `scenario` | `title`, `verdict`, `checks`, `seconds` |
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds` |
 | `warning` | `message` |
-| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds` |
+| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code` |
 
 ```sh
 ./run-tests -H u64 -j runs/
