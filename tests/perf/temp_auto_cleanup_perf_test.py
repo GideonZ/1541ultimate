@@ -15,6 +15,7 @@ from collections import deque
 import ftplib
 import json
 import math
+import os
 import statistics
 import sys
 import time
@@ -205,8 +206,10 @@ def parse_args():
             "original Temp settings are restored before exit unless --no-config-change is used."
         ),
     )
-    parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
-    parser.add_argument("-p", "--password", default="", help="U64 REST password")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="U64 REST password (default: $U64_PASS, empty)")
     parser.add_argument(
         "-n",
         "--no-assertions",

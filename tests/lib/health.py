@@ -64,9 +64,15 @@ SOCKET_TIMEOUT_SECONDS = 2.0
 REST_TIMEOUT_SECONDS = 5.0
 PING_TIMEOUT_SECONDS = 2
 # The jiffy clock advances every 20ms at 50Hz; the raster line moves every
-# 63us. Both are read until they change rather than once after a fixed wait, so
-# a healthy device costs two round trips and only a stopped one costs the lot.
-MOVEMENT_SAMPLES = 6
+# 63us. Both are read until they change, so a healthy device costs two round
+# trips and only a stopped one pays the budget.
+#
+# The budget has to outlast a C64 cold start. Measured live: a sweep that ran
+# straight after a suite had reset the machine read $00A2 static at $00 while
+# the raster was moving, because the KERNAL had not started ticking yet, and
+# the device was recovered over JTAG for it. The machine reaches the BASIC
+# prompt in about 2.4s, so the budget is comfortably past that.
+MOVEMENT_TIMEOUT_SECONDS = 4.0
 MOVEMENT_PAUSE_SECONDS = 0.02
 JIFFY_ADDRESS = 0x00A2
 RASTER_ADDRESS = 0xD012
@@ -170,15 +176,20 @@ def _dma_identify(host: str) -> str:
     return title.decode("utf-8", "replace").strip()
 
 
-def _moves(api: UltimateApi, address: int) -> str:
-    """Read `address` until the value changes, or say it never did."""
+def _moves(api: UltimateApi, address: int, means: str) -> str:
+    """Read `address` until the value changes, or say it never did.
+
+    Returns as soon as it moves, so this costs two round trips on a device
+    that is running and the whole budget only on one that is not.
+    """
     first = api.machine.readmem(address, 1)[0]
-    for _ in range(MOVEMENT_SAMPLES):
+    deadline = time.monotonic() + MOVEMENT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
         if api.machine.readmem(address, 1)[0] != first:
             return ""
         time.sleep(MOVEMENT_PAUSE_SECONDS)
-    raise RuntimeError(f"${address:04X} stayed at ${first:02X} over "
-                       f"{MOVEMENT_SAMPLES} reads")
+    raise RuntimeError(f"${address:04X} stayed at ${first:02X} for "
+                       f"{MOVEMENT_TIMEOUT_SECONDS:g}s: {means}")
 
 
 def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
@@ -214,13 +225,20 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
     # The machine checks need the menu shut: under Freeze the open menu has
     # stopped the C64 on purpose, and calling that a degraded device would send
     # the runner off to recover hardware that is doing exactly what was asked.
-    if not skip("jiffy") or not skip("raster"):
+    machine_checks = (
+        ("jiffy", JIFFY_ADDRESS,
+         "the KERNAL interrupt is not running, so the C64 is held in reset, "
+         "stopped, or running with interrupts masked"),
+        ("raster", RASTER_ADDRESS,
+         "the VIC is not scanning, so the C64 is not running at all"),
+    )
+    if any(not skip(name) for name, _, _ in machine_checks):
         menu_open = None
         try:
             menu_open = api.machine.menu_open()
         except Failure:
             menu_open = None
-        for name, address in (("jiffy", JIFFY_ADDRESS), ("raster", RASTER_ADDRESS)):
+        for name, address, means in machine_checks:
             if skip(name):
                 continue
             if menu_open:
@@ -228,7 +246,8 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
             elif menu_open is None:
                 checks.append(Check(name, SKIP, 0.0, "menu state unknown"))
             else:
-                checks.append(_timed(name, lambda a=address: _moves(api, a)))
+                checks.append(_timed(
+                    name, lambda a=address, m=means: _moves(api, a, m)))
     return Health(tuple(checks))
 
 

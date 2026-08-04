@@ -743,8 +743,10 @@ def parse_args():
                "--no-config-change is used. Runs the committed printer_e2e.prg "
                "fixture alongside this script; no assembler is needed.",
     )
-    parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
-    parser.add_argument("-p", "--password", default="", help="U64 REST password")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="U64 REST password (default: $U64_PASS, empty)")
     parser.add_argument("-n", "--no-assertions", action="store_true",
                          help="Warn instead of failing on assertion mismatches")
     parser.add_argument("--seed-count", type=int, default=0, help=argparse.SUPPRESS)

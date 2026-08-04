@@ -2032,8 +2032,10 @@ def parse_args(argv=None):
         epilog="Runs a controlled local pyftpdlib server, configures it as a remote host "
                "through the real firmware UI, and verifies every FTP operation against the "
                "server's filesystem and command log.")
-    p.add_argument("-H", "--host", default="u64", help="Ultimate hostname or IP (default u64)")
-    p.add_argument("-p", "--password", default="", help="REST password")
+    p.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                   help="Ultimate hostname or IP (default: $U64_HOST or u64)")
+    p.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                   help="REST password (default: $U64_PASS, empty)")
     p.add_argument("-n", "--no-assertions", action="store_true",
                    help="Warn instead of failing on assertion mismatches")
     p.add_argument("-t", "--timeout", type=float, default=5.0, help="REST timeout seconds")
