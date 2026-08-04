@@ -64,7 +64,7 @@ FIXTURE_NAME = "typingbench.prg"
 FIXTURE_BYTES = b"\x01\x08\x0b\x08\x0a\x00\x9e\x32\x30\x36\x31\x00\x00\x00"
 
 
-def needle() -> str:
+def needle(length: int = NEEDLE_LENGTH) -> str:
     """A random string that cannot appear on screen by accident.
 
     Letters only, and random, so a hit cannot come from a path, a label or a
@@ -72,7 +72,7 @@ def needle() -> str:
     earlier attempt at this got wrong: it searched for hex digits on a screen
     made largely of hex digits.
     """
-    return "".join(random.choice(string.ascii_lowercase) for _ in range(NEEDLE_LENGTH))
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(length))
 
 
 def open_rename_field(browser) -> None:
@@ -105,12 +105,12 @@ def type_half(browser, text: str) -> None:
         browser.type_char(ch)
 
 
-def measure(browser, strategy) -> Tuple[float, bool]:
+def measure(browser, strategy, length: int) -> Tuple[float, bool]:
     """Type a needle into the rename field. Returns (seconds, arrived whole)."""
     # The field arrives pre-filled with the current name; the needle is typed
     # after it rather than replacing it, which needs no field-clearing key and
     # still shows a partial arrival as a short or missing needle.
-    text = needle()
+    text = needle(length)
     open_rename_field(browser)
     started = time.perf_counter()
     strategy(browser, text)
@@ -122,14 +122,14 @@ def measure(browser, strategy) -> Tuple[float, bool]:
     return elapsed, arrived
 
 
-def sweep(browser, name: str, strategy, repeats: int,
+def sweep(browser, name: str, strategy, repeats: int, length: int,
           expect_incomplete: bool = False) -> None:
     check_start(name)
     rates: List[float] = []
     lost = 0
     for _ in range(repeats):
-        elapsed, arrived = measure(browser, strategy)
-        rates.append(NEEDLE_LENGTH / elapsed if elapsed else 0.0)
+        elapsed, arrived = measure(browser, strategy, length)
+        rates.append(length / elapsed if elapsed else 0.0)
         lost += 0 if arrived else 1
     rate = statistics.median(rates)
     if expect_incomplete:
@@ -154,12 +154,17 @@ def main() -> int:
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS,
                         help=f"measurements per strategy (default: {DEFAULT_REPEATS})")
+    parser.add_argument("--length", type=int, default=NEEDLE_LENGTH, metavar="N",
+                        help="characters per needle. Worth raising past what the "
+                             "suites type, because the claim this settles is that a "
+                             "long batch overruns the device's injected-key queue "
+                             f"(default: {NEEDLE_LENGTH}).")
     add_mode_argument(parser)
     args = parser.parse_args()
 
     section("Typing into a menu field")
     detail(f"host: {args.host}, mode: {args.mode}, "
-           f"{NEEDLE_LENGTH}-character random needles")
+           f"{args.length}-character random needles")
 
     device = UltimateApi(args.host, args.password or None, 15.0)
     browser = None
@@ -168,11 +173,11 @@ def main() -> int:
             ftp_lib.store(client, f"{FIXTURE_DIR}/{FIXTURE_NAME}", FIXTURE_BYTES)
         browser = make_browser(args.mode, args.host, args.password or None)
         sweep(browser, "batched: one request for the whole string",
-              type_batched, args.repeats)
+              type_batched, args.repeats, args.length)
         sweep(browser, "per key: one request per character",
-              type_per_key, args.repeats)
+              type_per_key, args.repeats, args.length)
         sweep(browser, "control: half the characters, must arrive incomplete",
-              type_half, args.repeats, expect_incomplete=True)
+              type_half, args.repeats, args.length, expect_incomplete=True)
     except Failure as exc:
         suite_fail(SUITE, str(exc))
         return 1
