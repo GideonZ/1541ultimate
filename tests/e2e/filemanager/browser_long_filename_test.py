@@ -61,9 +61,6 @@ TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
 
-EDITOR_CHARS = {".": "period"}
-
-
 def rest_headers(password: str) -> Dict[str, str]:
     headers = {}
     if password:
@@ -182,13 +179,15 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
 
 
 def type_editor_text(browser: Browser, text: str) -> None:
-    for ch in text:
-        if ch.isalnum():
-            browser.type_char(ch.lower())
-        elif ch in EDITOR_CHARS:
-            browser.type_char(ch)
-        else:
-            raise Failure(f"cannot type {ch!r} through the browser keyboard")
+    """Type into the rename editor through the shared batched path.
+
+    Lowercased because a bare letter key types uppercase in the firmware's
+    default character set, which is what the per-character loop this replaced
+    did too. Browser.type_text uses the shared character mapping and splits the
+    string into requests the firmware will accept, so an 85-character name goes
+    in two rather than eighty-five.
+    """
+    browser.type_text(text.lower())
 
 
 def open_fixture_directory(browser: Browser, test_dir: str) -> None:
