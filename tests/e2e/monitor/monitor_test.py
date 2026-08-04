@@ -1410,11 +1410,13 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over REST/Overlay (default), REST/Freeze or Telnet")
-    parser.add_argument("--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
-    parser.add_argument("--rest-host", default=os.environ.get("U64_REST_HOST"))
-    parser.add_argument("--password", default=os.environ.get("U64_PASS"))
-    parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
+                        default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
+    parser.add_argument("-t", "--timeout", type=float,
+                        default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 

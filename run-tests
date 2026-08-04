@@ -634,7 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
             "REST, FTP or Telnet, so a device has to be reachable and idle.\n"
             "Suites run one after another and share the device, so the runner\n"
             "puts it back into a known state around each one. With no options\n"
-            "this runs the E2E suites once, in the overlay profile.\n"
+            "this runs the E2E suites once, in the overlay mode.\n"
             "\n"
             "Before each E2E suite, and again after one fails, the runner\n"
             "checks the device is healthy. Three things, in this order:\n"
@@ -662,11 +662,11 @@ def build_parser() -> argparse.ArgumentParser:
             "that merely failed, and every recovery counts against the run."),
         epilog=(
             "examples:\n"
-            "  run-tests                          the E2E gate, overlay profile\n"
+            "  run-tests                          the E2E gate, overlay mode\n"
             "  run-tests -H 192.168.0.64          the same, against another device\n"
             "  run-tests -s prg-context-menu      one suite\n"
-            "  run-tests -m all                   the gate in all three profiles\n"
-            "  run-tests -m telnet,freeze         two chosen profiles\n"
+            "  run-tests -m all                   the gate in all three modes\n"
+            "  run-tests -m telnet,freeze         two chosen modes\n"
             "  run-tests --perf --soak            perf and soak only, no E2E\n"
             "  run-tests --all -m all             everything; takes hours\n"
             "  run-tests --list                   show every registered suite\n"
@@ -711,14 +711,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     e2e = parser.add_argument_group(
         "e2e options",
-        "Which suites, and in which UI profile.")
-    e2e.add_argument("-m", "--modes", default=DEFAULT_MODE, metavar="LIST",
-                     help="UI profile(s) to run the E2E suites in: overlay, freeze, "
+        "Which suites, and in which UI mode.")
+    e2e.add_argument("-m", "--mode", "--modes", dest="modes",
+                     default=DEFAULT_MODE, metavar="LIST",
+                     help="UI mode(s) to run the E2E suites in: overlay, freeze, "
                           "telnet, a comma-separated combination, or all "
-                          f"(default: {DEFAULT_MODE}). Suites that only work one way "
-                          "ignore this.")
+                          f"(default: {DEFAULT_MODE}). The same flag and the same "
+                          "word each suite takes. Suites that only work one way "
+                          "ignore it.")
     e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
-                     help="Run only this suite. Repeatable. Also selects manual suites.")
+                     help="Run only this suite. Repeatable, and also selects a "
+                          "manual suite. See --list for the names.")
     e2e.add_argument("--manual", action="store_true",
                      help="Also run the manual suites, which need an operator "
                           "decision, elevated privileges or a long wall-clock wait.")
@@ -1016,7 +1019,7 @@ def main(argv: List[str]) -> int:
     report.detail(f"host:       {options.host}")
     report.detail(f"categories: {', '.join(categories)}")
     if "e2e" in categories:
-        report.detail(f"profiles:   {', '.join(modes)}")
+        report.detail(f"modes:      {', '.join(modes)}")
     if "soak" in categories:
         report.detail(f"soak:       {options.soak_profile} profile")
     report.detail(f"timeout:    {options.timeout}s")

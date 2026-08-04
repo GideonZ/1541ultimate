@@ -284,6 +284,10 @@ def main() -> int:
                     "(needs sudo on ip for the vanishing-peer alias).")
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
                         help="device hostname or IP (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="REST password (default: $U64_PASS, empty). Taken for "
+                             "consistency with every other suite; this one drives "
+                             "raw TCP and does not need it today.")
     parser.add_argument("--iface", default=None,
                         help="LAN interface for the throwaway victim IP "
                              "(default: the interface that routes to the device)")

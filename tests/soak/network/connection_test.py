@@ -414,7 +414,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-n", "--log-every", type=int, default=LOG_EVERY_N_ITERATIONS, help="Log every Nth successful iteration")
     parser.add_argument("-u", "--ftp-user", default=FTP_USER, help="FTP username")
     parser.add_argument("-P", "--ftp-pass", default=FTP_PASS, help="Legacy alias for the shared device network password.")
-    parser.add_argument("--network-password", default=NETWORK_PASSWORD, help="Shared device network password used for HTTP, Telnet, FTP, and dma.")
+    parser.add_argument("-p", "--password", "--network-password",
+                        dest="network_password", default=NETWORK_PASSWORD,
+                        help="Device password for HTTP, Telnet, FTP and DMA. Named "
+                             "-p/--password like every other suite; the old "
+                             "--network-password spelling still works.")
     parser.add_argument("--http-path", default=HTTP_PATH, help="HTTP path")
     parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port")
     parser.add_argument("--ftp-port", type=int, default=FTP_PORT, help="FTP port")
@@ -440,7 +444,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runners", type=parse_runners, default=None, help="Logical runner count >= 1.")
     parser.add_argument("--duration-s", type=parse_duration_s, default=None, help="Optional total run duration in seconds. Soak defaults to 43200 (12h); stress defaults to 120.")
     parser.add_argument("--surface", choices=[value.value for value in ProbeSurface], default=None, help="Apply the same surface to all probes, falling back per protocol to the nearest supported lower surface.")
-    parser.add_argument("--mode", choices=[value.value for value in ProbeCorrectness], default=None, help=f"Apply the same correctness mode to all probes, falling back per protocol to the nearest supported lower mode. {CORRECTNESS_DEGRADATION_HELP}")
+    # Not the UI transport; see the note in printer_test.py. This one selects
+    # how correct a probe has to be.
+    parser.add_argument("--correctness", dest="mode",
+                        choices=[value.value for value in ProbeCorrectness], default=None,
+                        help="Apply the same correctness mode to all probes, falling "
+                             "back per protocol to the nearest supported lower mode. "
+                             f"{CORRECTNESS_DEGRADATION_HELP}")
     parser.add_argument("--http-surface", choices=[value.value for value in ProbeSurface], default=None, help="HTTP probe surface.")
     parser.add_argument("--ftp-surface", choices=[value.value for value in ProbeSurface], default=None, help="FTP probe surface.")
     parser.add_argument("--telnet-surface", choices=[value.value for value in ProbeSurface], default=None, help="Telnet probe surface.")

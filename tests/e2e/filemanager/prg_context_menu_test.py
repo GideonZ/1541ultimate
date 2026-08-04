@@ -1089,7 +1089,8 @@ def main() -> int:
     parser.add_argument(
         "-t", "--timeout", type=float,
         default=float(os.environ.get("U64_TIMEOUT", "15.0")))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
+                        default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "--keep-fixtures", action="store_true",

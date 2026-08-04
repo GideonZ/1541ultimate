@@ -1106,9 +1106,13 @@ class TelnetBackend(Backend):
 # ---------------------------------------------------------------------------
 
 def add_mode_argument(parser, default: str = DEFAULT_MODE, choices: Sequence[str] = MODES) -> None:
-    """Register the standard --mode flag on an argparse parser."""
+    """Register the standard -m/--mode flag on an argparse parser.
+
+    The same letter and the same word as run-tests uses, so a mode named on the
+    runner's command line and one named on a suite's read identically.
+    """
     parser.add_argument(
-        "--mode",
+        "-m", "--mode",
         choices=list(choices),
         default=default,
         help=f"UI transport to drive the on-device UI through: {', '.join(choices)} (default: {default})",

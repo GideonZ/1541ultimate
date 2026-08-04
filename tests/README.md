@@ -15,6 +15,27 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
 
+## Command-line conventions
+
+The runner and every suite it starts take the same flags for the same things,
+so a command line reads the same wherever it is typed:
+
+| Flag | Meaning |
+| --- | --- |
+| `-H`, `--host` | Device host name or IP |
+| `-p`, `--password` | REST and FTP password |
+| `-t`, `--timeout` | Per-request REST timeout, in seconds |
+| `-r`, `--rest-host` | REST address, when it differs from `--host` |
+| `-P`, `--telnet-port` | Telnet port |
+| `-m`, `--mode` | UI transport: `telnet`, `freeze` or `overlay` |
+| `-n`, `--no-assertions` | Warn instead of failing, for suites that support it |
+
+`--mode` means the UI transport and nothing else. Two suites used the same word
+for something of their own and have been renamed: `printer_test.py` takes
+`--print-mode` for bitmap or text, and the network soak takes `--correctness`.
+The only other "profile" in the tree is `run-tests --soak-profile`, which
+chooses between the two-minute and twelve-hour soak.
+
 ## Naming the device
 
 The runner passes the device to every suite explicitly, so these matter only

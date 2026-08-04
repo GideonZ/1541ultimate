@@ -761,7 +761,13 @@ def parse_args():
     parser.add_argument("--no-config-change", action="store_true",
                          help="Do not change or restore Printer Settings (caller must configure)")
     parser.add_argument("--emulation", choices=["epson", "commodore", "both"], default="epson")
-    parser.add_argument("--mode", choices=["bitmap", "text", "both"], default="bitmap")
+    # Not the UI transport: every other suite's --mode is telnet/freeze/overlay,
+    # and run-tests substitutes that into @MODE@. This one selects what the
+    # printer prints, so it says so.
+    parser.add_argument("--print-mode", dest="mode",
+                        choices=["bitmap", "text", "both"], default="bitmap",
+                        help="What to print: bitmap, text, or both "
+                             "(default: bitmap).")
     parser.add_argument("--rows", type=int, default=4, help="Bitmap lines or text rows per page (1-255)")
     parser.add_argument("--pages", type=int, default=1, help="Number of pages to print and eject (1-9)")
     parser.add_argument(
