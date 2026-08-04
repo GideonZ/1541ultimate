@@ -13,27 +13,50 @@ then deleting it so the host stops answering ARP/keepalive. Managing the alias
 needs root, so the script elevates only `ip addr add/del` via `sudo -n` (grant
 passwordless sudo for `ip`, or run under sudo).
 
+The interface and the throwaway address are derived from the route this host
+uses to reach the device, so no interface name or subnet is hard coded. Both
+can still be overridden with --iface and --victim-ip. The device must be on the
+same subnet as this host: a peer behind a router keeps being answered by that
+router, so deleting the alias would not make the peer vanish.
+
 Exit 0 = GREEN (all slots reaped, full capacity recovers); non-zero = RED / setup error.
 """
 
 import argparse
+import ipaddress
 import json
+import os
 import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+
+from report import detail, suite_fail, suite_ok, warn
+
+SUITE = "telnet_stale_session_test"
 
 TELNET_PORT = 23
 DEFAULT_MAX_SESSIONS = 4  # mirrors TELNET_MAX_SESSIONS in software/network/socket_gui.cc
 BUSY_MARKER = b"Too many connections"
 FREE_CONFIRM_BYTES = 64  # larger than any busy reply; excess with no marker = banner
 IP_CMD = ["sudo", "-n", "ip"]  # only ip needs root
+VICTIM_SEARCH_DEPTH = 16  # highest host addresses of the subnet to consider
+FALLBACK_PREFIX_LEN = 24  # only used when detection failed and both overrides were given
 
 
 def log(msg: str) -> None:
-    print(f"[telnet-stale-e2e] {msg}", flush=True)
+    """Narrate a step of the single scenario this suite runs.
+
+    The suite reports one verdict at the end rather than a numbered check
+    per step, so its progress goes out as detail lines under that verdict.
+    """
+    detail(msg)
 
 
 def reset_machine(host: str) -> None:
@@ -48,9 +71,11 @@ def reset_machine(host: str) -> None:
             if exc.code == 404:
                 break
             raise
-        key = "run_stop" if attempt % 2 == 0 else "return"
+        # F8 leaves the menu from any depth; RUN/STOP covers the editors it does
+        # not reach. Never RETURN: it activates the entry under the cursor.
+        keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
         body = json.dumps({
-            "events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]
+            "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
             f"http://{host}/v1/machine:input",
@@ -140,14 +165,97 @@ def run_cmd(args: list[str]) -> None:
     subprocess.run(args, check=True, capture_output=True, text=True)
 
 
-def add_ip_alias(iface: str, victim_ip: str) -> None:
-    run_cmd(IP_CMD + ["addr", "add", f"{victim_ip}/24", "dev", iface])
+class SetupError(RuntimeError):
+    pass
 
 
-def del_ip_alias(iface: str, victim_ip: str) -> bool:
+def query_ip(args: list[str]) -> list:
+    """Run a read-only `ip -j` query. These need no root, unlike `ip addr add/del`."""
+    result = subprocess.run(["ip", "-j"] + args, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SetupError(f"`ip -j {' '.join(args)}` failed: {(result.stderr or result.stdout).strip()}")
+    try:
+        return json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise SetupError(f"`ip -j {' '.join(args)}` returned unparseable output: {exc}") from exc
+
+
+def reserved_ipv4_addresses() -> set[str]:
+    """Addresses this host already owns, plus every gateway it routes through.
+
+    A gateway that drops ICMP would otherwise survive the ping check below and be
+    picked as the victim address, which would break the LAN rather than the test.
+    """
+    reserved = set()
+    for link in query_ip(["addr"]):
+        for info in link.get("addr_info", []):
+            if info.get("family") == "inet" and info.get("local"):
+                reserved.add(info["local"])
+    for route in query_ip(["route", "show"]):
+        if route.get("gateway"):
+            reserved.add(route["gateway"])
+    return reserved
+
+
+def detect_lan_path(device_ip: str) -> tuple[str, str, int]:
+    """Return the interface, source address and prefix length used to reach the device."""
+    routes = query_ip(["route", "get", device_ip])
+    if not routes:
+        raise SetupError(f"no route to {device_ip}")
+    route = routes[0]
+    if route.get("gateway"):
+        raise SetupError(
+            f"{device_ip} is reached through gateway {route['gateway']}. The vanishing-peer "
+            "trick needs the device on the same subnet as this host, because a router would "
+            "keep answering for the deleted address."
+        )
+    iface = route.get("dev")
+    source = route.get("prefsrc")
+    if not iface or not source:
+        raise SetupError(f"route to {device_ip} names no interface and source address: {route}")
+    for link in query_ip(["addr", "show", "dev", iface]):
+        for info in link.get("addr_info", []):
+            if info.get("family") == "inet" and info.get("local") == source:
+                return iface, source, int(info["prefixlen"])
+    raise SetupError(f"source address {source} is not configured on {iface}")
+
+
+def answers_ping(address: str) -> bool:
+    result = subprocess.run(
+        ["ping", "-c", "1", "-W", "1", address], capture_output=True, text=True
+    )
+    return result.returncode == 0
+
+
+def pick_victim_ip(source: str, prefix_len: int, device_ip: str) -> str:
+    """Highest address in the local subnet that neither this host nor any peer claims."""
+    network = ipaddress.ip_network(f"{source}/{prefix_len}", strict=False)
+    if network.num_addresses < 8:
+        raise SetupError(f"subnet {network} is too small to spare a throwaway address")
+    taken = reserved_ipv4_addresses() | {device_ip}
+    # Walk down from the last usable address. Materialising network.hosts() would
+    # allocate the whole subnet, which is wasteful on anything larger than a /24.
+    highest = int(network.broadcast_address) - 1
+    lowest = int(network.network_address) + 1
+    for value in range(highest, max(lowest - 1, highest - VICTIM_SEARCH_DEPTH), -1):
+        address = str(ipaddress.IPv4Address(value))
+        if address in taken or answers_ping(address):
+            continue
+        return address
+    raise SetupError(
+        f"every one of the last {VICTIM_SEARCH_DEPTH} addresses in {network} is in use; "
+        "pass a free one with --victim-ip"
+    )
+
+
+def add_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> None:
+    run_cmd(IP_CMD + ["addr", "add", f"{victim_ip}/{prefix_len}", "dev", iface])
+
+
+def del_ip_alias(iface: str, victim_ip: str, prefix_len: int) -> bool:
     """Remove the throwaway victim IP; return True on success. Never raises."""
     result = subprocess.run(
-        IP_CMD + ["addr", "del", f"{victim_ip}/24", "dev", iface],
+        IP_CMD + ["addr", "del", f"{victim_ip}/{prefix_len}", "dev", iface],
         check=False, capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -174,12 +282,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Red/green E2E for the telnet half-open session leak "
                     "(needs sudo on ip for the vanishing-peer alias).")
-    parser.add_argument("-H", "--host", default="u64",
-                        help="device hostname or IP (default u64)")
-    parser.add_argument("--iface", default="eth0",
-                        help="LAN interface for the throwaway victim IP")
-    parser.add_argument("--victim-ip", default="192.168.1.240",
-                        help="unused LAN IP to source the vanishing connections from")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                        help="device hostname or IP (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="REST password (default: $U64_PASS, empty). Taken for "
+                             "consistency with every other suite; this one drives "
+                             "raw TCP and does not need it today.")
+    parser.add_argument("--iface", default=None,
+                        help="LAN interface for the throwaway victim IP "
+                             "(default: the interface that routes to the device)")
+    parser.add_argument("--victim-ip", default=None,
+                        help="unused LAN IP to source the vanishing connections from "
+                             "(default: a free address in this host's subnet)")
     parser.add_argument("--sessions", type=int, default=DEFAULT_MAX_SESSIONS,
                         help="half-open sessions to leak (= TELNET_MAX_SESSIONS)")
     parser.add_argument("--reap-timeout", type=float, default=75.0,
@@ -188,46 +302,70 @@ def main() -> int:
                         help="seconds between recovery polls")
     args = parser.parse_args()
 
-    # Preflight: can we manage the alias? (needs sudo on ip)
-    check = subprocess.run(IP_CMD + ["addr", "show", "dev", args.iface],
-                           capture_output=True, text=True)
-    if check.returncode != 0:
-        log("ERROR: cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
-            f"run under sudo. ({(check.stderr or check.stdout).strip()})")
+    # Preflight 1: adding and deleting the alias needs passwordless sudo for `ip`.
+    probe = subprocess.run(IP_CMD + ["addr", "show"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        suite_fail(SUITE, "cannot run `sudo -n ip` - grant passwordless sudo for `ip` or "
+            f"run under sudo. ({(probe.stderr or probe.stdout).strip()})")
         return 2
+
+    # Preflight 2: work out which interface and address the vanishing peer should use.
+    try:
+        device_ip = socket.gethostbyname(args.host)
+    except OSError as exc:
+        suite_fail(SUITE, f"cannot resolve device host {args.host!r}: {exc}")
+        return 2
+
+    prefix_len = FALLBACK_PREFIX_LEN
+    try:
+        iface, source_ip, prefix_len = detect_lan_path(device_ip)
+        if args.iface:
+            iface = args.iface
+        victim_ip = args.victim_ip or pick_victim_ip(source_ip, prefix_len, device_ip)
+    except SetupError as exc:
+        if not (args.iface and args.victim_ip):
+            suite_fail(SUITE, str(exc))
+            log("Pass both --iface and --victim-ip to skip this detection.")
+            return 2
+        warn(str(exc))
+        log(f"Using --iface {args.iface} and --victim-ip {args.victim_ip} with a "
+            f"/{FALLBACK_PREFIX_LEN} prefix.")
+        iface, victim_ip = args.iface, args.victim_ip
+
+    log(f"using interface {iface}, victim address {victim_ip}/{prefix_len}")
 
     reset_machine(args.host)
 
     victims: list[socket.socket] = []
     alias_added = False
     try:
-        log(f"target telnet {args.host}:{TELNET_PORT}, victim source {args.victim_ip} on {args.iface}")
+        log(f"target telnet {args.host}:{TELNET_PORT}, victim source {victim_ip} on {iface}")
 
         # Table must be fully free at baseline, else another client is using it.
         free = measure_capacity(args.host, args.sessions)
         log(f"baseline free session slots: {free} (expected {args.sessions})")
         if free < args.sessions:
-            log("ERROR: listener not fully free at baseline - is another telnet client connected?")
+            suite_fail(SUITE, "listener not fully free at baseline; another telnet client is connected")
             return 3
 
         # Fill every slot with a half-open victim from the throwaway IP.
-        add_ip_alias(args.iface, args.victim_ip)
+        add_ip_alias(iface, victim_ip, prefix_len)
         alias_added = True
-        log(f"added victim IP alias {args.victim_ip}/24 on {args.iface}")
-        victims = open_half_open_victims(args.host, args.victim_ip, args.sessions)
+        log(f"added victim IP alias {victim_ip}/{prefix_len} on {iface}")
+        victims = open_half_open_victims(args.host, victim_ip, args.sessions)
 
         time.sleep(1.0)
         if probe_is_free(args.host):
-            log("ERROR: listener still free after filling every slot - could not saturate.")
+            suite_fail(SUITE, "listener still free after filling every slot; could not saturate")
             return 4
         log("listener saturated: fresh connections are refused (as expected).")
 
         # Required: if this del fails the peers never vanish (fake RED) - abort.
-        if not del_ip_alias(args.iface, args.victim_ip):
-            log("ERROR: could not delete victim IP alias - peers would not truly vanish; aborting.")
+        if not del_ip_alias(iface, victim_ip, prefix_len):
+            suite_fail(SUITE, "could not delete the victim IP alias; the peers would not truly vanish")
             return 5
         alias_added = False
-        log(f"deleted victim IP {args.victim_ip}: {args.sessions} sessions are now half-open.")
+        log(f"deleted victim IP {victim_ip}: {args.sessions} sessions are now half-open.")
 
         # Require the FULL table back, not one slot (guards a partial reap).
         deadline = time.time() + args.reap_timeout
@@ -242,12 +380,12 @@ def main() -> int:
             time.sleep(args.poll_interval)
 
         if recovered_at is not None:
-            log(f"GREEN: all {args.sessions} leaked slots recovered after ~{recovered_at:.0f}s "
-                "(keepalive reaped the half-open sessions).")
+            suite_ok(SUITE, f"all {args.sessions} leaked slots recovered after "
+                            f"~{recovered_at:.0f}s; keepalive reaped the half-open sessions")
             return 0
 
-        log(f"RED: listener still wedged {args.reap_timeout:.0f}s after the peers vanished - "
-            "half-open sessions were never reaped (fix absent or ineffective).")
+        suite_fail(SUITE, f"listener still wedged {args.reap_timeout:.0f}s after the peers "
+                          "vanished; half-open sessions were never reaped")
         return 1
 
     finally:
@@ -257,8 +395,8 @@ def main() -> int:
             except OSError:
                 pass
         if alias_added:
-            del_ip_alias(args.iface, args.victim_ip)
-            log(f"cleanup: removed victim IP alias {args.victim_ip}")
+            del_ip_alias(iface, victim_ip, prefix_len)
+            log(f"cleanup: removed victim IP alias {victim_ip}")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from connection_runtime import (
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
+    has_multiple_runners,
     is_expected_incomplete_disconnect,
     run_surface_operation,
     select_operation_index,
@@ -291,12 +292,6 @@ def _runner_probe_write_address(runner_id: int) -> str:
     return f"0x{PROBE_WRITE_ADDRESSES[slot]:04X}"
 
 
-def _has_multiple_runners(context: ProbeExecutionContext | None) -> bool:
-    if context is None or context.state is None:
-        return False
-    return getattr(context.state, "runner_count", 1) > 1
-
-
 def surface_operations(
     surface: ProbeSurface,
     *,
@@ -388,7 +383,7 @@ def run_probe(settings: RuntimeSettings, correctness, *, context: ProbeExecution
         operations = surface_operations(
             context.surface,
             runner_id=context.runner_id,
-            concurrent_multi_runner=_has_multiple_runners(context),
+            concurrent_multi_runner=has_multiple_runners(context),
             shared_state=context.state,
         )
         index = select_operation_index(context, len(operations))

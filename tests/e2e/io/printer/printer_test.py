@@ -4,8 +4,9 @@
 """End-to-end virtual-printer harness for a real Ultimate 64 / 64e.
 
 Drives the IEC virtual printer (device 4/5) with a dedicated 6510 assembly
-workload (printer_e2e.asm, assembled with 64tass), captures crash/hang
-behaviour, and verifies the resulting PNG/ASCII output over FTP. Pure REST
+workload, captures crash/hang behaviour, and verifies the resulting PNG/ASCII
+output over FTP. The workload is the committed printer_e2e.prg, assembled from
+printer_e2e.asm beside it, so running this needs no assembler. Pure REST
 (http.client) + FTP (ftplib); no MCP/bridge dependency.
 
 Style follows tests/e2e/filemanager/temp_auto_cleanup_perf_test.py:
@@ -20,24 +21,28 @@ import http.client
 import io
 import json
 import os
-import subprocess
-import struct
 import sys
-import tempfile
 import time
-import zlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_ASM_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.asm")
-ISSUE_717_BASIC = '''10 open 1,4
-20 for i = 1 to 100
-30 print#1,"line no "; i
-35 print#1, chr$(13)
-40 next i
-50 end
-'''
+# The two C64 programs this suite runs are committed as assembled PRGs, so the
+# suite needs no assembler and no BASIC tokenizer to run. Their sources sit
+# beside them and the Makefile in this directory regenerates them; see the
+# README for when that is needed.
+WORKLOAD_PRG_PATH = os.path.join(SCRIPT_DIR, "printer_e2e.prg")
+ISSUE_717_PRG_PATH = os.path.join(SCRIPT_DIR, "issue_717_basic.prg")
 sys.path.insert(0, SCRIPT_DIR)
 import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first)
+
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
+import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import wait  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402  (needs tests/lib on sys.path first)
+    Failure, check_fail, check_ok, check_start, detail, section, warn)
 
 try:
     from PIL import Image, ImageOps
@@ -84,7 +89,10 @@ PHASE_NAMES = {
 FTP_USER_DEFAULT = "user"
 FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
-MENU_SETTLE_SECONDS = 0.35
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
+# The menu toggle is observable, so it is waited for rather than slept on.
+MENU_CLOSE_TIMEOUT_SECONDS = 5.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -125,33 +133,12 @@ def full_page_bitmap_params(emulation, page_height):
     return rows, repeats
 
 
-class Failure(RuntimeError):
-    pass
-
-
-CHECK_COUNT = 0
-
-
-def check_start(label):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-
-
-def check_ok(extra=""):
-    print("OK" + (f" ({extra})" if extra else ""), flush=True)
-
-
-def check_fail(reason):
-    print(f"FAIL ({reason})", flush=True)
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return
     if assertions_enabled:
         raise Failure(message)
-    print(f"WARNING: {message}")
+    warn(message)
 
 
 class U64Client:
@@ -161,6 +148,9 @@ class U64Client:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def _headers(self, body, extra_headers=None):
         headers = {"Connection": "close"}
@@ -173,23 +163,27 @@ class U64Client:
         return headers
 
     def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        connection = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
-        try:
-            connection.request(method, path, body=body, headers=self._headers(body, extra_headers))
-            response = connection.getresponse()
-            payload = response.read()
-            return response.status, dict(response.getheaders()), payload
-        finally:
-            connection.close()
+        # Transport and retry policy come from tests/lib/rest.py, the one place
+        # that decides them. A request without a payload carries its arguments
+        # in the query string, so applying it twice is the same as applying it
+        # once; one with a payload would run a PRG or upload a file again, and
+        # so is only resent when it never left the client.
+        return rest_lib.retrying_http_request(
+            self.host, method, path,
+            body=body,
+            headers=self._headers(body, extra_headers),
+            timeout=timeout or self.timeout,
+            idempotent=body is None,
+        )
 
     def require_ok(self, method, path, body=None, description=None, extra_headers=None, timeout=None):
         status, _headers, payload = self.request(method, path, body=body, extra_headers=extra_headers, timeout=timeout)
         if status != 200:
             message = f"{description or path} failed with HTTP {status}"
             try:
-                detail = json.loads(payload.decode("utf-8"))
-                if detail.get("errors"):
-                    message += f": {detail['errors']}"
+                document = json.loads(payload.decode("utf-8"))
+                if document.get("errors"):
+                    message += f": {document['errors']}"
             except (ValueError, UnicodeDecodeError):
                 message += f": {payload[:160]!r}"
             raise Failure(message)
@@ -259,15 +253,11 @@ class U64Client:
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
 
+    def tap_keys(self, keys):
+        self.post_input([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+
     def close_menu_from_anywhere(self):
-        self.post_input([{"kind": "release_all"}])
-        for attempt in range(12):
-            if self.get_menu_screen() is None:
-                return
-            self.tap_key("run_stop" if attempt % 2 == 0 else "return")
-            time.sleep(MENU_SETTLE_SECONDS)
-        self.menu_button()
-        time.sleep(0.5)
+        self.api.machine.close_menu_from_anywhere()
         if self.get_menu_screen() is not None:
             raise Failure("could not dismiss active menu UI before reset")
 
@@ -297,23 +287,12 @@ class FtpInspector:
         self.password = password
         self.timeout = timeout
 
-    def _open(self):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        ftp.login(self.user, self.password)
-        return ftp
+    def _session(self):
+        return ftp_lib.session(self.host, self.password, self.timeout, user=self.user)
 
     def list_dir(self, directory):
-        ftp = self._open()
-        try:
-            entries = []
-            ftp.retrlines(f"LIST {directory}", entries.append)
-            return entries
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.listing(ftp, directory)
 
     def printer_root(self):
         """Use the first mounted USB volume; Temp is the last resort."""
@@ -324,38 +303,19 @@ class FtpInspector:
         return "/Temp"
 
     def file_size(self, path):
-        ftp = self._open()
-        try:
-            return ftp.size(path)
-        except ftplib.Error:
-            return None
-        finally:
+        with self._session() as ftp:
             try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                return ftp.size(path)
+            except ftplib.Error:
+                return None
 
     def download(self, path):
-        ftp = self._open()
-        try:
-            buf = io.BytesIO()
-            ftp.retrbinary(f"RETR {path}", buf.write)
-            return buf.getvalue()
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            return ftp_lib.retrieve(ftp, path)
 
     def upload_bytes(self, path, data):
-        ftp = self._open()
-        try:
-            ftp.storbinary(f"STOR {path}", io.BytesIO(data))
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+        with self._session() as ftp:
+            ftp_lib.store(ftp, path, data)
 
     def ensure_directory(self, directory):
         """Create `directory` (and its parents) if it doesn't already exist.
@@ -363,50 +323,23 @@ class FtpInspector:
         Output file pointed at one silently fails to save anything."""
         if directory in ("", "/"):
             return
-        ftp = self._open()
-        try:
-            parts = [p for p in directory.split("/") if p]
+        with self._session() as ftp:
             path = ""
-            for part in parts:
+            for part in [p for p in directory.split("/") if p]:
                 path += "/" + part
-                try:
-                    ftp.mkd(path)
-                except ftplib.error_perm:
-                    pass  # already exists
-        finally:
-            try:
-                ftp.quit()
-            except (OSError, EOFError, ftplib.Error):
-                ftp.close()
+                ftp_lib.make_dir(ftp, path)
 
 
-def assemble_prg(asm_path, assembler):
-    out_path = asm_path + ".out.prg"
-    result = subprocess.run(
-        [assembler, "-q", "-o", out_path, asm_path],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise Failure(f"assembler failed: {result.stdout}\n{result.stderr}")
-    with open(out_path, "rb") as handle:
-        data = handle.read()
-    os.remove(out_path)
+def load_prg(path):
+    """Read one of this directory's committed PRG fixtures."""
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as exc:
+        raise Failure(f"could not read {os.path.basename(path)}: {exc}") from exc
+    if not data:
+        raise Failure(f"{os.path.basename(path)} is empty")
     return data
-
-
-def issue_717_basic_prg():
-    """Tokenize the issue reporter's BASIC program verbatim as BASIC V2."""
-    with tempfile.TemporaryDirectory() as directory:
-        source = os.path.join(directory, "issue-717.bas")
-        output = os.path.join(directory, "issue-717.prg")
-        with open(source, "w", encoding="ascii") as handle:
-            handle.write(ISSUE_717_BASIC)
-        result = subprocess.run(["petcat", "-w2", "-o", output, source], capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Failure(f"petcat failed: {result.stdout}\n{result.stderr}")
-        with open(output, "rb") as handle:
-            return handle.read()
 
 
 def decode_status(payload):
@@ -489,12 +422,26 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
 
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
-    body = client.get_menu_screen()
-    if body is None:
-        # Builds before the menu-screen REST endpoint still accept synthetic
-        # input. Printer is the preselected Tasks entry on those builds.
-        client.menu_button()
-        time.sleep(settle)
+    if client.get_menu_screen() is not None:
+        client.menu_button()  # close whatever is open
+        wait.wait_until(lambda: client.get_menu_screen() is None,
+                        "the menu to close before Flush/Eject",
+                        timeout=MENU_CLOSE_TIMEOUT_SECONDS)
+
+    client.menu_button()  # open root browser
+    time.sleep(settle)
+
+    if client.get_menu_screen() is None:
+        # No menu-screen endpoint on this build: the menu button has just been
+        # pressed, so the menu is open, yet nothing can be read back. Drive the
+        # Tasks menu blind, with Printer as the preselected entry.
+        #
+        # Which build this is has to be decided with the menu open. The check
+        # used to run before the menu was opened, where the endpoint answers 404
+        # on every build because there is no menu to return, so every run took
+        # this branch: the step verified nothing, and its two RETURN presses
+        # landed on the Tasks menu's real first entry, Assembly 64, whose query
+        # form was then left open for the next suite (confirmed live).
         client.tap_key("f5")
         time.sleep(settle)
         client.tap_key("return")
@@ -502,12 +449,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         client.tap_key("return")
         time.sleep(1.0)
         return
-    if body is not None:
-        client.menu_button()  # close whatever is open
-        time.sleep(settle)
 
-    client.menu_button()  # open root browser
-    time.sleep(settle)
     client.tap_key("f5")  # open Tasks (context menu) for the current selection
     time.sleep(settle)
 
@@ -527,7 +469,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     downs = printer_row - 8
     for _ in range(downs):
         client.tap_key("cursor_up_down")
-        time.sleep(0.2)
+        time.sleep(pacing.KEY_SETTLE_SECONDS)
 
     client.tap_key("return")  # expand Printer category (Flush/Eject preselected)
     time.sleep(settle)
@@ -545,6 +487,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     client.tap_key("return")  # trigger Flush/Eject
     time.sleep(1.0)
 
+    # Close what this function opened, so the caller's teardown does not have to
+    # tap its way out with RETURN, which activates the entry under the cursor.
+    client.close_menu_from_anywhere()
+
 
 def capture_settings(client, assertions_enabled):
     snapshot = {}
@@ -559,11 +505,11 @@ def capture_settings(client, assertions_enabled):
 def restore_settings(client, snapshot, assertions_enabled):
     if not snapshot:
         return
-    print("\nRestoring original Printer Settings")
+    section("restoring original Printer Settings")
     for item, value in snapshot.items():
         try:
             client.set_config(CONFIG_CATEGORY, item, value)
-            print(f"  {item}: {value}")
+            detail(f"{item}: {value}")
         except Failure as exc:
             assert_or_warn(assertions_enabled, False, f"could not restore {item}: {exc}")
 
@@ -588,46 +534,6 @@ def apply_settings(client, output_base, output_type, ink_density, page_top_margi
             client.set_config(CONFIG_CATEGORY, item, value)
         except Failure as exc:
             assert_or_warn(assertions_enabled, False, f"could not set {item}={value}: {exc}")
-
-
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-
-def decode_png_dimensions(data):
-    if data[:8] != PNG_SIGNATURE:
-        return None
-    if data[12:16] != b"IHDR":
-        return None
-    width, height = struct.unpack(">II", data[16:24])
-    return width, height
-
-
-def png_is_well_formed(data):
-    """Validate PNG chunk structure and CRCs without needing a real decoder."""
-    if data[:8] != PNG_SIGNATURE:
-        return False, "missing PNG signature"
-    offset = 8
-    saw_ihdr = False
-    saw_iend = False
-    while offset + 8 <= len(data):
-        length = struct.unpack(">I", data[offset:offset + 4])[0]
-        chunk_type = data[offset + 4:offset + 8]
-        chunk_data = data[offset + 8:offset + 8 + length]
-        crc_stored = struct.unpack(">I", data[offset + 8 + length:offset + 12 + length])[0]
-        crc_calc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
-        if crc_calc != crc_stored:
-            return False, f"bad CRC in chunk {chunk_type!r}"
-        if chunk_type == b"IHDR":
-            saw_ihdr = True
-        if chunk_type == b"IEND":
-            saw_iend = True
-            break
-        offset += 12 + length
-    if not saw_ihdr:
-        return False, "no IHDR chunk"
-    if not saw_iend:
-        return False, "no IEND chunk (truncated file)"
-    return True, "ok"
 
 
 def download_with_retry(inspector, path, timeout_seconds=10.0, interval_seconds=0.5):
@@ -656,11 +562,14 @@ def verify_png_output(inspector, output_base, expected_pages, assertions_enabled
         path = page_output_path(output_base, page)
         data = download_with_retry(inspector, path)
         assert_or_warn(assertions_enabled, len(data) > 0, f"{path}: file is empty")
-        ok, reason = png_is_well_formed(data)
+        ok, reason = png_lite.png_is_well_formed(data)
         assert_or_warn(assertions_enabled, ok, f"{path}: not a well-formed PNG ({reason})")
-        dims = decode_png_dimensions(data)
+        dims = png_lite.decode_png_dimensions(data)
         assert_or_warn(assertions_enabled, dims is not None, f"{path}: could not read IHDR dimensions")
-        print(f"    {path}: {len(data)} bytes, {dims[0]}x{dims[1]}px, {'valid' if ok else 'INVALID'} PNG")
+        # assert_or_warn only warns under --no-assertions, so this line still
+        # runs with dims unset; indexing it there would abort the whole run.
+        size = f"{dims[0]}x{dims[1]}px" if dims else "size unreadable"
+        detail(f"{path}: {len(data)} bytes, {size}, {'valid' if ok else 'INVALID'} PNG")
 
 
 def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_page=1):
@@ -683,11 +592,10 @@ def verify_full_page_coverage(inspector, output_base, assertions_enabled, first_
     height_fraction = bbox_height / height
     ink_fraction = ink_count / (bbox_width * bbox_height)
 
-    print(
-        f"    {path}: ink spans {bbox_width}x{bbox_height}px at ({min_x},{min_y}) "
+    detail(
+        f"{path}: ink spans {bbox_width}x{bbox_height}px at ({min_x},{min_y}) "
         f"= {width_fraction:.0%} of page width, {height_fraction:.0%} of page height, "
-        f"{ink_fraction:.0%} ink density within that area ({ink_count} ink pixels)"
-    )
+        f"{ink_fraction:.0%} ink density within that area ({ink_count} ink pixels)")
     assert_or_warn(
         assertions_enabled, width_fraction >= FULL_PAGE_MIN_WIDTH_FRACTION,
         f"{path}: bitmap only spans {width_fraction:.0%} of page width "
@@ -738,7 +646,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
     necessary to prove the printed content is correct.
     """
     if not OCR_AVAILABLE:
-        print("    OCR verification skipped: pytesseract/PIL not installed "
+        detail("OCR verification skipped: pytesseract/PIL not installed "
               "(pip install pytesseract, apt install tesseract-ocr)")
         return
 
@@ -754,7 +662,7 @@ def verify_text_ocr(inspector, output_base, emulation, pages, rows, assertions_e
             continue
 
         preview = " / ".join(line.strip() for line in text.splitlines() if line.strip())
-        print(f"    {path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
+        detail(f"{path}: OCR read: {preview[:160]}{'...' if len(preview) > 160 else ''}")
 
         assert_or_warn(
             assertions_enabled, expected_tag in text,
@@ -840,11 +748,13 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Virtual-printer end-to-end harness for a real Ultimate 64/64e.",
         epilog="Captures original Printer Settings and restores them on exit unless "
-               "--no-config-change is used. Requires printer_e2e.asm alongside this "
-               "script and a 64tass binary on PATH (or --assembler).",
+               "--no-config-change is used. Runs the committed printer_e2e.prg "
+               "fixture alongside this script; no assembler is needed.",
     )
-    parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
-    parser.add_argument("-p", "--password", default="", help="U64 REST password")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="U64 REST password (default: $U64_PASS, empty)")
     parser.add_argument("-n", "--no-assertions", action="store_true",
                          help="Warn instead of failing on assertion mismatches")
     parser.add_argument("--seed-count", type=int, default=0, help=argparse.SUPPRESS)
@@ -856,7 +766,13 @@ def parse_args():
     parser.add_argument("--no-config-change", action="store_true",
                          help="Do not change or restore Printer Settings (caller must configure)")
     parser.add_argument("--emulation", choices=["epson", "commodore", "both"], default="epson")
-    parser.add_argument("--mode", choices=["bitmap", "text", "both"], default="bitmap")
+    # Not the UI transport: every other suite's --mode is telnet/freeze/overlay,
+    # and run-tests substitutes that into @MODE@. This one selects what the
+    # printer prints, so it says so.
+    parser.add_argument("--print-mode", dest="mode",
+                        choices=["bitmap", "text", "both"], default="bitmap",
+                        help="What to print: bitmap, text, or both "
+                             "(default: bitmap).")
     parser.add_argument("--rows", type=int, default=4, help="Bitmap lines or text rows per page (1-255)")
     parser.add_argument("--pages", type=int, default=1, help="Number of pages to print and eject (1-9)")
     parser.add_argument(
@@ -901,8 +817,6 @@ def parse_args():
     parser.add_argument("--stop-on-crash", action="store_true", default=True)
     parser.add_argument("--limit", type=int, default=10, help=argparse.SUPPRESS)
     parser.add_argument("--preset", choices=list(PRESETS.keys()), default=None)
-    parser.add_argument("--asm-path", default=DEFAULT_ASM_PATH)
-    parser.add_argument("--assembler", default="64tass")
     args = parser.parse_args()
 
     if args.preset:
@@ -977,7 +891,7 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if args.full_page_bitmap:
         rows, bim_repeats = full_page_bitmap_params(emulation, args.page_height)
-        print(f"    full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
+        detail(f"full-page bitmap: {rows} rows x {bim_repeats * 16} bytes/row "
               f"(~{rows * (EPSON_BIM_INTERLINE_PX if emulation == 'epson' else CBM_BIM_INTERLINE_PX)}px "
               f"tall, ~{bim_repeats * 16 * (1 if emulation == 'epson' else 4)}px wide)")
     else:
@@ -991,9 +905,9 @@ def run_combo(client, inspector, prg_bytes, args, emulation, mode, assertions_en
 
     if classification == "FAIL_CRASH_HARD":
         check_fail("device became unresponsive (FAIL_CRASH_HARD)")
-        print("    REST and ping are both unreachable. This matches the reported crash:")
-        print("    screen off, unresponsive, C64/machine reset will not help.")
-        print("    Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+        detail("REST and ping are both unreachable. This matches the reported crash:\n"
+               "screen off, unresponsive, C64/machine reset will not help.\n"
+               "Recover by redeploying the firmware over JTAG, or by power-cycling the device.")
         return "FAIL_CRASH_HARD", output_base, status
     if classification == "FAIL_TIMEOUT":
         check_fail(f"timed out after {args.timeout_seconds}s, REST still responsive")
@@ -1066,14 +980,13 @@ def main():
 
     check_start("reset before run")
     client.close_menu_from_anywhere()
-    client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
-    time.sleep(2.0)
+    client.api.machine.reset(force=True)
     check_ok()
 
-    check_start("tokenize literal issue #717 BASIC" if args.issue_717_basic else
-                f"assemble {os.path.basename(args.asm_path)} with {args.assembler}")
+    prg_path = ISSUE_717_PRG_PATH if args.issue_717_basic else WORKLOAD_PRG_PATH
+    check_start(f"load {os.path.basename(prg_path)}")
     try:
-        prg_bytes = issue_717_basic_prg() if args.issue_717_basic else assemble_prg(args.asm_path, args.assembler)
+        prg_bytes = load_prg(prg_path)
     except Failure as exc:
         check_fail(str(exc))
         return 1
@@ -1106,9 +1019,9 @@ def main():
         client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
         check_ok()
 
-    print("\nSummary")
+    section("summary")
     for emulation, mode, classification, output_base in results:
-        print(f"  {emulation:10s} {mode:6s} {classification:20s} {output_base}")
+        detail(f"{emulation:10s} {mode:6s} {classification:20s} {output_base}")
 
     failed = [r for r in results if r[2] not in ("PASS", "PASS_NO_VERIFY")]
     return 1 if failed else 0

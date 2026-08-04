@@ -266,12 +266,21 @@ void AssemblySearchForm :: send_query(void)
         delete body;
 }
 
+// The form mixes unselectable spacers in with the query fields, and the cast is
+// only valid for a field. send_query() guards the identical cast this way.
+static BrowsableQueryField *as_query_field(Browsable *under_cursor)
+{
+    if (!under_cursor || !under_cursor->isSelectable()) {
+        return NULL;
+    }
+    return (BrowsableQueryField *)under_cursor;
+}
+
 void AssemblySearchForm :: change(void)
 {
-	if(!under_cursor)
-		return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
+        return;
 
     char buffer[32];
     if ((field->getName())[0] == '$') {  // The dirtiest trick ever!
@@ -280,10 +289,18 @@ void AssemblySearchForm :: change(void)
         browser->context(0);
         // refresh will take place, because the context menu disappears and refresh flag is set
     } else {
-        strcpy(buffer, field->getStringValue());
+        // The value comes from the server, so its length is not ours to assume.
+        // max_chars must be explicit too: it otherwise defaults to the window
+        // width, which is unrelated to this buffer.
+        const int edit_len = 26;
+        strncpy(buffer, field->getStringValue(), sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = 0;
         browser->window->set_color(1);
-        browser->user_interface->string_edit(buffer, 26, browser->window, 10, this->cursor_pos);
-        field->setStringValue(buffer);
+        int edited = browser->user_interface->string_edit(buffer, edit_len, browser->window,
+                                                          10, this->cursor_pos, edit_len);
+        if (edited > 0) { // an aborted edit must not overwrite the field
+            field->setStringValue(buffer);
+        }
         // explicit refresh
         refresh = true;
         down(1);
@@ -292,30 +309,27 @@ void AssemblySearchForm :: change(void)
 
 void AssemblySearchForm :: increase(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->updown(1);
     update_selected();
 }
 
 void AssemblySearchForm :: decrease(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->updown(-1);
     update_selected();
 }
 
 void AssemblySearchForm :: clear_entry(void)
 {
-    if(!under_cursor)
+    BrowsableQueryField *field = as_query_field(under_cursor);
+    if (!field)
         return;
-
-    BrowsableQueryField *field = (BrowsableQueryField *)under_cursor;
     field->reset();
     update_selected();
 }

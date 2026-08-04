@@ -67,7 +67,7 @@ def request_json(r: Rest, method, path, params=None, body=None):
 
 def set_interface_type(r: Rest, value: str):
     r.req("PUT", "/v1/configs/User%20Interface%20Settings/Interface%20Type",
-          params={"value": urllib.parse.quote(value)})
+          params={"value": value})
     data = request_json(r, "GET", "/v1/configs/User%20Interface%20Settings/Interface%20Type")
     current = data["User Interface Settings"]["Interface Type"]["current"]
     if current != value:

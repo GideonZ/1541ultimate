@@ -16,6 +16,7 @@ from connection_runtime import (
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
+    has_multiple_runners,
     run_incomplete_surface_operation,
     run_surface_operation,
     select_operation_index,
@@ -744,12 +745,6 @@ def incomplete_operations(
     )
 
 
-def _has_multiple_runners(context: ProbeExecutionContext | None) -> bool:
-    if context is None or context.state is None:
-        return False
-    return getattr(context.state, "runner_count", 1) > 1
-
-
 def surface_operations(
     surface: ProbeSurface,
     *,
@@ -792,7 +787,7 @@ def run_probe(
             operations = surface_operations(
                 surface,
                 runner_id=context.runner_id,
-                concurrent_multi_runner=_has_multiple_runners(context),
+                concurrent_multi_runner=has_multiple_runners(context),
                 shared_state=context.state,
             )
             index = select_operation_index(context, len(operations))
@@ -808,7 +803,7 @@ def run_probe(
             operations = incomplete_operations(
                 surface,
                 runner_id=context.runner_id,
-                concurrent_multi_runner=_has_multiple_runners(context),
+                concurrent_multi_runner=has_multiple_runners(context),
             )
             index = select_operation_index(context, len(operations))
             op_name, operation = operations[index]
@@ -816,7 +811,7 @@ def run_probe(
         operations = surface_operations(
             surface,
             runner_id=context.runner_id,
-            concurrent_multi_runner=_has_multiple_runners(context),
+            concurrent_multi_runner=has_multiple_runners(context),
             shared_state=context.state,
         )
         index = select_operation_index(context, len(operations))

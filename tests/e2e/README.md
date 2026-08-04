@@ -1,122 +1,139 @@
 # Hardware end-to-end tests
 
-These tests exercise a deployed Ultimate device through its public interfaces
-and verify the result on real firmware and hardware. A suite may cross REST,
-FTP, Telnet, the on-device UI, C64 memory, mounted media, or physical-device
-services in one scenario.
-
-They are deliberately separate from host unit tests. Unit tests live beside
-their production modules, such as `software/api/tests/` and
-`software/filemanager/tests/`; hardware E2E tests live here and run against a
-reachable device.
+Deterministic functional and regression checks against a deployed Ultimate
+device, driven through its public interfaces. A suite may cross REST, FTP,
+Telnet, the on-device UI, C64 memory, mounted media or physical-device services
+in one scenario. These are the hardware release gate.
 
 ## Structure
 
-Top-level folders name the primary firmware subsystem under test, not the
-protocol used to drive it:
+Folders name the primary firmware subsystem under test, not the protocol used
+to drive it.
 
-| Folder | Primary production owner | Coverage |
+| Folder | Production owner | Coverage |
 |---|---|---|
 | `api/` | `software/api/` | REST contracts for input, menu screen, memory, and PRG runners |
 | `filemanager/` | `software/filemanager/`, `software/userinterface/` | Browser actions, change notification, and managed `/Temp` lifecycle |
 | `filesystem/` | `software/filesystem/` | Filesystem implementations, including the remote FTP filesystem |
-| `io/` | `software/io/` | Device-facing I/O subsystems; nested by production package (`c64/`, `command_interface/`, `printer/`) |
-| `monitor/` | `software/monitor/` | Machine-code monitor and its step/breakpoint debugger, over Telnet and the local overlay/freeze UI |
+| `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
+| `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), and the UI-state gate (`ui_state.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
-Larger subsystem-specific instructions may use a local README, as `monitor/`
-and `io/printer/` do.
+Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
+`monitor/` and `io/printer/` carry their own README for subsystem detail.
 
-## First run
+## Running
 
-You need a current firmware build deployed to a supported device, with its
-REST API reachable and the device otherwise idle. Most suites accept the
-device through `-H`/`--host` and an optional REST/FTP password through
-`-p`/`--password`. Individual suites may need additional host tools or device
-configuration; check their local README or source before selecting a manual
-suite.
-
-The repository-root runner is the supported entry point:
+The repository-root runner is the supported entry point.
 
 ```sh
-./run-e2e-tests --list
-./run-e2e-tests -H <host> -p <password>
-./run-e2e-tests -H <host> -s <suite>
+./run-tests --list
+./run-tests -H <host> -p <password>
+./run-tests -H <host> -s <suite>
+./run-tests -H <host> -m telnet
 ```
 
-Use `./run-e2e-tests --help` for the current options and suite selectors. Use
-the runner's `-s` option for normal isolation so selection, arguments, status
-reporting, and logs remain consistent. Direct harness invocation is reserved
-for developing a suite or using specialized options documented in a subsystem
-README; consult that script's own `--help` instead of copying its options here.
+`--help` is authoritative for options. `-m/--mode` selects the UI transport
+(`telnet`, `freeze`, `overlay`; default `overlay`) for suites that support
+switching. Use `-s` for isolation rather than invoking a suite directly, so
+selection, arguments and logs stay consistent.
 
-Each suite resets the machine in its own setup so it starts clean however it is
-invoked. Do not reset between scenarios that intentionally share observers or
-state. After all selected suites, the runner defensively releases injected
-input, closes any active menu UI, and performs one final reset; a failure there
-fails the run. These boundaries do not replace a suite's responsibility to
-restore the settings and fixtures it owns.
-
-Suites marked `manual` are excluded from the default sweep because they need
-an operator decision, elevated host privileges, a long run, or can exercise a
-known unsafe device condition. Read the runner comment and suite documentation
-before selecting one. `--all` is not a routine smoke-test option.
-
-Preserve combined stdout and stderr for hardware runs. When piping through
-`tee`, keep the runner's failure status:
+Preserve combined stdout and stderr, keeping the runner's exit status:
 
 ```sh
-stamp=$(date +%Y%m%d-%H%M%S)
 set -o pipefail
-./run-e2e-tests -H <host> 2>&1 | tee "run-e2e-tests-$stamp.log"
+./run-tests -H <host> 2>&1 | tee "run-tests-$(date +%Y%m%d-%H%M%S).log"
 ```
 
-## Adding or changing a suite
+### Device requirements
 
-Use these conventions so the tree can grow without inventing a new layout for
-each feature:
+- Reachable REST API, an otherwise idle device, and a current firmware build.
+- Commodore ROMs installed under `C64 and Cartridge Settings`:
+  `kernal.901227-03.bin`, `basic.901226-01.bin`, `characters.901225-01.bin`.
+  Several suites need the C64 to reach the BASIC prompt with KERNAL interrupts
+  running.
+- `freeze-menu` needs an FPGA core carrying the SID decoder fix for issue #733.
+  An older core stalls the whole Nios and needs a JTAG recovery.
+- These settings may differ from the default: `System Mode`, `Auto Save
+  Config`, `Interface Type`, `Command Interface`, `RAM Expansion Unit`,
+  `Printer Settings`. Suites that depend on any of them set and restore it.
+- Suites marked `manual` need an operator decision, elevated host privileges or
+  a long run. `--all` is not a routine smoke-test option.
+
+The runner establishes the documented UI state before each suite and performs
+one final release, menu close and reset afterwards. A failure in that teardown
+fails the run.
+
+## Rules for adding or changing a suite
 
 1. Put the suite under the folder for the production subsystem that owns the
-   behavior. Mirror a meaningful production package boundary where one exists:
-   a REST-driven printer test belongs in `io/printer/`, matching
-   `software/io/printer/`. Add a new top-level folder only for a real
-   production subsystem that does not fit an existing one.
-2. Use lowercase snake case for directories and files. Executable suites end
-   in `_test.py` or `_test.sh`; put qualifiers before `_test`
-   (`feature_perf_test.py`). Helpers and assets use descriptive snake-case
-   names without `_test`. Keep registered suite scripts executable.
+   behaviour. Add a top-level folder only for a real production subsystem that
+   does not fit an existing one.
+2. Use lowercase snake case. Executable suites end in `_test.py`, with
+   qualifiers before `_test`. Keep them executable. Python only.
 3. Give the runner a stable kebab-case selector and register every executable
-   suite in `run-e2e-tests`. New suites are automatic unless there is a
-   concrete reason they require operator opt-in; document any `manual` reason
-   next to the runner entry.
+   suite in `run-tests`. New suites are automatic unless they need operator
+   opt-in; document any `manual` reason next to the runner entry.
 4. Keep the default scenario deterministic and bounded. Assert externally
-   visible outcomes rather than private implementation timing, and print
-   enough numbered context to identify the exact failing operation.
-5. Return non-zero for every failed assertion, setup failure, lost device, or
-   incomplete cleanup. Do not turn firmware failures into skips or passes.
-   Retries must represent an explicit protocol allowance, remain bounded, and
+   visible outcomes, not private implementation timing. Report through
+   `tests/lib/report.py`; see [its rules](../lib/README.md).
+5. Return non-zero for every failed assertion, setup failure, lost device or
+   incomplete cleanup. Never turn a firmware failure into a skip or a pass.
+   Retries must represent an explicit protocol allowance, stay bounded, and
    preserve the original failure in diagnostics.
 6. Capture and restore settings, release injected input, close sessions, and
-   remove only fixtures created by the suite. Cleanup belongs in a `finally`
-   path where the language permits it.
-7. Reuse existing harness code for shared protocol decoding or screen models
-   instead of copying it. Keep support code local until more than one
-   subsystem has a proven need for the same abstraction.
-8. State supported targets and unusual dependencies in the suite docstring or
-   its subsystem README. Keep this file structural; do not copy per-suite CLI
-   help into it.
+   remove only fixtures the suite created. Clean up in a `finally` path.
+7. Reuse `lib/` for shared protocol decoding or screen models instead of
+   copying it. Keep support code local until a second suite needs it.
+8. State supported targets and unusual dependencies in the suite docstring.
+   Keep this file structural; do not copy per-suite CLI help into it.
+9. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
+   the duration `SLOW` in yellow, which is a prompt to look rather than a
+   failure. The whole gate is run repeatedly by people waiting for it, so a
+   slow check has to earn its time.
+
+   Ten is the threshold because some checks cannot go below a few seconds
+   whatever they do: one that resets the C64 pays about 2.4s for the machine's
+   cold start before it does anything of its own. Aim well under the threshold
+   anyway; most checks finish in under a second.
+
+   Before accepting a slow check, establish that it is slow for a reason that
+   cannot be removed:
+
+   - Waiting on a fixed sleep where the outcome could be observed instead. Poll
+     for the state the check is actually waiting for.
+   - Sending keystrokes one at a time. The batched paths in
+     `lib/ui_backend.py` send a whole string or run of keys in one request;
+     `Browser.select_entry` uses the browser's own quick-seek rather than
+     walking the listing.
+   - Moving more data than the assertion needs. Size a fixture for what is
+     being proved: if only the rendered size has to differ, a few kilobytes
+     does that as well as a few hundred.
+   - Repeating setup an earlier check already established.
+
+   Some checks are legitimately slow, and those keep their time: a key repeat
+   rate, a drive reaping a session, a real 1541 load. Say so in a comment next
+   to the wait, so the next reader does not have to rediscover it.
 
 Before submitting a structural or test-only change:
 
 ```sh
-python3 -m py_compile $(find tests/e2e -name '*.py' -type f)
-find tests/e2e -name '*.sh' -type f -exec bash -n {} +
-bash -n run-e2e-tests
-./run-e2e-tests --list
+python3 -m py_compile $(find tests -name '*.py' -type f -not -path '*/__pycache__/*')
+./run-tests --list
+
+# Proves every suite's imports resolve, which py_compile alone does not.
+for f in $(find tests -name '*_test.py' -not -path '*/__pycache__/*'); do
+    python3 "$f" --help >/dev/null || echo "FAILED $f"
+done
+
+# Neither of the above sees a name that is only resolved when the line runs, so
+# a helper used on a branch the gate does not reach stays broken until someone
+# hits it. pyflakes finds those, and is worth installing for this one check.
+python3 -m pyflakes $(git ls-files tests | grep '\.py$') run-tests
 ```
 
-For behavior changes, deploy the affected firmware and run the narrowest
-relevant selector first, followed by the default automatic sweep. Treat a
-hardware E2E failure as a regression to diagnose, not as a reason to relax the
-test.
+For behaviour changes, deploy the affected firmware and run the narrowest
+relevant selector first, then the default sweep. Treat a hardware failure as a
+regression to diagnose, not a reason to relax the test.

@@ -14,13 +14,18 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-CHECK_COUNT = 0
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import rest as rest_lib
+from api import UltimateApi
+from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
+
 TEST_CHOICES = (
     "all",
     "contract",
@@ -34,6 +39,9 @@ TEST_CHOICES = (
     "menu-repeat-printable",
     "menu-repeat-cursor",
 )
+# Bounded retry for idempotent reads whose transport failed; see request().
+TRANSPORT_RETRIES = 3
+TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 READY_SCREEN_CODES = bytes((0x12, 0x05, 0x01, 0x04, 0x19, 0x2E))
 LETTER_SCREEN_CODES = {chr(ord("A") + index): index + 1 for index in range(26)}
 KEYBOARD_ECHO_PROGRAM_ADDRESS = 0xC000
@@ -66,11 +74,11 @@ MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0
 MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
 MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
-RESET_APPLY_SECONDS = float(os.environ.get("U64_INPUT_RESET_APPLY_SECONDS", "3.0"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
 MULTICAST_GROUP = "239.0.1.64"
 VIDEO_PORT = 11000
+RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
 MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
@@ -148,29 +156,6 @@ KEYBOARD_MATRIX: Dict[str, Tuple[int, int]] = {
 }
 
 
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
-
-
 def wants_test(selected: Optional[List[str]], name: str) -> bool:
     return selected is None or "all" in selected or name in selected
 
@@ -183,24 +168,14 @@ def wants_keyboard_echo_tests(selected: Optional[List[str]]) -> bool:
     return any(item.startswith("keyboard-echo-") for item in selected or [])
 
 
-def device_unavailable(exc: BaseException) -> bool:
-    text = format_exception(exc).lower()
-    markers = (
-        "no route to host",
-        "network is unreachable",
-        "connection refused",
-        "timed out",
-        "temporary failure in name resolution",
-        "not found",
-    )
-    return any(marker in text for marker in markers)
-
-
 class RestInputSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def url(self, path: str, params: Optional[Dict[str, Any]] = None) -> str:
         query = ""
@@ -222,8 +197,14 @@ class RestInputSession:
         if body is not None and content_type is not None:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
+        # Transport and retry policy come from tests/lib/rest.py; see
+        # rest.may_retry, which this suite's own policy became.
+        #
+        # Retrying a POST cannot hide a double application here: every check
+        # asserts the exact resulting keyboard or joystick state, so a
+        # duplicated keystroke fails that assertion rather than passing.
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.read()
         except urllib.error.HTTPError:
             raise
@@ -274,12 +255,11 @@ class RestInputSession:
             headers["X-Password"] = self.password
         connection = None
         try:
-            connection = http.client.HTTPConnection(self.host, timeout=self.timeout)
-            connection.request("POST", "/v1/machine:input", body=b"", headers=headers)
-            response = connection.getresponse()
-            body = response.read()
-            if response.status != expected_code:
-                raise Failure(f"Expected HTTP {expected_code}, got HTTP {response.status}")
+            status, _headers, body = rest_lib.retrying_http_request(
+                self.host, "POST", "/v1/machine:input", body=b"", headers=headers,
+                timeout=self.timeout)
+            if status != expected_code:
+                raise Failure(f"Expected HTTP {expected_code}, got HTTP {status}")
             return json.loads(body.decode("utf-8"))
         except http.client.HTTPException as exc:
             raise Failure(f"HTTP client failure: {exc}") from exc
@@ -314,37 +294,7 @@ class RestInputSession:
         return self.menu_screen() is not None
 
     def close_menu_from_anywhere(self) -> None:
-        self.post_events([{"kind": "release_all"}])
-        for attempt in range(12):
-            body = self.menu_screen()
-            if body is None:
-                return
-            text = "".join(
-                chr(value & 0x7F) if 0x20 <= (value & 0x7F) <= 0x7E else " "
-                for value in body[:1000]
-            )
-            if "Save changes to Flash?" in text:
-                self.post_events(
-                    [
-                        {"kind": "keyboard", "inputs": ["cursor_left_right"], "transition": "tap"},
-                        {"kind": "keyboard", "inputs": ["return"], "transition": "tap"},
-                    ]
-                )
-            elif attempt < 4:
-                # Shift+F7 is F8, the firmware's full UI-exit command. Unlike
-                # RUN/STOP it destroys nested config/search stacks instead of
-                # merely hiding them for the next suite to reopen.
-                self.post_events(
-                    [{"kind": "keyboard", "inputs": ["left_shift", "f7"], "transition": "tap"}]
-                )
-            else:
-                key = "run_stop" if attempt % 2 == 0 else "return"
-                self.post_events([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
-            time.sleep(0.25)
-        self.put("menu_button")
-        time.sleep(0.5)
-        if self.menu_screen_open():
-            raise Failure("could not dismiss active menu UI before reset")
+        self.api.machine.close_menu_from_anywhere()
 
     def pause(self) -> None:
         self.put("pause")
@@ -563,8 +513,10 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
 def reset_to_basic(session: RestInputSession) -> None:
     session.close_menu_from_anywhere()
     session.reset()
-    # The REST command is acknowledged before the C64 reset has visibly taken
-    # effect. Do not mistake the previous READY prompt for the post-reset one.
+    # This suite's reset is left alone deliberately. Switching it to the shared
+    # polling reset made wait_for_basic_ready below stop finding the prompt,
+    # and the cause was not established; the shared reset is proven in the
+    # other suites, so this one keeps its own path until that is understood.
     time.sleep(RESET_APPLY_SECONDS)
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
@@ -770,6 +722,25 @@ def keyboard_echo_byte_name(value: int) -> str:
     if value == 0x20:
         return "space"
     return f"${value:02X}"
+
+
+# How much text the keyboard echo stress cases send, and so how long they take:
+# the rate is the subject, so the duration is length/rate and nothing else.
+#
+# mixed_alphabet_text repeats every 26 characters, so 26 already contains every
+# character it can produce; 52 sends each of them twice, which is what shows the
+# delivery holding up rather than merely starting. It was 200, which was the
+# same 26 characters seven more times over and cost 20s of a run that people
+# wait for. Sustained delivery over a long train has its own check, "keyboard
+# long repeated tap train drains fully without sticky state".
+ECHO_ALPHABET_LENGTH = 52
+# alternating_text produces only two distinct characters, so length buys
+# repetition rather than coverage. 60 is chosen for the time it takes at the
+# fastest rate this file drives: three seconds at 20 Hz, which is long enough
+# for a rate the device cannot keep up with to drop something. It was 100,
+# which was five seconds for the same evidence. The 5 Hz case keeps its own
+# smaller count, because 60 there would be twelve seconds on its own.
+ECHO_ALTERNATING_LENGTH = 60
 
 
 def mixed_alphabet_text(length: int) -> str:
@@ -1443,7 +1414,7 @@ def run_soak_tests(session: RestInputSession, duration_seconds: float) -> int:
         interleaved_case = interleaved_cases[cycles % len(interleaved_cases)]
         rapid_mix_case = rapid_mix_cases[cycles % len(rapid_mix_cases)]
 
-        print(f"[soak {cycles + 1:03d}] text={text_case} joy{joystick_case[0]}={'+'.join(joystick_case[1])}", flush=True)
+        detail(f"soak {cycles + 1:03d}: text={text_case} joy{joystick_case[0]}={'+'.join(joystick_case[1])}")
         screen_tail = soak_keyboard_basic_case(session, screen_tail, text_case)
         screen_tail = soak_interleaved_case(session, screen_tail, interleaved_case[0], interleaved_case[1], interleaved_case[2])
         screen_tail = soak_rapid_mixed_case(session, screen_tail, rapid_mix_case[0], rapid_mix_case[1])
@@ -1517,6 +1488,11 @@ def run_contract_tests(session: RestInputSession) -> None:
 
 
 def run_keyboard_tests(session: RestInputSession) -> None:
+    # These assert what the live C64 matrix sees, so the menu must be closed. It
+    # must also be closed for safety: the sweep below taps F5, which opens the
+    # task menu onto the Assembly 64 form when the UI has focus.
+    session.close_menu_from_anywhere()
+
     with check("keyboard single-tap batch is consumed by BASIC in order"):
         session.json_request(
             "POST",
@@ -1530,10 +1506,10 @@ def run_keyboard_tests(session: RestInputSession) -> None:
 
     echo_offset = prepare_keyboard_echo_program(session)
     with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
-        echo_offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0, echo_offset)
+        echo_offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(ECHO_ALPHABET_LENGTH), 10.0, echo_offset)
 
     with check("keyboard 20 Hz alternating ab echo has no missed presses"):
-        echo_offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0, echo_offset)
+        echo_offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_ALTERNATING_LENGTH), 20.0, echo_offset)
 
     with check("keyboard 5 Hz alternating ab echo has no missed presses"):
         run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0, echo_offset)
@@ -1692,11 +1668,11 @@ def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[s
 
     if wants_test(selected, "keyboard-echo-alphabet"):
         with check("keyboard 10 Hz mixed alphabet echo has no missed presses"):
-            offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(200), 10.0, offset)
+            offset = run_keyboard_echo_stress_case(session, mixed_alphabet_text(ECHO_ALPHABET_LENGTH), 10.0, offset)
 
     if wants_test(selected, "keyboard-echo-ab-20hz"):
         with check("keyboard 20 Hz alternating ab echo has no missed presses"):
-            offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", 100), 20.0, offset)
+            offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_ALTERNATING_LENGTH), 20.0, offset)
 
     if wants_test(selected, "keyboard-echo-ab-5hz"):
         with check("keyboard 5 Hz alternating ab echo has no missed presses"):
@@ -1801,6 +1777,7 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
                 stopped_cursor_value = save_editor_value("menu_cursor_repeat_stopped")
                 if "ZY" not in stopped_cursor_value:
                     raise Failure(f"Cursor repeat moved between post-release markers: {stopped_cursor_value!r}.")
+
     finally:
         try:
             restore_offline_text_field(session)
@@ -1972,10 +1949,10 @@ def main() -> int:
         description="Validate U64 keyboard and joystick REST input injection",
         epilog="Use --soak to continue with expanded long-run REST input coverage after the standard checks.",
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
+    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("-s", "--soak", action="store_true", help="run the expanded soak suite after the standard checks")
     parser.add_argument(
         "--test",
@@ -1996,24 +1973,24 @@ def main() -> int:
     selected_tests = None if not args.test else args.test
     soak_duration_seconds = parse_duration_seconds(args.soak_duration) if args.soak else None
     if args.soak and selected_tests is not None:
-        print("--test cannot be combined with --soak", file=sys.stderr)
+        suite_fail("input_test", "--test cannot be combined with --soak")
         return 2
     try:
         soak_cycles = run_tests(session, soak_duration_seconds=soak_duration_seconds, selected=selected_tests)
     except Failure as exc:
-        print(exc, file=sys.stderr)
+        suite_fail("input_test", str(exc))
         return 1
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
-        if device_unavailable(exc):
-            print(f"Connection failure: {format_exception(exc)}", file=sys.stderr)
+        if rest_lib.looks_unreachable(exc):
+            suite_fail("input_test", f"connection failure: {format_exception(exc)}")
         else:
-            print(f"REST failure: {format_exception(exc)}", file=sys.stderr)
+            suite_fail("input_test", f"REST failure: {format_exception(exc)}")
         return 1
 
     if soak_duration_seconds is not None:
-        print(f"input_test: OK ({CHECK_COUNT} checks, {soak_cycles} soak cycles)")
+        suite_ok("input_test", f"{check_count()} checks, {soak_cycles} soak cycles")
     else:
-        print(f"input_test: OK ({CHECK_COUNT} checks)")
+        suite_ok("input_test")
     return 0
 
 

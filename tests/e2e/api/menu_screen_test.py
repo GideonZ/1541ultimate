@@ -3,18 +3,21 @@
 
 import argparse
 import hashlib
-import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+from api import MachineApi
+from report import (Failure, check, check_skip, check_start, detail, format_exception,
+                    suite_fail, suite_ok, warn)
+from rest import RestClient, header_value, json_object
 
-CHECK_COUNT = 0
+
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 INPUT_PATH = "/v1/machine:input"
@@ -33,7 +36,8 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_MIN_PRINTABLE_CELLS = 20
 MENU_MAX_DISTINCT_COLOURS = 32
 MENU_MAX_DISTINCT_GLYPHS = 160
-MENU_TOGGLE_SETTLE_SECONDS = 0.25
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_CLOSE_TIMEOUT_SECONDS = 2.0
 DEFAULT_SOAK_STAGES = (10.0, 30.0, 120.0, 300.0)
 SOAK_NAVIGATION_INTERVAL_SECONDS = 0.20
@@ -41,64 +45,18 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 SOAK_TOP_LEVEL_SECTION_LIMIT = 64
 
 
-class Failure(RuntimeError):
-    pass
+class RestSession(RestClient):
+    """The device's REST API plus the menu-specific calls this suite adds.
 
+    Transport, the X-Password rule and the retry policy come from
+    tests/lib/rest.py; the typed calls come from tests/lib/api.py; only the
+    menu helpers below are specific to this suite.
+    """
 
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
-
-
-class RestSession:
-    def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
-        self.password = password
-        self.timeout = timeout
-
-    def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = ""
-        if params:
-            query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        params: Optional[Dict[str, object]] = None,
-        payload: Optional[Dict[str, object]] = None,
-        use_password: bool = True,
-    ) -> Tuple[int, Dict[str, str], bytes]:
-        body = None if payload is None else json.dumps(payload).encode("utf-8")
-        headers: Dict[str, str] = {}
-        if self.password and use_password:
-            headers["X-Password"] = self.password
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-
-        request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return response.status, dict(response.headers.items()), response.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, dict(exc.headers.items()), exc.read()
-        except (OSError, TimeoutError, urllib.error.URLError) as exc:
-            raise Failure(f"{method} {self.url(path, params)} failed: {format_exception(exc)}") from exc
+    def __init__(self, host: str, password: Optional[str] = None,
+                 timeout: float = 10.0) -> None:
+        super().__init__(host, password, timeout)
+        self.machine = MachineApi(self)
 
     def menu_button(self, label: str) -> None:
         with check(label):
@@ -174,7 +132,7 @@ class RestSession:
         content_type = header_value(headers, "Content-Type")
         if "application/json" not in content_type:
             raise Failure(f"expected application/json from input event, got {content_type!r}")
-        return parse_json("input event", body)
+        return json_object("input event", body)
 
     def tap_keyboard(self, inputs: List[str]) -> None:
         self.post_events([{"kind": "keyboard", "inputs": inputs, "transition": "tap"}])
@@ -183,22 +141,7 @@ class RestSession:
         self.post_events([{"kind": "release_all"}])
 
     def close_menu_from_anywhere(self) -> None:
-        for _ in range(12):
-            body = self.try_get_menu_screen()
-            if body is None:
-                return
-            if "Save changes to Flash?" in menu_screen_text(body):
-                self.tap_keyboard(["cursor_left_right"])
-                time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-                self.tap_keyboard(["return"])
-                time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-                continue
-            self.tap_keyboard(["run_stop"])
-            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-
-        if self.menu_screen_unavailable():
-            return
-        self.close_menu()
+        self.machine.close_menu_from_anywhere()
 
     def reset_to_clean_slate(self) -> None:
         self.release_all_input()
@@ -209,26 +152,8 @@ class RestSession:
         time.sleep(0.5)
 
 
-def header_value(headers: Dict[str, str], name: str) -> str:
-    wanted = name.lower()
-    for key, value in headers.items():
-        if key.lower() == wanted:
-            return value
-    return ""
-
-
-def parse_json(label: str, body: bytes) -> Dict[str, object]:
-    try:
-        data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Failure(f"{label}: response body is not valid JSON: {body[:160]!r}") from exc
-    if not isinstance(data, dict):
-        raise Failure(f"{label}: expected JSON object, got {data!r}")
-    return data
-
-
 def require_error(label: str, body: bytes, message: str) -> None:
-    data = parse_json(label, body)
+    data = json_object(label, body)
     errors = data.get("errors")
     if not isinstance(errors, list) or message not in errors:
         raise Failure(f"{label}: expected errors to contain {message!r}, got {data!r}")
@@ -282,18 +207,6 @@ def verify_menu_content(body: bytes) -> None:
         )
 
 
-def menu_screen_text(body: bytes) -> str:
-    chars = body[:SCREEN_CELLS]
-    rows = []
-    for row in range(SCREEN_HEIGHT):
-        row_chars = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-        rows.append("".join(
-            chr(ch & 0x7F) if 0x20 <= (ch & 0x7F) <= 0x7E else " "
-            for ch in row_chars
-        ))
-    return "\n".join(rows)
-
-
 def run_contract(session: RestSession) -> None:
     with check("GET menu_screen contract"):
         status, headers, body = session.request("GET", MENU_SCREEN_PATH)
@@ -320,7 +233,8 @@ def run_unavailable(session: RestSession) -> None:
 
 def run_auth(session: RestSession) -> None:
     if not session.password:
-        print("menu_screen_test: SKIP auth (--password not supplied)", file=sys.stderr)
+        check_start("GET menu_screen auth")
+        check_skip("--password not supplied")
         return
     with check("GET menu_screen auth"):
         status, headers, body = session.request("GET", MENU_SCREEN_PATH, use_password=False)
@@ -566,17 +480,14 @@ def run_soak(session: RestSession, stages: List[float], navigation_interval: flo
                 rate = count / elapsed if elapsed > 0.0 else 0.0
                 if len(snapshot_hashes) < 2:
                     raise Failure("soak did not observe changing menu snapshots during navigation")
-                print(
+                detail(
                     f"{count} snapshots, {navigation_count} keys, "
-                    f"{len(snapshot_hashes)} variants, {reopened_count} reopens, {rate:.1f}/s ",
-                    end="",
-                    flush=True,
-                )
+                    f"{len(snapshot_hashes)} variants, {reopened_count} reopens, {rate:.1f}/s")
     finally:
         try:
             session.release_all_input()
         except Exception as exc:
-            print(f"menu_screen_test: soak cleanup release_all failed: {exc}", file=sys.stderr)
+            warn(f"soak cleanup release_all failed: {exc}")
         session.close_menu_from_anywhere()
 
 
@@ -594,18 +505,18 @@ def expand_tests(selected: Optional[List[str]]) -> List[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate /v1/machine:menu_screen on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")),
+        default=os.environ.get("U64_PASS"),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument(
         "--test",
@@ -647,7 +558,7 @@ def main() -> int:
     if "soak" in tests:
         run_soak(session, args.soak_stages, args.soak_key_interval)
 
-    print(f"menu_screen_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("menu_screen_test")
     return 0
 
 
@@ -655,5 +566,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"menu_screen_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("menu_screen_test", format_exception(exc))
         raise SystemExit(1)

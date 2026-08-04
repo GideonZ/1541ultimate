@@ -17,8 +17,6 @@ timing and buffering behaviour that a BASIC-only test would miss.
 - A real Ultimate 64 or Ultimate 64 Elite (I or II) or Ultimate-II+, reachable
   by hostname/IP, with the REST API and FTP server enabled (both are on by
   default).
-- [64tass](https://sourceforge.net/projects/tass64/) on `PATH` (or pass
-  `--assembler /path/to/64tass`).
 - Python 3.9+. Core functionality (reproduction, structural PNG verification,
   full-page bitmap coverage checks) needs no third-party packages. OCR-based
   text verification is an optional enhancement - see below.
@@ -26,7 +24,7 @@ timing and buffering behaviour that a BASIC-only test would miss.
 Run the registered printer scenario from the repository root:
 
 ```sh
-./run-e2e-tests -H u64 -s printer
+./run-tests -H u64 -s printer
 ```
 
 The specialized presets below invoke `printer_test.py` directly because those
@@ -38,8 +36,8 @@ runner interface.
 - **REST** (`http.client`, matching the style of
   `tests/e2e/filemanager/temp_auto_cleanup_perf_test.py`): reads/writes
   `Printer Settings` config, pokes a parameter block and polls a status block
-  via `machine:writemem` / `machine:readmem`, uploads and runs the assembled
-  PRG via `POST /v1/runners:run_prg`, and drives the on-device Tasks menu
+  via `machine:writemem` / `machine:readmem`, uploads and runs the PRG
+  fixture via `POST /v1/runners:run_prg`, and drives the on-device Tasks menu
   (`machine:menu_button` + `machine:input`) to trigger **Printer >
   Flush/Eject** — the same interactive action a user takes, and the one that
   actually calls into the PNG save path (`IecPrinter::flush()` →
@@ -57,8 +55,13 @@ runner interface.
 
 ## The assembly workload (`printer_e2e.asm`)
 
-A single parametrized PRG, assembled once per run. Runtime parameters are
-written to `$C010` before the PRG is started:
+A single parametrized PRG. It is committed as the assembled `printer_e2e.prg`
+and the suite loads that file, so running the suite needs no assembler. After
+editing `printer_e2e.asm`, regenerate the PRG with `make` in this directory and
+commit both. The same applies to `issue_717_basic.bas` and its tokenized
+`issue_717_basic.prg`, which the `issue-717-basic` preset runs.
+
+Runtime parameters are written to `$C010` before the PRG is started:
 
 | Address | Meaning                                                        |
 |---------|----------------------------------------------------------------|

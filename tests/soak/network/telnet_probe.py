@@ -18,6 +18,7 @@ from connection_runtime import (
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
+    has_multiple_runners,
     run_incomplete_surface_operation,
     run_surface_operation,
     select_operation_index,
@@ -776,12 +777,6 @@ def run_open_surface_operation(
         drop_session(runner_id)
 
 
-def _has_multiple_runners(context: ProbeExecutionContext | None) -> bool:
-    if context is None or context.state is None:
-        return False
-    return getattr(context.state, "runner_count", 1) > 1
-
-
 def reset_to_home(sock) -> None:
     for _ in range(2):
         sock.sendall(TELNET_KEY_ESC)
@@ -943,7 +938,7 @@ def run_probe(
     if context is not None:
         surface = context.surface
         if correctness == ProbeCorrectness.OPEN:
-            operations = surface_operations(surface, concurrent_multi_runner=_has_multiple_runners(context), shared_state=context.state)
+            operations = surface_operations(surface, concurrent_multi_runner=has_multiple_runners(context), shared_state=context.state)
             index = select_operation_index(context, len(operations))
             op_name, operation = operations[index]
             return run_incomplete_surface_operation(
@@ -958,7 +953,7 @@ def run_probe(
             index = select_operation_index(context, len(operations))
             op_name, operation = operations[index]
             return run_incomplete_surface_operation("telnet", surface, op_name, operation, settings)
-        operations = surface_operations(surface, concurrent_multi_runner=_has_multiple_runners(context), shared_state=context.state)
+        operations = surface_operations(surface, concurrent_multi_runner=has_multiple_runners(context), shared_state=context.state)
         index = select_operation_index(context, len(operations))
         op_name, operation = operations[index]
         started_at = time.perf_counter_ns()

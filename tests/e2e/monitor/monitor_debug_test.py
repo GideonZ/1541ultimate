@@ -20,12 +20,13 @@ import os
 import re
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 # Reuse the existing telnet session helpers so both suites stay in lockstep.
 sys.path.insert(0, str(Path(__file__).parent))
-import monitor_test as mt  # type: ignore  # noqa: E402
+import mcm_monitor_compat as mt  # noqa: E402
+from report import suite_fail, suite_ok  # noqa: E402
+from ui_backend import add_mode_argument  # noqa: E402
 
 FLAG_BIT_INDEX = {
     "N": 0,
@@ -259,7 +260,7 @@ def _assert_snapshot_contains(snap: mt.Snapshot, token: str, context: str) -> No
 
 
 def _assert_status_tokens(snap: mt.Snapshot, context: str, *tokens: str) -> None:
-    line_index = snap.find_status_line()
+    line_index = mt.find_status_line(snap)
     line = snap.line(line_index)
     for token in tokens:
         if token not in line:
@@ -670,12 +671,10 @@ def _wait_for_blank_debug_context(session: "mt.MonitorSession",
 
 
 def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
-    url = f"http://{rest_host}/v1/machine:reset"
-    request = urllib.request.Request(url, data=b"", method="PUT")
     try:
-        with urllib.request.urlopen(request, timeout=max(5.0, timeout)):
-            pass
-    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        mt.rest_api(rest_host, timeout=max(5.0, timeout)).machine.reset(
+            force=True, wait=False)
+    except mt.Failure as exc:
         # The firmware may reset the C64 and briefly starve the REST response path
         # before the HTTP request is completed. Treat the response timeout as
         # recoverable only if the deterministic READY proof below succeeds.
@@ -736,7 +735,7 @@ def _assert_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSes
 
     _reopen_monitor(session)
     snap = session.capture()
-    line = snap.line(snap.find_status_line())
+    line = snap.line(mt.find_status_line(snap))
     live_bank = _live_cpu_bank_from_status(line)
     if live_bank != SAFE_CPU_PORT_LOW_BITS:
         raise mt.Failure(
@@ -855,8 +854,7 @@ def capture_basic_freeze_evidence(rest_host: str, session: "mt.MonitorSession",
     """Dump the full frozen-BASIC evidence bundle (called before any recovery)."""
     print(f"    ==== FROZEN-BASIC EVIDENCE [{context}] ====", flush=True)
     try:
-        info = json.loads(urllib.request.urlopen(
-            f"http://{rest_host}/v1/info", timeout=5).read().decode())
+        info = mt.rest_api(rest_host).rest.json("/v1/info")
         print(f"      firmware: {info.get('product')} {info.get('firmware_version')} "
               f"fpga={info.get('fpga_version')} core={info.get('core_version')}", flush=True)
     except Exception as exc:                                     # noqa: BLE001
@@ -937,7 +935,7 @@ def prove_monitor_exit_basic_liveness_and_reentry(
 
     if reenter:
         _reopen_monitor(session)
-        session.capture().find_status_line()    # monitor UI must be intact
+        mt.find_status_line(session.capture())  # monitor UI must be intact
         mt.write_rest_memory(rest_host, 0xC7A0, bytes([0xEA, 0xEA]))
         session.goto("C7A0")
         session.send_char("A")
@@ -1322,8 +1320,11 @@ def _reopen_monitor(session: "mt.MonitorSession") -> None:
     last_error = None
     for _ in range(6):
         try:
-            snap = session.send_key("CTRL_O")
-            snap.find_status_line()
+            # A natural Debug exit closes the on-device UI in REST-backed
+            # modes.  ``enter_monitor`` owns that recovery through the shared
+            # backend; sending CTRL+O directly assumes a still-open screen.
+            snap = session.enter_monitor()
+            mt.find_status_line(snap)
             return
         except mt.Failure as exc:
             last_error = exc
@@ -2429,7 +2430,7 @@ def _select_monitor_view(session: "mt.MonitorSession", bank: int,
     bank &= 0x07
     for _ in range(8):
         snap = session.capture()
-        status = snap.line(snap.find_status_line())
+        status = snap.line(mt.find_status_line(snap))
         if f"CPU{bank}" in status or f"O{bank}" in status:
             return snap
         session.send_char("o")
@@ -2471,7 +2472,7 @@ def _assert_rest_region_keeps_changing(rest_host: str, address: int, length: int
 
 def _assert_no_forced_cpu7_status(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
     snap = session.capture()
-    status = snap.line(snap.find_status_line())
+    status = snap.line(mt.find_status_line(snap))
     if "CPU7" in status or status.startswith("|C7") or " C7" in status:
         raise mt.Failure(f"{context}: live CPU bank was forced to 7: {status!r}\n{snap.text()}")
     if "CPU5" not in status and "C5O" not in status:
@@ -2509,7 +2510,7 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
         _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} live-port capture breakpoint clear")
         snap = mt.ensure_status(session, "C5O7 $A:BAS $D:I/O $E:KRN VIC")
-        status = snap.line(snap.find_status_line())
+        status = snap.line(mt.find_status_line(snap))
         if "C5O7" not in status or "$E:KRN" not in status:
             raise mt.Failure(f"Footer must show live CPU5, monitor O7 KERNAL labels: {status!r}")
 
@@ -2815,7 +2816,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         parsed = _wait_for_pc(session, "E000")
         _assert_no_debug_modal(session, "$01=$00 $E000 breakpoint hit")
         snap = session.capture()
-        status = snap.line(snap.find_status_line())
+        status = snap.line(mt.find_status_line(snap))
         # The live execution bank must be CPU0 (the continue reached the $01=$00
         # context). The monitor's Debug view-sync follows the live bank during a
         # debug stop, so the footer may read the synced "CPU0" rather than the
@@ -3455,12 +3456,15 @@ def _parse_selected_tests(parser: argparse.ArgumentParser,
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate Machine Code Monitor Debug mode over the standard telnet service")
-    parser.add_argument("--host", default=os.environ.get("U64_MONITOR_HOST", "u64"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_MONITOR_PORT", "23")))
-    parser.add_argument("--rest-host", default=os.environ.get("U64_MONITOR_REST_HOST"))
-    parser.add_argument("--password", default=os.environ.get("U64_MONITOR_PASSWORD"))
-    parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_MONITOR_TIMEOUT", "5.0")))
+        description="Validate Machine Code Monitor Debug mode through the shared UI backend")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
+                        default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
+    parser.add_argument("--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    add_mode_argument(parser, default=os.environ.get("U64_MODE", "telnet"),
+                      choices=("telnet",))
     parser.add_argument("--target", choices=("u64", "u2"),
                         default=os.environ.get("U64_MONITOR_TARGET", "u64"),
                         help="Target hardware. 'u2' skips U64-only features (REST API, "
@@ -3523,7 +3527,7 @@ def main() -> int:
                 _force_safe_cpu_port(rest_host, f"pre-{name} reset")
             _reset_c64_core(rest_host)
             mt.wait_for_monitor_ready(args.host, args.port, args.password, args.timeout)
-            session = mt.MonitorSession(args.host, args.port, args.password, args.timeout)
+            session = mt.MonitorSession(args.host, args.port, args.password, args.timeout, args.mode)
             mt.TestConfig.session = session
             try:
                 runners[name](rest_host, session)
@@ -3572,9 +3576,10 @@ def main() -> int:
         if aborted and not mt.TestConfig.failures:
             print("debug_e2e_test: ABORTED before completion (no check failed, but "
                   "the suite stopped early; see stderr above)", file=sys.stderr)
+        suite_fail("machine-code-monitor-debug", "debug scenario failed")
         return 1
-    print(f"debug_e2e_test: OK ({mt.CHECK_COUNT} checks, "
-          f"{len(mt.TestConfig.skipped)} skipped)")
+    suite_ok("machine-code-monitor-debug",
+             f"{mt.CHECK_COUNT} checks, {len(mt.TestConfig.skipped)} skipped")
     return 0
 
 

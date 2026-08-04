@@ -18,11 +18,18 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
 from typing import Dict, Optional, Tuple
 
+# tests/lib holds the reporting rules every suite shares.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
+from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
 
-CHECK_COUNT = 0
+
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
@@ -40,8 +47,12 @@ DISABLED = "Disabled"
 JIFFY_ADDRESS = 0x00A2
 JIFFY_SAMPLE_SECONDS = 0.5
 JIFFY_SETTLE_SECONDS = 5.0
-MENU_TOGGLE_SETTLE_SECONDS = 0.25
+# Shared with every suite; see tests/lib/pacing.py.
+MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_TOGGLE_TIMEOUT_SECONDS = 5.0
+# The form is fetched from the Assembly 64 server, so it is slower than a redraw.
+FORM_TITLE = "Assembly 64 Query Form"
+FORM_OPEN_TIMEOUT_SECONDS = 20.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -52,52 +63,14 @@ WEDGE_HINT = (
 )
 
 
-class Failure(RuntimeError):
-    pass
-
-
-@contextmanager
-def check(label: str):
-    global CHECK_COUNT
-    CHECK_COUNT += 1
-    print(f"[{CHECK_COUNT:02d}] {label} ... ", end="", flush=True)
-    try:
-        yield
-    except Exception:
-        print("FAIL", flush=True)
-        raise
-    print("OK", flush=True)
-
-
-def format_exception(exc: BaseException) -> str:
-    if isinstance(exc, urllib.error.URLError) and getattr(exc, "reason", None) is not None:
-        return f"{exc} ({exc.reason})"
-    return str(exc)
-
-
-def header_value(headers: Dict[str, str], name: str) -> str:
-    wanted = name.lower()
-    for key, value in headers.items():
-        if key.lower() == wanted:
-            return value
-    return ""
-
-
-def parse_json(label: str, body: bytes) -> Dict[str, object]:
-    try:
-        data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Failure(f"{label}: response body is not valid JSON: {body[:160]!r}") from exc
-    if not isinstance(data, dict):
-        raise Failure(f"{label}: expected JSON object, got {data!r}")
-    return data
-
-
 class RestSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -122,7 +95,7 @@ class RestSession:
 
         request = urllib.request.Request(self.url(path, params), data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()
@@ -143,24 +116,7 @@ class RestSession:
         time.sleep(1.0)
 
     def close_menu_from_anywhere(self) -> None:
-        for attempt in range(12):
-            status, _, _ = self.request("GET", MENU_SCREEN_PATH)
-            if status == 404:
-                return
-            if status != 200:
-                raise Failure(f"menu-state probe failed with HTTP {status}")
-            key = "run_stop" if attempt % 2 == 0 else "return"
-            status, _, body = self.request(
-                "POST",
-                "/v1/machine:input",
-                payload={"events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]},
-            )
-            if status != 200:
-                raise Failure(f"menu cleanup failed with HTTP {status}: {body[:160]!r}")
-            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-        self.menu_button()
-        if not self.wait_menu_state(want_open=False):
-            raise Failure("could not dismiss active menu UI before reset")
+        self.api.machine.close_menu_from_anywhere()
 
     def config_path(self, store: str, item: str) -> str:
         return f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}"
@@ -169,7 +125,7 @@ class RestSession:
         status, _, body = self.request("GET", self.config_path(store, item))
         if status != 200:
             raise Failure(f"reading '{item}' failed with HTTP {status}: {body[:160]!r}")
-        data = parse_json(f"config {item}", body)
+        data = json_object(f"config {item}", body)
         # The reply nests the setting under its category and name.
         entry = data.get(store, {})
         if isinstance(entry, dict):
@@ -189,6 +145,71 @@ class RestSession:
         if status != 200:
             raise Failure(f"menu_button failed with HTTP {status}: {body[:160]!r}")
         time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+
+    def tap(self, key: str) -> None:
+        status, _, body = self.request(
+            "POST",
+            "/v1/machine:input",
+            payload={"events": [{"kind": "keyboard", "inputs": [key], "transition": "tap"}]},
+        )
+        if status != 200:
+            raise Failure(f"tapping '{key}' failed with HTTP {status}: {body[:160]!r}")
+        time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+
+    def tap_keys(self, keys) -> None:
+        status, _, body = self.request(
+            "POST",
+            "/v1/machine:input",
+            payload={"events": [{"kind": "keyboard", "inputs": list(keys), "transition": "tap"}]},
+        )
+        if status != 200:
+            raise Failure(f"tapping {keys!r} failed with HTTP {status}: {body[:160]!r}")
+        time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+
+    def form_visible(self, title: str) -> bool:
+        body = self.menu_screen_bytes()
+        if body is None:
+            return False
+        text = "".join(
+            chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " " for c in body[:1000]
+        )
+        return title in text
+
+    def wait_form_title(self, title: str, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            body = self.menu_screen_bytes()
+            if body is not None:
+                text = "".join(
+                    chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " " for c in body[:1000]
+                )
+                if title in text:
+                    return True
+            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+        return False
+
+    def menu_screen_bytes(self) -> Optional[bytes]:
+        status, _, body = self.request("GET", MENU_SCREEN_PATH)
+        if status == 404:
+            return None
+        if status != 200:
+            raise Failure(f"menu_screen failed with HTTP {status}: {body[:160]!r}")
+        return body
+
+    def wait_screen_changes(self, before: Optional[bytes], timeout: float) -> bool:
+        """Wait until the menu screen differs from 'before'.
+
+        Drawing the context menu takes longer than the fixed settle used between
+        key taps, and pressing the menu button while it is still being drawn
+        loses the press. Waiting for the screen to actually change synchronises
+        on the event itself instead of guessing how long it takes.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.menu_screen_bytes() != before:
+                return True
+            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
+        return False
 
     def menu_is_open(self) -> bool:
         status, headers, body = self.request("GET", MENU_SCREEN_PATH)
@@ -293,14 +314,14 @@ def prepare(session: RestSession, mirroring: str) -> None:
 
 
 def run_menu_cycle(session: RestSession, mirroring: str) -> None:
-    print(f"-- menu cycle with {SID_ITEM} {mirroring}")
+    section(f"menu cycle with {SID_ITEM} {mirroring}")
     prepare(session, mirroring)
     open_menu(session)
     close_menu(session)
 
 
 def run_toggle_while_open(session: RestSession) -> None:
-    print(f"-- {SID_ITEM} switched off while the menu is open")
+    section(f"{SID_ITEM} switched off while the menu is open")
     prepare(session, ENABLED)
     open_menu(session)
     with check(f"set {SID_ITEM} to {DISABLED} while the menu is open"):
@@ -312,8 +333,125 @@ def run_toggle_while_open(session: RestSession) -> None:
     close_menu(session)
 
 
+def run_context_reopen(session: RestSession) -> None:
+    """Reopen the freezer menu with a context menu still on the UI object stack.
+
+    Closing the menu on a non-permanent host runs UserInterface::release_host(),
+    which deinitialises every object on the stack without peeling any off, so
+    'focus' still points at the context menu when the menu is next opened.
+    ContextMenu::deinit() deletes its window and clears the pointer, and the
+    next open runs appear(), which re-initialises each object through the
+    no-argument init() and then calls redraw() on it.
+
+    ContextMenu used to define only init(Window *, Keyboard *), a separate
+    overload rather than an override, so the UIObject no-op ran, the window was
+    never rebuilt, and redraw() dereferenced it. That halted the whole device:
+    the fault was raised in ContextMenu::redraw() and reached soft_exceptions,
+    which executes a break instruction and stops the CPU.
+
+    Only the Freeze interface reaches this. The overlay host is permanent, so
+    run_once() never re-runs appear() and the window is never torn down, which
+    is why this needs the Freeze interface selected above.
+    """
+    section("reopen the freezer menu with a context menu left open")
+    prepare(session, ENABLED)
+    open_menu(session)
+    with check("open the context menu on the first browser entry"):
+        # Locate the browser before pressing RETURN instead of inheriting wherever
+        # an earlier suite left it. Left steps back up to the root; a suite that
+        # ended inside its own fixture directory leaves the browser showing an
+        # empty listing once that directory is deleted, and RETURN there does
+        # nothing. Then home the cursor: on the Assembly 64 entry RETURN opens a
+        # network-backed query form rather than a context menu, and the menu
+        # button cannot dismiss that form.
+        for _ in range(12):
+            session.tap_keys(["left_shift", "cursor_left_right"])
+        for _ in range(14):
+            session.tap_keys(["left_shift", "cursor_up_down"])
+        before = session.menu_screen_bytes()
+        wedge_aware(session, "opening the context menu", lambda: session.tap("return"))
+        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
+            raise Failure("the context menu was not drawn")
+        if not session.menu_is_open():
+            raise Failure("the menu closed when the context menu was opened")
+    close_menu(session)
+    with check("reopen the menu with the context menu still on the object stack"):
+        wedge_aware(session, "reopening the freezer menu", lambda: session.menu_button())
+        if not session.wait_menu_state(want_open=True):
+            raise Failure("the menu did not reopen")
+    require_alive(session, "reopening the menu over a deinitialised context menu")
+    # Leave the stack unwound, so a later suite does not inherit the nested menu.
+    with check("dismiss the restored context menu"):
+        session.tap("run_stop")
+    close_menu(session)
+
+
+def run_menu_button_in_form(session: RestSession) -> None:
+    """The menu button must still close the menu from inside the Assembly 64 form.
+
+    F5 opens the task menu, whose first entry is Assembly 64 and is already under
+    the cursor. RETURN opens its query form and a second RETURN enters the Name
+    field, which puts the UI task inside UserInterface::string_edit. That loop
+    tested only host->exists(), while the loop that polls the menu button lives in
+    run_once() and is not running, so the button did nothing and the menu could
+    not be opened again until the device was rebooted. machine:menu_screen answers
+    404 throughout, because C64::is_accessible() reports isFrozen, so nothing can
+    detect the condition from outside.
+
+    The modal helpers now poll the button. They also drop a press that predates
+    the modal, otherwise one still latched from opening the menu would close the
+    editor before a single character was accepted.
+    """
+    section("the menu button works inside the Assembly 64 query form")
+    prepare(session, ENABLED)
+    open_menu(session)
+    with check("open the task menu"):
+        before = session.menu_screen_bytes()
+        wedge_aware(session, "opening the task menu", lambda: session.tap("f5"))
+        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
+            raise Failure("the task menu was not drawn")
+    with check("open the Assembly 64 query form"):
+        wedge_aware(session, "opening the query form", lambda: session.tap("return"))
+        if not session.wait_form_title(FORM_TITLE, FORM_OPEN_TIMEOUT_SECONDS):
+            raise Failure(f"{FORM_TITLE!r} did not appear")
+    with check("enter the form's first edit field"):
+        wedge_aware(session, "entering the edit field", lambda: session.tap("return"))
+        if not session.menu_is_open():
+            raise Failure("the menu closed when the edit field was entered")
+    with check("the menu button closes the menu from inside the edit field"):
+        wedge_aware(session, "pressing the menu button", lambda: session.menu_button())
+        if not session.wait_menu_state(want_open=False):
+            raise Failure(
+                "the menu button did nothing while the edit field had focus, so the "
+                "UI task is still blocked in string_edit"
+            )
+    require_alive(session, "closing the menu from inside the query form")
+    with check("the menu opens again afterwards"):
+        wedge_aware(session, "reopening the menu", lambda: session.menu_button())
+        if not session.wait_menu_state(want_open=True):
+            raise Failure("the menu did not open again")
+    # Leave the form behind, so a later suite does not inherit it. RUN/STOP backs
+    # out one object per press and leaves the menu entirely once the root browser
+    # has focus, so stop as soon as the form is gone rather than pressing a fixed
+    # number of times.
+    with check("leave the query form"):
+        for _ in range(6):
+            if not session.menu_is_open():
+                break
+            if not session.form_visible(FORM_TITLE):
+                break
+            session.tap("run_stop")
+        if session.form_visible(FORM_TITLE):
+            raise Failure(f"{FORM_TITLE!r} is still on screen")
+    if session.menu_is_open():
+        close_menu(session)
+    else:
+        require_machine_running(session, "C64 resumed after the menu closed")
+
+
 def expand_tests(selected) -> set:
-    names = {"mirroring-off", "toggle-open", "mirroring-on"}
+    names = {"mirroring-off", "toggle-open", "mirroring-on", "context-reopen",
+             "menu-button-in-form"}
     if not selected or "all" in selected:
         return names
     return {name for name in selected if name in names}
@@ -323,23 +461,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate the freezer menu against SID mappings without auto address mirroring."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")),
+        default=os.environ.get("U64_PASS"),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "mirroring-off", "toggle-open", "mirroring-on"),
+        choices=("all", "mirroring-off", "toggle-open", "mirroring-on", "context-reopen",
+                 "menu-button-in-form"),
     )
     parser.add_argument(
         "--repeat",
@@ -363,18 +502,22 @@ def main() -> int:
     session.reset()
     initial_interface = session.get_config(UI_STORE, UI_ITEM)
     initial_mirroring = session.get_config(SID_STORE, SID_ITEM)
-    print(f"-- captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")
+    detail(f"captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")
 
     try:
         for iteration in range(args.repeat):
             if args.repeat > 1:
-                print(f"-- pass {iteration + 1} of {args.repeat}")
+                section(f"pass {iteration + 1} of {args.repeat}")
             if "mirroring-off" in tests:
                 run_menu_cycle(session, DISABLED)
             if "toggle-open" in tests:
                 run_toggle_while_open(session)
             if "mirroring-on" in tests:
                 run_menu_cycle(session, ENABLED)
+            if "context-reopen" in tests:
+                run_context_reopen(session)
+            if "menu-button-in-form" in tests:
+                run_menu_button_in_form(session)
     finally:
         # Never leave the device on a changed mapping or with the menu open.
         if session.responds():
@@ -383,9 +526,9 @@ def main() -> int:
             session.set_config(SID_STORE, SID_ITEM, initial_mirroring)
             session.set_config(UI_STORE, UI_ITEM, initial_interface)
         else:
-            print("-- device is not responding; configuration left as-is", file=sys.stderr)
+            warn("device is not responding; configuration left as-is")
 
-    print(f"freeze_menu_test: OK ({CHECK_COUNT} checks)")
+    suite_ok("freeze_menu_test")
     return 0
 
 
@@ -393,5 +536,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Failure as exc:
-        print(f"freeze_menu_test: FAIL: {exc}", file=sys.stderr)
+        suite_fail("freeze_menu_test", format_exception(exc))
         raise SystemExit(1)
