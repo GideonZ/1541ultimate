@@ -23,6 +23,7 @@ from PIL import Image
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import rest as rest_lib
+from api import UltimateApi
 from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
 
 TEST_CHOICES = (
@@ -73,11 +74,11 @@ MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0
 MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
 MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
-RESET_APPLY_SECONDS = float(os.environ.get("U64_INPUT_RESET_APPLY_SECONDS", "3.0"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
 MULTICAST_GROUP = "239.0.1.64"
 VIDEO_PORT = 11000
+RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
 MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
@@ -167,24 +168,14 @@ def wants_keyboard_echo_tests(selected: Optional[List[str]]) -> bool:
     return any(item.startswith("keyboard-echo-") for item in selected or [])
 
 
-def device_unavailable(exc: BaseException) -> bool:
-    text = format_exception(exc).lower()
-    markers = (
-        "no route to host",
-        "network is unreachable",
-        "connection refused",
-        "timed out",
-        "temporary failure in name resolution",
-        "not found",
-    )
-    return any(marker in text for marker in markers)
-
-
 class RestInputSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def url(self, path: str, params: Optional[Dict[str, Any]] = None) -> str:
         query = ""
@@ -303,38 +294,7 @@ class RestInputSession:
         return self.menu_screen() is not None
 
     def close_menu_from_anywhere(self) -> None:
-        self.post_events([{"kind": "release_all"}])
-        for attempt in range(12):
-            body = self.menu_screen()
-            if body is None:
-                return
-            text = "".join(
-                chr(value & 0x7F) if 0x20 <= (value & 0x7F) <= 0x7E else " "
-                for value in body[:1000]
-            )
-            if "Save changes to Flash?" in text:
-                self.post_events(
-                    [
-                        {"kind": "keyboard", "inputs": ["cursor_left_right"], "transition": "tap"},
-                        {"kind": "keyboard", "inputs": ["return"], "transition": "tap"},
-                    ]
-                )
-            elif attempt < 4:
-                # Shift+F7 is F8, the firmware's full UI-exit command. Unlike
-                # RUN/STOP it destroys nested config/search stacks instead of
-                # merely hiding them for the next suite to reopen.
-                self.post_events(
-                    [{"kind": "keyboard", "inputs": ["left_shift", "f7"], "transition": "tap"}]
-                )
-            else:
-                # RUN/STOP only: a blind RETURN activates the entry under the
-                # cursor, which on the Assembly 64 entry opens its form.
-                self.post_events([{"kind": "keyboard", "inputs": ["run_stop"], "transition": "tap"}])
-            time.sleep(0.25)
-        self.put("menu_button")
-        time.sleep(0.5)
-        if self.menu_screen_open():
-            raise Failure("could not dismiss active menu UI before reset")
+        self.api.machine.close_menu_from_anywhere()
 
     def pause(self) -> None:
         self.put("pause")
@@ -553,8 +513,10 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
 def reset_to_basic(session: RestInputSession) -> None:
     session.close_menu_from_anywhere()
     session.reset()
-    # The REST command is acknowledged before the C64 reset has visibly taken
-    # effect. Do not mistake the previous READY prompt for the post-reset one.
+    # This suite's reset is left alone deliberately. Switching it to the shared
+    # polling reset made wait_for_basic_ready below stop finding the prompt,
+    # and the cause was not established; the shared reset is proven in the
+    # other suites, so this one keeps its own path until that is understood.
     time.sleep(RESET_APPLY_SECONDS)
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
@@ -1987,10 +1949,10 @@ def main() -> int:
         description="Validate U64 keyboard and joystick REST input injection",
         epilog="Use --soak to continue with expanded long-run REST input coverage after the standard checks.",
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")))
-    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
+    parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     parser.add_argument("-s", "--soak", action="store_true", help="run the expanded soak suite after the standard checks")
     parser.add_argument(
         "--test",
@@ -2019,7 +1981,7 @@ def main() -> int:
         suite_fail("input_test", str(exc))
         return 1
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
-        if device_unavailable(exc):
+        if rest_lib.looks_unreachable(exc):
             suite_fail("input_test", f"connection failure: {format_exception(exc)}")
         else:
             suite_fail("input_test", f"REST failure: {format_exception(exc)}")

@@ -127,6 +127,11 @@ python3 -m py_compile $(find tests -name '*.py' -type f -not -path '*/__pycache_
 for f in $(find tests -name '*_test.py' -not -path '*/__pycache__/*'); do
     python3 "$f" --help >/dev/null || echo "FAILED $f"
 done
+
+# Neither of the above sees a name that is only resolved when the line runs, so
+# a helper used on a branch the gate does not reach stays broken until someone
+# hits it. pyflakes finds those, and is worth installing for this one check.
+python3 -m pyflakes $(git ls-files tests | grep '\.py$') run-tests
 ```
 
 For behaviour changes, deploy the affected firmware and run the narrowest

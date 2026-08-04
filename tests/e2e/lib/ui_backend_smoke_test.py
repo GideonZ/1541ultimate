@@ -27,8 +27,10 @@ from typing import Sequence
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok
-from ui_backend import Backend, RestBackend, TelnetBackend, Snapshot
+import rest as rest_lib
+from report import Failure, check, format_exception, section, suite_fail, suite_ok
+from ui_backend import (Backend, RestBackend, Snapshot, TelnetBackend,
+                        plan_overlay_navigation)
 
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
@@ -40,13 +42,64 @@ ROOT_ENTRY_ROWS_REST = range(2, 24)
 ROOT_ENTRY_ROWS_TELNET = range(2, 23)
 
 
-def device_unavailable(exc: BaseException) -> bool:
-    text = format_exception(exc).lower()
-    markers = (
-        "no route to host", "network is unreachable", "connection refused",
-        "timed out", "temporary failure in name resolution",
-    )
-    return any(marker in text for marker in markers)
+def run_navigation_planner_checks() -> None:
+    """The overlay route planner, checked against the firmware's own rules.
+
+    Needs no device: it is a pure function, and it is the one place encoding
+    what ContextMenu::seek_char and ::perform_quick_seek do. If it drifts from
+    the firmware, every context and task menu in the tree selects the wrong
+    item, so it is checked before anything talks to hardware.
+    """
+    menu = ["Run", "Load", "View", "Hex View", "Copy to...", "Rename",
+            "Delete", "Move to..."]
+
+    with check("a unique first letter jumps straight to the item"):
+        for label in ("View", "Copy to...", "Delete", "Move to..."):
+            plan = plan_overlay_navigation(menu, label)
+            if plan != (label[0], 0):
+                raise Failure(f"{label!r}: expected a one-character jump, got {plan}")
+
+    with check("a shared first letter extends the prefix rather than walking"):
+        # "Run" and "Rename" both start with R, and R lands on "Run".
+        plan = plan_overlay_navigation(menu, "Rename")
+        if plan != ("Re", 0):
+            raise Failure(f"expected the prefix 'Re', got {plan}")
+
+    with check("walking wins when the item is already next to the cursor"):
+        plan = plan_overlay_navigation(menu, "Load")
+        if plan != ("", 1):
+            raise Failure(f"expected a single DOWN, got {plan}")
+
+    with check("the seek lands on the first match and the walk covers the rest"):
+        # The seek always lands on the *first* label matching the prefix, so a
+        # later one of the same letter needs a step afterwards. Written with
+        # the pair far down the list, because near the top a plain walk is
+        # cheaper and the planner correctly prefers it.
+        long_menu = ["Zero", "One", "Two", "Three", "Four",
+                     "Alpha one", "Alpha two"]
+        plan = plan_overlay_navigation(long_menu, "Alpha two")
+        if plan != ("A", 1):
+            raise Failure(f"expected 'A' then one DOWN, got {plan}")
+
+    with check("a prefix never contains a space, which selects rather than seeks"):
+        # ContextMenu::handle_key maps KEY_SPACE to select_item(), so a space
+        # in the prefix would activate whatever sits under the cursor.
+        for label in menu:
+            prefix, _ = plan_overlay_navigation(menu, label)
+            if " " in prefix:
+                raise Failure(f"{label!r}: prefix {prefix!r} contains a space")
+
+    with check("a plan is never longer than walking from the top"):
+        for index, label in enumerate(menu):
+            prefix, delta = plan_overlay_navigation(menu, label)
+            if len(prefix) + abs(delta) > index:
+                raise Failure(f"{label!r}: plan costs {len(prefix) + abs(delta)} keys, "
+                              f"walking costs {index}")
+
+    with check("an upward walk is planned when that is the shorter route"):
+        prefix, delta = plan_overlay_navigation(menu, "Load", start=3)
+        if len(prefix) + abs(delta) > 2:
+            raise Failure(f"expected at most two keys, got {prefix!r} {delta:+d}")
 
 
 def assert_looks_like_root_browser(snapshot: Snapshot) -> None:
@@ -148,6 +201,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        section("Overlay navigation planner")
+        run_navigation_planner_checks()
+
         section("Telnet backend")
         with check("Telnet: connect, navigate, teardown"):
             run_telnet_smoke(args.host, args.telnet_port, args.password, args.timeout)
@@ -163,7 +219,7 @@ def main() -> int:
         suite_fail("ui_backend_smoke_test", str(exc))
         return 1
     except Exception as exc:  # noqa: BLE001 - report any transport error through the shared library
-        if device_unavailable(exc):
+        if rest_lib.looks_unreachable(exc):
             suite_fail("ui_backend_smoke_test", f"device unavailable: {format_exception(exc)}")
         else:
             suite_fail("ui_backend_smoke_test", format_exception(exc))

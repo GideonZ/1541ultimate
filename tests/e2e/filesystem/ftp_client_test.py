@@ -52,9 +52,15 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# tests/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
+# the shared character-to-key mapping and the batching helper.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
+import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from ui_backend import char_to_combo  # noqa: E402  (needs tests/e2e/lib first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
     section, suite_fail, warn)
@@ -69,13 +75,6 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # Shared with every suite; see tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
-# Typing needs no per-key wait: the device buffers keystrokes and the string
-# editor drains them. Measured on hardware, per-key POSTs stay character-perfect
-# (including consecutive duplicates) with zero settle at ~49 keys/s, which is
-# POST-latency bound. Do NOT batch multiple keys into one POST to go faster:
-# that floods the injected-key queue past its drain rate and silently drops
-# characters (verified). One key per POST, no backoff, is the safe maximum.
-TYPE_SETTLE_SECONDS = 0.0
 SELECTED_ROW_MIN_MARKED_CELLS = 12
 
 # C64 keyboard-matrix names from software/api/input_api.h. Cursor keys are a
@@ -93,16 +92,6 @@ K_F2 = ["left_shift", "f1"]
 K_F5 = ["f5"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
-# uppercase adds left_shift; the punctuation the FTP fields need maps to the
-# unshifted symbol keys. Values used by generated fixtures/aliases stay within
-# this set (see safe_name()).
-CHAR_KEYS = {
-    ".": ["period"], "/": ["slash"], ":": ["colon"], "-": ["minus"],
-    "@": ["at"], "+": ["plus"], "=": ["equals"], ",": ["comma"],
-    ";": ["semicolon"], " ": ["space"], "*": ["star"],
-}
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return True
@@ -128,6 +117,9 @@ class RestSession:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
         self.rest_requests = 0
         self.menu_snapshots = 0
         self.key_events = 0
@@ -349,15 +341,30 @@ class MenuDriver:
         return None
 
     def type_text(self, text):
-        for ch in text:
-            if ch.isdigit() or (ch.isalpha() and ch.islower()):
-                self.tap([ch], settle=TYPE_SETTLE_SECONDS)
-            elif ch.isalpha() and ch.isupper():
-                self.tap(["left_shift", ch.lower()], settle=TYPE_SETTLE_SECONDS)
-            elif ch in CHAR_KEYS:
-                self.tap(CHAR_KEYS[ch], settle=TYPE_SETTLE_SECONDS)
-            else:
-                raise Failure(f"type_text: no key mapping for {ch!r}")
+        """Type a whole string in as few requests as the firmware allows.
+
+        Every form in the menu is a UIStringEdit fed from the same injected-key
+        queue, so there is one right way to type and this uses it: the shared
+        mapping and batching from tests/e2e/lib, the same as every other suite.
+
+        This suite used to send one POST per character, on a comment claiming
+        batching "floods the injected-key queue past its drain rate and
+        silently drops characters". Measured since, against a rename field with
+        a deliberately truncated control needle to prove the reader worked
+        (tests/perf/typing_speed_perf_test.py): batched typing arrived whole
+        every time at 25.7 characters a second, per-key at 4.6. The suite's own
+        checks below are what confirm it for this form, since they type host
+        names, ports and paths into it and then use the host they made.
+        """
+        combos = [char_to_combo(ch) for ch in text]
+        if not combos:
+            return
+        self.last_input = f"type {text!r}"
+        self.s.key_events += len(combos)
+        menu_lib.send_taps(self.s.post_input, combos)
+        # The batch is accepted at once and drains through the matrix after, so
+        # the caller must not read the field back until it has arrived.
+        time.sleep(len(combos) * pacing.KEY_DRAIN_SECONDS)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
@@ -381,29 +388,16 @@ class MenuDriver:
         raise Failure("menu did not open after repeated menu_button")
 
     def close_menu_from_anywhere(self):
-        for i in range(18):
-            body = self.s.get_menu_screen()
-            if body is None:
-                return
-            screen = MenuScreen(body)
-            if "Save changes to Flash?" in screen.text:
-                self.tap(K_LEFT)
-                self.tap(K_RETURN)
-                continue
-            # An OK/confirmation popup (e.g. "N files placed on clipboard",
-            # "Are you sure?", an error box) is dismissed with RETURN, not
-            # RUN/STOP. Alternate the two so teardown clears popups and then
-            # backs out of the browser levels.
-            if i % 2 == 0:
-                self.tap(K_RETURN)
-            else:
-                self.tap(K_RUNSTOP)
-        # last resort: toggle the menu button
-        if self.s.get_menu_screen() is not None:
-            self.s.menu_button()
-            time.sleep(MENU_SETTLE_SECONDS)
-        if self.s.get_menu_screen() is not None:
-            raise Failure("menu could not be closed from anywhere")
+        # confirm_key: this suite leaves OK popups behind of its own ("N files
+        # placed on clipboard", an error box), which UIPopup answers only with
+        # RETURN, SPACE or its own button hotkey. Without it the teardown would
+        # spend every attempt on a popup that neither F8 nor RUN/STOP dismisses.
+        #
+        # The copy this replaced answered "Save changes to Flash?" with LEFT
+        # then RETURN. LEFT clamps at the first button, which is Yes, so that
+        # wrote whatever the suite had changed into the device's flash. The
+        # shared implementation presses the No hotkey instead.
+        self.s.api.machine.close_menu_from_anywhere(confirm_key="return")
 
     # -- selection navigation ---------------------------------------------
     def select_row_text(self, text, max_steps=40, require=True):
@@ -1927,13 +1921,13 @@ def cleanup(ctx, crashed):
     section("cleanup")
     s, d = ctx.s, ctx.d
     if crashed:
-        print("Device hard-crashed; skipping UI cleanup.")
-        print("Recover with: bash tooling/build_and_deploy_u64.sh (JTAG redeploy)")
+        detail("device hard-crashed; skipping UI cleanup")
+        detail("recover by redeploying the firmware over JTAG, or by power-cycling the device")
     else:
         try:
             if ctx.alias and not ctx.args.preserve_ftp_host:
                 d.remove_ftp_host(ctx.alias)
-                print(f"Removed test host '{ctx.alias}'.")
+                detail(f"removed test host {ctx.alias!r}")
             # run-tests' UI-state gate (tests/e2e/lib/ui_state.py) requires the
             # next suite to find the root browser at "/" with a non-empty
             # listing. This suite works inside /ftp, and removing its own test
@@ -1946,7 +1940,7 @@ def cleanup(ctx, crashed):
             d.close_menu_from_anywhere()
             s.release_all()
         except Exception as exc:
-            print(f"UI cleanup warning: {exc}")
+            warn(f"UI cleanup: {exc}")
     # Remove any files staged on the device's local FS.
     for path in ctx.host_staged:
         try:
@@ -1958,41 +1952,40 @@ def cleanup(ctx, crashed):
         preserved.append(f"FTP host '{ctx.alias}'")
     if ctx.server.keep_root:
         preserved.append(f"server root {ctx.server.root}")
-    print("Preserved: " + (", ".join(preserved) if preserved else "nothing"))
+    detail("preserved: " + (", ".join(preserved) if preserved else "nothing"))
 
 
 def print_summary(ctx, crashed):
     s, server = ctx.s, ctx.server
     section("summary")
-    header = f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes"
-    print(header)
-    print("-" * 78)
+    detail(f"{'Phase':8} {'Operation':22} {'Result':18} {'Commands':14} Fixture/Notes")
+    detail("-" * 78)
     for phase, op, result, cmds, fixture, notes in ctx.results:
         fx = fixture if not notes else f"{fixture} {notes}".strip()
-        print(f"{phase:8} {op:22.22} {result:18.18} {cmds:14.14} {fx}")
-    print("-" * 78)
-    print(f"Total REST requests   : {s.rest_requests}")
-    print(f"Total menu snapshots  : {s.menu_snapshots}")
-    print(f"Total keyboard events : {s.key_events}")
-    print(f"Total FTP commands    : {server.log_len()}")
-    print(f"Created host alias    : {ctx.alias if ctx.args.preserve_ftp_host else '(removed)'}")
-    print(f"Remote root path      : {server.root}")
-    print(f"Cleanup status        : {'CRASH - manual recovery needed' if crashed else 'clean'}")
+        detail(f"{phase:8} {op:22.22} {result:18.18} {cmds:14.14} {fx}")
+    detail("-" * 78)
+    detail(f"Total REST requests   : {s.rest_requests}")
+    detail(f"Total menu snapshots  : {s.menu_snapshots}")
+    detail(f"Total keyboard events : {s.key_events}")
+    detail(f"Total FTP commands    : {server.log_len()}")
+    detail(f"Created host alias    : {ctx.alias if ctx.args.preserve_ftp_host else '(removed)'}")
+    detail(f"Remote root path      : {server.root}")
+    detail(f"Cleanup status        : {'CRASH - manual recovery needed' if crashed else 'clean'}")
     fails = [r for r in ctx.results if r[2] not in ("OK", "WARN", "SKIP", "UNSUPPORTED_BY_UI")]
     unsupported = [r for r in ctx.results if r[2] == "UNSUPPORTED_BY_UI"]
     if unsupported:
-        print("\nUNSUPPORTED_BY_UI (source-backed):")
+        detail("UNSUPPORTED_BY_UI (source-backed):")
         for r in unsupported:
-            print(f"  - {r[0]}/{r[1]}: {r[5]}")
+            detail(f"  - {r[0]}/{r[1]}: {r[5]}")
     return fails
 
 
 def print_failure_diagnostics(ctx, exc):
     section("failure diagnostics")
     detail(str(exc))
-    print(f"Last check          : [{check_count():02d}] {last_label()}")
-    print(f"Last REST input      : {ctx.d.last_input}")
-    print(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
+    detail(f"Last check           : [{check_count():02d}] {last_label()}")
+    detail(f"Last REST input      : {ctx.d.last_input}")
+    detail(f"Last FTP command     : {ctx.server.snapshot_log()[-1] if ctx.server.log_len() else '(none)'}")
     body = None
     try:
         body = ctx.s.get_menu_screen()
@@ -2000,14 +1993,14 @@ def print_failure_diagnostics(ctx, exc):
         pass
     if body is not None:
         screen = MenuScreen(body)
-        print("Decoded menu screen:")
+        detail("Decoded menu screen:")
         for i, r in enumerate(screen.rows):
             mark = ">>" if i == screen.selected_row else "  "
             detail(f"{mark}{i:2d}|{r}|")
-        print(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
-    print("\nServer log tail:")
+        detail(f"selected_row={screen.selected_row} selected_text={screen.selected_text!r}")
+    detail("Server log tail:")
     for e in ctx.server.snapshot_log()[-12:]:
-        print(f"  {e[1]:6} {str(e[2])[:32]:32} -> {e[3]} {e[4][:40]}")
+        detail(f"  {e[1]:6} {str(e[2])[:32]:32} -> {e[3]} {e[4][:40]}")
 
 
 # ---------------------------------------------------------------------------
@@ -2041,8 +2034,10 @@ def parse_args(argv=None):
         epilog="Runs a controlled local pyftpdlib server, configures it as a remote host "
                "through the real firmware UI, and verifies every FTP operation against the "
                "server's filesystem and command log.")
-    p.add_argument("-H", "--host", default="u64", help="Ultimate hostname or IP (default u64)")
-    p.add_argument("-p", "--password", default="", help="REST password")
+    p.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                   help="Ultimate hostname or IP (default: $U64_HOST or u64)")
+    p.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                   help="REST password (default: $U64_PASS, empty)")
     p.add_argument("-n", "--no-assertions", action="store_true",
                    help="Warn instead of failing on assertion mismatches")
     p.add_argument("-t", "--timeout", type=float, default=5.0, help="REST timeout seconds")
@@ -2120,11 +2115,10 @@ def main(argv=None):
 
     driver.close_menu_from_anywhere()
     session.release_all()
-    session.require_ok("PUT", "/v1/machine:reset", description="reset")
-    time.sleep(3.0)
+    session.api.machine.reset(force=True)
 
-    print(f"Starting controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
-          f"(advertised {args.ftp_advertised_host})")
+    detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
+           f"(advertised {args.ftp_advertised_host})")
     try:
         server = ControlledFtpServer(
             args.ftp_bind_host, args.ftp_advertised_host, args.ftp_port,
@@ -2134,7 +2128,7 @@ def main(argv=None):
         suite_fail("ftp_client_test", str(exc))
         return 2
     server.start()
-    print(f"Server root: {server.root} (marker {server.marker})")
+    detail(f"server root: {server.root} (marker {server.marker})")
 
     ctx = Context(args, session, driver, server, inspector, assertions_enabled)
     ctx.alias = safe_name(args.alias_prefix)
@@ -2160,12 +2154,12 @@ def main(argv=None):
         failed = True
         print_failure_diagnostics(ctx, exc)
     except KeyboardInterrupt:
-        print("\nInterrupted.")
+        warn("interrupted")
     finally:
         try:
             cleanup(ctx, crashed)
         except Exception as exc:
-            print(f"cleanup error: {exc}")
+            warn(f"cleanup error: {exc}")
         if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
             session.require_ok("PUT", "/v1/machine:reset", description="reset")
         fails = print_summary(ctx, crashed)

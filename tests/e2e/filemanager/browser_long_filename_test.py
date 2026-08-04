@@ -22,8 +22,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
@@ -61,9 +60,6 @@ TELNET_ENTRY_ROWS = range(2, 23)
 TELNET_STATUS_ROW = 23
 TELNET_WIDTH = 60
 TELNET_HEIGHT = 24
-
-EDITOR_CHARS = {".": "period"}
-
 
 def rest_headers(password: str) -> Dict[str, str]:
     headers = {}
@@ -183,13 +179,15 @@ def seed_long_fixture(host: str, password: str, test_dir: str) -> str:
 
 
 def type_editor_text(browser: Browser, text: str) -> None:
-    for ch in text:
-        if ch.isalnum():
-            browser.type_char(ch.lower())
-        elif ch in EDITOR_CHARS:
-            browser.type_char(ch)
-        else:
-            raise Failure(f"cannot type {ch!r} through the browser keyboard")
+    """Type into the rename editor through the shared batched path.
+
+    Lowercased because a bare letter key types uppercase in the firmware's
+    default character set, which is what the per-character loop this replaced
+    did too. Browser.type_text uses the shared character mapping and splits the
+    string into requests the firmware will accept, so an 85-character name goes
+    in two rather than eighty-five.
+    """
+    browser.type_text(text.lower())
 
 
 def open_fixture_directory(browser: Browser, test_dir: str) -> None:
@@ -294,17 +292,17 @@ def reset_machine(host: str, password: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate long-filename browser actions on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD", "")),
+        default=os.environ.get("U64_PASS", ""),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument("--telnet-port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("--test-dir", default=default_test_dir())

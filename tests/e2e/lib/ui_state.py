@@ -47,12 +47,6 @@ UNWIND_PRESSES = 14
 # Deeper than any listing the suites build.
 HOME_PRESSES = 16
 REPAIR_ROUNDS = 4
-# The device serves a small fixed number of HTTP connections, so a request can
-# time out while it is busy. Reads are idempotent and simply retried. Writes are
-# not resent blindly: the menu button is a toggle, so a lost press is detected by
-# re-reading the state and pressing again only if nothing changed.
-TRANSPORT_RETRIES = 3
-TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
 
 class Unrecoverable(RuntimeError):
@@ -65,7 +59,7 @@ class Device:
         self.password = password
         self.timeout = timeout
 
-    def _request(self, method: str, path: str, payload=None, retries: int = 1) -> Optional[bytes]:
+    def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
         headers = {}
         if self.password:
             headers["X-Password"] = self.password
@@ -77,8 +71,10 @@ class Device:
             f"http://{self.host}{path}", data=body, headers=headers, method=method
         )
         # Transport and retry policy come from tests/lib/rest.py; see
-        # rest.may_retry. `retries` is kept in the signature because callers
-        # read as though they choose it, but the shared policy decides.
+        # rest.may_retry. The device serves few concurrent HTTP connections, so
+        # a read can time out while it is busy and is simply retried. The menu
+        # button is a toggle and is never resent blindly: a lost press is found
+        # by re-reading the state and pressing again only if nothing changed.
         try:
             with rest_lib.retrying_urlopen(request, self.timeout) as response:
                 return response.read()
@@ -91,7 +87,7 @@ class Device:
 
     def screen(self) -> Optional[List[str]]:
         """Menu screen as text rows, or None when the menu is closed."""
-        body = self._request("GET", "/v1/machine:menu_screen", retries=TRANSPORT_RETRIES)
+        body = self._request("GET", "/v1/machine:menu_screen")
         if body is None:
             return None
         if len(body) != SCREEN_BYTES:
@@ -331,6 +327,51 @@ def verify(device: Device) -> str:
     return describe_open_menu(device)
 
 
+def diagnose(device: Device) -> List[str]:
+    """What a reader needs to tell one stuck UI from another.
+
+    Written because a real wedge reported only "the menu will not close", and
+    working out what had actually happened meant poking the device by hand.
+    The three things that turned out to matter, in the order they were needed:
+
+    - where the browser is. The wedge above sat in a /Temp directory a killed
+      suite had deleted, which is not something any other line would have said.
+    - whether the listing is empty, because an empty one cannot be backed out
+      of by keystrokes and needs a reload.
+    - whether the UI reacts to a keystroke at all. That is what separates a
+      browser in an awkward place, which keys can fix, from a UI task that has
+      stopped reading them, which only a restart can.
+    """
+    lines: List[str] = []
+    rows = device.screen()
+    if rows is None:
+        return ["the menu is closed, so there is nothing on screen to show"]
+    path = rows[PATH_ROW].strip()
+    lines.append(f"browser path row: {path!r}")
+    if EMPTY_MARKER in "\n".join(rows):
+        lines.append(f"the listing is {EMPTY_MARKER!r}, so there is nothing to back out of; "
+                     "only a reload repopulates it")
+    # A key that changes nothing at all is the signal that the UI task has
+    # stopped reading them. RUN/STOP is used because it is the one key that
+    # cannot activate anything.
+    device.tap(["run_stop"])
+    after = device.screen()
+    if after is None:
+        lines.append("RUN/STOP closed the menu, so the UI is reading keys")
+    elif after == rows:
+        lines.append("the screen did not change after RUN/STOP: the UI task is not "
+                     "reading injected keys, which no keystroke can fix")
+    else:
+        lines.append("the screen changed after RUN/STOP, so the UI is reading keys")
+    return lines
+
+
+def report_failure(message: str, device: Device) -> None:
+    print(message)
+    for line in diagnose(device):
+        print(f"  {line}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-H", "--host", required=True)
@@ -350,7 +391,7 @@ def main() -> int:
         if args.action == "verify":
             problem = verify(device)
             if problem:
-                print(f"UI state dirty{who}: {problem}")
+                report_failure(f"UI state dirty{who}: {problem}", device)
                 return 2
             return 0
 
@@ -361,12 +402,18 @@ def main() -> int:
         repair(device)
         problem = verify(device)
         if problem:
-            print(f"UI state still dirty{who}: {problem}")
+            report_failure(f"UI state still dirty{who}: {problem}", device)
             return 1
         print("UI state repaired")
         return 0
     except Unrecoverable as exc:
-        print(f"UI state check failed{who}: {exc}")
+        try:
+            report_failure(f"UI state check failed{who}: {exc}", device)
+        except Unrecoverable:
+            # The device went away while being asked about. The original
+            # message is the one that matters; say why there is nothing more.
+            print(f"UI state check failed{who}: {exc}")
+            print("  the device stopped answering while it was being diagnosed")
         return 1
 
 

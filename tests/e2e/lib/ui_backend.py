@@ -308,6 +308,65 @@ _SHIFTED_DIGIT_CHARS: Dict[str, str] = {
 }
 
 
+# Characters that are safe to type into an overlay to move its cursor.
+# ContextMenu::handle_key sends anything from '!' upwards to seek_char, with two
+# exceptions that matter here: KEY_SPACE selects the current item rather than
+# seeking, and pattern_match treats '*' and '?' as wildcards. Restricting the
+# seek prefix to letters and digits avoids all three.
+_SEEKABLE_RE = re.compile(r"[A-Za-z0-9]")
+
+
+def _seek_landing(labels: Sequence[str], prefix: str) -> Optional[int]:
+    """Where ContextMenu::perform_quick_seek puts the cursor for `prefix`.
+
+    It appends '*' and scans from index 0, taking the first label that matches
+    case-insensitively, so this is a plain case-insensitive prefix match on the
+    first hit rather than a search forward from the current position.
+    """
+    lowered = prefix.lower()
+    for index, label in enumerate(labels):
+        if label.lower().startswith(lowered):
+            return index
+    return None
+
+
+def plan_overlay_navigation(labels: Sequence[str], target: str,
+                            start: int = 0) -> Tuple[str, int]:
+    """Fewest keystrokes to move an overlay's cursor from `start` to `target`.
+
+    Returns (prefix, delta): type `prefix` one character at a time, then press
+    DOWN `delta` times, or UP `-delta` times.
+
+    The firmware accumulates typed characters into a seek string and jumps to
+    the first label matching it, while any cursor key resets that string
+    (ContextMenu::down, ::up). A plan is therefore always a run of characters
+    followed by a run of cursor keys, never interleaved.
+
+    Every prefix length is costed, including zero, and the cheapest wins. Zero
+    is walking from where the cursor already is, which is what this replaces
+    and still wins for a target that is one row away. A single character
+    usually lands exactly, and where several items share a first letter the
+    jump lands on the first of them and the walk covers the rest, which is
+    still shorter than walking from the top.
+    """
+    index = list(labels).index(target)
+    best = ("", index - start)
+    best_cost = abs(index - start)
+    prefix = ""
+    for ch in target:
+        if not _SEEKABLE_RE.fullmatch(ch):
+            break
+        prefix += ch
+        landing = _seek_landing(labels, prefix)
+        if landing is None:
+            # Unreachable in practice: a label always matches its own prefix.
+            break
+        cost = len(prefix) + abs(index - landing)
+        if cost < best_cost:
+            best, best_cost = (prefix, index - landing), cost
+    return best
+
+
 def char_to_combo(ch: str) -> List[str]:
     if ch in _DIRECT_CHARS:
         return _DIRECT_CHARS[ch]
@@ -1106,9 +1165,13 @@ class TelnetBackend(Backend):
 # ---------------------------------------------------------------------------
 
 def add_mode_argument(parser, default: str = DEFAULT_MODE, choices: Sequence[str] = MODES) -> None:
-    """Register the standard --mode flag on an argparse parser."""
+    """Register the standard -m/--mode flag on an argparse parser.
+
+    The same letter and the same word as run-tests uses, so a mode named on the
+    runner's command line and one named on a suite's read identically.
+    """
     parser.add_argument(
-        "--mode",
+        "-m", "--mode",
         choices=list(choices),
         default=default,
         help=f"UI transport to drive the on-device UI through: {', '.join(choices)} (default: {default})",
@@ -1442,9 +1505,19 @@ class Browser:
         return labels
 
     def choose_overlay_item(self, labels: List[str], label: str) -> None:
+        """Select `label` in an open overlay, by the shortest key sequence.
+
+        Both the context menu and the task menu are ContextMenu objects, and
+        both reach this, so every overlay in the tree navigates the same way.
+        See plan_overlay_navigation for what the firmware does with the keys.
+        """
         if label not in labels:
             raise Failure(f"overlay has no {label!r}; it offers {labels}")
-        self.press_many("DOWN", labels.index(label))
+        prefix, delta = plan_overlay_navigation(labels, label)
+        for character in prefix:
+            self.type_char(character)
+        if delta:
+            self.press_many("DOWN" if delta > 0 else "UP", abs(delta))
         self.press("ENTER")
 
     def invoke_context_action(self, label: str) -> None:

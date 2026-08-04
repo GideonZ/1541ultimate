@@ -30,12 +30,10 @@ the loaders, FTP and the raw D64 directory for the file operations:
 
 import argparse
 import ftplib
-import io
 import json
 import os
 import sys
 import time
-import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -49,7 +47,7 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
 import pacing
 from report import check_skip, detail, section, suite_fail, suite_ok
-from ui_backend import Browser, MODE_TELNET, TelnetBackend, add_mode_argument, make_browser, strip_frame
+from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
 FTP_USER = "user"
@@ -1084,15 +1082,16 @@ def run_context_menu_inventory(machine: Machine, fixtures: Fixtures, location, o
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Drive and verify every PRG context-menu action on real firmware.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument(
         "-p", "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD", "")))
+        default=os.environ.get("U64_PASS", ""))
     parser.add_argument(
         "-t", "--timeout", type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "15.0")))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("U64_TELNET_PORT", "23")))
-    parser.add_argument("--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+        default=float(os.environ.get("U64_TIMEOUT", "15.0")))
+    parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
+                        default=int(os.environ.get("U64_TELNET_PORT", "23")))
+    parser.add_argument("--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "--keep-fixtures", action="store_true",
         help="Leave the seeded /Temp fixtures in place for manual inspection.")

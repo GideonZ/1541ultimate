@@ -2,7 +2,6 @@
 # E2E: Verifies REST memory reads and writes across live and frozen C64 modes.
 
 import argparse
-import io
 import json
 import os
 import sys
@@ -17,6 +16,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
     FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
     suite_ok, warn)
@@ -110,6 +110,9 @@ class RestSession:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -185,21 +188,7 @@ class RestSession:
             raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
 
     def close_menu_from_anywhere(self) -> None:
-        for attempt in range(12):
-            if not self.menu_screen_open():
-                return
-            # Shift+F7 is F8, the full UI exit; RUN/STOP alone cannot dismiss a
-            # menu editor left open by a previous run.
-            keys = ["left_shift", "f7"] if attempt < 6 else ["run_stop"]
-            status, _, body = self.request(
-                "POST",
-                INPUT_PATH,
-                payload={"events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]},
-            )
-            if status != 200:
-                raise Failure(f"input cleanup failed with HTTP {status}: {body[:160]!r}")
-            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-        self.set_menu_open(False)
+        self.api.machine.close_menu_from_anywhere()
 
     def get_config(self, category: str) -> Dict[str, object]:
         status, _, body = self.request("GET", f"/v1/configs/{urllib.parse.quote(category)}")
@@ -522,18 +511,18 @@ def main() -> int:
         description="Validate REST readmem/writemem correctness within, and consistency across, "
                     "the Freeze and Overlay-on-HDMI interface modes on real firmware."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")),
+        default=os.environ.get("U64_PASS"),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "30.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
     )
     parser.add_argument(
         "--test",
@@ -622,8 +611,7 @@ def main() -> int:
         try:
             if not args.no_reset:
                 session.set_menu_open(False)
-                session.reset()
-                time.sleep(2.0)
+                session.api.machine.reset(force=True)
             if not args.keep_config and original_interface:
                 session.set_interface_type(original_interface)
                 detail(f"restored Interface Type to {original_interface!r}")

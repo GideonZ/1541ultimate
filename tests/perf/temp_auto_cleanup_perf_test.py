@@ -13,9 +13,9 @@ that the resulting managed uploadcount matches the expected cleanup behavior.
 import argparse
 from collections import deque
 import ftplib
-import http.client
 import json
 import math
+import os
 import statistics
 import sys
 import time
@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
 import rest as rest_lib
+from api import UltimateApi
 from report import detail, progress, progress_done, section, suite_fail, suite_ok, warn
 
 SUITE = "temp_auto_cleanup_perf_test"
@@ -36,12 +37,9 @@ CONFIG_ITEMS = (
     ("Temp%20Subfolders", "Temp Subfolders"),
 )
 DEFAULT_STAGE_MODE = "both"
-FTP_DEFAULT_PASSWORD = "password"
-FTP_USER = "user"
 FTP_TIMEOUT_SECONDS = 30
 MANAGED_UPLOAD_PATHS = ("/Temp/cache/upload", "/Temp/upload", "/Temp")
 MAX_DISABLED_TOTAL_UPLOADS = 1000
-MEASURE_PROGRESS_INTERVAL = 100
 MEMORY_START_ADDRESS = 0x0400
 PAYLOAD_SIZE = 1024
 ROLLING_WINDOW_SECONDS = 1
@@ -117,6 +115,9 @@ class U64Client:
         self.host = host
         self.password = password
         self.assertions_enabled = assertions_enabled
+        # For the calls this benchmark makes no measurement of, so that the
+        # menu teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password)
 
     def close(self):
         return
@@ -166,40 +167,7 @@ class U64Client:
         raise RuntimeError(message)
 
     def close_menu_from_anywhere(self):
-        release_body = json.dumps({"events": [{"kind": "release_all"}]}).encode("utf-8")
-        self.require_ok(
-            "POST",
-            "/v1/machine:input",
-            body=release_body,
-            description="release input",
-            extra_headers={"Content-Type": "application/json"},
-        )
-        for attempt in range(12):
-            status, _payload = self.request("GET", "/v1/machine:menu_screen")
-            if status == 404:
-                return
-            if status != 200:
-                raise RuntimeError(f"menu-state probe failed with HTTP {status}")
-            # F8 leaves the menu from any depth; RUN/STOP covers the editors it
-            # does not reach. Never RETURN: it activates the entry under the
-            # cursor, which on the Assembly 64 entry opens its form.
-            keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
-            body = json.dumps({
-                "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
-            }).encode("utf-8")
-            self.require_ok(
-                "POST",
-                "/v1/machine:input",
-                body=body,
-                description="menu cleanup",
-                extra_headers={"Content-Type": "application/json"},
-            )
-            time.sleep(0.25)
-        self.require_ok("PUT", "/v1/machine:menu_button", description="menu-button cleanup")
-        time.sleep(0.5)
-        status, _payload = self.request("GET", "/v1/machine:menu_screen")
-        if status != 404:
-            raise RuntimeError("could not dismiss active menu UI before reset")
+        self.api.machine.close_menu_from_anywhere()
 
 
 class ManagedTempInspector:
@@ -238,8 +206,10 @@ def parse_args():
             "original Temp settings are restored before exit unless --no-config-change is used."
         ),
     )
-    parser.add_argument("-H", "--host", default="u64", help="IP or hostname of the U64")
-    parser.add_argument("-p", "--password", default="", help="U64 REST password")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"),
+                        help="IP or hostname of the U64 (default: $U64_HOST or u64)")
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""),
+                        help="U64 REST password (default: $U64_PASS, empty)")
     parser.add_argument(
         "-n",
         "--no-assertions",

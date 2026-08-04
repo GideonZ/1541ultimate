@@ -41,7 +41,6 @@ them on exit.
 
 import argparse
 import ftplib
-import io
 import json
 import os
 import sys
@@ -804,7 +803,7 @@ def main() -> int:
                     "and that SoftIEC replies are framed as single-part."
     )
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
-    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", os.environ.get("C64U_PASSWORD")))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float, default=float(os.environ.get("U64_TIMEOUT", "30.0")))
     parser.add_argument("-b", "--busy-timeout", type=float, default=BUSY_TIMEOUT_SECONDS,
                         help="How long a single command may stay in Command Busy before it counts as wedged.")

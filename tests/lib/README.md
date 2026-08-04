@@ -12,6 +12,16 @@ repository-root `run-tests` all use it.
 | `ftp.py` | FTP sessions, listings, transfers, deletion and purging |
 | `wait.py` | Bounded polling and retry |
 | `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
+| `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
+
+Two registered suites live here as well, because both check the test tree
+itself rather than the device and so need no hardware. They run first, where a
+failure lands as a clear message instead of as a confusing one later:
+
+| Suite | Checks |
+| --- | --- |
+| `check_transport_usage.py` | No suite has grown its own HTTP client again |
+| `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
 
 Put this directory on `sys.path` before importing:
 
@@ -116,7 +126,10 @@ The guidance for what to do about one is in
 
 Set `E2E_JSONL` to a path to append the run as JSONL, one object per line.
 `E2E_SUITE` names the suite in those records. `run-tests -j DIR` sets both for
-every suite it starts, writing one file per suite run into DIR.
+every suite it starts, writing one file per suite run into DIR, and writes its
+own `run` record to `DIR/run.jsonl` through `set_jsonl_path`. A harness that
+parses its arguments after importing this module needs that setter, because
+`E2E_JSONL` is read at import.
 
 Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
 
@@ -124,13 +137,35 @@ Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
 |---|---|
 | `check` | `index`, `label`, `verdict`, `extra`, `seconds`, `scenario` |
 | `scenario` | `title`, `verdict`, `checks`, `seconds` |
-| `suite` | `name`, `verdict`, `note`, `checks`, `seconds` |
+| `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
+| `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail` |
 | `warning` | `message` |
-| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds` |
+| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code` |
+
+A `suite` record written by `run-tests` carries what only the harness knows:
+the UI profile, which attempt it was, and how many times the device had to be
+recovered around it. A suite writing its own closing line has none of those, so
+they are absent rather than zero.
+
+`health` is one device sweep, the same one the console shows as a single line,
+with a latency per check. A run consumed programmatically would otherwise have
+no way to see why a device was called unhealthy, or to watch a listener getting
+slower across a week of runs.
 
 ```sh
 ./run-tests -H u64 -j runs/
+
+# every check that did not pass
 jq -r 'select(.kind=="check" and .verdict!="OK") | "\(.suite) \(.label) \(.verdict)"' runs/*.jsonl
+
+# the run's own result, including whether the device had to be recovered
+jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries) exit=\(.exit_code)"' runs/run.jsonl
+
+# which suites were slowest, and which needed the device recovered
+jq -r 'select(.kind=="suite") | "\(.seconds)s \(.name) attempt=\(.attempt) recoveries=\(.recoveries)"' runs/run.jsonl | sort -rn | head
+
+# every degraded health sweep, with the failing check named
+jq -r 'select(.kind=="health" and .ok==false) | "\(.label) " + ([.checks[] | select(.state=="fail") | .name] | join(","))' runs/run.jsonl
 ```
 
 ## Rules for extending

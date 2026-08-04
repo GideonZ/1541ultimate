@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
+from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
 from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
 
 
@@ -61,29 +63,14 @@ WEDGE_HINT = (
 )
 
 
-def header_value(headers: Dict[str, str], name: str) -> str:
-    wanted = name.lower()
-    for key, value in headers.items():
-        if key.lower() == wanted:
-            return value
-    return ""
-
-
-def parse_json(label: str, body: bytes) -> Dict[str, object]:
-    try:
-        data = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise Failure(f"{label}: response body is not valid JSON: {body[:160]!r}") from exc
-    if not isinstance(data, dict):
-        raise Failure(f"{label}: expected JSON object, got {data!r}")
-    return data
-
-
 class RestSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
         self.host = host
         self.password = password
         self.timeout = timeout
+        # For the calls this suite makes no assertion about, so that the menu
+        # teardown has one implementation across the tree.
+        self.api = UltimateApi(host, password, timeout)
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -129,27 +116,7 @@ class RestSession:
         time.sleep(1.0)
 
     def close_menu_from_anywhere(self) -> None:
-        for attempt in range(12):
-            status, _, _ = self.request("GET", MENU_SCREEN_PATH)
-            if status == 404:
-                return
-            if status != 200:
-                raise Failure(f"menu-state probe failed with HTTP {status}")
-            # F8 leaves the menu from any depth; RUN/STOP covers the editors it
-            # does not reach. Never RETURN: it activates the entry under the
-            # cursor, which on the Assembly 64 entry opens its form.
-            keys = ["left_shift", "f7"] if attempt < 8 else ["run_stop"]
-            status, _, body = self.request(
-                "POST",
-                "/v1/machine:input",
-                payload={"events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]},
-            )
-            if status != 200:
-                raise Failure(f"menu cleanup failed with HTTP {status}: {body[:160]!r}")
-            time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
-        self.menu_button()
-        if not self.wait_menu_state(want_open=False):
-            raise Failure("could not dismiss active menu UI before reset")
+        self.api.machine.close_menu_from_anywhere()
 
     def config_path(self, store: str, item: str) -> str:
         return f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}"
@@ -158,7 +125,7 @@ class RestSession:
         status, _, body = self.request("GET", self.config_path(store, item))
         if status != 200:
             raise Failure(f"reading '{item}' failed with HTTP {status}: {body[:160]!r}")
-        data = parse_json(f"config {item}", body)
+        data = json_object(f"config {item}", body)
         # The reply nests the setting under its category and name.
         entry = data.get(store, {})
         if isinstance(entry, dict):
@@ -494,18 +461,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate the freezer menu against SID mappings without auto address mirroring."
     )
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
-    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_INPUT_REST_HOST"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument(
         "-p",
         "--password",
-        default=os.environ.get("U64_INPUT_PASSWORD", os.environ.get("C64U_PASSWORD")),
+        default=os.environ.get("U64_PASS"),
     )
     parser.add_argument(
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_INPUT_TIMEOUT", "5.0")),
+        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
     )
     parser.add_argument(
         "--test",

@@ -38,6 +38,7 @@ from report import (
     Failure,
     check,
     check_skip,
+    detail,
     section,
     suite_fail,
     suite_ok,
@@ -560,7 +561,7 @@ def scenario_query_returns_results(device: Device) -> None:
         if not matches:
             # An empty corpus is the service's business, not the firmware's. What
             # this suite owns is that the UI left the form and stayed usable.
-            print("(the service returned no matches) ", end="")
+            detail("the service returned no matches")
         elif len(matches) < MIN_RESULT_ROWS:
             raise Failure(
                 f"only {len(matches)} result rows mention {SEARCH_TERM!r}, which "
@@ -719,15 +720,15 @@ SCENARIOS = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float, default=10.0)
     parser.add_argument(
         "--telnet-port",
         type=int,
-        default=int(os.environ.get("U64_INPUT_TELNET_PORT", "23")),
+        default=int(os.environ.get("U64_TELNET_PORT", "23")),
     )
-    add_mode_argument(parser, default=os.environ.get("U64_INPUT_MODE", "overlay"))
+    add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     parser.add_argument("--test", action="append", choices=("all", *SCENARIOS))
     args = parser.parse_args()
 

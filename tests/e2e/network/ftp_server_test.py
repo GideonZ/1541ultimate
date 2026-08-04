@@ -14,7 +14,6 @@ and browser_long_filename_test both build fixtures that long.
 
 import argparse
 import ftplib
-import io
 import os
 import sys
 from pathlib import Path
@@ -121,12 +120,11 @@ def scenario_names_round_trip(server: Server) -> None:
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify the device's FTP server reports names it can address.")
-    parser.add_argument("-H", "--host", default=os.environ.get("U64_INPUT_HOST", "u64"))
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password",
-                        default=os.environ.get("U64_INPUT_PASSWORD",
-                                               os.environ.get("C64U_PASSWORD", "")))
+                        default=os.environ.get("U64_PASS", ""))
     parser.add_argument("-t", "--timeout", type=float,
-                        default=float(os.environ.get("U64_INPUT_TIMEOUT", "10.0")))
+                        default=float(os.environ.get("U64_TIMEOUT", "10.0")))
     return parser.parse_args(argv)
 
 

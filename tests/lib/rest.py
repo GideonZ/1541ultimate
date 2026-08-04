@@ -143,6 +143,44 @@ def header_value(headers: Dict[str, str], name: str) -> str:
     return ""
 
 
+# What a transport error says when the device is not answering at all, as
+# opposed to answering with something the caller did not want. Matched against
+# the formatted exception text because urllib, http.client, socket and the
+# resolver each report it as a different exception type.
+#
+# "not found" is deliberately absent: one copy of this list carried it, and it
+# also matches an HTTP 404 body, which is the device answering.
+UNREACHABLE_MARKERS = (
+    "no route to host",
+    "network is unreachable",
+    "connection refused",
+    "timed out",
+    "temporary failure in name resolution",
+)
+
+
+def looks_unreachable(exc: BaseException) -> bool:
+    """Whether `exc` reads as the device being off the network."""
+    text = format_exception(exc).lower()
+    return any(marker in text for marker in UNREACHABLE_MARKERS)
+
+
+def json_object(label: str, body: bytes) -> Dict[str, object]:
+    """Decode a response body that has to be a JSON object.
+
+    For a suite asserting on the HTTP contract itself, where an unparsable body
+    or a JSON array is the defect being looked for rather than a surprise.
+    `label` names the call, so the failure says which one answered badly.
+    """
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise Failure(f"{label}: response body is not valid JSON: {body[:160]!r}") from exc
+    if not isinstance(data, dict):
+        raise Failure(f"{label}: expected JSON object, got {data!r}")
+    return data
+
+
 class RestClient:
     """One device's REST API.
 
@@ -157,6 +195,13 @@ class RestClient:
         self.host = host
         self.password = password or ""
         self.timeout = timeout
+        # Requests that could have changed the device, counted. A GET does
+        # not: reading memory, the menu screen or a config value leaves the
+        # machine exactly as it was. Anything else may. A caller comparing this
+        # against a value it saw earlier learns whether the device could have
+        # moved since; MachineApi.reset uses it to skip a reset that cannot
+        # accomplish anything.
+        self.mutations = 0
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = "?" + urllib.parse.urlencode(params) if params else ""
@@ -181,6 +226,8 @@ class RestClient:
             sent_headers["X-Password"] = self.password
 
         target = self.url(path, params)
+        if method.upper() != "GET":
+            self.mutations += 1
         request = urllib.request.Request(target, data=body, headers=sent_headers,
                                          method=method)
         # `idempotent` lets a caller opt a non-GET call into the same retry,

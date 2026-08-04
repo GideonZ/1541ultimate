@@ -94,6 +94,18 @@ def select_operation_index(context: ProbeExecutionContext | None, operation_coun
     )
 
 
+def has_multiple_runners(context: ProbeExecutionContext | None) -> bool:
+    """Whether more than one runner is driving this surface concurrently.
+
+    A probe uses it to relax an assertion that only holds when it is the only
+    writer: with several runners another one can change the value between this
+    one's write and its read-back.
+    """
+    if context is None or context.state is None:
+        return False
+    return getattr(context.state, "runner_count", 1) > 1
+
+
 def is_retryable_surface_error(error: Exception) -> bool:
     if isinstance(error, ftplib.Error):
         detail = str(error).strip()

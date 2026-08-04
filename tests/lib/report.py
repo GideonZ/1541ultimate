@@ -363,7 +363,8 @@ def warn(message: str) -> None:
     _record(kind="warning", message=message)
 
 
-def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float]) -> None:
+def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float],
+                fields: Optional[dict] = None) -> None:
     _close_scenario()
     # An explicit `seconds` means a harness is timing a suite it ran as a child
     # process, so this process's own check counter describes nothing and is left
@@ -376,38 +377,78 @@ def _suite_line(name: str, verdict: str, extra: str, seconds: Optional[float]) -
     print(f"{name}: {colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})",
           flush=True)
     _record(kind="suite", name=name, verdict=verdict, note=extra,
-            checks=_count, seconds=round(elapsed, 4))
+            checks=_count, seconds=round(elapsed, 4), **(fields or {}))
 
 
-def suite_ok(name: str, extra: str = "", seconds: Optional[float] = None) -> None:
-    """The closing line of a passing suite."""
-    _suite_line(name, OK, extra, seconds)
+def suite_ok(name: str, extra: str = "", seconds: Optional[float] = None,
+             **fields) -> None:
+    """The closing line of a passing suite.
+
+    `fields` are added to the JSONL record only, for a harness that knows
+    things about the run the suite itself cannot: which UI profile it was, which
+    attempt this was, how many times the device had to be recovered around it.
+    They are deliberately not printed: the console line is one line.
+    """
+    _suite_line(name, OK, extra, seconds, fields)
 
 
-def suite_fail(name: str, reason: str, seconds: Optional[float] = None) -> None:
+def suite_fail(name: str, reason: str, seconds: Optional[float] = None,
+               **fields) -> None:
     """The closing line of a failing suite."""
-    _suite_line(name, FAIL, reason, seconds)
+    _suite_line(name, FAIL, reason, seconds, fields)
 
 
-def suite_skip(name: str, reason: str, seconds: Optional[float] = None) -> None:
+def suite_skip(name: str, reason: str, seconds: Optional[float] = None,
+               **fields) -> None:
     """The closing line of a suite that could not run."""
-    _suite_line(name, SKIP, reason, seconds)
+    _suite_line(name, SKIP, reason, seconds, fields)
 
 
-def suite_warn(name: str, reason: str, seconds: Optional[float] = None) -> None:
+def suite_warn(name: str, reason: str, seconds: Optional[float] = None,
+               **fields) -> None:
     """A suite that passed but left something behind. Not a failure."""
-    _suite_line(name, WARN, reason, seconds)
+    _suite_line(name, WARN, reason, seconds, fields)
+
+
+def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:
+    """The JSONL record for one device health sweep.
+
+    The console gets the sweep as a single line; this is the same sweep in a
+    shape something other than a reader can use, with a latency per check. A
+    run consumed programmatically would otherwise have no way to see why a
+    device was called unhealthy, or to watch a listener getting slower over a week
+    of runs.
+    """
+    _record(kind="health", label=label, ok=ok, checks=list(checks))
+
+
+def set_jsonl_path(path: str) -> None:
+    """Send this process's records to `path`, for a harness taking a flag.
+
+    The suites a harness starts are told through E2E_JSONL, which is read at
+    import. A harness parses its own arguments after importing this module, so
+    it needs a way to say the same thing afterwards.
+    """
+    global JSONL_PATH
+    JSONL_PATH = path
 
 
 def run_result(verdict: str, suites: int, passed: int, failed: int,
-               skipped: int, dirty: int, seconds: float) -> None:
+               skipped: int, dirty: int, seconds: float,
+               recoveries: int = 0, exit_code: Optional[int] = None) -> None:
     """The JSONL record for a whole run, written by a harness rather than a suite.
 
     Record shapes belong to this module, so a harness reports its own result
     through here instead of formatting a JSON object of its own.
+
+    `recoveries` is how many times the device had to be brought back during the
+    run, and `exit_code` is the status the harness is about to exit with, so a
+    caller reading only the JSONL sees the same verdict as one reading `$?`.
     """
     _record(kind="run", verdict=verdict, suites=suites, passed=passed,
-            failed=failed, skipped=skipped, dirty=dirty, seconds=round(seconds, 4))
+            failed=failed, skipped=skipped, dirty=dirty,
+            seconds=round(seconds, 4), recoveries=recoveries,
+            exit_code=exit_code)
 
 
 def die(message: str) -> None:
