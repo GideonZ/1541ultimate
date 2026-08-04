@@ -628,38 +628,52 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         usage="run-tests [OPTIONS] [HOST]",
         description=(
-            "Run hardware tests against one Ultimate device.\n"
+            "Run hardware test suites against one Ultimate device.\n"
             "\n"
-            "Each suite is a separate process driving the real firmware over\n"
-            "REST, FTP or Telnet, so a device has to be reachable and idle.\n"
-            "Suites run one after another and share the device, so the runner\n"
-            "puts it back into a known state around each one. With no options\n"
-            "this runs the E2E suites once, in the overlay mode.\n"
+            "Suites execute sequentially as separate processes, each driving the\n"
+            "firmware over REST, FTP or Telnet. They share one device and one UI\n"
+            "object stack, so the runner re-establishes a known state around each\n"
+            "one. With no arguments: the E2E suites once, in overlay mode.\n"
             "\n"
-            "Before each E2E suite, and again after one fails, the runner\n"
-            "checks the device is healthy. Three things, in this order:\n"
+            "DEVICE HEALTH\n"
             "\n"
-            "  it answers      REST replies, polled patiently, since briefly\n"
-            "                  busy is far more common than gone\n"
-            "  its UI works    the on-device UI reaches the documented state,\n"
-            "                  which a device can fail to do while answering\n"
-            "                  every request normally\n"
-            "  its parts work  the health sweep: ping, REST, FTP, Telnet, ident\n"
-            "                  and the DMA port, plus the raster and jiffy\n"
-            "                  registers, which show the C64 underneath is\n"
-            "                  still running. Logged as one line per suite,\n"
-            "                  with a latency for each check.\n"
+            "Every E2E suite is preceded by a health check, and any suite that\n"
+            "fails is followed by a second one. Three predicates, evaluated in\n"
+            "order, short-circuiting on the first failure:\n"
             "\n"
-            "That decides everything else. A suite that fails on a healthy\n"
-            "device has found something, and the failure stands. A suite that\n"
-            "fails on an unhealthy device has shown nothing, so the device is\n"
-            "recovered with --recover-command and the suite runs again. A\n"
-            "device that cannot be made healthy ends the run, rather than\n"
-            "failing every suite left for the same reason.\n"
+            "  reachable   GET /v1/version succeeds, polled for up to 60s. The\n"
+            "              device serves few concurrent connections and reclaims\n"
+            "              an abandoned one after roughly 18s, so a single\n"
+            "              timeout is not conclusive.\n"
+            "  drivable    The on-device UI returns to the documented state:\n"
+            "              menu closed, root browser at /, listing non-empty.\n"
+            "              Independent of reachability, since a UI task that has\n"
+            "              stopped consuming injected keys still serves REST.\n"
+            "  functional  ICMP, REST, FTP (21), Telnet (23), /v1/info and the\n"
+            "              DMA control port (64) all respond, and $D012 and $00A2\n"
+            "              advance, evidencing that the VIC is scanning and the\n"
+            "              KERNAL interrupt is running. Emitted as one line per\n"
+            "              suite with per-check latency.\n"
             "\n"
-            "Recovery is off until --recover-command names one, because what\n"
-            "brings a device back differs per setup. It never fires for a suite\n"
-            "that merely failed, and every recovery counts against the run."),
+            "The health check is both the precondition for running a suite and\n"
+            "the sole trigger for recovery. A non-zero exit status alone cannot\n"
+            "distinguish these three outcomes; the health check can:\n"
+            "\n"
+            "  suite failed, device healthy    the suite found a defect and the\n"
+            "                                  result stands\n"
+            "  suite failed, device unhealthy  the result is uninformative, so\n"
+            "                                  recover the device and re-run\n"
+            "  device cannot be made healthy   abandon the run rather than\n"
+            "                                  attribute one device fault to\n"
+            "                                  every remaining suite\n"
+            "\n"
+            "RECOVERY\n"
+            "\n"
+            "--recover-command supplies the recovery action; the runner has no\n"
+            "default, since the mechanism is site-specific (JTAG download, power\n"
+            "cycle, flash tool). It is invoked only for an unhealthy device,\n"
+            "never for a failing suite, and is bounded per suite and per run.\n"
+            "Recovery is not free: a run requiring one exits 3, not 0.\n"),
         epilog=(
             "examples:\n"
             "  run-tests                          the E2E gate, overlay mode\n"
@@ -675,19 +689,18 @@ def build_parser() -> argparse.ArgumentParser:
             "                                     machine-readable results\n"
             "\n"
             "exit status:\n"
-            f"  {EXIT_OK}  every suite passed and the device was never recovered\n"
+            f"  {EXIT_OK}  all suites passed, no recovery required\n"
             f"  {EXIT_SUITE_FAILED}  at least one suite failed\n"
-            f"  {EXIT_USAGE}  the command line was wrong\n"
-            f"  {EXIT_RECOVERED}  every suite passed, but the device had to be recovered\n"
-            f"  {EXIT_DEVICE_UNHEALTHY}  the device could not be made healthy; the run was abandoned\n"
+            f"  {EXIT_USAGE}  invalid command line\n"
+            f"  {EXIT_RECOVERED}  all suites passed, but the device required recovery\n"
+            f"  {EXIT_DEVICE_UNHEALTHY}  the device could not be made healthy; run abandoned\n"
             "\n"
             "notes:\n"
-            "  The device must be idle. These suites open the menu, reset the\n"
-            "  machine and mount disks; some change device settings and restore\n"
-            "  them on exit.\n"
-            "  The run continues through every selected suite unless -x is given.\n"
-            "  Suites marked manual in --list need an operator decision, elevated\n"
-            "  privileges or a long wait, and run only when named with -s.\n"
+            "  The device must be otherwise idle: suites open the menu, reset the\n"
+            "  machine and mount disk images, and some mutate device settings and\n"
+            "  restore them on exit.\n"
+            "  Suite ordering is significant and fixed; see the comments in the\n"
+            "  registry at the top of this file.\n"
             "\n"
             "see also:\n"
             "  tests/README.md            categories, environment and exit status\n"
@@ -699,107 +712,108 @@ def build_parser() -> argparse.ArgumentParser:
 
     what = parser.add_argument_group(
         "what to run",
-        "With none of these, the E2E suites run on their own.")
+        "Categories to run. With none given, E2E only.")
     what.add_argument("--e2e", action="store_true",
-                      help="Run the E2E suites (the release gate). This is the default.")
+                      help="Functional and regression suites; the release gate. "
+                           "This is the default.")
     what.add_argument("--perf", action="store_true",
-                      help="Run the perf benchmarks.")
+                      help="Benchmarks. These report measurements rather than "
+                           "pass/fail verdicts.")
     what.add_argument("--soak", action="store_true",
-                      help="Run the soak tests.")
+                      help="Duration and load tests, for leaks, exhaustion and "
+                           "transport degradation.")
     what.add_argument("--all", action="store_true",
-                      help="Run all three categories: e2e, perf and soak.")
+                      help="All three categories, in the order e2e, perf, soak.")
 
     e2e = parser.add_argument_group(
         "e2e options",
-        "Which suites, and in which UI mode.")
+        "Suite selection and UI transport.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
                      default=DEFAULT_MODE, metavar="LIST",
-                     help="UI mode(s) to run the E2E suites in: overlay, freeze, "
-                          "telnet, a comma-separated combination, or all "
-                          f"(default: {DEFAULT_MODE}). The same flag and the same "
-                          "word each suite takes. Suites that only work one way "
-                          "ignore it.")
+                     help="UI transport to drive the E2E suites through: overlay, "
+                          "freeze, telnet, a comma-separated list, or all. Each "
+                          "listed mode is a full pass over the selected suites "
+                          f"(default: {DEFAULT_MODE}). Same flag and values as the "
+                          "suites take. Suites bound to one transport ignore it.")
     e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
-                     help="Run only this suite. Repeatable, and also selects a "
-                          "manual suite. See --list for the names.")
+                     help="Restrict the run to this suite. Repeatable, and "
+                          "selects manual suites as well. Names are in --list.")
     e2e.add_argument("--manual", action="store_true",
-                     help="Also run the manual suites, which need an operator "
-                          "decision, elevated privileges or a long wall-clock wait.")
+                     help="Include suites excluded from the default run because "
+                          "they need an operator decision, elevated privileges or "
+                          "a long wall-clock wait.")
 
     device = parser.add_argument_group(
         "device",
-        "Which device to drive, and how patiently.")
+        "Target device and request timeouts.")
     device.add_argument("-H", "--host", default=DEFAULT_HOST,
                         help="Device host name or IP (default: $U64_HOST or u64).")
     device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
                         help="REST and FTP password (default: $U64_PASS, empty).")
     device.add_argument("-t", "--timeout", default=DEFAULT_TIMEOUT,
-                        help=f"Per-request REST timeout (default: {DEFAULT_TIMEOUT}).")
+                        help="Per-request REST timeout in seconds, passed to each "
+                             f"suite (default: {DEFAULT_TIMEOUT}).")
     device.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
-                        help="Profile for the network connection soak. stress is about "
-                             "two minutes; soak runs for twelve hours (default: stress).")
+                        help="Duration profile for the network connection soak: "
+                             "stress is about two minutes, soak is twelve hours "
+                             "(default: stress).")
 
     health = parser.add_argument_group(
         "device health",
-        "What counts as a usable device, and what to do when it is not one.\n"
-        "See the description above for the rule these follow.")
+        "Predicates for a usable device, and the response when one fails.\n"
+        "See DEVICE HEALTH above.")
     health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
-                         help="Judge health by whether the device answers, and "
-                              "nothing else. The sweep is on by default and costs "
-                              "about 150ms per suite: ping, REST, FTP, telnet, "
-                              "ident and the DMA port on 64, plus the jiffy clock "
-                              "and raster line to show the C64 itself is running, "
-                              "logged as one line with latencies. Turn it off when "
-                              "a listener is deliberately off on this device, which "
-                              "would otherwise read as unhealthy before every suite.")
+                         help="Drop the 'functional' predicate, reducing health to "
+                              "reachable and drivable. The check costs about 150ms "
+                              "per suite. Use when a listener is disabled on this "
+                              "device by design and would otherwise report unhealthy "
+                              "before every suite.")
     health.add_argument("--no-retry", dest="retry", action="store_false", default=True,
-                         help="Do not run a suite again after its device has been "
-                              "recovered. The failure is reported as it stands. The "
-                              "device is still recovered, so the suites after it "
-                              "get a working one.")
+                         help="Report a failure from an unhealthy device as-is "
+                              "instead of re-running the suite. Recovery still "
+                              "happens, so subsequent suites get a working device.")
     health.add_argument("--recover-command", default="", metavar="CMD",
-                         help="Shell command that brings the device back, e.g. "
-                              "'build u64'. Run only when the device is unhealthy, "
-                              "never because a suite failed. Nothing here has a "
-                              "default, because what recovers a device differs per "
-                              "setup. Every recovery counts against the run: one "
-                              "that needed a recovery exits 3, not 0."),
+                         help="Shell command that restores the device, e.g. "
+                              "'build u64'. Invoked only for an unhealthy device. "
+                              "No default: the mechanism is site-specific. Exit "
+                              "status is advisory; the health check decides whether "
+                              "the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
-                         help="How many times one suite may have its device "
-                              "recovered before it is given up on. This is also how "
-                              "many extra attempts it can get, because the two are "
-                              "the same thing "
+                         help="Recovery budget for one suite. Also caps its "
+                              "re-runs, since a re-run follows each recovery "
                               f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
     health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
-                         help="How many times the device may be recovered in the "
-                              "whole run before the runner gives up on it "
+                         help="Recovery budget for the whole run; exhausting it "
+                              "abandons the run "
                               f"(default: {DEFAULT_RECOVER_MAX_TOTAL}).")
     health.add_argument("--recover-timeout", type=float,
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SEC",
-                         help="How long the recovery command may take "
-                              f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
+                         help="Wall-clock limit for the recovery command, after "
+                              "which it is terminated "
+                              f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}s).")
 
     output = parser.add_argument_group(
         "output",
-        "What the run prints, and what it leaves behind for a reader that is\n"
-        "not a person.")
+        "Console rendering, and machine-readable output.")
     output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
-                        help="Colour the output: auto colours a terminal and writes plain "
-                             "text when redirected, which is what keeps a saved log "
-                             "readable (default: auto).")
+                        help="auto emits ANSI colour to a terminal and plain text "
+                             "when redirected. NO_COLOR and FORCE_COLOR are honoured "
+                             "and are propagated to the suites (default: auto).")
     output.add_argument("-l", "--list", action="store_true",
-                        help="List every registered suite and exit.")
+                        help="Print the suite registry, one per line with its "
+                             "category, path and whether it is manual, then exit.")
     output.add_argument("-x", "--stop-on-fail", action="store_true",
-                        help="Stop at the first failing suite. By default the run "
-                             "continues through every selected suite, so one failure "
-                             "does not hide the rest.")
+                        help="Halt after the first failing suite. The default runs "
+                             "every selected suite, so one failure does not mask "
+                             "the others.")
     output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
-                        help="Write one JSONL file per suite run into DIR, plus "
-                             "run.jsonl for the run's own result, for a reader that "
-                             "is not a person.")
+                        help="Emit JSONL into DIR: one file per suite run, plus "
+                             "run.jsonl carrying the run's own counts, recovery "
+                             "total and exit status. Record shapes are documented "
+                             "in tests/lib/README.md.")
     return parser
 
 
