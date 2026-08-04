@@ -48,8 +48,6 @@ FTP_TIMEOUT_SECONDS = 10
 # so a read that comes back blank is asked again rather than believed.
 CONFIG_READ_ATTEMPTS = 3
 CONFIG_READ_PAUSE_SECONDS = 0.5
-# The C64 needs about this long to reach the BASIC prompt after a reset.
-MACHINE_RESET_SETTLE_SECONDS = 1.0
 
 
 class TempSettingsSuite:
@@ -163,11 +161,11 @@ class TempSettingsSuite:
         make_backend(self.args.mode, self.args.host, self.args.password or None).close()
 
     def machine_reset(self) -> None:
+        """Reset and wait for the BASIC prompt, polling rather than sleeping."""
         try:
             self.device.machine.reset()
         except Failure as exc:
             self.fail(f"Machine reset failed: {exc}")
-        time.sleep(MACHINE_RESET_SETTLE_SECONDS)
 
     def reset_to_clean_slate(self) -> None:
         self.close_active_menu()

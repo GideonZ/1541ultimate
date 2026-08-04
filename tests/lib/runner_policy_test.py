@@ -375,6 +375,9 @@ def run_jsonl_contract_checks(runner, tmpdir):
 def run_reset_guard_checks():
     """A reset that cannot change anything is not sent.
 
+    wait=False throughout: these check whether the request goes out, not the
+    READY poll that follows it, and the fake transport serves no memory.
+
     The device is untouched by these: they drive a RestClient whose transport
     is replaced, so the rules are checked without hardware.
     """
@@ -405,36 +408,36 @@ def run_reset_guard_checks():
 
     with check("consecutive resets collapse into one"):
         rest, m = machine()
-        m.reset(); m.reset(); m.reset()
+        m.reset(wait=False); m.reset(wait=False); m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
     with check("a read between two resets does not warrant the second"):
         rest, m = machine()
-        m.reset()
+        m.reset(wait=False)
         m._rest.request("GET", "/v1/machine:readmem")
-        m.reset()
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
     with check("a mutating call between two resets warrants the second"):
         rest, m = machine()
-        m.reset()
+        m.reset(wait=False)
         m._rest.request("POST", "/v1/machine:input")
-        m.reset()
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
 
     with check("force resets even when nothing has changed"):
         rest, m = machine()
-        m.reset(); m.reset(force=True)
+        m.reset(wait=False); m.reset(force=True, wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
 
     with check("a suite told the device was just reset does not reset again"):
         rest, m = machine(just_reset=True)
-        m.reset()
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 0)
 
     with check("a suite not told that still resets"):
         rest, m = machine(just_reset=False)
-        m.reset()
+        m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
 
