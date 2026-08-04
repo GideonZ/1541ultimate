@@ -162,6 +162,11 @@ SUITES: Sequence[Suite] = (
     # --------------------------------------------------------------- perf --
     Suite("perf", "temp-auto-cleanup-perf", "tests/perf/temp_auto_cleanup_perf_test.py",
           "-H @HOST@ -p @PASS@"),
+    # Compares the two ways the tree types into a menu field, on speed and on
+    # whether the characters survive. Carries its own negative control, so a
+    # screen scan that stopped reading the field cannot report both as perfect.
+    Suite("perf", "typing-speed", "tests/perf/typing_speed_perf_test.py",
+          "-H @HOST@ -p @PASS@ --mode @MODE@"),
 
     # --------------------------------------------------------------- soak --
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
