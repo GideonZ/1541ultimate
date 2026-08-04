@@ -310,13 +310,10 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             pass
         time.sleep(0.5)
 
-    request = urllib.request.Request(
-        f"http://{host}/v1/machine:reset", data=b"", headers=headers, method="PUT"
-    )
-    # Resetting twice leaves the same machine as resetting once.
-    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
-        pass
-    time.sleep(1.0)
+    # Do not assume a successful reset request means the old 6510 program has
+    # stopped. The shared fixture waits for a fresh BASIC-ready screen, which
+    # is the required postcondition before writing the next test program.
+    UltimateApi(host, password, REST_TIMEOUT_SECONDS).machine.reset()
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -586,61 +583,21 @@ def machine_runs_behind_the_ui(mode: str) -> bool:
     return mode != MODE_FREEZE
 
 
-def stop_running_program(rest_host: str) -> None:
-    """Halt whatever the C64 is executing, without relying on a BRK.
-
-    A BRK placed in memory by DMA is not reliably honoured by the running
-    6510. A test that launches a program and then assumes it stopped at its
-    trailing BRK is therefore racing the machine: the program can still be
-    executing, and whatever the test writes next is overwritten by it.
-    Observed as "Memory at $2000 did not become $5A", with $2000 holding the
-    value the previous iteration's program writes, in one run out of three.
-
-    Pausing stops the machine outright, which is one of the three things that
-    reliably do: pause, reset, or having the BRK in memory before the program
-    is launched. Reset is not used here because the monitor holds the machine
-    while its UI is up, and releasing it from under the UI is what takes the
-    device off the network.
-
-    Only call this where machine_runs_behind_the_ui() is true, and always with
-    the matching resume_machine(). The rule being followed is the firmware's
-    own: C64_Subsys::dma_load_raw_buffer stops the C64 only when it finds it
-    running, and resumes it only if it was the one that stopped it. Under
-    Freeze this pair would break that rule and resume a machine the freeze
-    stopped. MENU_C64_PAUSE runs C64::stop(), which overwrites the raster and
-    VIC interrupt registers C64::freeze() saved for the eventual unfreeze, and
-    MENU_C64_RESUME runs C64::resume(), which sets C64_MODE back to
-    MODE_NORMAL and releases the CPU while isFrozen is still set and the UI's
-    own I/O is still installed.
-
-    Where it is called, it composes with the DMA path rather than fighting it:
-    dma_load_raw_buffer sees an already-stopped machine, so the writes that
-    follow leave it stopped instead of resuming it between them.
-    """
-    request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:pause", data=b"", method="PUT")
-    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
-        pass
-
-
-def resume_machine(rest_host: str) -> None:
-    """Undo stop_running_program, so G starts from the normal running state."""
-    request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:resume", data=b"", method="PUT")
-    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
-        pass
-
-
 def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> None:
     sentinel = 0x5A
     values = (0x42, 0x37, 0x99)
     stop_first = machine_runs_behind_the_ui(mode)
 
     for value in values:
-        # Whatever ran before this, stop it outright rather than trusting its
-        # trailing BRK to have done so; see stop_running_program.
+        # A G program may not retire at its trailing BRK before the monitor
+        # returns. A pause ordinarily stops it before the next DMA write, but
+        # an already-pending stop can lose that race on an Overlay/Telnet UI.
+        # Begin each independent handoff from the same reset baseline instead;
+        # this is the only device-level operation that proves no old program
+        # remains to overwrite the sentinel.
         if stop_first:
-            stop_running_program(rest_host)
+            reset_rest_machine(rest_host, None)
+            session.enter_monitor()
         write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
         write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
         # Confirm the sentinel is actually in memory before asking the monitor
@@ -649,9 +606,6 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> No
         # this read has come back with the previous iteration's value.
         wait_for_rest_byte(rest_host, 0x2000, sentinel)
 
-        # Back to the normal running state before G, which does its own resume.
-        if stop_first:
-            resume_machine(rest_host)
         ensure_view(session, "HEX ")
         before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
         if before != sentinel:

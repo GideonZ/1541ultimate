@@ -39,7 +39,7 @@ confusing failures scattered across every suite built on it.
 
 ```bash
 ./run-tests -H u64 -s machine-code-monitor
-./run-tests -H u64 -s machine-code-monitor-debug
+./run-tests -H u64 --manual -s machine-code-monitor-debug
 ```
 
 This suite takes its defaults from the same environment variables as every
@@ -65,10 +65,11 @@ REST calls can go to a second address on a dual-NIC device.
 
 The harness parses the VT100 telnet stream into a deterministic `40x25` screen buffer and compares the captured output against the expected snapshot fragments in `snapshots/expected_snapshots.json`.
 
-`machine-code-monitor-debug` uses the shared Telnet backend and REST fixture
+`machine-code-monitor-debug` is manual. It uses the shared Telnet backend and REST fixture
 for the step, breakpoint, banked-memory and execution-handoff regressions. Its
 natural-exit liveness checks need the C64 screen to be unowned, so it is the
-intentional Telnet-only monitor suite. The exhaustive
+intentional Telnet-only monitor suite; run it explicitly with
+`./run-tests -H u64 --manual -s machine-code-monitor-debug`. The exhaustive
 `machine-code-monitor-matrix` suite is manual: it repeats each
 memory/UI lane and writes a diagnostic ledger, so run it explicitly with
 `./run-tests -H u64 --manual -s machine-code-monitor-matrix`.
