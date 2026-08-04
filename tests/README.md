@@ -44,15 +44,15 @@ Everything else the runner does when things go badly follows from one idea.
 Before each E2E suite, and again after one fails, the runner establishes that
 the device is **healthy**:
 
-- **it answers** - polled patiently, because a device that is briefly busy is
-  far more common than one that has gone;
-- **it is usable** - its UI reaches the documented state. A device can answer
-  every request and still be impossible to drive: seen live, a browser stuck in
-  a directory a killed run had deleted, with the UI task no longer reading
-  injected keys, while REST, FTP, telnet and the DMA port all answered
+- **it answers** - REST replies, polled patiently, because a device that is
+  briefly busy is far more common than one that has gone;
+- **its UI works** - the on-device UI reaches the documented state. A device can
+  answer every request and still be impossible to drive: seen live, a browser
+  stuck in a directory a killed run had deleted, with the UI task no longer
+  reading injected keys, while REST, FTP, Telnet and the DMA port all answered
   normally;
-- **it is well** - a health sweep of every listener the suites need and of the
-  C64 underneath them.
+- **its parts work** - the health sweep of every listener the suites need, and
+  of the C64 underneath them.
 
 They are checked in that order, because reaching the documented state shuts the
 menu, and the jiffy and raster checks are skipped while it is open.
