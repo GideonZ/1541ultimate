@@ -611,8 +611,7 @@ def main() -> int:
         try:
             if not args.no_reset:
                 session.set_menu_open(False)
-                session.reset()
-                time.sleep(2.0)
+                session.api.machine.reset(force=True)
             if not args.keep_config and original_interface:
                 session.set_interface_type(original_interface)
                 detail(f"restored Interface Type to {original_interface!r}")

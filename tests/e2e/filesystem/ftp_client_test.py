@@ -2115,8 +2115,7 @@ def main(argv=None):
 
     driver.close_menu_from_anywhere()
     session.release_all()
-    session.require_ok("PUT", "/v1/machine:reset", description="reset")
-    time.sleep(3.0)
+    session.api.machine.reset(force=True)
 
     detail(f"controlled FTP server on {args.ftp_bind_host}:{args.ftp_port} "
            f"(advertised {args.ftp_advertised_host})")

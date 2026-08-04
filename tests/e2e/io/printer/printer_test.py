@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, detail, section, warn)
@@ -90,6 +91,8 @@ FTP_PASSWORD_DEFAULT = "password"
 POLL_INTERVAL_SECONDS = 0.5
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
+# The menu toggle is observable, so it is waited for rather than slept on.
+MENU_CLOSE_TIMEOUT_SECONDS = 5.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -421,7 +424,9 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     if client.get_menu_screen() is not None:
         client.menu_button()  # close whatever is open
-        time.sleep(settle)
+        wait.wait_until(lambda: client.get_menu_screen() is None,
+                        "the menu to close before Flush/Eject",
+                        timeout=MENU_CLOSE_TIMEOUT_SECONDS)
 
     client.menu_button()  # open root browser
     time.sleep(settle)
@@ -975,8 +980,7 @@ def main():
 
     check_start("reset before run")
     client.close_menu_from_anywhere()
-    client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
-    time.sleep(2.0)
+    client.api.machine.reset(force=True)
     check_ok()
 
     prg_path = ISSUE_717_PRG_PATH if args.issue_717_basic else WORKLOAD_PRG_PATH

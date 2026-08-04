@@ -74,11 +74,11 @@ MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0
 MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
 MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
-RESET_APPLY_SECONDS = float(os.environ.get("U64_INPUT_RESET_APPLY_SECONDS", "3.0"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
 MULTICAST_GROUP = "239.0.1.64"
 VIDEO_PORT = 11000
+RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
 MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
@@ -513,8 +513,10 @@ def wait_for_basic_ready(session: RestInputSession) -> None:
 def reset_to_basic(session: RestInputSession) -> None:
     session.close_menu_from_anywhere()
     session.reset()
-    # The REST command is acknowledged before the C64 reset has visibly taken
-    # effect. Do not mistake the previous READY prompt for the post-reset one.
+    # This suite's reset is left alone deliberately. Switching it to the shared
+    # polling reset made wait_for_basic_ready below stop finding the prompt,
+    # and the cause was not established; the shared reset is proven in the
+    # other suites, so this one keeps its own path until that is understood.
     time.sleep(RESET_APPLY_SECONDS)
     wait_for_basic_ready(session)
     session.post_events([{"kind": "release_all"}])
