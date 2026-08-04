@@ -372,6 +372,72 @@ def run_jsonl_contract_checks(runner, tmpdir):
                runner.EXIT_RECOVERED)
 
 
+def run_reset_guard_checks():
+    """A reset that cannot change anything is not sent.
+
+    The device is untouched by these: they drive a RestClient whose transport
+    is replaced, so the rules are checked without hardware.
+    """
+    import api as api_module
+
+    class FakeRest:
+        def __init__(self):
+            self.mutations = 0
+            self.sent = []
+
+        def request(self, method, path, **kwargs):
+            if method.upper() != "GET":
+                self.mutations += 1
+            self.sent.append((method, path))
+            return 200, {}, b""
+
+    def machine(just_reset=False):
+        rest = FakeRest()
+        previous = os.environ.get("U64_DEVICE_RESET")
+        os.environ["U64_DEVICE_RESET"] = "1" if just_reset else "0"
+        try:
+            return rest, api_module.MachineApi(rest)
+        finally:
+            if previous is None:
+                os.environ.pop("U64_DEVICE_RESET", None)
+            else:
+                os.environ["U64_DEVICE_RESET"] = previous
+
+    with check("consecutive resets collapse into one"):
+        rest, m = machine()
+        m.reset(); m.reset(); m.reset()
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
+
+    with check("a read between two resets does not warrant the second"):
+        rest, m = machine()
+        m.reset()
+        m._rest.request("GET", "/v1/machine:readmem")
+        m.reset()
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
+
+    with check("a mutating call between two resets warrants the second"):
+        rest, m = machine()
+        m.reset()
+        m._rest.request("POST", "/v1/machine:input")
+        m.reset()
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
+
+    with check("force resets even when nothing has changed"):
+        rest, m = machine()
+        m.reset(); m.reset(force=True)
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 2)
+
+    with check("a suite told the device was just reset does not reset again"):
+        rest, m = machine(just_reset=True)
+        m.reset()
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 0)
+
+    with check("a suite not told that still resets"):
+        rest, m = machine(just_reset=False)
+        m.reset()
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
+
+
 def run_health_checks():
     ok = health.Check("rest", health.OK, 12.0)
     bad = health.Check("ftp", health.FAIL, 2000.0, "connection refused")
@@ -411,6 +477,7 @@ def main():
         run_recovery_gating_checks(runner)
         run_recovery_limit_checks(runner)
         run_degraded_recovery_checks(runner)
+        run_reset_guard_checks()
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             run_retry_checks(runner, tmpdir)
             run_jsonl_contract_checks(runner, tmpdir)

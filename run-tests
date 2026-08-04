@@ -239,6 +239,15 @@ class Device:
         """Reset the per-suite recovery budget. Called once per suite run."""
         self.suite_recoveries = 0
 
+    @property
+    def just_reset(self) -> bool:
+        """Whether the device was reset and nothing has changed it since.
+
+        Reads do not count, so the health check between a reset and the next
+        suite does not invalidate it. See api.MachineApi.reset.
+        """
+        return self.api.machine.was_just_reset
+
     def may_recover(self) -> Tuple[bool, str]:
         """Whether another recovery is allowed, and why not when it is not."""
         if not self.recover_command:
@@ -503,6 +512,12 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
 
     environment = dict(os.environ)
     environment["E2E_SUITE"] = suite.name
+    # Tell the suite whether the device has just been reset and nothing has
+    # touched it since, so it does not open with a reset of its own. One suite
+    # ending with a reset and the next starting with one is the common case,
+    # and neither process can see the other. Cleared as soon as anything
+    # mutating is sent; see api.MachineApi.reset.
+    environment["U64_DEVICE_RESET"] = "1" if device.just_reset else "0"
     if options.jsonl_dir:
         path = os.path.join(options.jsonl_dir, f"{label}-{suite.name}.jsonl")
         # Truncated on the first attempt and appended to afterwards, so the

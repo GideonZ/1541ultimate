@@ -195,6 +195,13 @@ class RestClient:
         self.host = host
         self.password = password or ""
         self.timeout = timeout
+        # Requests that could have changed the device, counted. A GET does
+        # not: reading memory, the menu screen or a config value leaves the
+        # machine exactly as it was. Anything else may. A caller comparing this
+        # against a value it saw earlier learns whether the device could have
+        # moved since; MachineApi.reset uses it to skip a reset that cannot
+        # accomplish anything.
+        self.mutations = 0
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = "?" + urllib.parse.urlencode(params) if params else ""
@@ -219,6 +226,8 @@ class RestClient:
             sent_headers["X-Password"] = self.password
 
         target = self.url(path, params)
+        if method.upper() != "GET":
+            self.mutations += 1
         request = urllib.request.Request(target, data=body, headers=sent_headers,
                                          method=method)
         # `idempotent` lets a caller opt a non-GET call into the same retry,

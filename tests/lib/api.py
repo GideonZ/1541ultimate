@@ -20,6 +20,7 @@ assert on, and those want the raw response rather than a decoded object.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -119,14 +120,48 @@ class MachineApi:
 
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
+        # The mutation count as of the last reset. A harness that has just
+        # reset the device exports U64_DEVICE_RESET, which seeds this so the
+        # first suite in a fresh process does not reset a machine nothing has
+        # touched since. Any mutating call clears the assumption by advancing
+        # the counter past it.
+        self._reset_at: Optional[int] = (
+            rest.mutations if os.environ.get("U64_DEVICE_RESET") == "1" else None)
 
     def _act(self, action: str) -> None:
         code, _, body = self._rest.request("PUT", f"/v1/machine:{action}")
         if code != 200:
             raise Failure(f"machine:{action} returned HTTP {code}: {body[:160]!r}")
 
-    def reset(self) -> None:
+    def reset(self, force: bool = False) -> None:
+        """Reset the C64, unless nothing has happened that a reset would clear.
+
+        Resetting twice in a row is common and always wasted: one suite ends
+        with a reset and the next begins with one, and a suite's own setup
+        often resets after a helper already did. Only a request to the device
+        can put the machine into a state a reset would clear, so if the
+        transport has sent nothing since the last reset, this one cannot change
+        anything and is skipped.
+
+        Only mutating requests count. Reading memory, the menu screen or a
+        config value cannot move the machine, so a health check between two
+        resets does not make the second one necessary.
+
+        Across processes the runner exports U64_DEVICE_RESET after its own
+        reset, which covers the common case of one suite ending with a reset
+        and the next beginning with one. A caller that reached the device by
+        another route entirely (FTP, Telnet, the DMA control port) should pass
+        `force`, since those are invisible here.
+        """
+        if not force and self._reset_at == self._rest.mutations:
+            return
         self._act("reset")
+        self._reset_at = self._rest.mutations
+
+    @property
+    def was_just_reset(self) -> bool:
+        """Whether this client reset the device and nothing has moved it since."""
+        return self._reset_at is not None and self._reset_at == self._rest.mutations
 
     def reboot(self) -> None:
         self._act("reboot")
