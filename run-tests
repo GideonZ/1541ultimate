@@ -624,42 +624,74 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Run hardware tests against one Ultimate device.\n"
             "\n"
-            "By default this runs the E2E suites once, in the overlay profile.\n"
-            "Add --perf, --soak, or --all to run more, and -m to repeat the E2E\n"
-            "suites in more than one UI profile."),
+            "Each suite is a separate process driving the real firmware over\n"
+            "REST, FTP or Telnet, so a device has to be reachable and idle.\n"
+            "Suites run one after another and share the device, so the runner\n"
+            "puts it back into a known state around each one. With no options\n"
+            "this runs the E2E suites once, in the overlay profile.\n"
+            "\n"
+            "Before each E2E suite, and again after one fails, the runner\n"
+            "establishes that the device is FIT:\n"
+            "\n"
+            "  it answers   polled patiently, since briefly busy is far more\n"
+            "               common than gone\n"
+            "  it is usable its UI reaches the documented state, which a device\n"
+            "               can fail while answering every request normally\n"
+            "  it is well   a health sweep of ping, REST, FTP, Telnet, ident and\n"
+            "               the DMA port, plus the raster and jiffy registers to\n"
+            "               show the C64 underneath is still running. One line\n"
+            "               per suite, with a latency for each check.\n"
+            "\n"
+            "That one idea decides everything else. A suite that fails on a fit\n"
+            "device has found something, and the failure stands. A suite that\n"
+            "fails on an unfit device has shown nothing, so the device is\n"
+            "recovered with --recover-command and the suite runs again. A device\n"
+            "that cannot be made fit ends the run rather than failing every\n"
+            "suite left for the same reason.\n"
+            "\n"
+            "Recovery is off until --recover-command names one, because what\n"
+            "brings a device back differs per setup. It never fires for a suite\n"
+            "that merely failed, and every recovery counts against the run."),
         epilog=(
-            "Examples:\n"
-            "  run-tests                          E2E suites, overlay profile\n"
+            "examples:\n"
+            "  run-tests                          the E2E gate, overlay profile\n"
             "  run-tests -H 192.168.0.64          the same, against another device\n"
-            "  run-tests -m all                   E2E suites in all three profiles\n"
-            "  run-tests -m telnet,freeze         E2E suites in two chosen profiles\n"
-            "  run-tests --all -m all             everything: E2E in every profile,\n"
-            "                                     then perf, then soak\n"
+            "  run-tests -s prg-context-menu      one suite\n"
+            "  run-tests -m all                   the gate in all three profiles\n"
+            "  run-tests -m telnet,freeze         two chosen profiles\n"
             "  run-tests --perf --soak            perf and soak only, no E2E\n"
-            "  run-tests -s prg-context-menu      one E2E suite\n"
+            "  run-tests --all -m all             everything; takes hours\n"
             "  run-tests --list                   show every registered suite\n"
             "  run-tests --recover-command 'build u64' -j runs/\n"
-            "                                     recover an unreachable device and\n"
-            "                                     write machine-readable results\n"
+            "                                     recover an unfit device, and write\n"
+            "                                     machine-readable results\n"
             "\n"
-            "Exit status:\n"
-            f"  {EXIT_OK}  every suite passed and the device never needed recovering\n"
+            "exit status:\n"
+            f"  {EXIT_OK}  every suite passed and the device was never recovered\n"
             f"  {EXIT_SUITE_FAILED}  at least one suite failed\n"
             f"  {EXIT_USAGE}  the command line was wrong\n"
             f"  {EXIT_RECOVERED}  every suite passed, but the device had to be recovered\n"
-            f"  {EXIT_DEVICE_UNFIT}  the device could not be made fit and the run was abandoned\n"
+            f"  {EXIT_DEVICE_UNFIT}  the device could not be made fit; the run was abandoned\n"
             "\n"
-            "Notes:\n"
-            "  The device must be idle: these suites open the menu, reset the\n"
-            "  machine and mount disks. Some change device settings and restore\n"
-            "  them on exit. A full --all -m all run takes hours.\n"
-            "  The run continues through every selected suite unless -x is given.\n"))
+            "notes:\n"
+            "  The device must be idle. These suites open the menu, reset the\n"
+            "  machine and mount disks; some change device settings and restore\n"
+            "  them on exit.\n"
+            "  The run continues through every selected suite unless -x is given.\n"
+            "  Suites marked manual in --list need an operator decision, elevated\n"
+            "  privileges or a long wait, and run only when named with -s.\n"
+            "\n"
+            "see also:\n"
+            "  tests/README.md            categories, environment and exit status\n"
+            "  tests/e2e/README.md        adding or changing a suite\n"
+            "  tests/lib/README.md        the JSONL record shapes\n"))
 
     parser.add_argument("host_positional", nargs="?", metavar="HOST",
                         help="Device host name or IP. May also be given with -H.")
 
     what = parser.add_argument_group(
-        "what to run", "With none of these, the E2E suites run on their own.")
+        "what to run",
+        "With none of these, the E2E suites run on their own.")
     what.add_argument("--e2e", action="store_true",
                       help="Run the E2E suites (the release gate). This is the default.")
     what.add_argument("--perf", action="store_true",
@@ -669,7 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
     what.add_argument("--all", action="store_true",
                       help="Run all three categories: e2e, perf and soak.")
 
-    e2e = parser.add_argument_group("E2E options")
+    e2e = parser.add_argument_group(
+        "e2e options",
+        "Which suites, and in which UI profile.")
     e2e.add_argument("-m", "--modes", default=DEFAULT_MODE, metavar="LIST",
                      help="UI profile(s) to run the E2E suites in: overlay, freeze, "
                           "telnet, a comma-separated combination, or all "
@@ -681,7 +715,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Also run the manual suites, which need an operator "
                           "decision, elevated privileges or a long wall-clock wait.")
 
-    device = parser.add_argument_group("device")
+    device = parser.add_argument_group(
+        "device",
+        "Which device to drive, and how patiently.")
     device.add_argument("-H", "--host", default=DEFAULT_HOST,
                         help="Device host name or IP (default: $U64_HOST or u64).")
     device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
@@ -694,12 +730,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     fitness = parser.add_argument_group(
         "device fitness",
-        "One rule governs all of this. Before each E2E suite, and again after "
-        "one fails, the runner establishes that the device is FIT: it answers, "
-        "and its listeners and its C64 are working. A suite that fails on a fit "
-        "device has found something. A suite that fails on an unfit one has "
-        "shown nothing, so the device is recovered and the suite runs again. An "
-        "unfit device is the only thing that triggers --recover-command.")
+        "What counts as a usable device, and what to do when it is not one.\n"
+        "See the description above for the rule these follow.")
     fitness.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
                          help="Judge fitness by whether the device answers, and "
@@ -739,7 +771,10 @@ def build_parser() -> argparse.ArgumentParser:
                          help="How long the recovery command may take "
                               f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
 
-    output = parser.add_argument_group("output")
+    output = parser.add_argument_group(
+        "output",
+        "What the run prints, and what it leaves behind for a reader that is\n"
+        "not a person.")
     output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
                         help="Colour the output: auto colours a terminal and writes plain "
                              "text when redirected, which is what keeps a saved log "
