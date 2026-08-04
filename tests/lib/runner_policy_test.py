@@ -314,6 +314,64 @@ def run_retry_checks(runner, tmpdir):
         expect("device unfit", result.device_unfit, True)
 
 
+def run_jsonl_contract_checks(runner, tmpdir):
+    """What a programmatic caller reads has to carry what a person's log does.
+
+    The console and the JSONL are two renderings of one run, and it is easy to
+    add something to the first and forget the second: the health sweep was
+    logged as a line for a while and was invisible to anything reading JSONL.
+    """
+    import json
+
+    path = os.path.join(tmpdir, "records.jsonl")
+    report_module = sys.modules["report"]
+    previous = report_module.JSONL_PATH
+    report_module.set_jsonl_path(path)
+    try:
+        report_module.health_result("suite:", False, [
+            {"name": "rest", "state": "ok", "ms": 9.0, "detail": ""},
+            {"name": "ftp", "state": "fail", "ms": 2000.0, "detail": "refused"},
+        ])
+        report_module.suite_ok("fixture", "", 1.5, mode="overlay", attempt=2,
+                               recoveries=1)
+        report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
+                                 skipped=0, dirty=0, seconds=1.5, recoveries=1,
+                                 exit_code=3)
+        records = [json.loads(line) for line in open(path, encoding="utf-8")]
+    finally:
+        report_module.set_jsonl_path(previous)
+
+    by_kind = {record["kind"]: record for record in records}
+
+    with check("a health sweep reaches the JSONL with a latency per check"):
+        sweep = by_kind.get("health")
+        if sweep is None:
+            raise Failure("no health record was written")
+        expect("ok", sweep["ok"], False)
+        expect("checks", [c["name"] for c in sweep["checks"]], ["rest", "ftp"])
+        expect("latency", sweep["checks"][0]["ms"], 9.0)
+        expect("why it failed", sweep["checks"][1]["detail"], "refused")
+
+    with check("a suite record carries the profile, attempt and recoveries"):
+        suite = by_kind.get("suite")
+        if suite is None:
+            raise Failure("no suite record was written")
+        for field, wanted in (("mode", "overlay"), ("attempt", 2),
+                              ("recoveries", 1), ("verdict", "OK")):
+            expect(field, suite[field], wanted)
+
+    with check("the run record agrees with the exit status"):
+        run = by_kind.get("run")
+        if run is None:
+            raise Failure("no run record was written")
+        expect("recoveries", run["recoveries"], 1)
+        expect("exit_code", run["exit_code"], 3)
+        # A caller that reads only the JSONL must reach the same verdict as one
+        # that reads only $?, so the two are written from the same numbers.
+        expect("exit code matches a recovered run", run["exit_code"],
+               runner.EXIT_RECOVERED)
+
+
 def run_health_checks():
     ok = health.Check("rest", health.OK, 12.0)
     bad = health.Check("ftp", health.FAIL, 2000.0, "connection refused")
@@ -355,6 +413,7 @@ def main():
         run_degraded_recovery_checks(runner)
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             run_retry_checks(runner, tmpdir)
+            run_jsonl_contract_checks(runner, tmpdir)
         run_health_checks()
     except Failure as exc:
         suite_fail("runner_policy_test", str(exc))

@@ -399,13 +399,17 @@ class Device:
         return True
 
     def check_health(self, label: str) -> "health.Health":
-        """Sweep the device and log the result as one line."""
+        """Sweep the device, log one line, and record the whole sweep."""
         sweep = self.health()
         report.detail(f"{label} {sweep.one_line()}")
         for name in sweep.failed:
             note = sweep.detail_for(name)
             if note:
                 report.detail(f"    {name}: {note}")
+        report.health_result(
+            label.rstrip(": ") or "device", sweep.ok,
+            ({"name": c.name, "state": c.state, "ms": round(c.ms, 1),
+              "detail": c.detail} for c in sweep.checks))
         return sweep
 
     def close_active_menu(self) -> bool:
@@ -516,11 +520,13 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     completed = subprocess.run(build_command(suite, options, mode), env=environment)
     elapsed = time.monotonic() - started
 
+    fields = {"mode": mode, "attempt": attempt,
+              "recoveries": device.suite_recoveries}
     if completed.returncode == 0:
-        report.suite_ok(suite.name, "", elapsed)
+        report.suite_ok(suite.name, "", elapsed, **fields)
         verdict = report.OK
     else:
-        report.suite_fail(suite.name, "", elapsed)
+        report.suite_fail(suite.name, "", elapsed, **fields)
         verdict = report.FAIL
 
     # Attribution only: the precondition owns the state, so leaving the browser
@@ -531,7 +537,8 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
         # it: report._suite_line falls back to the time since the harness
         # process started when it is given no duration, so a WARN printed an
         # hour into a run read as an hour-long suite.
-        report.suite_warn(suite.name, "left the device UI outside the documented state", elapsed)
+        report.suite_warn(suite.name, "left the device UI outside the documented state",
+                          elapsed, **fields)
         ui_state_gate("ensure", options, suite.name, quiet=True)
         if verdict == report.OK:
             verdict = report.WARN
@@ -835,7 +842,25 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
                           f"{result.name}: the device was recovered "
                           f"{plural(result.recoveries, 'time')} around this suite")
 
+    # Where the time went. A run is judged on wall clock as much as on its
+    # verdict, and finding the expensive suites otherwise means scrolling a log
+    # of several hundred lines. Three is enough to see the shape without the
+    # summary turning into a second copy of the run.
+    slowest = sorted(results, key=lambda r: r.seconds, reverse=True)[:3]
+    if len(results) > 3 and slowest[0].seconds > 0:
+        report.detail("slowest: " + ", ".join(
+            f"{r.name} {report.format_duration(r.seconds)}" for r in slowest))
+
     total = time.monotonic() - started
+    # The difference between the suites' own time and the run's is the fitness
+    # sweeps, the UI-state gate and the teardown. Naming it stops it reading as
+    # unexplained, and makes it obvious when a gate has started misbehaving.
+    in_suites = sum(r.seconds for r in results)
+    overhead = total - in_suites
+    if overhead > 0:
+        report.detail(f"{report.format_duration(in_suites)} in suites, "
+                      f"{report.format_duration(overhead)} in fitness checks, "
+                      "the UI-state gate and teardown")
     if recoveries:
         report.detail(f"the device was recovered {plural(recoveries, 'time')} "
                       "during the run")
