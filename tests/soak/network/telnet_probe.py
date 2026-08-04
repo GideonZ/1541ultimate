@@ -18,6 +18,7 @@ from connection_runtime import (
     ProbeOutcome,
     ProbeSurface,
     RuntimeSettings,
+    has_multiple_runners,
     run_incomplete_surface_operation,
     run_surface_operation,
     select_operation_index,

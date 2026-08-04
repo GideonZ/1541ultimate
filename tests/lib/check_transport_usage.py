@@ -89,13 +89,46 @@ MUST_USE_POLICY = {
 }
 
 
+def imports_rest(tree):
+    """Whether the module actually imports tests/lib/rest.py, under any name."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == "rest" for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom) and node.module == "rest":
+            return True
+    return False
+
+
+def uses_policy(path):
+    """Whether `path` can actually reach rest.may_retry.
+
+    Both halves are needed. This check used to look only for the text
+    "may_retry", and ftp_client_test.py satisfied it for months while never
+    importing the module: every call in its own retry loop would have raised
+    NameError instead of deciding whether to retry. A grep cannot tell a call
+    from a name that happens to be spelled the same.
+    """
+    source = open(path, encoding="utf-8").read()
+    if "may_retry" not in source:
+        return False, "no reference to rest.may_retry"
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError as exc:
+        return False, f"could not be parsed: {exc}"
+    if not imports_rest(tree):
+        return False, "references may_retry without importing rest"
+    return True, ""
+
+
 def main():
     problems = []
     scanned = 0
     for path in sorted(MUST_USE_POLICY):
-        if "may_retry" not in open(path, encoding="utf-8").read():
+        usable, why = uses_policy(path)
+        if not usable:
             problems.append((os.path.relpath(path, ROOT), 0,
-                             "its own retry loop without rest.may_retry"))
+                             f"its own retry loop, {why}"))
     for base, _dirs, files in os.walk(TESTS):
         if "__pycache__" in base:
             continue

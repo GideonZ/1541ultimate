@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 from api import MachineApi
-from report import Failure, check, check_skip, check_start, format_exception, suite_fail, suite_ok, warn
+from report import (Failure, check, check_skip, check_start, detail, format_exception,
+                    suite_fail, suite_ok, warn)
 from rest import RestClient, header_value, json_object
 
 

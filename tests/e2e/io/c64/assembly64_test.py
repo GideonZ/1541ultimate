@@ -38,6 +38,7 @@ from report import (
     Failure,
     check,
     check_skip,
+    detail,
     section,
     suite_fail,
     suite_ok,
