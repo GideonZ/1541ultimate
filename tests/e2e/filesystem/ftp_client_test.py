@@ -53,9 +53,10 @@ except ImportError:  # pragma: no cover
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
-# the shared character-to-key mapping.
+# the shared character-to-key mapping and the batching helper.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
+import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from ui_backend import char_to_combo  # noqa: E402  (needs tests/e2e/lib first)
@@ -74,13 +75,6 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # Shared with every suite; see tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
-# Typing needs no per-key wait: the device buffers keystrokes and the string
-# editor drains them. Measured on hardware, per-key POSTs stay character-perfect
-# (including consecutive duplicates) with zero settle at ~49 keys/s, which is
-# POST-latency bound. Do NOT batch multiple keys into one POST to go faster:
-# that floods the injected-key queue past its drain rate and silently drops
-# characters (verified). One key per POST, no backoff, is the safe maximum.
-TYPE_SETTLE_SECONDS = 0.0
 SELECTED_ROW_MIN_MARKED_CELLS = 12
 
 # C64 keyboard-matrix names from software/api/input_api.h. Cursor keys are a
@@ -347,16 +341,30 @@ class MenuDriver:
         return None
 
     def type_text(self, text):
-        """Type a string, one POST per character. See TYPE_SETTLE_SECONDS.
+        """Type a whole string in as few requests as the firmware allows.
 
-        The character-to-key mapping is the shared one in tests/e2e/lib; this
-        suite used to carry its own copy covering a subset of the same keys.
-        The one-POST-per-character rhythm is this suite's own and is not an
-        oversight: the comment above TYPE_SETTLE_SECONDS records that batching
-        drops characters here.
+        Every form in the menu is a UIStringEdit fed from the same injected-key
+        queue, so there is one right way to type and this uses it: the shared
+        mapping and batching from tests/e2e/lib, the same as every other suite.
+
+        This suite used to send one POST per character, on a comment claiming
+        batching "floods the injected-key queue past its drain rate and
+        silently drops characters". Measured since, against a rename field with
+        a deliberately truncated control needle to prove the reader worked
+        (tests/perf/typing_speed_perf_test.py): batched typing arrived whole
+        every time at 25.7 characters a second, per-key at 4.6. The suite's own
+        checks below are what confirm it for this form, since they type host
+        names, ports and paths into it and then use the host they made.
         """
-        for ch in text:
-            self.tap(char_to_combo(ch), settle=TYPE_SETTLE_SECONDS)
+        combos = [char_to_combo(ch) for ch in text]
+        if not combos:
+            return
+        self.last_input = f"type {text!r}"
+        self.s.key_events += len(combos)
+        menu_lib.send_taps(self.s.post_input, combos)
+        # The batch is accepted at once and drains through the matrix after, so
+        # the caller must not read the field back until it has arrived.
+        time.sleep(len(combos) * pacing.KEY_DRAIN_SECONDS)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):

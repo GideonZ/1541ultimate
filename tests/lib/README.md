@@ -149,7 +149,7 @@ they are absent rather than zero.
 
 `health` is one device sweep, the same one the console shows as a single line,
 with a latency per check. A run consumed programmatically would otherwise have
-no way to see why a device was called unfit, or to watch a listener getting
+no way to see why a device was called unhealthy, or to watch a listener getting
 slower across a week of runs.
 
 ```sh

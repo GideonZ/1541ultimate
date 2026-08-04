@@ -39,10 +39,10 @@ not hide the rest. `-x/--stop-on-fail` stops at the first one.
 
 Everything else the runner does when things go badly follows from one idea.
 
-### Fitness
+### Health
 
 Before each E2E suite, and again after one fails, the runner establishes that
-the device is **fit**:
+the device is **healthy**:
 
 - **it answers** - polled patiently, because a device that is briefly busy is
   far more common than one that has gone;
@@ -61,11 +61,11 @@ From that, three rules, and there are no others:
 
 | Situation | What happens |
 | --- | --- |
-| A suite fails on a fit device | It found something. The failure stands. |
-| A suite fails on an unfit device | It showed nothing. Recover, run it again. |
-| The device cannot be made fit | Abandon the run rather than fail every remaining suite for the same reason. |
+| A suite fails on a healthy device | It found something. The failure stands. |
+| A suite fails on an unhealthy device | It showed nothing. Recover, run it again. |
+| The device cannot be made healthy | Abandon the run rather than fail every remaining suite for the same reason. |
 
-An unfit device is the **only** thing that triggers recovery. A failing suite
+An unhealthy device is the **only** thing that triggers recovery. A failing suite
 never triggers it on its own.
 
 ### The health sweep
@@ -84,8 +84,8 @@ perfectly well. Those two are skipped, not failed, while the menu is open,
 because under Freeze the menu has stopped the machine on purpose.
 
 The sweep costs about 150ms and is on by default. `--no-health-check` reduces
-fitness to "it answers", which is what you want when a listener is deliberately
-off on a particular device and would otherwise read as unfit before every
+health to "it answers", which is what you want when a listener is deliberately
+off on a particular device and would otherwise read as unhealthy before every
 suite.
 
 `tests/lib/health.py` runs the sweep on its own, and takes `-c/--check` to run
@@ -109,12 +109,12 @@ until you ask for it:
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `--recover-command` | What to run when the device is unfit | none, so recovery is off |
+| `--recover-command` | What to run when the device is unhealthy | none, so recovery is off |
 | `--recover-max-per-suite` | Recoveries for one suite, which is also its extra attempts | 3 |
 | `--recover-max-total` | Recoveries in the whole run | 10 |
 | `--recover-timeout` | How long the command may take | 900s |
 | `--no-retry` | Recover, but do not run the suite again | off, so it does retry |
-| `--no-health-check` | Fitness means "it answers", nothing more | off, so the sweep runs |
+| `--no-health-check` | Health means "it answers", nothing more | off, so the sweep runs |
 
 A suite is repeated only while the device is what failed it, so repetition
 needs no count of its own: `--recover-max-per-suite` is both how many times a
@@ -136,7 +136,7 @@ console output:
 | `1` | At least one suite failed |
 | `2` | The command line was wrong |
 | `3` | Every suite passed, but the device had to be recovered |
-| `4` | The device could not be made fit, and the run was abandoned |
+| `4` | The device could not be made healthy, and the run was abandoned |
 
 `-j DIR` writes the same thing as JSONL: one file per suite run, plus
 `run.jsonl` holding the run's own `run` record with `passed`, `failed`,

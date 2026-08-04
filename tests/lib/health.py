@@ -4,10 +4,10 @@
 """One bounded sweep of the device, reported as a single line.
 
 A suite that fails tells you the check did not hold. It does not tell you
-whether the device was still fit to be tested, and by the time someone reads
-the log the device has usually been reset several times over. The sweep below
-answers that question at the moment it mattered: before each suite, and again
-after one fails.
+whether the device was still healthy enough to test on, and by the time
+someone reads the log it has usually been reset several times over. The sweep
+below answers that question at the moment it mattered: before each suite, and
+again after one fails.
 
 What it covers, and why each one is here:
 
@@ -260,7 +260,7 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
         # A static jiffy under a moving raster is an ordinary state, not a
         # fault: the machine is running, its KERNAL interrupt is not ticking.
         # Downgrading rather than dropping the check keeps the reason visible
-        # in the line without it making the device unfit.
+        # in the line without it making the device unhealthy.
         states = {c.name: c.state for c in checks}
         if states.get("raster") == OK and states.get("jiffy") == FAIL:
             checks = [

@@ -63,7 +63,7 @@ EXIT_OK = 0
 EXIT_SUITE_FAILED = 1
 EXIT_USAGE = 2
 EXIT_RECOVERED = 3
-EXIT_DEVICE_UNFIT = 4
+EXIT_DEVICE_UNHEALTHY = 4
 
 
 @dataclass(frozen=True)
@@ -185,11 +185,11 @@ class Result:
     name: str
     verdict: str
     seconds: float
-    # Set when the device could not be made fit, so the remaining suites would
+    # Set when the device could not be made healthy, so the remaining suites would
     # each fail for the same reason and tell nobody anything new. A device that
     # still answers but is permanently degraded counts: every suite after it
     # fails on the same dead listener.
-    device_unfit: bool = False
+    device_unhealthy: bool = False
     # How many times the device had to be recovered around this suite.
     recoveries: int = 0
 
@@ -251,7 +251,7 @@ class Device:
                            f"{self.recover_max_per_suite} recoveries")
         return True, ""
 
-    def health(self) -> health.Health:
+    def health_sweep(self) -> health.Health:
         """One health sweep, using this run's own short-timeout client."""
         return health.probe(self.host, self.password, api=self.probe)
 
@@ -334,11 +334,11 @@ class Device:
         report.check_fail(f"still unreachable after {POST_RECOVERY_BUDGET_SECONDS:g}s")
         return False
 
-    def unfitness(self, label: str, patient: bool = True,
+    def health_problem(self, label: str, patient: bool = True,
                   extra: Optional[Callable[[], str]] = None) -> str:
-        """Why the device is not fit to be tested, or "" when it is.
+        """Why the device is not healthy enough to test on, or "" when it is.
 
-        Fitness is the runner's one notion of a usable device, and everything
+        Health is the runner's one notion of a usable device, and everything
         else keys off it:
 
           it answers    `wait_until_reachable`, patiently by default, because
@@ -349,14 +349,14 @@ class Device:
                         the UI task deaf to injected keys, while REST, FTP,
                         telnet and the DMA port all answered normally. Nothing
                         else here notices that, which is why the gate is part
-                        of fitness rather than a separate precondition.
+                        of health rather than a separate precondition.
           it is well    the health sweep: every listener the suites need, and a
                         C64 that is still running. Skipped under
-                        --no-health-check, which leaves fitness meaning only
+                        --no-health-check, which leaves health meaning only
                         that the device answers and its UI can be driven. That
                         is the whole effect of the flag: a device with a
                         listener deliberately switched off would otherwise read
-                        as unfit before every suite, forever.
+                        as unhealthy before every suite, forever.
 
         The order matters. The gate runs before the sweep because it shuts the
         menu, and the jiffy and raster checks are skipped while the menu is
@@ -374,38 +374,38 @@ class Device:
                 return problem
         if not self.health_check:
             return ""
-        sweep = self.check_health(label)
+        sweep = self.sweep_health(label)
         if sweep.ok:
             return ""
         return "it is degraded: " + ", ".join(sweep.failed)
 
-    def make_fit(self, label: str, patient: bool = True,
+    def ensure_healthy(self, label: str, patient: bool = True,
                  extra: Optional[Callable[[], str]] = None) -> bool:
-        """Establish that the device is fit, recovering it once if it is not.
+        """Establish that the device is healthy, recovering it once if it is not.
 
         One call runs at most one recovery, so a caller that wants several
         rounds loops and stays inside the ceilings on its own. Returns whether
-        the device is fit now.
+        the device is healthy now.
         """
-        problem = self.unfitness(label, patient, extra)
+        problem = self.health_problem(label, patient, extra)
         if not problem:
             return True
-        report.detail(f"{label} the device is unfit: {problem}")
+        report.detail(f"{label} the device is unhealthy: {problem}")
         allowed, why = self.may_recover()
         if not allowed:
             report.detail(f"{label} not recovering: {why}")
             return False
         if not self.run_recovery_command():
             return False
-        problem = self.unfitness(f"{label} after recovery,", patient, extra)
+        problem = self.health_problem(f"{label} after recovery,", patient, extra)
         if problem:
-            report.detail(f"{label} still unfit after recovering: {problem}")
+            report.detail(f"{label} still unhealthy after recovering: {problem}")
             return False
         return True
 
-    def check_health(self, label: str) -> "health.Health":
+    def sweep_health(self, label: str) -> "health.Health":
         """Sweep the device, log one line, and record the whole sweep."""
-        sweep = self.health()
+        sweep = self.health_sweep()
         report.detail(f"{label} {sweep.one_line()}")
         for name in sweep.failed:
             note = sweep.detail_for(name)
@@ -491,10 +491,11 @@ def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
 
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                     label: str, attempt: int) -> Tuple[str, float, bool]:
-    """One go at a suite. Returns (verdict, seconds, device_unfit).
+    """One go at a suite. Returns (verdict, seconds, device_unhealthy).
 
     Everything that has to hold before the suite starts is one question: is the
-    device fit. See Device.unfitness for what that covers and in which order.
+    device healthy. See Device.health_problem for what that covers, and in
+    which order.
     """
     report.banner(f"{suite.category.upper()}  {suite.name}"
                   + (f"  ({mode})" if suite.category == "e2e" else "")
@@ -514,11 +515,11 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     if suite.category == "e2e":
         # E2E suites share one device and one UI object stack, so each starts
         # from the documented state rather than from whatever the last one
-        # left. Reaching that state is part of fitness, not a check beside it:
+        # left. Reaching that state is part of health, not a check beside it:
         # a device can answer every request and still be impossible to drive.
-        if not device.make_fit(f"{suite.name}:",
+        if not device.ensure_healthy(f"{suite.name}:",
                                extra=lambda: ui_state_ready(options, suite.name)):
-            report.suite_fail(suite.name, "precondition: the device is unfit", 0.0)
+            report.suite_fail(suite.name, "precondition: the device is unhealthy", 0.0)
             return report.FAIL, 0.0, True
 
     started = time.monotonic()
@@ -557,8 +558,8 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
 
     The rule this loop implements, and the only one there is:
 
-        a suite that fails on a fit device has found something. A suite that
-        fails on an unfit one has told you nothing, so the device is recovered
+        a suite that fails on a healthy device has found something. A suite that
+        fails on an unhealthy one has told you nothing, so the device is recovered
         and the suite runs again.
 
     Repetition is therefore bounded by the recovery ceilings rather than by a
@@ -582,27 +583,27 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         recoveries = device.recoveries - recoveries_before
         if lost:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
-                          device_unfit=True, recoveries=recoveries)
+                          device_unhealthy=True, recoveries=recoveries)
         if verdict != report.FAIL or not options.retry:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
                           recoveries=recoveries)
 
         # The suite failed. Whether that verdict is believed depends on the
-        # device: a fit one means the suite found a defect and there is nothing
-        # to retry, an unfit one means the attempt proved nothing.
+        # device: a healthy one means the suite found a defect and there is nothing
+        # to retry, an unhealthy one means the attempt proved nothing.
         before = device.recoveries
-        fit = device.make_fit(
+        healthy = device.ensure_healthy(
             f"{suite.name}: after failure,",
             extra=(lambda: ui_state_ready(options, suite.name))
             if suite.category == "e2e" else None)
         recoveries = device.recoveries - recoveries_before
-        if fit and device.recoveries == before:
-            # It was fit all along, so the failure stands.
+        if healthy and device.recoveries == before:
+            # It was healthy all along, so the failure stands.
             return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
                           recoveries=recoveries)
-        if not fit:
+        if not healthy:
             return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
-                          device_unfit=True, recoveries=recoveries)
+                          device_unhealthy=True, recoveries=recoveries)
         report.detail(f"{suite.name}: the device was recovered, so this failure "
                       "proves nothing; running it again")
         attempt += 1
@@ -636,7 +637,7 @@ def build_parser() -> argparse.ArgumentParser:
             "this runs the E2E suites once, in the overlay profile.\n"
             "\n"
             "Before each E2E suite, and again after one fails, the runner\n"
-            "establishes that the device is FIT:\n"
+            "establishes that the device is HEALTHY:\n"
             "\n"
             "  it answers   polled patiently, since briefly busy is far more\n"
             "               common than gone\n"
@@ -647,11 +648,12 @@ def build_parser() -> argparse.ArgumentParser:
             "               show the C64 underneath is still running. One line\n"
             "               per suite, with a latency for each check.\n"
             "\n"
-            "That one idea decides everything else. A suite that fails on a fit\n"
-            "device has found something, and the failure stands. A suite that\n"
-            "fails on an unfit device has shown nothing, so the device is\n"
+            "That one idea decides everything else. A suite that fails on a\n"
+            "healthy device has found something, and the failure stands. A\n"
+            "suite that\n"
+            "fails on an unhealthy device has shown nothing, so the device is\n"
             "recovered with --recover-command and the suite runs again. A device\n"
-            "that cannot be made fit ends the run rather than failing every\n"
+            "that cannot be made healthy ends the run rather than failing every\n"
             "suite left for the same reason.\n"
             "\n"
             "Recovery is off until --recover-command names one, because what\n"
@@ -668,7 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  run-tests --all -m all             everything; takes hours\n"
             "  run-tests --list                   show every registered suite\n"
             "  run-tests --recover-command 'build u64' -j runs/\n"
-            "                                     recover an unfit device, and write\n"
+            "                                     recover an unhealthy device, and write\n"
             "                                     machine-readable results\n"
             "\n"
             "exit status:\n"
@@ -676,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
             f"  {EXIT_SUITE_FAILED}  at least one suite failed\n"
             f"  {EXIT_USAGE}  the command line was wrong\n"
             f"  {EXIT_RECOVERED}  every suite passed, but the device had to be recovered\n"
-            f"  {EXIT_DEVICE_UNFIT}  the device could not be made fit; the run was abandoned\n"
+            f"  {EXIT_DEVICE_UNHEALTHY}  the device could not be made healthy; the run was abandoned\n"
             "\n"
             "notes:\n"
             "  The device must be idle. These suites open the menu, reset the\n"
@@ -733,45 +735,45 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Profile for the network connection soak. stress is about "
                              "two minutes; soak runs for twelve hours (default: stress).")
 
-    fitness = parser.add_argument_group(
-        "device fitness",
+    health = parser.add_argument_group(
+        "device health",
         "What counts as a usable device, and what to do when it is not one.\n"
         "See the description above for the rule these follow.")
-    fitness.add_argument("--no-health-check", dest="health_check",
+    health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
-                         help="Judge fitness by whether the device answers, and "
+                         help="Judge health by whether the device answers, and "
                               "nothing else. The sweep is on by default and costs "
                               "about 150ms per suite: ping, REST, FTP, telnet, "
                               "ident and the DMA port on 64, plus the jiffy clock "
                               "and raster line to show the C64 itself is running, "
                               "logged as one line with latencies. Turn it off when "
                               "a listener is deliberately off on this device, which "
-                              "would otherwise read as unfit before every suite.")
-    fitness.add_argument("--no-retry", dest="retry", action="store_false", default=True,
+                              "would otherwise read as unhealthy before every suite.")
+    health.add_argument("--no-retry", dest="retry", action="store_false", default=True,
                          help="Do not run a suite again after its device has been "
                               "recovered. The failure is reported as it stands. The "
                               "device is still recovered, so the suites after it "
                               "get a working one.")
-    fitness.add_argument("--recover-command", default="", metavar="CMD",
+    health.add_argument("--recover-command", default="", metavar="CMD",
                          help="Shell command that brings the device back, e.g. "
-                              "'build u64'. Run only when the device is unfit, "
+                              "'build u64'. Run only when the device is unhealthy, "
                               "never because a suite failed. Nothing here has a "
                               "default, because what recovers a device differs per "
                               "setup. Every recovery counts against the run: one "
                               "that needed a recovery exits 3, not 0."),
-    fitness.add_argument("--recover-max-per-suite", type=int,
+    health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
                          help="How many times one suite may have its device "
                               "recovered before it is given up on. This is also how "
                               "many extra attempts it can get, because the two are "
                               "the same thing "
                               f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
-    fitness.add_argument("--recover-max-total", type=int,
+    health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
                          help="How many times the device may be recovered in the "
                               "whole run before the runner gives up on it "
                               f"(default: {DEFAULT_RECOVER_MAX_TOTAL}).")
-    fitness.add_argument("--recover-timeout", type=float,
+    health.add_argument("--recover-timeout", type=float,
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SEC",
                          help="How long the recovery command may take "
                               f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
@@ -823,14 +825,14 @@ def plural(count: int, noun: str) -> str:
 def exit_code_for(results: List[Result], recoveries: int) -> int:
     """The run's status, worst thing first.
 
-    A device that could not be made fit outranks a failed suite: it says
+    A device that could not be made healthy outranks a failed suite: it says
     nothing could run rather than something did not hold. A recovery outranks a clean run even when every
     suite passed afterwards, because a run that needed the device brought back
     is not the same result as one that did not, and a caller polling only `$?`
     would otherwise never learn it happened.
     """
-    if any(r.device_unfit for r in results):
-        return EXIT_DEVICE_UNFIT
+    if any(r.device_unhealthy for r in results):
+        return EXIT_DEVICE_UNHEALTHY
     if any(r.verdict == report.FAIL for r in results):
         return EXIT_SUITE_FAILED
     if recoveries:
@@ -867,8 +869,8 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
             note = {report.FAIL: "failed",
                     report.WARN: "left the device UI outside the documented state",
                     report.SKIP: "skipped"}[result.verdict]
-            if result.device_unfit:
-                note = "failed; the device could not be made fit"
+            if result.device_unhealthy:
+                note = "failed; the device could not be made healthy"
             where = f"{result.category} {result.mode}".strip() \
                 if result.category == "e2e" else result.category
             report.detail("%s %s %s: %s"
@@ -892,14 +894,14 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
             f"{r.name} {report.format_duration(r.seconds)}" for r in slowest))
 
     total = time.monotonic() - started
-    # The difference between the suites' own time and the run's is the fitness
+    # The difference between the suites' own time and the run's is the health
     # sweeps, the UI-state gate and the teardown. Naming it stops it reading as
     # unexplained, and makes it obvious when a gate has started misbehaving.
     in_suites = sum(r.seconds for r in results)
     overhead = total - in_suites
     if overhead > 0:
         report.detail(f"{report.format_duration(in_suites)} in suites, "
-                      f"{report.format_duration(overhead)} in fitness checks, "
+                      f"{report.format_duration(overhead)} in health checks, "
                       "the UI-state gate and teardown")
     if recoveries:
         report.detail(f"the device was recovered {plural(recoveries, 'time')} "
@@ -919,9 +921,9 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
         recoveries=recoveries,
         exit_code=status)
 
-    if status == EXIT_DEVICE_UNFIT:
+    if status == EXIT_DEVICE_UNHEALTHY:
         print(f"\n{report.colour('FAIL', report.RED)}  "
-              f"the device could not be made fit; "
+              f"the device could not be made healthy; "
               f"{len(failed)} of {len(results)} suite runs failed.")
     elif failed:
         print(f"\n{report.colour('FAIL', report.RED)}  "
@@ -1018,7 +1020,7 @@ def main(argv: List[str]) -> int:
         report.detail(f"soak:       {options.soak_profile} profile")
     report.detail(f"timeout:    {options.timeout}s")
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
-    report.detail("fitness:    "
+    report.detail("health:    "
                   + ("answers + health sweep" if options.health_check else "answers only")
                   + (", retry after recovery" if options.retry else ", no retry"))
     if options.recover_command:
@@ -1037,7 +1039,7 @@ def main(argv: List[str]) -> int:
     results: List[Result] = []
     started = time.monotonic()
     stopped = False
-    device_unfit = False
+    device_unhealthy = False
 
     for index, category in enumerate(categories):
         suites = selected_suites(category, args.suite, args.manual)
@@ -1061,23 +1063,23 @@ def main(argv: List[str]) -> int:
             for suite in suites:
                 result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
                 results.append(result)
-                if result.device_unfit:
+                if result.device_unhealthy:
                     print()
-                    report.detail("the device could not be made fit; abandoning the "
+                    report.detail("the device could not be made healthy; abandoning the "
                                   "run rather than failing every suite left for the "
                                   "same reason")
                     if not options.recover_command:
                         report.detail("--recover-command names a command that could "
                                       "have been tried here")
                     stopped = True
-                    device_unfit = True
+                    device_unhealthy = True
                     break
                 if result.verdict == report.FAIL and options.stop_on_fail:
                     stopped = True
                     break
             # Teardown still runs after --stop-on-fail, where the device is
             # there to be cleaned; it is only pointless once the device is gone.
-            if category == "e2e" and not device_unfit:
+            if category == "e2e" and not device_unhealthy:
                 print()
                 if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
                     results.append(Result(category, mode, "teardown", report.FAIL, 0.0))

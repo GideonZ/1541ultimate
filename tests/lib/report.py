@@ -416,7 +416,7 @@ def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:
     The console gets the sweep as a single line; this is the same sweep in a
     shape something other than a reader can use, with a latency per check. A
     run consumed programmatically would otherwise have no way to see why a
-    device was called unfit, or to watch a listener getting slower over a week
+    device was called unhealthy, or to watch a listener getting slower over a week
     of runs.
     """
     _record(kind="health", label=label, ok=ok, checks=list(checks))
