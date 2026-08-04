@@ -52,10 +52,13 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# tests/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
+# the shared character-to-key mapping.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from ui_backend import char_to_combo  # noqa: E402  (needs tests/e2e/lib first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
@@ -95,16 +98,6 @@ K_F2 = ["left_shift", "f1"]
 K_F5 = ["f5"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
-# uppercase adds left_shift; the punctuation the FTP fields need maps to the
-# unshifted symbol keys. Values used by generated fixtures/aliases stay within
-# this set (see safe_name()).
-CHAR_KEYS = {
-    ".": ["period"], "/": ["slash"], ":": ["colon"], "-": ["minus"],
-    "@": ["at"], "+": ["plus"], "=": ["equals"], ",": ["comma"],
-    ";": ["semicolon"], " ": ["space"], "*": ["star"],
-}
-
-
 def assert_or_warn(assertions_enabled, condition, message):
     if condition:
         return True
@@ -354,15 +347,16 @@ class MenuDriver:
         return None
 
     def type_text(self, text):
+        """Type a string, one POST per character. See TYPE_SETTLE_SECONDS.
+
+        The character-to-key mapping is the shared one in tests/e2e/lib; this
+        suite used to carry its own copy covering a subset of the same keys.
+        The one-POST-per-character rhythm is this suite's own and is not an
+        oversight: the comment above TYPE_SETTLE_SECONDS records that batching
+        drops characters here.
+        """
         for ch in text:
-            if ch.isdigit() or (ch.isalpha() and ch.islower()):
-                self.tap([ch], settle=TYPE_SETTLE_SECONDS)
-            elif ch.isalpha() and ch.isupper():
-                self.tap(["left_shift", ch.lower()], settle=TYPE_SETTLE_SECONDS)
-            elif ch in CHAR_KEYS:
-                self.tap(CHAR_KEYS[ch], settle=TYPE_SETTLE_SECONDS)
-            else:
-                raise Failure(f"type_text: no key mapping for {ch!r}")
+            self.tap(char_to_combo(ch), settle=TYPE_SETTLE_SECONDS)
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
