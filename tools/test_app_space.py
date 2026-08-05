@@ -51,6 +51,11 @@ class AppSpaceTest(unittest.TestCase):
             .is_below_warning_threshold
         )
 
+    def test_warning_identifies_the_threshold_as_such(self):
+        report = app_space.check_application_space("u2", 0xC6000)
+
+        self.assertIn("5% is 39.6 KiB", report.warning_message())
+
 
 if __name__ == "__main__":
     unittest.main()

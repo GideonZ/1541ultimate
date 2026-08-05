@@ -77,6 +77,16 @@ class ApplicationSpaceReport:
             )
         )
 
+    def warning_message(self):
+        return (
+            "%s is below the application-space warning threshold "
+            "(%d%% is %.1f KiB)." % (
+                TARGET_NAMES[self.target],
+                WARNING_PERCENT,
+                self.warning_bytes / 1024,
+            )
+        )
+
 
 def check_application_space(target, application_bytes):
     return ApplicationSpaceReport(
@@ -96,15 +106,7 @@ def main(argv):
     report = check_application_space(args.target, args.application.stat().st_size)
     print(report.message())
     if report.is_below_warning_threshold:
-        print(
-            "ERROR: %s is below the %d%% application-space warning threshold "
-            "(%.1f KiB remaining)." % (
-                TARGET_NAMES[args.target],
-                WARNING_PERCENT,
-                report.warning_bytes / 1024,
-            ),
-            file=sys.stderr,
-        )
+        print("ERROR: " + report.warning_message(), file=sys.stderr)
         return 1
     return 0
 
