@@ -783,8 +783,15 @@ class RestBackend(Backend):
 # Telnet backend: raw VT100 remote-menu session.
 # ---------------------------------------------------------------------------
 
-WIDTH = 40
-HEIGHT = 24  # the Telnet remote session only ever fills 24 of the 25 physical rows
+# The Telnet remote session is NOT the physical 40x25 C64 display. The firmware
+# serves it through Screen_VT100, whose get_size_x()/get_size_y() report 60x24
+# (software/io/stream/screen_vt100.h), and the monitor lays its header out
+# against that width: the Dbg/Edit/Undc flags sit in the last 8 columns. Render
+# the session into a 40-column emulator and those columns fall off the right
+# edge, so every assertion that looks for a header flag reads a truncated line
+# and fails even though the firmware drew it correctly.
+WIDTH = 60
+HEIGHT = 24  # Screen_VT100::get_size_y(); the 25th physical row is never used
 
 ALT_CHARSET_MAP = {
     "l": "+", "k": "+", "m": "+", "j": "+", "q": "-", "x": "|",

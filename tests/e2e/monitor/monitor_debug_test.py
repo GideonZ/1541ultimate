@@ -2014,6 +2014,13 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
         _ensure_no_debug(session)
         if mt.read_rest_memory(rest_host, 0xC300, 1)[0] != 0xEE:
             raise mt.Failure("Breakpoint cleanup did not restore INC opcode at $C300")
+        # Leaving Debug restores the patched byte but keeps the breakpoint in the
+        # slot table, so this check has to remove what it armed. Without it the
+        # post-suite hygiene check reports "1 breakpoint slot(s) still armed"
+        # against $C300 - this group runs last, so the leak lands there.
+        session.send_char("D")
+        _clear_breakpoint_at(session, 0xC300, "$C300 re-entry breakpoint clear")
+        _ensure_no_debug(session)
 
 
 def run_rom_single_step_tests(rest_host: str, session: "mt.MonitorSession") -> None:

@@ -39,7 +39,16 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
 
-STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+# The monitor renders the status row in two forms (format_status_line_impl in
+# software/monitor/machine_monitor.cc): "CPU5 $A:..." when the browsing view
+# follows the live CPU bank, and "C5O7 $A:..." when a view override is
+# selected, where the first digit is the live bank and the second is the
+# overridden view. Matching only the first form left find_status_line unable
+# to locate the row at all whenever an override was active, which is exactly
+# the state every banked-breakpoint and banked-continue scenario works in.
+STATUS_LINE_RE = re.compile(
+    r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
+    r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
