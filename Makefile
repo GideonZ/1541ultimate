@@ -77,7 +77,7 @@ u2_rv: app_space_test
 	@$(MAKE) -C target/u2/riscv/boot2
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
-	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
 	@$(MAKE) -C target/u2/riscv/updater
@@ -87,7 +87,7 @@ u2_rv_swonly: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
-	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 

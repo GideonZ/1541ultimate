@@ -18,6 +18,19 @@ class AppSpaceTest(unittest.TestCase):
         self.assertEqual(app_space.application_limit_bytes("u64"), 0x170000)
         self.assertEqual(app_space.application_limit_bytes("u64ii"), 0x1C0000)
 
+    def test_u2_guard_checks_the_flashed_binary(self):
+        makefile = pathlib.Path(__file__).parents[1] / "Makefile"
+        source = makefile.read_text()
+
+        self.assertIn(
+            "$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin",
+            source,
+        )
+        self.assertNotIn(
+            "$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app",
+            source,
+        )
+
     def test_reports_remaining_space_in_kib(self):
         report = app_space.check_application_space("u64", 0x170000 - 100 * 1024)
 
