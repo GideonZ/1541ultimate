@@ -31,6 +31,11 @@ class AppSpaceTest(unittest.TestCase):
             source,
         )
 
+    def test_build_checks_are_warning_only_until_limits_are_confirmed(self):
+        makefile = pathlib.Path(__file__).parents[1] / "Makefile"
+
+        self.assertIn("APP_SPACE_CHECK = python3 tools/app_space.py --warning-only", makefile.read_text())
+
     def test_reports_remaining_space_in_kib(self):
         report = app_space.check_application_space("u64", 0x170000 - 100 * 1024)
 

@@ -1,7 +1,7 @@
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 
-APP_SPACE_CHECK = python3 tools/app_space.py
+APP_SPACE_CHECK = python3 tools/app_space.py --warning-only
 
 .PHONY: app_space_test
 

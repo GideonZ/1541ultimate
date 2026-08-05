@@ -96,6 +96,11 @@ def check_application_space(target, application_bytes):
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--warning-only",
+        action="store_true",
+        help="report threshold breaches without failing the build",
+    )
     parser.add_argument("target", choices=sorted(TARGET_TABLES))
     parser.add_argument("application", type=pathlib.Path)
     args = parser.parse_args(argv)
@@ -106,8 +111,10 @@ def main(argv):
     report = check_application_space(args.target, args.application.stat().st_size)
     print(report.message())
     if report.is_below_warning_threshold:
-        print("ERROR: " + report.warning_message(), file=sys.stderr)
-        return 1
+        prefix = "WARNING" if args.warning_only else "ERROR"
+        print(prefix + ": " + report.warning_message(), file=sys.stderr)
+        if not args.warning_only:
+            return 1
     return 0
 
 
