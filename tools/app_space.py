@@ -1,121 +1,109 @@
 #!/usr/bin/env python3
-"""Report firmware application-partition headroom during builds."""
+"""Validate final firmware images against their application-size limits."""
 
 import argparse
+import os
 import pathlib
-import re
 import sys
 
 
-FLASH_LAYOUT = pathlib.Path(__file__).parents[1] / "software/io/flash/w25q_flash.cc"
-TARGET_TABLES = {
-    "u2": ("flash_addresses",),
-    "u2plus": ("flash_addresses_u2p",),
-    "u2pl": ("flash_addresses_u2pl",),
-    "u64": ("flash_addresses_u64",),
-    "u64ii": ("flash_addresses_u64ii_50t", "flash_addresses_u64ii_100t"),
+FIRMWARE_VARIANTS = {
+    "u2": {"name": "U2", "limit_bytes": 0xC6000},
+    "u2plus": {"name": "U2+", "limit_bytes": 0x140000},
+    "u2pl": {"name": "U2+L", "limit_bytes": 0x160000},
+    "u64": {"name": "U64", "limit_bytes": 0x170000},
+    "u64e2_50t": {"name": "U64E2_50T", "limit_bytes": 0x1E0000},
+    "u64e2_100t": {"name": "U64E2_100T", "limit_bytes": 0x1C0000},
 }
-TARGET_NAMES = {
-    "u2": "U2",
-    "u2plus": "U2+",
-    "u2pl": "U2+L",
-    "u64": "U64",
-    "u64ii": "U64-II",
-}
-WARNING_PERCENT = 5
 
 
-def table_application_limit(source, table_name):
-    table = re.search(
-        r"static const t_flash_address " + re.escape(table_name) +
-        r"\[\] = \{(.*?)\};",
-        source,
-        re.DOTALL,
-    )
-    if table is None:
-        raise ValueError("could not find flash layout table " + table_name)
-
-    application = re.search(
-        r"\{\s*FLASH_ID_APPL\s*,\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*"
-        r"(0x[0-9A-Fa-f]+|[0-9]+)\s*\}",
-        table.group(1),
-    )
-    if application is None:
-        raise ValueError("could not find application partition in " + table_name)
-    return int(application.group(1), 0)
-
-
-def application_limit_bytes(target):
+def firmware_limit_bytes(variant):
     try:
-        table_names = TARGET_TABLES[target]
+        return FIRMWARE_VARIANTS[variant]["limit_bytes"]
     except KeyError as error:
-        raise ValueError("unknown target " + target) from error
-
-    source = FLASH_LAYOUT.read_text()
-    return min(table_application_limit(source, name) for name in table_names)
+        raise ValueError("unknown firmware variant " + variant) from error
 
 
-class ApplicationSpaceReport:
-    def __init__(self, target, application_bytes, limit_bytes):
-        self.target = target
-        self.application_bytes = application_bytes
+class FirmwareSizeReport:
+    def __init__(self, variant, actual_bytes, limit_bytes):
+        self.variant = variant
+        self.actual_bytes = actual_bytes
         self.limit_bytes = limit_bytes
-        self.remaining_bytes = limit_bytes - application_bytes
-        self.warning_bytes = limit_bytes * WARNING_PERCENT // 100
+        self.remaining_bytes = limit_bytes - actual_bytes
 
     @property
-    def is_below_warning_threshold(self):
-        return self.remaining_bytes < self.warning_bytes
+    def status(self):
+        if self.remaining_bytes < 0:
+            return "FAIL"
+        if self.remaining_bytes * 100 < self.limit_bytes:
+            return "WARNING"
+        return "PASS"
+
+    @property
+    def exit_status(self):
+        return 1 if self.status == "FAIL" else 0
+
+    def percentage(self):
+        basis_points = abs(self.remaining_bytes) * 10000 // self.limit_bytes
+        whole, fraction = divmod(basis_points, 100)
+        sign = "-" if self.remaining_bytes < 0 else ""
+        return "%s%d.%02d%%" % (sign, whole, fraction)
 
     def message(self):
         return (
-            "%s application: %.1f KiB remaining of %.1f KiB (%.1f%% free)" % (
-                TARGET_NAMES[self.target],
-                self.remaining_bytes / 1024,
-                self.limit_bytes / 1024,
-                self.remaining_bytes * 100 / self.limit_bytes,
+            "variant=%s, actual=0x%X (%d bytes), limit=0x%X (%d bytes), "
+            "remaining=%d bytes, percentage=%s, status=%s" % (
+                FIRMWARE_VARIANTS[self.variant]["name"],
+                self.actual_bytes,
+                self.actual_bytes,
+                self.limit_bytes,
+                self.limit_bytes,
+                self.remaining_bytes,
+                self.percentage(),
+                self.status,
             )
         )
 
     def warning_message(self):
         return (
-            "%s is below the application-space warning threshold "
-            "(%d%% is %.1f KiB)." % (
-                TARGET_NAMES[self.target],
-                WARNING_PERCENT,
-                self.warning_bytes / 1024,
+            "%s has less than 1%% of its firmware limit remaining." % (
+                FIRMWARE_VARIANTS[self.variant]["name"],
             )
         )
 
 
-def check_application_space(target, application_bytes):
-    return ApplicationSpaceReport(
-        target, application_bytes, application_limit_bytes(target)
+def check_firmware_size(variant, actual_bytes):
+    return FirmwareSizeReport(
+        variant, actual_bytes, firmware_limit_bytes(variant)
     )
 
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--warning-only",
-        action="store_true",
-        help="report threshold breaches without failing the build",
-    )
-    parser.add_argument("target", choices=sorted(TARGET_TABLES))
-    parser.add_argument("application", type=pathlib.Path)
+    parser.add_argument("variant", choices=sorted(FIRMWARE_VARIANTS))
+    parser.add_argument("artifact", type=pathlib.Path)
     args = parser.parse_args(argv)
 
-    if not args.application.is_file():
-        parser.error("application image not found: " + str(args.application))
+    if not args.artifact.is_file():
+        print(
+            "ERROR: expected firmware artifact for %s was not produced: %s" % (
+                FIRMWARE_VARIANTS[args.variant]["name"],
+                args.artifact,
+            ),
+            file=sys.stderr,
+        )
+        return 2
 
-    report = check_application_space(args.target, args.application.stat().st_size)
+    report = check_firmware_size(args.variant, args.artifact.stat().st_size)
     print(report.message())
-    if report.is_below_warning_threshold:
-        prefix = "WARNING" if args.warning_only else "ERROR"
-        print(prefix + ": " + report.warning_message(), file=sys.stderr)
-        if not args.warning_only:
-            return 1
-    return 0
+    if report.status == "WARNING":
+        warning = report.warning_message()
+        print("WARNING: " + warning, file=sys.stderr)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print("::warning::" + warning)
+    elif report.status == "FAIL":
+        print("ERROR: firmware exceeds its limit.", file=sys.stderr)
+    return report.exit_status
 
 
 if __name__ == "__main__":

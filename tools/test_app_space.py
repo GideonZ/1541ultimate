@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Regression tests for the firmware application-space build guard."""
+"""Regression tests for the final-firmware size build guard."""
 
+import contextlib
+import io
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
@@ -11,55 +15,106 @@ import app_space
 
 
 class AppSpaceTest(unittest.TestCase):
-    def test_uses_application_partition_limits(self):
-        self.assertEqual(app_space.application_limit_bytes("u2"), 0xC6000)
-        self.assertEqual(app_space.application_limit_bytes("u2plus"), 0x140000)
-        self.assertEqual(app_space.application_limit_bytes("u2pl"), 0x160000)
-        self.assertEqual(app_space.application_limit_bytes("u64"), 0x170000)
-        self.assertEqual(app_space.application_limit_bytes("u64ii"), 0x1C0000)
+    def test_uses_supplied_firmware_limits(self):
+        self.assertEqual(
+            {
+                variant: details["limit_bytes"]
+                for variant, details in app_space.FIRMWARE_VARIANTS.items()
+            },
+            {
+                "u2": 0xC6000,
+                "u2plus": 0x140000,
+                "u2pl": 0x160000,
+                "u64": 0x170000,
+                "u64e2_50t": 0x1E0000,
+                "u64e2_100t": 0x1C0000,
+            },
+        )
 
-    def test_u2_guard_checks_the_flashed_binary(self):
+    def test_build_checks_all_final_firmware_artifacts(self):
         makefile = pathlib.Path(__file__).parents[1] / "Makefile"
         source = makefile.read_text()
 
-        self.assertIn(
-            "$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin",
-            source,
-        )
-        self.assertNotIn(
-            "$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app",
-            source,
-        )
+        for check in (
+            "u2 target/u2/riscv/ultimate/result/ultimate.bin",
+            "u2plus target/u2plus/nios/ultimate/result/ultimate.app",
+            "u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app",
+            "u64 target/u64/nios2/ultimate/result/ultimate.app",
+            "u64e2_50t target/u64ii/riscv/ultimate/result/ultimate.app",
+            "u64e2_100t target/u64ii/riscv/ultimate/result/ultimate.app",
+        ):
+            self.assertIn("$(FIRMWARE_SIZE_CHECK) " + check, source)
 
-    def test_build_checks_are_warning_only_until_limits_are_confirmed(self):
-        makefile = pathlib.Path(__file__).parents[1] / "Makefile"
+    def test_github_actions_forwards_warning_context_to_builds(self):
+        workflow = pathlib.Path(__file__).parents[1] / ".github/workflows/build.yml"
 
-        self.assertIn("APP_SPACE_CHECK = python3 tools/app_space.py --warning-only", makefile.read_text())
+        self.assertIn("docker run --rm -e GITHUB_ACTIONS", workflow.read_text())
 
-    def test_reports_remaining_space_in_kib(self):
-        report = app_space.check_application_space("u64", 0x170000 - 100 * 1024)
+    def test_comfortably_below_limit_passes(self):
+        report = app_space.FirmwareSizeReport("u2", 100, 1000)
 
-        self.assertEqual(report.remaining_bytes, 100 * 1024)
-        self.assertIn("100.0 KiB remaining", report.message())
-        self.assertFalse(report.is_below_warning_threshold)
+        self.assertEqual(report.remaining_bytes, 900)
+        self.assertEqual(report.status, "PASS")
+        self.assertEqual(report.exit_status, 0)
+        self.assertIn("variant=U2", report.message())
+        self.assertIn("actual=0x64", report.message())
+        self.assertIn("limit=0x3E8", report.message())
+        self.assertIn("remaining=900 bytes", report.message())
+        self.assertIn("percentage=90.00%", report.message())
+        self.assertIn("status=PASS", report.message())
 
-    def test_fails_only_below_five_percent_remaining(self):
-        limit = app_space.application_limit_bytes("u2plus")
-        threshold = limit * 5 // 100
+    def test_exactly_one_percent_remaining_passes_without_warning(self):
+        report = app_space.FirmwareSizeReport("u2", 99, 100)
 
-        self.assertFalse(
-            app_space.check_application_space("u2plus", limit - threshold)
-            .is_below_warning_threshold
-        )
-        self.assertTrue(
-            app_space.check_application_space("u2plus", limit - threshold + 1)
-            .is_below_warning_threshold
-        )
+        self.assertEqual(report.status, "PASS")
+        self.assertEqual(report.exit_status, 0)
 
-    def test_warning_identifies_the_threshold_as_such(self):
-        report = app_space.check_application_space("u2", 0xC6000)
+    def test_less_than_one_percent_remaining_warns(self):
+        report = app_space.FirmwareSizeReport("u2", 1000, 1009)
 
-        self.assertIn("5% is 39.6 KiB", report.warning_message())
+        self.assertEqual(report.status, "WARNING")
+        self.assertEqual(report.exit_status, 0)
+
+    def test_exactly_at_limit_warns(self):
+        report = app_space.FirmwareSizeReport("u2", 1000, 1000)
+
+        self.assertEqual(report.status, "WARNING")
+        self.assertEqual(report.exit_status, 0)
+
+    def test_one_byte_over_limit_fails(self):
+        report = app_space.FirmwareSizeReport("u2", 1001, 1000)
+
+        self.assertEqual(report.status, "FAIL")
+        self.assertEqual(report.exit_status, 1)
+
+    def test_missing_artifact_fails_clearly(self):
+        missing = pathlib.Path("does-not-exist")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            exit_status = app_space.main(["u2", str(missing)])
+
+        self.assertEqual(exit_status, 2)
+        self.assertIn("expected firmware artifact for U2 was not produced", stderr.getvalue())
+
+    def test_main_returns_report_exit_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = pathlib.Path(directory) / "firmware.bin"
+            artifact.write_bytes(b"x" * (0xC6000 + 1))
+
+            self.assertEqual(app_space.main(["u2", str(artifact)]), 1)
+
+    def test_github_actions_emits_a_native_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = pathlib.Path(directory) / "firmware.bin"
+            artifact.write_bytes(b"x" * 0xC6000)
+            stdout = io.StringIO()
+
+            with mock.patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}):
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(app_space.main(["u2", str(artifact)]), 0)
+
+        self.assertIn("::warning::U2 has less than 1%", stdout.getvalue())
 
 
 if __name__ == "__main__":

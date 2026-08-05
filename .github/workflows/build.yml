@@ -83,54 +83,54 @@ jobs:
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2.outputs.cache-hit == 'true'
         name: Build U2 using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2p.outputs.cache-hit != 'true'
         name: Build U2+ including FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2p.outputs.cache-hit == 'true'
         name: Build U2+ using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2pl.outputs.cache-hit != 'true'
         name: Build U2+L including FPGA
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_no_esp && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - if: steps.cache-u2pl.outputs.cache-hit == 'true'
         name: Build U2+L using cached FPGAs
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - name: Build U64 Software
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64_no_esp && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
 
       - name: Build U64-II Software
         run: |
-          docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
+          docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
 
