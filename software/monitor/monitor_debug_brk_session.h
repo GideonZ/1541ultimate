@@ -43,11 +43,6 @@ protected:
     // The default is a normal stopped session; the U64 backend overrides it with a
     // raster-synced ("clean") stop so the live 6510 reliably observes the patch.
     virtual bool begin_clean_stopped_session(void);
-    // Let the live CPU clock briefly so the FPGA commits a freshly-written
-    // visible-ROM BRK to the live instruction-fetch path before we launch into
-    // it. Only meaningful when the machine is running (overlay/Telnet); the
-    // freeze path already restarts the CPU cleanly on unfreeze. Default no-op.
-    virtual void settle_visible_rom_for_live_fetch(bool sustained = false) { (void)sustained; }
     // True when visible-ROM opcode fetches can lag monitor writes.
     virtual bool visible_rom_fetch_lags(void) const { return false; }
     virtual void delay_ms(int ms) = 0;
@@ -110,15 +105,6 @@ public:
     virtual void refresh_debug_ownership(void);
     virtual void release_debug_ownership(void);
 
-#if defined(RUNS_ON_PC)
-protected:
-    void test_mark_visible_rom_breakpoint_hit(uint16_t pc)
-    {
-        rom_bp_hit_pc_valid = true;
-        rom_bp_hit_pc = pc;
-    }
-#endif
-
 private:
     enum PatchInstallResult {
         PATCH_INSTALL_OK = 0,
@@ -147,14 +133,6 @@ private:
     Patch patches[MAX_PATCHES];
     bool handler_installed;
     bool cpu_parked_in_spin;
-    // A free-run (G) breakpoint hit in visible ROM leaves the live 6510
-    // instruction-fetch ROM line for that PC holding the BRK ($00). Restoring it
-    // updates the DMA-visible image immediately, but the fetch path only refreshes
-    // after sustained continuous core execution. The very next step launched from
-    // that exact PC therefore needs the sustained ROM-fetch settle once; ordinary
-    // forward stepping does not. Tracked here and consumed by release_to_run().
-    bool rom_bp_hit_pc_valid;
-    uint16_t rom_bp_hit_pc;
     // Nesting-safe CPU-run window. When enabled, begin_run_window() unfreezes a
     // frozen machine once; end_run_window() re-freezes it on the outermost exit
     // so a frozen monitor's render target survives the step.
@@ -214,13 +192,9 @@ private:
                                bool skip_address_valid,
                                bool skip_all_at_address = false) const;
     void restore_patches(void);
-    bool recommit_visible_rom_patches(void);
     bool patch_installed_at(uint16_t addr, MonitorBackingStore target) const;
-    bool recommit_visible_rom_fetch_byte(uint16_t addr, uint8_t cpu_port);
     bool has_banked_ram_patch(void) const;
     bool has_high_memory_patch(void) const;
-    bool has_visible_rom_patch(void) const;
-    bool only_visible_rom_patches(void) const;
     bool has_any_patch(void) const;
     bool captured_at_installed_patch(uint16_t *captured_brk_pc = 0);
     void reinstall_handler_bytes(void);
@@ -242,12 +216,11 @@ private:
     Result wait_for_sentinel(int timeout_ms);
     void read_captured_context(DebugContext *ctx, uint8_t cpu_port);
     void restore_cpu_port_registers(const DebugContext &from);
-    void release_to_run(const DebugContext *from, bool launch_byte_last = false);
+    void release_to_run(const DebugContext *from);
     void resume_from_parked_context(const DebugContext &from);
     void reset_spin_target(void);
     void nmi_redirect_to(uint16_t target, uint8_t cpu_port,
-                         bool force_cpu_port, bool staged = false,
-                         bool sustained_settle = false);
+                         bool force_cpu_port, bool staged = false);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,

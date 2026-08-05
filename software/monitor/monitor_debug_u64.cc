@@ -140,13 +140,20 @@ protected:
     }
     virtual void pulse_nmi_and_release(bool stopped_it)
     {
-        // Raise the NMI request while the CPU is still stopped, release the
-        // stop so the CPU resumes and observes the pending edge, then clear
-        // the request. This order is required: clearing before the release
-        // would let the CPU exit the stopped session without ever seeing the
-        // NMI edge.
+        // The redirect NMI must still be asserted when the CPU un-stops, which
+        // is what end_stopped_session_nmi() does (plain resume() writes
+        // C64_MODE = MODE_NORMAL before C64_STOP = 0, so the request is dropped
+        // before the un-stop). Same hook as the U2 backend uses.
+        if (stopped_it) {
+            machine->end_stopped_session_nmi(stopped_it);
+            return;
+        }
+        // An outer stopped session still owns the release, so only latch the
+        // request here. Hold it for several C64 cycles: the FPGA samples the
+        // line once per phi2, and a bare register write pair is shorter than
+        // that.
         C64_MODE = C64_MODE_NMI;
-        machine->end_stopped_session(stopped_it);
+        wait_10us(2);
         C64_MODE = MODE_NORMAL;
     }
     virtual bool begin_clean_stopped_session(void)
@@ -155,36 +162,6 @@ protected:
         // with the mode-1 resume used by the reliable freeze path, so the live CPU
         // observes freshly armed high-memory BRKs on release.
         return machine->begin_stopped_session(true);
-    }
-    virtual void settle_visible_rom_for_live_fetch(bool sustained)
-    {
-        // Overlay/Telnet only. A visible-ROM byte has just been (re)written into
-        // the FPGA ROM image while the machine is stopped. The CPU-visible DMA
-        // aperture can read the new byte before the live instruction-fetch path
-        // observes it, so clock the CPU, then stop again for the controlled
-        // launch. The caller clears any stale sentinel afterwards.
-        //
-        // Two regimes:
-        //  - Default (short): a freshly INSTALLED BRK or an ordinary forward
-        //    single-step launch byte. A brief clock is enough and keeps stepping
-        //    responsive; a long continuous run here destabilises forward stepping.
-        //  - Sustained (long): a RESTORED launch opcode that the live 6510 keeps
-        //    re-trapping on. The CPU instruction-fetch ROM copy refreshes from
-        //    the image buffer only during one sustained continuous run, not from
-        //    the image write alone and not from fragmented brief settles (each
-        //    stop/start aborts the refresh). Used only on the re-trap relaunch,
-        //    so the cost is paid only when actually needed.
-        if (!machine || machine->is_accessible()) {
-            return;
-        }
-        machine->end_stopped_session(true);
-        // Sustained length measured on a U64 Elite, as the contextless
-        // visible-ROM entry hit rate over repeated bp+Go launches:
-        // 33/40 at the original 50 ms, 39/40 at 150 ms, 18/20 at 250 ms.
-        // The refresh saturates around 150 ms, and the cost is paid only on a
-        // launch toward a freshly patched ROM image.
-        wait_10us(sustained ? 15000 : 50);
-        machine->begin_stopped_session();
     }
     virtual void request_staged_nmi(void)
     {

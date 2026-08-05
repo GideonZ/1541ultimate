@@ -714,12 +714,6 @@ public:
     uint16_t last_rom_patch_addr;
     int ram_patch_writes;
     uint16_t last_ram_patch_addr;
-    int settle_calls;
-    int sustained_settle_calls;
-    bool last_settle_sustained;
-    bool saw_sustained_settle;
-    uint8_t settle_spin_lo;
-    uint8_t settle_spin_hi;
     bool switch_cpu_port_on_delay;
     uint8_t cpu_port_after_delay;
 
@@ -729,20 +723,11 @@ public:
           force_raw_peek_brk_addr(0), fetch_lags(false),
           rom_patch_writes(0), last_rom_patch_addr(0),
           ram_patch_writes(0), last_ram_patch_addr(0),
-          settle_calls(0), sustained_settle_calls(0),
-          last_settle_sustained(false),
-          saw_sustained_settle(false),
-          settle_spin_lo(0), settle_spin_hi(0),
           switch_cpu_port_on_delay(false), cpu_port_after_delay(0x07)
     {
         memset(basic_rom, 0, sizeof(basic_rom));
         memset(kernal_rom, 0, sizeof(kernal_rom));
         memset(char_rom, 0, sizeof(char_rom));
-    }
-
-    void mark_visible_rom_hit_for_test(uint16_t pc)
-    {
-        test_mark_visible_rom_breakpoint_hit(pc);
     }
 
 protected:
@@ -772,17 +757,6 @@ protected:
     virtual bool visible_rom_fetch_lags(void) const
     {
         return fetch_lags;
-    }
-    virtual void settle_visible_rom_for_live_fetch(bool sustained)
-    {
-        settle_calls++;
-        last_settle_sustained = sustained;
-        if (sustained) {
-            saw_sustained_settle = true;
-            sustained_settle_calls++;
-            settle_spin_lo = ram[FAKE_SPIN_LO];
-            settle_spin_hi = ram[FAKE_SPIN_HI];
-        }
     }
     virtual uint8_t peek_cpu(uint16_t a, uint8_t patch_cpu_port)
     {
@@ -4903,14 +4877,12 @@ static int test_visible_basic_step_uses_rom_patch_support()
                "Visible BASIC patch byte must be restored after the step")) return 1;
     if (expect(m.ram[0xA001] == 0x5A,
                "Visible BASIC patching must not scribble into underlying RAM")) return 1;
-    // 4 ROM-image writes: install BRK + recommit launch-PC fetch byte + recommit
-    // BRK + restore. The two recommits guard the live 6510 against a stale fetch.
-    if (expect(m.rom_patch_writes == 4,
-               "Visible BASIC step must patch, recommit launch byte + BRK, and restore the ROM image")) return 1;
-    // The BRK ($00) is written twice for the single step: once by install_brk_at
-    // and once by recommit_visible_rom_patches() in the launch's stopped session.
-    if (expect(m.brk_patch_writes == 2,
-               "Visible BASIC step must re-commit the ROM BRK as the final pre-launch write")) return 1;
+    // 2 ROM-image writes: install BRK + restore. The BRK is committed once, in
+    // install_brk_at, well before the CPU is released.
+    if (expect(m.rom_patch_writes == 2,
+               "Visible BASIC step must patch and restore the ROM image once each")) return 1;
+    if (expect(m.brk_patch_writes == 1,
+               "Visible BASIC step must write the ROM BRK exactly once")) return 1;
     return 0;
 }
 
@@ -5409,12 +5381,10 @@ static int test_visible_kernal_step_into_uses_rom_patch_support()
                "Visible KERNAL Step Into patch byte must be restored")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
                "Visible KERNAL Step Into must not patch RAM under ROM")) return 1;
-    // 4 ROM-image writes: install BRK + recommit launch-PC fetch byte ($E000 is
-    // visible ROM) + recommit BRK + restore.
-    if (expect(m.rom_patch_writes == 4,
-               "Visible KERNAL Step Into must patch, recommit launch byte + BRK, and restore the ROM image")) return 1;
-    if (expect(m.brk_patch_writes == 2,
-               "Visible KERNAL Step Into must re-commit the ROM BRK as the final pre-launch write")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible KERNAL Step Into must patch and restore the ROM image once each")) return 1;
+    if (expect(m.brk_patch_writes == 1,
+               "Visible KERNAL Step Into must write the ROM BRK exactly once")) return 1;
     return 0;
 }
 
@@ -5444,113 +5414,8 @@ static int test_visible_kernal_step_over_jsr_patches_fallthrough_rom()
                "Visible KERNAL Step Over JSR must restore fall-through ROM byte")) return 1;
     if (expect(m.ram[0xE003] == 0x7B,
                "Visible KERNAL Step Over JSR must not patch RAM under ROM")) return 1;
-    // patch fall-through BRK + launch-PC ($E000 JSR) fetch-byte recommit + BRK
-    // recommit + restore = 4 (launch PC is visible ROM, so its byte recommits too).
-    if (expect(m.rom_patch_writes == 4,
-               "Visible KERNAL Step Over JSR must patch, recommit launch byte + BRK, and restore ROM")) return 1;
-    return 0;
-}
-
-static int test_visible_rom_sustained_settle_does_not_launch_before_sentinel_clear()
-{
-    FakeVisibleRomMachine m(false);
-    m.allow_visible_rom_patching = true;
-    m.cpu_port = 0x07;
-    m.kernal_rom[0] = 0x20;       // JSR $E100
-    m.kernal_rom[1] = 0x00;
-    m.kernal_rom[2] = 0xE1;
-    m.kernal_rom[0x100] = 0xEA;   // captured visible-ROM target
-    m.kernal_rom[0x101] = 0xEA;   // next Step Into fall-through
-
-    uint8_t first_bytes[3] = { 0x20, 0x00, 0xE1 };
-    DebugPredictResult first_pred;
-    debug_predict(0xE000, first_bytes, false, &first_pred);
-    m.arm_capture_context(0xE100, 0xF6, 0x37, 0x00, 0x00, 0x24);
-
-    DebugContext from;
-    DebugSession::Result r = m.trace_at(0xE000, first_pred, &from);
-    if (expect(r == DebugSession::DBG_OK && from.valid && from.pc == 0xE100,
-               "Setup visible-ROM JSR Step Into must park at the callee")) return 1;
-
-    m.settle_calls = 0;
-    m.last_settle_sustained = false;
-    m.saw_sustained_settle = false;
-    m.settle_spin_lo = 0;
-    m.settle_spin_hi = 0;
-    m.mark_visible_rom_hit_for_test(from.pc);
-
-    uint8_t next_bytes[3] = { 0xEA, 0xEA, 0xEA };
-    DebugPredictResult next_pred;
-    debug_predict(0xE100, next_bytes, false, &next_pred);
-    m.arm_capture_context(0xE101, 0xF6, 0x37, 0x00, 0x00, 0x24);
-
-    DebugContext ctx;
-    r = m.trace(from, next_pred, &ctx);
-    if (expect(r == DebugSession::DBG_OK,
-               "Visible-ROM parked Step Into after a breakpoint hit must complete")) return 1;
-    if (expect(ctx.valid && ctx.pc == 0xE101,
-               "Visible-ROM parked Step Into must stop at fall-through")) return 1;
-    if (expect(m.settle_calls > 0,
-               "Visible-ROM breakpoint relaunch must call the settle hook")) return 1;
-    if (expect(m.saw_sustained_settle,
-               "Visible-ROM breakpoint relaunch must use the sustained settle")) return 1;
-    if (expect(m.settle_spin_lo == (uint8_t)(FAKE_SPIN_JMP & 0xFF) &&
-               m.settle_spin_hi == (uint8_t)(FAKE_SPIN_JMP >> 8),
-               "Sustained visible-ROM settle must not arm the restore trampoline early")) return 1;
-    return 0;
-}
-
-// Run a contextless bp+Go toward a visible-ROM breakpoint from a RAM bootstrap.
-// Returns the number of sustained fetch-path settles performed. When
-// force_first_miss is set, the first launch traps at an unrelated $00 so the
-// self-heal relaunch backstop fires; otherwise the first launch traps at the
-// installed breakpoint and no relaunch occurs.
-static int run_contextless_visible_rom_go_settles(bool force_first_miss)
-{
-    FakeVisibleRomMachine m(false);
-    m.allow_visible_rom_patching = true;
-    m.cpu_port = 0x07;                 // KERNAL visible
-    m.kernal_rom[1] = 0xEA;            // byte under the $E001 breakpoint
-    m.ram[0xC000] = 0xEA;             // RAM bootstrap the NMI redirects toward
-
-    MonitorBreakpoints bps;
-    bps.allocate(0xE001, 0x07);        // visible-ROM (high-memory) breakpoint
-
-    DebugContext from;
-    debug_context_reset(&from);        // contextless launch (bp+Go)
-
-    if (force_first_miss) {
-        // First launch traps at a PC that matches no installed patch, so the
-        // relaunch backstop treats it as a runaway and re-issues the launch.
-        m.arm_capture_context(0xE050, 0xF8, 0, 0, 0, 0x24);
-    }
-    m.settle_calls = 0;
-    m.sustained_settle_calls = 0;
-    m.saw_sustained_settle = false;
-
-    m.go(from, &bps, 0xC000);
-    return m.sustained_settle_calls;
-}
-
-// Regression for the contextless visible-ROM relaunch settle gate. A bp+Go
-// toward a visible-ROM breakpoint can miss on the first launch (the freshly
-// DMA-committed ROM-image BRK lags the live 6510 fetch path), so the self-heal
-// relaunch must settle the fetch path again before re-redirecting - exactly as
-// the initial contextless launch does. The relaunch previously gated that
-// settle on nmi_force_cpu_port, which is derived from the RAM-bootstrap launch
-// PC and is therefore false here, so the settle was skipped and the relaunch
-// re-issued the same NMI redirect that had just missed. Gating on the installed
-// breakpoint bank (has_visible_rom_patch()) restores the settle. Proven as a
-// differential: the relaunch path must add at least one sustained settle over
-// the no-relaunch baseline.
-static int test_contextless_visible_rom_relaunch_resettles_fetch_path()
-{
-    int baseline = run_contextless_visible_rom_go_settles(false);
-    int with_relaunch = run_contextless_visible_rom_go_settles(true);
-    if (expect(baseline >= 1,
-               "Contextless visible-ROM launch must settle the fetch path once")) return 1;
-    if (expect(with_relaunch > baseline,
-               "Contextless visible-ROM relaunch must re-settle the fetch path")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible KERNAL Step Over JSR must patch and restore the fall-through ROM byte")) return 1;
     return 0;
 }
 
@@ -5627,8 +5492,8 @@ static int test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram()
                "Visible ROM breakpoint Go must restore the ROM byte")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
                "Visible ROM breakpoint Go must not use RAM under ROM as proof")) return 1;
-    if (expect(m.rom_patch_writes == 3,
-               "Visible ROM breakpoint Go must patch, recommit at launch, and restore the ROM image")) return 1;
+    if (expect(m.rom_patch_writes == 2,
+               "Visible ROM breakpoint Go must patch and restore the ROM image once each")) return 1;
     return 0;
 }
 
@@ -5662,8 +5527,8 @@ static int test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores()
     DebugSession::Result r = m.go(from, &bps, 0xC000);
     if (expect(r == DebugSession::DBG_OK,
                "Mixed KERNAL/RAM breakpoints must run and trap")) return 1;
-    if (expect(m.last_rom_patch_addr == 0xE000 && m.rom_patch_writes == 3,
-               "KERNAL breakpoint must patch, recommit at launch, and restore the ROM image")) return 1;
+    if (expect(m.last_rom_patch_addr == 0xE000 && m.rom_patch_writes == 2,
+               "KERNAL breakpoint must patch and restore the ROM image once each")) return 1;
     if (expect(m.last_ram_patch_addr == 0xE000 && m.ram_patch_writes == 1,
                "RAM-under-KERNAL breakpoint must patch hidden RAM")) return 1;
     if (expect(m.kernal_rom[0] == 0x4C && m.ram[0xE000] == 0xEA,
@@ -5708,6 +5573,73 @@ static int test_patch_restore_uses_recorded_destination_after_cpu_bank_changes()
     m.cleanup();
     if (expect(m.kernal_rom[1] == 0xEA && m.ram[0xE001] == 0x6C,
                "Patch cleanup must be idempotent after the bank changed")) return 1;
+    return 0;
+}
+
+static int test_visible_rom_stub_chains_interrupts_to_the_kernal_entry()
+{
+    // The hard BRK stub at $03C8 forwards any interrupt that is not one of the
+    // debugger's own BRKs through the pointer at $03EE/$03EF. That pointer used
+    // to be seeded only from RAM under the KERNAL at $FFFE/$FFFF, which is $0000
+    // on any machine that never installed a vector there. The same stub is also
+    // installed in the KERNAL ROM image for a visible-ROM breakpoint, and that
+    // copy is only reachable with the KERNAL mapped, so with such a breakpoint
+    // armed every jiffy IRQ of the still-running C64 entered the stub and was
+    // forwarded to $0000 - the 6510 port register. The CPU then executed the port
+    // bytes as code and died, and the launch that followed found a 6510 that
+    // answered neither IRQ nor NMI. Measured on an Ultimate 64 Elite: a
+    // contextless KERNAL breakpoint entry hit 1 time in 10 before this, and 10
+    // times in 10 after.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x07;
+    m.allow_visible_rom_patching = true;
+    m.ram[FAKE_HARD_VECTOR_LO] = 0x00;   // RAM under KERNAL holds no vector
+    m.ram[FAKE_HARD_VECTOR_HI] = 0x00;
+    m.kernal_rom[0x1FFE] = 0x48;         // KERNAL $FFFE/$FFFF -> $FF48
+    m.kernal_rom[0x1FFF] = 0xFF;
+    fake_seed_rom_nop_run(m, 0xE000);
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Visible-KERNAL step must trap")) return 1;
+    if (expect(m.ram[FAKE_HARD_BRK_ORIG_VECTOR_LO] == 0x48 &&
+               m.ram[FAKE_HARD_BRK_ORIG_VECTOR_LO + 1] == 0xFF,
+               "Visible-ROM stub must forward interrupts to the KERNAL entry "
+               "$FF48, never to the empty RAM vector $0000")) return 1;
+    return 0;
+}
+
+static int test_kernal_out_stub_keeps_the_programs_ram_chain_vector()
+{
+    // A session with no visible-ROM breakpoint only installs the RAM copy of the
+    // stub, which is reachable only with the KERNAL banked out. There the right
+    // forward target is the program's own RAM vector, so the KERNAL entry must
+    // not be substituted for it.
+    FakeVisibleRomMachine m(false);
+    m.cpu_port = 0x05;
+    m.allow_visible_rom_patching = true;
+    m.ram[FAKE_HARD_VECTOR_LO] = 0x34;
+    m.ram[FAKE_HARD_VECTOR_HI] = 0x12;
+    m.ram[0xE000] = 0xEA;
+    m.ram[0xE001] = 0xEA;
+    m.ram[0xE002] = 0xEA;
+
+    uint8_t bytes[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.trace_at(0xE000, pred, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "RAM-under-KERNAL step must trap")) return 1;
+    if (expect(m.ram[FAKE_HARD_BRK_ORIG_VECTOR_LO] == 0x34 &&
+               m.ram[FAKE_HARD_BRK_ORIG_VECTOR_LO + 1] == 0x12,
+               "KERNAL-out stub must keep the program's own RAM vector")) return 1;
     return 0;
 }
 
@@ -5771,15 +5703,13 @@ static int test_kernal_out_hard_vector_restores_on_timeout()
     return 0;
 }
 
-static int test_contextless_visible_rom_entry_reports_uncoherent_on_miss()
+static int test_contextless_visible_rom_entry_miss_cleans_up()
 {
     // A contextless visible-ROM breakpoint entry (bp+Go into KERNAL from a RAM
-    // bootstrap) that never traps is the documented closed-core served-ROM
-    // fetch-coherency limit, not a debugger fault. The engine must report the
-    // precise DBG_ROM_ENTRY_UNCOHERENT (never a bare DBG_TIMEOUT that the test
-    // harness would then mask with a reset), restore its ROM-image patch so no
-    // stale BRK is left in KERNAL, and leave the debugger usable - no reset, no
-    // replay. sentinel_armed=false forces the launch to miss.
+    // bootstrap) that never traps is an ordinary DBG_TIMEOUT. It must restore its
+    // ROM-image patch so no stale BRK is left in KERNAL, and leave the debugger
+    // usable - no reset, no replay. sentinel_armed=false forces the launch to
+    // miss.
     FakeVisibleRomMachine m(false);
     m.cpu_port = 0x07;                 // BASIC + KERNAL + I/O visible
     m.allow_visible_rom_patching = true;
@@ -5796,9 +5726,8 @@ static int test_contextless_visible_rom_entry_reports_uncoherent_on_miss()
 
     // Contextless bp+Go launched from a RAM bootstrap PC.
     DebugSession::Result r = m.go(from, &bps, 0xC5F0);
-    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
-               "Contextless visible-ROM entry miss must report DBG_ROM_ENTRY_UNCOHERENT, "
-               "not a bare DBG_TIMEOUT")) return 1;
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "Contextless visible-ROM entry miss must report DBG_TIMEOUT")) return 1;
     if (expect(m.kernal_rom[0x0000] == 0xEA,
                "Miss must restore the visible-ROM breakpoint byte (no stale BRK left)")) return 1;
     if (expect(!m.is_debug_session_active(),
@@ -5827,18 +5756,15 @@ static void fake_leave_debug_after_visible_rom_session(FakeVisibleRomMachine &m)
     m.forget_context();
 }
 
-static int test_contextless_visible_rom_entry_after_prior_session_reports_uncoherent()
+static int test_contextless_visible_rom_entry_after_prior_session_cleans_up()
 {
-    // Regression for the state that the hardware E2E suite actually hits. After
-    // any Debug session that is left while parked, cleanup_to_context() stores a
+    // Regression for the state the hardware E2E suite actually hits. After any
+    // Debug session that is left while parked, cleanup_to_context() stores a
     // resume_context and forget_context() deliberately keeps it (it is a retry
-    // seed). The next contextless bp+Go into visible ROM therefore found
-    // has_resume_context set and adopted it as launch metadata, which used to
-    // clear the "contextless visible-ROM launch" classification. Two things broke
-    // together: the sustained fetch-path settle was skipped, and a genuine miss
-    // was reported as a bare DBG_TIMEOUT instead of DBG_ROM_ENTRY_UNCOHERENT.
-    // The launch itself is an NMI redirect in both cases - the CPU is never at
-    // start_pc here - so the stale seed must not change either behaviour.
+    // seed). The next contextless bp+Go into visible ROM therefore starts with
+    // has_resume_context set and adopts it as launch metadata. The launch is an
+    // NMI redirect either way - the CPU is never at start_pc here - so the stale
+    // seed must not change the outcome or the cleanup.
     FakeVisibleRomMachine m(false);
     m.cpu_port = 0x07;
     m.allow_visible_rom_patching = true;
@@ -5848,9 +5774,6 @@ static int test_contextless_visible_rom_entry_after_prior_session_reports_uncohe
     // Second entry: same contextless bp+Go, forced to miss.
     fake_seed_rom_nop_run(m, 0xE000);
     m.sentinel_armed = false;
-    m.settle_calls = 0;
-    m.sustained_settle_calls = 0;
-    m.saw_sustained_settle = false;
 
     MonitorBreakpoints bps;
     bps.allocate(0xE000, 0x07);
@@ -5858,24 +5781,19 @@ static int test_contextless_visible_rom_entry_after_prior_session_reports_uncohe
     debug_context_reset(&from);
 
     DebugSession::Result r = m.go(from, &bps, 0xC5F0);
-    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
-               "Contextless visible-ROM miss after a prior session must still "
-               "report DBG_ROM_ENTRY_UNCOHERENT, not a bare DBG_TIMEOUT")) return 1;
-    if (expect(m.sustained_settle_calls >= 1,
-               "Contextless visible-ROM entry after a prior session must still "
-               "settle the fetch path")) return 1;
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "Contextless visible-ROM miss after a prior session must report "
+               "DBG_TIMEOUT")) return 1;
     if (expect(m.kernal_rom[0x0000] == 0xEA,
                "Miss must restore the visible-ROM breakpoint byte (no stale BRK left)")) return 1;
     return 0;
 }
 
-static int test_ram_launch_with_stale_rom_breakpoint_is_not_reported_as_uncoherent()
+static int test_ram_launch_with_stale_rom_breakpoint_times_out_cleanly()
 {
-    // A contextless launch that can stop in RAM is not a visible-ROM entry, even
-    // when an unrelated ROM breakpoint is still armed from an earlier operation.
-    // Reporting DBG_ROM_ENTRY_UNCOHERENT there would label a genuine RAM-step
-    // timeout as the documented closed-core limitation, which the E2E suite then
-    // records as a skip instead of a failure.
+    // A contextless launch that can stop in RAM must time out and still restore
+    // an unrelated visible-ROM breakpoint that was armed from an earlier
+    // operation, so no stale BRK is left in the KERNAL image.
     FakeVisibleRomMachine m(false);
     m.cpu_port = 0x07;
     m.allow_visible_rom_patching = true;
@@ -5907,10 +5825,10 @@ static int test_sentinel_wait_timeout_tracks_real_elapsed_time()
     // measuring elapsed time. Every iteration also polls the cancel keyboard,
     // and on a Telnet session that poll blocks for the socket's 200 ms receive
     // timeout, so an iteration really cost ~205 ms while crediting 5 ms. A
-    // 5000 ms budget therefore ran for over three minutes, and a genuine
-    // visible-ROM entry miss never reported DBG_ROM_ENTRY_UNCOHERENT inside any
-    // usable timeout - the monitor simply went silent. Model that per-poll cost
-    // and require the wait to end after roughly its budget of real time.
+    // 5000 ms budget therefore ran for over three minutes, so a genuine miss
+    // never reported anything inside a usable timeout - the monitor simply went
+    // silent. Model that per-poll cost and require the wait to end after roughly
+    // its budget of real time.
     const uint16_t poll_cost_ms = 200;
     FakeVisibleRomMachine m(false);
     m.cpu_port = 0x07;
@@ -5928,8 +5846,8 @@ static int test_sentinel_wait_timeout_tracks_real_elapsed_time()
     m.delay_calls = 0;
     DebugSession::Result r = m.go(from, &bps, 0xC5F0);
 
-    if (expect(r == DebugSession::DBG_ROM_ENTRY_UNCOHERENT,
-               "A miss must still report DBG_ROM_ENTRY_UNCOHERENT")) return 1;
+    if (expect(r == DebugSession::DBG_TIMEOUT,
+               "A miss must report DBG_TIMEOUT")) return 1;
     // Each poll costs poll_cost_ms + the 5 ms delay, so an honest wait needs
     // about budget/205 iterations. The old step-counting wait needed budget/5,
     // i.e. 40x more. Allow generous slack and still separate the two by far.
@@ -5945,12 +5863,10 @@ static int test_sentinel_wait_timeout_tracks_real_elapsed_time()
     return 0;
 }
 
-static int test_ram_under_rom_timeout_is_not_reported_as_uncoherent()
+static int test_ram_under_rom_contextless_miss_times_out()
 {
-    // The precise DBG_ROM_ENTRY_UNCOHERENT is specific to a visible-ROM image
-    // fetch. A RAM-under-KERNAL contextless miss is a plain DBG_TIMEOUT (RAM is
-    // always coherent), so the honest ROM-entry classification must NOT leak onto
-    // it. cpu_port 0x05 has HIRAM clear -> $E000 is RAM, not served KERNAL.
+    // A RAM-under-KERNAL contextless miss is a plain DBG_TIMEOUT. cpu_port 0x05
+    // has HIRAM clear, so $E000 is RAM rather than served KERNAL.
     FakeVisibleRomMachine m(false);
     m.cpu_port = 0x05;                 // KERNAL banked out: $E000 is RAM
     m.allow_visible_rom_patching = true;
@@ -5966,8 +5882,7 @@ static int test_ram_under_rom_timeout_is_not_reported_as_uncoherent()
     debug_context_reset(&from);
     DebugSession::Result r = m.go(from, &bps, 0xC5F0);
     if (expect(r == DebugSession::DBG_TIMEOUT,
-               "RAM-under-ROM contextless miss must stay DBG_TIMEOUT, not "
-               "DBG_ROM_ENTRY_UNCOHERENT")) return 1;
+               "RAM-under-ROM contextless miss must report DBG_TIMEOUT")) return 1;
     return 0;
 }
 
@@ -8880,20 +8795,20 @@ int main()
     RUN(test_cursor_visible_rom_step_sets_monitor_cpu_port_before_jump);
     RUN(test_visible_kernal_step_into_uses_rom_patch_support);
     RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
-    RUN(test_visible_rom_sustained_settle_does_not_launch_before_sentinel_clear);
-    RUN(test_contextless_visible_rom_relaunch_resettles_fetch_path);
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
     RUN(test_visible_rom_breakpoint_go_uses_same_capability_gate);
     RUN(test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram);
     RUN(test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores);
     RUN(test_patch_restore_uses_recorded_destination_after_cpu_bank_changes);
+    RUN(test_visible_rom_stub_chains_interrupts_to_the_kernal_entry);
+    RUN(test_kernal_out_stub_keeps_the_programs_ram_chain_vector);
     RUN(test_kernal_out_hard_vector_installs_and_restores_on_cleanup);
     RUN(test_kernal_out_hard_vector_restores_on_timeout);
-    RUN(test_contextless_visible_rom_entry_reports_uncoherent_on_miss);
-    RUN(test_contextless_visible_rom_entry_after_prior_session_reports_uncoherent);
-    RUN(test_ram_launch_with_stale_rom_breakpoint_is_not_reported_as_uncoherent);
+    RUN(test_contextless_visible_rom_entry_miss_cleans_up);
+    RUN(test_contextless_visible_rom_entry_after_prior_session_cleans_up);
+    RUN(test_ram_launch_with_stale_rom_breakpoint_times_out_cleanly);
     RUN(test_sentinel_wait_timeout_tracks_real_elapsed_time);
-    RUN(test_ram_under_rom_timeout_is_not_reported_as_uncoherent);
+    RUN(test_ram_under_rom_contextless_miss_times_out);
     RUN(test_visible_kernal_hard_vector_installs_and_restores);
     RUN(test_stale_visible_kernal_hard_vector_is_recovered);
     RUN(test_run_to_current_visible_kernal_jsr_enters_callee_before_rearming_cursor_breakpoint);

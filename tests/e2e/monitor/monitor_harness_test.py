@@ -8,18 +8,14 @@ runs in a few seconds and guards the harnesses the hardware suites depend on.
 
 Two groups:
 
-1. Anti-masking enforcement. The debugger's contextless visible-ROM breakpoint
-   entry can, under concurrent REST/DMA load, miss the 6510's first fetch,
-   because the closed U64 C64 core can serve a stale pre-patch ROM byte to the
-   live instruction fetch (documented in
-   doc/machine-code-monitor-rom-fetch-coherency.md). A reset does not create
-   coherency, so masking that miss with a reset-and-retry loop fabricates a
-   green result and is prohibited. The debugger reports the genuine miss as
-   DBG_ROM_ENTRY_UNCOHERENT after a bounded, no-reset in-place relaunch. The
-   check is structural (AST), not text matching: it flags any loop whose body
-   both resets/reconnects the machine or debug session and re-issues a debugger
-   launch/step. Diagnostic tools that reset in order to MEASURE the race are
-   deliberately out of scope.
+1. Anti-masking enforcement. A contextless visible-ROM breakpoint entry that
+   does not trap is a defect, and resetting the machine to buy another draw
+   turns an intermittent defect into a green result. A reset-and-retry loop
+   around a debugger launch is therefore prohibited. The check is structural
+   (AST), not text matching: it flags any loop whose body both resets/reconnects
+   the machine or debug session and re-issues a debugger launch/step. Diagnostic
+   tools that reset in order to MEASURE an intermittency are deliberately out of
+   scope.
 
 2. Matrix-suite unit checks: fail-fast scheduling, oracle fixture setup, and the
    Debug alert wording contract.
@@ -227,7 +223,7 @@ class ModalDetectionTest(unittest.TestCase):
         "|MONITOR ASM $C700                                 Dbg     |",
         "|C700 A9 5A     LDA #$5A          [RAM]                    |",
         "|C70C 80    +------------------------------------+         |",
-        "|C70D 00    |ROM BP ENTRY MISSED - RUN CODE FIRST|         |",
+        "|C70D 00    |           DEBUG TIMEOUT            |         |",
         "|C70F FF    |                 Ok                 |         |",
         "|C710 FF    +------------------------------------+         |",
     ]
