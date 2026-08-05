@@ -1,6 +1,13 @@
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 
+APP_SPACE_CHECK = python3 tools/app_space.py
+
+.PHONY: app_space_test
+
+app_space_test:
+	@python3 tools/test_app_space.py
+
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 
 esp32_clean: esp32_raw_u64_clean esp32_raw_c3_clean esp32_u64ctrl_clean
@@ -64,21 +71,23 @@ fpga_depends::
 esp_depends::
 	@cd software && python3 esp_depends.py >esp_depends.txt
 
-u2_rv:
+u2_rv: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/riscv/boot1
 	@$(MAKE) -C target/u2/riscv/boot2
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
+	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
-u2_rv_swonly:
+u2_rv_swonly: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
+	@$(APP_SPACE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
@@ -125,7 +134,7 @@ niosboot:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u2plus:
+u2plus: app_space_test
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -139,6 +148,7 @@ u2plus:
 	@$(MAKE) -C target/fpga/u2plus_recovery
 	@$(MAKE) -C target/fpga/u2plus_run
 	@$(MAKE) -C target/u2plus/nios/ultimate
+	@$(APP_SPACE_CHECK) u2plus target/u2plus/nios/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2plus/nios/recovery
 	@$(MAKE) -C target/u2plus/nios/updater
 	@cp target/u2plus/nios/updater/result/update.app ./update.u2p
@@ -212,7 +222,7 @@ mb_clean:
 	@rm -rf `find target/u2/microblaze/mb* -name result`
 	@rm -rf `find target/u2/microblaze/mb* -name output`
 
-u2plus_swonly:
+u2plus_swonly: app_space_test
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -222,6 +232,7 @@ u2plus_swonly:
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u2plus/nios/ultimate
+	@$(APP_SPACE_CHECK) u2plus target/u2plus/nios/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2plus/nios/recovery
 	@$(MAKE) -C target/u2plus/nios/updater
 	@cp target/u2plus/nios/updater/result/update.app ./update.u2p
@@ -251,7 +262,7 @@ nios_bsps:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u64: esp32_raw_u64
+u64: app_space_test esp32_raw_u64
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -261,10 +272,11 @@ u64: esp32_raw_u64
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u64/nios2/ultimate
+	@$(APP_SPACE_CHECK) u64 target/u64/nios2/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
-u64_no_esp::
+u64_no_esp:: app_space_test
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -274,6 +286,7 @@ u64_no_esp::
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u64/nios2/ultimate
+	@$(APP_SPACE_CHECK) u64 target/u64/nios2/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
@@ -281,11 +294,12 @@ u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
 
-u64ii: esp32_u64ctrl
+u64ii: app_space_test esp32_u64ctrl
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(APP_SPACE_CHECK) u64ii target/u64ii/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u64ii/riscv/factorytest
 	@$(MAKE) -C target/u64ii/riscv/update
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
@@ -296,11 +310,12 @@ u64ii: esp32_u64ctrl
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
-u64ii_no_esp::
+u64ii_no_esp:: app_space_test
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
+	@$(APP_SPACE_CHECK) u64ii target/u64ii/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u64ii/riscv/factorytest
 	@$(MAKE) -C target/u64ii/riscv/update
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
@@ -311,27 +326,30 @@ u64ii_no_esp::
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
-u2pl: esp32_raw_c3
+u2pl: app_space_test esp32_raw_c3
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
+	@$(APP_SPACE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
-u2pl_no_esp::
+u2pl_no_esp:: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
+	@$(APP_SPACE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
-u2pl_swonly:
+u2pl_swonly: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
+	@$(APP_SPACE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
