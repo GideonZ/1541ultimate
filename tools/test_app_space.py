@@ -224,28 +224,23 @@ class RenderTest(unittest.TestCase):
 
 
 class CommandTest(unittest.TestCase):
-    @contextlib.contextmanager
-    def artifact_at(self, variant, artifact):
-        variants = dict(app_space.FIRMWARE_VARIANTS)
-        variants[variant] = dict(variants[variant], artifact=str(artifact))
-        with mock.patch.object(app_space, "FIRMWARE_VARIANTS", variants):
-            yield
+    def setUp(self):
+        # Every variant points at a path that cannot exist, so no test can be swayed by
+        # which firmware images happen to be built in the checkout it runs in.
+        self.variants = {
+            variant: dict(details, artifact="/does/not/exist/" + variant)
+            for variant, details in app_space.FIRMWARE_VARIANTS.items()
+        }
+        patcher = mock.patch.object(app_space, "FIRMWARE_VARIANTS", self.variants)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @contextlib.contextmanager
     def artifact_of_size(self, variant, size_bytes):
         with tempfile.TemporaryDirectory() as directory:
             artifact = pathlib.Path(directory) / "ultimate.app"
             artifact.write_bytes(b"x" * size_bytes)
-            with self.artifact_at(variant, artifact):
-                yield
-
-    @contextlib.contextmanager
-    def no_artifacts(self):
-        variants = {
-            variant: dict(details, artifact="/does/not/exist/" + variant)
-            for variant, details in app_space.FIRMWARE_VARIANTS.items()
-        }
-        with mock.patch.object(app_space, "FIRMWARE_VARIANTS", variants):
+            self.variants[variant] = dict(self.variants[variant], artifact=str(artifact))
             yield
 
     def run_main(self, argv):
@@ -273,8 +268,7 @@ class CommandTest(unittest.TestCase):
         self.assertIn("fails at the final application space report", stderr)
 
     def test_measure_stops_the_build_when_the_artifact_was_not_produced(self):
-        with self.artifact_at("u2", "/does/not/exist/ultimate.bin"):
-            status, _, stderr = self.run_main(["measure", "u2"])
+        status, _, stderr = self.run_main(["measure", "u2"])
 
         self.assertEqual(status, 2)
         self.assertIn("expected firmware artifact for U2 was not produced", stderr)
@@ -290,8 +284,7 @@ class CommandTest(unittest.TestCase):
         self.assertNotIn("::warning::", stdout)
 
     def test_report_tabulates_every_variant_even_when_none_are_built(self):
-        with self.no_artifacts():
-            status, stdout, _ = self.run_main(["report"])
+        status, stdout, _ = self.run_main(["report"])
 
         self.assertEqual(status, 0)
         for details in app_space.FIRMWARE_VARIANTS.values():
@@ -319,9 +312,8 @@ class CommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             summary = pathlib.Path(directory) / "summary.md"
             summary.write_text("earlier step\n")
-            with self.no_artifacts():
-                with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
-                    self.run_main(["report"])
+            with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+                self.run_main(["report"])
 
             written = summary.read_text()
 
@@ -329,11 +321,10 @@ class CommandTest(unittest.TestCase):
         self.assertIn("| Firmware | Limit | Size | Free | Free % | Status |", written)
 
     def test_report_survives_an_unwritable_job_summary(self):
-        with self.no_artifacts():
-            with mock.patch.dict(
-                "os.environ", {"GITHUB_STEP_SUMMARY": "/does/not/exist/summary.md"}
-            ):
-                status, _, stderr = self.run_main(["report"])
+        with mock.patch.dict(
+            "os.environ", {"GITHUB_STEP_SUMMARY": "/does/not/exist/summary.md"}
+        ):
+            status, _, stderr = self.run_main(["report"])
 
         self.assertEqual(status, 0)
         self.assertIn("could not write the CI job summary", stderr)
