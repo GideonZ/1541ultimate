@@ -361,7 +361,9 @@ begin
                 serve_rom <= '1';
                 rom_mode  <= "00"; -- 8K banks 
 
-            when c_megabyter =>
+            when c_megabyter => -- Max 256 banks of 8K = 2 MB
+                -- Variant 0 -- Max 256 banks of 8K = 2 MB
+                -- Variant 1 -- Max 256 banks of 16K = 4 MB
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     if io_addr(1) = '0' then 
                         bank_bits(21 downto 14) <= io_wdata;
@@ -370,10 +372,16 @@ begin
                         -- bit 7 is LED => ignored
                     end if;
                 end if;
-                game_n    <= not mode_bits(1);
-                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
-                rom_mode  <= "00"; -- 8K banks 
+                if variant(0) = '0' then
+                    game_n    <= not mode_bits(0);
+                    exrom_n   <= mode_bits(1);
+                    rom_mode  <= "00"; -- 8K banks 
+                else
+                    game_n    <= mode_bits(0);
+                    exrom_n   <= mode_bits(1);
+                    rom_mode  <= "01"; -- 16K banks
+                end if;
 
             when c_supergames =>
                 if io_write='1' and io_addr(8)='1' and mode_bits(1) = '0' then -- DF00-DFFF
