@@ -1,49 +1,59 @@
 #!/usr/bin/env python3
 """Report and enforce the application space budget of the final firmware images.
 
-    app_space.py check <variant>   gate one freshly built image (used by the Makefile)
-    app_space.py report            table across every firmware (used by CI and `make all`)
+    app_space.py measure <variant>  print one image's row as it is built (never fails on size)
+    app_space.py report             table across every firmware; the single size gate
+
+Measuring never stops a build, so every firmware in a run gets built and measured even
+when an earlier one is over its limit. `report` runs last and fails the build there.
 """
 
 import argparse
 import os
 import pathlib
+import re
 import sys
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-# The limits are the FLASH_ID_APPL partition sizes in software/io/flash/*_flash.cc.
-# tools/test_app_space.py checks that these two definitions stay in sync.
+# The limits are not restated here. They are read from the FLASH_ID_APPL entry of the
+# flash partition tables below, which are what the firmware itself uses at runtime.
+# A table that appears in more than one of these files must fit the smallest of them.
+FLASH_TABLE_SOURCES = (
+    "software/io/flash/w25q_flash.cc",
+    "software/io/flash/at45_flash.cc",
+)
+
 FIRMWARE_VARIANTS = {
     "u2": {
         "name": "U2",
-        "limit_bytes": 0xC6000,
+        "partition": "flash_addresses",
         "artifact": "target/u2/riscv/ultimate/result/ultimate.bin",
     },
     "u2plus": {
         "name": "U2+",
-        "limit_bytes": 0x140000,
+        "partition": "flash_addresses_u2p",
         "artifact": "target/u2plus/nios/ultimate/result/ultimate.app",
     },
     "u2pl": {
         "name": "U2+L",
-        "limit_bytes": 0x160000,
+        "partition": "flash_addresses_u2pl",
         "artifact": "target/u2plus_L/riscv/ultimate/result/ultimate.app",
     },
     "u64": {
         "name": "U64",
-        "limit_bytes": 0x170000,
+        "partition": "flash_addresses_u64",
         "artifact": "target/u64/nios2/ultimate/result/ultimate.app",
     },
     "u64e2_50t": {
         "name": "U64E2_50T",
-        "limit_bytes": 0x1E0000,
+        "partition": "flash_addresses_u64ii_50t",
         "artifact": "target/u64ii/riscv/ultimate/result/ultimate.app",
     },
     "u64e2_100t": {
         "name": "U64E2_100T",
-        "limit_bytes": 0x1C0000,
+        "partition": "flash_addresses_u64ii_100t",
         "artifact": "target/u64ii/riscv/ultimate/result/ultimate.app",
     },
 }
@@ -76,6 +86,59 @@ ROW_WIDTH = sum(width for _, width, _ in COLUMNS) + len(GAP) * (len(COLUMNS) - 1
 ANSI_RESET = "\033[0m"
 ANSI_BOLD = "\033[1m"
 ANSI_COLORS = {PASS: "\033[32m", WARNING: "\033[33m", FAIL: "\033[31m", MISSING: "\033[90m"}
+
+
+class LimitError(Exception):
+    """The application space limits could not be read from the flash partition tables."""
+
+
+def read_partition_limits(source):
+    """Map each t_flash_address table in one C++ source to its FLASH_ID_APPL size."""
+    limits = {}
+    for table, body in re.findall(
+        r"t_flash_address\s+(\w+)\[\]\s*=\s*\{(.*?)\};", source, re.DOTALL
+    ):
+        entry = re.search(r"FLASH_ID_APPL\s*,([^\n]*)", body)
+        if entry:
+            fields = re.findall(r"0x[0-9A-Fa-f]+", entry.group(1))
+            if fields:
+                limits[table] = int(fields[-1], 16)  # size is the last field
+    return limits
+
+
+def load_limits(root=None):
+    """Read every variant's limit out of the flash partition tables."""
+    root = REPO_ROOT if root is None else root
+    partitions = {}
+    for name in FLASH_TABLE_SOURCES:
+        path = root / name
+        try:
+            source = path.read_text()
+        except OSError as error:
+            raise LimitError("cannot read the flash partition table %s: %s" % (path, error))
+        for table, size in read_partition_limits(source).items():
+            # One table can describe several flash devices; the app must fit the smallest.
+            partitions[table] = min(size, partitions.get(table, size))
+
+    limits = {}
+    for variant, details in FIRMWARE_VARIANTS.items():
+        if details["partition"] not in partitions:
+            raise LimitError(
+                "no FLASH_ID_APPL entry for %s (table %s) in %s"
+                % (details["name"], details["partition"], ", ".join(FLASH_TABLE_SOURCES))
+            )
+        limits[variant] = partitions[details["partition"]]
+    return limits
+
+
+_LIMITS = None
+
+
+def firmware_limits():
+    global _LIMITS
+    if _LIMITS is None:
+        _LIMITS = load_limits()
+    return _LIMITS
 
 
 def label(status):
@@ -146,10 +209,9 @@ class FirmwareSizeReport:
 
 
 def read_report(variant):
-    details = FIRMWARE_VARIANTS[variant]
-    artifact = REPO_ROOT / details["artifact"]
+    artifact = REPO_ROOT / FIRMWARE_VARIANTS[variant]["artifact"]
     actual_bytes = artifact.stat().st_size if artifact.is_file() else None
-    return FirmwareSizeReport(variant, actual_bytes, details["limit_bytes"])
+    return FirmwareSizeReport(variant, actual_bytes, firmware_limits()[variant])
 
 
 def _supports_unicode(stream):
@@ -284,8 +346,13 @@ def announce(level, message):
         print("::%s::%s" % (level, message))
 
 
-def run_check(variant):
-    """Gate a single freshly built image. Prints one row; annotations come from `report`."""
+def run_measure(variant):
+    """Print one freshly built image's row.
+
+    Deliberately does not fail on size: the build continues so that every remaining
+    firmware is still built and measured. `report` is the gate. A missing artifact is
+    a build fault rather than a size fault, so that alone stops the build here.
+    """
     report = read_report(variant)
     if report.status == MISSING:
         print("ERROR: " + report.missing_message(), file=sys.stderr)
@@ -296,14 +363,18 @@ def run_check(variant):
     print(renderer.row(report))
     sys.stdout.flush()  # keep the row ahead of the diagnostics on stderr
     if report.status == FAIL:
-        print("ERROR: " + report.failure_message(), file=sys.stderr)
+        print(
+            "OVER LIMIT: %s The build fails at the final application space report."
+            % report.failure_message(),
+            file=sys.stderr,
+        )
     elif report.status == WARNING:
         print("WARNING: " + report.warning_message(), file=sys.stderr)
-    return report.exit_status
+    return 0
 
 
 def run_report():
-    """Central signal: one table over every firmware, plus CI annotations and job summary."""
+    """The size gate: one table over every firmware, plus CI annotations and job summary."""
     reports = [read_report(variant) for variant in FIRMWARE_VARIANTS]
     print(Renderer().table(reports))
     sys.stdout.flush()  # keep the table ahead of the diagnostics on stderr
@@ -323,14 +394,18 @@ def main(argv):
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    check = commands.add_parser("check", help="gate one freshly built firmware image")
-    check.add_argument("variant", choices=sorted(FIRMWARE_VARIANTS))
-    commands.add_parser("report", help="tabulate the application space of every firmware")
+    measure = commands.add_parser("measure", help="print one freshly built image's row")
+    measure.add_argument("variant", choices=sorted(FIRMWARE_VARIANTS))
+    commands.add_parser("report", help="tabulate every firmware and gate the build on size")
     args = parser.parse_args(argv)
 
-    if args.command == "check":
-        return run_check(args.variant)
-    return run_report()
+    try:
+        if args.command == "measure":
+            return run_measure(args.variant)
+        return run_report()
+    except LimitError as error:
+        print("ERROR: " + str(error), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

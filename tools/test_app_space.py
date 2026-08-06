@@ -17,45 +17,80 @@ import app_space
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-# Variant -> the flash partition table in software/io/flash/w25q_flash.cc it is budgeted from.
-FLASH_TABLES = {
-    "u2": "flash_addresses",
-    "u2plus": "flash_addresses_u2p",
-    "u2pl": "flash_addresses_u2pl",
-    "u64": "flash_addresses_u64",
-    "u64e2_50t": "flash_addresses_u64ii_50t",
-    "u64e2_100t": "flash_addresses_u64ii_100t",
-}
-
-
-def application_sizes_from_flash_tables():
-    source = (REPO_ROOT / "software/io/flash/w25q_flash.cc").read_text()
-    sizes = {}
-    for table, body in re.findall(
-        r"t_flash_address (\w+)\[\] = \{(.*?)\};", source, re.DOTALL
-    ):
-        entry = re.search(r"FLASH_ID_APPL,([^\n]*)", body)
-        if entry:
-            # The partition size is the last field of the entry.
-            sizes[table] = int(re.findall(r"0x[0-9A-Fa-f]+", entry.group(1))[-1], 16)
-    return sizes
-
 
 def report_for(actual_bytes, limit_bytes=1000, variant="u2"):
     return app_space.FirmwareSizeReport(variant, actual_bytes, limit_bytes)
 
 
 class LimitTest(unittest.TestCase):
-    def test_limits_match_the_flash_partition_tables(self):
-        sizes = application_sizes_from_flash_tables()
+    def test_limits_read_from_the_flash_tables_are_the_partition_sizes(self):
+        # Pins the parse against the real sources. A change here means a partition
+        # moved, which has to be a deliberate decision rather than a silent one.
+        self.assertEqual(
+            app_space.load_limits(),
+            {
+                "u2": 0xC6000,
+                "u2plus": 0x140000,
+                "u2pl": 0x160000,
+                "u64": 0x170000,
+                "u64e2_50t": 0x1E0000,
+                "u64e2_100t": 0x1C0000,
+            },
+        )
 
-        self.assertEqual(len(sizes), 6)
-        for variant, table in FLASH_TABLES.items():
-            self.assertEqual(
-                app_space.FIRMWARE_VARIANTS[variant]["limit_bytes"],
-                sizes[table],
-                "%s limit differs from %s in w25q_flash.cc" % (variant, table),
-            )
+    def test_no_limit_is_written_down_outside_the_flash_tables(self):
+        for source in ("tools/app_space.py", "Makefile", ".github/workflows/build.yml"):
+            text = (REPO_ROOT / source).read_text()
+
+            for limit in app_space.load_limits().values():
+                self.assertNotIn("0x%X" % limit, text, source)
+                self.assertNotIn(str(limit), text, source)
+
+    def test_size_is_taken_from_the_last_field_of_the_appl_entry(self):
+        limits = app_space.read_partition_limits("""
+            static const t_flash_address flash_addresses[] = {
+                { FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
+                { FLASH_ID_APPL,       0x01, 0x062000, 0x062000, 0xC6000 }, // max 792K
+                { FLASH_ID_CONFIG,     0x00, 0x1F0000, 0x1F0000, 0x10000 } };
+            static const t_flash_address other[] = {
+                { FLASH_ID_BOOTFPGA,   0x00, 0x000000, 0x000000, 0x0C0000 } };
+        """)
+
+        self.assertEqual(limits, {"flash_addresses": 0xC6000})
+
+    def test_a_table_shared_by_two_devices_uses_the_smaller_partition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "software/io/flash").mkdir(parents=True)
+            entry = "{ FLASH_ID_APPL, 0x01, 0x062000, 0x062000, %s }"
+            for name, size in zip(app_space.FLASH_TABLE_SOURCES, ("0xC6000", "0xB0000")):
+                (root / name).write_text(
+                    "\n".join(
+                        "static const t_flash_address %s[] = { %s };"
+                        % (details["partition"], entry % size)
+                        for details in app_space.FIRMWARE_VARIANTS.values()
+                    )
+                )
+
+            self.assertEqual(app_space.load_limits(root)["u2"], 0xB0000)
+
+    def test_a_missing_partition_table_is_reported_clearly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "software/io/flash").mkdir(parents=True)
+            for name in app_space.FLASH_TABLE_SOURCES:
+                (root / name).write_text("static const t_flash_address other[] = { };")
+
+            with self.assertRaises(app_space.LimitError) as raised:
+                app_space.load_limits(root)
+
+        self.assertIn("no FLASH_ID_APPL entry for U2", str(raised.exception))
+
+    def test_an_unreadable_source_is_reported_clearly(self):
+        with self.assertRaises(app_space.LimitError) as raised:
+            app_space.load_limits(pathlib.Path("/does/not/exist"))
+
+        self.assertIn("cannot read the flash partition table", str(raised.exception))
 
     def test_artifact_paths_are_repo_relative_and_plausible(self):
         for variant, details in app_space.FIRMWARE_VARIANTS.items():
@@ -190,15 +225,28 @@ class RenderTest(unittest.TestCase):
 
 class CommandTest(unittest.TestCase):
     @contextlib.contextmanager
+    def artifact_at(self, variant, artifact):
+        variants = dict(app_space.FIRMWARE_VARIANTS)
+        variants[variant] = dict(variants[variant], artifact=str(artifact))
+        with mock.patch.object(app_space, "FIRMWARE_VARIANTS", variants):
+            yield
+
+    @contextlib.contextmanager
     def artifact_of_size(self, variant, size_bytes):
         with tempfile.TemporaryDirectory() as directory:
             artifact = pathlib.Path(directory) / "ultimate.app"
             artifact.write_bytes(b"x" * size_bytes)
-            variants = dict(app_space.FIRMWARE_VARIANTS)
-            variants[variant] = dict(variants[variant], artifact=artifact.name)
-            with mock.patch.object(app_space, "FIRMWARE_VARIANTS", variants):
-                with mock.patch.object(app_space, "REPO_ROOT", pathlib.Path(directory)):
-                    yield
+            with self.artifact_at(variant, artifact):
+                yield
+
+    @contextlib.contextmanager
+    def no_artifacts(self):
+        variants = {
+            variant: dict(details, artifact="/does/not/exist/" + variant)
+            for variant, details in app_space.FIRMWARE_VARIANTS.items()
+        }
+        with mock.patch.object(app_space, "FIRMWARE_VARIANTS", variants):
+            yield
 
     def run_main(self, argv):
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -207,39 +255,43 @@ class CommandTest(unittest.TestCase):
                 status = app_space.main(argv)
         return status, stdout.getvalue(), stderr.getvalue()
 
-    def test_check_prints_a_header_and_one_row(self):
+    def test_measure_prints_a_header_and_one_row(self):
         with self.artifact_of_size("u64", 1024):
-            status, stdout, _ = self.run_main(["check", "u64"])
+            status, stdout, _ = self.run_main(["measure", "u64"])
 
         self.assertEqual(status, 0)
         self.assertEqual(len(stdout.strip().splitlines()), 2)
         self.assertIn("Firmware", stdout)
         self.assertIn("U64", stdout)
 
-    def test_check_fails_the_build_when_over_the_limit(self):
+    def test_measure_does_not_stop_a_build_that_is_over_the_limit(self):
         with self.artifact_of_size("u2", 0xC6000 + 1):
-            status, _, stderr = self.run_main(["check", "u2"])
+            status, _, stderr = self.run_main(["measure", "u2"])
 
-        self.assertEqual(status, 1)
-        self.assertIn("U2 is 1 bytes over its application space limit", stderr)
+        self.assertEqual(status, 0)
+        self.assertIn("OVER LIMIT: U2 is 1 bytes over its application space limit", stderr)
+        self.assertIn("fails at the final application space report", stderr)
 
-    def test_check_fails_when_the_artifact_was_not_produced(self):
-        status, _, stderr = self.run_main(["check", "u2"])
+    def test_measure_stops_the_build_when_the_artifact_was_not_produced(self):
+        with self.artifact_at("u2", "/does/not/exist/ultimate.bin"):
+            status, _, stderr = self.run_main(["measure", "u2"])
 
         self.assertEqual(status, 2)
         self.assertIn("expected firmware artifact for U2 was not produced", stderr)
 
-    def test_check_does_not_duplicate_the_github_annotations(self):
-        with self.artifact_of_size("u2", 0xC6000):
+    def test_measure_does_not_duplicate_the_github_annotations(self):
+        with self.artifact_of_size("u2", 0xC6000 + 1):
             with mock.patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}):
-                status, stdout, stderr = self.run_main(["check", "u2"])
+                status, stdout, stderr = self.run_main(["measure", "u2"])
 
         self.assertEqual(status, 0)
-        self.assertIn("WARNING: U2 has", stderr)
+        self.assertIn("OVER LIMIT: U2 is", stderr)
+        self.assertNotIn("::error::", stdout)
         self.assertNotIn("::warning::", stdout)
 
     def test_report_tabulates_every_variant_even_when_none_are_built(self):
-        status, stdout, _ = self.run_main(["report"])
+        with self.no_artifacts():
+            status, stdout, _ = self.run_main(["report"])
 
         self.assertEqual(status, 0)
         for details in app_space.FIRMWARE_VARIANTS.values():
@@ -267,8 +319,9 @@ class CommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             summary = pathlib.Path(directory) / "summary.md"
             summary.write_text("earlier step\n")
-            with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
-                self.run_main(["report"])
+            with self.no_artifacts():
+                with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary)}):
+                    self.run_main(["report"])
 
             written = summary.read_text()
 
@@ -276,8 +329,11 @@ class CommandTest(unittest.TestCase):
         self.assertIn("| Firmware | Limit | Size | Free | Free % | Status |", written)
 
     def test_report_survives_an_unwritable_job_summary(self):
-        with mock.patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": "/does/not/exist/summary.md"}):
-            status, _, stderr = self.run_main(["report"])
+        with self.no_artifacts():
+            with mock.patch.dict(
+                "os.environ", {"GITHUB_STEP_SUMMARY": "/does/not/exist/summary.md"}
+            ):
+                status, _, stderr = self.run_main(["report"])
 
         self.assertEqual(status, 0)
         self.assertIn("could not write the CI job summary", stderr)
@@ -288,16 +344,19 @@ class BuildIntegrationTest(unittest.TestCase):
         self.makefile = (REPO_ROOT / "Makefile").read_text()
         self.workflow = (REPO_ROOT / ".github/workflows/build.yml").read_text()
 
-    def test_every_firmware_target_gates_its_own_image(self):
+    def test_every_firmware_target_measures_its_own_image(self):
         for variant in app_space.FIRMWARE_VARIANTS:
-            self.assertIn("$(APP_SPACE) check " + variant + "\n", self.makefile)
+            self.assertIn("$(APP_SPACE) measure " + variant + "\n", self.makefile)
+
+    def test_no_build_target_gates_on_size_so_every_firmware_is_still_built(self):
+        self.assertNotIn("$(APP_SPACE) check", self.makefile)
 
     def test_artifact_paths_are_not_duplicated_into_the_makefile(self):
         invocations = re.findall(r"\$\(APP_SPACE\)[^\n]*", self.makefile)
 
         self.assertTrue(invocations)
         for invocation in invocations:
-            self.assertRegex(invocation, r"^\$\(APP_SPACE\) (report|check \w+)$")
+            self.assertRegex(invocation, r"^\$\(APP_SPACE\) (report|measure \w+)$")
 
     def test_a_local_full_build_ends_with_the_report(self):
         recipe = self.makefile.split("all: esp32", 1)[1].splitlines()[1]
@@ -305,7 +364,7 @@ class BuildIntegrationTest(unittest.TestCase):
         self.assertEqual(recipe.strip(), "@$(APP_SPACE) report")
 
     def test_ci_runs_the_report_as_a_dedicated_final_step(self):
-        step = self.workflow.split("- name: Report Firmware Application Space", 1)[1]
+        step = self.workflow.split("- name: Check Firmware Application Space", 1)[1]
         step = step.split("- name:", 1)[0]
 
         self.assertIn("if: always()", step)
