@@ -1,9 +1,13 @@
 
+APP_SPACE = python3 tools/app_space.py
+
+.PHONY: all app_space app_space_test
+
 all: esp32 u2_rv u2plus u2pl u64 u64ii
+	@$(APP_SPACE) report
 
-FIRMWARE_SIZE_CHECK = python3 tools/app_space.py
-
-.PHONY: app_space_test
+app_space:
+	@$(APP_SPACE) report
 
 app_space_test:
 	@python3 tools/test_app_space.py
@@ -77,7 +81,7 @@ u2_rv: app_space_test
 	@$(MAKE) -C target/u2/riscv/boot2
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin
+	@$(APP_SPACE) check u2
 	@$(MAKE) -C target/fpga/rv700dd
 	@$(MAKE) -C target/fpga/rv700au
 	@$(MAKE) -C target/u2/riscv/updater
@@ -87,7 +91,7 @@ u2_rv_swonly: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2 target/u2/riscv/ultimate/result/ultimate.bin
+	@$(APP_SPACE) check u2
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
@@ -148,7 +152,7 @@ u2plus: app_space_test
 	@$(MAKE) -C target/fpga/u2plus_recovery
 	@$(MAKE) -C target/fpga/u2plus_run
 	@$(MAKE) -C target/u2plus/nios/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2plus target/u2plus/nios/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u2plus
 	@$(MAKE) -C target/u2plus/nios/recovery
 	@$(MAKE) -C target/u2plus/nios/updater
 	@cp target/u2plus/nios/updater/result/update.app ./update.u2p
@@ -232,7 +236,7 @@ u2plus_swonly: app_space_test
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u2plus/nios/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2plus target/u2plus/nios/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u2plus
 	@$(MAKE) -C target/u2plus/nios/recovery
 	@$(MAKE) -C target/u2plus/nios/updater
 	@cp target/u2plus/nios/updater/result/update.app ./update.u2p
@@ -272,7 +276,7 @@ u64: app_space_test esp32_raw_u64
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u64/nios2/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u64 target/u64/nios2/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u64
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
@@ -286,7 +290,7 @@ u64_no_esp:: app_space_test
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/libs/nios2/lwip
 	@$(MAKE) -C target/u64/nios2/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u64 target/u64/nios2/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u64
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
@@ -299,8 +303,8 @@ u64ii: app_space_test esp32_u64ctrl
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u64e2_50t target/u64ii/riscv/ultimate/result/ultimate.app
-	@$(FIRMWARE_SIZE_CHECK) u64e2_100t target/u64ii/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u64e2_50t
+	@$(APP_SPACE) check u64e2_100t
 	@$(MAKE) -C target/u64ii/riscv/factorytest
 	@$(MAKE) -C target/u64ii/riscv/update
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
@@ -316,8 +320,8 @@ u64ii_no_esp:: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u64ii/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u64e2_50t target/u64ii/riscv/ultimate/result/ultimate.app
-	@$(FIRMWARE_SIZE_CHECK) u64e2_100t target/u64ii/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u64e2_50t
+	@$(APP_SPACE) check u64e2_100t
 	@$(MAKE) -C target/u64ii/riscv/factorytest
 	@$(MAKE) -C target/u64ii/riscv/update
 	@cp target/u64ii/riscv/ultimate/result/ultimate.app u64ii
@@ -334,7 +338,7 @@ u2pl: app_space_test esp32_raw_c3
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u2pl
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
@@ -344,7 +348,7 @@ u2pl_no_esp:: app_space_test
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
 	@$(MAKE) -C target/fpga/u2plus_ecp5
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u2pl
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
@@ -352,6 +356,6 @@ u2pl_swonly: app_space_test
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate
-	@$(FIRMWARE_SIZE_CHECK) u2pl target/u2plus_L/riscv/ultimate/result/ultimate.app
+	@$(APP_SPACE) check u2pl
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l

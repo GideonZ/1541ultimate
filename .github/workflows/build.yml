@@ -134,6 +134,14 @@ jobs:
           -v /opt/build-tools:/mnt/build-tools:ro \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
 
+      - name: Report Firmware Application Space
+        if: always()
+        run: |
+          docker run --rm -e GITHUB_ACTIONS -e GITHUB_STEP_SUMMARY \
+          -v /opt/build-tools:/mnt/build-tools:ro \
+          -v $GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY:rw \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make app_space"
+
       - name: Upload User Artifacts
         uses: actions/upload-artifact@v7
         with:
