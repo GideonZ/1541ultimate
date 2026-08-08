@@ -224,6 +224,16 @@ BrkDebugSession :: ~BrkDebugSession()
     // monitor always calls cleanup() explicitly before deleting the session,
     // and each concrete leaf calls cleanup() from its own destructor while its
     // vtable is still valid.
+    //
+    // Ownership is different: debug_owner is a file-static that outlives this
+    // object, so a session deleted while still holding it leaves the token
+    // pointing at freed memory. The next claim then either refuses outright -
+    // leaving the monitor showing a Debug session that no key can exit, through
+    // a monitor teardown and a machine reset, until the firmware is reloaded -
+    // or decides the owner is stale and calls cleanup() on the freed object
+    // through a dangling vtable. release_debug_ownership() is non-virtual and
+    // only touches the static, so it is safe here.
+    release_debug_ownership();
 }
 
 bool BrkDebugSession :: free_run_no_breakpoint(uint16_t address)

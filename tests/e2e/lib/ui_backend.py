@@ -303,7 +303,9 @@ _DIRECT_CHARS: Dict[str, List[str]] = {
     " ": ["space"], ":": ["colon"], ",": ["comma"], ".": ["period"],
     "+": ["plus"], "-": ["minus"], "=": ["equals"], "/": ["slash"],
     "@": ["at"], ";": ["semicolon"], "*": ["star"], "\\": ["arrow_up"],
-    "\r": ["return"], "\b": ["inst_del"],
+    # The C64 has a single RETURN key, so both newline conventions map to it.
+    # Callers write whichever their surrounding string style uses.
+    "\r": ["return"], "\n": ["return"], "\b": ["inst_del"],
 }
 _SHIFTED_DIGIT_CHARS: Dict[str, str] = {
     "!": "1", '"': "2", "#": "3", "$": "4", "%": "5", "&": "6",

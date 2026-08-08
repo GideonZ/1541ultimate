@@ -63,6 +63,15 @@ int ContextMenu :: get_items(void)
 
 void ContextMenu :: init(Window *parwin, Keyboard *key)
 {
+    // A NULL parent window is reachable whenever a key is handled between
+    // release_host() tearing the UI objects down and take_host() building them
+    // back up. Dereferencing it here faults the Nios, which takes the whole
+    // device down - no network, no REST - so refuse the popup instead.
+    if(!parwin) {
+        keyb = key;
+        context_state = e_finished;
+        return;
+    }
 	Screen *scr = parwin->getScreen();
 	int len, max_len;
     int rows, size_y;

@@ -12,6 +12,13 @@ static MachineMonitor *active_reset_monitor = 0;
 void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     bool reopen_after_reset;
+    // release_host() below deinits every UI object on the focus stack, including
+    // the browser that launched the monitor: its window is deleted and left
+    // NULL. A reopen-after-reset pass must therefore rebuild them before any key
+    // can reach the browser, or a context menu opened from it gets a NULL parent
+    // window. This flag survives across passes so the rebuild happens at the top
+    // of the next one, once ownership of the screen has been re-taken.
+    bool torn_down_host = false;
     do {
         MachineMonitor *monitor = new MachineMonitor(this, backend);
         uint16_t go_address = 0;
@@ -50,6 +57,13 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         monitor->set_debug_run_window_refreeze_enabled(false);
         monitor->set_reset_exits_monitor(false);
 #endif
+        if (torn_down_host) {
+            // Ownership of the screen has just been re-taken above, so rebuild
+            // the objects the previous pass tore down before anything can hand
+            // them a key.
+            appear();
+            torn_down_host = false;
+        }
         active_reset_monitor = monitor;
         monitor->init(screen, keyboard);
         int ret = 0;
@@ -83,13 +97,16 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             C64 *machine = C64::getMachine();
             if (machine && machine->is_accessible()) {
                 release_host();
+                torn_down_host = true;
                 machine->release_ownership();
             } else if (host) {
                 release_host();
+                torn_down_host = true;
                 host->release_ownership();
             }
 #else
             release_host();
+            torn_down_host = true;
 #endif
             release_after_exit = false;
         }
@@ -116,6 +133,7 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
                     monitor_io::stage_resume_to_context(go_context) :
                     monitor_io::stage_jump_to(go_address);
                 release_host();
+                torn_down_host = true;
                 machine->release_ownership();
                 if (staged_nmi) {
                     monitor_io::pulse_staged_nmi();
@@ -123,6 +141,7 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             }
             if (!staged_nmi && direct_render_target && host) {
                 release_host();
+                torn_down_host = true;
                 host->release_ownership();
             }
             if (!staged_nmi)
@@ -140,13 +159,16 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             C64 *machine = C64::getMachine();
             if (machine && machine->is_accessible()) {
                 release_host();
+                torn_down_host = true;
                 machine->release_ownership();
             } else if (host) {
                 release_host();
+                torn_down_host = true;
                 host->release_ownership();
             }
 #else
             release_host();
+            torn_down_host = true;
 #endif
         }
     } while (reopen_after_reset && host->exists());

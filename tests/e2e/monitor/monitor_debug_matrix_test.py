@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import socket
 import struct
@@ -35,7 +36,12 @@ import mcm_localui as L  # noqa: E402
 import mcm6502 as ORC  # noqa: E402
 import monitor_debug_stress as stress  # noqa: E402
 import monitor_debug_test as dbg  # noqa: E402
-import monitor_test as mt  # noqa: E402
+# The Telnet lane drives the session through the same bridge the Debug suite
+# uses: TelnetDebugDriver calls the (host, port, password, timeout) constructor
+# and needs TestConfig and wait_for_monitor_ready, none of which the core
+# monitor_test module provides.
+import mcm_monitor_compat as mt  # noqa: E402
+import matrix_run_ledger as RUNLEDGER  # noqa: E402
 import overlay_lifecycle  # noqa: E402
 
 
@@ -158,6 +164,23 @@ class BlockedWithEvidence(GateError):
     classification = "BLOCKED_WITH_EVIDENCE"
 
 
+# Python-level errors the firmware cannot possibly cause: a missing attribute, a
+# bad name, a wrong argument type or an unimportable module is always a defect in
+# this harness. Classifying them as VALID_DEBUGGER_DEFECT reports a broken test
+# as a broken debugger, which is the one failure mode this gate must not have.
+_HARNESS_BUG_TYPES = (AttributeError, NameError, TypeError, ImportError,
+                      IndentationError, SyntaxError)
+
+
+def classify_exception(exc: BaseException) -> str:
+    explicit = getattr(exc, "classification", None)
+    if explicit is not None:
+        return explicit
+    if isinstance(exc, _HARNESS_BUG_TYPES):
+        return "HARNESS_BUG"
+    return "VALID_DEBUGGER_DEFECT"
+
+
 class CellTimeout(GateError):
     """A single cell exceeded its hard wall-clock watchdog. Bounds any transport /
     device stall so a stuck cell can never hang the whole run for minutes-to-hours
@@ -186,6 +209,15 @@ class RomEntryUncoherent(GateError):
 
 # Substrings the firmware prints for the honest DBG_ROM_ENTRY_UNCOHERENT miss.
 ROM_ENTRY_MISS_MARKERS = ("ROM BP ENTRY MISSED", "ROM_ENTRY_UNCOHERENT")
+
+# A row of the monitor's 10-entry breakpoint popup: "0 SET $E000 RAM" or
+# "0 EMPTY", with the popup's box borders already stripped.
+BREAKPOINT_SLOT_RE = re.compile(r"^\|?\s*[0-9]\s+(SET|EMPTY)\b", re.IGNORECASE)
+
+# Set by main() once the cross-run history is open, so the entry point can still
+# write a record for a run that dies on an unhandled exception. Cleared on the
+# normal path, which writes its own record.
+_RUN_LEDGER_CONTEXT: dict[str, Any] = {}
 
 
 class ResetRetryCounters:
@@ -285,6 +317,7 @@ def default_row(memory: str, interface: str, rep: int) -> dict[str, Any]:
         "step_over": "PENDING",
         "step_into": "PENDING",
         "step_into_depth": 0,
+        "straight_call_depth": 0,
         "step_out": "PENDING",
         "continue_to_cursor": "PENDING",
         "continue_to_breakpoint": "PENDING",
@@ -297,6 +330,7 @@ def default_row(memory: str, interface: str, rep: int) -> dict[str, Any]:
         "stack_validated": False,
         "memory_writes_validated": False,
         "breakpoint_hygiene_validated": False,
+        "breakpoint_slot_hygiene_validated": False,
         "brk_patch_hygiene_validated": False,
         "rom_restore_validated": False,
         "banking_restore_validated": False,
@@ -324,7 +358,8 @@ class Ledger:
     def to_markdown(self) -> str:
         cols = [
             "cell_id", "memory_mode", "interface", "repetition", "status",
-            "step_over", "step_into", "step_into_depth", "step_out",
+            "step_over", "step_into", "step_into_depth", "straight_call_depth",
+            "step_out",
             "continue_to_cursor", "continue_to_breakpoint", "continue", "reset",
             "opcode_count", "oracle_validated", "vice_oracle_validated", "footer_validated",
             "stack_validated", "memory_writes_validated", "failure",
@@ -391,6 +426,16 @@ def _c64_running(rest_host: str) -> bool:
         return False
 
 
+def _wait_c64_running(rest_host: str, timeout: float) -> bool:
+    """Poll until the jiffy clock advances, or the deadline passes."""
+    deadline = time.time() + timeout
+    while True:
+        if _c64_running(rest_host):
+            return True
+        if time.time() >= deadline:
+            return False
+
+
 def _log_wedge_incident(artifact_dir: Path, row: dict, rest_host: str) -> None:
     """Record a hard-wedge incident (pre-wedge cell + measured state) so the run
     report can capture exactly what preceded each wedge and how it was recovered."""
@@ -435,6 +480,16 @@ class MatrixFixture:
     # Addresses whose fixture bytes live in RAM under ROM, so a readback through
     # REST would see the ROM image instead of what was written.
     hidden_ram_chunks: tuple[int, ...] = ()
+    # Straight-call run: a block of consecutive "JSR helper" instructions ending
+    # in RTS, stepped with Step Over. Nesting drives the stack deeper on every
+    # step; this drives the same call repeatedly at one stack level, so it is
+    # what exercises repeated breakpoint arm/disarm and park/resume cycles with
+    # the stack pointer returning to the same value each time. 0 where the mode
+    # has no such block.
+    straight_entry: int = 0
+    straight_block: int = 0
+    straight_calls: int = 0
+    straight_return: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -449,6 +504,8 @@ class MatrixFixture:
             "sentinel": f"{self.sentinel:04X}",
             "progress": f"{self.progress:04X}",
             "bootstrap_addr": f"{self.bootstrap_addr:04X}",
+            "straight_entry": f"{self.straight_entry:04X}",
+            "straight_calls": self.straight_calls,
             "traversal": [
                 {"key": k, "pc": f"{pc:04X}", "region": region}
                 for k, pc, region in self.traversal
@@ -664,12 +721,20 @@ def build_fixture(memory: str, depth: int) -> MatrixFixture:
     entry = base
     cursor_target = base + 0x0006
     breakpoint_target = base + 0x0008
+    # The straight-call block sits inside the program's live loop. A debug entry
+    # is made by arming a breakpoint and letting the CPU run to it, so the block
+    # has to be on a path the program actually executes; a block reachable only
+    # by a jump the fixture never takes can never be entered.
+    straight_block = base + 0x0210
+    straight_calls = 32
+    straight_entry = base + 0x000E                        # the JSR into the block
     main = bytes([
         0x20, over & 0xFF, over >> 8,                     # JSR over
         0x20, chain0 & 0xFF, chain0 >> 8,                 # JSR chain0
         0xA9, 0x77,                                       # LDA #$77
         0x8D, sentinel & 0xFF, sentinel >> 8,             # STA sentinel
         0xEE, progress & 0xFF, progress >> 8,             # INC progress
+        0x20, straight_block & 0xFF, straight_block >> 8,  # JSR straight_block
         0x4C, (base + 0x000B) & 0xFF, (base + 0x000B) >> 8,
     ])
     chunks.append((base, main))
@@ -678,6 +743,15 @@ def build_fixture(memory: str, depth: int) -> MatrixFixture:
         0x8D, sentinel & 0xFF, sentinel >> 8,
         0x60,
     ])))
+    # Every JSR in the block targets the same one-line helper, so the CPU comes
+    # back to the same stack level after each Step Over and the expected PC, SP
+    # and A are exact at every position in the run.
+    straight_body = bytearray()
+    for _ in range(straight_calls):
+        straight_body += bytes([0x20, over & 0xFF, over >> 8])
+    straight_body.append(0x60)                              # RTS
+    chunks.append((straight_block, bytes(straight_body)))
+
     chain_returns: list[int] = []
     for i, addr in enumerate(chain_addrs):
         if i + 1 < depth:
@@ -705,7 +779,22 @@ def build_fixture(memory: str, depth: int) -> MatrixFixture:
         progress=progress,
         chunks=chunks,
         bootstrap=bootstrap,
+        straight_entry=straight_entry,
+        straight_block=straight_block,
+        straight_calls=straight_calls,
+        straight_return=straight_entry + 3,
     )
+
+
+def live_readback_trustworthy(fixture: MatrixFixture, address: int) -> bool:
+    """Whether a REST read of `address` returns the fixture's own byte.
+
+    It does not for anything the fixture put in RAM under ROM: a read there is
+    served the ROM image instead of the hidden RAM the CPU executes and writes.
+    """
+    if address in fixture.hidden_ram_chunks:
+        return False
+    return not (fixture.memory_mode == "ram-under-rom" and 0xA000 <= address <= 0xFFFF)
 
 
 def apply_fixture_entry_side_effects(mem: bytearray, fixture: MatrixFixture) -> None:
@@ -773,6 +862,7 @@ class DebugInterfaceDriver:
     def reset_from_debug_ui(self): ...
     def verify_liveness(self): ...
     def verify_hygiene(self): ...
+    def breakpoint_slot_lines(self) -> list[str]: ...
 
 
 class BaseDriver(DebugInterfaceDriver):
@@ -874,6 +964,16 @@ class BaseDriver(DebugInterfaceDriver):
                            address=f"{address:04X}",
                            reason="REST readmem sees visible ROM, not hidden RAM backing store")
                 continue
+            if address in (fixture.sentinel, fixture.progress):
+                # Counters the fixture program writes. Reading one back and
+                # demanding the value just written is a race against the CPU,
+                # not a check that the write landed: if anything is still
+                # executing the program, the counter has already moved on.
+                self.event("fixture_readback_deferred",
+                           address=f"{address:04X}",
+                           reason="counter cell the fixture program writes; "
+                                  "its value is not stable enough to verify")
+                continue
             actual = self.read_bytes(address, len(data))
             if actual != data:
                 raise GateError(
@@ -891,6 +991,17 @@ class BaseDriver(DebugInterfaceDriver):
         if not L.ensure_menu_closed(self.rest):
             raise GateError("menu did not close during baseline recovery")
         self.wait_rest_ready("post-menu-close", timeout=8.0)
+        # machine:reset is asynchronous and REST answers throughout, so REST
+        # readiness alone does not mean the 6510 stopped running the previous
+        # cell's fixture. Installing over a still-running program lets it
+        # execute half-written code and keep writing its counters. Waiting for
+        # the BASIC READY prompt with a live jiffy clock is the proof that the
+        # old program is gone and the machine is back in the KERNAL.
+        try:
+            overlay_lifecycle.wait_ready(self.rest, timeout=12.0)
+            self.event("baseline_basic_ready")
+        except Exception as exc:  # noqa: BLE001
+            self.event("baseline_basic_ready_warning", error=str(exc))
 
     def wait_rest_ready(self, label: str, timeout: float) -> None:
         deadline = time.time() + timeout
@@ -1084,6 +1195,10 @@ class TelnetDebugDriver(BaseDriver):
         dbg._clear_all_breakpoints(self._session(), f"{self.row['cell_id']}: clear breakpoints")
         self.event("clear_all_breakpoints")
 
+    def breakpoint_slot_lines(self) -> list[str]:
+        return dbg._breakpoint_slot_lines(
+            self._session(), f"{self.row['cell_id']}: breakpoint table")
+
     def set_breakpoint(self, address: int) -> None:
         if (self.fixture is not None and self.fixture.memory_mode == "ram-under-rom"
                 and 0xA000 <= address <= 0xFFFF):
@@ -1213,6 +1328,22 @@ class RestDebugDriver(BaseDriver):
                 self.rest.screen_text(), encoding="utf-8")
         except Exception:
             pass
+        # Leave the monitor with no Debug session. open_monitor() reuses a
+        # monitor that is already up, so a cell that ends still parked in Debug
+        # hands the next cell a monitor sitting on this fixture's PC, and a
+        # parked session will not navigate: the next cell's first goto times out
+        # and the failure is reported against a cell that did nothing wrong.
+        # Runs after this cell's verdict is decided, so it cannot mask it.
+        try:
+            for _ in range(3):
+                if "Dbg" not in self.rest.screen_text():
+                    break
+                self.rest.tap(["commodore", "d"])
+                time.sleep(0.5)
+            self.event("close_monitor_debug_state",
+                       debug_active="Dbg" in self.rest.screen_text())
+        except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+            self.event("close_monitor_leave_debug_failed", error=str(exc))
         try:
             self.session.close()
         except Exception:
@@ -1308,26 +1439,61 @@ class RestDebugDriver(BaseDriver):
         return DebugState(footer.pc, footer.ac, footer.xr, footer.yr,
                           footer.sp, footer.sr, raw=footer.__dict__)
 
-    def clear_all_breakpoints(self) -> None:
+    def _open_breakpoint_popup(self) -> str:
         self.rest.tap(["commodore", "r"])
-        time.sleep(0.35)
-        try:
-            text = self.rest.screen_text()
-        except Exception as exc:
-            self.event("clear_all_breakpoints_unverified", error=str(exc))
-            return
-        if "BRK" not in text.upper() and "BREAK" not in text.upper():
-            self.event("clear_all_breakpoints_unverified",
-                       reason="breakpoint popup not detected; monitor left open")
-            return
-        for _ in range(10):
-            self.rest.tap(["inst_del"])
-            time.sleep(0.08)
-            self.rest.tap(["cursor_up_down"])
-            time.sleep(0.08)
+        time.sleep(0.45)
+        text = self.rest.screen_text()
+        if "BREAKPOINT" not in text.upper():
+            raise GateError(
+                "breakpoint popup did not open on CBM+R; monitor screen:\n"
+                + text)
+        return text
+
+    @staticmethod
+    def _slot_lines_from(text: str) -> list[str]:
+        return [line.strip() for line in text.splitlines()
+                if BREAKPOINT_SLOT_RE.match(line.strip())]
+
+    def breakpoint_slot_lines(self) -> list[str]:
+        text = self._open_breakpoint_popup()
+        lines = self._slot_lines_from(text)
         self.rest.tap(["run_stop"])
         time.sleep(0.2)
-        self.event("clear_all_breakpoints")
+        if not lines:
+            raise GateError(f"breakpoint popup listed no slots:\n{text}")
+        return lines
+
+    def clear_all_breakpoints(self) -> None:
+        """Delete every armed slot and prove the table is empty afterwards.
+
+        The cursor starts on slot 0 and INST/DEL clears the slot under it, so
+        one delete-then-advance pass covers the table. The pass is repeated
+        while any slot is still armed, because a delete issued while the popup
+        is repainting can be dropped, and it ends by re-reading the table -
+        without that, a clear that silently did nothing looked successful and
+        the stale breakpoint went on to trap an unrelated later test.
+        """
+        for attempt in range(1, 4):
+            text = self._open_breakpoint_popup()
+            if not any("EMPTY" not in line.upper()
+                       for line in self._slot_lines_from(text)):
+                self.rest.tap(["run_stop"])
+                time.sleep(0.2)
+                self.event("clear_all_breakpoints", attempts=attempt)
+                return
+            for _ in range(10):
+                self.rest.tap(["inst_del"])
+                time.sleep(0.08)
+                self.rest.tap(["cursor_up_down"])
+                time.sleep(0.08)
+            self.rest.tap(["run_stop"])
+            time.sleep(0.25)
+        remaining = [line for line in self.breakpoint_slot_lines()
+                     if "EMPTY" not in line.upper()]
+        if remaining:
+            raise GateError(
+                f"breakpoint table still armed after 3 clear passes: {remaining}")
+        self.event("clear_all_breakpoints", attempts=3)
 
     def _u2_toggle_breakpoint(self, address: int) -> str:
         """U2 breakpoint toggle: goto + R, no monitor bank view, source tag is
@@ -1385,9 +1551,34 @@ class RestDebugDriver(BaseDriver):
             f"{self.row['cell_id']}: clear bp ${address:04X}")
         self.event("clear_breakpoint", address=f"{address:04X}")
 
+    def leave_stale_debug(self) -> None:
+        """End a Debug session inherited from an earlier cell.
+
+        Closing the menu does not end a Debug session, so a cell can finish with
+        the menu shut while the session is still parked on its fixture's PC. The
+        next cell reopens the monitor onto that session, and a parked session
+        will not navigate: its first goto times out and the failure is reported
+        against a cell that did nothing wrong. This runs with the monitor open
+        and before any of the tested workflow, so it cannot mask this cell.
+        """
+        for attempt in range(4):
+            try:
+                if "Dbg" not in self.rest.screen_text():
+                    if attempt:
+                        self.event("left_stale_debug", taps=attempt)
+                    return
+            except mt.Failure:
+                return          # no monitor screen to read; nothing inherited
+            self.rest.tap(["commodore", "d"])
+            time.sleep(0.5)
+        raise GateError(
+            "inherited Debug session would not exit with C=+D:\n"
+            + self.rest.screen_text())
+
     def enter_debug_at(self, address: int):
         if self.fixture is None:
             raise HarnessBug("missing fixture")
+        self.leave_stale_debug()
         self.select_bank(self.fixture.bank)
         self.goto(address)
         self.send_key("A")
@@ -1773,6 +1964,11 @@ class ViceBinaryMonitor:
                 "x64sc", "-default", "-silent", "-sounddev", "dummy", "-warp",
                 "-binarymonitor", "-binarymonitoraddress", f"127.0.0.1:{self.port}",
                 "-initbreak", "ready", "+confirmonexit", "+saveres",
+                # Start iconified so a test run does not put a VICE window on the
+                # desktop and steal focus. The window still exists and can be
+                # restored; Binary Monitor traffic, screen reads and keyboard input
+                # are unaffected, which is why this is preferred over -headless here.
+                "-minimized",
             ],
             stdout=stdout,
             stderr=stderr,
@@ -1952,12 +2148,30 @@ class DualOracles:
             # the two regions are executed under different $01 settings that
             # never overlap.
             apply_captured_rom_heads(mem, cell_dir)
+        # The sentinel and progress cells are counters the fixture program keeps
+        # writing, so their live values move on after the fixture is installed:
+        # the program can run many loop passes before the entry breakpoint stops
+        # it. Their install-time bytes are in fixture.chunks, and laying those
+        # over the captured image would reset the oracle's copy to zero while
+        # the machine holds something else. The next INC then sets N on the
+        # machine and not in the oracle, and the cell fails with a register
+        # mismatch that is entirely the oracle's error. Keep the captured values
+        # wherever they can actually be read back.
+        live_counters = {
+            address: mem[address]
+            for address in (fixture.sentinel, fixture.progress)
+            if live_readback_trustworthy(fixture, address)
+        }
         for address, data in fixture.chunks:
             mem[address:address + len(data)] = data
+        for address, value in live_counters.items():
+            mem[address] = value
         mem[fixture.bootstrap_addr:fixture.bootstrap_addr + len(fixture.bootstrap)] = fixture.bootstrap
         if fixture.memory_mode == "rom":
             apply_captured_rom_heads(mem, cell_dir)
         apply_fixture_entry_side_effects(mem, fixture)
+        driver.event("oracle_live_counters",
+                     values={f"{a:04X}": f"{v:02X}" for a, v in live_counters.items()})
         self.cpu = ORC.CPU6502(bytearray(mem))
         self.cpu.set_state(entry.ac, entry.xr, entry.yr, entry.sp, entry.pc, entry.sr)
         self.vice: Optional[ViceBinaryMonitor] = None
@@ -2201,6 +2415,108 @@ def run_rom_opcode_trace_dual(driver: BaseDriver, row: dict[str, Any], cell_dir:
         "ROM trace did not satisfy minimum coverage: "
         f"{summary}, required opcodes>=100, max_call_depth>=2, "
         "KERNAL->BASIC and BASIC->KERNAL transitions")
+
+
+def assert_no_breakpoints_remain(driver: BaseDriver, row: dict[str, Any],
+                                 cell_dir: Path, label: str) -> None:
+    """Every slot in the breakpoint table must be EMPTY when a cell finishes.
+
+    A leaked breakpoint is not cosmetic and not contained: it survives a machine
+    reset, so the next cell - or the next suite entirely - traps on this cell's
+    stale BRK instead of its own target. The failure then surfaces somewhere
+    unrelated, which is what makes such a leak look like a sporadic debugger
+    fault. Asserting it here names the cell that leaked.
+    """
+    try:
+        lines = driver.breakpoint_slot_lines()
+    except Exception as exc:  # noqa: BLE001
+        driver.event("breakpoint_slot_readback_failed", stage=label, error=str(exc))
+        raise GateError(
+            f"{label}: could not read the breakpoint table to prove no slot "
+            f"was left armed: {exc}") from exc
+    leaked = [line for line in lines if "EMPTY" not in line.upper()]
+    (cell_dir / "breakpoint-slots-final.txt").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8")
+    if leaked:
+        driver.event("breakpoint_slots_leaked", stage=label, slots=leaked)
+        raise GateError(
+            f"{label}: {len(leaked)} breakpoint slot(s) still armed after the "
+            f"cell; this cell did not remove what it set: {leaked}")
+    driver.event("breakpoint_slots_clean", stage=label, slots=len(lines))
+    row["breakpoint_slot_hygiene_validated"] = True
+
+
+def run_straight_call_sequence(driver: BaseDriver, row: dict[str, Any],
+                               cell_dir: Path, fixture: MatrixFixture) -> int:
+    """Step Over a long run of consecutive JSRs at one stack level.
+
+    The nesting chain drives the stack one level deeper per step, so it never
+    repeats a Step Over from the same stack state. This block calls the same
+    helper `straight_calls` times in a row, which means every Step Over here
+    arms a breakpoint, parks, resumes and disarms from an identical starting
+    state, and the CPU comes back to the same stack pointer each time. A
+    breakpoint slot that is not released, or a park/resume that drifts the
+    stack, shows up as a divergence at some position in this run and nowhere
+    else in the matrix.
+
+    Expected PC, SP and A are exact at every position, so this needs no
+    simulator oracle: after the k-th Step Over the CPU must be at
+    straight_block + 3k with the stack pointer it had on entering the block,
+    and A must hold the helper's $42.
+    """
+    if not fixture.straight_calls:
+        return 0
+
+    # Reached with Continue To Cursor rather than a fresh debug entry: the cell
+    # is already parked in a live debug session here, and re-entering would have
+    # to re-arm the entry breakpoint and re-open the UI, which differs per
+    # interface. The block sits in the program's loop, so the cursor is hit on
+    # the next pass.
+    #
+    # The cursor is put on the JSR, and the block is then entered with Step
+    # Into, because step_out() unwinds the session's tracked return-target stack
+    # (peek_return_target) rather than reading the live 6502 stack. Only a frame
+    # the debugger stepped into is on that stack, so landing inside the block
+    # directly would leave the closing Step Out with no frame of its own to
+    # return from.
+    driver.continue_to_cursor(fixture.straight_entry)
+    entry = driver.wait_pc(fixture.straight_entry,
+                           "Straight-call Continue To Cursor", timeout=15.0)
+    outer_sp = entry.sp
+    state = step_and_wait_pc(driver, driver.step_into, fixture.straight_block,
+                             "Straight-call Step Into", fixture.straight_entry)
+    assert_state_pc_sp(state, fixture.straight_block, (outer_sp - 2) & 0xFF,
+                       "Straight-call Step Into")
+    block_sp = state.sp
+
+    evidence: list[dict[str, Any]] = []
+    for index in range(1, fixture.straight_calls + 1):
+        label = f"Straight-call Step Over {index}/{fixture.straight_calls}"
+        expected_pc = fixture.straight_block + 3 * index
+        state = step_and_wait_pc(driver, driver.step_over, expected_pc, label,
+                                 state.pc)
+        assert_state_pc_sp(state, expected_pc, block_sp, label)
+        if state.ac != 0x42:
+            raise GateError(
+                f"{label}: helper body did not run through its RTS; "
+                f"expected AC $42, got ${state.ac:02X}")
+        evidence.append({"index": index, "pc": f"{state.pc:04X}",
+                         "sp": f"{state.sp:02X}", "ac": f"{state.ac:02X}"})
+
+    # The run ends on the block's RTS, so Step Out must unwind exactly one
+    # frame and restore the stack pointer the caller had.
+    out = step_and_wait_pc(driver, driver.step_out, fixture.straight_return,
+                           "Straight-call Step Out", state.pc)
+    assert_state_pc_sp(out, fixture.straight_return, outer_sp,
+                       "Straight-call Step Out")
+
+    (cell_dir / "straight-call-evidence.json").write_text(
+        json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+    driver.event("straight_call_sequence", calls=fixture.straight_calls,
+                 block=f"{fixture.straight_block:04X}",
+                 sp=f"{block_sp:02X}")
+    row["straight_call_depth"] = fixture.straight_calls
+    return fixture.straight_calls
 
 
 def run_step_trace_dual(driver: BaseDriver, row: dict[str, Any], cell_dir: Path,
@@ -2683,6 +2999,28 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             mark_op(row, "continue_to_breakpoint", "PASS")
             ledger.save()
 
+            # Runs before Continue, while the debug UI still owns the machine.
+            # Continue hands the CPU back and the Freeze UI closes with it, so a
+            # debug entry after that point has no menu screen to read. Nothing
+            # below depends on the step oracles tracking the CPU, so re-entering
+            # debug at a different address here is free. Modes without a
+            # straight-call block (visible ROM and the boundary walks) skip it.
+            if fixture.straight_calls:
+                log_line(f"{cid}: Straight-call run of "
+                         f"{fixture.straight_calls} Step Overs")
+                run_straight_call_sequence(driver, row, cell_dir, fixture)
+                row["opcode_count"] += fixture.straight_calls
+                ledger.save()
+
+            # Checked here, with the debug UI still open and every
+            # breakpoint-setting operation of this cell already finished.
+            # Continue and Reset arm nothing, so anything armed now was leaked
+            # by this cell.
+            log_line(f"{cid}: Breakpoint slot hygiene")
+            assert_no_breakpoints_remain(driver, row, cell_dir,
+                                         "post-workflow breakpoint hygiene")
+            ledger.save()
+
             log_line(f"{cid}: Continue")
             before_progress = None
             if driver.active_debug_readback_allowed():
@@ -2745,7 +3083,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                 encoding="utf-8")
             ledger.save()
         except Exception as exc:  # noqa: BLE001
-            classification = getattr(exc, "classification", "VALID_DEBUGGER_DEFECT")
+            classification = classify_exception(exc)
             row["status"] = "FAIL"
             row["failure"] = {
                 "classification": classification,
@@ -2794,6 +3132,30 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                 driver.close_monitor()
             except Exception:
                 pass
+            # A cell that raised part-way through a trace leaves the 6510 parked
+            # at a breakpoint. Closing the monitor does not resume it, so without
+            # this the jiffy clock stays frozen, the post-cell health check reads
+            # that as a hard wedge, and the run aborts for a fault the previous
+            # cell already reported. Unpark before the health check runs so each
+            # cell's verdict reflects that cell.
+            if row.get("status") != "PASS":
+                try:
+                    driver.rest.reset()
+                    driver.wait_rest_ready("post-failure-unpark", timeout=25.0)
+                    # REST answering again does not mean the 6510 is running:
+                    # the reset has to land the CPU back in the KERNAL before
+                    # the jiffy clock advances, and the wedge check reads that
+                    # clock. Confirm it is actually ticking, so a slow-but-
+                    # healthy recovery is not reported as a hard wedge.
+                    running = _wait_c64_running(args.rest_host, timeout=15.0)
+                    driver.event("post_failure_unpark",
+                                 result="ok" if running else "c64_not_ticking")
+                except Exception as unpark_exc:
+                    try:
+                        driver.event("post_failure_unpark",
+                                     result="failed", error=str(unpark_exc))
+                    except Exception:
+                        pass
 
 
 def selected_values(value: str, all_values: tuple[str, ...]) -> list[str]:
@@ -2943,6 +3305,19 @@ def load_preflight_results(artifact_dir: Path) -> dict[str, Any]:
         return {"skipped": True, "load_error": str(exc), "path": str(path)}
 
 
+def device_identity_lines(args: argparse.Namespace) -> list[str]:
+    """The device's self-reported identity, or an explicit note that it could
+    not be read. Never a claim the run did not observe."""
+    try:
+        _status, payload = make_rest(args).req("GET", "/v1/info")
+        info = json.loads(payload)
+    except Exception as exc:  # noqa: BLE001
+        return [f"- Firmware identity: unavailable ({type(exc).__name__}: {exc})"]
+    fields = ("product", "firmware_version", "fpga_version", "core_version",
+              "hostname", "unique_id")
+    return [f"- `{name}`: `{info[name]}`" for name in fields if name in info]
+
+
 def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
     op_dir = artifact_dir / "opcode-1000"
     op_dir.mkdir(parents=True, exist_ok=True)
@@ -3054,14 +3429,18 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
         "## Hardware Identity And Firmware Version",
         f"- REST host: `{args.rest_host}`",
         f"- Telnet host: `{args.host}:{args.port}`",
-        "- Firmware identity: captured via REST/preflight logs where available.",
+        *device_identity_lines(args),
         "",
         "## Build And Deploy Evidence",
-        "- `./build` was run before the final matrix attempt.",
-        "- U64 firmware build completed and deployed over JTAG/FTP.",
-        "- U64-II firmware build completed.",
-        "- U2 build was started and then stopped after U64/U64-II completion per local build guidance that the U2 phase need not be waited out for this run.",
-        "- No push was performed by this runner.",
+        # This runner does not build or flash anything: it drives whatever
+        # firmware the device is already running. Stating build steps here
+        # would assert something the run never observed, so the report gives
+        # the device's own reported identity above and says only what is true
+        # of this process.
+        "- This runner performs no build, deploy or push. It exercises the "
+        "firmware already running on the device named above.",
+        "- The device identity reported above is what that firmware returned "
+        "over REST during this run.",
         "",
         "## Preflight Results",
         "```json",
@@ -3203,6 +3582,13 @@ def parse_args() -> argparse.Namespace:
                         help="Where to write the ledger, per-cell evidence and "
                              "FINAL_REPORT.md. Defaults to a timestamped "
                              "directory under the system temp dir.")
+    parser.add_argument("--run-ledger", default="",
+                        help="Directory holding the cross-run history "
+                             "(history.jsonl, HISTORY.md and one folder per "
+                             "run). Defaults to $MCM_RUN_LEDGER, else "
+                             "doc/research/machine-code-monitor/matrix-runs.")
+    parser.add_argument("--no-run-ledger", action="store_true",
+                        help="Do not record this run in the cross-run history.")
     parser.add_argument("--jsonl", default="")
     parser.add_argument("--coverage-ledger", default="")
     parser.add_argument("--timeout", type=float, default=5.0)
@@ -3275,6 +3661,22 @@ def main() -> int:
     if args.focus == "alerts":
         return run_alert_scope(args, artifact_dir)
     ledger = create_or_load_ledger(args, artifact_dir)
+
+    run_ledger_root = (Path(args.run_ledger) if args.run_ledger
+                       else RUNLEDGER.default_root(REPO_ROOT))
+    run_record: Optional[dict[str, Any]] = None
+    if not args.no_run_ledger:
+        try:
+            run_ledger_root.mkdir(parents=True, exist_ok=True)
+            run_record = RUNLEDGER.start_run(REPO_ROOT, args, artifact_dir)
+            print(f"run id: {run_record['run_id']}", flush=True)
+            # Published so the entry point can still record a run that dies on
+            # an unhandled exception. A crashed run is exactly the kind the
+            # history needs to show.
+            _RUN_LEDGER_CONTEXT.update(
+                {"root": run_ledger_root, "record": run_record, "ledger": ledger})
+        except Exception as exc:  # noqa: BLE001 - history must not block a run
+            print(f"run ledger disabled: {type(exc).__name__}: {exc}", flush=True)
 
     preflight = load_preflight_results(artifact_dir) if args.skip_preflight else {"skipped": True}
     if not args.skip_preflight:
@@ -3363,10 +3765,44 @@ def main() -> int:
     if masking_violations:
         print(f"ANTI-MASKING VIOLATION (prohibited reset/retry counters): "
               f"{masking_violations}", flush=True)
-    if args.strict and not clean:
-        return 1
-    return 0 if clean else 1
+    exit_code = 0 if clean else 1
+
+    # Append this run to the cross-run history before returning, so the trend
+    # files describe every run that got this far, not only the clean ones.
+    if run_record is not None:
+        try:
+            _RUN_LEDGER_CONTEXT.clear()      # recorded here, not by the crash path
+            run_dir = RUNLEDGER.finish_run(run_ledger_root, run_record,
+                                           ledger.rows, opcode, verdict,
+                                           exit_code)
+            print(f"run ledger: {run_dir}", flush=True)
+            print(f"run history: {run_ledger_root / RUNLEDGER.HISTORY_MD}",
+                  flush=True)
+        except Exception as exc:  # noqa: BLE001 - history must not change a verdict
+            print(f"run ledger not written: {type(exc).__name__}: {exc}",
+                  flush=True)
+    return exit_code
+
+
+def _record_crashed_run(exc: BaseException) -> None:
+    context = _RUN_LEDGER_CONTEXT
+    if not context.get("record"):
+        return
+    try:
+        run_dir = RUNLEDGER.finish_run(
+            context["root"], context["record"], context["ledger"].rows,
+            {"opcode_requirement_status": "NOT_REACHED", "opcode_count": 0},
+            f"CRASHED ({type(exc).__name__})", 2)
+        print(f"run ledger (crashed run): {run_dir}", flush=True)
+    except Exception as ledger_exc:  # noqa: BLE001
+        print(f"run ledger not written: {type(ledger_exc).__name__}: {ledger_exc}",
+              flush=True)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        _exit_code = main()
+    except BaseException as _exc:      # noqa: BLE001 - record, then re-raise
+        _record_crashed_run(_exc)
+        raise
+    raise SystemExit(_exit_code)

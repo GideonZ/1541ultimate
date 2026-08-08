@@ -1864,6 +1864,13 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         monitor_saved_state = state;
         monitor_saved_state_valid = true;
         monitor_reset_reopen_state_valid = false;
+        // Consume the whole one-shot. Leaving the debug half set means a later
+        // reopen that never went through request_reopen_after_reset() restores a
+        // Debug session the user did not ask for, parked on a stale PC. That
+        // session ignores C=+D and survives both a monitor teardown and a
+        // machine reset, so the monitor is stuck showing Dbg until the firmware
+        // is reloaded.
+        monitor_reset_reopen_debug_active = false;
     } else if (monitor_saved_state_valid) {
         state = monitor_saved_state;
     } else {

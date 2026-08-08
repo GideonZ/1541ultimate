@@ -110,6 +110,13 @@ void TreeBrowser :: context(int initial)
 	if(!state->under_cursor)
 		return;
 
+    // release_host() deinits every UI object without peeling it off the stack,
+    // which deletes this browser's window and leaves it NULL until take_host()
+    // re-inits on the way back. A key that arrives inside that window still
+    // reaches handle_key(), and a popup has nothing to anchor to.
+    if(!window)
+        return;
+
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
@@ -123,6 +130,9 @@ void TreeBrowser :: task_menu(void)
 {
 	if(!state->node)
 		return;
+    // Same deinitialised-browser window as in context(), above.
+    if(!window)
+        return;
     //printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
