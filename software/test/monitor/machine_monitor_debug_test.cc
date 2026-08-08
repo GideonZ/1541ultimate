@@ -4422,6 +4422,64 @@ static int test_step_out_follows_jsr_validated_stack_frame_without_trace()
     return 0;
 }
 
+static int test_step_out_keeps_traced_frame_still_on_the_stack()
+{
+    // A subroutine that pushes after its JSR leaves bytes at the stack pointer
+    // that are not a return address. Those bytes can still look like a frame if
+    // a $20 happens to sit three bytes before what they address. The traced
+    // frame wins that disagreement, because the address its JSR pushed is
+    // provably still on the stack.
+    FakeFreezeMachine m(false);
+
+    // $C000 JSR $C010 ; $C003 is the real return site.
+    m.ram[0xC000] = 0x20;
+    m.ram[0xC001] = 0x10;
+    m.ram[0xC002] = 0xC0;
+    m.ram[0xC003] = 0xEA;
+    m.ram[0xC010] = 0x48;   // PHA: the callee pushes after the call
+    m.ram[0xC011] = 0xEA;
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xC000;
+    from.sp = 0xF8;
+    from.sr = 0x24;
+
+    uint8_t jsr[3] = { 0x20, 0x10, 0xC0 };
+    DebugPredictResult pred;
+    debug_predict(0xC000, jsr, false, &pred);
+    m.arm_capture_context(0xC010, 0xF6, 0, 0, 0, 0x24);
+    DebugContext inside;
+    if (expect(m.trace_at(0xC000, pred, &inside) == DebugSession::DBG_OK,
+               "Step Into must record the call it entered")) return 1;
+
+    // The JSR frame sits at $01F7/$01F8 holding $C002. The callee has since
+    // pushed one byte, so the stack pointer now addresses that pushed data,
+    // which here forms a plausible-looking but wrong frame.
+    m.ram[0x01F7] = 0x02;
+    m.ram[0x01F8] = 0xC0;
+    m.ram[0x01F6] = 0x44;   // pushed data -> decodes as a return to $C445
+    m.ram[0xC442] = 0x20;   // and $C442 happens to hold a JSR opcode
+    m.ram[0xC443] = 0x00;
+    m.ram[0xC444] = 0xC5;
+
+    DebugContext after;
+    debug_context_reset(&after);
+    after.valid = true;
+    after.pc = 0xC011;
+    after.sp = 0xF5;
+    after.sr = 0x24;
+
+    m.arm_capture_context(0xC003, 0xF9, 0, 0, 0, 0x24);
+    DebugContext ctx;
+    if (expect(m.step_out(after, &ctx) == DebugSession::DBG_OK,
+               "Step Out must return using the traced frame")) return 1;
+    if (expect(ctx.pc == 0xC003,
+               "Step Out must not follow pushed data that looks like a frame")) return 1;
+    return 0;
+}
+
 static int test_step_out_prefers_live_stack_over_stale_traced_frame()
 {
     // A traced frame goes stale as soon as the CPU is released: the program
@@ -8869,6 +8927,7 @@ int main()
     RUN(test_step_out_ignores_nearby_rts_and_patches_after_traced_jsr);
     RUN(test_step_out_follows_jsr_validated_stack_frame_without_trace);
     RUN(test_step_out_refuses_stack_frame_without_jsr);
+    RUN(test_step_out_keeps_traced_frame_still_on_the_stack);
     RUN(test_step_out_prefers_live_stack_over_stale_traced_frame);
     RUN(test_step_out_unwinds_past_eight_nested_traces);
     RUN(test_visible_rom_simple_linear_interprets_without_breakpoint);

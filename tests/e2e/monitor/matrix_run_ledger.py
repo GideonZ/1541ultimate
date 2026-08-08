@@ -36,7 +36,7 @@ _GOOD_STATUSES = ("PASS",)
 # in 45 places.
 _NOT_RUN_STATUS = "PENDING"
 # Statuses that count as this run having found something.
-_FAILED_STATUSES = ("FAIL", "BLOCKED_WITH_EVIDENCE", "ROM_ENTRY_UNCOHERENT")
+_FAILED_STATUSES = ("FAIL", "BLOCKED_WITH_EVIDENCE")
 
 
 def _git(repo_root: Path, *args: str) -> str:
@@ -154,7 +154,6 @@ def finish_run(root: Path, record: dict[str, Any], rows: list[dict[str, Any]],
         "cells_passed": statuses.get("PASS", 0),
         "cells_failed": statuses.get("FAIL", 0),
         "cells_blocked": statuses.get("BLOCKED_WITH_EVIDENCE", 0),
-        "cells_rom_entry_uncoherent": statuses.get("ROM_ENTRY_UNCOHERENT", 0),
         "cells_not_run": statuses.get(_NOT_RUN_STATUS, 0),
         "status_counts": statuses,
         "opcode_status": opcode.get("opcode_requirement_status"),
@@ -208,7 +207,7 @@ def _run_markdown(record: dict[str, Any]) -> str:
         "",
         f"- Cells: {record.get('cells_passed')}/{record.get('cells_total')} passed, "
         f"{record.get('cells_failed')} failed, {record.get('cells_blocked')} blocked, "
-        f"{record.get('cells_rom_entry_uncoherent')} ROM-entry-uncoherent",
+        f"{record.get('cells_not_run')} not run",
         f"- Opcode gate: {record.get('opcode_status')} "
         f"({record.get('opcode_count')} opcodes)",
         f"- Deepest Step Into chain: {record.get('max_step_into_depth')}",

@@ -2446,9 +2446,6 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // only covers frames Step Into entered, and goes stale once the CPU has run
     // free. The live stack always reflects reality, but its top two bytes are a
     // return address only if a JSR sits three bytes before what they point at.
-    // Prefer the live stack when it shows a real frame the traced target
-    // disagrees with; keep the traced one when they agree or the stack shows no
-    // frame, which is the banked case the traced record exists for.
     uint16_t traced = 0;
     bool has_traced = peek_return_target(&traced);
     uint16_t sp1 = (uint16_t)(0x0100 + ((from.sp + 1) & 0xFF));
@@ -2462,9 +2459,29 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // use.
     bool live_is_frame = live != from.pc &&
                          read_patch_byte((uint16_t)(ret - 2), cpu_port) == 0x20;
+    // The traced frame is still live if the address JSR pushed for it is on the
+    // stack at or below the current SP. That is what settles a disagreement:
+    // the top two bytes are not necessarily a return address (a subroutine that
+    // pushes after its JSR puts its own data there, which can look like one), so
+    // a traced frame that is provably still on the stack outranks the live
+    // candidate. Only when the traced frame has gone is the live one preferred.
+    bool traced_on_stack = false;
+    if (has_traced) {
+        uint16_t pushed = (uint16_t)(traced - 1);
+        for (int i = 0; i < MAX_RETURN_TARGETS; i++) {
+            int slot = from.sp + 1 + i;
+            if (slot >= 0xFF) break;
+            uint16_t lo = (uint16_t)(0x0100 + slot);
+            uint16_t hi = (uint16_t)(0x0100 + slot + 1);
+            if ((peek_cpu(lo, cpu_port) | (peek_cpu(hi, cpu_port) << 8)) == pushed) {
+                traced_on_stack = true;
+                break;
+            }
+        }
+    }
 
     uint16_t target;
-    if (has_traced && (!live_is_frame || traced == live)) {
+    if (has_traced && (!live_is_frame || traced == live || traced_on_stack)) {
         target = traced;
     } else if (live_is_frame) {
         target = live;
