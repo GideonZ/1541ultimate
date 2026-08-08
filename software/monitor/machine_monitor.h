@@ -135,7 +135,6 @@ void monitor_format_breakpoint_mismatch(char *out, int out_len,
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
-MonitorError monitor_parse_byte_value(const char *text, uint8_t *value);
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value);
 MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,

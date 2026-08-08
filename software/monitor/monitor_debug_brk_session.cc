@@ -225,14 +225,10 @@ BrkDebugSession :: ~BrkDebugSession()
     // and each concrete leaf calls cleanup() from its own destructor while its
     // vtable is still valid.
     //
-    // Ownership is different: debug_owner is a file-static that outlives this
-    // object, so a session deleted while still holding it leaves the token
-    // pointing at freed memory. The next claim then either refuses outright -
-    // leaving the monitor showing a Debug session that no key can exit, through
-    // a monitor teardown and a machine reset, until the firmware is reloaded -
-    // or decides the owner is stale and calls cleanup() on the freed object
-    // through a dangling vtable. release_debug_ownership() is non-virtual and
-    // only touches the static, so it is safe here.
+    // debug_owner is a file-static that outlives this object, so releasing it
+    // here is required: a token left pointing at freed memory either blocks the
+    // next claim forever or gets cleanup()ed through a dangling vtable.
+    // Non-virtual and touches only the static, so it is safe in this destructor.
     release_debug_ownership();
 }
 
@@ -756,18 +752,6 @@ void BrkDebugSession :: restore_patches(void)
         }
     }
     end_stopped_session(stopped_it);
-}
-
-bool BrkDebugSession :: patch_installed_at(uint16_t addr,
-                                           MonitorBackingStore target) const
-{
-    for (int i = 0; i < MAX_PATCHES; i++) {
-        if (patches[i].used && patches[i].address == addr &&
-                patches[i].target == target) {
-            return true;
-        }
-    }
-    return false;
 }
 
 bool BrkDebugSession :: has_any_patch(void) const
@@ -2458,8 +2442,33 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
 {
     if (!backend_ready() || !ctx || !from.valid) return DBG_REFUSED;
     uint8_t cpu_port = execution_cpu_port(&from);
+    // Two sources for the frame to return to. The traced target is exact but
+    // only covers frames Step Into entered, and goes stale once the CPU has run
+    // free. The live stack always reflects reality, but its top two bytes are a
+    // return address only if a JSR sits three bytes before what they point at.
+    // Prefer the live stack when it shows a real frame the traced target
+    // disagrees with; keep the traced one when they agree or the stack shows no
+    // frame, which is the banked case the traced record exists for.
+    uint16_t traced = 0;
+    bool has_traced = peek_return_target(&traced);
+    uint16_t sp1 = (uint16_t)(0x0100 + ((from.sp + 1) & 0xFF));
+    uint16_t sp2 = (uint16_t)(0x0100 + ((from.sp + 2) & 0xFF));
+    uint16_t ret = (uint16_t)(peek_cpu(sp1, cpu_port) |
+                              (peek_cpu(sp2, cpu_port) << 8));
+    uint16_t live = (uint16_t)(ret + 1);
+    // A candidate equal to the current PC is the frame of the call we have just
+    // come back from, still on the stack because its RTS has not run. Returning
+    // to where we already are is not a Step Out, so that frame is not the one to
+    // use.
+    bool live_is_frame = live != from.pc &&
+                         read_patch_byte((uint16_t)(ret - 2), cpu_port) == 0x20;
+
     uint16_t target;
-    if (!peek_return_target(&target)) {
+    if (has_traced && (!live_is_frame || traced == live)) {
+        target = traced;
+    } else if (live_is_frame) {
+        target = live;
+    } else {
         return DBG_NOT_IN_SUBROUTINE;
     }
     // A Step Out that would free-run through visible ROM (launch or return

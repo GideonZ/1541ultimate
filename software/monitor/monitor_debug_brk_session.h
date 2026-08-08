@@ -192,7 +192,6 @@ private:
                                bool skip_address_valid,
                                bool skip_all_at_address = false) const;
     void restore_patches(void);
-    bool patch_installed_at(uint16_t addr, MonitorBackingStore target) const;
     bool has_banked_ram_patch(void) const;
     bool has_high_memory_patch(void) const;
     bool has_any_patch(void) const;

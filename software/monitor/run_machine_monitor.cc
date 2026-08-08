@@ -12,12 +12,10 @@ static MachineMonitor *active_reset_monitor = 0;
 void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     bool reopen_after_reset;
-    // release_host() below deinits every UI object on the focus stack, including
-    // the browser that launched the monitor: its window is deleted and left
-    // NULL. A reopen-after-reset pass must therefore rebuild them before any key
-    // can reach the browser, or a context menu opened from it gets a NULL parent
-    // window. This flag survives across passes so the rebuild happens at the top
-    // of the next one, once ownership of the screen has been re-taken.
+    // release_host() below deinits every UI object, deleting the launching
+    // browser's window. A reopen-after-reset pass must rebuild them before any
+    // key reaches the browser. Survives the pass so the rebuild happens once
+    // screen ownership has been re-taken.
     bool torn_down_host = false;
     do {
         MachineMonitor *monitor = new MachineMonitor(this, backend);
@@ -58,10 +56,7 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         monitor->set_reset_exits_monitor(false);
 #endif
         if (torn_down_host) {
-            // Ownership of the screen has just been re-taken above, so rebuild
-            // the objects the previous pass tore down before anything can hand
-            // them a key.
-            appear();
+            appear();   // rebuild what the previous pass tore down
             torn_down_host = false;
         }
         active_reset_monitor = monitor;

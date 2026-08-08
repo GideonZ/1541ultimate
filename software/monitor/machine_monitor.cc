@@ -1264,22 +1264,6 @@ MonitorError monitor_parse_expression(const char *text, uint16_t *value)
     return parse_number_core(text, value);
 }
 
-MonitorError monitor_parse_byte_value(const char *text, uint8_t *value)
-{
-    const char *cursor = text;
-    uint16_t parsed = 0;
-    MonitorError error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed);
-    if (error != MONITOR_OK) {
-        return MONITOR_VALUE;
-    }
-    skip_spaces(cursor);
-    if (*cursor) {
-        return MONITOR_VALUE;
-    }
-    *value = (uint8_t)parsed;
-    return MONITOR_OK;
-}
-
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value)
 {
     const char *cursor = text;
@@ -1864,12 +1848,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         monitor_saved_state = state;
         monitor_saved_state_valid = true;
         monitor_reset_reopen_state_valid = false;
-        // Consume the whole one-shot. Leaving the debug half set means a later
-        // reopen that never went through request_reopen_after_reset() restores a
-        // Debug session the user did not ask for, parked on a stale PC. That
-        // session ignores C=+D and survives both a monitor teardown and a
-        // machine reset, so the monitor is stuck showing Dbg until the firmware
-        // is reloaded.
+        // Consume the whole one-shot: a leftover debug half makes a later
+        // reopen restore a Debug session nobody asked for, parked on a stale PC.
         monitor_reset_reopen_debug_active = false;
     } else if (monitor_saved_state_valid) {
         state = monitor_saved_state;

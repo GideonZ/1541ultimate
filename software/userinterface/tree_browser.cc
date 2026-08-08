@@ -110,10 +110,9 @@ void TreeBrowser :: context(int initial)
 	if(!state->under_cursor)
 		return;
 
-    // release_host() deinits every UI object without peeling it off the stack,
-    // which deletes this browser's window and leaves it NULL until take_host()
-    // re-inits on the way back. A key that arrives inside that window still
-    // reaches handle_key(), and a popup has nothing to anchor to.
+    // Between release_host() and take_host() this browser has no window, and a
+    // key arriving in that gap still reaches handle_key(). Nothing to anchor a
+    // popup to.
     if(!window)
         return;
 

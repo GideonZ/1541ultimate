@@ -63,10 +63,9 @@ int ContextMenu :: get_items(void)
 
 void ContextMenu :: init(Window *parwin, Keyboard *key)
 {
-    // A NULL parent window is reachable whenever a key is handled between
-    // release_host() tearing the UI objects down and take_host() building them
-    // back up. Dereferencing it here faults the Nios, which takes the whole
-    // device down - no network, no REST - so refuse the popup instead.
+    // A key handled between release_host() and take_host() reaches here with a
+    // NULL parent. Dereferencing it faults the Nios and takes the whole device
+    // down, so refuse the popup instead.
     if(!parwin) {
         keyb = key;
         context_state = e_finished;

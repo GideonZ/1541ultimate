@@ -118,8 +118,6 @@ def _capture_lines(session: "mt.MonitorSession") -> list[str]:
     return [snap.line(y).rstrip() for y in range(mt.HEIGHT)]
 
 
-def _find(lines: list[str], needle: str) -> bool:
-    return any(needle in line for line in lines)
 
 
 def _header_line(session: "mt.MonitorSession") -> str:
@@ -1957,6 +1955,74 @@ def prove_stop_debug_exit_resumes_current_context(rest_host: str,
     _reopen_monitor(session)
 
 
+def prove_step_out_after_free_run(rest_host: str, session: "mt.MonitorSession",
+                                  context: str) -> None:
+    """Step Out of a subroutine that was entered by a free run, not a Step Into.
+
+    Step Into records the frames it enters, and Step Out used to rely on that
+    record alone. Arriving inside a subroutine any other way - a Continue, or the
+    Run to Cursor used here - leaves no record, so Step Out had nothing correct
+    to return to. Releasing the CPU also invalidates whatever was recorded
+    earlier, because the program makes and completes calls the debugger never
+    sees.
+
+    Step Out now derives the caller from the live 6510 stack when it has no
+    recorded frame. This walks the exact path that used to fail: enter debug at
+    the caller, run to a cursor inside the subroutine, then Step Out.
+    """
+
+    caller = bytes([
+        0x20, 0xC0, 0xC6,       # $C6A0: JSR $C6C0
+        0xEE, 0xF0, 0xC6,       # $C6A3: INC $C6F0   (caller-side counter)
+        0x4C, 0xA0, 0xC6,       # $C6A6: JMP $C6A0
+    ])
+    routine = bytes([
+        0xA9, 0x42,             # $C6C0: LDA #$42
+        0xEE, 0xF1, 0xC6,       # $C6C2: INC $C6F1   (cursor target, inside the routine)
+        0x60,                   # $C6C5: RTS
+    ])
+
+    _reopen_monitor(session)
+
+    mt.write_rest_memory(rest_host, 0xC6A0, caller)
+    mt.write_rest_memory(rest_host, 0xC6C0, routine)
+    mt.write_rest_memory(rest_host, 0xC6F0, bytes([0x00, 0x00]))
+    if mt.read_rest_memory(rest_host, 0xC6A0, len(caller)) != caller:
+        raise mt.Failure(f"{context}: caller fixture did not round-trip")
+    if mt.read_rest_memory(rest_host, 0xC6C0, len(routine)) != routine:
+        raise mt.Failure(f"{context}: routine fixture did not round-trip")
+
+    # Enter Debug and take one Step Over to open the session. Step Over records
+    # no frame, so the debugger is left holding nothing traced.
+    session.goto("C6A0")
+    session.send_char("A")
+    session.send_char("D")
+
+    # Run to a cursor inside the subroutine. The CPU executes the JSR itself, so
+    # the debugger never observes the call and holds no recorded frame.
+    session.goto("C6C2")
+    session.send_char("K")
+    inside = _wait_for_pc(session, "C6C2", timeout=10.0)
+    sp_inside = int(inside["sp"], 16)
+    caller_count = mt.read_rest_memory(rest_host, 0xC6F0, 1)[0]
+    inner_count = mt.read_rest_memory(rest_host, 0xC6F1, 1)[0]
+
+    parsed = _step_and_assert_pc(session, "U", 0xC6A3, context)
+    if int(parsed["sp"], 16) != ((sp_inside + 2) & 0xFF):
+        raise mt.Failure(
+            f"{context}: Step Out must pop the JSR frame; expected SP "
+            f"${(sp_inside + 2) & 0xFF:02X}, got ${parsed['sp']}")
+    if parsed["ac"] != "42":
+        raise mt.Failure(
+            f"{context}: Step Out must execute the rest of the subroutine: {parsed!r}")
+    if mt.read_rest_memory(rest_host, 0xC6F1, 1)[0] != ((inner_count + 1) & 0xFF):
+        raise mt.Failure(f"{context}: subroutine body did not complete")
+    if mt.read_rest_memory(rest_host, 0xC6F0, 1)[0] != caller_count:
+        raise mt.Failure(
+            f"{context}: Step Out must stop before the caller-side increment")
+    _ensure_no_debug(session)
+
+
 def run_step_out_target_proof_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     """Dedicated E2E proof for stack-frame Step Out target selection."""
 
@@ -1964,6 +2030,11 @@ def run_step_out_target_proof_tests(rest_host: str, session: "mt.MonitorSession"
         prove_step_out_breaks_after_active_jsr(
             rest_host, session,
             "Step Out active-JSR target proof")
+
+    with mt.check("Debug: Step Out returns to the caller after a free run into the subroutine"):
+        prove_step_out_after_free_run(
+            rest_host, session,
+            "Step Out untraced-frame proof")
 
 
 def run_cleanup_exit_tests(rest_host: str, session: "mt.MonitorSession") -> None:

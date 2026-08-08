@@ -57,16 +57,6 @@ def wait_text(rest, needle, timeout=6.0, interval=0.2):
     return last if (last and needle.lower() in last.lower()) else None
 
 
-def wait_no_menu(rest, timeout=6.0, interval=0.2):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if not menu_active(rest):
-            return True
-        time.sleep(interval)
-    return not menu_active(rest)
-
-
-# ---- navigation primitives (disciplined) ----------------------------------
 
 def settle(rest, s=0.25):
     rest.release_all()

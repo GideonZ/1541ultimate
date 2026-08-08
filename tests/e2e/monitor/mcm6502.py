@@ -571,13 +571,6 @@ def documented_opcodes() -> set:
     return set(CPU6502().table.keys())
 
 
-def is_documented(opcode: int) -> bool:
-    return opcode in documented_opcodes()
-
-
-# ----------------------------------------------------------------------------
-# Self-test: hand-computed vectors covering the tricky NMOS behaviours.
-# ----------------------------------------------------------------------------
 def _selftest() -> int:
     failures = []
 

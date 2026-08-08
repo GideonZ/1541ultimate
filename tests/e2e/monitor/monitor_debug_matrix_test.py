@@ -72,21 +72,10 @@ MEMORY_MODES = ("ram", "ram-under-rom", "rom", "ram-rom-ram", "ram-rur-rom-ram")
 # 32-level Step Into chain.
 TRAVERSAL_MODES = ("ram-rom-ram", "ram-rur-rom-ram")
 INTERFACES = ("telnet", "freeze", "overlay")
-# ROM_ENTRY_UNCOHERENT is a terminal, honest outcome (NOT a pass, NOT a genuine
-# failure): the contextless visible-ROM breakpoint entry missed the 6510's first
-# fetch because the closed U64 C64 core serves a stale pre-patch byte to the live
-# instruction fetch for a ROM line not re-fetched since the DMA patch. It is rare
-# and load-conditioned (not seen at idle on a healthy device) and not fixable in
-# this tree (prebuilt core); a reset does not create coherency, so this path is
-# reported honestly instead of being masked by a reset-and-retry loop. See
-# doc/machine-code-monitor-rom-fetch-coherency.md.
-FINAL_STATUSES = ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE", "ROM_ENTRY_UNCOHERENT")
+FINAL_STATUSES = ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE")
 
-# A contextless visible-ROM entry that misses blocks in the firmware go() for its
-# full breakpoint wait + bounded in-place relaunch budget (~15s) before it returns
-# the honest DBG_ROM_ENTRY_UNCOHERENT and paints the miss popup. The entry wait
-# must outlast that so the miss resolves to ROM_ENTRY_UNCOHERENT, not a premature
-# timeout misread as a defect.
+# Entering a visible-ROM breakpoint costs the firmware's full go() budget, so the
+# wait has to outlast it or a slow but successful entry reads as a failure.
 ROM_ENTRY_WAIT_S = 22.0
 OP_FIELDS = (
     "step_over",
@@ -199,17 +188,6 @@ def _cell_watchdog_handler(signum, frame):
     raise CellTimeout(f"cell exceeded the {CELL_WATCHDOG_SECONDS}s watchdog")
 
 
-class RomEntryUncoherent(GateError):
-    """Contextless visible-ROM breakpoint entry missed the first fetch: the
-    documented closed-core served-ROM coherency limit, not a debugger defect.
-    Reported as its own terminal ROM_ENTRY_UNCOHERENT status - never masked by a
-    reset-and-retry loop."""
-    classification = "ROM_ENTRY_UNCOHERENT"
-
-
-# Substrings the firmware prints for the honest DBG_ROM_ENTRY_UNCOHERENT miss.
-ROM_ENTRY_MISS_MARKERS = ("ROM BP ENTRY MISSED", "ROM_ENTRY_UNCOHERENT")
-
 # A row of the monitor's 10-entry breakpoint popup: "0 SET $E000 RAM" or
 # "0 EMPTY", with the popup's box borders already stripped.
 BREAKPOINT_SLOT_RE = re.compile(r"^\|?\s*[0-9]\s+(SET|EMPTY)\b", re.IGNORECASE)
@@ -254,17 +232,6 @@ class ResetRetryCounters:
 # whole matrix). SETUP_RESETS is the legitimate per-cell baseline reset.
 COUNTERS = ResetRetryCounters()
 SETUP_RESETS = COUNTERS  # legibility alias for the per-cell setup reset call site
-
-
-def _rom_entry_miss_visible(driver: "BaseDriver") -> bool:
-    """True when the monitor shows the firmware's honest ROM-entry coherency-miss
-    popup (DBG_ROM_ENTRY_UNCOHERENT). Distinguishes the documented closed-core
-    limitation from a genuine debugger defect."""
-    try:
-        text = screen_text(driver)
-    except Exception:  # noqa: BLE001 - detection is best-effort
-        return False
-    return any(marker in text for marker in ROM_ENTRY_MISS_MARKERS)
 
 
 def slug_memory(memory: str) -> str:
@@ -1776,29 +1743,6 @@ def step_and_wait_pc(driver: BaseDriver, action, target: int, label: str,
     raise GateError(f"{label}: retry exhausted without executing step")
 
 
-def enter_clean_debug_context(driver: BaseDriver, fixture: MatrixFixture,
-                              address: int, label: str) -> DebugState:
-    """Enter Debug at a monitor address without using a breakpoint bounce."""
-    try:
-        driver.send_key("C=+D")
-        time.sleep(0.25)
-    except Exception as exc:  # noqa: BLE001 - already outside Debug is acceptable here
-        driver.event("leave_debug_before_clean_entry_warning",
-                     label=label, error=str(exc))
-    driver.select_bank(fixture.bank)
-    try:
-        driver.clear_all_breakpoints()
-    except Exception as exc:  # noqa: BLE001 - retain evidence, then enter clean context
-        driver.event("clear_breakpoints_before_clean_entry_warning",
-                     label=label, error=str(exc))
-    driver.goto(address)
-    driver.send_key("A")
-    driver.ensure_debug_active()
-    driver.select_bank(fixture.bank)
-    state = driver.read_debug_state()
-    assert_state_pc_sp(state, address, None, label)
-    driver.event("clean_debug_context_entry", label=label, address=f"{address:04X}")
-    return state
 
 
 def screen_text(driver: BaseDriver) -> str:
@@ -1822,128 +1766,10 @@ def leave_debug_for_relaunch(driver: BaseDriver, label: str) -> None:
     driver.event("leave_debug_for_relaunch", label=label)
 
 
-def refresh_monitor_for_relaunch(driver: BaseDriver, label: str) -> None:
-    try:
-        driver.close_monitor()
-    finally:
-        time.sleep(0.5)
-        driver.open_monitor()
-    driver.event("monitor_refreshed_for_relaunch", label=label)
 
 
-def run_rom_opcode_trace(driver: BaseDriver, row: dict[str, Any], cell_dir: Path,
-                         start: DebugState, minimum_opcodes: int = 100) -> tuple[DebugState, ORC.CPU6502, int]:
-    mem = driver.read_memory_image()
-    (cell_dir / "rom-trace-memory-image.bin").write_bytes(bytes(mem))
-    cpu = ORC.CPU6502(mem)
-    cpu.set_state(start.ac, start.xr, start.yr, start.sp, start.pc, start.sr)
-
-    trace = []
-    jsr_count = 0
-    call_depth = 0
-    max_call_depth = 0
-    kernal_to_basic = False
-    basic_to_kernal = False
-    state = start
-    max_steps = max(300, minimum_opcodes * 3)
-    for index in range(1, max_steps + 1):
-        before_region = rom_region(cpu.pc)
-        if before_region == "other":
-            raise GateError(
-                f"ROM trace left BASIC/KERNAL before step {index}: PC ${cpu.pc:04X}")
-        before_pc = cpu.pc
-        try:
-            result = cpu.step()
-        except ORC.UndocumentedOpcode as exc:
-            raise GateError(f"ROM trace hit undocumented opcode: {exc}") from exc
-        if result.mnemonic == "JSR":
-            jsr_count += 1
-            call_depth += 1
-            max_call_depth = max(max_call_depth, call_depth)
-        elif result.mnemonic == "RTS" and call_depth > 0:
-            call_depth -= 1
-        after_region = rom_region(cpu.pc)
-        if before_region == "kernal" and after_region == "basic":
-            kernal_to_basic = True
-        if before_region == "basic" and after_region == "kernal":
-            basic_to_kernal = True
-
-        driver.step_into()
-        state = driver.wait_pc(cpu.pc, f"ROM opcode trace {index}", timeout=12.0)
-        assert_state_matches_cpu(state, cpu, f"ROM opcode trace {index}")
-        trace.append({
-            "index": index,
-            "pc_before": f"{before_pc:04X}",
-            "opcode": f"{result.opcode:02X}",
-            "mnemonic": result.mnemonic,
-            "pc_after": f"{cpu.pc:04X}",
-            "region_before": before_region,
-            "region_after": after_region,
-            "sp": f"{cpu.sp:02X}",
-            "call_depth": call_depth,
-            "max_call_depth": max_call_depth,
-        })
-        driver.event(
-            "rom_opcode_trace_step",
-            index=index,
-            pc_before=f"{before_pc:04X}",
-            opcode=f"{result.opcode:02X}",
-            mnemonic=result.mnemonic,
-            pc_after=f"{cpu.pc:04X}",
-            region_before=before_region,
-            region_after=after_region,
-            call_depth=call_depth,
-            max_call_depth=max_call_depth)
-        if (index >= minimum_opcodes and max_call_depth >= 2
-                and kernal_to_basic and basic_to_kernal):
-            summary = {
-                "opcode_count": index,
-                "jsr_count": jsr_count,
-                "max_call_depth": max_call_depth,
-                "kernal_to_basic": kernal_to_basic,
-                "basic_to_kernal": basic_to_kernal,
-                "final_pc": f"{cpu.pc:04X}",
-            }
-            (cell_dir / "rom-opcode-trace.json").write_text(
-                json.dumps({"summary": summary, "trace": trace}, indent=2) + "\n",
-                encoding="utf-8")
-            row["rom_trace"] = summary
-            driver.event("rom_opcode_trace_pass", **summary)
-            return state, cpu, index
-
-    summary = {
-        "opcode_count": len(trace),
-        "jsr_count": jsr_count,
-        "max_call_depth": max_call_depth,
-        "kernal_to_basic": kernal_to_basic,
-        "basic_to_kernal": basic_to_kernal,
-        "final_pc": f"{cpu.pc:04X}",
-    }
-    (cell_dir / "rom-opcode-trace.json").write_text(
-        json.dumps({"summary": summary, "trace": trace}, indent=2) + "\n",
-        encoding="utf-8")
-    raise GateError(
-        "ROM trace did not satisfy minimum coverage: "
-        f"{summary}, required opcodes>={minimum_opcodes}, max_call_depth>=2, "
-        "KERNAL->BASIC and BASIC->KERNAL transitions")
 
 
-def continue_one_predicted_rom_opcode(driver: BaseDriver, cpu: ORC.CPU6502,
-                                      action, label: str) -> tuple[DebugState, ORC.CPU6502, ORC.StepResult]:
-    predicted = clone_cpu(cpu)
-    before_pc = predicted.pc
-    result = predicted.step()
-    action(predicted.pc)
-    state = driver.wait_pc(predicted.pc, label, timeout=12.0)
-    assert_state_matches_cpu(state, predicted, label)
-    driver.event(
-        "rom_predicted_continue",
-        label=label,
-        pc_before=f"{before_pc:04X}",
-        opcode=f"{result.opcode:02X}",
-        mnemonic=result.mnemonic,
-        pc_after=f"{predicted.pc:04X}")
-    return state, predicted, result
 
 
 class ViceBinaryMonitor:
@@ -2670,15 +2496,6 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             row["program_seed"] = seed
             fixture = build_fixture(row["memory_mode"], args.required_step_into_depth)
             row["fixture"] = fixture.to_json()
-            # Contextless visible-ROM entry can miss the ROM-image BRK on the
-            # 6510's first fetch (closed-core served-ROM coherency limit). It is
-            # attempted ONCE from a single per-cell setup reset and, on the honest
-            # miss, reported as its own terminal ROM_ENTRY_UNCOHERENT status -
-            # NEVER reset-and-retried to buy another independent draw (a reset does
-            # not create coherency). The wait covers the full firmware go() budget
-            # so a slow-but-successful entry is not misread as a miss. See
-            # doc/machine-code-monitor-rom-fetch-coherency.md.
-            rom_entry = row["memory_mode"] == "rom"
             log_line(f"{cid}: reset baseline")
             driver.reset_baseline()   # per-cell setup reset (not recovery)
             SETUP_RESETS.count("setup_reset", f"{cid}: cell setup")
@@ -2687,25 +2504,7 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             ledger.save()
             log_line(f"{cid}: open monitor and enter debug")
             driver.open_monitor()
-            try:
-                entry = driver.enter_debug_at(fixture.entry)
-            except BlockedWithEvidence:
-                raise
-            except RomEntryUncoherent:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                if rom_entry and _rom_entry_miss_visible(driver):
-                    driver.event(
-                        "rom_entry_uncoherent",
-                        reason=("contextless visible-ROM entry missed the first "
-                                "fetch (closed-core served-ROM coherency limit); "
-                                "reported honestly, never reset-retried"),
-                        detail=str(exc).splitlines()[0][:160])
-                    raise RomEntryUncoherent(
-                        f"contextless visible-ROM entry at ${fixture.entry:04X} "
-                        f"missed the first fetch (closed-core served-ROM coherency "
-                        f"limit)") from exc
-                raise
+            entry = driver.enter_debug_at(fixture.entry)
             row["start_pc"] = f"{entry.pc:04X}"
             row["footer_validated"] = not driver.contextless_entry()
             assert_state_pc_sp(entry, fixture.entry, None, "entry")
@@ -3051,25 +2850,6 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                 row["opcode_count"] += 6
             row["status"] = "PASS"
             ledger.save()
-        except RomEntryUncoherent as exc:
-            # Documented closed-core served-ROM coherency limit on a contextless
-            # visible-ROM entry. Terminal, honest, and NOT a genuine failure - the
-            # cell is recorded as ROM_ENTRY_UNCOHERENT (never masked by reset-retry,
-            # never reported as PASS). Deterministic cells (RAM/RAM-under-ROM) are
-            # unaffected and must still PASS.
-            row["status"] = "ROM_ENTRY_UNCOHERENT"
-            row["failure"] = {
-                "classification": exc.classification,
-                "message": str(exc),
-                "traceback": traceback.format_exc(),
-                "next_action": ("Documented closed-core limitation: run the target "
-                                "so its fetch line warms, or enter the breakpoint "
-                                "from a running context. Not fixable in firmware."),
-            }
-            (cell_dir / "rom-entry-uncoherent.txt").write_text(
-                f"{exc.classification}: {exc}\n\n{traceback.format_exc()}",
-                encoding="utf-8")
-            ledger.save()
         except BlockedWithEvidence as exc:
             row["status"] = "BLOCKED_WITH_EVIDENCE"
             row["failure"] = {
@@ -3369,20 +3149,14 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
     rows = ledger.rows
     all_done = all(row["status"] in FINAL_STATUSES for row in rows)
     all_pass = all(row["status"] == "PASS" for row in rows)
-    # ROM_ENTRY_UNCOHERENT is a documented closed-core limitation, not a genuine
-    # failure. The gate verdict distinguishes it so the deterministic paths can be
-    # proven green without the racy cold ROM entry masking or blocking them.
     genuine_failures = [row for row in rows
                         if row["status"] in ("FAIL", "BLOCKED_WITH_EVIDENCE")]
-    rom_limited = [row for row in rows if row["status"] == "ROM_ENTRY_UNCOHERENT"]
     masking_violations = COUNTERS.violations()
     opcode_pass = opcode.get("opcode_requirement_status") == "PASS"
     if not all_done or masking_violations:
         verdict = "NOT PRODUCTION READY"
     elif genuine_failures or not opcode_pass:
         verdict = "NOT PRODUCTION READY"
-    elif rom_limited:
-        verdict = "DETERMINISTIC PATHS PASS; ROM COLD-ENTRY FPGA-LIMITED"
     else:
         verdict = "PRODUCTION READY"
     report = artifact_dir / "FINAL_REPORT.md"
@@ -3399,11 +3173,10 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
             subset = [row for row in rows if str(row[key]) == value]
             counts = {status: sum(1 for row in subset if row["status"] == status)
                       for status in ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE",
-                                     "ROM_ENTRY_UNCOHERENT", "PENDING")}
+                                     "PENDING")}
             lines_out.append(
                 f"- `{value}`: PASS={counts['PASS']} FAIL={counts['FAIL']} "
                 f"BLOCKED_WITH_EVIDENCE={counts['BLOCKED_WITH_EVIDENCE']} "
-                f"ROM_ENTRY_UNCOHERENT={counts['ROM_ENTRY_UNCOHERENT']} "
                 f"PENDING={counts['PENDING']}"
             )
         return lines_out
@@ -3522,7 +3295,7 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
                 f"`--memory {row['memory_mode']} --ui {row['interface']} --reps {row['repetition']} --resume` "
                 f"and inspect `{row['artifact_dir']}`."
             )
-    if all(row["status"] in ("PASS", "ROM_ENTRY_UNCOHERENT") for row in rows):
+    if all_pass:
         lines.append("- None (no genuine debugger failure)")
     lines += [
         "",
@@ -3536,12 +3309,6 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
         (f"- ANTI-MASKING VIOLATION: {masking_violations}" if masking_violations
          else "- Anti-masking invariant HELD (all prohibited counters == 0)"),
         "",
-        "## ROM Cold-Entry (documented closed-core FPGA limit)",
-        f"- Cells reporting ROM_ENTRY_UNCOHERENT: {len(rom_limited)} "
-        f"({', '.join(row['cell_id'] for row in rom_limited) or 'none'})",
-        "- This is the contextless visible-ROM first-fetch coherency miss served "
-        "by the prebuilt U64 C64 core. It is reported honestly, never masked by a "
-        "reset-and-retry. See doc/machine-code-monitor-rom-fetch-coherency.md.",
         "",
         "## Commit And Push Status",
         "- Committed: no",
@@ -3733,9 +3500,7 @@ def main() -> int:
                   f"logged to wedge-incidents.jsonl; stopping for recovery", flush=True)
             stopped_after_required_cell_failure = True
             break
-        # ROM_ENTRY_UNCOHERENT is a documented closed-core limitation, not a
-        # genuine failure, so it must not trip fail-fast (which is for real defects).
-        if (row["status"] not in ("PASS", "ROM_ENTRY_UNCOHERENT")
+        if (row["status"] != "PASS"
                 and stop_after_cell_failure(args)):
             stopped_after_required_cell_failure = True
             break
@@ -3754,8 +3519,6 @@ def main() -> int:
     verdict = write_final_report(args, artifact_dir, ledger, preflight, opcode, hygiene)
     # A run is clean when every cell is terminal, there is no GENUINE failure
     # (FAIL/BLOCKED), the opcode gate passed, and no prohibited masking counter
-    # fired. ROM_ENTRY_UNCOHERENT (documented closed-core limit) is acceptable and
-    # does not fail the gate; the report states it explicitly.
     rows_done = all(row["status"] in FINAL_STATUSES for row in ledger.rows)
     genuine_failures = any(
         row["status"] in ("FAIL", "BLOCKED_WITH_EVIDENCE") for row in ledger.rows)

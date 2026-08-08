@@ -4381,8 +4381,19 @@ static int test_step_out_ignores_nearby_rts_and_patches_after_traced_jsr()
     return 0;
 }
 
-static int test_step_out_refuses_stale_far_stack_frame()
+static int test_step_out_follows_jsr_validated_stack_frame_without_trace()
 {
+    // Step Out has no traced frame whenever the subroutine was entered by
+    // something other than a Step Into: a Continue, or a Run to Cursor that
+    // stopped inside it. That is the common way a developer arrives somewhere
+    // they then want to step out of, so Step Out derives the caller from the
+    // live 6510 stack, guarded by the same JSR check the RTS prediction path
+    // uses (see test_step_out_refuses_stack_frame_without_jsr).
+    //
+    // The guard is a filter, not a proof: a frame that looks like a call is
+    // followed. This is a deliberate trade. Refusing every untraced frame keeps
+    // Step Out from ever following a stale one, but also removes it from the
+    // workflow it is most wanted in.
     FakeFreezeMachine m(false);
 
     DebugContext from;
@@ -4391,9 +4402,8 @@ static int test_step_out_refuses_stale_far_stack_frame()
     from.pc = 0x2003;
     from.sp = 0xF7;
 
-    // Stale interpreter frame left on the C64 stack while the user is debugging
-    // an arbitrary loop at $2000. It is a real JSR-looking frame, but it cannot
-    // be the active caller of the current program counter.
+    // Live stack holds a return address of $C104, and $C101 really does hold the
+    // JSR that pushed it.
     m.ram[0x01F8] = 0x03;
     m.ram[0x01F9] = 0xC1;
     m.ram[0xC101] = 0x20;
@@ -4401,10 +4411,97 @@ static int test_step_out_refuses_stale_far_stack_frame()
     m.ram[0xC103] = 0xC0;
     m.ram[0xC104] = 0xEA;
 
+    m.arm_capture_context(0xC104, 0xF9, 0, 0, 0, 0x24);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.step_out(from, &ctx);
+    if (expect(r == DebugSession::DBG_OK,
+               "Step Out must follow a JSR-validated live stack frame")) return 1;
+    if (expect(ctx.pc == 0xC104,
+               "Step Out must land on the instruction after the calling JSR")) return 1;
+    return 0;
+}
+
+static int test_step_out_prefers_live_stack_over_stale_traced_frame()
+{
+    // A traced frame goes stale as soon as the CPU is released: the program
+    // makes and completes calls nobody watches, and the recorded target can
+    // belong to a call that has already returned. When the live stack shows a
+    // real frame and the traced target disagrees with it, the live stack wins.
+    // Trusting the traced target here is what once sent Step Out into an
+    // unrelated part of the program.
+    FakeFreezeMachine m(false);
+
+    // The call the debugger traced, whose frame is now gone.
+    m.ram[0xC000] = 0x20;   // JSR $C010
+    m.ram[0xC001] = 0x10;
+    m.ram[0xC002] = 0xC0;
+    m.ram[0xC003] = 0xEA;
+    m.ram[0xC010] = 0xEA;
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xC000;
+    from.sp = 0xF8;
+    from.sr = 0x24;
+
+    uint8_t jsr[3] = { 0x20, 0x10, 0xC0 };
+    DebugPredictResult pred;
+    debug_predict(0xC000, jsr, false, &pred);
+    m.arm_capture_context(0xC010, 0xF6, 0, 0, 0, 0x24);
+    DebugContext inside;
+    if (expect(m.trace_at(0xC000, pred, &inside) == DebugSession::DBG_OK,
+               "Step Into must record the call it entered")) return 1;
+
+    // The CPU has since run on and is inside a different subroutine, called from
+    // $C200. The live stack says so; the traced target still says $C003.
+    m.ram[0xC201] = 0x20;   // the JSR that really pushed this frame
+    m.ram[0xC202] = 0x00;
+    m.ram[0xC203] = 0xC5;
+    m.ram[0xC204] = 0xEA;
+    m.ram[0x01F8] = 0x03;   // pushed return address $C203 -> returns to $C204
+    m.ram[0x01F9] = 0xC2;
+
+    DebugContext after;
+    debug_context_reset(&after);
+    after.valid = true;
+    after.pc = 0xC500;
+    after.sp = 0xF7;
+    after.sr = 0x24;
+
+    m.arm_capture_context(0xC204, 0xF9, 0, 0, 0, 0x24);
+    DebugContext ctx;
+    if (expect(m.step_out(after, &ctx) == DebugSession::DBG_OK,
+               "Step Out must return using the live stack frame")) return 1;
+    if (expect(ctx.pc == 0xC204,
+               "Step Out must not return to the stale traced target")) return 1;
+    return 0;
+}
+
+static int test_step_out_refuses_stack_frame_without_jsr()
+{
+    // The guard that keeps the untraced path honest. A subroutine that pushed
+    // registers on entry leaves bytes at the stack pointer that are not a return
+    // address; following them would send the CPU to whatever they happen to
+    // address. Without a JSR three bytes before the candidate, Step Out refuses.
+    FakeFreezeMachine m(false);
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0x2003;
+    from.sp = 0xF7;
+
+    m.ram[0x01F8] = 0x03;
+    m.ram[0x01F9] = 0xC1;
+    m.ram[0xC101] = 0xEA;   // caller opcode at ret-2 is not JSR
+    m.ram[0xC104] = 0xEA;
+
     DebugContext ctx;
     DebugSession::Result r = m.step_out(from, &ctx);
     if (expect(r == DebugSession::DBG_NOT_IN_SUBROUTINE,
-               "Step Out must report that no traced subroutine is active")) return 1;
+               "Step Out must refuse a stack frame with no JSR behind it")) return 1;
     if (expect(m.brk_patch_writes == 0,
                "Refused Step Out must not install a temporary BRK")) return 1;
     if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
@@ -8770,7 +8867,9 @@ int main()
     RUN(test_freeze_step_out_refreezes);
     RUN(test_step_out_uses_traced_jsr_target_even_when_target_is_above_pc);
     RUN(test_step_out_ignores_nearby_rts_and_patches_after_traced_jsr);
-    RUN(test_step_out_refuses_stale_far_stack_frame);
+    RUN(test_step_out_follows_jsr_validated_stack_frame_without_trace);
+    RUN(test_step_out_refuses_stack_frame_without_jsr);
+    RUN(test_step_out_prefers_live_stack_over_stale_traced_frame);
     RUN(test_step_out_unwinds_past_eight_nested_traces);
     RUN(test_visible_rom_simple_linear_interprets_without_breakpoint);
     RUN(test_visible_rom_basic_loop_interprets_index_register_and_flags);
