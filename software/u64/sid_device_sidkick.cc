@@ -61,6 +61,8 @@ void SidDeviceSidKick :: SetSidType(int type)
     base[0x1e] = 0x00; // choose profile to update
 //     base[0x1d] = 0xFC; // update and afterwards leave config mode
 
+    type--; // receive 1 = 6581, 2 = 8580 => map to 0 and 1
+
     // Set sid#2 to none for now
     if (type) { // 8580
         base[0x1d] = SID_TYPE_8580_BOOST;
