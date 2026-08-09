@@ -2,10 +2,6 @@ name: Build
 
 on: [push, pull_request]
 
-concurrency:
-  group: build-self-hosted-runner
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: self-hosted
