@@ -333,8 +333,8 @@ architecture logic of ultimate_logic_32 is
 
     constant c_tag_slot          : std_logic_vector(7 downto 0) := X"09";
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"0A";
-    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"14"; -- Needs 4 consecutive tags 
     constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
     constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
 

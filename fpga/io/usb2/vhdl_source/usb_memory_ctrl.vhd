@@ -5,9 +5,6 @@ use ieee.numeric_std.all;
 use work.mem_bus_pkg.all;
 use work.endianness_pkg.all;
 
---use work.tl_sctb_pkg.all;
---use work.tl_string_util_pkg.all;
-
 -- This module performs the memory operations that are instructed
 -- by the nano_cpu. This controller copies data to or from a
 -- designated BRAM, and notifies the nano_cpu that the transfer
@@ -16,7 +13,7 @@ use work.endianness_pkg.all;
 entity usb_memory_ctrl is
 generic (
     g_big_endian   : boolean;
-    g_tag          : std_logic_vector(7 downto 0) := X"55" );
+    g_tag          : std_logic_vector(7 downto 0) := X"54" );
 
 port (
     clock       : in  std_logic;
@@ -68,9 +65,11 @@ architecture gideon of usb_memory_ctrl is
     signal last_req         : std_logic;
     signal mem_rdata_le     : std_logic_vector(31 downto 0);
 begin
-    mem_req.tag(7)          <= last_req;
-    mem_req.tag(6)          <= first_req;
-    mem_req.tag(5 downto 0) <= g_tag(5 downto 0);
+    assert g_tag(1 downto 0) = "00" report "Tag should be a multiple of 4" severity failure;
+
+    mem_req.tag(7 downto 2) <= g_tag(7 downto 2);
+    mem_req.tag(1)          <= last_req;
+    mem_req.tag(0)          <= first_req;
     mem_req.request     <= mreq;
     mem_req.address     <= mem_addr_i & mem_addr_r(1 downto 0);
     mem_req.read_writen <= rwn;
@@ -92,7 +91,7 @@ begin
             ram_en <= '1';
 
         when writing =>
-            if (mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0)) then
+            if (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2)) then
                 ram_en <= '1';
             end if;
             
@@ -101,7 +100,7 @@ begin
         end case;
 
         rem_do_dec <= '0';
-        if mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0) then
+        if mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2) then
             rem_do_dec <= '1';
         end if;
         
@@ -157,7 +156,7 @@ begin
                 end if;
             
             when reading =>
-                if (mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0)) then
+                if (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2)) then
                     first_req <= '0';
                     if last_req = '1' then
                         state <= data_wait;
@@ -168,7 +167,7 @@ begin
     
             when data_wait =>
                 -- just wait until we get a tag on data valid that indicates the last dataword of the transfer
-                if rdata_valid = '1' and mem_resp.dack_tag(7) = '1' then
+                if rdata_valid = '1' and mem_resp.dack_tag(1) = '1' then
                     state <= idle;
                 end if;
 
@@ -178,7 +177,7 @@ begin
                 state <= writing;
                 
             when writing =>
-                if (mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0)) then
+                if (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2)) then
                     first_req <= '0';
                     ram_addr_i <= ram_addr_i + 1;
                     if remain_is_1 = '1' then
@@ -209,7 +208,7 @@ begin
     cmd_ready <= '1' when (state = idle) else '0';
 
     addr_do_load  <= new_addr when (state = init) else '0';
-    addr_do_inc   <= '1' when (mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0)) else '0';
+    addr_do_inc   <= '1' when (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2)) else '0';
     
     i_addr: entity work.mem_addr_counter
     port map (
@@ -232,7 +231,7 @@ begin
         remain_is_0 => remain_is_0 );
 
     last_req <= remain_is_1;
-    rdata_valid <= '1' when mem_resp.dack_tag(5 downto 0) = g_tag(5 downto 0) else '0';
+    rdata_valid <= '1' when mem_resp.dack_tag(7 downto 2) = g_tag(7 downto 2) else '0';
     
     mem_rdata_le <= byte_swap(mem_resp.data, g_big_endian);
     
@@ -242,8 +241,8 @@ begin
         reset       => reset,
         rdata       => mem_rdata_le,
         rdata_valid => rdata_valid,
-        first_word  => mem_resp.dack_tag(6),
-        last_word   => mem_resp.dack_tag(7),
+        first_word  => mem_resp.dack_tag(0),
+        last_word   => mem_resp.dack_tag(1),
         offset      => mem_addr_r(1 downto 0),
         last_bytes  => size_r,
         wdata       => ram_wdata,

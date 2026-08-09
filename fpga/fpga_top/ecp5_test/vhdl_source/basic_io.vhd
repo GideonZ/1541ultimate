@@ -95,7 +95,7 @@ architecture logic of basic_io is
     constant c_capabilities     : std_logic_vector(31 downto 0) := capab(g_bootfpga);
      -- Uart, Spi Flash, USB, Ethernet
 
-    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0B";
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"14"; -- and 15, 16 and 17
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
     constant c_tag_wifi_tx       : std_logic_vector(7 downto 0) := X"1E";
     constant c_tag_wifi_rx       : std_logic_vector(7 downto 0) := X"1F";
