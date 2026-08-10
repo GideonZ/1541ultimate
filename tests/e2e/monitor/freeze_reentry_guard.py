@@ -14,14 +14,19 @@ the fixed firmware (idempotent freeze) it runs clean.
 
 `monitor_debug_matrix_test.py` runs this as a preflight check before the matrix.
 
-Usage: freeze_reentry_guard.py [host] [cycles]
+On a split session (`--c64-host`) the freeze-entry keystrokes go to the C64U a
+U2+L cartridge is plugged into, while the overlay reads stay on the cartridge:
+the cartridge's own machine:input is compiled out and answers HTTP 501.
+
+Usage: freeze_reentry_guard.py [host] [cycles] [--c64-host HOST]
 Exit 0 = no wedge; 2 = WEDGE (REST dead).
 """
+import argparse
 import os
 import sys
 import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import mcm_rest as R
+import mcm_split_rest as SR
 import mcm_localui as L
 
 
@@ -33,17 +38,27 @@ def check(rest, label):
     if not rest.alive():
         time.sleep(2.0)
         if not rest.alive():
-            print(f"  *** WEDGE after {label}: REST dead on .13 ***", flush=True)
-            r70 = R.Rest(host="192.168.1.70")
-            print(f"  .70 alive: {r70.alive()}", flush=True)
+            print(f"  *** WEDGE after {label}: REST dead ***", flush=True)
+            print(f"  endpoints: {SR.endpoint_liveness(rest)}", flush=True)
             return False
     return True
 
 
-def main():
-    host = sys.argv[1] if len(sys.argv) > 1 else "192.168.1.13"
-    cycles = int(sys.argv[2]) if len(sys.argv) > 2 else 60
-    rest = R.Rest(host=host)
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description="Freeze/restore re-entry wedge guard")
+    p.add_argument("host", nargs="?", default="192.168.1.15")
+    p.add_argument("cycles", nargs="?", type=int, default=60)
+    p.add_argument("--c64-host", default=None,
+                   help="Split-session mode for a U2+L cartridge: the C64U host "
+                        "it is plugged into. Keystrokes and memory go there "
+                        "while menu_screen/menu_button stay on `host`.")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    a = parse_args(argv)
+    host, cycles = a.host, a.cycles
+    rest = SR.make_rest(host, a.c64_host)
     print(f"FREEZE-THRASH host={host} cycles={cycles} alive={alive(rest)}", flush=True)
     if not alive(rest):
         print("DEVICE NOT ALIVE AT START"); return 2

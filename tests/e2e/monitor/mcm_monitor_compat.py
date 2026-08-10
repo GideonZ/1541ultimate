@@ -56,18 +56,37 @@ TestConfig = _Config()
 CHECK_COUNT = 0
 
 
+# Set by check() when the check it opened does not apply to the target, and
+# consumed by skip_unsupported() as the first statement of that check's body.
+#
+# A @contextmanager cannot skip its own with-body: returning before the yield
+# makes __enter__ raise RuntimeError("generator didn't yield"), which is exactly
+# what every u2=False check did the first time one was actually reached on a
+# U2+L - the suite aborted instead of skipping. The body has to opt out itself,
+# so the reason is parked here and the body's first line raises SkipCheck, which
+# check() already reports as a SKIP.
+_pending_skip: Optional[str] = None
+
+
+def skip_unsupported() -> None:
+    """First statement of a check body that carries u2=False."""
+    global _pending_skip
+    reason = _pending_skip
+    _pending_skip = None
+    if reason:
+        raise SkipCheck(reason)
+
+
 @contextmanager
 def check(label: str, *, u2: bool = True, u2_reason: str = "") -> Iterator[None]:
     """Report legacy scenario checks through the shared report fixture."""
-    global CHECK_COUNT
+    global CHECK_COUNT, _pending_skip
     CHECK_COUNT += 1
     number = CHECK_COUNT
     check_start(label)
+    _pending_skip = None
     if TestConfig.target == "u2" and not u2:
-        reason = u2_reason or "not supported on U2"
-        TestConfig.skipped.append((number, label, reason))
-        check_skip(reason)
-        return
+        _pending_skip = u2_reason or "not supported on U2"
     try:
         yield
     except SkipCheck as exc:
@@ -86,6 +105,22 @@ def check(label: str, *, u2: bool = True, u2_reason: str = "") -> Iterator[None]
         check_fail(str(exc))
         raise
     else:
+        if _pending_skip:
+            # The body was supposed to opt out and did not: either it omits the
+            # skip_unsupported() call or something runs before it. Either way it
+            # has just executed work this target does not support, and without
+            # this guard that passes silently - the one hole in a convention the
+            # code cannot otherwise enforce. Fail loudly instead.
+            reason = _pending_skip
+            _pending_skip = None
+            message = (f"check is marked u2=False ({reason}) but its body never "
+                       f"called mt.skip_unsupported(), so it ran on a U2 anyway")
+            TestConfig.failures.append((number, label, message))
+            detail(message)
+            check_fail(message)
+            if not TestConfig.keep_going:
+                raise Failure(message)
+            return
         check_ok()
 
 

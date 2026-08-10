@@ -33,6 +33,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcm_rest as R          # noqa: E402
+import mcm_split_rest as SR   # noqa: E402
 import mcm_localui as L       # noqa: E402
 import mcm6502 as ORC         # noqa: E402
 import overlay_lifecycle  # noqa: E402
@@ -105,10 +106,15 @@ FORBIDDEN = ("UNSAFE TARGET", "DEBUG TIMEOUT", "TIMEOUT", "PATCH FAILED",
 
 
 class RestSession:
-    def __init__(self, host, ui="freeze"):
-        self.rest = R.Rest(host=host)
-        self.host = host
+    def __init__(self, host, ui="freeze", c64_host=None):
+        self.rest = SR.make_rest(host, c64_host)
+        self.host = c64_host or host
         self.ui = ui
+        # A split session is a U2+L cartridge in a C64U host. Beyond routing,
+        # the U2 MCM differs from the U64 one in what it exposes: no Interface
+        # Type config, no monitor bank view, and one memory-source tag for
+        # every row. The methods below name their own deviation.
+        self.split = bool(c64_host)
 
     # --- low-level ---
     def lines(self):
@@ -123,6 +129,88 @@ class RestSession:
 
     def alive(self):
         return self.rest.alive()
+
+    def read_mem(self, addr, length):
+        """Memory read that does not depend on which device holds the bus.
+
+        On a split session the C64U cannot see $1000-$CFFF while the cartridge
+        holds the C64 in Ultimax; it reads $FF there. Comparing that against the
+        oracle reports a mismatch that is an artefact of the read path, so the
+        comparison reads the device that can always see the window.
+        """
+        if self.split:
+            return self.rest.read_mem_oracle(addr, length)
+        return self.rest.read_mem(addr, length)
+
+    def release_cartridge_hold(self, tries=8):
+        """Hand the C64 back if a previous session left the cartridge holding it.
+
+        Keystrokes reach a U2+L over the C64U's keyboard matrix, and that matrix
+        is scanned only while the 6510 executes. A held machine therefore
+        swallows every key while REST still answers normally, and every later
+        step reports no progress for a reason that has nothing to do with
+        stepping. A machine:reset does not clear it; toggling the cartridge's
+        own menu does. Returns True once the jiffy clock advances again.
+        """
+        for _ in range(tries):
+            if self._c64_running():
+                return True
+            self.rest.menu_button()
+            time.sleep(1.4)
+        return self._c64_running()
+
+    def assert_overlay_draws(self):
+        """Fail when the overlay is present but renders nothing.
+
+        An overlay whose every line is blank cannot open a monitor, so the
+        monitor open times out and the run reports a monitor problem instead of
+        the UI state that caused it. This names the state where it is found.
+
+        This detects; it does not repair. A repair was written for it and
+        removed: its only evidence came from a window in which a second agent
+        was driving the same device, which is also what would produce a blank
+        overlay. Rediscovering the phenomenon with clean evidence costs one run;
+        a remedy built on contaminated evidence could mask a real regression
+        indefinitely. See REPORT.md, "The remedy that was removed".
+
+        A closed menu is a different state and is not a failure.
+        """
+        try:
+            lines = self.rest.screen_lines()
+        except Exception:  # noqa: BLE001 - a closed menu has no screen to judge
+            return
+        if not any(line.strip() for line in lines):
+            raise StressError(
+                "overlay is present but every line of it is blank, so no "
+                "monitor can open. The cartridge UI is rendering nothing. This "
+                "is reported, not repaired: confirm it with sole access to the "
+                "device before treating it as a firmware finding.")
+
+    def hold_note(self):
+        """A suffix naming the C64 as DMA-held, when it is.
+
+        A held machine takes no keystrokes, so every step after the hold reports
+        no progress for a reason that is not stepping. Saying so where the
+        failure is raised stops a firmware hold reading as an opcode failure.
+        Empty on a single-host run and whenever the machine is executing.
+        """
+        if not self.split or self._c64_running():
+            return ""
+        try:
+            screen = self.rest.read_mem(0x0400, 16)
+        except Exception:  # noqa: BLE001 - diagnostics must not replace the failure
+            screen = b""
+        return (" [C64 IS DMA-HELD: jiffy frozen, $0400="
+                f"{screen.hex()}; this is the hold-after-close defect, "
+                "not a stepping result]")
+
+    def _c64_running(self):
+        try:
+            first = self.rest.read_mem(0x00A0, 3)
+            time.sleep(0.5)
+            return first != self.rest.read_mem(0x00A0, 3)
+        except Exception:  # noqa: BLE001 - an unreadable device is not running
+            return False
 
     def key(self, *names, settle=0.0):
         self.rest.tap(list(names))
@@ -196,8 +284,14 @@ class RestSession:
 
     def set_ui_mode(self):
         """Ensure the configured UI mode through the same REST configuration path
-        used by the maintained overlay lifecycle gate."""
+        used by the maintained overlay lifecycle gate.
+
+        A U2+L cartridge has no "Interface Type" config - its only UI is the
+        freeze overlay, so the PUT 404s there and there is nothing to select.
+        """
         L.ensure_menu_closed(self.rest)
+        if self.split:
+            return
         if self.ui == "overlay":
             overlay_lifecycle.set_interface_type(self.rest, "Overlay on HDMI")
         else:
@@ -205,6 +299,8 @@ class RestSession:
         L.ensure_menu_closed(self.rest)
 
     def recover(self):
+        if self.split:
+            self.release_cartridge_hold()   # keys are dead until the C64 runs
         self.rest.tap(["commodore", "x"]); time.sleep(0.5)
         L.ensure_menu_open(self.rest)
 
@@ -215,6 +311,9 @@ class RestSession:
         reset is required after failed or interrupted debug runs: while the UI can
         still be alive, REST readmem/writemem may be observing the frozen backing
         state instead of live RAM until the machine is reset."""
+        if self.split:
+            self.release_cartridge_hold()   # keys are dead until the C64 runs
+            self.assert_overlay_draws()     # and a blank overlay never opens a monitor
         self.rest.tap(["commodore", "d"]); time.sleep(0.2)   # leave Debug if active
         self.rest.tap(["run_stop"]); time.sleep(0.2)          # close monitor if open
         self.rest.tap(["commodore", "x"]); time.sleep(0.4)    # break/reset from any monitor mode
@@ -230,9 +329,20 @@ class RestSession:
             raise StressError("monitor did not open")
 
     def close(self):
-        # leave debug if active, then close to a live machine
-        self.rest.tap(["commodore", "d"]); time.sleep(0.2)
-        self.rest.tap(["run_stop"]); time.sleep(0.3)
+        """Leave Debug, then the monitor, confirming each step actually landed.
+
+        Fixed sleeps are not enough on a split session: those keystrokes travel
+        to the C64U and reach the cartridge over the C64's keyboard matrix, which
+        is slow enough that a dropped one leaves the monitor open and the C64
+        held, and the liveness check that follows then reports a firmware hold
+        that is really a lost keystroke."""
+        deadline = time.time() + 12.0
+        while time.time() < deadline:
+            text = "\n".join(self.lines() or [])
+            if "MONITOR" not in text.upper():
+                break
+            self.rest.tap(["commodore", "d"] if "Dbg" in text else ["run_stop"])
+            time.sleep(0.4)
         L.settle(self.rest, 0.2)
 
     def goto(self, addr):
@@ -243,6 +353,8 @@ class RestSession:
 
     def set_cpu_bank7(self):
         """Cycle O until the footer shows CPU7 (view==exec bank 7)."""
+        if self.split:
+            return          # a U2 MCM has no monitor bank view; it reads the live aperture
         for _ in range(9):
             ls = self.lines() or []
             if any(ln.strip().startswith("CPU7") or " CPU7" in ln for ln in ls):
@@ -250,22 +362,73 @@ class RestSession:
             self.rest.tap(["o"]); time.sleep(0.15)
         # not fatal; bank view doesn't affect execution stream
 
-    def enter_debug(self):
-        self.rest.tap(["d"]); time.sleep(0.2)
-        ls = self.lines() or []
-        if not any("Dbg" in ln for ln in ls):
-            raise StressError("debug mode not entered")
+    def enter_debug(self, timeout=6.0):
+        """Enter Debug, waiting for the header to say so.
+
+        Measured on a split U2+L: when the key lands, `Dbg` appears after about
+        0.21s; when it does not land, it never appears at all, even over 15s.
+        A single sample taken at 0.2s therefore sits exactly on the boundary
+        and misses successful entries as often as it catches them. Waiting on
+        the state still fails a genuine non-entry, it just stops reporting a
+        slow one as a failure.
+        """
+        self.rest.tap(["d"])
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if any("Dbg" in line for line in (self.lines() or [])):
+                return
+            time.sleep(0.15)
+        raise StressError("debug mode not entered")
 
     def set_breakpoint(self, addr):
+        if self.split:
+            row = overlay_lifecycle.toggle_breakpoint_at(
+                self.rest, addr, True, f"stress set bp ${addr:04X}")
+            if "[BRK" not in row:
+                raise StressError(f"breakpoint not set at ${addr:04X}: {row!r}")
+            return
         overlay_lifecycle.ensure_breakpoint_at(
             self.rest, addr, 7, "RAM", f"stress set bp ${addr:04X}")
 
     def clear_breakpoint(self, addr):
+        if self.split:
+            row = overlay_lifecycle.toggle_breakpoint_at(
+                self.rest, addr, False, f"stress clear bp ${addr:04X}")
+            if "[BRK" in row:
+                raise StressError(f"breakpoint not cleared at ${addr:04X}: {row!r}")
+            return
         overlay_lifecycle.clear_breakpoint_at(
             self.rest, addr, 7, f"stress clear bp ${addr:04X}")
 
+    def clear_table_by_row_toggle(self):
+        """Clear every armed slot with the monitor's own goto + R toggle, and
+        prove the table is empty afterwards.
+
+        A U2+L drops the slot popup's INST/DEL while the freezer holds a
+        trapped PC, so the delete pass below leaves the table armed while
+        reporting nothing. One armed slot is enough to refuse every debug
+        operation on a target that cannot patch visible ROM, so an empty table
+        is proved here rather than assumed.
+        """
+        label = "stress clear breakpoint table"
+        armed = overlay_lifecycle.armed_breakpoint_addresses(self.rest, label)
+        if not armed:
+            # An empty table is the observation; re-reading it costs a second
+            # popup open and close, and the RUN/STOP that closes a popup closes
+            # the monitor when the popup is not the focused object.
+            return
+        for addr in armed:
+            self.clear_breakpoint(addr)
+        remaining = overlay_lifecycle.armed_breakpoint_addresses(self.rest, label)
+        if remaining:
+            raise StressError("breakpoint table still armed at "
+                              + ", ".join(f"${a:04X}" for a in remaining))
+
     def clear_all_breakpoints(self):
         """Reset all 10 breakpoint slots via the C=+R list popup (DEL per slot)."""
+        if self.split:
+            self.clear_table_by_row_toggle()
+            return
         self.rest.tap(["commodore", "r"]); time.sleep(0.3)
         ls = self.lines() or []
         if not any("BRK" in ln.upper() or "BREAK" in ln.upper() for ln in ls):
@@ -485,7 +648,7 @@ def enter_at(sess: RestSession, cpu, target, seed):
     cpu.set_state(expected.ac, expected.xr, expected.yr, expected.sp, target,
                   expected.sr)
     # also seed the oracle's copy of the bootstrap bytes (harmless; we start at target)
-    boot = sess.rest.read_mem(BOOTSTRAP_ADDR, 16)
+    boot = sess.read_mem(BOOTSTRAP_ADDR, 16)
     for i, b in enumerate(boot):
         cpu.mem[BOOTSTRAP_ADDR + i] = b
     sess.open()
@@ -565,14 +728,14 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
         if not sess.progress_step(key, cpu.pc, writes,
                                   active_write_progress=active_write_readback):
             raise StressError(f"step {steps} {mnem}: no progress after re-sends "
-                              f"(want PC {cpu.pc:04X})")
+                              f"(want PC {cpu.pc:04X}){sess.hold_note()}")
         if active_write_readback:
             for waddr, wval in writes:
                 if waddr in (0x0000, 0x0001):
                     continue
                 dev = None
                 for _ in range(25):
-                    dev = sess.rest.read_mem(waddr, 1)[0]
+                    dev = sess.read_mem(waddr, 1)[0]
                     if dev == (wval & 0xFF):
                         break
                     time.sleep(0.1)
@@ -598,7 +761,7 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
         time.sleep(0.3)
     # verify entire scratch window matches the oracle at a safe checkpoint
     # (catches any missed writes without trusting active-Debug readmem).
-    dev = sess.rest.read_mem(SCRATCH_LO, 256)
+    dev = sess.read_mem(SCRATCH_LO, 256)
     for i, b in enumerate(dev):
         if cpu.mem[SCRATCH_LO + i] != b:
             raise StressError(f"scratch mismatch at ${SCRATCH_LO+i:04X}: "
@@ -665,7 +828,12 @@ def liveness_check(sess: RestSession):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="192.168.1.13")
+    ap.add_argument("--host", default="192.168.1.15")
+    ap.add_argument("--c64-host", default=None,
+                    help="Split-session mode for a U2+L cartridge: the C64U host "
+                         "it is plugged into. Keystrokes and memory go there "
+                         "while menu_screen/menu_button stay on --host; the "
+                         "cartridge's own machine:input answers HTTP 501.")
     ap.add_argument("--ui", default="freeze", choices=["freeze", "overlay"])
     ap.add_argument("--focus", default="all",
                     choices=["all", "steps", "jsr", "liveness"])
@@ -697,7 +865,7 @@ def main():
              "liveness_fail": 0, "iterations": 0, "errors": 0,
              "ops": {}, "keys": {}, "ui": a.ui}
 
-    sess = RestSession(a.host, ui=a.ui)
+    sess = RestSession(a.host, ui=a.ui, c64_host=a.c64_host)
     if not sess.alive():
         print("DEVICE NOT ALIVE"); return 2
 
@@ -705,6 +873,8 @@ def main():
         print(f"{time.strftime('%H:%M:%S')} {m}", flush=True)
 
     log(f"STRESS start ui={a.ui} focus={a.focus} iters={a.iterations} seed={a.seed}")
+    identity_at_start = SR.device_identity(sess.rest)
+    log(f"device identity at start: {identity_at_start}")
     sess.recover()
     try:
         sess.set_ui_mode()      # leaves a clean closed-menu baseline; do NOT close()
@@ -732,7 +902,10 @@ def main():
                 ok = liveness_check(sess)
                 stats["liveness_ok" if ok else "liveness_fail"] += 1
                 if not ok:
-                    log(f"iter {it+1} LIVENESS FAIL")
+                    # A liveness failure on a split session is usually the
+                    # machine being left DMA-held by the monitor exit, not a
+                    # stepping result. Name which one it is where it is logged.
+                    log(f"iter {it+1} LIVENESS FAIL{sess.hold_note()}")
                 sess.recover()
         except StressError as e:
             stats["errors"] += 1
@@ -758,7 +931,20 @@ def main():
                 break
             sess.recover()
 
-    summary = {"t": "summary", **stats, "rc": rc, "final_alive": sess.alive()}
+    # A device that was reflashed or swapped part-way through was not one image
+    # under test, whatever the counts say, so this outranks the run's own result.
+    identity_at_end = SR.device_identity(sess.rest)
+    identity_changed = SR.identity_changes(identity_at_start, identity_at_end)
+    if identity_changed:
+        log(f"*** DEVICE IDENTITY CHANGED DURING THE RUN: {identity_changed} - "
+            f"this run is not a measurement of one image and its numbers are "
+            f"not evidence ***")
+        rc = 4
+
+    summary = {"t": "summary", **stats, "rc": rc, "final_alive": sess.alive(),
+               "device_identity_start": identity_at_start,
+               "device_identity_end": identity_at_end,
+               "device_identity_changed": identity_changed}
     jsonl.write(json.dumps(summary) + "\n")
     jsonl.close()
     with open(os.path.join(artdir, f"stress_{a.ui}_{a.focus}_{a.seed}.summary.json"), "w") as f:

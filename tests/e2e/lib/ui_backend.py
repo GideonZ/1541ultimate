@@ -470,15 +470,25 @@ class RestBackend(Backend):
         password: Optional[str] = None,
         timeout: float = 5.0,
         interface_type: Optional[str] = OVERLAY_MODE,
+        machine_host: Optional[str] = None,
     ) -> None:
         self.host = host
+        # Split session (a U2+L cartridge in a C64 Ultimate host): the
+        # cartridge renders the overlay and owns menu_button/menu_screen and
+        # its own configs, but machine:input is compiled `#if U64` only
+        # (software/api/route_input.cc), so the cartridge answers 501. The
+        # keyboard matrix is a real hardware signal, so keystrokes injected on
+        # the host machine reach the cartridge's UI over the cartridge port.
+        # `machine_host` is where machine:input goes; everything else stays on
+        # `host`. Left unset it is `host`, which is the single-device case.
+        self.machine_host = machine_host or host
         self.password = password
         self.timeout = timeout
         self.last_command = "<connect>"
         self._original_interface_type: Optional[str] = None
         if interface_type is not None:
-            current = self.get_config(UI_STORE, UI_ITEM)
-            if current != interface_type:
+            current = self.try_get_config(UI_STORE, UI_ITEM)
+            if current is not None and current != interface_type:
                 # Change it only with the menu closed. Which UserInterface owns
                 # the machine is decided when the menu opens, so switching the
                 # setting under an open one leaves the firmware holding a
@@ -508,7 +518,10 @@ class RestBackend(Backend):
     # -- transport --
     def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{self.host}{path}{query}"
+        return f"http://{self._host_for(path)}{path}{query}"
+
+    def _host_for(self, path: str) -> str:
+        return self.machine_host if path == INPUT_PATH else self.host
 
     def _request(
         self, method: str, path: str,
@@ -538,7 +551,18 @@ class RestBackend(Backend):
 
     # -- config --
     def get_config(self, store: str, item: str) -> str:
+        current = self.try_get_config(store, item)
+        if current is None:
+            raise Failure(f"config '{item}' is not present in store {store!r}")
+        return current
+
+    def try_get_config(self, store: str, item: str) -> Optional[str]:
+        """The setting's current value, or None when the device has no such
+        setting. A U2+L has a single UI (its own cartridge overlay) and so no
+        'Interface Type' item at all, while a U64 has one per UI mode."""
         status, body = self._request("GET", f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}")
+        if status == 404:
+            return None
         if status != 200:
             raise Failure(f"reading '{item}' failed with HTTP {status}: {body[:160]!r}")
         data = json.loads(body)
@@ -546,9 +570,7 @@ class RestBackend(Backend):
         if isinstance(entry, dict):
             entry = entry.get(item, {})
         current = entry.get("current") if isinstance(entry, dict) else None
-        if not isinstance(current, str):
-            raise Failure(f"config '{item}' has no string 'current': {data!r}")
-        return current
+        return current if isinstance(current, str) else None
 
     def set_config(self, store: str, item: str, value: str) -> None:
         status, body = self._request(
@@ -1208,6 +1230,7 @@ def make_backend(
     telnet_port: int = 23,
     telnet_width: int = WIDTH,
     telnet_height: int = HEIGHT,
+    machine_host: Optional[str] = None,
 ) -> Backend:
     """Construct the Backend for `mode` ("telnet", "freeze" or "overlay").
 
@@ -1221,7 +1244,9 @@ def make_backend(
     if mode == MODE_TELNET:
         return TelnetBackend(telnet_host or host, telnet_port, password, timeout, width=telnet_width, height=telnet_height)
     if mode in _MODE_INTERFACE_TYPE:
-        return RestBackend(host, password, timeout, interface_type=_MODE_INTERFACE_TYPE[mode])
+        return RestBackend(host, password, timeout,
+                           interface_type=_MODE_INTERFACE_TYPE[mode],
+                           machine_host=machine_host)
     raise Failure(f"Unknown mode {mode!r}; expected one of {MODES}")
 
 

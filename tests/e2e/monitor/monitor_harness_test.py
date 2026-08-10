@@ -25,15 +25,21 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import mcm6502 as ORC  # noqa: E402
+import mcm_rest as R  # noqa: E402
+import mcm_split_rest as SR  # noqa: E402
+import monitor_debug_stress as stress  # noqa: E402
 import monitor_debug_matrix_test as gate  # noqa: E402
 
 # Gate harnesses whose green result must never depend on a hidden reset-retry.
@@ -330,6 +336,37 @@ class FailFastSchedulingTest(unittest.TestCase):
         self.assertFalse(gate.stop_after_cell_failure(args))
 
 
+class SplitU2RunLengthTest(unittest.TestCase):
+    def test_split_u2_defaults_shorten_step_runs(self) -> None:
+        args = gate.parse_args([
+            "--host", "u2", "--rest-host", "u2", "--c64-host", "c64u",
+        ])
+
+        self.assertEqual(args.reps, gate.U2_REPS)
+        self.assertEqual(args.required_step_into_depth, gate.U2_STEP_INTO_DEPTH)
+        self.assertEqual(args.straight_calls, gate.U2_STRAIGHT_CALLS)
+        self.assertLess(gate.U2_TRACE_OPCODES, gate.DEFAULT_TRACE_OPCODES)
+
+    def test_explicit_split_u2_run_lengths_are_retained(self) -> None:
+        args = gate.parse_args([
+            "--host", "u2", "--rest-host", "u2", "--c64-host", "c64u",
+            "--reps", "2", "--required-step-into-depth", "12",
+            "--straight-calls", "16",
+        ])
+
+        self.assertEqual(args.reps, 2)
+        self.assertEqual(args.required_step_into_depth, 12)
+        self.assertEqual(args.straight_calls, 16)
+
+    def test_single_host_defaults_keep_full_run_lengths(self) -> None:
+        args = gate.parse_args(["--host", "u64", "--rest-host", "u64"])
+
+        self.assertEqual(args.reps, gate.DEFAULT_REPS)
+        self.assertEqual(args.required_step_into_depth, gate.DEFAULT_STEP_INTO_DEPTH)
+        self.assertEqual(args.straight_calls, gate.DEFAULT_STRAIGHT_CALLS)
+        self.assertEqual(gate.DEFAULT_TRACE_OPCODES, 100)
+
+
 class FixtureOracleSetupTest(unittest.TestCase):
     def test_ram_under_rom_oracle_gets_cpu_port_side_effects(self) -> None:
         fixture = gate.build_fixture("ram-under-rom", 4)
@@ -395,6 +432,591 @@ class AlertScopeContractTest(unittest.TestCase):
         self.assertTrue(gate.validate_manual_text(missing))
         stale = good + " DbX"
         self.assertTrue(gate.validate_manual_text(stale))
+
+
+SPLIT_ARGV = ["--host", "u2", "--rest-host", "u2", "--c64-host", "c64u"]
+SINGLE_ARGV = ["--host", "u64", "--rest-host", "u64"]
+
+
+class SplitRestFactoryTest(unittest.TestCase):
+    """One factory decides what a split session routes where, so a tool cannot
+    grow a second, differently-routed split mechanism."""
+
+    def test_a_machine_host_produces_a_split_fixture(self) -> None:
+        rest = SR.make_rest("u2", "c64u")
+
+        self.assertIsInstance(rest, SR.SplitRest)
+        self.assertEqual(rest.machine_host, "c64u")
+        self.assertEqual(rest.overlay_host, "u2")
+        self.assertEqual(rest.host, "c64u")
+
+    def test_no_machine_host_produces_a_plain_single_host_fixture(self) -> None:
+        rest = SR.make_rest("u64")
+
+        self.assertIsInstance(rest, R.Rest)
+        self.assertEqual(rest.host, "u64")
+        self.assertEqual(rest.timeout, 10.0)
+
+
+class SplitHostToolFlagTest(unittest.TestCase):
+    """Every split-host flag the matrix emits must be accepted by the tool it
+    invokes. The U2+L preflight failed because it drove single-host tools, each
+    of which sent its first keystroke to the cartridge's machine:input, which is
+    compiled out and answers HTTP 501."""
+
+    def _help(self, *argv: str) -> str:
+        proc = subprocess.run([sys.executable, *argv, "--help"], cwd=str(HERE),
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout
+
+    def test_freeze_reentry_guard_takes_a_machine_host(self) -> None:
+        self.assertIn("--c64-host", self._help(str(HERE / "freeze_reentry_guard.py")))
+
+    def test_localui_soak_takes_a_machine_host(self) -> None:
+        self.assertIn("--c64-host", self._help(str(HERE / "mcm_localui.py"), "soak"))
+
+    def test_stress_driver_takes_a_machine_host(self) -> None:
+        self.assertIn("--c64-host", self._help(str(HERE / "monitor_debug_stress.py")))
+
+    def test_debug_suite_takes_a_target_but_no_machine_host(self) -> None:
+        text = self._help(str(HERE / "monitor_debug_test.py"))
+
+        self.assertIn("--target", text)
+        self.assertNotIn("--c64-host", text)
+
+
+class DeviceAddressTest(unittest.TestCase):
+    """No tool may default to, or probe, an address that is not a device.
+
+    `192.168.1.13` was the U64 and is now dead; `192.168.1.70` was its second
+    NIC and means nothing on a split session. A default pointing at neither
+    device reports "DEVICE NOT ALIVE AT START", which reads as a wedge.
+    """
+
+    DEAD_ADDRESSES = ("192.168.1.13", "192.168.1.70")
+    TOOLS = ("freeze_reentry_guard.py", "mcm_localui.py", "monitor_debug_stress.py")
+
+    def test_no_tool_names_a_dead_device_address(self) -> None:
+        for name in self.TOOLS:
+            source = (HERE / name).read_text(encoding="utf-8")
+            for address in self.DEAD_ADDRESSES:
+                self.assertNotIn(address, source, f"{name} names {address}")
+
+    def test_a_wedge_reports_every_endpoint_of_the_fixture(self) -> None:
+        split = SR.make_rest("u2", "c64u")
+        with mock.patch.object(R.Rest, "alive", return_value=True):
+            self.assertEqual(SR.endpoint_liveness(split),
+                             {"c64u": True, "u2": True})
+            self.assertEqual(SR.endpoint_liveness(SR.make_rest("u64")),
+                             {"u64": True})
+
+
+class PreflightTopologyTest(unittest.TestCase):
+    def _commands(self, argv: list[str]) -> dict[str, list[str]]:
+        args = gate.parse_args(argv)
+        return dict(gate.preflight_commands(args, Path("/tmp/preflight")))
+
+    @staticmethod
+    def _value(cmd: list[str], flag: str) -> str:
+        return cmd[cmd.index(flag) + 1]
+
+    def test_split_run_sends_local_ui_keystrokes_to_the_machine_host(self) -> None:
+        commands = self._commands(SPLIT_ARGV)
+
+        for name in ("freeze-reentry", "localui-soak"):
+            self.assertEqual(self._value(commands[name], "--c64-host"), "c64u", name)
+
+    def test_split_run_tells_the_telnet_suite_which_target_it_is_on(self) -> None:
+        cmd = self._commands(SPLIT_ARGV)["quick-telnet-debug"]
+
+        self.assertEqual(self._value(cmd, "--target"), "u2")
+        # Telnet is the cartridge's own remote session; that suite has no
+        # machine host to route keystrokes to.
+        self.assertNotIn("--c64-host", cmd)
+
+    def test_split_run_gives_the_stress_driver_the_machine_host(self) -> None:
+        args = gate.parse_args(SPLIT_ARGV)
+        cmd = gate.opcode_volume_command(args, Path("/tmp/opcode"))
+
+        self.assertEqual(self._value(cmd, "--c64-host"), "c64u")
+        self.assertEqual(self._value(cmd, "--host"), "u2")
+
+    def test_single_host_run_passes_no_topology_flags(self) -> None:
+        args = gate.parse_args(SINGLE_ARGV)
+        commands = dict(gate.preflight_commands(args, Path("/tmp/preflight")))
+        commands["opcode-volume"] = gate.opcode_volume_command(args, Path("/tmp/opcode"))
+
+        for name, cmd in commands.items():
+            self.assertNotIn("--c64-host", cmd, name)
+            self.assertNotIn("--target", cmd, name)
+
+
+class SplitStressSessionTest(unittest.TestCase):
+    """The stress driver is the 1000-opcode volume gate. On a U2+L it needs the
+    routing and the U2 monitor's own deviations: no Interface Type config, no
+    bank view, and one memory-source tag for every row."""
+
+    def test_split_session_routes_through_a_split_fixture(self) -> None:
+        session = stress.RestSession("u2", ui="overlay", c64_host="c64u")
+
+        self.assertTrue(session.split)
+        self.assertIsInstance(session.rest, SR.SplitRest)
+        self.assertEqual(session.host, "c64u")
+
+    def test_single_host_session_is_unchanged(self) -> None:
+        session = stress.RestSession("u64", ui="overlay")
+
+        self.assertFalse(session.split)
+        self.assertIsInstance(session.rest, R.Rest)
+        self.assertEqual(session.host, "u64")
+
+    def test_split_session_skips_the_interface_type_config(self) -> None:
+        session = stress.RestSession("u2", ui="overlay", c64_host="c64u")
+        calls: list = []
+        with mock.patch.object(stress.L, "ensure_menu_closed", lambda *a, **k: True), \
+             mock.patch.object(stress.overlay_lifecycle, "set_interface_type",
+                               lambda *a: calls.append(a)):
+            session.set_ui_mode()
+
+        self.assertEqual(calls, [])
+
+    def test_single_host_session_still_selects_the_interface_type(self) -> None:
+        session = stress.RestSession("u64", ui="overlay")
+        calls: list = []
+        with mock.patch.object(stress.L, "ensure_menu_closed", lambda *a, **k: True), \
+             mock.patch.object(stress.overlay_lifecycle, "set_interface_type",
+                               lambda *a: calls.append(a)):
+            session.set_ui_mode()
+
+        self.assertEqual([a[1] for a in calls], ["Overlay on HDMI"])
+
+
+class HeldBusReadTest(unittest.TestCase):
+    """A cartridge session holds the C64 in Ultimax, so the machine host reads
+    $FF outside $0000-$0FFF and the I/O space. Measured with a session live:
+    the C64U read $C800 as ffffffff while the cartridge read 2b33c1dc, and both
+    read 2b33c1dc once released. A comparison against the oracle must therefore
+    read the device that can see the window."""
+
+    def _split(self):
+        rest = SR.make_rest("u2", "c64u")
+        rest.machine = mock.Mock(**{"read_mem.return_value": b"\xff" * 4})
+        rest.overlay = mock.Mock(**{"read_mem.return_value": b"\x2b\x33\xc1\xdc"})
+        return rest
+
+    def test_a_held_window_is_read_from_the_cartridge(self) -> None:
+        rest = self._split()
+
+        self.assertEqual(rest.read_mem_oracle(0xC800, 4), b"\x2b\x33\xc1\xdc")
+        rest.machine.read_mem.assert_not_called()
+
+    def test_always_decoded_windows_stay_on_the_machine_host(self) -> None:
+        rest = self._split()
+
+        for addr in (0x0000, 0x00A0, 0x0FFC, 0xD020):
+            with self.subTest(addr=addr):
+                self.assertEqual(rest.read_mem_oracle(addr, 4), b"\xff" * 4)
+
+    def test_a_window_straddling_the_boundary_reads_the_cartridge(self) -> None:
+        rest = self._split()
+
+        self.assertEqual(rest.read_mem_oracle(0x0FFE, 4), b"\x2b\x33\xc1\xdc")
+
+    def test_a_split_session_reads_the_scratch_window_coherently(self) -> None:
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = self._split()
+
+        self.assertEqual(session.read_mem(0xC800, 4), b"\x2b\x33\xc1\xdc")
+
+    def test_a_single_host_session_reads_its_only_device(self) -> None:
+        session = stress.RestSession("u64")
+        session.rest = mock.Mock(**{"read_mem.return_value": b"\x2b"})
+
+        self.assertEqual(session.read_mem(0xC800, 1), b"\x2b")
+        session.rest.read_mem.assert_called_once_with(0xC800, 1)
+
+
+class CartridgeHoldReleaseTest(unittest.TestCase):
+    """Keystrokes reach a U2+L over the C64U's keyboard matrix, which is scanned
+    only while the 6510 executes. Measured: a run that inherited a held machine
+    stopped after 10 steps, and the same seed ran all 20 once released."""
+
+    @staticmethod
+    def _session(jiffies):
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock(**{"read_mem.side_effect": list(jiffies)})
+        return session
+
+    def test_a_running_machine_needs_no_menu_toggle(self) -> None:
+        session = self._session([b"\x00\x00\x01", b"\x00\x00\x02"])
+
+        with mock.patch.object(stress.time, "sleep"):
+            self.assertTrue(session.release_cartridge_hold())
+        session.rest.menu_button.assert_not_called()
+
+    def test_a_held_machine_is_toggled_until_the_jiffy_advances(self) -> None:
+        # frozen, frozen, then advancing after the second toggle
+        session = self._session([b"\x00\x00\x01", b"\x00\x00\x01",
+                                 b"\x00\x00\x01", b"\x00\x00\x01",
+                                 b"\x00\x00\x01", b"\x00\x00\x09"])
+
+        with mock.patch.object(stress.time, "sleep"):
+            self.assertTrue(session.release_cartridge_hold())
+        self.assertEqual(session.rest.menu_button.call_count, 2)
+
+    def test_a_machine_that_will_not_release_reports_it(self) -> None:
+        session = self._session([b"\x00\x00\x01"] * 40)
+
+        with mock.patch.object(stress.time, "sleep"):
+            self.assertFalse(session.release_cartridge_hold(tries=3))
+        self.assertEqual(session.rest.menu_button.call_count, 3)
+
+    def test_a_single_host_baseline_never_toggles_the_menu(self) -> None:
+        session = stress.RestSession("u64")
+        session.rest = mock.Mock()
+        with mock.patch.object(stress.L, "ensure_menu_open"), \
+             mock.patch.object(stress.time, "sleep"):
+            session.recover()
+
+        session.rest.menu_button.assert_not_called()
+        session.rest.tap.assert_called_once_with(["commodore", "x"])
+
+
+class BlankOverlayDetectionTest(unittest.TestCase):
+    """An overlay that is present but renders nothing never opens a monitor, so
+    the run reports a monitor timeout instead of the UI state behind it. It is
+    detected and named. It is deliberately NOT repaired: the repair that was
+    written for it rested only on a measurement taken while a second agent was
+    driving the same device."""
+
+    @staticmethod
+    def _session(screen):
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock(**{"screen_lines.return_value": screen})
+        return session
+
+    def test_a_blank_overlay_fails_loudly(self) -> None:
+        session = self._session(["", "  ", ""])
+
+        with self.assertRaises(stress.StressError) as caught:
+            session.assert_overlay_draws()
+
+        self.assertIn("every line of it is blank", str(caught.exception))
+        self.assertIn("not repaired", str(caught.exception))
+
+    def test_nothing_is_reset_to_paper_over_it(self) -> None:
+        session = self._session(["", ""])
+
+        with self.assertRaises(stress.StressError):
+            session.assert_overlay_draws()
+
+        session.rest.reset.assert_not_called()
+        session.rest.menu_button.assert_not_called()
+        self.assertFalse(hasattr(session, "ensure_overlay_draws"))
+
+    def test_a_drawing_overlay_passes(self) -> None:
+        session = self._session([" U-II Main", " Manage"])
+
+        session.assert_overlay_draws()
+
+    def test_a_closed_menu_is_not_the_blank_state(self) -> None:
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock(**{"screen_lines.side_effect": Exception("menu closed")})
+
+        session.assert_overlay_draws()
+
+    def test_the_removed_remedy_has_no_route_back(self) -> None:
+        self.assertFalse(hasattr(SR.SplitRest, "reset_overlay_device"))
+
+
+class DeviceIdentityStampTest(unittest.TestCase):
+    """A run must be able to say it measured one image on one board. The device
+    was reflashed three times during one campaign and nothing noticed, so the
+    identity is stamped at both ends of a run and compared."""
+
+    STAMP = {"product": "Ultimate II+L", "firmware_version": "3.15",
+             "unique_id": "F13E69"}
+
+    @staticmethod
+    def _fixture(machine_info, overlay_info=None):
+        rest = SR.make_rest("u2", "c64u") if overlay_info is not None else SR.make_rest("u64")
+        payloads = [machine_info] if overlay_info is None else [machine_info, overlay_info]
+        devices = [mock.Mock(**{"req.return_value": (200, json.dumps(p).encode())})
+                   for p in payloads]
+        if overlay_info is None:
+            rest.req = devices[0].req
+        else:
+            rest.machine, rest.overlay = devices
+        return rest
+
+    def test_a_split_fixture_stamps_both_devices(self) -> None:
+        rest = self._fixture(self.STAMP, {"product": "C64 Ultimate",
+                                          "firmware_version": "1.2.0"})
+
+        stamp = SR.device_identity(rest)
+
+        self.assertEqual(sorted(stamp), ["c64u", "u2"])
+        self.assertEqual(stamp["c64u"]["product"], "Ultimate II+L")
+        self.assertEqual(stamp["u2"]["product"], "C64 Ultimate")
+
+    def test_a_single_host_fixture_stamps_one_device(self) -> None:
+        rest = self._fixture(self.STAMP)
+
+        self.assertEqual(SR.device_identity(rest), {"u64": self.STAMP})
+
+    def test_only_identity_fields_are_compared(self) -> None:
+        rest = self._fixture(dict(self.STAMP, uptime_seconds=1234))
+
+        self.assertNotIn("uptime_seconds", SR.device_identity(rest)["u64"])
+
+    def test_an_unchanged_device_reports_no_change(self) -> None:
+        self.assertEqual(
+            SR.identity_changes({"u2": self.STAMP}, {"u2": dict(self.STAMP)}), {})
+
+    def test_a_reflashed_device_is_reported(self) -> None:
+        after = dict(self.STAMP, firmware_version="3.16")
+
+        changed = SR.identity_changes({"u2": self.STAMP}, {"u2": after})
+
+        self.assertEqual(changed["u2"]["before"]["firmware_version"], "3.15")
+        self.assertEqual(changed["u2"]["after"]["firmware_version"], "3.16")
+
+    def test_a_swapped_board_is_reported(self) -> None:
+        after = dict(self.STAMP, unique_id="ABCDEF")
+
+        self.assertIn("u2", SR.identity_changes({"u2": self.STAMP}, {"u2": after}))
+
+    def test_an_unreadable_stamp_is_not_a_proven_change(self) -> None:
+        unreadable = {"error": "Failure: connection refused"}
+
+        self.assertEqual(SR.identity_changes({"u2": self.STAMP}, {"u2": unreadable}), {})
+        self.assertEqual(SR.identity_changes({"u2": unreadable}, {"u2": self.STAMP}), {})
+
+    def test_an_unreadable_device_records_the_reason(self) -> None:
+        rest = SR.make_rest("u64")
+        rest.req = mock.Mock(side_effect=RuntimeError("connection refused"))
+
+        self.assertIn("connection refused", SR.device_identity(rest)["u64"]["error"])
+
+
+class MatrixIdentityGateTest(unittest.TestCase):
+    """The matrix compares its preflight stamp against its closing stamp, so a
+    device reflashed mid-run fails the gate instead of producing a verdict."""
+
+    def _hygiene(self, preflight_stamp, closing_stamp):
+        args = gate.parse_args(SINGLE_ARGV)
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(gate, "make_rest",
+                               return_value=mock.Mock(**{"alive.return_value": True})), \
+             mock.patch.object(gate, "tcp_probe", return_value=True), \
+             mock.patch.object(gate, "run_cmd", return_value=0), \
+             mock.patch.object(gate.SR, "device_identity", return_value=closing_stamp):
+            return gate.final_hygiene(args, Path(tmp),
+                                      {"device_identity": preflight_stamp})
+
+    def test_a_reflash_between_the_two_stamps_is_reported(self) -> None:
+        results = self._hygiene({"u64": {"firmware_version": "3.15"}},
+                                {"u64": {"firmware_version": "3.16"}})
+
+        self.assertIn("u64", results["identity_changed"])
+
+    def test_the_same_image_at_both_ends_is_clean(self) -> None:
+        results = self._hygiene({"u64": {"firmware_version": "3.15"}},
+                                {"u64": {"firmware_version": "3.15"}})
+
+        self.assertEqual(results["identity_changed"], {})
+
+
+class HoldClassificationTest(unittest.TestCase):
+    """A failure raised while the C64 is DMA-held must say so. A held machine
+    takes no keystrokes, so the step that reports no progress is downstream of
+    the hold and is not an opcode result."""
+
+    @staticmethod
+    def _session(running):
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock(**{"read_mem.return_value": b"\x20" * 16})
+        session._c64_running = lambda: running
+        return session
+
+    def test_a_held_machine_is_named_in_the_failure(self) -> None:
+        note = self._session(running=False).hold_note()
+
+        self.assertIn("DMA-HELD", note)
+        self.assertIn("hold-after-close", note)
+
+    def test_a_running_machine_adds_nothing(self) -> None:
+        self.assertEqual(self._session(running=True).hold_note(), "")
+
+    def test_a_single_host_run_adds_nothing(self) -> None:
+        session = stress.RestSession("u64")
+        session.rest = mock.Mock()
+        session._c64_running = lambda: False
+
+        self.assertEqual(session.hold_note(), "")
+
+
+class BreakpointTableClearTest(unittest.TestCase):
+    """Clearing the table reads the popup once when it is already empty. The
+    RUN/STOP that closes a popup closes the monitor when the popup is not the
+    focused object, and the next goto then times out against a blank screen."""
+
+    def _session(self, reads):
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock()
+        self.reads = mock.Mock(side_effect=list(reads))
+        self.cleared: list = []
+        session.clear_breakpoint = lambda addr: self.cleared.append(addr)
+        return session
+
+    def test_an_empty_table_is_read_once(self) -> None:
+        session = self._session([[]])
+        with mock.patch.object(stress.overlay_lifecycle,
+                               "armed_breakpoint_addresses", self.reads):
+            session.clear_table_by_row_toggle()
+
+        self.assertEqual(self.reads.call_count, 1)
+        self.assertEqual(self.cleared, [])
+
+    def test_an_armed_table_is_cleared_then_proved_empty(self) -> None:
+        session = self._session([[0xE000, 0xC020], []])
+        with mock.patch.object(stress.overlay_lifecycle,
+                               "armed_breakpoint_addresses", self.reads):
+            session.clear_table_by_row_toggle()
+
+        self.assertEqual(self.cleared, [0xE000, 0xC020])
+        self.assertEqual(self.reads.call_count, 2)
+
+    def test_a_table_that_will_not_clear_is_reported(self) -> None:
+        session = self._session([[0xE000], [0xE000]])
+        with mock.patch.object(stress.overlay_lifecycle,
+                               "armed_breakpoint_addresses", self.reads):
+            with self.assertRaises(stress.StressError) as caught:
+                session.clear_table_by_row_toggle()
+
+        self.assertIn("$E000", str(caught.exception))
+
+
+class DebugEntryWaitTest(unittest.TestCase):
+    """Debug entry is waited on, not sampled once. Measured on a split U2+L:
+    `Dbg` appears about 0.21s after the key lands, so the previous single
+    sample at 0.2s sat exactly on the boundary."""
+
+    @staticmethod
+    def _session(screens):
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock()
+        session.lines = mock.Mock(side_effect=list(screens))
+        return session
+
+    def test_debug_entry_just_past_the_old_sample_point_succeeds(self) -> None:
+        session = self._session([None, [" MONITOR ASM $C020"], [" MONITOR ASM $C020   Dbg"]])
+
+        with mock.patch.object(stress.time, "sleep"):
+            session.enter_debug()
+
+        session.rest.tap.assert_called_once_with(["d"])
+
+    def test_debug_that_never_engages_still_fails(self) -> None:
+        session = stress.RestSession("u2", c64_host="c64u")
+        session.rest = mock.Mock()
+        session.lines = mock.Mock(return_value=[" MONITOR ASM $C020"])
+
+        with mock.patch.object(stress.time, "sleep"):
+            with self.assertRaises(stress.StressError) as caught:
+                session.enter_debug(timeout=0.3)
+
+        self.assertIn("debug mode not entered", str(caught.exception))
+
+
+class BreakpointRowToggleTest(unittest.TestCase):
+    """`toggle_breakpoint_at` reads only the row's [BRK] marker, which both
+    targets draw, and toggles only when the row is not already in the wanted
+    state."""
+
+    class FakeRest:
+        def __init__(self, rows):
+            self.rows = list(rows)
+            self.sent: list = []
+
+        def send_text(self, text, settle=0.12):
+            self.sent.append(text)
+            if text == "r" and len(self.rows) > 1:
+                self.rows.pop(0)
+
+        def screen_lines(self):
+            return [" C020 EE 21 D0  INC $D021" + self.rows[0]]
+
+        def screen_text(self):
+            return "\n".join(self.screen_lines())
+
+    def _toggle(self, rows, armed):
+        rest = self.FakeRest(rows)
+        with mock.patch.object(gate.overlay_lifecycle, "goto_addr", lambda *a: None):
+            row = gate.overlay_lifecycle.toggle_breakpoint_at(
+                rest, 0xC020, armed, "unit")
+        return rest, row
+
+    def test_arming_an_unarmed_row_presses_r(self) -> None:
+        rest, row = self._toggle(["  [RAM]", "  [BRK0][RAM]"], True)
+
+        self.assertEqual(rest.sent, ["r"])
+        self.assertIn("[BRK0]", row)
+
+    def test_an_already_armed_row_is_left_alone(self) -> None:
+        rest, row = self._toggle(["  [BRK0][RAM]"], True)
+
+        self.assertEqual(rest.sent, [])
+        self.assertIn("[BRK0]", row)
+
+    def test_clearing_an_armed_row_presses_r(self) -> None:
+        rest, row = self._toggle(["  [BRK0][RAM]", "  [RAM]"], False)
+
+        self.assertEqual(rest.sent, ["r"])
+        self.assertNotIn("[BRK", row)
+
+    def test_armed_slot_rows_are_recognised(self) -> None:
+        matched = gate.overlay_lifecycle.ARMED_SLOT_RE.match("0 SET $E000 KRN")
+
+        self.assertIsNotNone(matched)
+        self.assertEqual(int(matched.group(1), 16), 0xE000)
+        self.assertIsNone(gate.overlay_lifecycle.ARMED_SLOT_RE.match("1 EMPTY"))
+
+
+class FinalTeardownTest(unittest.TestCase):
+    """A direct matrix invocation gets no runner teardown, so it hands the
+    device back itself. Teardown runs after the verdict and must never raise."""
+
+    def test_teardown_records_a_device_failure_instead_of_raising(self) -> None:
+        args = gate.parse_args(SINGLE_ARGV)
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(gate, "make_rest",
+                               side_effect=RuntimeError("device unreachable")):
+            result = gate.final_teardown(args, Path(tmp))
+            recorded = (Path(tmp) / "final-teardown.json").exists()
+
+        self.assertIn("device unreachable", result["error"])
+        self.assertTrue(recorded)
+
+    def test_teardown_releases_input_and_closes_the_menu(self) -> None:
+        args = gate.parse_args(SINGLE_ARGV)
+        rest = mock.Mock()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(gate, "make_rest", return_value=rest), \
+             mock.patch.object(gate.L, "ensure_menu_closed", return_value=True), \
+             mock.patch.object(gate, "_c64_running", return_value=True):
+            result = gate.final_teardown(args, Path(tmp))
+
+        rest.release_all.assert_called_once_with()
+        self.assertEqual(result["release_input"], True)
+        self.assertTrue(result["menu_closed"])
+        self.assertTrue(result["c64_running"])
+
+    def test_teardown_is_a_no_op_before_a_scope_claims_the_device(self) -> None:
+        gate._TEARDOWN_CONTEXT.clear()
+
+        gate._run_final_teardown()      # must not raise and must not touch a device
 
 
 if __name__ == "__main__":

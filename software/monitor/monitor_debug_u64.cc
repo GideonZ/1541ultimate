@@ -7,6 +7,7 @@
 // volatile-ROM patch override for BASIC/KERNAL/CHAR stepping.
 
 #include "monitor_debug_u64.h"
+#include "monitor_init.h"
 
 #if !defined(RUNS_ON_PC)
 
@@ -18,10 +19,6 @@
 #include "itu.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
-// Defined in c64.cc: flags the FPGA ROM image as patched so C64::reset() heals it
-// before the booting CPU can execute a stale BRK left in KERNAL/BASIC ROM.
-extern "C" void u64_mark_rom_image_dirty(void) __attribute__((weak));
 
 namespace {
 
@@ -213,7 +210,10 @@ protected:
         if (monitor_backing_store_for_cpu_port(addr, cpu_port) == MONITOR_BACKING_IO) {
             return machine->peek_visible(addr);
         }
-        return machine->peek_raw(addr);
+        // peek_cpu/poke_cpu, not the _raw pair: a patch must save and restore
+        // the byte the SAME cpu_port selects; the _raw pair ignores the port and
+        // follows whatever the live map has banked in.
+        return machine->peek_cpu(addr, cpu_port);
     }
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
     {
@@ -238,7 +238,6 @@ protected:
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
             machine->poke_cpu_rom(rom, byte);
-            if (u64_mark_rom_image_dirty) u64_mark_rom_image_dirty();
             wait_for_cpu_visible_rom_byte(addr, cpu_port, byte);
             return;
         }
@@ -246,7 +245,7 @@ protected:
             machine->poke_visible(addr, byte);
             return;
         }
-        machine->poke_raw(addr, byte);
+        machine->poke_cpu(addr, byte, cpu_port);
     }
 
 public:
@@ -260,6 +259,26 @@ public:
     // abstract base destructor must not call cleanup() (its hooks are pure by
     // then), so the leaf owns the final safety-net cleanup.
     virtual ~U64DebugSession() { cleanup(); }
+    virtual void cleanup(void)
+    {
+        BrkDebugSession::cleanup();
+        restore_rom_image_if_patched();
+    }
+    virtual void cleanup_to_context(const DebugContext *ctx)
+    {
+        BrkDebugSession::cleanup_to_context(ctx);
+        restore_rom_image_if_patched();
+    }
+    // A leaked ROM patch would otherwise survive until the next machine reset
+    // and hand the following suite a corrupted KERNAL. The restore compares the
+    // aperture against the loaded image, so a legitimately replaced KERNAL is
+    // left alone.
+    void restore_rom_image_if_patched(void)
+    {
+        if (u64_restore_pristine_rom_image) {
+            u64_restore_pristine_rom_image();
+        }
+    }
 };
 
 }

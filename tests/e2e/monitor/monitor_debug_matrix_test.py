@@ -30,7 +30,6 @@ MCM_DIR = Path(__file__).resolve().parent
 REPO_ROOT = MCM_DIR.parents[2]
 sys.path.insert(0, str(MCM_DIR))
 
-import mcm_rest as R  # noqa: E402
 import mcm_split_rest as SR  # noqa: E402
 import mcm_localui as L  # noqa: E402
 import mcm6502 as ORC  # noqa: E402
@@ -56,10 +55,19 @@ def make_rest(args: argparse.Namespace, timeout: float = 12.0):
     """Return a Rest bound to the run's topology: a SplitRest (machine ops ->
     --c64-host, overlay ops -> --rest-host) when --c64-host is given (U2+L
     cartridge in a C64U host), else a plain single-host Rest."""
-    if getattr(args, "c64_host", None):
-        return SR.SplitRest(machine_host=args.c64_host,
-                            overlay_host=args.rest_host, timeout=timeout)
-    return R.Rest(args.rest_host, timeout=timeout)
+    return SR.make_rest(args.rest_host, getattr(args, "c64_host", None),
+                        timeout=timeout)
+
+
+def debug_suite_target(args: argparse.Namespace) -> str:
+    """`monitor_debug_test.py --target` for this run's topology.
+
+    That suite has no --c64-host: Telnet is the cartridge's own remote session,
+    so its keystrokes need no C64U injection and its REST oracle reads the
+    cartridge. --target is what selects its U2 skips, and without it a U2+L is
+    measured against U64-only expectations.
+    """
+    return "u2" if getattr(args, "c64_host", None) else "u64"
 
 
 # "ram-rom-ram" and "ram-rur-rom-ram" are boundary-traversal modes: the
@@ -74,6 +82,15 @@ TRAVERSAL_MODES = ("ram-rom-ram", "ram-rur-rom-ram")
 INTERFACES = ("telnet", "freeze", "overlay")
 FINAL_STATUSES = ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE")
 
+DEFAULT_REPS = 3
+DEFAULT_STEP_INTO_DEPTH = 32
+DEFAULT_STRAIGHT_CALLS = 32
+DEFAULT_TRACE_OPCODES = 100
+U2_REPS = 1
+U2_STEP_INTO_DEPTH = 8
+U2_STRAIGHT_CALLS = 8
+U2_TRACE_OPCODES = 20
+
 # Entering a visible-ROM breakpoint costs the firmware's full go() budget, so the
 # wait has to outlast it or a slow but successful entry reads as a failure.
 ROM_ENTRY_WAIT_S = 22.0
@@ -86,6 +103,25 @@ OP_FIELDS = (
     "continue",
     "reset",
 )
+
+# These states distinguish every CPU-visible source in the three banked regions.
+# CPU0 and CPU4 intentionally expose the same all-RAM map: requiring their
+# distinct status values proves the debugger captured CHAREN itself rather than
+# inferring only the visible ROM signatures. The bootstrap uses $30 | bank so
+# bits 0-2 are all outputs while the upper port bits retain the normal C64 value.
+BANKING_STATES = (
+    (7, ("BAS", "I/O", "KRN")),
+    (3, ("BAS", "CHR", "KRN")),
+    (5, ("RAM", "I/O", "RAM")),
+    (0, ("RAM", "RAM", "RAM")),
+    (4, ("RAM", "RAM", "RAM")),
+)
+
+BANKING_RAM_BYTES = {
+    0xA000: bytes([0xA9, 0xA1, 0xEA]),
+    0xD020: bytes([0xA2, 0xD1, 0xEA]),
+    0xE000: bytes([0xA0, 0xE1, 0xEA]),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +232,10 @@ BREAKPOINT_SLOT_RE = re.compile(r"^\|?\s*[0-9]\s+(SET|EMPTY)\b", re.IGNORECASE)
 # write a record for a run that dies on an unhandled exception. Cleared on the
 # normal path, which writes its own record.
 _RUN_LEDGER_CONTEXT: dict[str, Any] = {}
+
+# Set by main() once a scope that drives the device starts, so the entry point
+# can hand the device back however the run ends.
+_TEARDOWN_CONTEXT: dict[str, Any] = {}
 
 
 class ResetRetryCounters:
@@ -616,7 +656,8 @@ def _build_ram_rur_rom_ram_fixture() -> MatrixFixture:
     )
 
 
-def build_fixture(memory: str, depth: int) -> MatrixFixture:
+def build_fixture(memory: str, depth: int,
+                  straight_calls: int = DEFAULT_STRAIGHT_CALLS) -> MatrixFixture:
     if memory == "ram-rom-ram":
         return _build_ram_rom_ram_fixture()
     if memory == "ram-rur-rom-ram":
@@ -693,7 +734,6 @@ def build_fixture(memory: str, depth: int) -> MatrixFixture:
     # has to be on a path the program actually executes; a block reachable only
     # by a jump the fixture never takes can never be entered.
     straight_block = base + 0x0210
-    straight_calls = 32
     straight_entry = base + 0x000E                        # the JSR into the block
     main = bytes([
         0x20, over & 0xFF, over >> 8,                     # JSR over
@@ -863,10 +903,90 @@ class BaseDriver(DebugInterfaceDriver):
     def read_bytes(self, address: int, length: int) -> bytes:
         return self.rest.read_mem(address, length)
 
+    def machine_is_held(self) -> Optional[bool]:
+        """Whether the cartridge is still holding the C64 in Ultimax.
+
+        Ultimax leaves $1000-$CFFF undecoded on the bus, so a read of $C000 from
+        the OTHER device comes back as all-$FF exactly while the cartridge holds
+        the machine. None means the question could not be asked.
+        """
+        machine = getattr(self.rest, "machine", None)
+        if machine is None:
+            return None
+        try:
+            return machine.read_mem(0xC000, 4) == b"\xFF\xFF\xFF\xFF"
+        except Exception:
+            return None
+
+    def release_machine_hold(self, context: str) -> bool:
+        """Hand the machine back, and say so out loud when that fails.
+
+        A state that ends with the cartridge still holding the C64 poisons
+        everything after it: keystrokes reach the cartridge over the C64U's
+        keyboard matrix, which is only scanned while the C64 executes, so the
+        next state cannot drive the UI and its breakpoint table cannot be
+        cleared. Releasing is therefore part of the result, not best-effort
+        tidying, and a release that fails is reported rather than swallowed.
+        """
+        errors: list[str] = []
+        try:
+            self.close_monitor()
+        except Exception as exc:
+            errors.append(f"close_monitor: {type(exc).__name__}: {exc}")
+        try:
+            self.rest.reset()
+        except Exception as exc:
+            errors.append(f"reset: {type(exc).__name__}: {exc}")
+
+        for _ in range(4):
+            held = self.machine_is_held()
+            if held is not True:
+                if errors:
+                    print(f"  [teardown] {context}: released, but {'; '.join(errors)}",
+                          flush=True)
+                self.event("release_machine_hold", context=context, held=False,
+                           errors=errors)
+                return True
+            try:
+                self.rest.menu_button()
+            except Exception as exc:
+                errors.append(f"menu_button: {type(exc).__name__}: {exc}")
+                break
+            time.sleep(1.2)
+
+        print(f"  [teardown] {context}: MACHINE STILL HELD - the next state will "
+              f"inherit a UI it cannot drive. {'; '.join(errors) or 'no exception raised'}",
+              flush=True)
+        self.event("release_machine_hold", context=context, held=True, errors=errors)
+        return False
+
+    def read_oracle_bytes(self, address: int, length: int) -> bytes:
+        """Memory oracle that can see the address while the cartridge is frozen.
+
+        The freezer holds the C64 in Ultimax, which leaves only $0000-$0FFF and
+        the I/O space decoded on the cartridge bus. A read issued from the other
+        device for $1000-$CFFF or $E000-$FFFF comes back as $FF, measured on
+        hardware: with a banking state live, the C64U reads $A000 as FFFFFFFF
+        and $E000 as FFFFFFFF while the cartridge reads 94E37BE3 and 8556200F.
+        The independent read is therefore an oracle only for the I/O range while
+        a state is live.
+
+        Those two ranges are read from the cartridge instead. That is less
+        independent, because the displayed bytes and this read both reach memory
+        through the cartridge, but it compares two different paths through it
+        rather than comparing $FF against real bytes and calling the difference
+        a defect.
+        """
+        hidden_by_ultimax = (0x1000 <= address < 0xD000) or address >= 0xE000
+        overlay = getattr(self.rest, "overlay", None)
+        if hidden_by_ultimax and overlay is not None:
+            return overlay.read_mem(address, length)
+        return self.rest.read_mem(address, length)
+
     def read_memory_image(self, chunk_size: int = 0x1000) -> bytearray:
         image = bytearray()
         for address in range(0, 0x10000, chunk_size):
-            image.extend(self.read_bytes(address, chunk_size))
+            image.extend(self.read_oracle_bytes(address, chunk_size))
         if len(image) != 0x10000:
             raise GateError(f"memory image length {len(image)}, expected 65536")
         return image
@@ -904,6 +1024,16 @@ class BaseDriver(DebugInterfaceDriver):
             self.capture_live_rom_snapshot()
         if fixture.memory_mode == "rom":
             kernal_head = self.capture_live_rom_snapshot()
+            if kernal_head[:5] != bytes([0x85, 0x56, 0x20, 0x0F, 0xBC]):
+                # readmem serves $E000 through the live 6510 map, so this only
+                # reads the KERNAL while the KERNAL is banked in. A program left
+                # running by an earlier cell or suite can be toggling banking,
+                # and the read then samples RAM under ROM instead. Re-establish
+                # a known machine before believing the bytes.
+                self.event("rom_precondition_recheck",
+                           first_read=kernal_head[:5].hex().upper())
+                self.reset_baseline()
+                kernal_head = self.capture_live_rom_snapshot()
             if kernal_head[:5] != bytes([0x85, 0x56, 0x20, 0x0F, 0xBC]):
                 raise BlockedWithEvidence(
                     "Configured KERNAL at $E000 is not the canonical path "
@@ -957,7 +1087,7 @@ class BaseDriver(DebugInterfaceDriver):
         self.wait_rest_ready("post-reset", timeout=25.0)
         if not L.ensure_menu_closed(self.rest):
             raise GateError("menu did not close during baseline recovery")
-        self.wait_rest_ready("post-menu-close", timeout=8.0)
+        self.wait_rest_ready("post-menu-close")
         # machine:reset is asynchronous and REST answers throughout, so REST
         # readiness alone does not mean the 6510 stopped running the previous
         # cell's fixture. Installing over a still-running program lets it
@@ -970,31 +1100,47 @@ class BaseDriver(DebugInterfaceDriver):
         except Exception as exc:  # noqa: BLE001
             self.event("baseline_basic_ready_warning", error=str(exc))
 
-    def wait_rest_ready(self, label: str, timeout: float) -> None:
-        deadline = time.time() + timeout
+    def wait_rest_ready(self, label: str, timeout: float = 20.0) -> None:
+        """Wait until three consecutive REST reads succeed.
+
+        A single success is not enough: right after a menu close or a firmware
+        redeploy the device answers the first read and then stalls. The budget
+        has to cover three *slow* reads, not three fast ones, because a device
+        that is still coming up answers each read in seconds without ever
+        raising -- which is why a failure here reports elapsed time and the
+        run of consecutive successes, not just the last exception.
+        """
+        started = time.time()
+        deadline = started + timeout
         last_error: Optional[Exception] = None
         stable_reads = 0
+        attempts = 0
         while time.time() < deadline:
+            attempts += 1
             try:
                 if not self.rest.alive(timeout=1.0):
                     raise GateError("REST TCP/80 not accepting")
                 self.rest.read_mem(0x0400, 16)
                 stable_reads += 1
                 if stable_reads >= 3:
-                    self.event("rest_ready", label=label)
+                    self.event("rest_ready", label=label,
+                               elapsed=round(time.time() - started, 2))
                     return
             except Exception as exc:  # noqa: BLE001 - transport recovery loop
                 last_error = exc
                 stable_reads = 0
                 self.event("rest_ready_retry", label=label, error=str(exc))
             time.sleep(0.35)
-        raise GateError(f"{label}: REST did not stabilize: {last_error}")
+        raise GateError(
+            f"{label}: REST did not stabilize within {timeout:.0f}s "
+            f"({attempts} attempts, {stable_reads}/3 consecutive reads, "
+            f"last error: {last_error})")
 
     def wait_progress_change(self, address: int, label: str, timeout: float = 4.0) -> bool:
         seen = set()
         deadline = time.time() + timeout
         while time.time() < deadline:
-            seen.add(self.read_bytes(address, 1)[0])
+            seen.add(self.read_oracle_bytes(address, 1)[0])
             if len(seen) >= 2:
                 self.event("progress_change", address=f"{address:04X}", values=sorted(seen))
                 return True
@@ -1005,9 +1151,9 @@ class BaseDriver(DebugInterfaceDriver):
                 address=f"{address:04X}",
                 seen=sorted(seen),
                 cpu_port=self.read_bytes(0x0001, 1).hex(),
-                progress=self.read_bytes(address, 1).hex(),
-                sentinel=self.read_bytes(0xC1F0, 2).hex(),
-                scratch=self.read_bytes(0xC1F0, 16).hex(),
+                progress=self.read_oracle_bytes(address, 1).hex(),
+                sentinel=self.read_oracle_bytes(0xC1F0, 2).hex(),
+                scratch=self.read_oracle_bytes(0xC1F0, 16).hex(),
                 insn_trampoline=self.read_bytes(0x0340, 8).hex(),
                 debug_store=self.read_bytes(0x03F0, 12).hex(),
             )
@@ -1025,7 +1171,7 @@ class BaseDriver(DebugInterfaceDriver):
         self.wait_progress_change(self.fixture.progress, "post-continue liveness")
 
     def verify_hygiene(self):
-        self.wait_rest_ready("hygiene", timeout=8.0)
+        self.wait_rest_ready("hygiene")
         try:
             overlay_lifecycle.wait_ready(self.rest, timeout=8.0)
             self.event("basic_ready_validated")
@@ -1251,13 +1397,13 @@ class RestDebugDriver(BaseDriver):
     def __init__(self, args: argparse.Namespace, row: dict[str, Any],
                  cell_dir: Path, trace) -> None:
         super().__init__(args, row, cell_dir, trace)
-        self.session = stress.RestSession(args.rest_host, ui=row["interface"])
+        self.session = stress.RestSession(args.rest_host, ui=row["interface"],
+                                          c64_host=getattr(args, "c64_host", None))
         # Split U2+L session: drive the overlay UI through the same SplitRest so
         # keystrokes/memory go to the C64U while menu_screen/menu_button stay on
         # the cartridge. Single-host runs keep RestSession's own Rest untouched.
         if getattr(args, "c64_host", None):
             self.session.rest = self.rest
-            self.session.host = machine_host(args)
 
     def reset_baseline(self) -> None:
         try:
@@ -1270,7 +1416,7 @@ class RestDebugDriver(BaseDriver):
         self.wait_rest_ready("post-reset", timeout=25.0)
         if not L.ensure_menu_closed(self.rest):
             raise GateError("menu did not close during local-UI baseline recovery")
-        self.wait_rest_ready("post-menu-close", timeout=8.0)
+        self.wait_rest_ready("post-menu-close")
 
     def apply_interface_type(self):
         # A U2+L cartridge (split session) has no "Interface Type" config - its
@@ -1434,11 +1580,15 @@ class RestDebugDriver(BaseDriver):
         """Delete every armed slot and prove the table is empty afterwards.
 
         The cursor starts on slot 0 and INST/DEL clears the slot under it, so
-        one delete-then-advance pass covers the table. The pass is repeated
-        while any slot is still armed, because a delete issued while the popup
-        is repainting can be dropped, and it ends by re-reading the table -
-        without that, a clear that silently did nothing looked successful and
-        the stale breakpoint went on to trap an unrelated later test.
+        one delete-then-advance pass covers the table. Each delete is confirmed
+        by re-reading the popup before the cursor advances, rather than sending
+        a fixed burst and checking only at the end: a delete issued while the
+        popup is repainting is dropped, and how long that repaint takes is a
+        property of the target. On a U2+L, where the overlay is driven across
+        the cartridge bus, a fixed 0.08s gap dropped every delete and left the
+        table fully armed, while the same key confirmed one slot at a time
+        clears it. Waiting on the observation costs nothing on a fast target and
+        is the only pacing that suits both.
         """
         for attempt in range(1, 4):
             text = self._open_breakpoint_popup()
@@ -1448,18 +1598,54 @@ class RestDebugDriver(BaseDriver):
                 time.sleep(0.2)
                 self.event("clear_all_breakpoints", attempts=attempt)
                 return
-            for _ in range(10):
-                self.rest.tap(["inst_del"])
-                time.sleep(0.08)
+            deletes = 0
+            popup_lost = 0
+            for slot in range(10):
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    screen = self.rest.screen_text()
+                    lines = self._slot_lines_from(screen)
+                    if slot >= len(lines) or "EMPTY" in lines[slot].upper():
+                        break
+                    # A delete only reaches the table while the popup is up and
+                    # holding focus. Driven by hand the popup is opened and
+                    # watched; in a run it is assumed to still be there, and a
+                    # key sent to a screen that is no longer the popup lands
+                    # nowhere while the table goes on reading as armed. Counted
+                    # rather than assumed: popup_lost == 0 refutes that as the
+                    # explanation for an in-run failure, and a non-zero count
+                    # names it.
+                    if "BREAKPOINT" not in screen.upper():
+                        popup_lost += 1
+                        screen = self._open_breakpoint_popup()
+                        lines = self._slot_lines_from(screen)
+                        if slot >= len(lines) or "EMPTY" in lines[slot].upper():
+                            break
+                    self.rest.tap(["inst_del"])
+                    deletes += 1
+                    time.sleep(0.25)
                 self.rest.tap(["cursor_up_down"])
-                time.sleep(0.08)
+                time.sleep(0.12)
+            # Recorded per pass because this loop deletes correctly when driven
+            # by hand and has failed in situ: the pass that fails needs to say
+            # what it was looking at, not be reconstructed afterwards.
+            tail = self._slot_lines_from(self.rest.screen_text())
+            armed_after = [l for l in tail if "EMPTY" not in l.upper()]
+            if popup_lost:
+                print(f"  [clear] pass {attempt}: popup was not focused for "
+                      f"{popup_lost} delete(s); reopened", flush=True)
+            self.event("clear_pass", attempt=attempt, deletes=deletes,
+                       popup_lost=popup_lost, armed_after=armed_after)
             self.rest.tap(["run_stop"])
             time.sleep(0.25)
         remaining = [line for line in self.breakpoint_slot_lines()
                      if "EMPTY" not in line.upper()]
         if remaining:
+            popup = self._open_breakpoint_popup()
+            self.rest.tap(["run_stop"])
             raise GateError(
-                f"breakpoint table still armed after 3 clear passes: {remaining}")
+                f"breakpoint table still armed after 3 clear passes: {remaining}\n"
+                f"popup as the clear loop last saw it:\n{popup}")
         self.event("clear_all_breakpoints", attempts=3)
 
     def _u2_toggle_breakpoint(self, address: int) -> str:
@@ -1542,6 +1728,23 @@ class RestDebugDriver(BaseDriver):
             "inherited Debug session would not exit with C=+D:\n"
             + self.rest.screen_text())
 
+    def log_entry_opcode(self, address: int, verdict: str) -> None:
+        """Record the breakpoint target byte through the machine's own DMA.
+
+        A launch that never starts the program and a launch that starts it after
+        the breakpoint opcode has been lost both report DEBUG TIMEOUT, so the
+        byte is read on every entry, passing or failing. An armed breakpoint
+        reads as $00; anything else means the trap the run depends on is not
+        there, whatever the entry verdict says.
+        """
+        try:
+            got = self.read_oracle_bytes(address, 1)[0]
+        except Exception as exc:
+            print(f"  [entry probe] ${address:04X} unreadable ({exc}) - {verdict}")
+            return
+        note = "BRK armed" if got == 0x00 else "NOT BRK"
+        print(f"  [entry probe] ${address:04X} = ${got:02X} ({note}) - {verdict}")
+
     def enter_debug_at(self, address: int):
         if self.fixture is None:
             raise HarnessBug("missing fixture")
@@ -1558,13 +1761,20 @@ class RestDebugDriver(BaseDriver):
         elif self.fixture.memory_mode == "rom":
             self.select_bank(self.fixture.bank)
         self.goto(self.fixture.bootstrap_addr)
+        self.log_entry_opcode(address, "before launch")
         self.send_key("G")
         entry_wait = ROM_ENTRY_WAIT_S if self.fixture.memory_mode == "rom" else 12.0
-        state = self.wait_pc(address, "entry breakpoint", timeout=entry_wait)
-        if self.fixture.memory_mode == "rom":
-            self.clear_breakpoint(address)
-        else:
-            self.clear_all_breakpoints()
+        try:
+            state = self.wait_pc(address, "entry breakpoint", timeout=entry_wait)
+        except BaseException:
+            self.log_entry_opcode(address, "entry FAILED")
+            raise
+        self.log_entry_opcode(address, "entry ok")
+        # The entry slot is the only slot this path armed.  Clearing that
+        # address directly avoids repeatedly reopening the popup while the
+        # U2 freezer has the C64 held at the just-trapped PC; those delete
+        # keystrokes can be lost even though the slot table is otherwise sound.
+        self.clear_breakpoint(address)
         self.select_bank(self.fixture.bank)
         self.goto(address)
         return state
@@ -1749,25 +1959,6 @@ def screen_text(driver: BaseDriver) -> str:
     if isinstance(driver, TelnetDebugDriver):
         return driver._session().capture().text()
     return driver.rest.screen_text()
-
-
-def leave_debug_for_relaunch(driver: BaseDriver, label: str) -> None:
-    driver.send_key("C=+D")
-    time.sleep(0.25)
-    try:
-        text = screen_text(driver)
-    except Exception as exc:  # noqa: BLE001
-        driver.event("leave_debug_screen_probe_warning", label=label, error=str(exc))
-        return
-    if "DEBUG CANCELLED" in text.upper():
-        driver.send_key("RETURN")
-        time.sleep(0.25)
-        driver.event("debug_cancelled_acknowledged", label=label)
-    driver.event("leave_debug_for_relaunch", label=label)
-
-
-
-
 
 
 
@@ -2494,7 +2685,8 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
         try:
             seed = 0x154100 + row["repetition"] + MEMORY_MODES.index(row["memory_mode"]) * 100
             row["program_seed"] = seed
-            fixture = build_fixture(row["memory_mode"], args.required_step_into_depth)
+            fixture = build_fixture(row["memory_mode"], args.required_step_into_depth,
+                                    args.straight_calls)
             row["fixture"] = fixture.to_json()
             log_line(f"{cid}: reset baseline")
             driver.reset_baseline()   # per-cell setup reset (not recovery)
@@ -2766,9 +2958,11 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
                 mark_op(row, "step_out", "PASS")
                 ledger.save()
 
-                log_line(f"{cid}: 100-opcode dual-oracle Step Into trace")
+                trace_minimum = (U2_TRACE_OPCODES if args.c64_host
+                                 else DEFAULT_TRACE_OPCODES)
+                log_line(f"{cid}: {trace_minimum}-opcode dual-oracle Step Into trace")
                 trace_steps = run_step_trace_dual(driver, row, cell_dir, oracles,
-                                                  minimum_opcodes=100)
+                                                  minimum_opcodes=trace_minimum)
                 row["opcode_count"] = row["step_into_depth"] + trace_steps
                 row["oracle_validated"] = True
                 ledger.save()
@@ -2823,10 +3017,10 @@ def run_cell(args: argparse.Namespace, row: dict[str, Any], ledger: Ledger) -> N
             log_line(f"{cid}: Continue")
             before_progress = None
             if driver.active_debug_readback_allowed():
-                before_progress = driver.read_bytes(fixture.progress, 1)[0]
+                before_progress = driver.read_oracle_bytes(fixture.progress, 1)[0]
             driver.continue_run()
             driver.wait_progress_change(fixture.progress, "Continue liveness")
-            after_progress = driver.read_bytes(fixture.progress, 1)[0]
+            after_progress = driver.read_oracle_bytes(fixture.progress, 1)[0]
             driver.event("continue_progress", before=before_progress, after=after_progress)
             row["memory_writes_validated"] = True
             row["liveness_validated"] = True
@@ -3023,15 +3217,20 @@ def mark_pending_blocked(ledger: Ledger, artifact_dir: Path, message: str) -> No
     ledger.save()
 
 
-def run_preflight(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
-    log_dir = artifact_dir / "preflight"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    results: dict[str, Any] = {
-        "rest_liveness": make_rest(args).alive(),
-        "telnet_liveness": tcp_probe(args.host, args.port),
-        "commands": [],
-    }
-    commands = [
+def preflight_commands(args: argparse.Namespace,
+                       log_dir: Path) -> list[tuple[str, list[str]]]:
+    """The preflight command line for each tool, bound to the run's topology.
+
+    On a split session the local-UI tools must send their keystrokes to the
+    C64U, because the cartridge's own machine:input is compiled out and answers
+    HTTP 501. The Telnet debug suite is the exception: it drives the
+    cartridge's own remote session, so it takes --target rather than a machine
+    host. A single-host run passes neither flag and each tool keeps its own
+    default.
+    """
+    split_host = ["--c64-host", args.c64_host] if args.c64_host else []
+    debug_target = ["--target", debug_suite_target(args)] if args.c64_host else []
+    return [
         ("git-status", ["git", "status", "--short"]),
         ("git-log", ["git", "log", "--oneline", "-8"]),
         ("mcm6502-selftest", ["python3", str(MCM_DIR / "mcm6502.py"), "--selftest"]),
@@ -3043,11 +3242,11 @@ def run_preflight(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any
             "--timeout", str(args.timeout),
             "--test", "step-out-target,nested-out",
             "--keep-going",
-        ]),
+        ] + debug_target),
         ("freeze-reentry", [
             "python3", str(MCM_DIR / "freeze_reentry_guard.py"),
             args.rest_host, "3",
-        ]),
+        ] + split_host),
         ("localui-soak", [
             "python3", str(MCM_DIR / "mcm_localui.py"),
             "soak", args.rest_host,
@@ -3055,9 +3254,20 @@ def run_preflight(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any
             "--cycles", "2",
             "--ui", "both",
             "--log", str(log_dir / "mcm_localui_soak.log"),
-        ]),
+        ] + split_host),
     ]
-    for name, cmd in commands:
+
+
+def run_preflight(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
+    log_dir = artifact_dir / "preflight"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    results: dict[str, Any] = {
+        "rest_liveness": make_rest(args).alive(),
+        "telnet_liveness": tcp_probe(args.host, args.port),
+        "device_identity": SR.device_identity(make_rest(args)),
+        "commands": [],
+    }
+    for name, cmd in preflight_commands(args, log_dir):
         rc = run_cmd(cmd, REPO_ROOT, log_dir / f"{name}.log", timeout=180)
         results[name] = rc
         results["commands"].append({"name": name, "cmd": cmd, "rc": rc})
@@ -3098,10 +3308,12 @@ def device_identity_lines(args: argparse.Namespace) -> list[str]:
     return [f"- `{name}`: `{info[name]}`" for name in fields if name in info]
 
 
-def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
-    op_dir = artifact_dir / "opcode-1000"
-    op_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
+def opcode_volume_command(args: argparse.Namespace, op_dir: Path) -> list[str]:
+    """The stress driver's command line for this run's topology. On a split
+    session the driver needs the C64U as its machine host, or its first
+    keystroke reaches the cartridge's compiled-out machine:input."""
+    split_host = ["--c64-host", args.c64_host] if args.c64_host else []
+    return [
         "python3", str(MCM_DIR / "monitor_debug_stress.py"),
         "--host", args.rest_host,
         "--ui", "overlay",
@@ -3112,7 +3324,13 @@ def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str,
         "--jsr-depths", str(max(32, args.required_step_into_depth)),
         "--seed", "9001",
         "--artifact-dir", str(op_dir),
-    ]
+    ] + split_host
+
+
+def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
+    op_dir = artifact_dir / "opcode-1000"
+    op_dir.mkdir(parents=True, exist_ok=True)
+    cmd = opcode_volume_command(args, op_dir)
     rc = run_cmd(cmd, REPO_ROOT, op_dir / "opcode-volume.log", timeout=1800)
     summaries = sorted(op_dir.glob("*.summary.json"))
     summary: dict[str, Any] = {"rc": rc, "cmd": cmd, "memory_mode": "ram", "interface": "overlay"}
@@ -3127,11 +3345,17 @@ def run_opcode_volume(args: argparse.Namespace, artifact_dir: Path) -> dict[str,
     return summary
 
 
-def final_hygiene(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
+def final_hygiene(args: argparse.Namespace, artifact_dir: Path,
+                  preflight: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     results = {
         "rest_liveness": make_rest(args).alive(),
         "telnet_liveness": tcp_probe(args.host, args.port),
+        "device_identity": SR.device_identity(make_rest(args)),
     }
+    # The run must be able to say it measured one image on one board. A device
+    # reflashed or swapped between the preflight stamp and this one was not.
+    results["identity_changed"] = SR.identity_changes(
+        (preflight or {}).get("device_identity", {}), results["device_identity"])
     for name, cmd in [
         ("git-diff-check", ["git", "diff", "--check"]),
         ("git-status-short", ["git", "status", "--short"]),
@@ -3141,6 +3365,39 @@ def final_hygiene(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any
     (artifact_dir / "final-hygiene.json").write_text(
         json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return results
+
+
+def final_teardown(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
+    """Leave the device with no held input and no open menu.
+
+    A run driven by ./run-tests gets the runner's own teardown; a direct
+    invocation of this gate does not. An open on-device menu holds the C64, so
+    the next health sweep reports raster and jiffy as skipped and reads as a
+    dead machine. This runs after the verdict is decided, records what it did,
+    and never raises: teardown must not change or mask a result.
+    """
+    result: dict[str, Any] = {"time": now_stamp()}
+    try:
+        rest = make_rest(args, timeout=8.0)
+        try:
+            rest.release_all()
+            result["release_input"] = True
+        except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+            result["release_input"] = f"{type(exc).__name__}: {exc}"
+        result["menu_closed"] = L.ensure_menu_closed(rest)
+        result["c64_running"] = _c64_running(machine_host(args))
+    except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "final-teardown.json").write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+        print(f"final teardown not recorded: {type(exc).__name__}: {exc}", flush=True)
+    print(f"final teardown: menu_closed={result.get('menu_closed')} "
+          f"c64_running={result.get('c64_running')} "
+          f"release_input={result.get('release_input')}", flush=True)
+    return result
 
 
 def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Ledger,
@@ -3319,7 +3576,7 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
     return verdict
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Machine Code Monitor debugger matrix gate")
     parser.add_argument("--host", required=True)
     parser.add_argument("--rest-host", required=True)
@@ -3333,11 +3590,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--password")
     parser.add_argument("--memory", choices=MEMORY_MODES + ("all",), default="all")
     parser.add_argument("--ui", choices=INTERFACES + ("all",), default="all")
-    parser.add_argument("--focus", choices=("matrix", "alerts"), default="matrix",
+    parser.add_argument("--focus",
+                        choices=("matrix", "alerts", "banking", "entry-footer"),
+                        default="matrix",
                         help="matrix = full debugger matrix; alerts = focused "
-                             "Debug alert/manual wording contract check.")
-    parser.add_argument("--reps", type=int, default=3)
-    parser.add_argument("--required-step-into-depth", type=int, default=32)
+                             "Debug alert/manual wording contract check; banking "
+                             "= focused split-session U2 CPU-banking check; "
+                             "entry-footer = focused split-session check that "
+                             "the monitor's first frame already carries the "
+                             "running program's CPU and VIC banking.")
+    parser.add_argument("--reps", type=int,
+                        help="Cell repetitions (default: 3; 1 for split U2 sessions).")
+    parser.add_argument("--required-step-into-depth", type=int,
+                        help="Nested Step Into depth (default: 32; 8 for split U2 sessions).")
+    parser.add_argument("--straight-calls", type=int,
+                        help="Consecutive Step Overs (default: 32; 8 for split U2 sessions).")
     parser.add_argument("--opcode-run", type=int, default=1000)
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--resume", action="store_true")
@@ -3365,7 +3632,505 @@ def parse_args() -> argparse.Namespace:
                         help="Developer escape hatch for harness iteration; strict final runs should not use it.")
     parser.add_argument("--classify-pending-device-blocked", action="store_true",
                         help="Mark pending rows BLOCKED_WITH_EVIDENCE when the device is unreachable.")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.c64_host:
+        if args.reps is None:
+            args.reps = U2_REPS
+        if args.required_step_into_depth is None:
+            args.required_step_into_depth = U2_STEP_INTO_DEPTH
+        if args.straight_calls is None:
+            args.straight_calls = U2_STRAIGHT_CALLS
+    else:
+        if args.reps is None:
+            args.reps = DEFAULT_REPS
+        if args.required_step_into_depth is None:
+            args.required_step_into_depth = DEFAULT_STEP_INTO_DEPTH
+        if args.straight_calls is None:
+            args.straight_calls = DEFAULT_STRAIGHT_CALLS
+    return args
+
+
+def _banking_bootstrap(bank: int) -> bytes:
+    """Seed RAM under the three banked windows, select `bank`, then run C000."""
+    code = bytearray([
+        0x78,                         # SEI
+        0xA9, 0x2F, 0x85, 0x00,       # $00=$2F: bits 0-2 are outputs
+        0xA9, 0x30, 0x85, 0x01,       # all three banked windows expose RAM
+    ])
+    for address, data in BANKING_RAM_BYTES.items():
+        for offset, byte in enumerate(data):
+            target = address + offset
+            code.extend((0xA9, byte, 0x8D, target & 0xFF, target >> 8))
+    code.extend((
+        0xA9, 0x30 | (bank & 0x07),
+        0x85, 0x01,
+        0x4C, 0x00, 0xC0,
+    ))
+    return bytes(code)
+
+
+def _banking_row_bytes(row: str, address: int) -> bytes:
+    fields = row.strip("| ").split()
+    if not fields or fields[0].upper() != f"{address:04X}":
+        raise GateError(
+            f"could not parse displayed instruction bytes at ${address:04X}: {row!r}")
+    raw = []
+    for field in fields[1:4]:
+        if re.fullmatch(r"[0-9A-Fa-f]{2}", field) is None:
+            break
+        raw.append(int(field, 16))
+    if not raw:
+        raise GateError(
+            f"could not parse displayed instruction bytes at ${address:04X}: {row!r}")
+    return bytes(raw)
+
+
+def _wait_banking_status(rest, expected: str, timeout: float = 8.0) -> str:
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = overlay_lifecycle.status_line(rest)
+        if expected in last:
+            return last
+        time.sleep(0.2)
+    raise GateError(f"status did not show {expected!r}: {last!r}\n{rest.screen_text()}")
+
+
+def _wait_banking_row(rest, address: int, source: str,
+                      timeout: float = 8.0) -> str:
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = overlay_lifecycle.line_for_address(rest, address)
+        if f"[{source}]" in last:
+            return last
+        time.sleep(0.2)
+    raise GateError(
+        f"${address:04X} did not show [{source}]: {last!r}\n{rest.screen_text()}")
+
+
+def run_banking_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
+    """Focused U2 check for captured $01 and CPU-visible DMA disassembly.
+
+    The C64U runs the bootstrap and provides the independent DMA readback; the
+    U2 owns the monitor overlay. A real 6510 instruction writes $01 immediately
+    before the breakpoint, so the status row can only pass when Debug captures
+    the pre-diversion banking state.
+    """
+    results: dict[str, Any] = {
+        "focus": "banking",
+        "machine_host": args.c64_host,
+        "overlay_host": args.rest_host,
+        "states": [],
+    }
+    if not args.c64_host:
+        results.update({
+            "status": "FAIL",
+            "error": "--focus banking requires --c64-host for split-session U2 coverage",
+        })
+        (artifact_dir / "banking-results.json").write_text(
+            json.dumps(results, indent=2) + "\n", encoding="utf-8")
+        print(results["error"], flush=True)
+        return 1
+
+    # Isolation runs: one state per process, so a failure cannot be inherited
+    # from whatever the previous state left armed. Unset, every state runs.
+    # The listed order is honoured, not the declaration order, so a state can be
+    # run in a chosen position. That is what distinguishes a per-bank failure
+    # from one that follows position because a predecessor left something behind.
+    only = os.environ.get("MCM_BANKING_ONLY", "").strip()
+    banking_states = BANKING_STATES
+    if only:
+        by_bank = {bank: (bank, sources) for bank, sources in BANKING_STATES}
+        banking_states = tuple(by_bank[int(part)] for part in only.split(",")
+                               if part.strip())
+
+    for bank, sources in banking_states:
+        state_dir = artifact_dir / f"cpu{bank}"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        row = {"cell_id": f"BANKING_CPU{bank}", "interface": "overlay"}
+        state_result: dict[str, Any] = {
+            "bank": bank,
+            "port": f"{0x30 | bank:02X}",
+            "expected_sources": dict(zip(("A000", "D020", "E000"), sources)),
+            "rows": {},
+        }
+        driver: Optional[RestDebugDriver] = None
+        with (state_dir / "trace.jsonl").open(
+                "a", encoding="utf-8", buffering=1) as trace:
+            try:
+                driver = RestDebugDriver(args, row, state_dir, trace)
+                driver.reset_baseline()
+                fixture = build_fixture("ram", 1)
+                fixture.bank = bank
+                fixture.bootstrap = _banking_bootstrap(bank)
+                fixture.chunks = [(0xC000, bytes([0xEA, 0xEA, 0x4C, 0x00, 0xC0]))]
+                driver.install_fixture(fixture)
+                driver.open_monitor()
+                entry = driver.enter_debug_at(0xC000)
+                assert_state_pc_sp(entry, 0xC000, None, f"CPU{bank} entry")
+
+                expected_status = (
+                    f"CPU{bank} $A:{sources[0]} $D:{sources[1]} $E:{sources[2]}")
+                state_result["status_line"] = _wait_banking_status(
+                    driver.rest, expected_status)
+
+                for address, source in zip((0xA000, 0xD020, 0xE000), sources):
+                    driver.goto(address)
+                    screen_row = _wait_banking_row(driver.rest, address, source)
+                    displayed = _banking_row_bytes(screen_row, address)
+                    # The U2 freezer intentionally forces Ultimax.  Its C64U
+                    # DMA aperture consequently sees I/O at $D000 even when
+                    # the stopped 6510 had banked RAM there.  The captured
+                    # CPU-port footer and the row source tag remain observable,
+                    # but no frozen-DMA byte oracle exists for that one case.
+                    dma_observable = not (address == 0xD020 and source == "RAM")
+                    dma = driver.read_oracle_bytes(address, len(displayed))
+                    if dma_observable and displayed != dma:
+                        raise GateError(
+                            f"CPU{bank} ${address:04X} display/DMA mismatch: "
+                            f"display={displayed.hex().upper()} dma={dma.hex().upper()} "
+                            f"row={screen_row!r}")
+                    if source == "RAM" and dma_observable:
+                        ram = driver.read_oracle_bytes(
+                            address, len(BANKING_RAM_BYTES[address]))
+                        if ram != BANKING_RAM_BYTES[address]:
+                            raise GateError(
+                                f"CPU{bank} ${address:04X} did not expose seeded RAM: "
+                                f"expected={BANKING_RAM_BYTES[address].hex().upper()} "
+                                f"dma={ram.hex().upper()}")
+                    state_result["rows"][f"{address:04X}"] = {
+                        "source": source,
+                        "row": screen_row,
+                        "displayed_bytes": displayed.hex().upper(),
+                        "dma_bytes": dma.hex().upper(),
+                        "dma_observable": dma_observable,
+                    }
+                state_result["status"] = "PASS"
+                print(f"banking CPU{bank}: PASS", flush=True)
+            except Exception as exc:  # noqa: BLE001 - record every banking state
+                state_result.update({
+                    "status": "FAIL",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "traceback": traceback.format_exc(),
+                })
+                print(f"banking CPU{bank}: FAIL: {exc}", flush=True)
+            finally:
+                if driver is not None:
+                    released = driver.release_machine_hold(f"post-CPU{bank}")
+                    state_result["machine_released"] = released
+                    if not released and state_result["status"] == "PASS":
+                        # A state that passed but did not hand the machine back
+                        # has broken every state after it, so it is not a pass.
+                        state_result.update({
+                            "status": "FAIL",
+                            "error": "state passed but left the machine held",
+                        })
+                        print(f"banking CPU{bank}: FAIL: passed but left the "
+                              f"machine held", flush=True)
+        results["states"].append(state_result)
+
+    failed = [state for state in results["states"] if state["status"] != "PASS"]
+    results["status"] = "FAIL" if failed else "PASS"
+    (artifact_dir / "banking-results.json").write_text(
+        json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    print(f"banking scope: {results['status']} "
+          f"({len(results['states']) - len(failed)}/{len(results['states'])} states)",
+          flush=True)
+    return 1 if failed else 0
+
+
+def _entry_footer_bootstrap(ddr: int, port: int, vic_bank: int) -> bytes:
+    """Put the machine in a known CPU-port and VIC-bank state, then spin at C000.
+
+    The order matters. $DD00/$DD02 are only reachable while I/O is mapped, and
+    the RAM under the three banked windows is only writable while those windows
+    expose RAM, so both are done under the default port before the requested
+    port is selected last.
+    """
+    code = bytearray([
+        0x78,                               # SEI
+        0xA9, 0x2F, 0x85, 0x00,             # $00=$2F: bank bits are outputs
+        0xA9, 0x37, 0x85, 0x01,             # $01=$37: I/O mapped for $DD0x
+        0xAD, 0x02, 0xDD,                   # LDA $DD02
+        0x09, 0x03, 0x8D, 0x02, 0xDD,       # ORA #$03 / STA $DD02: bank bits out
+        0xAD, 0x00, 0xDD,                   # LDA $DD00
+        0x29, 0xFC,                         # AND #$FC
+        0x09, (3 - (vic_bank & 0x03)) & 0x03,
+        0x8D, 0x00, 0xDD,                   # STA $DD00: VIC bank selected
+        0xA9, 0x30, 0x85, 0x01,             # $01=$30: all banked windows are RAM
+    ])
+    for address, data in BANKING_RAM_BYTES.items():
+        for offset, byte in enumerate(data):
+            target = address + offset
+            code.extend((0xA9, byte, 0x8D, target & 0xFF, target >> 8))
+    code.extend((
+        0xA9, port & 0xFF, 0x85, 0x01,      # data register first,
+        0xA9, ddr & 0xFF, 0x85, 0x00,       # then the direction that resolves it
+        0x4C, 0x00, 0xC0,
+    ))
+    return bytes(code)
+
+
+def _parse_footer(line: str) -> dict[str, Any]:
+    """Split a monitor status row into its CPU and VIC fields.
+
+    Returns `complete=False` for the partial `CPU VIEW  VICn $XXXX` form, which
+    carries no CPU banking at all.
+    """
+    text = line.strip()
+    full = re.search(
+        r"CPU(\d)\s+\$A:(\S+)\s+\$D:(\S+)\s+\$E:(\S+)\s+VIC(\d)\s+\$([0-9A-Fa-f]{4})",
+        text)
+    if full:
+        return {
+            "complete": True,
+            "raw": text,
+            "cpu": int(full.group(1)),
+            "a000": full.group(2),
+            "d000": full.group(3),
+            "e000": full.group(4),
+            "vic": int(full.group(5)),
+            "vic_base": int(full.group(6), 16),
+        }
+    partial = re.search(r"CPU\s+VIEW\s+VIC(\d)\s+\$([0-9A-Fa-f]{4})", text)
+    if partial:
+        return {
+            "complete": False,
+            "raw": text,
+            "form": "cpu-view-partial",
+            "vic": int(partial.group(1)),
+            "vic_base": int(partial.group(2), 16),
+        }
+    return {"complete": False, "raw": text, "form": "unrecognised"}
+
+
+def _read_entry_footer(rest, timeout: float = 6.0) -> dict[str, Any]:
+    """Read the status row on the first frames after the monitor opens.
+
+    Polls only until a row appears at all -- deliberately NOT until it becomes
+    complete, because the point of the check is what the footer says on entry.
+    """
+    deadline = time.time() + timeout
+    parsed = {"complete": False, "raw": "", "form": "absent"}
+    while time.time() < deadline:
+        line = overlay_lifecycle.status_line(rest)
+        if line.strip():
+            parsed = _parse_footer(line)
+            break
+        time.sleep(0.2)
+    return parsed
+
+
+ENTRY_FOOTER_CPU_STATES = (
+    # label, $0000 (DDR), $0001 (data), resolved bank, ($A000, $D000, $E000)
+    ("cpu7", 0x2F, 0x37, 7, ("BAS", "I/O", "KRN")),
+    ("cpu5", 0x2F, 0x35, 5, ("RAM", "I/O", "RAM")),
+    ("cpu4", 0x2F, 0x34, 4, ("RAM", "RAM", "RAM")),
+    ("cpu3", 0x2F, 0x33, 3, ("BAS", "CHR", "KRN")),
+    ("cpu0", 0x2F, 0x30, 0, ("RAM", "RAM", "RAM")),
+    # The DDR-resolved state: the data register holds 0 in all three bank bits,
+    # but the direction register makes them inputs, so the pull-ups drive them
+    # high and the machine is banked exactly as CPU7. A footer sourced from the
+    # data register alone reports CPU0 here; the machine is running the KERNAL.
+    ("cpu7-ddr", 0x28, 0x30, 7, ("BAS", "I/O", "KRN")),
+)
+
+ENTRY_FOOTER_VIC_BANKS = (0, 1, 2, 3)
+VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
+ENTRY_FOOTER_PROGRESS = 0xC1F0
+
+
+def _launch_fixture_from_basic(driver: "RestDebugDriver", fixture: MatrixFixture) -> None:
+    """Start the fixture from the BASIC prompt, outside the monitor.
+
+    The monitor must open onto a machine that is already running the program in
+    its chosen banking, so the launch cannot come from the monitor's own `G`:
+    on a U2+L that goes through the boot cartridge and resets the C64 first.
+    Typing SYS at the C64U keyboard leaves the monitor entirely out of it.
+    """
+    driver.rest.write_mem(ENTRY_FOOTER_PROGRESS, bytes([0x00]))
+    # Lower case here on purpose: char_to_combo() shifts an upper-case letter,
+    # and a shifted key at the BASIC prompt types a graphic character, not "S".
+    driver.rest.send_text(f"sys {fixture.bootstrap_addr}\r")
+    driver.event("fixture_launched_from_basic",
+                 address=f"{fixture.bootstrap_addr:04X}")
+    driver.wait_progress_change(ENTRY_FOOTER_PROGRESS,
+                                "fixture running before monitor open",
+                                timeout=6.0)
+
+
+def run_entry_footer_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
+    """Split-host check that the monitor's first frame carries full banking.
+
+    On the frame the monitor draws when it opens -- before Debug is pressed and
+    before any debugged instruction has executed -- the status row must report
+    the CPU banking and the VIC bank of the program that was running, and the
+    first Debug capture must then agree with it.
+    """
+    results: dict[str, Any] = {
+        "focus": "entry-footer",
+        "machine_host": args.c64_host,
+        "overlay_host": args.rest_host,
+        "cells": [],
+    }
+    if not args.c64_host:
+        results.update({
+            "status": "FAIL",
+            "error": "--focus entry-footer requires --c64-host for split-session U2 coverage",
+        })
+        (artifact_dir / "entry-footer-results.json").write_text(
+            json.dumps(results, indent=2) + "\n", encoding="utf-8")
+        print(results["error"], flush=True)
+        return 1
+
+    # Same isolation lever as MCM_BANKING_ONLY: "cpu7:0,cpu3:2" runs those two
+    # cells, each in the listed order, so a per-cell failure can be told apart
+    # from one that follows position because a predecessor left state behind.
+    only = os.environ.get("MCM_ENTRY_FOOTER_ONLY", "").strip()
+    cells: list[tuple[tuple, int]] = []
+    if only:
+        by_label = {state[0]: state for state in ENTRY_FOOTER_CPU_STATES}
+        for part in only.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            label, _, bank = part.partition(":")
+            cells.append((by_label[label], int(bank or 0)))
+    else:
+        for state in ENTRY_FOOTER_CPU_STATES:
+            for vic_bank in ENTRY_FOOTER_VIC_BANKS:
+                cells.append((state, vic_bank))
+
+    for (label, ddr, port, bank, sources), vic_bank in cells:
+        cell_dir = artifact_dir / f"{label}-vic{vic_bank}"
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        row = {"cell_id": f"ENTRY_FOOTER_{label.upper()}_VIC{vic_bank}",
+               "interface": "overlay"}
+        expected_footer = (
+            f"CPU{bank} $A:{sources[0]} $D:{sources[1]} $E:{sources[2]} "
+            f"VIC{vic_bank} ${VIC_BANK_BASES[vic_bank]:04X}")
+        cell: dict[str, Any] = {
+            "cell_id": row["cell_id"],
+            "cpu_state": label,
+            "ddr": f"{ddr:02X}",
+            "port": f"{port:02X}",
+            "expected_cpu_bank": bank,
+            "expected_sources": dict(zip(("A000", "D020", "E000"), sources)),
+            "expected_vic_bank": vic_bank,
+            "expected_footer": expected_footer,
+        }
+        driver: Optional[RestDebugDriver] = None
+        with (cell_dir / "trace.jsonl").open(
+                "a", encoding="utf-8", buffering=1) as trace:
+            try:
+                driver = RestDebugDriver(args, row, cell_dir, trace)
+                driver.reset_baseline()
+                fixture = build_fixture("ram", 1)
+                fixture.bank = bank
+                fixture.bootstrap = _entry_footer_bootstrap(ddr, port, vic_bank)
+                # INC $C1F0 / JMP $C000: an infinite loop with a liveness
+                # counter, so "the program is running" is a measured fact.
+                fixture.chunks = [(0xC000, bytes([0xEE, 0xF0, 0xC1,
+                                                  0x4C, 0x00, 0xC0]))]
+                driver.install_fixture(fixture)
+
+                # The program must be the thing running when the monitor opens,
+                # so launch it and prove it reached its loop before freezing.
+                _launch_fixture_from_basic(driver, fixture)
+                # Recorded, not asserted on: what a DMA read of the port
+                # mirror says while the program runs is evidence about the
+                # channel, and is exactly the value that must not be trusted
+                # blindly.
+                cell["dma_0000_before_open"] = \
+                    f"{driver.read_oracle_bytes(0x0000, 1)[0]:02X}"
+                cell["dma_0001_before_open"] = \
+                    f"{driver.read_oracle_bytes(0x0001, 1)[0]:02X}"
+
+                driver.open_monitor()
+                entry_footer = _read_entry_footer(driver.rest)
+                cell["entry_footer"] = entry_footer
+                (cell_dir / "entry-screen.txt").write_text(
+                    driver.rest.screen_text(), encoding="utf-8")
+
+                if not entry_footer.get("complete"):
+                    raise GateError(
+                        f"entry footer is not populated: {entry_footer.get('raw')!r} "
+                        f"(form={entry_footer.get('form')}); expected "
+                        f"{expected_footer!r}")
+                mismatches = []
+                if entry_footer["cpu"] != bank:
+                    mismatches.append(
+                        f"CPU{entry_footer['cpu']} != CPU{bank}")
+                for field_name, got, want in (
+                        ("$A", entry_footer["a000"], sources[0]),
+                        ("$D", entry_footer["d000"], sources[1]),
+                        ("$E", entry_footer["e000"], sources[2])):
+                    if got != want:
+                        mismatches.append(f"{field_name}:{got} != {field_name}:{want}")
+                if entry_footer["vic"] != vic_bank:
+                    mismatches.append(
+                        f"VIC{entry_footer['vic']} != VIC{vic_bank}")
+                if entry_footer["vic_base"] != VIC_BANK_BASES[vic_bank]:
+                    mismatches.append(
+                        f"VIC base ${entry_footer['vic_base']:04X} != "
+                        f"${VIC_BANK_BASES[vic_bank]:04X}")
+                if mismatches:
+                    raise GateError(
+                        "entry footer disagrees with the running program: "
+                        + "; ".join(mismatches)
+                        + f"; row={entry_footer['raw']!r}")
+
+                # Only now enter Debug. The first captured context must report
+                # the same CPU and VIC facts the entry frame already showed.
+                debug_state = driver.enter_debug_at(0xC000)
+                assert_state_pc_sp(debug_state, 0xC000, None, f"{label} entry")
+                debug_footer = _parse_footer(
+                    _wait_banking_status(
+                        driver.rest,
+                        f"CPU{bank} $A:{sources[0]} $D:{sources[1]} $E:{sources[2]}"))
+                cell["debug_footer"] = debug_footer
+                (cell_dir / "debug-screen.txt").write_text(
+                    driver.rest.screen_text(), encoding="utf-8")
+                for key in ("cpu", "a000", "d000", "e000", "vic", "vic_base"):
+                    if debug_footer.get(key) != entry_footer.get(key):
+                        raise GateError(
+                            f"first Debug capture disagrees with the entry footer "
+                            f"on {key}: entry={entry_footer.get(key)!r} "
+                            f"debug={debug_footer.get(key)!r}; "
+                            f"entry_row={entry_footer['raw']!r} "
+                            f"debug_row={debug_footer['raw']!r}")
+
+                cell["status"] = "PASS"
+                print(f"entry-footer {label} VIC{vic_bank}: PASS", flush=True)
+            except Exception as exc:  # noqa: BLE001 - record every cell
+                cell.update({
+                    "status": "FAIL",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "traceback": traceback.format_exc(),
+                })
+                print(f"entry-footer {label} VIC{vic_bank}: FAIL: {exc}", flush=True)
+            finally:
+                if driver is not None:
+                    released = driver.release_machine_hold(f"post-{label}-vic{vic_bank}")
+                    cell["machine_released"] = released
+                    if not released and cell.get("status") == "PASS":
+                        cell.update({
+                            "status": "FAIL",
+                            "error": "cell passed but left the machine held",
+                        })
+                        print(f"entry-footer {label} VIC{vic_bank}: FAIL: passed "
+                              f"but left the machine held", flush=True)
+        results["cells"].append(cell)
+
+    failed = [cell for cell in results["cells"] if cell.get("status") != "PASS"]
+    results["status"] = "FAIL" if failed else "PASS"
+    (artifact_dir / "entry-footer-results.json").write_text(
+        json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    print(f"entry-footer scope: {results['status']} "
+          f"({len(results['cells']) - len(failed)}/{len(results['cells'])} cells)",
+          flush=True)
+    return 1 if failed else 0
 
 
 def run_alert_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
@@ -3426,7 +4191,14 @@ def main() -> int:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     print(f"artifact dir: {artifact_dir}", flush=True)
     if args.focus == "alerts":
+        # A wording contract over the alert strings and the manual. It never
+        # drives the UI, so it has nothing to hand back.
         return run_alert_scope(args, artifact_dir)
+    _TEARDOWN_CONTEXT.update({"args": args, "artifact_dir": artifact_dir})
+    if args.focus == "banking":
+        return run_banking_scope(args, artifact_dir)
+    if args.focus == "entry-footer":
+        return run_entry_footer_scope(args, artifact_dir)
     ledger = create_or_load_ledger(args, artifact_dir)
 
     run_ledger_root = (Path(args.run_ledger) if args.run_ledger
@@ -3449,7 +4221,7 @@ def main() -> int:
     if not args.skip_preflight:
         preflight = run_preflight(args, artifact_dir)
     if args.preflight_only:
-        final_hygiene(args, artifact_dir)
+        final_hygiene(args, artifact_dir, preflight)
         return 0
 
     if args.classify_pending_device_blocked:
@@ -3515,7 +4287,7 @@ def main() -> int:
     opcode_status = opcode.get("opcode_requirement_status", "FAIL")
     print(progress_line(ledger.rows, opcode_status), flush=True)
 
-    hygiene = final_hygiene(args, artifact_dir)
+    hygiene = final_hygiene(args, artifact_dir, preflight)
     verdict = write_final_report(args, artifact_dir, ledger, preflight, opcode, hygiene)
     # A run is clean when every cell is terminal, there is no GENUINE failure
     # (FAIL/BLOCKED), the opcode gate passed, and no prohibited masking counter
@@ -3523,11 +4295,16 @@ def main() -> int:
     genuine_failures = any(
         row["status"] in ("FAIL", "BLOCKED_WITH_EVIDENCE") for row in ledger.rows)
     masking_violations = COUNTERS.violations()
+    identity_changed = hygiene.get("identity_changed") or {}
     clean = rows_done and not genuine_failures and opcode_status == "PASS" \
-        and not masking_violations
+        and not masking_violations and not identity_changed
     if masking_violations:
         print(f"ANTI-MASKING VIOLATION (prohibited reset/retry counters): "
               f"{masking_violations}", flush=True)
+    if identity_changed:
+        print(f"DEVICE IDENTITY CHANGED DURING THE RUN: {identity_changed}; "
+              f"this run did not measure one image and its result is not "
+              f"evidence", flush=True)
     exit_code = 0 if clean else 1
 
     # Append this run to the cross-run history before returning, so the trend
@@ -3562,10 +4339,22 @@ def _record_crashed_run(exc: BaseException) -> None:
               flush=True)
 
 
+def _run_final_teardown() -> None:
+    context = _TEARDOWN_CONTEXT
+    if not context:
+        return
+    try:
+        final_teardown(context["args"], context["artifact_dir"])
+    except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+        print(f"final teardown not run: {type(exc).__name__}: {exc}", flush=True)
+
+
 if __name__ == "__main__":
     try:
         _exit_code = main()
     except BaseException as _exc:      # noqa: BLE001 - record, then re-raise
         _record_crashed_run(_exc)
         raise
+    finally:
+        _run_final_teardown()
     raise SystemExit(_exit_code)

@@ -93,6 +93,15 @@ public:
     virtual bool is_frozen(void) const { return false; }
     virtual void set_frozen(bool) { }
     virtual bool supports_cpu_banking(void) const { return true; }
+
+    // Whether get_live_cpu_port() is reporting an observed value rather than a
+    // fallback. A backend that cannot select a view bank can still know the
+    // machine's real one, so this is a separate fact from
+    // supports_cpu_banking().
+    virtual bool live_cpu_port_known(void) const { return supports_cpu_banking(); }
+    // True only while a debug stop's own CPU-port reading is held. Narrower
+    // than live_cpu_port_known(), which is also satisfied by weaker sources.
+    virtual bool has_debug_observed_cpu_port(void) const { return false; }
     virtual bool supports_vic_bank(void) const { return true; }
     virtual bool supports_go(void) const { return true; }
     virtual bool supports_reset(void) const { return false; }

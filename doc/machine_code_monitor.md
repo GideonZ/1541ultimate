@@ -700,7 +700,7 @@ Debug is a modal state layered on the Assembly view. It adds breakpoints, single
 
 Press `D` outside Debug. The monitor switches to Assembly view, shows `Dbg` in the header, and reserves the bottom two rows for the CPU footer.
 
-Entering Debug executes nothing and does not stop the C64. There is no captured CPU state yet, so the footer is blank and the first execution command starts at the Assembly cursor address, not at the address the C64 is currently executing. To attach to running code, set a breakpoint and press `G`.
+Entering Debug executes nothing and does not stop the C64. There is no captured CPU state yet, so the footer is blank and the first execution command starts at the Assembly cursor address, not at the address the C64 is currently executing. To attach to running code, use breakpoint+Go: set a breakpoint and press `G`.
 
 To end the session:
 

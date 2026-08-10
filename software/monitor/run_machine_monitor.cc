@@ -68,7 +68,19 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             // loop closes the monitor; pollMenuButtonPush() re-arms the push so
             // the outer run_once() loop also tears the menu down, landing the
             // user back on the live machine instead of a dismissed-menu shell.
-            if (!ret && !monitor->is_debug_session_active() && pollMenuButtonPush()) {
+            if (!ret && pollMenuButtonPush()) {
+                // The menu button must work even while a debug session owns the
+                // CPU: on a cartridge target with no keyboard injection it is
+                // the only way out, and refusing it there leaves the machine
+                // held with no software escape. This leaves Debug mode so the
+                // monitor tears down from a consistent state; the parked CPU
+                // itself is handed back by the teardown that follows the break
+                // -- deinit()'s debug_cleanup_session(), or
+                // dispatch_deferred_debug_go() when a parked-context G is
+                // pending.
+                if (monitor->is_debug_session_active()) {
+                    monitor->leave_debug_for_exit();
+                }
                 break;
             }
         }
@@ -88,20 +100,17 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         monitor->deinit();
         active_reset_monitor = NULL;
         if (deferred_debug_go && release_after_exit) {
-#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
-            C64 *machine = C64::getMachine();
-            if (machine && machine->is_accessible()) {
-                release_host();
-                torn_down_host = true;
-                machine->release_ownership();
-            } else if (host) {
-                release_host();
-                torn_down_host = true;
-                host->release_ownership();
-            }
-#else
             release_host();
             torn_down_host = true;
+#if !defined(RUNS_ON_PC)
+            // The C64 is its own host when the monitor renders into the
+            // machine, so release ownership through whichever object owns it.
+            C64 *machine = C64::getMachine();
+            if (machine && machine->is_accessible()) {
+                machine->release_ownership();
+            } else if (host) {
+                host->release_ownership();
+            }
 #endif
             release_after_exit = false;
         }
@@ -185,6 +194,14 @@ extern "C" bool machine_monitor_request_global_reset_cancel(void)
     // on every REST/menu reset that happens to fire while the monitor is visible.
     active_reset_monitor->request_debug_reset_cancel();
     return true;
+}
+
+extern "C" bool machine_monitor_debug_has_captured_cpu_port(void)
+{
+    if (!active_reset_monitor) {
+        return false;
+    }
+    return active_reset_monitor->debug_observed_cpu_port_held();
 }
 
 extern "C" bool machine_monitor_global_reset_sees_debug_session(void)

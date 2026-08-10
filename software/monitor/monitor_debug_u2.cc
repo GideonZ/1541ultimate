@@ -24,19 +24,39 @@
 #include "itu.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <string.h>
 
 namespace {
 
 class U2DebugSession : public BrkDebugSession
 {
+    // The boot cart clears page three, so the launch reloads $0314-$03FB: the
+    // KERNAL vectors plus the whole debugger stub area. The 14-byte launcher
+    // starts at the instruction trampoline ($0340) and runs into the NMI
+    // capture scratch above it. Neither is in use during a contextless launch,
+    // because there is no parked operation and no freeze in progress.
+    enum {
+        CONTEXTLESS_RELOAD_START = 0x0314,
+        CONTEXTLESS_RELOAD_END = 0x03FB,
+        CONTEXTLESS_RELOAD_LENGTH =
+            CONTEXTLESS_RELOAD_END - CONTEXTLESS_RELOAD_START + 1,
+        CONTEXTLESS_LAUNCHER = 0x0340
+    };
     U2MemoryBackend *backend;
     C64 *machine;
+    uint8_t contextless_reload[CONTEXTLESS_RELOAD_LENGTH];
 
 protected:
     virtual bool backend_ready(void) const { return machine != 0 && machine->exists(); }
     virtual uint8_t current_cpu_port(void) const
     {
         return backend ? backend->get_live_cpu_port() : (uint8_t)0x07;
+    }
+    virtual void note_captured_cpu_port(uint8_t cpu_port)
+    {
+        if (backend) {
+            backend->set_observed_cpu_port(cpu_port);
+        }
     }
     virtual bool begin_stopped_session(void) { return machine->begin_stopped_session(); }
     virtual void end_stopped_session(bool stopped_it) { machine->end_stopped_session(stopped_it); }
@@ -51,6 +71,10 @@ protected:
     virtual uint8_t peek_visible(uint16_t address)
     {
         return machine->peek(address);
+    }
+    virtual uint8_t peek_run_marker(uint16_t address)
+    {
+        return machine->peek_while_running(address);
     }
     virtual void poke_visible(uint16_t address, uint8_t byte)
     {
@@ -97,12 +121,10 @@ protected:
         // begin_run_window() has unfrozen the machine; the 6510 is free-running
         // from its pre-freeze PC. Stop it and un-stop it with the NMI asserted so
         // the CPU observes the edge as it resumes and vectors through the redirect
-        // trampoline installed by nmi_redirect_to(). NOTE: on a U2+L plugged into
-        // a C64U host this NMI is dropped by the host (the C64U does not forward
-        // the cartridge NMI to its internal 6510 in any bus config - see
-        // tests/e2e/monitor/U2_CARTRIDGE_NMI.md), so
-        // entry/stepping does not complete there; on a real C64 (native cartridge
-        // NMI) this is the correct launch.
+        // trampoline installed by nmi_redirect_to(). The same mechanism carries
+        // C64::capture_cpu_port_via_nmi()'s stub on a U2+L in a C64U host, which
+        // reports the port back, so the edge does reach the host's 6510; see
+        // tests/e2e/monitor/U2_CARTRIDGE_NMI.md.
         bool stopped_it = machine->begin_stopped_session();
         machine->end_stopped_session_nmi(stopped_it);
     }
@@ -115,11 +137,68 @@ protected:
         monitor_io::jump_to(address);
         return true;
     }
+    virtual bool supports_contextless_breakpoint_launch(void) const
+    {
+        return true;
+    }
+    virtual bool prepare_contextless_breakpoint_launch(uint16_t address)
+    {
+        // Snapshot while the installed handler is still stopped/frozen, so the
+        // run window can release the CPU without racing page-three changes
+        // into the image handed to the boot cart.
+        bool stopped_it = machine->begin_stopped_session();
+        for (int i = 0; i < CONTEXTLESS_RELOAD_LENGTH; i++) {
+            contextless_reload[i] = machine->peek(
+                (uint16_t)(CONTEXTLESS_RELOAD_START + i));
+        }
+        machine->end_stopped_session(stopped_it);
+
+        // A trap taken during the short transition into the boot cart must not
+        // be replayed as the launch result.
+        clear_run_result_markers(contextless_reload, CONTEXTLESS_RELOAD_START,
+                                 CONTEXTLESS_RELOAD_LENGTH);
+
+        // start_cartridge() resets the C64 before the boot-cart DMA load. RAM
+        // under the KERNAL survives that, but the launcher reinstalls the hard
+        // IRQ/BRK vector anyway so a bootstrap that banks the KERNAL out
+        // (CPU0/4/5) reaches the hard BRK stub as reliably as a KERNAL-visible
+        // one reaches the soft $0316 vector.
+        const uint16_t stub = hard_brk_stub_address();
+        const uint8_t launcher[] = {
+            0x78,
+            0xA9, (uint8_t)(stub & 0xFF),
+            0x8D, 0xFE, 0xFF,
+            0xA9, (uint8_t)(stub >> 8),
+            0x8D, 0xFF, 0xFF,
+            0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
+        };
+        memcpy(contextless_reload +
+                   (CONTEXTLESS_LAUNCHER - CONTEXTLESS_RELOAD_START),
+               launcher, sizeof(launcher));
+        return true;
+    }
+    virtual bool launch_contextless_with_breakpoints(uint16_t address)
+    {
+        // The C64U does not forward the cartridge NMI. The boot cart clears
+        // $0300-$03FF during initialization, so reload the debugger's vectors
+        // and cassette-buffer handler in the same handoff before it jumps.
+        return monitor_io::jump_to_with_payload(
+            CONTEXTLESS_LAUNCHER, CONTEXTLESS_RELOAD_START, contextless_reload,
+            CONTEXTLESS_RELOAD_LENGTH);
+    }
+
+    virtual void on_cpu_run_window_open(void)
+    {
+        if (backend) {
+            backend->invalidate_live_cpu_port_cache();
+        }
+    }
 
 public:
     explicit U2DebugSession(U2MemoryBackend *b)
         : BrkDebugSession(), backend(b), machine(0)
     {
+        memset(contextless_reload, 0, sizeof(contextless_reload));
         machine = C64::getMachine();
     }
 

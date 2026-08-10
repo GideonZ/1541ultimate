@@ -431,6 +431,9 @@ class MachineMonitor : public UIObject
     MonitorBackingStore breakpoint_target_for_view(uint16_t address) const;
     MonitorBackingStore breakpoint_target_for_live_cpu(uint16_t address) const;
     void show_breakpoint_mapping_note(uint16_t address, MonitorBackingStore target);
+    // Popup for a debug operation that did not complete. The result is an int
+    // so this header does not have to name DebugSession::Result.
+    void debug_popup_result(int result);
     void debug_toggle_breakpoint(void);
     void debug_open_breakpoint_popup(void);
     void edit_breakpoint_label(uint8_t slot);
@@ -543,6 +546,11 @@ public:
     void request_debug_reset_cancel(void);
     void invalidate_live_cpu_port_view(void);
     bool is_debug_session_active(void) const;
+    bool live_cpu_port_known(void) const;
+    bool debug_observed_cpu_port_held(void) const;
+    // Leave Debug so the monitor can be closed from outside. Hands the
+    // parked CPU back to the interrupted program.
+    void leave_debug_for_exit(void) { debug_leave(); }
     // Test/inspection accessor for the transient Debug status line.
     const char *debug_status_message(void) const {
         return debug_status_visible ? debug_status_text : "";

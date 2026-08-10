@@ -46,9 +46,67 @@ REST_TIMEOUT_SECONDS = 5.0
 # overridden view. Matching only the first form left find_status_line unable
 # to locate the row at all whenever an override was active, which is exactly
 # the state every banked-breakpoint and banked-continue scenario works in.
+#
+# A backend that reports neither CPU banking nor a VIC bank (the U2+L's
+# U2MemoryBackend) draws a third and fourth form instead, and a backend that
+# reports only one of the two draws a fifth: see the status-row branches in
+# MachineMonitor::draw_status_line. find_status_line only has to locate the
+# row; the assertions that read banking detail out of it are already gated on
+# the target. Without these alternatives the U2+L status row matches nothing,
+# so enter_monitor() cannot tell an open monitor from a closed one and falls
+# through to its blind menu-navigation fallback.
 STATUS_LINE_RE = re.compile(
     r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
-    r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+    r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}"
+    r"|CPU VIEW  CPU BANK N/A  VIC N/A"
+    r"|CPU VIEW  VIC[0-3] \$[0-9A-F]{4}"
+    r"|(?:CPU[0-7]|C[0-7]O[0-7])  VIC N/A")
+# Which hardware the suite is pointed at. The U2+L runs the same monitor but
+# its memory backend reports no CPU banking and no VIC bank, so the checks
+# that read those out of the status row have nothing to assert there.
+TARGET = "u64"
+
+
+def is_u2() -> bool:
+    return TARGET == "u2"
+
+
+# In a split session the device running the monitor cannot accept REST keyboard
+# input, so keystrokes go to the machine it is plugged into. Everything else
+# (menus, configs, memory, files) stays on the device under test.
+MACHINE_HOST: Optional[str] = None
+
+
+def input_host(host: str) -> str:
+    return MACHINE_HOST or host
+
+
+# Skip reason shared by the checks whose subject is selecting a CPU bank. The
+# U2+L reports the live bank - the freeze captures the 6510's port by running a
+# stub on the CPU itself - but its monitor has no view bank to point elsewhere,
+# so a check that cycles the view with O has nothing to cycle.
+NO_CPU_BANKING = ("the U2+L monitor has no CPU view bank to select; it reports "
+                  "the live bank the freeze captured off the 6510 and nothing "
+                  "else to switch between")
+
+
+# The mapping fields a U2+L shows at the BASIC prompt. Its freeze reads the
+# 6510's port through an NMI stub, so the row carries real banking - but the
+# monitor has no view bank, so it always renders the LIVE one. Checks that pin a
+# selected view bank therefore cannot be asserted verbatim there; the mapping is
+# what is true and what is worth asserting.
+U2_LIVE_MAPPING = "$A:BAS $D:I/O $E:KRN"
+
+
+def status_text(snapshots: Dict, key: str) -> str:
+    """The expected status row for the target under test."""
+    return U2_LIVE_MAPPING if is_u2() else snapshots[key]["contains"]["22"]
+
+
+# How long the monitor may take to appear after the key that opens it.
+MONITOR_OPEN_TIMEOUT_SECONDS = 8.0
+POLL_INTERVAL_SECONDS = 0.25
+
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
@@ -101,9 +159,53 @@ class MonitorSession:
     def send_text(self, text: str, label: str) -> Snapshot:
         return self.backend.send_text(text, label)
 
-    def goto(self, address: str) -> Snapshot:
-        self.send_char("J")
-        return self.send_text(address + "\r", f"J {address}")
+    def _navigation_landed(self, snapshot: Snapshot, marker: str) -> bool:
+        # The address is looked for in the header row alone, not anywhere on
+        # screen: in Assembly view an operand such as "JSR $C6C0" contains the
+        # target string, so a whole-screen match could be satisfied by a stale
+        # page that merely mentions the address. The prompt check does look at
+        # the whole screen, because the prompt is a box drawn over the view.
+        header = next((line for line in snapshot.lines if "MONITOR" in line), "")
+        return bool(header) and marker in header and "Jump" not in snapshot.text()
+
+    def goto(self, address: str, attempts: int = 3) -> Snapshot:
+        """Navigate to `address`, confirming the monitor actually got there.
+
+        Two separate things can leave the caller reading the wrong page.
+
+        The navigation may not have finished: the J prompt closes and the header
+        updates only once the monitor has re-read that page, which on a U2+L
+        means stopping the machine, and the transport's settle can return while
+        the prompt is still up.
+
+        Or a keystroke may be lost outright. Where the keyboard is injected on
+        one device and scanned off the matrix by another, a character goes
+        missing every so often - measured on a U2+L in a C64U host, where "3200"
+        arrived as "320" and the monitor dutifully went to $0320. Retrying is
+        safe because navigation is idempotent, and it is the only thing that
+        recovers a dropped character; waiting longer never will.
+        """
+        marker = f"${address.upper()}"
+        snapshot = self.capture()
+        for _ in range(attempts):
+            # A previous attempt may have left the prompt open with a partial
+            # address in it; typing the next J into that field would compound
+            # the error rather than retry it.
+            if "Jump" in snapshot.text():
+                snapshot = self.send_key("ESC")
+            self.send_char("J")
+            snapshot = self.send_text(address + "\r", f"J {address}")
+            deadline = time.monotonic() + MONITOR_OPEN_TIMEOUT_SECONDS
+            while True:
+                if self._navigation_landed(snapshot, marker):
+                    return snapshot
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(POLL_INTERVAL_SECONDS)
+                snapshot = self.capture()
+        # Out of attempts: hand back what is on screen so the caller's own
+        # assertion reports the mismatch.
+        return snapshot
 
     def fill(self, expr: str) -> Snapshot:
         self.send_char("F")
@@ -129,14 +231,35 @@ class MonitorSession:
             # failure.
             return Snapshot([], [], f"G {address} (menu closed)")
 
+    def _await_status_line(self, snapshot: Snapshot,
+                           timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Optional[Snapshot]:
+        """Re-read until the monitor's status row is on screen, or give up.
+
+        Opening the monitor stops the machine, reads a screenful of memory and
+        redraws, and how long that takes depends on the target: on a U2+L, where
+        the C64 is running behind the remote UI, the first draw takes seconds. A
+        single read can therefore catch a partly drawn screen, and treating that
+        as "the monitor did not open" is what sent the caller into the blind menu
+        navigation below - which presses keys on rows it has not verified and has
+        wedged a U2+L in the past."""
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                find_status_line(snapshot)
+                return snapshot
+            except Failure:
+                pass
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(POLL_INTERVAL_SECONDS)
+            snapshot = self.capture()
+
     def enter_monitor(self) -> Snapshot:
         self.backend.ensure_ready()
         snapshot = self.send_key("CTRL_O")
-        try:
-            find_status_line(snapshot)
-            return snapshot
-        except Failure:
-            pass
+        settled = self._await_status_line(snapshot)
+        if settled is not None:
+            return settled
 
         # A Debug scenario can intentionally leave the monitor open while it
         # restores the C64.  Its footer replaces the ordinary CPU/VIC status
@@ -146,6 +269,18 @@ class MonitorSession:
             snapshot = self.send_key("CTRL_D")
             find_status_line(snapshot)
             return snapshot
+
+        # CTRL_O toggles the monitor rather than opening it, so when the monitor
+        # was already up the key above closed it. Whether it was up depends on
+        # the transport: a REST machine reset takes the overlay and freeze UIs
+        # down with the machine, but the telnet UI is a separate remote session
+        # that keeps the monitor open across the same reset. Toggling back is
+        # the direct way to reopen, and it leaves a freshly opened monitor just
+        # as the menu navigation below does.
+        snapshot = self.send_key("CTRL_O")
+        settled = self._await_status_line(snapshot)
+        if settled is not None:
+            return settled
 
         snapshot = self.send_key("F5")
         snapshot = self.send_char("D")
@@ -171,9 +306,41 @@ def assert_contains(snapshot: Snapshot, line_index: int, expected: str) -> None:
         )
 
 
-def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
+def view_bank_status_forms(expected: str) -> Tuple[str, ...]:
+    """The status-line spellings that report the monitor view bank in `expected`.
+
+    `O` moves the monitor view bank only and never writes `$0001`, so the footer
+    reads `CPU<n>` only while the live CPU execution bank still equals the view
+    bank, and `C<live>O<n>` once the two differ. doc/machine_code_monitor.md
+    documents both spellings, and both report the same view bank.
+
+    Which spelling appears depends on the transport, not on the monitor. Under
+    the overlay and freeze backends the live bank the monitor reads follows the
+    view bank, so the footer stays on `CPU<n>`. Over telnet the C64 keeps running
+    BASIC in bank 7 while `O` cycles the view, so the footer becomes `C7O<n>`.
+
+    Only the checks that cycle the view bank use this. The live bank is a real
+    assertion elsewhere - the debug suite separately expects `CPU5 ...` for a
+    machine actually executing in bank 5 and `C5O7 ...` for one executing in
+    bank 5 while the view shows bank 7 - so `ensure_status` stays exact.
+    """
+    if not re.match(r"^CPU[0-7]", expected):
+        return (expected,)
+    view_bank = expected[3]
+    rest = expected[4:]
+    return (expected,) + tuple(f"C{live}O{view_bank}{rest}" for live in "01234567")
+
+
+def assert_view_bank_status(snapshot: Snapshot, expected: str) -> None:
     line_index = find_status_line(snapshot)
-    assert_contains(snapshot, line_index, expected)
+    accepted = view_bank_status_forms(expected)
+    if any(form in snapshot.line(line_index) for form in accepted):
+        return
+    raise Failure(
+        f"Snapshot mismatch after {snapshot.last_command}: expected line {line_index} "
+        f"to contain one of {accepted!r}\n"
+        f"actual:\n  {snapshot.line(line_index)!r}"
+    )
 
 
 def assert_line_contains_all(snapshot: Snapshot, values: Tuple[str, ...]) -> int:
@@ -279,6 +446,30 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
     rest_api(host).machine.writemem(address, data, idempotent=True)
 
 
+def write_rest_memory_confirmed(host: str, address: int, data: bytes,
+                                attempts: int = 8, settle: float = 0.25) -> None:
+    """Write memory and confirm it is still there afterwards.
+
+    A machine:reset hands the C64 to the KERNAL, whose start-up walks up through
+    RAM and zeroes it. A fixture written into that window is wiped before the
+    test ever runs, and the check then fails on a byte that was written
+    correctly. Re-arm rather than guess how long the boot takes: the write is
+    repeated until a read-back matches, so a boot-time wipe costs one more
+    attempt instead of the check.
+    """
+    last = b""
+    for _ in range(attempts):
+        write_rest_memory(host, address, data)
+        time.sleep(settle)
+        last = read_rest_memory(host, address, len(data))
+        if last == data:
+            return
+    raise Failure(
+        f"${address:04X} would not hold {data.hex().upper()} after {attempts} "
+        f"attempts; last read {last.hex().upper()}"
+    )
+
+
 def reset_rest_machine(host: str, password: Optional[str]) -> None:
     headers = {"X-Password": password} if password else {}
     for attempt in range(12):
@@ -299,7 +490,7 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:input",
+            f"http://{input_host(host)}/v1/machine:input",
             data=body,
             headers={**headers, "Content-Type": "application/json"},
             method="POST",
@@ -407,13 +598,31 @@ def ensure_status(session: MonitorSession, expected: str) -> Snapshot:
     )
 
 
+def ensure_view_bank_status(session: MonitorSession, expected: str) -> Snapshot:
+    """ensure_status for a view bank reached with `O`, accepting either spelling."""
+    accepted = view_bank_status_forms(expected)
+    screen = session.capture()
+    for _ in range(8):
+        try:
+            line_index = find_status_line(screen)
+        except Failure:
+            line_index = -1
+        if line_index >= 0 and any(form in screen.line(line_index) for form in accepted):
+            return screen
+        screen = session.send_char("o")
+    raise Failure(
+        f"Unable to reach expected monitor view bank {expected!r}; last status line was "
+        f"{screen.line(find_status_line(screen))!r}"
+    )
+
+
 def cycle_cpu_bank_from_cpu7(session: MonitorSession, target_status: str, steps: int) -> Snapshot:
-    screen = ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
+    screen = ensure_view_bank_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
 
     for _ in range(steps):
         screen = session.send_char("o")
 
-    assert_status_contains(screen, target_status)
+    assert_view_bank_status(screen, target_status)
     return screen
 
 
@@ -596,6 +805,13 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> No
     sentinel = 0x5A
     values = (0x42, 0x37, 0x99)
     stop_first = machine_runs_behind_the_ui(mode)
+    # Where the test program is placed. The U2+L has no NMI trampoline to hand
+    # the CPU a new PC with (see tests/e2e/monitor/U2_CARTRIDGE_NMI.md), so its
+    # G runs the boot cartridge, which resets the C64 first. The reset takes
+    # the BASIC program area with it, so a program at $0810 is gone before it
+    # can run there. $1100 is above everything the reset clears and below the
+    # sentinel, and behaves identically on both targets.
+    program = 0x1100 if is_u2() else 0x0810
 
     for value in values:
         # A G program may not retire at its trailing BRK before the monitor
@@ -607,18 +823,21 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> No
         if stop_first:
             reset_rest_machine(rest_host, None)
             session.enter_monitor()
-        write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
-        write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
-        # Confirm the sentinel is actually in memory before asking the monitor
-        # to show it. Reading the monitor's view first cannot tell "the write
-        # has not landed" from "the view has not refreshed", and under Freeze
-        # this read has come back with the previous iteration's value.
-        wait_for_rest_byte(rest_host, 0x2000, sentinel)
+        # Both fixtures are written through the confirming helper: this loop
+        # runs straight after a reset, so either can land in the window where
+        # the KERNAL's RAM initialisation is still walking up through memory.
+        # Confirming also covers what the read-back it replaces was for:
+        # reading the monitor's view first cannot tell "the write has not
+        # landed" from "the view has not refreshed", and under Freeze that read
+        # has come back with the previous iteration's value.
+        write_rest_memory_confirmed(
+            rest_host, program, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
+        write_rest_memory_confirmed(rest_host, 0x2000, bytes((sentinel,)))
 
         ensure_view(session, "HEX ")
         before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
         if before != sentinel:
-            # The sentinel is known to be in memory: wait_for_rest_byte above
+            # The sentinel is known to be in memory: the confirming write above
             # would have failed otherwise. Report what REST sees now as well,
             # so the message says whether memory changed under the test or the
             # monitor's view simply did not follow it.
@@ -629,7 +848,7 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> No
                 f"({'monitor view is stale' if rest_now == sentinel else 'memory changed'})"
             )
 
-        session.goto_run("0810")
+        session.goto_run(f"{program:04X}")
         wait_for_rest_byte(rest_host, 0x2000, value)
 
         session.enter_monitor()
@@ -1064,6 +1283,12 @@ def picker_path(snapshot: Snapshot) -> str:
     return tokens[0] if tokens else ""
 
 
+# The root listing is not in the same order on every device: a U64 lists Temp
+# first, a U2+L lists Flash first. Quick-seek to the entry by name instead of
+# assuming a position.
+TEMP_ENTRY = "Temp"
+
+
 def picker_to_root(session: MonitorSession) -> Snapshot:
     """Walk the picker up to the filesystem root ("/").
 
@@ -1084,13 +1309,62 @@ def picker_enter(session: MonitorSession, name_prefix: str) -> Snapshot:
     return session.send_key("RIGHT")
 
 
-def clear_prompt_field(session: MonitorSession) -> None:
-    """Empty a (non-template) string prompt by sending backspaces.
+def prompt_field_text(session: MonitorSession, title: str) -> str:
+    """The current contents of a string prompt's edit field.
+
+    UIStringBox draws the title on the box's first row and the edit field two
+    window rows below it (edit.init(window, keyb, 0, 2, ...)), inside a five-row
+    box. The box is a window over whatever view is behind it, so the full screen
+    line also carries that view's text to the left and right of the box border:
+    on a U64 the memory view shows through, and reading the whole line back
+    returned "0840 FF FF" as if the field still held text. Only the columns
+    between this box's own borders belong to the field, and the title row is what
+    locates them, because the title is centred inside them.
+
+    The firmware's own layout (title_row + 2) is read first and title_row + 1
+    second, so a stray artefact on the blank row can never win, and both are read
+    because which screen row the field lands on depends on whether the border
+    occupies a row of its own on that display. Reading a single fixed offset gets an empty
+    string from the other row, which reads as "the field is already empty" and
+    silently skips clearing it.
+    """
+    snapshot = session.capture()
+    row = snapshot.find_line_containing(title)
+    title_line = snapshot.line(row)
+    title_at = title_line.index(title)
+    left = title_line.rfind("|", 0, title_at)
+    right = title_line.find("|", title_at + len(title))
+    for offset in (2, 1):
+        field_line = snapshot.line(row + offset)
+        if left < 0 or right < 0:
+            text = field_line.strip("|+ ").rstrip()
+        elif set(field_line[left:right + 1].strip()) <= {"+", "-", "|"}:
+            continue  # the box's bottom border, not a field row
+        else:
+            text = field_line[left + 1:right].strip()
+        if text:
+            return text
+    return ""
+
+
+def clear_prompt_field(session: MonitorSession, title: str) -> None:
+    """Empty a (non-template) string prompt by deleting what is in it.
 
     The monitor's "Save as" prompt is pre-filled with the last-used name and
-    does not auto-clear on the first keystroke, so we delete it first. The
-    field is at most 35 characters, hence the generous count."""
-    session.send_key_repeat("BACKSPACE", 40)
+    does not auto-clear on the first keystroke, so it has to be deleted first.
+    The number of backspaces comes from the field's own contents, and the field
+    is read back until it is empty: a key sent over REST is held long enough
+    for the firmware's own auto-repeat to fire, so a blind burst of 40 queues
+    far more than 40 deletions on a U2+L, and the keys sent after it are still
+    draining several seconds later - which is how the name typed next went
+    missing entirely."""
+    for _ in range(6):
+        text = prompt_field_text(session, title)
+        if not text:
+            return
+        session.send_key_repeat("BACKSPACE", len(text))
+    raise Failure(f"{title!r} prompt field would not clear; it still reads "
+                  f"{prompt_field_text(session, title)!r}")
 
 
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
@@ -1119,13 +1393,13 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     session.send_char("S")
     session.send_text(mem_range + "\r", f"save range {mem_range}")
     picker_to_root(session)
-    snapshot = session.send_key("RIGHT")  # step into /Temp (the first root entry)
+    snapshot = picker_enter(session, TEMP_ENTRY)
     for prefix in enter_dirs:
         snapshot = picker_enter(session, prefix)
     # The cursor defaults to "<< Create New File >>"; RIGHT picks it and the
     # monitor then asks for the file name.
     session.send_key("RIGHT")
-    clear_prompt_field(session)
+    clear_prompt_field(session, "Save as")
     snapshot = session.send_text(filename + "\r", f"save as {filename}")
     snapshot.find_line_containing("SAVE")
     return session.send_key("ENTER")  # dismiss the confirmation popup
@@ -1135,7 +1409,7 @@ def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str) 
     """Load filename back, navigating from root through enter_dirs."""
     session.send_char("L")
     picker_to_root(session)
-    session.send_key("RIGHT")  # step into /Temp
+    picker_enter(session, TEMP_ENTRY)
     for prefix in enter_dirs:
         picker_enter(session, prefix)
     for ch in filename:
@@ -1148,7 +1422,12 @@ def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str) 
     return session.send_key("ENTER")  # dismiss the confirmation popup
 
 
-def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: str) -> None:
+def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: str,
+                               file_host: Optional[str] = None) -> None:
+    # The monitor's save/load picker writes to the filesystem of the device
+    # running the monitor, which in a split session is not the device whose
+    # C64 memory `rest_host` reads.
+    file_host = file_host or rest_host
     addr = 0xC000
     pattern = bytes((0x5A, 0xA5, 0x01, 0x02, 0xDE, 0xAD, 0xBE, 0xEF,
                      0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80))
@@ -1156,7 +1435,7 @@ def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: s
 
     write_rest_memory(rest_host, addr, pattern)
     monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [], name)
-    if not rest_file_exists(rest_host, f"/Temp/{name}"):
+    if not rest_file_exists(file_host, f"/Temp/{name}"):
         raise Failure(f"Saved file /Temp/{name} not found via REST")
 
     write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
@@ -1170,15 +1449,17 @@ def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: s
         )
 
 
-def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) -> None:
+def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str,
+                           file_host: Optional[str] = None) -> None:
+    file_host = file_host or rest_host
     addr = 0xC100
     pattern = bytes((0x11, 0x22, 0x33, 0x44, 0xAA, 0xBB, 0xCC, 0xDD,
                      0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02))
     disk = f"MD{token}.D64"
     inner = f"D{token}"
 
-    rest_create_d64(rest_host, f"/Temp/{disk}", f"MD{token}")
-    if not rest_file_exists(rest_host, f"/Temp/{disk}"):
+    rest_create_d64(file_host, f"/Temp/{disk}", f"MD{token}")
+    if not rest_file_exists(file_host, f"/Temp/{disk}"):
         raise Failure(f"D64 image /Temp/{disk} was not created")
 
     write_rest_memory(rest_host, addr, pattern)
@@ -1195,11 +1476,13 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
         )
 
 
-def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
+def run_tests(session: MonitorSession, rest_host: str, mode: str,
+              file_host: Optional[str] = None) -> None:
+    file_host = file_host or rest_host
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
-        ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
+        ensure_status(session, status_text(snapshots, "status_cpu31"))
 
     with check("KERNAL $E000 hex view and REST match"):
         ensure_hex_width(session, 8)
@@ -1232,16 +1515,22 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
     with check("CPU6 RAM under BASIC write/read"):
-        screen = ensure_view(session, "HEX ")
-        session.goto("A000")
-        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
-        session.fill("A000-A000,AA")
-        screen = session.goto("A000")
-        assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
+        if is_u2():
+            check_skip(NO_CPU_BANKING)
+        else:
+            screen = ensure_view(session, "HEX ")
+            session.goto("A000")
+            screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
+            session.fill("A000-A000,AA")
+            screen = session.goto("A000")
+            assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
     with check("CPU5 RAM under KERNAL status"):
-        session.goto("E000")
-        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
+        if is_u2():
+            check_skip(NO_CPU_BANKING)
+        else:
+            session.goto("E000")
+            screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
     with check("ASCII view width and scrolling"):
         # 19 rows of 0x20 bytes, each row a distinct character, so the view has
@@ -1259,7 +1548,8 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         first_content_row = content_rows[0]
         last_content_row = content_rows[-1]
         assert_ascii_width(screen, first_content_row)
-        assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
+        # Still on the view bank the previous check cycled to with O.
+        assert_view_bank_status(screen, status_text(snapshots, "status_cpu29"))
 
         screen = session.send_key("DOWN")
         assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
@@ -1293,13 +1583,16 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         session.send_key("ESC")
 
     with check("CPU bank cycling reaches CHAR and RAM mappings"):
-        session.goto("A000")
-        screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
-        assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
-        session.send_char("o")
-        session.send_char("o")
-        screen = session.send_char("o")
-        assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+        if is_u2():
+            check_skip(NO_CPU_BANKING)
+        else:
+            session.goto("A000")
+            screen = ensure_view_bank_status(session, snapshots["status_cpu27"]["contains"]["22"])
+            assert_view_bank_status(screen, snapshots["status_cpu27"]["contains"]["22"])
+            session.send_char("o")
+            session.send_char("o")
+            screen = session.send_char("o")
+            assert_view_bank_status(screen, snapshots["status_cpu30"]["contains"]["22"])
 
     with check("COMPARE reports differing address"):
         screen = ensure_view(session, "HEX ")
@@ -1359,10 +1652,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
     save_load_token = f"{int(time.time()) % 100000:05d}"
 
     with check("save/load round-trip to top-level /Temp file"):
-        run_save_load_topfile_test(session, rest_host, save_load_token)
+        run_save_load_topfile_test(session, rest_host, save_load_token, file_host)
 
     with check("save/load round-trip to file in new /Temp D64"):
-        run_save_load_d64_test(session, rest_host, save_load_token)
+        run_save_load_d64_test(session, rest_host, save_load_token, file_host)
 
     # These two checks are about the Telnet transport itself -- a concurrent
     # poll-mode connection, and Telnet's own per-keystroke output volume --
@@ -1391,21 +1684,42 @@ def main() -> int:
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
+    parser.add_argument("--c64-host", default=os.environ.get("U64_C64_HOST"),
+                        help="Split session: the machine this device is plugged into. "
+                             "A U2+L cartridge renders its own overlay but cannot accept "
+                             "REST keyboard input, and the C64 memory it debugs belongs to "
+                             "the host, so keystrokes and the memory oracle go here while "
+                             "menu_screen/menu_button/configs stay on --host.")
+    parser.add_argument("--target", choices=("u64", "u2"),
+                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
+                        help="Target hardware. 'u2' skips checks for features the U2+L "
+                             "does not have (CPU banking view, VIC bank).")
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
-    rest_host = args.rest_host or args.host
+    global TARGET, MACHINE_HOST
+    TARGET = args.target
+    MACHINE_HOST = args.c64_host
+
+    ui_host = args.rest_host or args.host
+    # Only keystrokes are routed to --c64-host. The memory oracle stays on the
+    # device running the monitor: both devices sit on the same physical C64
+    # bus, but only the cartridge's own DMA is coordinated with the cartridge
+    # UI that is holding that bus, and a read issued from the other device
+    # while the cartridge holds DMA comes back as $FF.
+    rest_host = ui_host
 
     reset_rest_machine(rest_host, args.password)
 
     session = None
     try:
         backend = make_backend(
-            args.mode, rest_host, args.password, args.timeout,
+            args.mode, ui_host, args.password, args.timeout,
             telnet_host=args.host, telnet_port=args.port,
+            machine_host=args.c64_host,
         )
         session = MonitorSession(backend)
-        run_tests(session, rest_host, args.mode)
+        run_tests(session, rest_host, args.mode, file_host=ui_host)
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:

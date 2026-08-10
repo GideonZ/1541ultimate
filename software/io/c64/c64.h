@@ -306,6 +306,18 @@ class C64 : public GenericHost, ConfigurableObject
     // un-stops the CPU instead of clearing C64_MODE, so a debug launch NMI raised
     // while the CPU was stopped survives the un-stop and is taken by the 6510.
     bool nmi_on_resume;
+    // 6510 port as the running program had it, read by an NMI stub before
+    // the freeze halts the CPU. The FPGA 6510 does not write its port
+    // through to RAM, so a DMA read of $0001 cannot supply this.
+    bool cpu_port_captured;
+    uint8_t captured_cpu_port;
+    uint8_t captured_cpu_ddr;
+    // Set once the host has proved it does not deliver the cartridge NMI, after
+    // enough consecutive misses that a single interrupt-masked program cannot
+    // account for them.
+    bool cpu_port_capture_unavailable;
+    uint8_t cpu_port_capture_failures;
+    static const uint8_t CPU_PORT_CAPTURE_MAX_FAILURES = 3;
     void determine_d012(void);
     void goUltimax(void);
     void backup_io(void);
@@ -359,6 +371,19 @@ public:
     	this->client = client;
     	freeze();
     }
+    // Runs a short stub on the live 6510 through the NMI vector to read
+    // $00/$01, then restores everything it touched. Returns false when the
+    // stub did not run, which is the case on a host that does not deliver
+    // the cartridge NMI.
+    bool capture_cpu_port_via_nmi(void);
+    // Drop the sample when the program is about to run: it can rewrite $01.
+    void invalidate_captured_cpu_port(void) { cpu_port_captured = false; }
+    bool get_captured_cpu_port(uint8_t *port, uint8_t *ddr) const {
+        if (!cpu_port_captured) return false;
+        if (port) *port = captured_cpu_port;
+        if (ddr) *ddr = captured_cpu_ddr;
+        return true;
+    }
     void release_ownership(void) {
     	unfreeze();
     	this->client = 0;
@@ -374,6 +399,19 @@ public:
     bool exists(void);
     bool is_accessible(void);
     bool is_stopped(void);
+
+    // The freezer menu is up, so the machine is held and its I/O has been
+    // reconfigured for the cartridge's own use.
+    bool is_frozen(void) const { return isFrozen; }
+
+    // CIA2 port A as the frozen program left it; its bottom two bits select the
+    // VIC bank. Taken from the backup, not a live $DD00 read: init_io() turns
+    // those pins into inputs (CIA2_DDRA &= 0xFC), after which a read returns the
+    // floating state, measured as bank 0 whatever the program selected. Neither
+    // init_io() nor restore_io() touches the data register, so a value written
+    // here survives the unfreeze.
+    uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
+    void set_frozen_cia2_porta(uint8_t value) { cia_backup[1] = value; }
     
     void set_colors(int background, int border);
     Screen *getScreen(void);
@@ -403,6 +441,9 @@ public:
     void start(void);
     bool is_in_reset(void);
     virtual uint8_t peek(uint16_t address);
+    // Reads one DMA-visible byte without stopping the 6510, so the value is
+    // only meaningful for a single byte another actor owns and writes once.
+    uint8_t peek_while_running(uint16_t address) const;
     virtual void poke(uint16_t address, uint8_t value);
     void dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw);
 

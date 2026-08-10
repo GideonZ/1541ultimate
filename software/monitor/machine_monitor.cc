@@ -1,4 +1,5 @@
 #include "machine_monitor.h"
+#include "monitor_init.h"
 
 #include "assembler_6502.h"
 #include "disassembler_6502.h"
@@ -4386,8 +4387,17 @@ void MachineMonitor :: draw_status()
     if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
         strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
     } else if (backend && !backend->supports_cpu_banking()) {
-        sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
-                monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        if (backend->live_cpu_port_known()) {
+            // The bank can only be observed here, not selected, so the view and
+            // the live value are the same and the row never shows an override
+            // the user did not ask for.
+            uint8_t live_cpu_port = backend->get_live_cpu_port();
+            monitor_format_status_line(line, live_cpu_port, live_cpu_port,
+                                       current_vic_bank);
+        } else {
+            sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
+                    monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        }
     } else if (backend && !backend->supports_vic_bank()) {
         uint8_t live_cpu_port = backend ? backend->get_live_cpu_port() : state.view_cpu_port;
         if ((state.view_cpu_port & 0x07) == (live_cpu_port & 0x07)) {
@@ -6059,6 +6069,13 @@ void MachineMonitor :: debug_leave()
     clear_pending_go();
     debug_clear_status();
     debug.leave();
+    if (backend) {
+        // Leaving Debug returns the CPU to the interrupted program, which may
+        // rewrite $01 before the monitor is looked at again. Dropping the
+        // captured port makes the status row fall back to what is still
+        // measurable, and lets the next freeze take a fresh reading.
+        backend->invalidate_live_cpu_port_cache();
+    }
     if (restore_debug_after_reset) {
         debug.invalidate_context();
         debug_entry_context_valid = false;
@@ -6205,6 +6222,14 @@ void MachineMonitor :: debug_cleanup_session()
         delete debug_session;
         debug_session = NULL;
     }
+    // Safety net. cleanup() restores the patches the session recorded; this
+    // catches a byte that reached the ROM image any other way, so a debug
+    // session can never hand the next one a modified KERNAL. It compares before
+    // writing, and the snapshot is retaken whenever the ROM is legitimately
+    // replaced, so an intentionally different ROM is left alone.
+    if (u64_restore_pristine_rom_image) {
+        u64_restore_pristine_rom_image();
+    }
 }
 
 void MachineMonitor :: dispatch_deferred_debug_go(void)
@@ -6220,7 +6245,17 @@ void MachineMonitor :: dispatch_deferred_debug_go(void)
         debug_session = NULL;
     }
     debug_context_reset(&deferred_debug_go_context);
+    // Same safety net as debug_cleanup_session(). This path is the one where it
+    // matters most: the C64 is handed back and starts executing immediately, so
+    // a ROM byte that escaped cleanup_to_context() would be run, not merely
+    // left in place.
+    if (u64_restore_pristine_rom_image) {
+        u64_restore_pristine_rom_image();
+    }
     if (backend) {
+        // The CPU runs on from here, free to rewrite $01, so the port read at
+        // the last debug stop stops describing it.
+        backend->invalidate_live_cpu_port_cache();
         backend->end_session();
     }
 }
@@ -6322,6 +6357,12 @@ static const char *const monitor_debug_session_not_in_subroutine = "NOT IN SUBRO
 static const char *const monitor_debug_session_return_not_reached = "RETURN NOT REACHED";
 static const char *const monitor_debug_session_timeout = "DEBUG TIMEOUT";
 static const char *const monitor_debug_session_patch = "PATCH FAILED";
+// Address-bearing: the address is what lets a user clear the breakpoint from
+// the R popup.
+static const char *const monitor_debug_blocking_breakpoint_fmt =
+    "BRK $%04X IN ROM BLOCKS DEBUG";
+static const char *const monitor_debug_blocking_breakpoint_plain =
+    "A BRK IN ROM BLOCKS DEBUG";
 static const char *monitor_debug_result_name(DebugSession::Result result)
 {
     switch (result) {
@@ -6335,6 +6376,8 @@ static const char *monitor_debug_result_name(DebugSession::Result result)
         case DebugSession::DBG_CANCELLED: return "CANCELLED";
         case DebugSession::DBG_RESET: return "RESET";
         case DebugSession::DBG_PATCH_FAILED: return "PATCH_FAILED";
+        case DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE:
+            return "BREAKPOINT_NOT_INSTALLABLE";
     }
     return "UNKNOWN";
 }
@@ -6412,6 +6455,9 @@ const char *monitor_debug_result_message(int result)
         case DebugSession::DBG_CANCELLED:     return "DEBUG CANCELLED";
         case DebugSession::DBG_RESET:         return NULL;
         case DebugSession::DBG_PATCH_FAILED:  return monitor_debug_session_patch;
+        // DBG_BREAKPOINT_NOT_INSTALLABLE is absent: its message carries the
+        // blocking address and is built in debug_popup_result(), which can
+        // reach the session.
         default: return NULL;
     }
 }
@@ -6606,11 +6652,7 @@ void MachineMonitor :: debug_request_over()
         if (debug_handle_terminal_result(r)) {
             return;
         }
-        const char *msg = monitor_debug_result_message(r);
-        if (msg) {
-            get_ui()->popup(msg, BUTTON_OK);
-            redraw_full();
-        }
+        debug_popup_result(r);
     }
 }
 
@@ -6672,11 +6714,7 @@ void MachineMonitor :: debug_request_trace()
         if (debug_handle_terminal_result(r)) {
             return;
         }
-        const char *msg = monitor_debug_result_message(r);
-        if (msg) {
-            get_ui()->popup(msg, BUTTON_OK);
-            redraw_full();
-        }
+        debug_popup_result(r);
     }
 }
 
@@ -6711,11 +6749,7 @@ void MachineMonitor :: debug_request_out()
         if (debug_handle_terminal_result(r)) {
             return;
         }
-        const char *msg = monitor_debug_result_message(r);
-        if (msg) {
-            get_ui()->popup(msg, BUTTON_OK);
-            redraw_full();
-        }
+        debug_popup_result(r);
     }
 }
 
@@ -6816,11 +6850,7 @@ void MachineMonitor :: debug_request_go()
         if (debug_handle_terminal_result(r)) {
             return;
         }
-        const char *msg = monitor_debug_result_message(r);
-        if (msg) {
-            get_ui()->popup(msg, BUTTON_OK);
-            redraw_full();
-        }
+        debug_popup_result(r);
     }
 }
 
@@ -6855,11 +6885,7 @@ void MachineMonitor :: debug_request_cursor()
         if (debug_handle_terminal_result(r)) {
             return;
         }
-        const char *msg = monitor_debug_result_message(r);
-        if (msg) {
-            get_ui()->popup(msg, BUTTON_OK);
-            redraw_full();
-        }
+        debug_popup_result(r);
     }
 }
 
@@ -6899,6 +6925,36 @@ MonitorBackingStore MachineMonitor :: breakpoint_target_for_live_cpu(uint16_t ad
 
     return backend ? backend->backing_store_for_cpu_port(address, live_cpu_port) :
         monitor_backing_store_for_cpu_port(address, live_cpu_port);
+}
+
+bool MachineMonitor :: live_cpu_port_known(void) const
+{
+    return backend && backend->live_cpu_port_known();
+}
+
+bool MachineMonitor :: debug_observed_cpu_port_held(void) const
+{
+    return backend && backend->has_debug_observed_cpu_port();
+}
+
+void MachineMonitor :: debug_popup_result(int result)
+{
+    char blocking_msg[40];
+    const char *msg = monitor_debug_result_message(result);
+
+    if (result == DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE) {
+        uint16_t blocking = 0;
+        if (debug_session && debug_session->blocking_breakpoint(&blocking)) {
+            sprintf(blocking_msg, monitor_debug_blocking_breakpoint_fmt, blocking);
+            msg = blocking_msg;
+        } else {
+            msg = monitor_debug_blocking_breakpoint_plain;
+        }
+    }
+    if (msg) {
+        get_ui()->popup(msg, BUTTON_OK);
+        redraw_full();
+    }
 }
 
 void MachineMonitor :: show_breakpoint_mapping_note(uint16_t address,

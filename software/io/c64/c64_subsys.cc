@@ -444,8 +444,14 @@ SubsysResultCode_e C64_Subsys::executeCommand(SubsysCommand *cmd)
             }
             break;
         case C64_DMA_BUFFER:
-            dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
-                    c64->cfg->get_value(CFG_C64_DMA_ID));
+            // dma_load() returns -1 when the boot-cart handshake times out,
+            // which means nothing was launched. Discarding it reports a load
+            // that never happened as a success, and callers that act on the
+            // result then wait for a program that is not running.
+            if (dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode,
+                    c64->cfg->get_value(CFG_C64_DMA_ID)) < 0) {
+                result = SSRET_GENERIC_ERROR;
+            }
             break;
         case C64_DMA_RAW_WRITE:
             dma_load_raw_buffer((uint16_t)cmd->mode, (uint8_t *)cmd->buffer, cmd->bufferSize, 0);
@@ -607,7 +613,13 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 		const char *name, uint8_t run_code, uint8_t drv, uint16_t reloc)
 {
 	// prepare DMA load
-    if(c64->client) { // we are locked by a client, likely: user interface
+    // Keep the client attached while a debug session owns the machine: a
+    // cartridge-target debug step launches its run through this boot cart and
+    // must come back to the same UI. Releasing it here skips the
+    // release_ownership() that unfreezes the C64, leaving the machine DMA-held
+    // after the monitor closes.
+    if(c64->client && !(machine_monitor_global_reset_sees_debug_session &&
+                        machine_monitor_global_reset_sees_debug_session())) {
     	c64->client->release_host(); // disconnect from user interface
     	c64->client = 0;
 	}

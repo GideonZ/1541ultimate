@@ -16,6 +16,7 @@ protected:
     virtual uint8_t peek_cpu(uint16_t address, uint8_t cpu_port) = 0;
     virtual void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port) = 0;
     virtual uint8_t peek_visible(uint16_t address) = 0;
+    virtual uint8_t peek_run_marker(uint16_t address) { return peek_visible(address); }
     virtual void poke_visible(uint16_t address, uint8_t byte) = 0;
     virtual void poke_visible_preserving_freeze_restore(uint16_t address,
                                                         uint8_t byte)
@@ -47,6 +48,20 @@ protected:
     virtual bool visible_rom_fetch_lags(void) const { return false; }
     virtual void delay_ms(int ms) = 0;
     virtual bool free_run_no_breakpoint(uint16_t address);
+    // A cartridge target can launch a contextless run through its boot-cart
+    // handoff when it cannot deliver the debugger's NMI redirect. The caller
+    // keeps the BRK handler and patches installed across this launch.
+    virtual bool supports_contextless_breakpoint_launch(void) const
+    { return false; }
+    virtual bool prepare_contextless_breakpoint_launch(uint16_t) { return true; }
+    virtual bool launch_contextless_with_breakpoints(uint16_t) { return false; }
+    // Page-three facts for a backend that has to rebuild that page itself.
+    static uint16_t hard_brk_stub_address(void);
+    // Zeroes, in the caller's image of page three, the bytes only the launched
+    // program may write, so a trap taken during the handoff cannot be read back
+    // as the run's result.
+    static void clear_run_result_markers(uint8_t *page, uint16_t base,
+                                         uint16_t length);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
     virtual void write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port);
     virtual void note_captured_cpu_port(uint8_t) { }
@@ -54,6 +69,16 @@ public:
     BrkDebugSession();
     virtual ~BrkDebugSession();
 
+    virtual bool blocking_breakpoint(uint16_t *address) const
+    {
+        if (!blocking_bp_valid) {
+            return false;
+        }
+        if (address) {
+            *address = blocking_bp_address;
+        }
+        return true;
+    }
     virtual void set_cancel_keyboard(Keyboard *keyboard);
     virtual void set_run_window_refreeze_enabled(bool enabled);
     virtual void request_reset_cancel(void);
@@ -165,6 +190,10 @@ private:
     uint8_t return_target_count;
 
     bool reserved_patch_address(uint16_t addr) const;
+    // Called once when the CPU is about to run, for a backend that caches a
+    // CPU-port reading the running program can invalidate. Default no-op: a
+    // backend that reads the port register directly has nothing to drop.
+    virtual void on_cpu_run_window_open(void) { }
     void begin_run_window(void);
     void end_run_window(void);
     void save_and_install_handler(void);
@@ -185,6 +214,10 @@ private:
                                            MonitorBackingStore skip_target,
                                            bool skip_address_valid,
                                            bool skip_all_at_address = false);
+    // The armed breakpoint install_breakpoints() could not place. Recorded so
+    // the refusal can name it; cleared on every successful table install.
+    uint16_t blocking_bp_address;
+    bool blocking_bp_valid;
     bool context_at_breakpoint(const DebugContext &ctx,
                                const MonitorBreakpoints *breakpoints,
                                uint16_t skip_address,
@@ -222,6 +255,10 @@ private:
                          bool force_cpu_port, bool staged = false);
     Result perform_run(const DebugContext *from, uint16_t start_pc,
                        bool use_start_pc, DebugContext *out, uint8_t cpu_port);
+    // Opens the run window through the backend's own contextless launch. On
+    // failure the patches and handler are already removed, so the caller only
+    // has to report the refusal.
+    bool launch_contextless_run_window(uint16_t start_pc);
     Result step_with_predict(const DebugContext *from, uint16_t start_pc,
                              const DebugPredictResult &pred,
                              bool prefer_jsr_target,

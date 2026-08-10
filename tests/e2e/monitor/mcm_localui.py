@@ -19,6 +19,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mcm_rest as R  # noqa: E402
+import mcm_split_rest as SR  # noqa: E402
 
 
 # ---- screen helpers -------------------------------------------------------
@@ -215,8 +216,8 @@ def aggressive_burst(rest):
     ensure_menu_closed(rest)
 
 
-def soak(host, mode, cycles, ui, logpath):
-    rest = R.Rest(host=host)
+def soak(host, mode, cycles, ui, logpath, c64_host=None):
+    rest = SR.make_rest(host, c64_host)
     import datetime
     f = open(logpath, "a", buffering=1) if logpath else None
 
@@ -269,9 +270,7 @@ def soak(host, mode, cycles, ui, logpath):
         if not alive:
             wedges += 1
             log(f"cycle {i} [{current}] *** WEDGE: REST dead -> stopping for post-mortem ***")
-            # also check .70
-            r70 = R.Rest(host="192.168.1.70")
-            log(f"  .70 alive: {r70.alive()}")
+            log(f"  endpoints: {SR.endpoint_liveness(rest)}")
             break
         if i % 10 == 0 or mode == "aggressive":
             log(f"cycle {i}/{cycles} [{current}] ok (errors={errors})")
@@ -295,7 +294,13 @@ if __name__ == "__main__":
         p.add_argument("--cycles", type=int, default=50)
         p.add_argument("--ui", default="freeze", choices=["freeze", "overlay", "both"])
         p.add_argument("--log", default="")
+        p.add_argument("--c64-host", default=None,
+                       help="Split-session mode for a U2+L cartridge: the C64U "
+                            "host it is plugged into. Keystrokes and memory go "
+                            "there while menu_screen/menu_button stay on `host`; "
+                            "the cartridge's own machine:input answers HTTP 501.")
         a = p.parse_args()
-        sys.exit(soak(a.host, a.mode, a.cycles, a.ui, a.log))
+        sys.exit(soak(a.host, a.mode, a.cycles, a.ui, a.log, c64_host=a.c64_host))
     else:
-        print("usage: mcm_localui.py [probe|soak] [host] [--mode --cycles --ui --log]")
+        print("usage: mcm_localui.py [probe|soak] [host] "
+              "[--mode --cycles --ui --log --c64-host]")

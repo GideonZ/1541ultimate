@@ -14,6 +14,7 @@ endpoints; no temporary E2E hooks.
 """
 import argparse
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -55,6 +56,9 @@ HIDDEN_PAYLOAD = bytes([
 
 SCENARIOS = ("ram", "ram-under-rom", "rom")
 MODES = ("Overlay on HDMI", "Freeze")
+
+# An armed row of the C=+R breakpoint table popup: "0 SET $E000 KRN".
+ARMED_SLOT_RE = re.compile(r"^\|?\s*[0-9]\s+SET\s+\$([0-9A-Fa-f]{4})")
 
 
 def request_json(r: Rest, method, path, params=None, body=None):
@@ -277,6 +281,73 @@ def ensure_breakpoint_at(r: Rest, addr: int, bank: int, source: str, label: str)
     row = line_for_address(r, addr)
     if "[BRK" not in row:
         raise Failure(f"{label}: breakpoint was not set at ${addr:04X}: {row!r}\n{r.screen_text()}")
+
+
+def _screen_or_empty(r: Rest):
+    """The monitor screen, or "" while menu_screen is momentarily unavailable."""
+    try:
+        return r.screen_text()
+    except Exception:  # noqa: BLE001 - a transient 404 is not a result
+        return ""
+
+
+def toggle_breakpoint_at(r: Rest, addr: int, armed: bool, label: str, timeout=4.0):
+    """Set (`armed` true) or clear the breakpoint on the row at `addr` with R.
+
+    `ensure_breakpoint_at` and `clear_breakpoint_at` select a monitor bank and
+    match the row's memory-source tag. A U2 MCM has neither: CPU BANK is N/A
+    and its memory backend reports [CPU] as the source of every row. This
+    toggle reads only the row's [BRK] marker, which both targets draw.
+
+    The row is waited on rather than read after a fixed pause, because how long
+    the marker takes to appear is a property of the target: a U2+L draws its
+    overlay across the cartridge bus. Returns the row as it stands at the end,
+    so a caller still sees, and reports, a toggle that did not take.
+    """
+    goto_addr(r, addr, label)
+    row = line_for_address(r, addr)
+    if ("[BRK" in row) == armed:
+        return row
+    r.send_text("r")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if "not mapped now" in _screen_or_empty(r):
+            r.send_text("\n")
+            time.sleep(0.2)
+        row = line_for_address(r, addr)
+        if ("[BRK" in row) == armed:
+            return row
+        time.sleep(0.15)
+    return row
+
+
+def armed_breakpoint_addresses(r: Rest, label: str, timeout=8.0):
+    """Addresses armed in the 10-slot breakpoint table, popup left closed.
+
+    The popup is waited on and the chord re-sent while it has not appeared. A
+    chord sent into a repainting overlay is dropped, and on a U2+L that repaint
+    crosses the cartridge bus; measured, C=+R raises the popup in about 0.23s
+    when it lands at all, and not at all when it does not. Re-sending a
+    popup-open key cannot mask a debugger result, because no debugger command
+    runs until the table has been read.
+    """
+    deadline = time.time() + timeout
+    text = ""
+    while time.time() < deadline:
+        r.tap(["commodore", "r"])
+        settled = time.time() + 1.5
+        while time.time() < settled:
+            text = _screen_or_empty(r)
+            if "BREAKPOINT" in text.upper():
+                addresses = [
+                    int(m.group(1), 16) for m in
+                    (ARMED_SLOT_RE.match(line.strip()) for line in text.splitlines())
+                    if m]
+                r.tap(["run_stop"])
+                time.sleep(0.2)
+                return addresses
+            time.sleep(0.15)
+    raise Failure(f"{label}: breakpoint popup did not open on C=+R\n{text}")
 
 
 def clear_breakpoint_at(r: Rest, addr: int, bank: int, label: str):

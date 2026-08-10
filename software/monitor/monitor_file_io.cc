@@ -14,6 +14,7 @@
 #include "mystring.h"
 #include "host.h"
 #include "memory_backend.h"
+#include <string.h>
 #ifndef RECOVERYAPP
 #ifndef UPDATER
 #include "c64.h"
@@ -383,6 +384,39 @@ void monitor_io::jump_to(uint16_t address)
 #endif
 #else
     (void)address;
+#endif
+}
+
+bool monitor_io::jump_to_with_payload(uint16_t address, uint16_t load_address,
+                                      const uint8_t *payload,
+                                      uint16_t payload_length)
+{
+#if !defined(RECOVERYAPP) && !defined(UPDATER) && !(defined(U64) && (U64))
+    if (!payload || payload_length == 0) {
+        return false;
+    }
+    uint8_t *jump_buffer = new uint8_t[(uint32_t)payload_length + 4];
+    if (!jump_buffer) {     // built with -fno-exceptions, so new returns NULL
+        return false;
+    }
+    jump_buffer[0] = (uint8_t)(address & 0xFF);
+    jump_buffer[1] = (uint8_t)(address >> 8);
+    jump_buffer[2] = (uint8_t)(load_address & 0xFF);
+    jump_buffer[3] = (uint8_t)(load_address >> 8);
+    memcpy(jump_buffer + 4, payload, payload_length);
+
+    SubsysCommand *cmd = new SubsysCommand(
+        NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP,
+        jump_buffer, (int)payload_length + 4);
+    SubsysResultCode_t result = cmd->execute();
+    delete[] jump_buffer;
+    return result.status == SSRET_OK;
+#else
+    (void)address;
+    (void)load_address;
+    (void)payload;
+    (void)payload_length;
+    return false;
 #endif
 }
 

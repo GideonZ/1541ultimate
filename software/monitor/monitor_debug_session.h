@@ -26,7 +26,12 @@ public:
         DBG_TIMEOUT,            // Trap did not fire within the wait window.
         DBG_CANCELLED,          // User pressed RUN/STOP / Telnet ESC during wait.
         DBG_RESET,              // User forced a machine reset; context is no longer truthful.
-        DBG_PATCH_FAILED        // Could not safely install or restore a patch.
+        DBG_PATCH_FAILED,       // Could not safely install or restore a patch.
+        DBG_BREAKPOINT_NOT_INSTALLABLE // An armed breakpoint could not be
+                                // placed, so the run was not started.
+                                // DBG_NOT_SUPPORTED is about the operation's
+                                // own target; this one is about an entry in
+                                // the breakpoint table.
     };
 
     virtual ~DebugSession() { }
@@ -157,6 +162,15 @@ public:
     // cannot must leave this false so the shared BRK engine refuses visible
     // ROM breakpoints before scribbling into the RAM underneath the ROM.
     virtual bool supports_visible_rom_patching(void) const { return false; }
+
+    // Address of the armed breakpoint the last operation could not place, valid
+    // only after that operation returned DBG_BREAKPOINT_NOT_INSTALLABLE. It is
+    // the one fact a user needs in order to clear it.
+    virtual bool blocking_breakpoint(uint16_t *address) const
+    {
+        (void)address;
+        return false;
+    }
 
     // Fetch instruction bytes for step prediction from the live execution
     // domain the debug session controls. This lets ROM-capable backends decode

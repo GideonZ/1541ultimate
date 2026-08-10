@@ -426,6 +426,9 @@ public:
     int nmi_pulses;
     int staged_nmi_requests;
     int staged_nmi_clears;
+    bool contextless_breakpoint_launch_supported;
+    int contextless_breakpoint_launches;
+    uint16_t contextless_breakpoint_launch_address;
     int brk_patch_writes;
     int delay_calls;
     // Milliseconds the modelled cancel-key poll costs per sentinel poll.
@@ -467,6 +470,9 @@ public:
           break_on_unfrozen_unfreeze_attempt(false), unfreeze_attempts(0),
           unfreeze_calls(0), refreeze_calls(0), reset_calls(0), nmi_pulses(0),
           staged_nmi_requests(0), staged_nmi_clears(0),
+          contextless_breakpoint_launch_supported(false),
+          contextless_breakpoint_launches(0),
+          contextless_breakpoint_launch_address(0),
           brk_patch_writes(0), delay_calls(0), cancel_poll_cost_ms(0),
           pokes_at_cancel(0),
           last_brk_patch_addr(0),
@@ -649,6 +655,16 @@ protected:
     virtual void clear_staged_nmi(void)
     {
         staged_nmi_clears++;
+    }
+    virtual bool supports_contextless_breakpoint_launch(void) const
+    {
+        return contextless_breakpoint_launch_supported;
+    }
+    virtual bool launch_contextless_with_breakpoints(uint16_t address)
+    {
+        contextless_breakpoint_launches++;
+        contextless_breakpoint_launch_address = address;
+        return true;
     }
     virtual void delay_ms(int ms)
     {
@@ -4906,6 +4922,46 @@ static int test_freeze_go_breakpoint_refreezes()
     return 0;
 }
 
+static int test_contextless_breakpoint_go_uses_backend_launch()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+    uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, nop, false, &pred);
+    m.arm_capture_context(0x2001, 0xF8, 0, 0, 0, 0x24);
+    DebugContext parked;
+    if (expect(m.trace_at(0x2000, pred, &parked) == DebugSession::DBG_OK,
+               "Setup must leave a prior captured context")) return 1;
+    m.cleanup_to_context(&parked);
+    m.forget_context();
+
+    m.contextless_breakpoint_launch_supported = true;
+    m.ram[0xC000] = 0xEA;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xC000, 0x07);
+
+    int nmi_pulses_before = m.nmi_pulses;
+    int staged_nmi_requests_before = m.staged_nmi_requests;
+    DebugContext from;
+    debug_context_reset(&from);
+    m.arm_capture_context(0xC000, 0xF8, 0, 0, 0, 0x24);
+
+    DebugSession::Result r = m.go(from, &bps, 0xC500);
+    if (expect(r == DebugSession::DBG_OK,
+               "Contextless breakpoint Go must complete through the backend launch")) return 1;
+    if (expect(m.contextless_breakpoint_launches == 1 &&
+               m.contextless_breakpoint_launch_address == 0xC500,
+               "Contextless breakpoint Go must launch the selected start address once")) return 1;
+    if (expect(m.nmi_pulses == nmi_pulses_before &&
+               m.staged_nmi_requests == staged_nmi_requests_before,
+               "Backend contextless launch must ignore stale retry context and "
+               "must not request another NMI")) return 1;
+    return 0;
+}
+
 static int test_go_from_current_breakpoint_stops_at_callee_breakpoint()
 {
     FakeFreezeMachine m(false);
@@ -5611,8 +5667,12 @@ static int test_visible_rom_breakpoint_go_uses_same_capability_gate()
     debug_context_reset(&from);
 
     DebugSession::Result r = m.go(from, &bps, 0xC000);
-    if (expect(r == DebugSession::DBG_NOT_SUPPORTED,
+    // The armed breakpoint is what cannot be placed, not the Go itself.
+    if (expect(r == DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE,
                "Visible ROM breakpoint Go must refuse before execution when ROM patching is unavailable")) return 1;
+    uint16_t blocking = 0;
+    if (expect(m.blocking_breakpoint(&blocking) && blocking == 0xE001,
+               "Visible ROM breakpoint refusal must name the breakpoint that blocked it")) return 1;
     if (expect(m.kernal_rom[1] == 0xEA,
                "Unsupported visible ROM breakpoint must leave ROM untouched")) return 1;
     if (expect(m.ram[0xE001] == 0x6C,
@@ -5621,6 +5681,70 @@ static int test_visible_rom_breakpoint_go_uses_same_capability_gate()
                "Unsupported visible ROM breakpoint must not attempt ROM writes")) return 1;
     if (expect(m.ram[FAKE_SENTINEL_ADDR] == 0x00,
                "Unsupported visible ROM breakpoint must refuse before starting execution")) return 1;
+    return 0;
+}
+
+static int test_unplaceable_breakpoint_names_itself_when_it_blocks_a_ram_step()
+{
+    // A backend that cannot patch visible ROM, one breakpoint armed in the
+    // KERNAL, and a step in ordinary RAM that has nothing to do with it. Every
+    // debug operation installs the whole breakpoint table first, so the step is
+    // refused, and the refusal has to identify the breakpoint responsible.
+    FakeVisibleRomMachine m(false);
+    m.allow_visible_rom_patching = false;
+    m.ram[0xC020] = 0xEE;   // INC $D021
+    m.ram[0xC021] = 0x21;
+    m.ram[0xC022] = 0xD0;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0xE000, 0x07);
+
+    uint8_t bytes[3] = { 0xEE, 0x21, 0xD0 };
+    DebugPredictResult pred;
+    debug_predict(0xC020, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0xC020, pred, &bps, &ctx);
+    if (expect(r == DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE,
+               "A breakpoint that cannot be placed must be reported as such, not as an unsupported step")) return 1;
+    uint16_t blocking = 0;
+    if (expect(m.blocking_breakpoint(&blocking),
+               "A blocked step must expose the breakpoint that blocked it")) return 1;
+    if (expect(blocking == 0xE000,
+               "The reported blocking breakpoint must be the armed KERNAL one")) return 1;
+
+    // With that slot gone the identical step is not refused, which is what
+    // proves the refusal was about the breakpoint and not about the step.
+    MonitorBreakpoints empty;
+    DebugSession::Result cleared = m.over_at(0xC020, pred, &empty, &ctx);
+    if (expect(cleared != DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE,
+               "Clearing the unplaceable breakpoint must unblock the same RAM step")) return 1;
+    return 0;
+}
+
+static int test_breakpoint_in_the_debugger_scratch_area_is_a_patch_failure()
+{
+    // $0380 is inside the page-three area the debugger's own handler occupies,
+    // so installing a BRK there fails outright. That is a different fact from
+    // a breakpoint that cannot be placed because it sits in visible ROM, and
+    // the two must not share a result: the blocking-breakpoint message says
+    // "IN ROM", which would be untrue here.
+    FakeVisibleRomMachine m(false);
+    m.ram[0xC020] = 0xEE;   // INC $D021
+    m.ram[0xC021] = 0x21;
+    m.ram[0xC022] = 0xD0;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x0380, 0x07);
+
+    uint8_t bytes[3] = { 0xEE, 0x21, 0xD0 };
+    DebugPredictResult pred;
+    debug_predict(0xC020, bytes, false, &pred);
+
+    DebugContext ctx;
+    DebugSession::Result r = m.over_at(0xC020, pred, &bps, &ctx);
+    if (expect(r == DebugSession::DBG_PATCH_FAILED,
+               "A breakpoint inside the debugger's own page-three area must report a patch failure")) return 1;
     return 0;
 }
 
@@ -8936,6 +9060,7 @@ int main()
     RUN(test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable);
     RUN(test_traced_kernal_to_basic_step_out_patches_kernal_return);
     RUN(test_freeze_go_breakpoint_refreezes);
+    RUN(test_contextless_breakpoint_go_uses_backend_launch);
     RUN(test_go_from_current_breakpoint_stops_at_callee_breakpoint);
     RUN(test_go_from_current_visible_rom_breakpoint_uses_patch_aware_bytes);
     RUN(test_step_over_stops_at_callee_breakpoint);
@@ -8955,6 +9080,8 @@ int main()
     RUN(test_visible_kernal_step_over_jsr_patches_fallthrough_rom);
     RUN(test_visible_kernal_step_without_rom_patch_support_refuses_cleanly);
     RUN(test_visible_rom_breakpoint_go_uses_same_capability_gate);
+    RUN(test_unplaceable_breakpoint_names_itself_when_it_blocks_a_ram_step);
+    RUN(test_breakpoint_in_the_debugger_scratch_area_is_a_patch_failure);
     RUN(test_visible_rom_breakpoint_go_patches_rom_not_underlying_ram);
     RUN(test_mixed_kernal_and_ram_breakpoints_patch_distinct_backing_stores);
     RUN(test_patch_restore_uses_recorded_destination_after_cpu_bank_changes);

@@ -88,14 +88,17 @@ UI, repeated `--reps` times:
 Two call-shape stresses run inside each cell, because they fail differently:
 
 - **Nesting**: a chain of `--required-step-into-depth` subroutines (32 by
-  default), each calling the next. Every Step Into pushes another frame, and the
+  default; 8 for split U2+L/C64U sessions), each calling the next. Every Step
+  Into pushes another frame, and the
   return address on the stack is checked at each level, so this exercises depth.
 - **Straight calls**: a block of 32 consecutive `JSR` instructions to the same
   helper, stepped with Step Over. The stack pointer returns to the same value
   after every step, so this is what repeatedly arms, parks, resumes and disarms
   from an identical state. Expected PC, SP and A are exact at every position, so
   a leaked breakpoint slot or a park/resume that drifts the stack shows up here.
-  Evidence lands in each cell's `straight-call-evidence.json`.
+  Evidence lands in each cell's `straight-call-evidence.json`. Split U2+L/C64U
+  sessions default to one repetition and eight straight calls; explicit options
+  retain a longer run.
 
 Steps are cross-checked against two independent oracles: the in-tree 6502
 interpreter (`mcm6502.py`) and, where installed, VICE over its binary monitor.

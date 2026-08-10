@@ -43,6 +43,7 @@ static const uint16_t SPIN_OPERAND_HI = 0x0389;
 static const uint16_t TRAMPOLINE_ADDR = 0x038A;
 static const uint16_t NMI_TRAMPOLINE_ADDR = 0x03B0;
 // Low-RAM scratch for a copied instruction plus trailing trap.
+// $0345-$0359 is C64::capture_cpu_port_via_nmi()'s stub and results.
 static const uint16_t INSN_TRAMPOLINE_ADDR = 0x0340;
 static const uint16_t HARD_BRK_STUB_ADDR = 0x03C8;
 static const uint16_t HARD_BRK_ORIG_VECTOR_LO = 0x03EE;
@@ -199,7 +200,8 @@ BrkDebugSession :: BrkDebugSession()
       hard_vector_installed(false),
       hard_rom_vector_installed(false), has_last_context(false),
       has_resume_context(false),
-      return_target_count(0)
+      return_target_count(0),
+      blocking_bp_address(0), blocking_bp_valid(false)
 {
     memset(patches, 0, sizeof(patches));
     memset(return_targets, 0, sizeof(return_targets));
@@ -340,6 +342,11 @@ void BrkDebugSession :: begin_run_window(void)
     // share the single unfreeze/refreeze pair.
     if (run_window_depth++ == 0) {
         screen_was_clobbered = false;
+        // Both CPU-port readings describe a machine that was not executing.
+        // From here it is, and it can rewrite $01, so neither one describes it
+        // any more. A trap at the end of this window takes a fresh reading;
+        // breakpoint placement for this window has already happened.
+        on_cpu_run_window_open();
         // run_window_refreeze_enabled is set (in run_machine_monitor) only when
         // the monitor renders through the C64 freeze screen -- host == the C64
         // and frozen at launch -- never on the telnet/overlay path. So re-taking
@@ -687,6 +694,7 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
     MonitorBackingStore skip_target, bool skip_address_valid,
     bool skip_all_at_address)
 {
+    blocking_bp_valid = false;
     if (!bps) {
         return PATCH_INSTALL_OK;
     }
@@ -703,6 +711,8 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
         PatchInstallResult patched = install_brk_at(bp->address, bp->view_cpu_port,
                                                     bp->target);
         if (patched != PATCH_INSTALL_OK) {
+            blocking_bp_address = bp->address;
+            blocking_bp_valid = true;
             return patched;
         }
     }
@@ -1016,7 +1026,7 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
             debug_context_reset(&resume_context);
             return DBG_RESET;
         }
-        if (peek_visible(SENTINEL_ADDR) != 0x00) {
+        if (peek_run_marker(SENTINEL_ADDR) != 0x00) {
             drop_queued_execution_keys();
             return DBG_OK;
         }
@@ -1345,6 +1355,43 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     cpu_parked_in_spin = false;
 }
 
+uint16_t BrkDebugSession :: hard_brk_stub_address(void)
+{
+    return HARD_BRK_STUB_ADDR;
+}
+
+void BrkDebugSession :: clear_run_result_markers(uint8_t *page, uint16_t base,
+                                                 uint16_t length)
+{
+    static const uint16_t markers[] = {
+        SENTINEL_ADDR, STORE_TRAP_MODE, STORE_HARD_CPU_DDR, STORE_HARD_CPU_PORT
+    };
+    for (unsigned i = 0; i < sizeof(markers) / sizeof(markers[0]); i++) {
+        if (markers[i] >= base && (markers[i] - base) < length) {
+            page[markers[i] - base] = 0x00;
+        }
+    }
+}
+
+bool BrkDebugSession :: launch_contextless_run_window(uint16_t start_pc)
+{
+    if (!prepare_contextless_breakpoint_launch(start_pc)) {
+        restore_patches();
+        uninstall_handler();
+        cpu_parked_in_spin = false;
+        return false;
+    }
+    begin_run_window();
+    if (!launch_contextless_with_breakpoints(start_pc)) {
+        restore_patches();
+        uninstall_handler();
+        cpu_parked_in_spin = false;
+        end_run_window();
+        return false;
+    }
+    return true;
+}
+
 DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                                                     uint16_t start_pc,
                                                     bool use_start_pc,
@@ -1385,7 +1432,8 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
         // Non-parked run-to/breakpoint launch. Provide captured registers when
         // available; otherwise high-memory monitor starts retry through the same
         // NMI redirect because there are no registers to synthesize.
-        if (has_any_patch()) {
+        bool target_launch = supports_contextless_breakpoint_launch();
+        if (!target_launch && has_any_patch()) {
             if (has_last_context) {
                 start_context = last_context;
                 start_context.pc = start_pc;
@@ -1396,21 +1444,27 @@ DebugSession::Result BrkDebugSession :: perform_run(const DebugContext *from,
                 launch_ctx = &start_context;
             }
         }
-        bool staged = run_window_refreeze_enabled && machine_is_frozen();
-        bool force_cpu_port = patch_requires_visible_rom(
-            monitor_backing_store_for_cpu_port(start_pc, cpu_port));
-        if (!launch_ctx && has_high_memory_patch()) {
-            nmi_launch_valid = true;
-            nmi_launch_target = start_pc;
-            nmi_launch_force_cpu_port = force_cpu_port;
-        }
-        nmi_redirect_to(start_pc, cpu_port, force_cpu_port, staged);
-        if (staged) {
-            request_staged_nmi();
-        }
-        begin_run_window();
-        if (staged) {
-            clear_staged_nmi();
+        if (target_launch) {
+            if (!launch_contextless_run_window(start_pc)) {
+                return DBG_REFUSED;
+            }
+        } else {
+            bool staged = run_window_refreeze_enabled && machine_is_frozen();
+            bool force_cpu_port = patch_requires_visible_rom(
+                monitor_backing_store_for_cpu_port(start_pc, cpu_port));
+            if (!launch_ctx && has_high_memory_patch()) {
+                nmi_launch_valid = true;
+                nmi_launch_target = start_pc;
+                nmi_launch_force_cpu_port = force_cpu_port;
+            }
+            nmi_redirect_to(start_pc, cpu_port, force_cpu_port, staged);
+            if (staged) {
+                request_staged_nmi();
+            }
+            begin_run_window();
+            if (staged) {
+                clear_staged_nmi();
+            }
         }
     } else {
         begin_run_window();
@@ -2344,7 +2398,7 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
-            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+            DBG_BREAKPOINT_NOT_INSTALLABLE : DBG_PATCH_FAILED;
     }
     for (int i = 0; i < n; i++) {
         PatchInstallResult patched = install_brk_at(addrs[i], cpu_port);
@@ -2515,7 +2569,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
-            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+            DBG_BREAKPOINT_NOT_INSTALLABLE : DBG_PATCH_FAILED;
     }
     PatchInstallResult patched = install_brk_at(target, cpu_port);
     if (patched != PATCH_INSTALL_OK) {
@@ -2594,7 +2648,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
-            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+            DBG_BREAKPOINT_NOT_INSTALLABLE : DBG_PATCH_FAILED;
     }
 
     bool any_bp = false;
@@ -2681,7 +2735,8 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         // Non-parked breakpoint-continue. Provide captured registers when
         // available; otherwise high-memory monitor starts retry through the same
         // NMI redirect because there are no registers to synthesize.
-        if (has_any_patch()) {
+        bool target_launch = supports_contextless_breakpoint_launch();
+        if (!target_launch && has_any_patch()) {
             if (has_last_context) {
                 go_start_context = last_context;
                 go_start_context.pc = start_pc;
@@ -2692,21 +2747,27 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
                 launch_ctx = &go_start_context;
             }
         }
-        bool staged = run_window_refreeze_enabled && machine_is_frozen();
-        bool force_cpu_port = patch_requires_visible_rom(
-            monitor_backing_store_for_cpu_port(start_pc, cpu_port));
-        if (!launch_ctx && has_high_memory_patch()) {
-            nmi_launch_valid = true;
-            nmi_launch_target = start_pc;
-            nmi_launch_force_cpu_port = force_cpu_port;
-        }
-        nmi_redirect_to(start_pc, cpu_port, force_cpu_port, staged);
-        if (staged) {
-            request_staged_nmi();
-        }
-        begin_run_window();
-        if (staged) {
-            clear_staged_nmi();
+        if (target_launch) {
+            if (!launch_contextless_run_window(start_pc)) {
+                return DBG_REFUSED;
+            }
+        } else {
+            bool staged = run_window_refreeze_enabled && machine_is_frozen();
+            bool force_cpu_port = patch_requires_visible_rom(
+                monitor_backing_store_for_cpu_port(start_pc, cpu_port));
+            if (!launch_ctx && has_high_memory_patch()) {
+                nmi_launch_valid = true;
+                nmi_launch_target = start_pc;
+                nmi_launch_force_cpu_port = force_cpu_port;
+            }
+            nmi_redirect_to(start_pc, cpu_port, force_cpu_port, staged);
+            if (staged) {
+                request_staged_nmi();
+            }
+            begin_run_window();
+            if (staged) {
+                clear_staged_nmi();
+            }
         }
     } else {
         begin_run_window();
@@ -2796,7 +2857,7 @@ DebugSession::Result BrkDebugSession :: run_to(const DebugContext &from,
     if (bp_patched != PATCH_INSTALL_OK) {
         restore_patches();
         return (bp_patched == PATCH_INSTALL_NOT_SUPPORTED) ?
-            DBG_NOT_SUPPORTED : DBG_PATCH_FAILED;
+            DBG_BREAKPOINT_NOT_INSTALLABLE : DBG_PATCH_FAILED;
     }
     PatchInstallResult patched = install_brk_at(target_pc, cpu_port);
     if (patched != PATCH_INSTALL_OK) {
