@@ -89,7 +89,6 @@ SRCS_CC	 =	small_printf.cc \
 			sdcard_manager.cc \
 			size_str.cc \
 			userinterface.cc \
-			run_machine_monitor.cc \
 			ui_elements.cc \
 			form.cc \
 			user_file_interaction.cc \
@@ -100,13 +99,6 @@ SRCS_CC	 =	small_printf.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
-			monitor_init.cc \
-			monitor_file_io.cc \
-			monitor_bookmarks.cc \
-			machine_monitor.cc \
-			disassembler_6502.cc \
-			assembler_6502.cc \
-			u2_memory_backend.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
@@ -166,9 +158,7 @@ SRCS_CC	 =	small_printf.cc \
 			http_target.cc \
 			assembly_search.cc \
 			assembly.cc \
-			ftp_client.cc \
 			filesystem_a64.cc \
-			filesystem_ftp.cc \
 			sntp_time.cc \
 			$(PRJ).cc
 
