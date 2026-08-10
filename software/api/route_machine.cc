@@ -393,3 +393,20 @@ API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
     }
     free(buffer);
 }
+
+// Heap statistics. Every dynamic allocation on this target reaches the FreeRTOS
+// heap -- operator new goes through get_mem() and malloc through __wrap_malloc,
+// and both call pvPortMalloc (software/system/memory_wrap.cc). So one free-bytes
+// figure accounts for all of it, which is what makes a leak visible from outside:
+// sample before and after a body of work, then compare.
+//
+// "free" is the number to diff. "min_ever_free" is the low-water mark since boot,
+// useful for headroom but not for leaks: it never recovers, so it cannot tell a
+// leak from a transient peak.
+API_CALL(GET, machine, heap, NULL, ARRAY( {  }))
+{
+    resp->json->add("free", (int)xPortGetFreeHeapSize());
+    resp->json->add("min_ever_free", (int)xPortGetMinimumEverFreeHeapSize());
+    resp->json->add("total", (int)configTOTAL_HEAP_SIZE);
+    resp->json_response(HTTP_OK);
+}

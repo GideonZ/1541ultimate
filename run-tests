@@ -169,6 +169,10 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
 
     # --------------------------------------------------------------- soak --
+    # Creates disk images to measure whether the heap comes back, so it needs a
+    # writable directory. Skips entirely on firmware without machine:heap.
+    Suite("soak", "heap-leak", "tests/soak/api/heap_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # The stress profile is the bounded one, at about two minutes. The soak
