@@ -79,7 +79,8 @@ SubsysResultCode_e FileTypeCfg :: execute(SubsysCommand *cmd)
     StreamTextLog log(8192);
 
     if(file) {
-        bool ok = ConfigIO :: S_read_from_file(file, &log);
+        IndexedList<ConfigStore *> loaded_stores(8, NULL);
+        bool ok = ConfigIO :: S_read_from_file(file, &log, loaded_stores);
         fm->fclose(file);
         if (ok) {
             cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
@@ -87,11 +88,8 @@ SubsysResultCode_e FileTypeCfg :: execute(SubsysCommand *cmd)
             cmd->user_interface->popup("There were errors.", BUTTON_OK);
             cmd->user_interface->run_editor(log.getText(), log.getLength());
         }
-        ConfigStore *s;
-        ConfigManager *cm = ConfigManager :: getConfigManager();
-        IndexedList<ConfigStore*> *stores = cm->getStores();
-        for(int n = 0; n < stores->get_elements();n++) {
-            s = (*stores)[n];
+        for(int n = 0; n < loaded_stores.get_elements();n++) {
+            ConfigStore *s = loaded_stores[n];
             if (s->need_effectuate()) {
                 printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
                 s->effectuate();
