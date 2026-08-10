@@ -25,6 +25,7 @@ MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 READMEM_PATH = "/v1/machine:readmem"
 WRITEMEM_PATH = "/v1/machine:writemem"
+MEASURE_PATH = "/v1/machine:measure"
 RESET_PATH = "/v1/machine:reset"
 PAUSE_PATH = "/v1/machine:pause"
 RESUME_PATH = "/v1/machine:resume"
@@ -487,13 +488,81 @@ def run_reset(session: RestSession) -> None:
     wait_for_stable_zero_page(session, attempts=10, interval=1.0)
 
 
+# Every readmem request the firmware accepts allocates a caller-sized buffer, so
+# the parameter checks are the only thing standing between a hostile `length` and
+# the allocator. Rejection has to happen before the allocation, and the allocation
+# has to be able to fail: `operator new` PANICs and spins forever on OOM
+# (software/system/memory_wrap.cc), which takes the device down with no reset, so
+# the handler uses malloc and reports HTTP 500 instead.
+BAD_READ_REQUESTS = [
+    ({"address": "0000", "length": 0}, "zero length"),
+    ({"address": "0000", "length": -1}, "negative length"),
+    ({"address": "0000", "length": 65537}, "length one past the 64KB cap"),
+    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap"),
+    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
+    ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
+    ({"address": "10000", "length": 1}, "address above $FFFF"),
+    ({"address": "-1", "length": 1}, "negative address"),
+]
+# Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
+# suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
+# REST reports free heap, so the assertion is the observable one -- a max-size
+# read still succeeds afterwards.
+MEASURE_LEAK_REPEATS = 25
+# The suite's own live-noise probe already does eight full 64KB reads, so eight
+# here costs no more than something the run does anyway.
+MAX_READ_REPEATS = 8
+
+
+def run_bounds(session: RestSession) -> bool:
+    """Reject out-of-range readmem parameters, and survive the allocations we do accept.
+
+    Every accepted readmem allocates a caller-sized buffer, so these parameter
+    checks are the whole defence. A wrong verdict here means the firmware is
+    allocating on input it should have refused, which makes the rest of the run
+    meaningless -- so these raise rather than accumulate.
+    """
+    section("bounds: readmem rejects out-of-range parameters before allocating, "
+            "and max-size reads do not degrade the device")
+
+    for params, label in BAD_READ_REQUESTS:
+        with check(f"readmem rejects {label}"):
+            status, _, body = session.request("GET", READMEM_PATH, params=params)
+            if status != 400:
+                raise Failure(f"readmem({params}) returned HTTP {status}, expected 400: {body[:200]!r}")
+
+    # The success path allocates and frees the same 64KB every time. A regression
+    # that drops the free shows up here as a later iteration failing outright.
+    with check(f"{MAX_READ_REPEATS} back-to-back max-size reads ($0000, {MEM_SIZE} bytes) all succeed"):
+        for _ in range(MAX_READ_REPEATS):
+            session.readmem(0, MEM_SIZE)
+
+    # machine:measure allocated its 64KB buffer before checking whether the FPGA
+    # supports bus measurement, then returned 501 without freeing it. Bus timing
+    # measurement is off by default on U2 builds (commit 8155daec), so on those
+    # devices the leaking path is the only path this endpoint ever takes.
+    status, _, _ = session.request("GET", MEASURE_PATH)
+    if status == 501:
+        with check(f"{MEASURE_LEAK_REPEATS} unsupported machine:measure calls leave readmem working"):
+            for _ in range(MEASURE_LEAK_REPEATS):
+                session.request("GET", MEASURE_PATH)
+            session.readmem(0, MEM_SIZE)
+    elif status == 200:
+        detail("machine:measure is supported on this FPGA build; not repeating it, "
+               "a real bus measurement is intrusive and the leak was on the 501 path only")
+    else:
+        warn(f"machine:measure returned unexpected HTTP {status}; leak check not applicable")
+
+    return True
+
+
 FREEZE_ONLY_TESTS = ["selfcheck-freeze"]
 OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                            "overlay-to-freeze", "freeze-to-overlay"]
 
 
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
-    all_tests = ["selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+    all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
                  "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
         return all_tests
@@ -527,7 +596,7 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="append",
-        choices=("all", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
+        choices=("all", "bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
                  "overlay-to-freeze", "freeze-to-overlay"),
     )
     parser.add_argument(
@@ -581,6 +650,11 @@ def main() -> int:
             tests = [t for t in tests if t not in OVERLAY_DEPENDENT_TESTS] or FREEZE_ONLY_TESTS
             if skipped_tests:
                 detail(f"skipping (requires Overlay-on-HDMI, unsupported here): {', '.join(skipped_tests)}")
+        # First, and before the live-noise probe spends eight full 64KB reads:
+        # if readmem mishandles its own parameters, everything after it is noise.
+        if "bounds" in tests:
+            results["bounds"] = run_bounds(session)
+
         noise_addrs: Set[int] = set()
         if interface_selectable:
             with check("switch to Overlay on HDMI to probe live background activity"):

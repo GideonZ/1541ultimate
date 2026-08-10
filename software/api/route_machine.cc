@@ -206,7 +206,7 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
     }
 
     int datalen = args.get_int("length", 256);
-    if ((datalen < 0) || (datalen > 65536)) {
+    if ((datalen < 1) || (datalen > 65536)) {
         resp->error("Invalid length");
         resp->json_response(HTTP_BAD_REQUEST);
         return;
@@ -218,20 +218,28 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
         return;
     }
 
-    uint8_t *buffer = new uint8_t[datalen];
+    // Use malloc (not new): operator new panics and spins forever on OOM, so a
+    // new[] result can never be NULL. malloc returns NULL, so this caller-sized
+    // request can fail cleanly with HTTP 500 instead of hanging the device.
+    uint8_t *buffer = (uint8_t *)malloc(datalen);
+    if (!buffer) {
+        resp->error("Out of memory");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW_READ, address, buffer, datalen);
     SubsysResultCode_t retval = cmd->execute();
     if (retval.status == SSRET_OK) {
         // output result in JSON format
         StreamRamFile *rf = resp->add_attachment();
         rf->write(buffer, datalen);
-        delete[] buffer;
         resp->binary_response();
     } else {
         resp->error(SubsysCommand::error_string(retval.status));
         resp->json_response(SubsysCommand::http_response_map(retval.status));
-        delete[] buffer;
     }
+    free(buffer);
 }
 
 API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))
@@ -347,11 +355,20 @@ static void make_vcd(StreamRamFile *d, uint32_t *values, int count, const char *
 
 API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
 {
-    uint8_t *buffer = new uint8_t[64*1024];
-
+    // Capability check before the allocation: it used to run after, and returned
+    // without freeing, leaking 64 KB per call. Bus measurement is off by default
+    // on U2 builds, so that early return is the common path, and the leak is what
+    // drives the heap towards the OOM the readmem path guards against.
     if (!(getFpgaCapabilities() & CAPAB_BUS_MEASURE)) {
         resp->error("The current FPGA build does not support timing measurement of the cartridge bus.");
         resp->json_response(HTTP_NOT_IMPLEMENTED);
+        return;
+    }
+
+    uint8_t *buffer = (uint8_t *)malloc(64*1024);
+    if (!buffer) {
+        resp->error("Out of memory");
+        resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
@@ -369,11 +386,10 @@ API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
 #else
         make_vcd(rf, (uint32_t*)buffer, 64*256, "15 ns");
 #endif
-        delete[] buffer;
         resp->binary_response();
     } else {
         resp->error(SubsysCommand::error_string(retval.status));
         resp->json_response(SubsysCommand::http_response_map(retval.status));
-        delete[] buffer;
     }
+    free(buffer);
 }
