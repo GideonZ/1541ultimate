@@ -68,7 +68,7 @@ SidDevicePdSid::~SidDevicePdSid()
 int SidDevicePdSid::PdSidConfig:: S_cfg_pdsid_type(ConfigItem *it)
 {
     SidDevicePdSid *obj = (SidDevicePdSid *)it->store->get_hook_object();
-    obj->SetSidType(it->getValue());
+    obj->SetSidType(it->getValue() + 1); // menu enum is 0 = 6581, 1 = 8580; SetSidType takes 1 = 6581, 2 = 8580
     return 0;
 }
 
