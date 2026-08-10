@@ -1,0 +1,12 @@
+# Host-side Python packages the test suites need. These install on the machine
+# driving the device, not on the device itself.
+#
+#   pip install -r tests/requirements.txt
+#
+# pytesseract is a wrapper and additionally needs the tesseract binary on PATH:
+#   macOS         brew install tesseract
+#   Debian/Ubuntu apt install tesseract-ocr
+
+Pillow          # e2e/api/input_test.py, e2e/io/printer/printer_test.py
+pyftpdlib       # e2e/filesystem/ftp_client_test.py
+pytesseract     # e2e/io/printer/printer_test.py, only under --stage verify

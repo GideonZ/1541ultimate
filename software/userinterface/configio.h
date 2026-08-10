@@ -41,7 +41,7 @@ public:
     static SubsysResultCode_e S_restore(SubsysCommand *cmd);
     static SubsysResultCode_e S_reset(SubsysCommand *cmd);
     static SubsysResultCode_e S_clear(SubsysCommand *cmd);
-    static bool S_read_from_file(File *f, StreamTextLog *log);
+    static bool S_read_from_file(File *f, StreamTextLog *log, IndexedList<ConfigStore *> &loaded_stores);
 };
 
 

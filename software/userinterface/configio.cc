@@ -224,13 +224,13 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
     f->write(buffer, len, &tr);
 }
 
-bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
+bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<ConfigStore *> &loaded_stores)
 {
     char c;
     char line[128];
     uint32_t tr;
     bool allOK = true;
-    ConfigStore *store;
+    ConfigStore *store = NULL;
     ConfigManager *cm = ConfigManager :: getConfigManager();
     int linenr = 0;
 
@@ -255,6 +255,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
             continue;
         }
         if (line[0] == '[') {
+            store = NULL;
             for(int i=1;i<128;i++) {
                 if (line[i] == ']') {
                     line[i] = 0;
@@ -270,7 +271,20 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
         // trim line? well for now let's assume correct spacing
         if (strlen(line) > 0) {
             if (store) {
-                allOK &= S_read_store_element(store, line, linenr, log);
+                bool loaded = S_read_store_element(store, line, linenr, log);
+                allOK &= loaded;
+                if (loaded) {
+                    bool found = false;
+                    for (int n = 0; n < loaded_stores.get_elements(); n++) {
+                        if (loaded_stores[n] == store) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        loaded_stores.append(store);
+                    }
+                }
             } else {
                 log->format("Line %d: Not inside valid store.\n", linenr);
                 allOK = false;

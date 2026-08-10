@@ -109,9 +109,4 @@ VPATH   += $(OUTPUT) $(RESULT)
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).a
 
-$(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
-	@echo "Creating Archive $@"
-	$(AR) -rc $@ $(ALL_OBJS)
-
-
 include ../../../common/rules.mk
