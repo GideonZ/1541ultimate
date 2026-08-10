@@ -15,6 +15,29 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
 
+## Host requirements
+
+The suites run on the machine driving the device, so a few Python packages have
+to be present there. The firmware needs none of them.
+
+```sh
+pip install -r tests/requirements.txt
+```
+
+| Package | Needed by |
+| --- | --- |
+| `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
+| `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
+| `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
+
+`pytesseract` is a wrapper around a separate binary, so it also needs
+`tesseract` on `PATH` (`brew install tesseract`, or `apt install
+tesseract-ocr`).
+
+A package that is missing either fails its suite with a message naming what to
+install, or reports the coverage it had to leave out. Neither case passes
+quietly.
+
 ## Command-line conventions
 
 The runner and every suite it starts take the same flags for the same things,

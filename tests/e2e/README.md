@@ -88,7 +88,10 @@ fails the run.
 7. Reuse `lib/` for shared protocol decoding or screen models instead of
    copying it. Keep support code local until a second suite needs it.
 8. State supported targets and unusual dependencies in the suite docstring.
-   Keep this file structural; do not copy per-suite CLI help into it.
+   Keep this file structural; do not copy per-suite CLI help into it. A suite
+   that needs a host Python package adds it to [`tests/requirements.txt`](../requirements.txt)
+   and to the table in [`tests/README.md`](../README.md) in the same change, so
+   a fresh checkout can run the gate without guessing.
 9. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
    the duration `SLOW` in yellow, which is a prompt to look rather than a
    failure. The whole gate is run repeatedly by people waiting for it, so a
