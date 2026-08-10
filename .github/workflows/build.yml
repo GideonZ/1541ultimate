@@ -1,12 +1,14 @@
 name: Build
 
-on:
-  push:
-    branches: [master, test-merge]
-  pull_request:
+on: [push, pull_request]
 
 jobs:
   build:
+    # A same-repo branch's push already builds via the push event above; only run the
+    # pull_request event when the PR head is a fork, whose pushes never reach this repo
+    # and so would otherwise never build at all. This is what avoids building the same
+    # commit twice, without restricting which branches build on push.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: self-hosted
     steps:
       - name: Checkout repository
