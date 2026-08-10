@@ -8,14 +8,19 @@ class C64;
 class U2MemoryBackend : public MemoryBackend
 {
     C64 *machine;
+    uint8_t cached_cia2_porta;
+    uint8_t read_cia2_porta(void);
 public:
-    explicit U2MemoryBackend(C64 *machine) : machine(machine) { }
+    explicit U2MemoryBackend(C64 *machine) : machine(machine), cached_cia2_porta(0x03) { }
 
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
     virtual bool supports_cpu_banking(void) const { return false; }
-    virtual bool supports_vic_bank(void) const { return false; }
+    virtual void begin_session(void);
+    virtual bool supports_vic_bank(void) const { return true; }
+    virtual uint8_t get_live_vic_bank(void);
+    virtual void set_live_vic_bank(uint8_t vic_bank);
     virtual bool supports_go(void) const { return true; }
     virtual const char *source_name(uint16_t address) const;
 };

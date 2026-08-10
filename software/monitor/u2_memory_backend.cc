@@ -27,10 +27,62 @@ void U2MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
         }
         return;
     }
+    bool stopped_it = machine->begin_stopped_session();
     while (len) {
         *dst++ = machine->peek(address++);
         len--;
     }
+    machine->end_stopped_session(stopped_it);
+}
+
+void U2MemoryBackend :: begin_session(void)
+{
+    if (!machine || !machine->exists() || machine->is_accessible()) {
+        return;
+    }
+    bool stopped_it = machine->begin_stopped_session();
+    cached_cia2_porta = machine->peek(0xDD00);
+    machine->end_stopped_session(stopped_it);
+}
+
+uint8_t U2MemoryBackend :: read_cia2_porta(void)
+{
+    if (!machine || !machine->exists()) {
+        return 0x03;
+    }
+    if (machine->is_accessible()) {
+        cached_cia2_porta = machine->get_frozen_cia2_porta();
+    } else if (machine->is_stopped()) {
+        cached_cia2_porta = machine->peek(0xDD00);
+    }
+    return cached_cia2_porta;
+}
+
+uint8_t U2MemoryBackend :: get_live_vic_bank(void)
+{
+    return (uint8_t)(3 - (read_cia2_porta() & 0x03));
+}
+
+void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
+{
+    if (!machine || !machine->exists() || machine->is_accessible()) {
+        // While the freezer owns the C64, the live $DD00 register belongs
+        // to the freezer's own display, not the frozen program. The frozen
+        // program's VIC bank is a read-only snapshot; poking hardware here
+        // would corrupt the freezer's screen instead of editing it.
+        return;
+    }
+    uint8_t porta;
+    if (machine->is_stopped()) {
+        porta = read_cia2_porta();
+    } else {
+        bool stopped_it = machine->begin_stopped_session();
+        porta = machine->peek(0xDD00);
+        machine->end_stopped_session(stopped_it);
+    }
+    porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
+    machine->poke(0xDD00, porta);
+    cached_cia2_porta = porta;
 }
 
 const char *U2MemoryBackend :: source_name(uint16_t) const

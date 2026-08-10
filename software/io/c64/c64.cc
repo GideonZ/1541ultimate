@@ -592,6 +592,22 @@ void C64::resume(void)
     }
 }
 
+bool C64::begin_stopped_session(void)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(false);
+    }
+    return !wasStopped;
+}
+
+void C64::end_stopped_session(bool stopped_it)
+{
+    if (stopped_it) {
+        resume();
+    }
+}
+
 void C64::reset(void)
 {
     C64_MODE = MODE_NORMAL;

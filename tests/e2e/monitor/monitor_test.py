@@ -11,6 +11,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -26,8 +27,10 @@ from api import UltimateApi
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
+    INPUT_PATH,
     MODE_FREEZE,
     MODE_TELNET,
+    RestBackend,
     Snapshot,
     add_mode_argument,
     make_backend,
@@ -39,13 +42,55 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
 
-STATUS_LINE_RE = re.compile(r"CPU[0-7] \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+# The monitor renders the status row in two forms (format_status_line_impl in
+# software/monitor/machine_monitor.cc): "CPU5 $A:..." when the browsing view
+# follows the live CPU bank, and "C5O7 $A:..." when a view override is
+# selected, where the first digit is the live bank and the second is the
+# overridden view. Matching only the first form left find_status_line unable
+# to locate the row at all whenever an override was active, which is exactly
+# the state every banked-breakpoint and banked-continue scenario works in.
+STATUS_LINE_RE = re.compile(
+    r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
+    r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
+
+# U2 has no monitor-selected CPU banking (MemoryBackend::supports_cpu_banking()
+# is false), so draw_status() in machine_monitor.cc never reaches the full
+# CPU%c $A:... form; it falls back to this shorter VIC-only footer.
+U2_STATUS_LINE_RE = re.compile(r"CPU VIEW  VIC([0-3]) \$([0-9A-F]{4})")
+U2_VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 
 
 def find_status_line(snapshot: Snapshot) -> int:
     return snapshot.find_line_matching(STATUS_LINE_RE)
+
+
+def find_u2_footer_line(snapshot: Snapshot) -> int:
+    return snapshot.find_line_matching(U2_STATUS_LINE_RE)
+
+
+class SplitRestBackend(RestBackend):
+    """RestBackend for a U2+L cartridge (overlay_host) plugged into a C64U
+    (machine_host) that supplies the real C64 bus.
+
+    The U2+L's own machine:input is compiled out (HTTP 501, #if U64 only), so
+    keyboard injection has to reach the C64U instead. The overlay screen
+    (machine:menu_screen / machine:menu_button) is local UI state that only
+    the U2+L cartridge itself serves. The U2+L also has no "Interface Type"
+    setting to toggle between Overlay and Freeze presentation -- its freezer
+    always takes over the whole screen -- so this always skips that step.
+    """
+
+    def __init__(self, overlay_host: str, machine_host: str,
+                 password: Optional[str] = None, timeout: float = 5.0) -> None:
+        self.machine_host = machine_host
+        super().__init__(overlay_host, password, timeout, interface_type=None)
+
+    def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+        host = self.machine_host if path == INPUT_PATH else self.host
+        query = "?" + urllib.parse.urlencode(params) if params else ""
+        return f"http://{host}{path}{query}"
 
 
 VIEW_KEYS = {
@@ -301,13 +346,10 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             pass
         time.sleep(0.5)
 
-    request = urllib.request.Request(
-        f"http://{host}/v1/machine:reset", data=b"", headers=headers, method="PUT"
-    )
-    # Resetting twice leaves the same machine as resetting once.
-    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
-        pass
-    time.sleep(1.0)
+    # Do not assume a successful reset request means the old 6510 program has
+    # stopped. The shared fixture waits for a fresh BASIC-ready screen, which
+    # is the required postcondition before writing the next test program.
+    UltimateApi(host, password, REST_TIMEOUT_SECONDS).machine.reset()
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -577,61 +619,29 @@ def machine_runs_behind_the_ui(mode: str) -> bool:
     return mode != MODE_FREEZE
 
 
-def stop_running_program(rest_host: str) -> None:
-    """Halt whatever the C64 is executing, without relying on a BRK.
-
-    A BRK placed in memory by DMA is not reliably honoured by the running
-    6510. A test that launches a program and then assumes it stopped at its
-    trailing BRK is therefore racing the machine: the program can still be
-    executing, and whatever the test writes next is overwritten by it.
-    Observed as "Memory at $2000 did not become $5A", with $2000 holding the
-    value the previous iteration's program writes, in one run out of three.
-
-    Pausing stops the machine outright, which is one of the three things that
-    reliably do: pause, reset, or having the BRK in memory before the program
-    is launched. Reset is not used here because the monitor holds the machine
-    while its UI is up, and releasing it from under the UI is what takes the
-    device off the network.
-
-    Only call this where machine_runs_behind_the_ui() is true, and always with
-    the matching resume_machine(). The rule being followed is the firmware's
-    own: C64_Subsys::dma_load_raw_buffer stops the C64 only when it finds it
-    running, and resumes it only if it was the one that stopped it. Under
-    Freeze this pair would break that rule and resume a machine the freeze
-    stopped. MENU_C64_PAUSE runs C64::stop(), which overwrites the raster and
-    VIC interrupt registers C64::freeze() saved for the eventual unfreeze, and
-    MENU_C64_RESUME runs C64::resume(), which sets C64_MODE back to
-    MODE_NORMAL and releases the CPU while isFrozen is still set and the UI's
-    own I/O is still installed.
-
-    Where it is called, it composes with the DMA path rather than fighting it:
-    dma_load_raw_buffer sees an already-stopped machine, so the writes that
-    follow leave it stopped instead of resuming it between them.
-    """
-    request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:pause", data=b"", method="PUT")
-    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
-        pass
-
-
-def resume_machine(rest_host: str) -> None:
-    """Undo stop_running_program, so G starts from the normal running state."""
-    request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:resume", data=b"", method="PUT")
-    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
-        pass
-
-
 def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> None:
     sentinel = 0x5A
     values = (0x42, 0x37, 0x99)
     stop_first = machine_runs_behind_the_ui(mode)
 
     for value in values:
-        # Whatever ran before this, stop it outright rather than trusting its
-        # trailing BRK to have done so; see stop_running_program.
+        # A G program may not retire at its trailing BRK before the monitor
+        # returns. A pause ordinarily stops it before the next DMA write, but
+        # an already-pending stop can lose that race on an Overlay/Telnet UI.
+        # Begin each independent handoff from the same reset baseline instead;
+        # this is the only device-level operation that proves no old program
+        # remains to overwrite the sentinel.
         if stop_first:
-            stop_running_program(rest_host)
+            # Close the monitor through its own exit key before resetting.
+            # Measured on hardware over Telnet: reset_rest_machine's REST-level
+            # menu-close loop does not reliably tear down a Telnet-opened
+            # monitor session -- the machine reset proceeds while the overlay
+            # is only half closed, leaving a stale window on screen that
+            # enter_monitor() can no longer re-enter afterward. Closing it
+            # here first leaves reset_rest_machine nothing to do.
+            session.send_key("ESC")
+            reset_rest_machine(rest_host, None)
+            session.enter_monitor()
         write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
         write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
         # Confirm the sentinel is actually in memory before asking the monitor
@@ -640,9 +650,6 @@ def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> No
         # this read has come back with the previous iteration's value.
         wait_for_rest_byte(rest_host, 0x2000, sentinel)
 
-        # Back to the normal running state before G, which does its own resume.
-        if stop_first:
-            resume_machine(rest_host)
         ensure_view(session, "HEX ")
         before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
         if before != sentinel:
@@ -1223,11 +1230,33 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
         )
 
 
-def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
+def assert_u2_footer_consistent(snapshot: Snapshot) -> None:
+    """The U2 footer's VIC digit and hex base address must agree.
+
+    U2 has no monitor-selected CPU banking, so draw_status() falls back to
+    the shorter "CPU VIEW  VICn $xxxx" form (machine_monitor.cc); this checks
+    that form is present and internally consistent rather than assuming the
+    full CPU%c $A:... layout the CPU-banked checks rely on.
+    """
+    line_index = find_u2_footer_line(snapshot)
+    match = U2_STATUS_LINE_RE.search(snapshot.line(line_index))
+    bank = int(match.group(1))
+    address = int(match.group(2), 16)
+    if address != U2_VIC_BANK_BASES[bank]:
+        raise Failure(
+            f"U2 footer VIC{bank} shows ${address:04X}, expected "
+            f"${U2_VIC_BANK_BASES[bank]:04X}: {snapshot.line(line_index)!r}"
+        )
+
+
+def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = False) -> None:
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
-        ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
+        if is_u2:
+            assert_u2_footer_consistent(session.capture())
+        else:
+            ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
 
     with check("KERNAL $E000 hex view and REST match"):
         ensure_hex_width(session, 8)
@@ -1258,16 +1287,22 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
     with check("CPU6 RAM under BASIC write/read"):
-        screen = ensure_view(session, "HEX ")
-        session.goto("A000")
-        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
-        session.fill("A000-A000,AA")
-        screen = session.goto("A000")
-        assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
+        if is_u2:
+            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        else:
+            screen = ensure_view(session, "HEX ")
+            session.goto("A000")
+            screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu30"]["contains"]["22"], 7)
+            session.fill("A000-A000,AA")
+            screen = session.goto("A000")
+            assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
     with check("CPU5 RAM under KERNAL status"):
-        session.goto("E000")
-        screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
+        if is_u2:
+            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        else:
+            session.goto("E000")
+            screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
 
     with check("ASCII view width and scrolling"):
         # 19 rows of 0x20 bytes, each row a distinct character, so the view has
@@ -1285,7 +1320,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         first_content_row = content_rows[0]
         last_content_row = content_rows[-1]
         assert_ascii_width(screen, first_content_row)
-        assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
+        if is_u2:
+            assert_u2_footer_consistent(screen)
+        else:
+            assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
 
         screen = session.send_key("DOWN")
         assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
@@ -1319,13 +1357,26 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str) -> None:
         session.send_key("ESC")
 
     with check("CPU bank cycling reaches CHAR and RAM mappings"):
-        session.goto("A000")
-        screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
-        assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
-        session.send_char("o")
-        session.send_char("o")
-        screen = session.send_char("o")
-        assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+        if is_u2:
+            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        else:
+            session.goto("A000")
+            screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
+            assert_status_contains(screen, snapshots["status_cpu27"]["contains"]["22"])
+            session.send_char("o")
+            session.send_char("o")
+            screen = session.send_char("o")
+            assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
+
+    with check("U2 VIC-bank footer cycles through all four banks"):
+        if not is_u2:
+            check_skip("U2-only: exercises the VIC-only footer form (supports_cpu_banking()==false)")
+        else:
+            screen = session.capture()
+            assert_u2_footer_consistent(screen)
+            for _ in range(4):
+                screen = session.send_char("O")
+                assert_u2_footer_consistent(screen)
 
     with check("COMPARE reports differing address"):
         screen = ensure_view(session, "HEX ")
@@ -1414,24 +1465,33 @@ def main() -> int:
     parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
+    parser.add_argument("-c", "--c64-host", default=os.environ.get("U64_C64_HOST"),
+                        help="C64U a U2+L cartridge under --host is plugged into. Its "
+                             "own machine:input is compiled out, so keyboard/memory ops "
+                             "in Overlay/Freeze mode are routed here instead; Telnet is "
+                             "unaffected since it talks to --host's own telnet server.")
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
-    rest_host = args.rest_host or args.host
+    rest_host = args.rest_host or args.c64_host or args.host
+    is_u2 = rest_api(args.host).info().product.startswith("Ultimate II")
 
     reset_rest_machine(rest_host, args.password)
 
     session = None
     try:
-        backend = make_backend(
-            args.mode, rest_host, args.password, args.timeout,
-            telnet_host=args.host, telnet_port=args.port,
-        )
+        if args.c64_host and args.mode != MODE_TELNET:
+            backend = SplitRestBackend(args.host, args.c64_host, args.password, args.timeout)
+        else:
+            backend = make_backend(
+                args.mode, rest_host, args.password, args.timeout,
+                telnet_host=args.host, telnet_port=args.port,
+            )
         session = MonitorSession(backend)
-        run_tests(session, rest_host, args.mode)
+        run_tests(session, rest_host, args.mode, is_u2)
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:

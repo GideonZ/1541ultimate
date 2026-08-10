@@ -370,6 +370,9 @@ public:
     bool exists(void);
     bool is_accessible(void);
     bool is_stopped(void);
+    bool begin_stopped_session(void);
+    void end_stopped_session(bool stopped_it);
+    uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
     
     void set_colors(int background, int border);
     Screen *getScreen(void);
