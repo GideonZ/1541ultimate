@@ -35,6 +35,23 @@ void U2MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
     machine->end_stopped_session(stopped_it);
 }
 
+void U2MemoryBackend :: write_block(uint16_t address, const uint8_t *src, uint16_t len)
+{
+    if (!machine || !machine->exists()) {
+        return;
+    }
+    if (machine->is_accessible()) {
+        machine->dma_transfer_frozen(address, const_cast<uint8_t *>(src), len, 0);
+        return;
+    }
+    bool stopped_it = machine->begin_stopped_session();
+    while (len) {
+        machine->poke(address++, *src++);
+        len--;
+    }
+    machine->end_stopped_session(stopped_it);
+}
+
 void U2MemoryBackend :: begin_session(void)
 {
     if (!machine || !machine->exists() || machine->is_accessible()) {

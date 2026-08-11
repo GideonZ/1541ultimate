@@ -151,9 +151,7 @@ const char *monitor_io::load_into_memory(const char *path, const char *name,
         if (f->read(buf, want, &got) != FR_OK || got == 0) {
             break;
         }
-        for (uint32_t i = 0; i < got; i++) {
-            backend->write((uint16_t)(start_addr + mem_pos + i), buf[i]);
-        }
+        backend->write_block((uint16_t)(start_addr + mem_pos), buf, (uint16_t)got);
         mem_pos += got;
         remaining -= got;
     }

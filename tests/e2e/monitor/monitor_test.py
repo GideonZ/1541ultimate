@@ -42,22 +42,14 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
 
-# The monitor renders the status row in two forms (format_status_line_impl in
-# software/monitor/machine_monitor.cc): "CPU5 $A:..." when the browsing view
-# follows the live CPU bank, and "C5O7 $A:..." when a view override is
-# selected, where the first digit is the live bank and the second is the
-# overridden view. Matching only the first form left find_status_line unable
-# to locate the row at all whenever an override was active, which is exactly
-# the state every banked-breakpoint and banked-continue scenario works in.
+# The normal footer reports either a live CPU bank or a CPU-view override.
 STATUS_LINE_RE = re.compile(
     r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
     r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
-# U2 has no monitor-selected CPU banking (MemoryBackend::supports_cpu_banking()
-# is false), so draw_status() in machine_monitor.cc never reaches the full
-# CPU%c $A:... form; it falls back to this shorter VIC-only footer.
+# U2 has no monitor-selected CPU bank, so it uses a VIC-only footer.
 U2_STATUS_LINE_RE = re.compile(r"CPU VIEW  VIC([0-3]) \$([0-9A-F]{4})")
 U2_VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 
@@ -71,13 +63,7 @@ def find_u2_footer_line(snapshot: Snapshot) -> int:
 
 
 def find_any_status_line(snapshot: Snapshot) -> int:
-    """Either footer form is proof the monitor screen is open and rendered.
-
-    Callers that need the CPU-banked fields specifically (assert_status_contains,
-    ensure_status, cycle_cpu_bank_from_cpu7) keep using find_status_line, since on
-    U2 those fields do not exist and callers already gate on is_u2 before reaching
-    them. This helper is for the target-agnostic "did the monitor open" check.
-    """
+    """Either target footer proves that the monitor rendered."""
     try:
         return find_status_line(snapshot)
     except Failure:
@@ -85,15 +71,9 @@ def find_any_status_line(snapshot: Snapshot) -> int:
 
 
 class SplitRestBackend(RestBackend):
-    """RestBackend for a U2+L cartridge (overlay_host) plugged into a C64U
-    (machine_host) that supplies the real C64 bus.
+    """Split-host UI backend.
 
-    The U2+L's own machine:input is compiled out (HTTP 501, #if U64 only), so
-    keyboard injection has to reach the C64U instead. The overlay screen
-    (machine:menu_screen / machine:menu_button) is local UI state that only
-    the U2+L cartridge itself serves. The U2+L also has no "Interface Type"
-    setting to toggle between Overlay and Freeze presentation -- its freezer
-    always takes over the whole screen -- so this always skips that step.
+    The overlay host owns the menu; the machine host supplies keyboard input.
     """
 
     def __init__(self, overlay_host: str, machine_host: str,
@@ -320,12 +300,35 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
     rest_api(host).machine.writemem(address, data, idempotent=True)
 
 
-def reset_rest_machine(host: str, password: Optional[str]) -> None:
+def write_rest_memory_confirmed(host: str, address: int, data: bytes,
+                                attempts: int = 8, settle: float = 0.25) -> None:
+    for _ in range(attempts):
+        write_rest_memory(host, address, data)
+        time.sleep(settle)
+        if read_rest_memory(host, address, len(data)) == data:
+            return
+    raise Failure(f"${address:04X} would not hold {data.hex().upper()}")
+
+
+def wait_for_rest_data(host: str, address: int, expected: bytes,
+                       timeout: float = 5.0) -> bytes:
+    deadline = time.time() + timeout
+    actual = b""
+    while time.time() < deadline:
+        actual = read_rest_memory(host, address, len(expected))
+        if actual == expected:
+            return actual
+        time.sleep(0.05)
+    return actual
+
+
+def close_rest_menu(host: str, password: Optional[str], menu_host: Optional[str] = None) -> None:
     headers = {"X-Password": password} if password else {}
+    menu_host = menu_host or host
     for attempt in range(12):
         try:
             request = urllib.request.Request(
-                f"http://{host}/v1/machine:menu_screen", headers=headers, method="GET"
+                f"http://{menu_host}/v1/machine:menu_screen", headers=headers, method="GET"
             )
             with rest_lib.retrying_urlopen(request, 5.0):
                 pass
@@ -360,10 +363,14 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             pass
         time.sleep(0.5)
 
-    # Do not assume a successful reset request means the old 6510 program has
-    # stopped. The shared fixture waits for a fresh BASIC-ready screen, which
-    # is the required postcondition before writing the next test program.
+
+def reset_rest_machine(host: str, password: Optional[str], menu_host: Optional[str] = None) -> None:
+    close_rest_menu(host, password, menu_host)
+
+    # Let the reset supersede any program that was still executing. READY can
+    # remain elsewhere in screen RAM until the new boot redraws it.
     UltimateApi(host, password, REST_TIMEOUT_SECONDS).machine.reset()
+    time.sleep(0.2)
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -510,6 +517,19 @@ def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
     return screen
 
 
+def enter_hex_nibble(session: MonitorSession, nibble: str, expected: str) -> Snapshot:
+    screen = session.capture()
+    for _ in range(3):
+        screen = session.send_char(nibble)
+        try:
+            assert_contains(screen, 4, expected)
+            return screen
+        except Failure:
+            pass
+    assert_contains(screen, 4, expected)
+    return screen
+
+
 def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
     ascii_view_addr = 0x3200
     ascii_edit_addr = 0x3220
@@ -622,71 +642,44 @@ def goto_and_read_byte(
     return value
 
 
-def machine_runs_behind_the_ui(mode: str) -> bool:
-    """Whether the C64 keeps executing while this mode's monitor UI is up.
-
-    Under Overlay and Telnet it does: the menu is drawn without stopping the
-    machine, so a program launched by an earlier G is still running while the
-    next one is being set up. Under Freeze the menu stops the machine as it
-    opens, so nothing is running and there is nothing to stop.
-    """
-    return mode != MODE_FREEZE
-
-
-def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> None:
+def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str, reset_host: str) -> None:
+    sentinel_addr = 0xC200
     sentinel = 0x5A
     values = (0x42, 0x37, 0x99)
-    stop_first = machine_runs_behind_the_ui(mode)
 
     for value in values:
-        # A G program may not retire at its trailing BRK before the monitor
-        # returns. A pause ordinarily stops it before the next DMA write, but
-        # an already-pending stop can lose that race on an Overlay/Telnet UI.
-        # Begin each independent handoff from the same reset baseline instead;
-        # this is the only device-level operation that proves no old program
-        # remains to overwrite the sentinel.
-        if stop_first:
-            # Close the monitor through its own exit key before resetting.
-            # Measured on hardware over Telnet: reset_rest_machine's REST-level
-            # menu-close loop does not reliably tear down a Telnet-opened
-            # monitor session -- the machine reset proceeds while the overlay
-            # is only half closed, leaving a stale window on screen that
-            # enter_monitor() can no longer re-enter afterward. Closing it
-            # here first leaves reset_rest_machine nothing to do.
-            session.send_key("ESC")
-            reset_rest_machine(rest_host, None)
-            session.enter_monitor()
-        write_rest_memory(rest_host, 0x0810, bytes((0xA9, value, 0x8D, 0x00, 0x20, 0x00)))
-        write_rest_memory(rest_host, 0x2000, bytes((sentinel,)))
-        # Confirm the sentinel is actually in memory before asking the monitor
-        # to show it. Reading the monitor's view first cannot tell "the write
-        # has not landed" from "the view has not refreshed", and under Freeze
-        # this read has come back with the previous iteration's value.
-        wait_for_rest_byte(rest_host, 0x2000, sentinel)
+        # Close the monitor before writing each fixture to live RAM.
+        session.send_key("ESC")
+        if mode == MODE_FREEZE:
+            close_rest_menu(reset_host, None, rest_host)
+        else:
+            reset_rest_machine(reset_host, None, rest_host)
+        write_rest_memory(rest_host, 0x0810,
+                          bytes((0xA9, value, 0x8D, sentinel_addr & 0xFF, sentinel_addr >> 8, 0x00)))
+        write_rest_memory(rest_host, sentinel_addr, bytes((sentinel,)))
+        # Confirm before monitor entry: Freeze may otherwise show the prior iteration.
+        wait_for_rest_byte(rest_host, sentinel_addr, sentinel)
 
+        session.enter_monitor()
         ensure_view(session, "HEX ")
-        before = goto_and_read_byte(session, "2000", 0x2000, expected=sentinel)
+        before = goto_and_read_byte(session, f"{sentinel_addr:04X}", sentinel_addr, expected=sentinel)
         if before != sentinel:
-            # The sentinel is known to be in memory: wait_for_rest_byte above
-            # would have failed otherwise. Report what REST sees now as well,
-            # so the message says whether memory changed under the test or the
-            # monitor's view simply did not follow it.
-            rest_now = read_rest_memory(rest_host, 0x2000, 1)[0]
+            rest_now = read_rest_memory(rest_host, sentinel_addr, 1)[0]
             raise Failure(
-                f"G precondition failed for ${value:02X}: expected ${sentinel:02X} at $2000, "
+                f"G precondition failed for ${value:02X}: expected ${sentinel:02X} at ${sentinel_addr:04X}, "
                 f"monitor view shows ${before:02X}, REST reads ${rest_now:02X} "
                 f"({'monitor view is stale' if rest_now == sentinel else 'memory changed'})"
             )
 
         session.goto_run("0810")
-        wait_for_rest_byte(rest_host, 0x2000, value)
+        wait_for_rest_byte(rest_host, sentinel_addr, value)
 
         session.enter_monitor()
         ensure_view(session, "HEX ")
-        after = goto_and_read_byte(session, "2000", 0x2000, expected=value)
+        after = goto_and_read_byte(session, f"{sentinel_addr:04X}", sentinel_addr, expected=value)
         if after != value:
             raise Failure(
-                f"G postcondition failed for ${value:02X}: expected ${value:02X} at $2000, got ${after:02X}"
+                f"G postcondition failed for ${value:02X}: expected ${value:02X} at ${sentinel_addr:04X}, got ${after:02X}"
             )
 
 
@@ -1142,6 +1135,19 @@ def clear_prompt_field(session: MonitorSession) -> None:
     session.send_key_repeat("BACKSPACE", 40)
 
 
+def wait_for_screen_contains(session: MonitorSession, text: str,
+                             timeout: float = 5.0) -> Snapshot:
+    deadline = time.time() + timeout
+    snapshot = session.capture()
+    while time.time() < deadline:
+        if text in snapshot.text():
+            return snapshot
+        time.sleep(0.05)
+        snapshot = session.capture()
+    snapshot.find_line_containing(text)
+    return snapshot
+
+
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
     url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
     request = urllib.request.Request(url, data=b"", method="PUT")
@@ -1168,10 +1174,7 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     session.send_char("S", settle=True)
     session.send_text(mem_range + "\r", f"save range {mem_range}")
     picker_to_root(session)
-    # Quick-seek by name rather than assuming position: the root listing's
-    # order is device-specific (U64 lists Temp first; U2+L lists Flash,
-    # then Temp), so pressing RIGHT unconditionally saved into whichever
-    # device was actually first on U2+L instead of into /Temp.
+    # Root-entry order differs by target, so seek /Temp by name.
     snapshot = picker_enter(session, "Temp")
     for prefix in enter_dirs:
         snapshot = picker_enter(session, prefix)
@@ -1179,14 +1182,9 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     # monitor then asks for the file name.
     session.send_key("RIGHT")
     clear_prompt_field(session)
-    snapshot = session.send_text(filename + "\r", f"save as {filename}")
-    snapshot.find_line_containing("SAVE")
-    # settle=True: the write to flash lands before this popup even opens
-    # (handle_save_command's monitor_io::save_from_memory call precedes
-    # show_io_confirmation), but dismissing the confirmation is still a
-    # view-closing redraw of the same shape as the other settled keys, and a
-    # save/load round-trip has been observed to read back one stale byte on
-    # U2+L when this dismissal was not settled.
+    session.send_text(filename + "\r", f"save as {filename}")
+    snapshot = wait_for_screen_contains(session, "SAVE")
+    # Dismissing this popup has the same two-burst redraw as other settled keys.
     return session.send_key("ENTER", settle=True)  # dismiss the confirmation popup
 
 
@@ -1204,7 +1202,8 @@ def monitor_load(session: MonitorSession, enter_dirs: List[str], filename: str) 
     # "Load [PRG|AAAA],[Offs],[Len|AUTO]" prompt: typing the spec clears the
     # template, so PRG mode is forced regardless of the last-used value.
     session.send_text("PRG,0,AUTO\r", "load PRG")
-    # settle=True: see monitor_save's matching dismiss for why.
+    wait_for_screen_contains(session, "LOAD")
+    # This dismissal also has a two-burst redraw.
     return session.send_key("ENTER", settle=True)  # dismiss the confirmation popup
 
 
@@ -1214,14 +1213,14 @@ def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: s
                      0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80))
     name = f"MS{token}.PRG"
 
-    write_rest_memory(rest_host, addr, pattern)
+    write_rest_memory_confirmed(rest_host, addr, pattern)
     monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [], name)
     if not rest_file_exists(rest_host, f"/Temp/{name}"):
         raise Failure(f"Saved file /Temp/{name} not found via REST")
 
-    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    write_rest_memory_confirmed(rest_host, addr, b"\x00" * len(pattern))
     monitor_load(session, [], f"MS{token}")
-    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    loaded = wait_for_rest_data(rest_host, addr, pattern)
     if loaded != pattern:
         raise Failure(
             f"Top-level save/load mismatch at ${addr:04X}:\n"
@@ -1241,12 +1240,12 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
     if not rest_file_exists(rest_host, f"/Temp/{disk}"):
         raise Failure(f"D64 image /Temp/{disk} was not created")
 
-    write_rest_memory(rest_host, addr, pattern)
+    write_rest_memory_confirmed(rest_host, addr, pattern)
     monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [f"MD{token}"], inner)
 
-    write_rest_memory(rest_host, addr, b"\x00" * len(pattern))
+    write_rest_memory_confirmed(rest_host, addr, b"\x00" * len(pattern))
     monitor_load(session, [f"MD{token}"], inner)
-    loaded = read_rest_memory(rest_host, addr, len(pattern))
+    loaded = wait_for_rest_data(rest_host, addr, pattern)
     if loaded != pattern:
         raise Failure(
             f"D64 save/load mismatch at ${addr:04X}:\n"
@@ -1255,14 +1254,8 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
         )
 
 
-def assert_u2_footer_consistent(snapshot: Snapshot) -> None:
-    """The U2 footer's VIC digit and hex base address must agree.
-
-    U2 has no monitor-selected CPU banking, so draw_status() falls back to
-    the shorter "CPU VIEW  VICn $xxxx" form (machine_monitor.cc); this checks
-    that form is present and internally consistent rather than assuming the
-    full CPU%c $A:... layout the CPU-banked checks rely on.
-    """
+def assert_u2_footer_consistent(snapshot: Snapshot) -> int:
+    """Return the U2 VIC bank after checking that its base address agrees."""
     line_index = find_u2_footer_line(snapshot)
     match = U2_STATUS_LINE_RE.search(snapshot.line(line_index))
     bank = int(match.group(1))
@@ -1272,22 +1265,14 @@ def assert_u2_footer_consistent(snapshot: Snapshot) -> None:
             f"U2 footer VIC{bank} shows ${address:04X}, expected "
             f"${U2_VIC_BANK_BASES[bank]:04X}: {snapshot.line(line_index)!r}"
         )
+    return bank
 
 
 def u2_freeze_banked_ram_reason(is_u2: bool, mode: str) -> Optional[str]:
-    """Reason to skip a check whose test addresses fall in $1000-$3FFF, or None.
+    """Return the U2+L Freeze limitation for $1000-$3FFF, if applicable.
 
-    Measured directly on U2+L hardware while frozen: REST readmem/writemem
-    in that range returns/accepts open bus ($FF), while $0400 (screen) and
-    $C000-and-up (KERNAL/high RAM) both work. That is consistent with the
-    U2+L freezer's own RAM being banked into that range while it holds the
-    C64, not a REST-routing gap this file can route around (see
-    memory_verify_host in main() for the routing gap that was fixed): it
-    reproduces from the U2+L's own REST endpoint directly, whichever host
-    a caller here is pointed at. A firmware/hardware characteristic of the
-    freezer, not a harness bug, so out of scope for this non-debug
-    stability PR; every check below that seeds its test data in that range
-    skips accordingly under U2+L Freeze rather than failing.
+    The cartridge's own REST endpoint returns open bus there while frozen;
+    $0400 and $C000-and-up remain usable.
     """
     if is_u2 and mode == MODE_FREEZE:
         return ("U2+L Freeze: REST cannot reach $1000-$3FFF while frozen "
@@ -1295,7 +1280,8 @@ def u2_freeze_banked_ram_reason(is_u2: bool, mode: str) -> Optional[str]:
     return None
 
 
-def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = False) -> None:
+def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = False,
+              reset_host: Optional[str] = None) -> None:
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
@@ -1398,14 +1384,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
 
     with check("HEX edit writes both nibbles"):
         session.goto("C000")
-        session.fill("C000-C000,00")
+        write_rest_memory_confirmed(rest_host, 0xC000, b"\x00")
         screen = ensure_view(session, "HEX ")
         screen = session.send_char("e")
         assert_highlight(screen, [(6, 4), (7, 4)], "e")
-        screen = session.send_char("A")
-        assert_contains(screen, 4, snapshots["hex_first_nibble"]["contains"]["4"])
-        screen = session.send_char("B")
-        assert_contains(screen, 4, snapshots["hex_second_nibble"]["contains"]["4"])
+        screen = enter_hex_nibble(session, "A", snapshots["hex_first_nibble"]["contains"]["4"])
+        screen = enter_hex_nibble(session, "B", snapshots["hex_second_nibble"]["contains"]["4"])
         session.send_key("ESC")
 
     with check("CPU bank cycling reaches CHAR and RAM mappings"):
@@ -1425,48 +1409,35 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
             check_skip("U2-only: exercises the VIC-only footer form (supports_cpu_banking()==false)")
         else:
             screen = session.capture()
-            assert_u2_footer_consistent(screen)
+            bank = assert_u2_footer_consistent(screen)
             for _ in range(4):
                 screen = session.send_char("O")
-                assert_u2_footer_consistent(screen)
+                bank = (bank + 1) & 0x03
+                actual = assert_u2_footer_consistent(screen)
+                if actual != bank:
+                    raise Failure(f"U2 VIC bank did not advance to VIC{bank}: "
+                                  f"footer reports VIC{actual}")
 
     with check("COMPARE reports differing address"):
         screen = ensure_view(session, "HEX ")
-        session.fill("C100-C103,10")
-        session.fill("C200-C203,10")
-        session.fill("C201-C201,91")
-        session.fill("C203-C203,93")
+        write_rest_memory_confirmed(rest_host, 0xC100, bytes((0x10,) * 4))
+        write_rest_memory_confirmed(rest_host, 0xC200, bytes((0x10, 0x91, 0x10, 0x93)))
         screen = session.compare("C100-C103,C200")
         assert_contains(screen, 4, "C101")
 
     with check("G executes finite loop and returns to monitor"):
-        write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
+        go_address = 0xC000 if is_u2 and mode == MODE_FREEZE else 0x1000
+        write_rest_memory(rest_host, go_address,
+                          bytes.fromhex("A9008D0004A9018D00044C") +
+                          go_address.to_bytes(2, "little"))
         write_rest_memory(rest_host, 0x0400, bytes([0x20]))
-        session.goto("1000")
-        session.goto_run("1000")
+        session.goto(f"{go_address:04X}")
+        session.goto_run(f"{go_address:04X}")
         wait_for_rest_byte(rest_host, 0x0400, 0x01)
         session.enter_monitor()
 
     with check("G repeated execution updates RAM sentinel"):
-        if is_u2 and mode == MODE_FREEZE:
-            # Measured on U2+L hardware: after a G-triggered unfreeze/
-            # re-freeze cycle, REST reads of general RAM ($0810, the
-            # program buffer itself, and $2000/$C800, tried as sentinel
-            # addresses) return stale or garbage bytes for some period,
-            # unlike the "G executes finite loop" check above, whose
-            # sentinel is screen memory ($0400) and passes reliably. This
-            # is not the same as the $1000-$3FFF banked-RAM-while-frozen
-            # characteristic documented at the "ASCII and Screen mapping
-            # semantics" skip above (relocating the sentinel to $C800, well
-            # outside that range, did not fix it) -- it reproduces only
-            # after a G round-trip, so it looks like a re-freeze settling
-            # characteristic of the U2+L firmware rather than a harness
-            # pacing gap this file can wait out with a REST poll. Out of
-            # scope for this non-debug stability PR.
-            check_skip("U2+L Freeze: REST reads of general RAM are unreliable "
-                       "for some period after a G-triggered re-freeze")
-        else:
-            run_go_repeat_test(session, rest_host, mode)
+        run_go_repeat_test(session, rest_host, mode, reset_host or rest_host)
 
     with check("G handoff preserves stable VIC state"):
         if mode != MODE_TELNET:
@@ -1523,7 +1494,6 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
             run_number_arithmetic_test(session, rest_host)
 
     save_load_token = f"{int(time.time()) % 100000:05d}"
-
     with check("save/load round-trip to top-level /Temp file"):
         run_save_load_topfile_test(session, rest_host, save_load_token)
 
@@ -1549,21 +1519,13 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate the U64 machine monitor over REST/Overlay (default), REST/Freeze or Telnet")
+    parser = argparse.ArgumentParser(description="Validate the machine monitor over REST, Freeze, or Telnet")
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-P", "--telnet-port", "--port", dest="port", type=int,
                         default=int(os.environ.get("U64_TELNET_PORT", "23")))
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument("-c", "--c64-host", default=os.environ.get("U64_C64_HOST"),
-                        help="C64U a U2+L cartridge under --host is plugged into. Its "
-                             "own machine:input is compiled out, so keyboard injection in "
-                             "Overlay/Freeze mode is routed here instead. Memory "
-                             "verification is routed here too in Overlay, where the C64U "
-                             "can see live memory normally, but not in Freeze, where the "
-                             "U2+L cartridge itself holds the freeze and only its own "
-                             "machine:readmem sees the frozen contents; the C64U's reads "
-                             "open bus there. Telnet is unaffected since it talks to "
-                             "--host's own telnet server.")
+                        help="Companion host for UI keys and Overlay memory verification.")
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
@@ -1573,17 +1535,7 @@ def main() -> int:
     rest_host = args.rest_host or args.c64_host or args.host
     is_u2 = rest_api(args.host).info().product.startswith("Ultimate II")
 
-    # Memory verification (assert_rest_matches_row, write_rest_memory, ...)
-    # needs a REST endpoint that can actually see live C64 memory. In Freeze
-    # mode the U2+L cartridge itself holds the freeze, so its own REST reads
-    # the frozen contents coherently; the C64U's separate machine:readmem
-    # cannot arbitrate onto a bus another device is holding and reads open
-    # bus instead. Measured on hardware: c64u's machine:readmem at a live
-    # KERNAL address returned FF FF FF FF FF FF FF FF while u2's own
-    # machine:readmem at the same address returned the correct frozen
-    # bytes, matching what the monitor itself already rendered. Overlay
-    # mode does not need this: the C64 keeps running there, so nothing
-    # holds the bus away from the C64U.
+    # The freezer owns frozen memory; the companion sees live Overlay memory.
     memory_verify_host = rest_host
     if args.c64_host and args.mode == MODE_FREEZE:
         memory_verify_host = args.rest_host or args.host
@@ -1600,7 +1552,7 @@ def main() -> int:
                 telnet_host=args.host, telnet_port=args.port,
             )
         session = MonitorSession(backend)
-        run_tests(session, memory_verify_host, args.mode, is_u2)
+        run_tests(session, memory_verify_host, args.mode, is_u2, rest_host)
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:

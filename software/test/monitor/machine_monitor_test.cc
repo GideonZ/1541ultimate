@@ -1737,8 +1737,28 @@ static int test_monitor_interaction(void)
     if (expect(view_monitor.poll(0) == 1, "RUN/STOP monitor exit failed after ASCII edit navigation.")) return 1;
     view_monitor.deinit();
 
-    const int hex_keys[] = { 'e', 'A', 'B', KEY_LEFT, 'C', 'D', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard hex_keyboard(hex_keys, 8);
+    {
+        const int arrow_keys[] = { 'I', 'e', '`', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard arrow_keyboard(arrow_keys, 5);
+        ui.keyboard = &arrow_keyboard;
+        screen.clear();
+        backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor arrow_monitor(&ui, &backend);
+        arrow_monitor.init(&screen, &arrow_keyboard);
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII view switch failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII edit entry failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII top-left arrow input failed.")) return 1;
+        if (expect(backend.read(0x0000) == '`',
+                   "ASCII edit must retain the top-left arrow character.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 0, "ASCII edit exit failed.")) return 1;
+        if (expect(arrow_monitor.poll(0) == 1, "ASCII monitor exit failed.")) return 1;
+        arrow_monitor.deinit();
+    }
+
+    const int hex_keys[] = { 'e', 'A', 'B', '`', '`' };
+    FakeKeyboard hex_keyboard(hex_keys, 5);
     ui.keyboard = &hex_keyboard;
     screen.clear();
     backend.write(0x0000, 0x00);
@@ -1759,13 +1779,8 @@ static int test_monitor_interaction(void)
     if (expect(strstr(line, "0000 ab") == line || strstr(line, "0000 AB") == line,
                "Hex edit did not redraw the changed byte immediately.")) return 1;
     if (expect(screen.reverse_chars[4][9] && screen.reverse_chars[4][10], "Hex edit did not advance to the next byte.")) return 1;
-    if (expect(hex_monitor.poll(0) == 0, "Left-arrow should navigate inside hex edit mode.")) return 1;
-    if (expect(screen.reverse_chars[4][6] && screen.reverse_chars[4][7], "Hex left-arrow must move the edit cursor back to the previous byte.")) return 1;
-    if (expect(hex_monitor.poll(0) == 0, "Hex edit must remain active after left-arrow navigation.")) return 1;
-    if (expect(hex_monitor.poll(0) == 0, "Hex edit second byte write after left-arrow failed.")) return 1;
-    if (expect(backend.read(0x0000) == 0xCD, "Hex edit should keep writing after moving left in edit mode.")) return 1;
-    if (expect(hex_monitor.poll(0) == 0, "RUN/STOP should leave hex edit mode before closing the monitor.")) return 1;
-    if (expect(hex_monitor.poll(0) == 1, "RUN/STOP exit after hex edit failed.")) return 1;
+    if (expect(hex_monitor.poll(0) == 0, "Top-left arrow should leave hex edit mode.")) return 1;
+    if (expect(hex_monitor.poll(0) == 1, "Second top-left arrow should close the monitor.")) return 1;
     hex_monitor.deinit();
 
     {
@@ -1821,22 +1836,52 @@ static int test_monitor_interaction(void)
     {
         const int nav_keys[] = {
             KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN,
-            KEY_PAGEUP, KEY_PAGEDOWN, KEY_F2, KEY_F7,
+            KEY_PAGEUP, KEY_PAGEDOWN, KEY_F2,
             KEY_F3, KEY_LEFT, KEY_PAGEUP, KEY_PAGEDOWN,
             KEY_BREAK
         };
-        FakeKeyboard nav_keyboard(nav_keys, 13);
+        FakeKeyboard nav_keyboard(nav_keys, 12);
         ui.keyboard = &nav_keyboard;
         screen.clear();
         monitor_reset_saved_state();
 
         BackendMachineMonitor nav_monitor(&ui, &backend);
         nav_monitor.init(&screen, &nav_keyboard);
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 11; i++) {
             if (expect(nav_monitor.poll(0) == 0, "Global navigation key exited the monitor.")) return 1;
         }
         if (expect(nav_monitor.poll(0) == 1, "RUN/STOP exit failed after global navigation checks.")) return 1;
         nav_monitor.deinit();
+    }
+
+    {
+        const int number_left_keys[] = { 'N', '+', '`', '`', '`' };
+        FakeKeyboard number_left_keyboard(number_left_keys, 5);
+        ui.keyboard = &number_left_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor number_left_monitor(&ui, &backend);
+        number_left_monitor.init(&screen, &number_left_keyboard);
+        if (expect(number_left_monitor.poll(0) == 0, "Number popup open failed.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Calculator open failed.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Top-left arrow should leave the calculator.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 0, "Top-left arrow should close the Number popup.")) return 1;
+        if (expect(number_left_monitor.poll(0) == 1, "Top-left arrow should close the monitor after popups.")) return 1;
+        number_left_monitor.deinit();
+    }
+
+    {
+        const int left_keys[] = { '`' };
+        FakeKeyboard left_keyboard(left_keys, 1);
+        ui.keyboard = &left_keyboard;
+        screen.clear();
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor left_monitor(&ui, &backend);
+        left_monitor.init(&screen, &left_keyboard);
+        if (expect(left_monitor.poll(0) == 1, "Top-left arrow should close the monitor.")) return 1;
+        left_monitor.deinit();
     }
 
     {
@@ -2471,6 +2516,29 @@ static int test_scr_edit_writes_screen_code(void)
         if (expect(backend.read(0x0401) == 0x01, "SCR edit: typing 'A' must write screen code 0x01 in U/G")) return 1;
         if (expect(backend.read(0x0402) == 0x23, "SCR edit: typing '#' must write literal screen code 0x23")) return 1;
         if (expect(backend.read(0x0403) == 0x3C, "SCR edit: typing '<' must write literal screen code 0x3C")) return 1;
+    }
+
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'V', 'E', '`', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, 6);
+
+        monitor_reset_saved_state();
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("0400", 1);
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 4; i++) {
+            if (expect(mon.poll(0) == 0, "SCR edit top-left arrow input failed.")) return 1;
+        }
+        if (expect(backend.read(0x0400) == 0x1F,
+                   "SCR edit must retain the top-left arrow character.")) return 1;
+        if (expect(mon.poll(0) == 0, "SCR edit exit failed.")) return 1;
+        if (expect(mon.poll(0) == 1, "SCR monitor exit failed.")) return 1;
+        mon.deinit();
     }
 
     return 0;

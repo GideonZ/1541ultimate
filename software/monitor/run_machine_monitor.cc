@@ -1,7 +1,7 @@
 #include "userinterface.h"
 #include "machine_monitor.h"
 #include "monitor_file_io.h"
-#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
 #include "c64.h"
 #endif
 
@@ -21,7 +21,7 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
     monitor->deinit();
     delete monitor;
     if (do_go) {
-#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
         C64 *machine = C64::getMachine();
         if (machine && machine->is_accessible()) {
             release_host();

@@ -23,6 +23,14 @@ public:
         }
     }
 
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        while (len) {
+            write(address++, *src++);
+            len--;
+        }
+    }
+
     // Freeze / pause control. Backends that can hold the host machine in a
     // stopped state across many reads/writes (so register/IO state is stable)
     // override these. The monitor exposes a Z toggle to drive this. Default

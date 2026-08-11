@@ -16,6 +16,7 @@ public:
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len);
     virtual bool supports_cpu_banking(void) const { return false; }
     virtual void begin_session(void);
     virtual bool supports_vic_bank(void) const { return true; }

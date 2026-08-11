@@ -785,13 +785,8 @@ class RestBackend(Backend):
 # Telnet backend: raw VT100 remote-menu session.
 # ---------------------------------------------------------------------------
 
-# The Telnet remote session is NOT the physical 40x25 C64 display. The firmware
-# serves it through Screen_VT100, whose get_size_x()/get_size_y() report 60x24
-# (software/io/stream/screen_vt100.h), and the monitor lays its header out
-# against that width: the Dbg/Edit/Undc flags sit in the last 8 columns. Render
-# the session into a 40-column emulator and those columns fall off the right
-# edge, so every assertion that looks for a header flag reads a truncated line
-# and fails even though the firmware drew it correctly.
+# Screen_VT100 serves a 60x24 Telnet session, not the physical 40x25 display.
+# The monitor's right-side header flags are otherwise truncated by this emulator.
 WIDTH = 60
 HEIGHT = 24  # Screen_VT100::get_size_y(); the 25th physical row is never used
 
@@ -1026,17 +1021,8 @@ class TelnetBackend(Backend):
     # never triggered.
     _expect_redraw = False
 
-    # Set by send_text, or by send_char(ch, settle=True), cleared by the
-    # drain that follows it: on U2+L a committed prompt (Jump/Fill/
-    # Compare/Go, a bookmark label, a save/load filename) or a settled key
-    # (W, the hex-width toggle) echoes almost instantly, then goes quiet for
-    # the same begin_session() pause as CTRL_O before the real redraw
-    # follows as a separate, later burst. Most bare keystrokes (arrow keys,
-    # CTRL_O/CTRL_B, view toggles) do not show this two-burst shape even
-    # though their own single redraw can still be slow to start, so this
-    # flag keeps the extra patience (TELNET_SETTLE_GAP_SECONDS, bounded by
-    # the caller's own timeout) opt-in instead of taxing every capture with
-    # it.
+    # Committed prompts and selected keys have a U2+L echo burst before their
+    # redraw. Require a longer quiet period for those commands only.
     _expect_settle = False
 
     def close(self) -> None:
@@ -1113,16 +1099,8 @@ class TelnetBackend(Backend):
         return self.screen.snapshot(self.last_command), self._last_drain_bytes
 
     def send_char(self, ch: str, *, settle: bool = False) -> Snapshot:
-        # `settle`: some single-key commands (e.g. W, the hex-width toggle)
-        # redraw the same way a committed prompt does on U2+L hardware: an
-        # initial burst, then a second and much larger one after the same
-        # begin_session() pause, measured up to 3s apart. Without this, the
-        # capture that follows this one (whatever key comes next) inherits
-        # the still-arriving second burst and reads a stale/corrupted
-        # screen, since a bare keypress does not get the patience send_text
-        # gets. Opt-in rather than default because most bare keys (arrows,
-        # CTRL_O, view toggles) are not on this pattern and gating them here
-        # too would only add wait for no reason.
+        # Some U2+L commands emit an echo burst, pause, then redraw. Keep the
+        # longer quiet wait opt-in so ordinary keystrokes remain fast.
         self.last_command = ch
         self._expect_redraw = True
         if settle:
@@ -1186,44 +1164,9 @@ class TelnetBackend(Backend):
                         self._last_drain_bytes = drained
                         return
                     continue
-                # A committed prompt (send_text) or a settled key
-                # (send_char(ch, settle=True)) echoes almost instantly, then
-                # a separate, later burst follows once the device finishes
-                # begin_session()-ing the C64 for the real redraw. The short
-                # IDLE_GAP alone reads the echo's own trailing quiet spot as
-                # "redraw over" and returns a snapshot from mid-transition.
-                #
-                # This used to gate on total bytes received (trust an idle
-                # gap only once enough had arrived to look like the real
-                # redraw), but the echo burst is not reliably smaller than
-                # the real one: it scales with whatever is already on
-                # screen, not with what was typed. A compare/fill popup over
-                # a plain hex view echoes under 400 bytes before a ~1300-byte
-                # redraw, but N's number popup (drawn over a busier ASM view)
-                # already echoes over 1800 bytes on its own, past any fixed
-                # byte threshold that also has to stay small enough not to
-                # misread a small key's single complete redraw (see
-                # TELNET_QUIET_CHECK_SECONDS) as "more still coming". Elapsed
-                # quiet time is the one signal that stays valid regardless of
-                # screen content: below, require a longer confirmed-quiet
-                # period (TELNET_SETTLE_GAP_SECONDS) before trusting the gap
-                # at all, instead of the usual short IDLE_GAP.
-                #
-                # This does not reset last_data and is not bounded by
-                # first_wait: on U2+L hardware the gap before the real
-                # redraw was measured past 4s under a rapid sequence of
-                # prompt commits (four fills immediately followed by a
-                # compare) and around 3s for W's own two bursts. Resetting
-                # last_data routed the next no-data poll back through the
-                # "no byte has arrived yet" branch above, which gives up at
-                # the short first_wait budget rather than the caller's
-                # requested timeout, truncating the capture before the real
-                # redraw arrived; the leftover bytes then arrived during the
-                # *next* command's drain and corrupted its capture instead.
-                # Bounding this on `end` (the caller's own timeout, already
-                # generous, e.g. monitor_test.py's -t 30) instead of
-                # first_wait lets a slow-but-real redraw finish being read
-                # by the drain call that actually triggered it.
+                # A byte count cannot distinguish the echo from a redraw: both
+                # vary with screen content. For settled commands, wait for a
+                # longer quiet period, bounded by the caller's timeout.
                 idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
                                else pacing.TELNET_IDLE_GAP_SECONDS)
                 if now - last_data >= idle_needed:

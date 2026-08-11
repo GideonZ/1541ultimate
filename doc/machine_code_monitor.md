@@ -19,6 +19,7 @@ To close the monitor:
 
 - Press `C=+O` again.
 - Press `RUN/STOP` when no edit operation or popup is active.
+- Press the top-left `←` key to leave a popup or edit mode, then close the monitor. In ASCII and Screen edit views it enters that character.
 
 ## Screen Layout
 
@@ -294,8 +295,7 @@ Binary width details:
 
 - `J`: jump to an address.
 - `G`: exit the monitor and execute from an address.
-- `F1` or `Shift+Space`: page up.
-- `F7` or `Space`: page down.
+- Use the configured page-up/page-down keys, `Shift+Space`, or `Space` to page.
 - `Enter`: in Assembly view, follow the target of a jumpable instruction, or return to the most recent saved source location when the current instruction is not jumpable and the follow stack is non-empty.
 - `O`: cycle CPU port banking, `CPU0`..`CPU7`.
 - `Shift+O`: cycle the VIC bank override.
@@ -348,7 +348,7 @@ Cartridges can further affect the CPU-visible memory map through the expansion-p
 All views support editing:
 
 - `E`: enter edit mode.
-- `C=+E` or `RUN/STOP`: leave edit mode.
+- `C=+E`, `RUN/STOP`, or the top-left `←` key: leave edit mode. In ASCII and Screen views that key enters its character.
 
 Edit behavior is view-specific:
 

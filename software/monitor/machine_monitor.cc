@@ -48,7 +48,13 @@ static const char *const monitor_help_lines[] = {
     NULL
 };
 
+#if COMMODORE
+static const char monitor_help_paging_line[] = "Page Up/Down:  F3/SH+SPACE / F5/SPACE";
+#else
 static const char monitor_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
+#endif
+// The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
+static const int monitor_key_arrow_left = '`';
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -905,6 +911,7 @@ uint8_t monitor_screen_code_for_char(char c, uint8_t screen_charset)
 
     if (c == '@') return 0x00;
     if (c == ' ') return 0x20;
+    if (c == '`') return 0x1F;
     if (c >= '0' && c <= '9') return (uint8_t)c;
     if (c >= '!' && c <= '?') return (uint8_t)c;
     if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);
@@ -2292,7 +2299,7 @@ MonitorError MachineMonitor :: number_picker_evaluate_expression(uint16_t *value
 int MachineMonitor :: number_picker_handle_key(int key)
 {
     if (number_expr_active) {
-        if (key == KEY_ESCAPE || key == KEY_BREAK) {
+        if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
             number_picker_close_expression();
             refresh_popup_overlay();
             return 0;
@@ -2338,7 +2345,7 @@ int MachineMonitor :: number_picker_handle_key(int key)
         return 0;
     }
 
-    if (key == KEY_ESCAPE || key == KEY_BREAK) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
         number_picker_active = false;
         draw();
         return 0;
@@ -3108,7 +3115,7 @@ void MachineMonitor :: edit_bookmark_label(uint8_t slot)
 
 int MachineMonitor :: bookmark_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_HELP || key == KEY_F3 ||
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left || key == KEY_HELP || key == KEY_F3 ||
         key == '?' || monitor_key_is_bookmark_popup(key)) {
         bookmark_popup_active = false;
         redraw_full();
@@ -4337,7 +4344,7 @@ void MachineMonitor :: hunt_picker_jump()
 
 int MachineMonitor :: hunt_picker_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_O) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left || key == KEY_CTRL_O) {
         hunt_picker_close();
         draw();
         return (key == KEY_CTRL_O) ? 1 : 0;
@@ -4645,7 +4652,7 @@ void MachineMonitor :: opcode_picker_commit()
 
 int MachineMonitor :: opcode_picker_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
         opcode_picker_close();
         draw();
         return 0;
@@ -4929,7 +4936,7 @@ int MachineMonitor :: handle_key(int key)
         // execute as a normal monitor command (so e.g. pressing H from the
         // help screen actually launches Hunt instead of leaving help open).
         help_visible = false;
-        if (key == KEY_ESCAPE || monitor_key_is_bookmark_action(key)) {
+        if (key == KEY_ESCAPE || key == monitor_key_arrow_left || monitor_key_is_bookmark_action(key)) {
             draw();
             return 0;
         }
@@ -5008,6 +5015,12 @@ int MachineMonitor :: handle_key(int key)
     if (edit_mode) {
         if (key == KEY_CTRL_O) {
             return 1;
+        }
+        if (key == monitor_key_arrow_left && state.view != MONITOR_VIEW_ASCII &&
+            state.view != MONITOR_VIEW_SCREEN) {
+            exit_edit_mode();
+            draw();
+            return 0;
         }
         if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();
@@ -5231,11 +5244,15 @@ int MachineMonitor :: handle_key(int key)
         }
     }
 
+    if (!edit_mode && key == monitor_key_arrow_left) {
+        return 1;
+    }
+
     if (!edit_mode) {
         if (key == KEY_SPACE) {
-            key = KEY_F7;
+            key = KEY_PAGEDOWN;
         } else if (key == KEY_SHIFT_SP) {
-            key = KEY_F1;
+            key = KEY_PAGEUP;
         }
     }
 
@@ -5280,7 +5297,6 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_PAGEUP:
-        case KEY_F1:
         case KEY_F2:
         case KEY_CONFIG:
             if (state.view == MONITOR_VIEW_DISASM) {
@@ -5292,7 +5308,6 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_PAGEDOWN:
-        case KEY_F7:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(content_height);
                 draw();
