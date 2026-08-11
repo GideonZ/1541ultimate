@@ -27,6 +27,7 @@ every check here skips, so the suite is safe to run against any image.
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 # tests/lib holds the reporting rules and the shared REST client; the D64
@@ -39,10 +40,14 @@ import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
-from prg_context_menu_test import build_d64, PRG_BYTES  # noqa: E402
+from prg_context_menu_test import build_d64, default_fixture_token, PRG_BYTES  # noqa: E402
 
 HEAP_PATH = "/v1/machine:heap"
 TEMP = "/Temp/"
+# Every run needs image names it has never used before. A mount is keyed by
+# path, so recreating a file the previous run deleted would be matched against
+# that run's stale mount and allocate nothing -- the suite would pass on
+# firmware that leaks, having measured a cache hit.
 PREFIX = "mountleak"
 
 # The cache holds eight mounts. Entering appreciably more than that is what
@@ -53,10 +58,28 @@ MEASURED = 20
 # A mount is about 5 KB. Anything approaching that per image means the cache is
 # still growing; a few hundred bytes is the ordinary noise of a REST round trip.
 TOLERANCE_BYTES_PER_IMAGE = 512
+# An FTP session borrows several KB and returns it shortly after it closes, so
+# every heap figure here is taken after a settle. Sampling without one reads
+# that borrowing as a leak: measured at 7568 bytes still outstanding
+# immediately after twenty listings, and zero a few seconds later.
+SETTLE_SECONDS = 6.0
+# Re-entering images that are already mounted must not mount them again. The
+# bar is deliberately well under what one fresh mount costs, so remounting even
+# a single image fails this, while ordinary session noise does not.
+TOLERANCE_REENTRY_BYTES = 2048
+
+
+def heap_free(rest) -> int:
+    """Free heap, after letting transient allocations come back."""
+    time.sleep(SETTLE_SECONDS)
+    return int(rest.json(HEAP_PATH)["free"])
+
+
+TOKEN = default_fixture_token()
 
 
 def image_name(index: int) -> str:
-    return f"{PREFIX}{index}.d64"
+    return f"{PREFIX}{TOKEN}_{index}.d64"
 
 
 def seed_and_enter(host: str, password: str, indices) -> None:
@@ -125,9 +148,9 @@ def main() -> int:
 
         try:
             with check(f"free heap is flat across {MEASURED} further images"):
-                before = int(rest.json(HEAP_PATH)["free"])
+                before = heap_free(rest)
                 seed_and_enter(args.host, password, measured)
-                after = int(rest.json(HEAP_PATH)["free"])
+                after = heap_free(rest)
                 consumed = before - after
                 stats.update(before=before, after=after, consumed=consumed,
                              per_image=consumed / MEASURED)
@@ -146,10 +169,10 @@ def main() -> int:
         section("the cache still does its job")
         with check("re-entering images that are still mounted costs nothing"):
             recent = list(measured)[-5:]
-            before = int(rest.json(HEAP_PATH)["free"])
+            before = heap_free(rest)
             re_enter(args.host, password, recent, 4)
-            after = int(rest.json(HEAP_PATH)["free"])
-            if before - after > TOLERANCE_BYTES_PER_IMAGE:
+            after = heap_free(rest)
+            if before - after > TOLERANCE_REENTRY_BYTES:
                 raise Failure(
                     f"re-entering {len(recent)} mounted images consumed "
                     f"{before - after} bytes; they should already be mounted")
