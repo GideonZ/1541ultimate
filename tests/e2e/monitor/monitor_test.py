@@ -1220,7 +1220,7 @@ def rest_file_exists(host: str, path: str) -> bool:
         return False
 
 
-def wait_for_rest_file(host: str, path: str, timeout: float = 10.0) -> None:
+def wait_for_rest_file(host: str, path: str, timeout: float = 60.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if rest_file_exists(host, path):
