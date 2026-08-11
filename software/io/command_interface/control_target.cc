@@ -6,6 +6,9 @@
 #include "tape_recorder.h"
 #include "reu_preloader.h"
 #include "iec_interface.h"
+#include "configio.h"
+#include "stream_textlog.h"
+#include "indexed_list.h"
 #if U64
 #include "u64_config.h"
 #include "u64.h"
@@ -27,6 +30,8 @@ static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN 
 static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
 static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
 static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
+static Message c_status_cannot_open_config  = { 26, true, (uint8_t *)"88,CANNOT OPEN CONFIG FILE" };
+static Message c_status_config_had_errors   = { 25, true, (uint8_t *)"89,CONFIG FILE HAD ERRORS" };
 
 char *struprt(char *str)
 {
@@ -427,7 +432,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
         }
         break;
 
-        case CTRL_CMD_GET_RAMDISKINFO:
+        case CTRL_CMD_GET_RAMDISKINFO: {
             data_message.length = 8;
             unsigned char *data = (unsigned char *)data_message.message;
             for (int i = 0; i < 4; i++) {
@@ -455,6 +460,12 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             data_message.last_part = true;
             *reply = &data_message;
             break;
+        }
+
+        case CTRL_CMD_LOAD_CONFIG: {
+            load_config(command, reply, status);
+            break;
+        }
     }
 }
 
@@ -493,6 +504,60 @@ void ControlTarget :: save_u64_memory(Message *command)
     status_message.length = strlen((char *)status_message.message);
 }
 #endif
+
+// Loads (and effectuates) settings from a config-text file, in the same
+// "[store]\nitem=value\n" format used by the "Load Settings" GUI action
+// (filetype_cfg.cc) and by ConfigIO's own Save/Restore actions. The file
+// is expected to already exist - typically written by the cartridge
+// software itself via the DOS target's OPEN_FILE/WRITE_DATA/CLOSE_FILE
+// commands - and is not deleted here. The file does not need to contain
+// every item of a store, or every store; only the items actually present
+// are touched, so a single setting can be updated with a two-line file.
+void ControlTarget :: load_config(Message *command, Message **reply, Message **status)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+
+    const char *fn = "/temp/uci_config.cfg";
+    if (command->length > 2) {
+        fn = (const char *)command->message + 2;
+    }
+
+    FRESULT res = fm->fopen(fn, FA_READ, &f);
+    if (res != FR_OK) {
+        *reply  = &c_message_empty;
+        *status = &c_status_cannot_open_config;
+        return;
+    }
+
+    StreamTextLog log(512);
+    IndexedList<ConfigStore *> loaded_stores(8, NULL);
+    bool ok = ConfigIO :: S_read_from_file(f, &log, loaded_stores);
+    fm->fclose(f);
+
+    for (int n = 0; n < loaded_stores.get_elements(); n++) {
+        ConfigStore *s = loaded_stores[n];
+        if (s->need_effectuate()) {
+            printf("Effectuating settings of store '%s' after UCI config load.\n", s->get_store_name());
+            s->effectuate();
+            s->set_effectuated();
+        }
+    }
+
+    // Reply data carries the parse log (empty on full success, since
+    // S_read_from_file only logs the lines it couldn't apply), so the
+    // caller can see exactly what went wrong without needing the GUI.
+    int loglen = log.getLength();
+    if (loglen > 511) {
+        loglen = 511;
+    }
+    memcpy(data_message.message, log.getText(), loglen);
+    data_message.length = loglen;
+    data_message.last_part = true;
+    *reply = &data_message;
+
+    *status = ok ? &c_status_ok : &c_status_config_had_errors;
+}
 
 void ControlTarget :: get_more_data(Message **reply, Message **status)
 {
