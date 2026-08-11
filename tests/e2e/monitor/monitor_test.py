@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib
 from api import UltimateApi
+from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, video_frames
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
@@ -32,6 +33,7 @@ from ui_backend import (
     MODE_TELNET,
     RestBackend,
     Snapshot,
+    TelnetBackend,
     add_mode_argument,
     make_backend,
 )
@@ -969,21 +971,27 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     session.send_key("ESC")           # leave edit mode
 
 
-def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str) -> None:
-    """Enter instructions, verify their bytes, and hand off a deterministic result."""
+def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
+                                  video_host: str, reset_host: str,
+                                  verify_video: bool) -> None:
+    """Enter instructions, verify their bytes, then prove that G produces video."""
     address = 0xC000
     entered = bytes((0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xC0))
+
+    def type_asm(line: str) -> Snapshot:
+        if isinstance(session.backend, TelnetBackend):
+            return session.send_text(line + "\r", f"ASM {line}")
+        screen = session.send_char(line[0])
+        for char in line[1:]:
+            screen = session.send_char(char)
+        return session.send_key("ENTER")
 
     write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
     screen = ensure_view(session, "ASM ")
     screen = session.goto(f"{address:04X}")
     screen = session.send_char("e")
-    for char in "INC$D021":
-        screen = session.send_char(char)
-    screen = session.send_key("ENTER")
-    for char in "JMP$C000":
-        screen = session.send_char(char)
-    screen = session.send_key("ENTER")
+    screen = type_asm("INC$D021")
+    screen = type_asm("JMP$C000")
     session.send_key("ESC")
 
     screen = session.goto(f"{address:04X}")
@@ -996,32 +1004,45 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str) -> No
             f"REST reads {actual.hex().upper()}"
         )
 
-    # Replace the loop with a typed finite fixture. G must produce this exact
-    # RAM result, rather than merely showing a transient screen effect.
+    # Extend the typed loop with a RAM side effect that remains observable
+    # while the colour-changing loop runs.
     screen = session.goto("C003")
     screen = session.send_char("e")
-    for char in "LDA#$5A":
-        screen = session.send_char(char)
-    screen = session.send_key("ENTER")
-    for char in "STA$C200":
-        screen = session.send_char(char)
-    screen = session.send_key("ENTER")
-    for char in "JMP$C008":
-        screen = session.send_char(char)
-    screen = session.send_key("ENTER")
+    screen = type_asm("LDA#$5A")
+    screen = type_asm("STA$C200")
+    screen = type_asm("JMP$C000")
     session.send_key("ESC")
 
-    expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x4C, 0x08, 0xC0))
+    expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x4C, 0x00, 0xC0))
     screen = session.goto(f"{address:04X}")
     screen.find_line_containing("LDA #$5A")
     screen.find_line_containing("STA $C200")
-    screen.find_line_containing("JMP $C008")
+    screen.find_line_containing("JMP $C000")
     if read_rest_memory(rest_host, address, len(expected)) != expected:
         raise Failure(f"ASM handoff fixture mismatch at ${address:04X}")
 
     write_rest_memory_confirmed(rest_host, 0xC200, b"\x00")
-    session.goto_run(f"{address:04X}")
+    if verify_video:
+        with AvStreamCapture(video_host) as capture:
+            capture.capture(0.15)
+            capture.clear()
+            session.goto_run(f"{address:04X}")
+            capture.clear()
+            launched = time.monotonic()
+            capture.capture(0.60)
+            frames = [frame for frame in video_frames(capture.video_packets)
+                      if frame.received_at >= launched]
+            if not frames:
+                raise Failure("G $C000 produced no complete C64U video frame")
+            visible = [frame for frame in frames if set(frame.pixels) != {0}]
+            if not visible:
+                assert_not_black(frames[-1], "G $C000 video")
+            assert_frames_differ(visible, "G $C000 video")
+    else:
+        session.goto_run(f"{address:04X}")
     wait_for_rest_byte(rest_host, 0xC200, 0x5A)
+
+    reset_rest_machine(reset_host, None, rest_host)
     session.enter_monitor()
 
 
@@ -1331,6 +1352,15 @@ def assert_u2_footer_consistent(snapshot: Snapshot) -> int:
     return bank
 
 
+def set_u2_vic_bank(session: MonitorSession, target: int) -> Snapshot:
+    for _ in range(4):
+        screen = session.capture()
+        if assert_u2_footer_consistent(screen) == target:
+            return screen
+        session.send_char("O")
+    raise Failure(f"U2 VIC bank did not reach VIC{target}")
+
+
 def u2_freeze_banked_ram_reason(is_u2: bool, mode: str) -> Optional[str]:
     """Return the U2+L Freeze limitation for $1000-$3FFF, if applicable.
 
@@ -1344,7 +1374,7 @@ def u2_freeze_banked_ram_reason(is_u2: bool, mode: str) -> Optional[str]:
 
 
 def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = False,
-              reset_host: Optional[str] = None) -> None:
+              reset_host: Optional[str] = None, video_host: Optional[str] = None) -> None:
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
@@ -1471,13 +1501,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
         if not is_u2:
             check_skip("U2-only: exercises the VIC-only footer form (supports_cpu_banking()==false)")
         else:
-            screen = session.capture()
-            bank = assert_u2_footer_consistent(screen)
-            requested = (bank + 1) & 0x03
-            screen = session.send_char("O")
-            actual = assert_u2_footer_consistent(screen)
-            if actual != requested:
-                raise Failure(f"U2 VIC bank did not advance to VIC{requested}: footer reports VIC{actual}")
+            default_bank = 0
+            requested = 1
+            set_u2_vic_bank(session, default_bank)
+            screen = set_u2_vic_bank(session, requested)
             if mode == MODE_FREEZE:
                 session.send_key("ESC")
                 close_rest_menu(reset_host or rest_host, None, rest_host)
@@ -1489,6 +1516,15 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
                         f"$DD00=${dd00:02X} is VIC{persisted}"
                     )
                 session.enter_monitor()
+            set_u2_vic_bank(session, default_bank)
+            if mode == MODE_FREEZE:
+                session.send_key("ESC")
+                close_rest_menu(reset_host or rest_host, None, rest_host)
+                dd00 = read_rest_memory(reset_host or rest_host, 0xDD00, 1)[0]
+                restored = 3 - (dd00 & 0x03)
+                if restored != default_bank:
+                    raise Failure(f"U2 VIC bank did not restore to VIC{default_bank}")
+                session.enter_monitor()
 
     with check("COMPARE reports differing address"):
         screen = ensure_view(session, "HEX ")
@@ -1499,7 +1535,8 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
         session.send_key("ENTER")
 
     with check("ASM entry reaches screen and RAM, then G executes it"):
-        run_asm_entry_round_trip_test(session, rest_host)
+        run_asm_entry_round_trip_test(session, rest_host, video_host or rest_host,
+                                      reset_host or rest_host, mode != MODE_TELNET)
 
     with check("G executes finite loop and returns to monitor"):
         go_address = 0xC000 if is_u2 and mode == MODE_FREEZE else 0x1000
@@ -1610,13 +1647,16 @@ def main() -> int:
 
     rest_host = args.rest_host or args.c64_host or args.host
     is_u2 = rest_api(args.host).info().product.startswith("Ultimate II")
+    if is_u2 and not args.c64_host:
+        parser.error("U2 monitor video checks require --c64-host for the C64U stream source")
 
     # The freezer owns frozen memory; the companion sees live Overlay memory.
     memory_verify_host = rest_host
     if args.c64_host and args.mode == MODE_FREEZE:
         memory_verify_host = args.rest_host or args.host
 
-    reset_rest_machine(rest_host, args.password)
+    control_host = args.c64_host or rest_host
+    reset_rest_machine(control_host, args.password, rest_host)
 
     session = None
     try:
@@ -1628,7 +1668,8 @@ def main() -> int:
                 telnet_host=args.host, telnet_port=args.port,
             )
         session = MonitorSession(backend)
-        run_tests(session, memory_verify_host, args.mode, is_u2, rest_host)
+        run_tests(session, memory_verify_host, args.mode, is_u2, control_host,
+                  args.c64_host or args.host)
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:

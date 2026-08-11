@@ -6,8 +6,6 @@ import http.client
 import json
 import os
 import re
-import socket
-import struct
 import sys
 import time
 import urllib.error
@@ -22,9 +20,12 @@ from PIL import Image
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib
 from api import UltimateApi
 from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
+from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
     "all",
@@ -76,8 +77,6 @@ MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BAT
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
-MULTICAST_GROUP = "239.0.1.64"
-VIDEO_PORT = 11000
 RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
@@ -324,55 +323,6 @@ class FrameText:
     def contains(self, needle: str) -> bool:
         needle_upper = needle.upper()
         return any(needle_upper in line for line in self.lines)
-
-
-class VicStreamCapture:
-    def __init__(self) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(2.0)
-        self.sock.bind(("", VIDEO_PORT))
-        group = socket.inet_aton(MULTICAST_GROUP)
-        membership = struct.pack("4sL", group, socket.INADDR_ANY)
-        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
-
-    def close(self) -> None:
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def _drain_partial_frame(self) -> None:
-        while True:
-            data, _ = self.sock.recvfrom(1024)
-            _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-            if line & 0x8000:
-                return
-
-    def capture_image(self) -> Image.Image:
-        for _ in range(8):
-            self._drain_partial_frame()
-            raw = bytearray()
-            while True:
-                data, _ = self.sock.recvfrom(1024)
-                _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-                raw.extend(data[12:])
-                if line & 0x8000:
-                    break
-
-            lines = len(raw) // 192
-            if lines < 180:
-                continue
-
-            image = Image.new("P", (384, lines))
-            i = 0
-            for y in range(lines):
-                for x in range(192):
-                    value = raw[i]
-                    image.putpixel((2 * x, y), value & 0x0F)
-                    image.putpixel((2 * x + 1, y), value >> 4)
-                    i += 1
-            return image
-        raise Failure("Did not receive a complete VIC frame.")
 
 
 class C64FrameOCR:
