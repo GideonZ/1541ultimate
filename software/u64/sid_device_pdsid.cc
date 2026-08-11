@@ -27,6 +27,12 @@ SidDevicePdSid::SidDevicePdSid(int socket, volatile uint8_t *base) : SidDevice(s
     config = new SidDevicePdSid :: PdSidConfig(this, name, pd_sid_config);
     ConfigManager::getConfigManager()->add_custom_store(config);
     config->set_sort_order(SORT_ORDER_CFG_SIDREP + socket);
+
+    // Take the mode the device is actually in, rather than leaving the item at
+    // its default. Saving a .cfg without having opened the SID menu first would
+    // otherwise record 6581 for everyone. ArmSid reads its parameters at this
+    // same point for the same reason.
+    config->at_open_config();
 }
 
 void SidDevicePdSid :: SetSidType(int type)
@@ -65,10 +71,18 @@ SidDevicePdSid::~SidDevicePdSid()
     // TODO Auto-generated destructor stub
 }
 
+void SidDevicePdSid::PdSidConfig :: effectuate(void)
+{
+    ConfigItem *i = find_item(CFG_PDSID_TYPE);
+    if (i) {
+        // menu enum is 0 = 6581, 1 = 8580; SetSidType takes 1 = 6581, 2 = 8580
+        parent->SetSidType(i->getValue() + 1);
+    }
+}
+
 int SidDevicePdSid::PdSidConfig:: S_cfg_pdsid_type(ConfigItem *it)
 {
-    SidDevicePdSid *obj = (SidDevicePdSid *)it->store->get_hook_object();
-    obj->SetSidType(it->getValue() + 1); // menu enum is 0 = 6581, 1 = 8580; SetSidType takes 1 = 6581, 2 = 8580
+    ((PdSidConfig *)it->store)->effectuate();
     return 0;
 }
 

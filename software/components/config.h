@@ -205,6 +205,12 @@ public:
 
     virtual void effectuate(void);
 
+    // Whether this store belongs in a .cfg file. Stores that live in a device
+    // rather than in an Ultimate flash page -- the SID replacements -- still
+    // belong there, so having no flash page is not the deciding factor. A
+    // store overrides this to stay out.
+    virtual bool save_to_cfg_file(void) { return true; }
+
     void  set_hook_object(void *obj) { hook_obj = obj; }
     void *get_hook_object() { return hook_obj; }
     void set_change_hook(uint8_t id, t_change_hook hook);

@@ -22,7 +22,9 @@ class SidDeviceSidKick: public SidDevice {
 
         void read(bool ignore) { }
         void write(void) { }
-        void effectuate(void) { }
+        // Applies the configured mode to the device. Called when a .cfg file
+        // is loaded, and by the menu's change hook, so both go the same way.
+        void effectuate(void);
         void at_open_config(void);
         void at_close_config(void) { }
 
