@@ -129,8 +129,7 @@ bool FileTypePRG :: check_header(File *f, bool has_header)
 SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
 {
 	printf("PRG Select: %4x\n", cmd->functionID);
-	File *file = 0, *d64;
-	FileInfo *inf;
+	File *file = 0;
 	SubsysCommand *drive_command;
 	SubsysCommand *c64_command;
 	
@@ -163,7 +162,14 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->fopen(cmd->path.c_str(), name, FA_READ, &file);
     if (file) {
-        if (check_header(file, (cmd->mode == 1))) {
+        // The file is opened here only to validate the P00 header; the C64 subsystem
+        // opens it again itself to perform the DMA load. Closing it here keeps the
+        // handle from leaking on every Run/Load/DMA action.
+        bool header_ok = check_header(file, (cmd->mode == 1));
+        fm->fclose(file);
+        file = NULL;
+
+        if (header_ok) {
 
             if (run_code & RUNCODE_MOUNT_BIT) {
                 printf("Runcode mount bit set. trying to find mount point '%s' resulted: ", cmd->path.c_str());
@@ -186,7 +192,6 @@ SubsysResultCode_e FileTypePRG :: execute_st(SubsysCommand *cmd)
             }
         } else {
             printf("Header of P00 file not correct.\n");
-            fm->fclose(file);
         }
     } else {
         printf("Error opening file. %s\n", FileSystem::get_error_string(fres));
