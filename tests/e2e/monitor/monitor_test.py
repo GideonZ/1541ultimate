@@ -1006,15 +1006,16 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str) -> No
     for char in "STA$C200":
         screen = session.send_char(char)
     screen = session.send_key("ENTER")
-    for char in "BRK":
+    for char in "JMP$C008":
         screen = session.send_char(char)
     screen = session.send_key("ENTER")
     session.send_key("ESC")
 
-    expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x00))
+    expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x4C, 0x08, 0xC0))
     screen = session.goto(f"{address:04X}")
     screen.find_line_containing("LDA #$5A")
     screen.find_line_containing("STA $C200")
+    screen.find_line_containing("JMP $C008")
     if read_rest_memory(rest_host, address, len(expected)) != expected:
         raise Failure(f"ASM handoff fixture mismatch at ${address:04X}")
 
