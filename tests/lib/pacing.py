@@ -130,50 +130,68 @@ OVERLAY_DRAW_TIMEOUT_SECONDS = _seconds("U64_UI_OVERLAY_DRAW_TIMEOUT", 2.0)
 SEEK_CHANGE_TIMEOUT_SECONDS = _seconds("U64_UI_SEEK_CHANGE_TIMEOUT", 0.4)
 
 # Telnet reads a byte stream rather than a frame, so it decides a redraw has
-# finished by watching the stream go quiet. Two different questions, which used
-# to share one 0.5s answer:
+# finished by watching the stream go quiet. Three different questions, which
+# used to share one 0.5s answer:
 #
 #   FIRST_BYTE  how long to wait for a redraw to start after a keystroke that
 #               may or may not produce one (a keystroke that only ends an
-#               input mode, e.g. CTRL_E, can legitimately draw nothing). U2+L's
-#               CTRL_O is the slow case: opening the monitor calls
-#               begin_session(), which freezes the C64 through the ECP5 core
-#               before the first redraw byte is sent. Measured worst on U2+L
-#               hardware: 1.875s in isolation, growing past 9.7s under a rapid
-#               sequence of prompt commits (four fills immediately followed by
-#               a compare). This has to stay a bounded budget, not the
-#               caller's full timeout, because a keystroke that legitimately
-#               draws nothing would otherwise block for the whole timeout
-#               every time; 15.0s clears the worst observed CTRL_O case with
-#               margin while staying well under a -t 30 run.
-#   IDLE_GAP    how long a silence means the redraw is over. Measured worst gap
-#               between bytes inside a redraw: 0.015s, so 0.15 is ten times the
-#               observed worst. This is the one paid on every capture, which is
-#               why it is the short one.
+#               input mode, e.g. CTRL_E, can legitimately draw nothing). U2+L
+#               session-opening/switching keys (CTRL_O into the monitor,
+#               CTRL_B into the bookmark picker) are the slow case: each one
+#               calls begin_session(), which freezes the C64 through the ECP5
+#               core before the first redraw byte is sent, and the pause grows
+#               with how long the session has already been running. Measured
+#               worst on U2+L hardware: 1.875s for CTRL_O in isolation,
+#               growing past 9.7s under a rapid sequence of prompt commits,
+#               and CTRL_B alone timed out at the previous 15.0s budget late
+#               in a long-running session (17 monitor commands in). This has
+#               to stay a bounded budget, not the caller's full timeout,
+#               because a keystroke that legitimately draws nothing would
+#               otherwise block for the whole timeout every time; 25.0s
+#               leaves a real margin over the worst observed case while
+#               staying under a -t 30 run.
+#   IDLE_GAP    how long a silence means an already-complete redraw is over.
+#               Measured worst gap between bytes inside a single redraw:
+#               0.015s, so 0.15 is ten times the observed worst. This is the
+#               one paid on every capture, which is why it is the short one.
+#   SETTLE_GAP  how long a silence means a two-burst redraw (see below) is
+#               really over, not just paused between its two bursts.
 #
-# A committed prompt (Jump/Fill/Compare/Go) on U2+L echoes the typed digits
-# and Enter almost instantly, then goes quiet for the same begin_session()
-# pause as CTRL_O before the real redraw follows as a separate, much larger
-# burst. IDLE_GAP alone reads the echo's own trailing quiet spot as "redraw
-# over" and returns a snapshot with the prompt still open. MIN_REDRAW
-# distinguishes the two: below this many bytes, an idle gap does not end the
-# drain, so the real burst is still waited for. Unlike FIRST_BYTE, this one is
-# bounded only by the caller's own timeout (not a fixed budget): a committed
-# prompt always redraws eventually, so there is no "legitimately nothing
-# coming" case to protect against, and the gap before the real redraw was
-# measured as long as 25s on U2+L under load; giving up at a fixed budget
-# shorter than that does not skip the wait, it just hands the still-arriving
-# bytes to whichever capture runs next, corrupting that one instead. Measured
-# on U2+L hardware: a short Jump echoes 88 bytes before a 1337-byte redraw; a
-# longer Compare/Fill value (its popup echoes the whole typed range, e.g.
-# "C100-C103,C200") echoes up to 368 bytes before a 1257-byte redraw. 300 was
-# picked between the short case's two sizes but sat inside the long case's
-# echo, so the long case's echo alone satisfied it and returned before the
-# real redraw arrived. 600 clears every observed echo with margin while
-# staying well under every observed redraw.
-TELNET_FIRST_BYTE_TIMEOUT_SECONDS = _seconds("U64_UI_TELNET_FIRST_BYTE", 15.0)
+# A committed prompt (send_text: Jump/Fill/Compare/Go, a bookmark label, a
+# save/load filename) or a settled key (send_char(ch, settle=True): W, the
+# hex-width toggle) echoes almost instantly, then goes quiet for the same
+# begin_session() pause as CTRL_O before the real redraw follows as a
+# separate, later burst. IDLE_GAP alone reads the echo's own trailing quiet
+# spot as "redraw over" and returns a snapshot from mid-transition.
+#
+# This used to be told apart by total bytes received (trust an idle gap only
+# once enough had arrived to look like the real redraw), but the echo burst
+# is not reliably smaller than the real one: it scales with whatever is
+# already on screen, not with what was typed or pressed. A short Jump
+# echoes 88 bytes before a 1337-byte redraw, and a Compare/Fill popup over a
+# plain hex view echoes under 400 bytes before a ~1300-byte redraw, but W's
+# own two bursts measured ~1323 bytes each (no split to gate on at all), and
+# the number popup's echo (drawn over a busier ASM view) measured over 1800
+# bytes on its own, past any fixed byte threshold that would still have to
+# stay small enough not to misread a small key's single complete redraw as
+# "more still coming" (e.g. a dialog-open alone, ~300-425 bytes, with
+# nothing further arriving). Elapsed quiet time is the one signal that stays
+# valid regardless of screen content: SETTLE_GAP requires a longer confirmed
+# quiet period before trusting an idle gap for these two cases.
+#
+# Like FIRST_BYTE for a key that legitimately draws nothing, this has to be a
+# bounded budget rather than being told apart with certainty; unlike
+# FIRST_BYTE, it is not further bounded by a fixed ceiling of its own beyond
+# the caller's own timeout (see _drain_until_idle), since a committed prompt
+# or a settled key always redraws eventually. Measured worst gap before the
+# real redraw: past 4s on U2+L under a rapid sequence of prompt commits, and
+# around 3s for W's own two bursts; giving up sooner does not skip the wait,
+# it just hands the still-arriving bytes to whichever capture runs next,
+# corrupting that one instead. 6.0s roughly doubles the worst observed gap
+# for margin while staying well under a -t 30 run.
+TELNET_FIRST_BYTE_TIMEOUT_SECONDS = _seconds("U64_UI_TELNET_FIRST_BYTE", 25.0)
 TELNET_IDLE_GAP_SECONDS = _seconds("U64_UI_TELNET_IDLE_GAP", 0.15)
-TELNET_MIN_REDRAW_BYTES = _count("U64_UI_TELNET_MIN_REDRAW_BYTES", 600)
+TELNET_SETTLE_GAP_SECONDS = _seconds("U64_UI_TELNET_SETTLE_GAP", 6.0)
 
 # What a bare capture waits when nothing was sent and so no redraw is expected.
 TELNET_QUIET_CHECK_SECONDS = _seconds("U64_UI_TELNET_QUIET_CHECK", 0.15)

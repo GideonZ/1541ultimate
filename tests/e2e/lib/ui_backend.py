@@ -162,10 +162,10 @@ class Backend:
     def capture(self) -> Snapshot:
         raise NotImplementedError
 
-    def send_key(self, key: str) -> Snapshot:
+    def send_key(self, key: str, *, settle: bool = False) -> Snapshot:
         raise NotImplementedError
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False) -> Snapshot:
         raise NotImplementedError
 
     def send_text(self, text: str, label: str) -> Snapshot:
@@ -709,14 +709,19 @@ class RestBackend(Backend):
         self._post_events([{"kind": "keyboard", "inputs": list(matrix_keys), "transition": "tap"}])
         return self._settle(before)
 
-    def send_key(self, key: str) -> Snapshot:
+    def send_key(self, key: str, *, settle: bool = False) -> Snapshot:
+        # `settle` accepted for interface parity with TelnetBackend only; see
+        # send_char below.
         combo = KEY_ALIASES.get(key)
         if combo is None:
             raise Failure(f"Unknown key alias {key!r} for RestBackend")
         self.last_command = key
         return self.send_combo(combo)
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False) -> Snapshot:
+        # REST reads are a fixed-size settle regardless of what changed, so
+        # the two-burst Telnet-only race `settle` guards against does not
+        # apply here; accepted for interface parity with TelnetBackend only.
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
@@ -1021,15 +1026,18 @@ class TelnetBackend(Backend):
     # never triggered.
     _expect_redraw = False
 
-    # Set only by send_text, cleared by the drain that follows it: on U2+L a
-    # committed prompt (Jump/Fill/Compare/Go, a bookmark label, a save/load
-    # filename) echoes the typed text almost instantly and then, as a much
-    # later and much larger separate burst, the real redraw once the device
-    # finishes begin_session()-ing the C64. A plain keystroke (arrow keys,
-    # view toggles) never showed this two-burst shape, so this flag keeps
-    # the extra patience in _drain_until_idle scoped to send_text instead of
-    # taxing every capture with it.
-    _expect_committed_text = False
+    # Set by send_text, or by send_char(ch, settle=True), cleared by the
+    # drain that follows it: on U2+L a committed prompt (Jump/Fill/
+    # Compare/Go, a bookmark label, a save/load filename) or a settled key
+    # (W, the hex-width toggle) echoes almost instantly, then goes quiet for
+    # the same begin_session() pause as CTRL_O before the real redraw
+    # follows as a separate, later burst. Most bare keystrokes (arrow keys,
+    # CTRL_O/CTRL_B, view toggles) do not show this two-burst shape even
+    # though their own single redraw can still be slow to start, so this
+    # flag keeps the extra patience (TELNET_SETTLE_GAP_SECONDS, bounded by
+    # the caller's own timeout) opt-in instead of taxing every capture with
+    # it.
+    _expect_settle = False
 
     def close(self) -> None:
         try:
@@ -1076,12 +1084,14 @@ class TelnetBackend(Backend):
         rows = self.screen.rows()
         return self._marked_row(entry_rows, rows), [row.rstrip() for row in rows]
 
-    def send_key(self, key: str) -> Snapshot:
+    def send_key(self, key: str, *, settle: bool = False) -> Snapshot:
         payload = TELNET_KEY_BYTES.get(key)
         if payload is None:
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = key
         self._expect_redraw = True
+        if settle:
+            self._expect_settle = True
         self.sock.sendall(payload)
         return self.capture()
 
@@ -1102,16 +1112,28 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command), self._last_drain_bytes
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False) -> Snapshot:
+        # `settle`: some single-key commands (e.g. W, the hex-width toggle)
+        # redraw the same way a committed prompt does on U2+L hardware: an
+        # initial burst, then a second and much larger one after the same
+        # begin_session() pause, measured up to 3s apart. Without this, the
+        # capture that follows this one (whatever key comes next) inherits
+        # the still-arriving second burst and reads a stale/corrupted
+        # screen, since a bare keypress does not get the patience send_text
+        # gets. Opt-in rather than default because most bare keys (arrows,
+        # CTRL_O, view toggles) are not on this pattern and gating them here
+        # too would only add wait for no reason.
         self.last_command = ch
         self._expect_redraw = True
+        if settle:
+            self._expect_settle = True
         self.sock.sendall(ch.encode("ascii"))
         return self.capture()
 
     def send_text(self, text: str, label: str) -> Snapshot:
         self.last_command = label
         self._expect_redraw = True
-        self._expect_committed_text = True
+        self._expect_settle = True
         self.sock.sendall(text.encode("ascii"))
         return self.capture()
 
@@ -1147,9 +1169,9 @@ class TelnetBackend(Backend):
         started = time.time()
         end = started + timeout
         expecting = self._expect_redraw
-        expecting_committed_text = self._expect_committed_text
+        expecting_settle = self._expect_settle
         self._expect_redraw = False
-        self._expect_committed_text = False
+        self._expect_settle = False
         first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
                       else pacing.TELNET_QUIET_CHECK_SECONDS)
         last_data: Optional[float] = None
@@ -1164,35 +1186,47 @@ class TelnetBackend(Backend):
                         self._last_drain_bytes = drained
                         return
                     continue
-                if now - last_data >= pacing.TELNET_IDLE_GAP_SECONDS:
-                    # A committed prompt (send_text) echoes the typed text
-                    # almost instantly, then a much larger redraw can follow
-                    # as a separate burst after a device-side processing
-                    # pause (see TELNET_MIN_REDRAW_BYTES). Only trust the
-                    # idle gap once enough has arrived to look like the real
-                    # redraw. Scoped to send_text: a plain keystroke's redraw
-                    # is legitimately small and complete, so extending its
-                    # wait would only slow every capture for no benefit.
-                    #
-                    # This does not reset last_data and is not bounded by
-                    # first_wait: on U2+L hardware the gap between the echo
-                    # and the real redraw was measured past 4s under a rapid
-                    # sequence of prompt commits (four fills immediately
-                    # followed by a compare), and occasionally longer still.
-                    # Resetting last_data routed the next no-data poll back
-                    # through the "no byte has arrived yet" branch below,
-                    # which gives up at the short first_wait budget rather
-                    # than the caller's requested timeout, truncating the
-                    # capture before the real redraw arrived; the leftover
-                    # bytes then arrived during the *next* command's drain
-                    # and corrupted its capture instead. Bounding this on
-                    # `end` (the caller's own timeout, already generous, e.g.
-                    # monitor_test.py's -t 30) instead of first_wait lets a
-                    # slow-but-real redraw finish being read by the drain
-                    # call that actually triggered it.
-                    if (expecting_committed_text
-                            and drained < pacing.TELNET_MIN_REDRAW_BYTES):
-                        continue
+                # A committed prompt (send_text) or a settled key
+                # (send_char(ch, settle=True)) echoes almost instantly, then
+                # a separate, later burst follows once the device finishes
+                # begin_session()-ing the C64 for the real redraw. The short
+                # IDLE_GAP alone reads the echo's own trailing quiet spot as
+                # "redraw over" and returns a snapshot from mid-transition.
+                #
+                # This used to gate on total bytes received (trust an idle
+                # gap only once enough had arrived to look like the real
+                # redraw), but the echo burst is not reliably smaller than
+                # the real one: it scales with whatever is already on
+                # screen, not with what was typed. A compare/fill popup over
+                # a plain hex view echoes under 400 bytes before a ~1300-byte
+                # redraw, but N's number popup (drawn over a busier ASM view)
+                # already echoes over 1800 bytes on its own, past any fixed
+                # byte threshold that also has to stay small enough not to
+                # misread a small key's single complete redraw (see
+                # TELNET_QUIET_CHECK_SECONDS) as "more still coming". Elapsed
+                # quiet time is the one signal that stays valid regardless of
+                # screen content: below, require a longer confirmed-quiet
+                # period (TELNET_SETTLE_GAP_SECONDS) before trusting the gap
+                # at all, instead of the usual short IDLE_GAP.
+                #
+                # This does not reset last_data and is not bounded by
+                # first_wait: on U2+L hardware the gap before the real
+                # redraw was measured past 4s under a rapid sequence of
+                # prompt commits (four fills immediately followed by a
+                # compare) and around 3s for W's own two bursts. Resetting
+                # last_data routed the next no-data poll back through the
+                # "no byte has arrived yet" branch above, which gives up at
+                # the short first_wait budget rather than the caller's
+                # requested timeout, truncating the capture before the real
+                # redraw arrived; the leftover bytes then arrived during the
+                # *next* command's drain and corrupted its capture instead.
+                # Bounding this on `end` (the caller's own timeout, already
+                # generous, e.g. monitor_test.py's -t 30) instead of
+                # first_wait lets a slow-but-real redraw finish being read
+                # by the drain call that actually triggered it.
+                idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
+                               else pacing.TELNET_IDLE_GAP_SECONDS)
+                if now - last_data >= idle_needed:
                     self._last_drain_bytes = drained
                     return
                 continue
