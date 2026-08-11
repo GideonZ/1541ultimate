@@ -1220,6 +1220,15 @@ def rest_file_exists(host: str, path: str) -> bool:
         return False
 
 
+def wait_for_rest_file(host: str, path: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if rest_file_exists(host, path):
+            return
+        time.sleep(0.1)
+    raise Failure(f"Saved file {path} not found via REST")
+
+
 def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str], filename: str) -> Snapshot:
     """Save mem_range to filename, navigating from root through enter_dirs.
 
@@ -1270,8 +1279,7 @@ def run_save_load_topfile_test(session: MonitorSession, rest_host: str, token: s
 
     write_rest_memory_confirmed(rest_host, addr, pattern)
     monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [], name)
-    if not rest_file_exists(rest_host, f"/Temp/{name}"):
-        raise Failure(f"Saved file /Temp/{name} not found via REST")
+    wait_for_rest_file(rest_host, f"/Temp/{name}")
 
     write_rest_memory_confirmed(rest_host, addr, b"\x00" * len(pattern))
     monitor_load(session, [], f"MS{token}")
@@ -1292,8 +1300,7 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str) 
     inner = f"D{token}"
 
     rest_create_d64(rest_host, f"/Temp/{disk}", f"MD{token}")
-    if not rest_file_exists(rest_host, f"/Temp/{disk}"):
-        raise Failure(f"D64 image /Temp/{disk} was not created")
+    wait_for_rest_file(rest_host, f"/Temp/{disk}")
 
     write_rest_memory_confirmed(rest_host, addr, pattern)
     monitor_save(session, f"{addr:04X}-{addr + len(pattern) - 1:04X}", [f"MD{token}"], inner)
