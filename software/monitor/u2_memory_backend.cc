@@ -62,7 +62,7 @@ void U2MemoryBackend :: begin_session(void)
         return;
     }
     bool stopped_it = machine->begin_stopped_session();
-    cached_cia2_porta = machine->peek(0xDD00);
+    sampled_cia2_porta = machine->peek(0xDD00);
     machine->end_stopped_session(stopped_it);
 }
 
@@ -72,11 +72,11 @@ uint8_t U2MemoryBackend :: read_cia2_porta(void)
         return 0x03;
     }
     if (machine->is_accessible()) {
-        cached_cia2_porta = machine->get_frozen_cia2_porta();
+        sampled_cia2_porta = machine->get_frozen_cia2_porta();
     } else if (machine->is_stopped()) {
-        cached_cia2_porta = machine->peek(0xDD00);
+        sampled_cia2_porta = machine->peek(0xDD00);
     }
-    return cached_cia2_porta;
+    return sampled_cia2_porta;
 }
 
 uint8_t U2MemoryBackend :: get_live_vic_bank(void)
@@ -93,7 +93,7 @@ void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
         uint8_t porta = read_cia2_porta();
         porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
         machine->set_frozen_cia2_porta(porta);
-        cached_cia2_porta = porta;
+        sampled_cia2_porta = porta;
         return;
     }
     uint8_t porta;
@@ -106,7 +106,7 @@ void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
     }
     porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
     machine->poke(0xDD00, porta);
-    cached_cia2_porta = porta;
+    sampled_cia2_porta = porta;
 }
 
 const char *U2MemoryBackend :: source_name(uint16_t) const
