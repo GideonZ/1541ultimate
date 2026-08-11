@@ -131,6 +131,10 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # A CFG naming a store or item this machine does not have has to load
+    # anyway: that is what a file from another Ultimate looks like.
+    Suite("e2e", "cfg-unknown-items", "tests/e2e/filemanager/cfg_unknown_items_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
