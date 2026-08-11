@@ -15,6 +15,10 @@ void U2MemoryBackend :: write(uint16_t address, uint8_t value)
     if (!machine || !machine->exists()) {
         return;
     }
+    if (machine->is_accessible()) {
+        machine->dma_transfer_frozen(address, &value, 1, 0);
+        return;
+    }
     machine->poke(address, value);
 }
 
@@ -82,11 +86,14 @@ uint8_t U2MemoryBackend :: get_live_vic_bank(void)
 
 void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
 {
-    if (!machine || !machine->exists() || machine->is_accessible()) {
-        // While the freezer owns the C64, the live $DD00 register belongs
-        // to the freezer's own display, not the frozen program. The frozen
-        // program's VIC bank is a read-only snapshot; poking hardware here
-        // would corrupt the freezer's screen instead of editing it.
+    if (!machine || !machine->exists()) {
+        return;
+    }
+    if (machine->is_accessible()) {
+        uint8_t porta = read_cia2_porta();
+        porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
+        machine->set_frozen_cia2_porta(porta);
+        cached_cia2_porta = porta;
         return;
     }
     uint8_t porta;

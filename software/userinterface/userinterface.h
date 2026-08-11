@@ -119,6 +119,7 @@ public:
     Keyboard *get_keyboard() { return keyboard; }
 
     int keymapper(int c, keymap_options_t map);
+    const char *function_key_for(int action) const;
 
     int  activate_uiobject(UIObject *obj);
     int  uiobject_modal(UIObject *obj);

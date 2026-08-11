@@ -296,6 +296,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d012;
     uint8_t frozen_mode;
     bool backupIsValid;
+    bool frozen_cia2_porta_changed;
 
     volatile bool buttonPushSeen;
     volatile bool available;
@@ -373,6 +374,10 @@ public:
     bool begin_stopped_session(void);
     void end_stopped_session(bool stopped_it);
     uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
+    void set_frozen_cia2_porta(uint8_t value) {
+        cia_backup[1] = value;
+        frozen_cia2_porta_changed = true;
+    }
     
     void set_colors(int background, int border);
     Screen *getScreen(void);

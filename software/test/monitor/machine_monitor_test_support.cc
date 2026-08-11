@@ -498,6 +498,19 @@ int UserInterface :: keymapper(int c, keymap_options_t map)
     return c;
 }
 
+const char *UserInterface :: function_key_for(int action) const
+{
+    static const int keys[] = { KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8 };
+    static const char *const names[] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8" };
+
+    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        if (const_cast<UserInterface *>(this)->keymapper(keys[i], e_keymap_default) == action) {
+            return names[i];
+        }
+    }
+    return "";
+}
+
 int UserInterface :: popup(const char *, uint8_t)
 {
     return 0;

@@ -13,7 +13,7 @@ To open the monitor, use one of the following:
 - Press `C=+O`.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`.
 
-Open the built-in help with `F3` or `?`.
+Open the built-in help with `?`.
 
 To close the monitor:
 

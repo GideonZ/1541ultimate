@@ -149,6 +149,7 @@ C64::C64()
     isFrozen = false;
     frozen_mode = MODE_NORMAL;
     backupIsValid = false;
+    frozen_cia2_porta_changed = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -845,6 +846,7 @@ void C64::backup_io(void)
     // backup CIA registers
     cia_backup[0] = CIA2_DDRA;
     cia_backup[1] = CIA2_DPA;
+    frozen_cia2_porta_changed = false;
     cia_backup[2] = CIA1_DDRA;
     cia_backup[3] = CIA1_DDRB;
     CIA1_DDRA = 0x00;
@@ -950,6 +952,9 @@ void C64::restore_io(void)
     }
 
     // restore the cia registers
+    if (frozen_cia2_porta_changed) {
+        CIA2_DPA = cia_backup[1];
+    }
     CIA2_DDRA = cia_backup[0];
 //    CIA2_DPA  = cia_backup[1]; // don't touch!
     CIA1_DDRA = cia_backup[2];

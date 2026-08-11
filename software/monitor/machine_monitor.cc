@@ -48,11 +48,6 @@ static const char *const monitor_help_lines[] = {
     NULL
 };
 
-#if COMMODORE
-static const char monitor_help_paging_line[] = "Page Up/Down:  F3/SH+SPACE / F5/SPACE";
-#else
-static const char monitor_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
-#endif
 // The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
 static const int monitor_key_arrow_left = '`';
 
@@ -3554,8 +3549,11 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        draw_padded(window, window->get_size_y() - 1, monitor_help_paging_line,
-                    (int)strlen(monitor_help_paging_line));
+        char paging_line[40];
+        const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
+        const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
+        sprintf(paging_line, "Page Up/Down:  %s/SH+SPACE / %s/SPACE", page_up, page_down);
+        draw_padded(window, window->get_size_y() - 1, paging_line, (int)strlen(paging_line));
         return;
     }
 

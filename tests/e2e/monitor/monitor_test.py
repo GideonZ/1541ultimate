@@ -969,6 +969,61 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     session.send_key("ESC")           # leave edit mode
 
 
+def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str) -> None:
+    """Enter instructions, verify their bytes, and hand off a deterministic result."""
+    address = 0xC000
+    entered = bytes((0xEE, 0x21, 0xD0, 0x4C, 0x00, 0xC0))
+
+    write_rest_memory_confirmed(rest_host, address, bytes((0xEA,) * 12))
+    screen = ensure_view(session, "ASM ")
+    screen = session.goto(f"{address:04X}")
+    screen = session.send_char("e")
+    for char in "INC$D021":
+        screen = session.send_char(char)
+    screen = session.send_key("ENTER")
+    for char in "JMP$C000":
+        screen = session.send_char(char)
+    screen = session.send_key("ENTER")
+    session.send_key("ESC")
+
+    screen = session.goto(f"{address:04X}")
+    screen.find_line_containing("INC $D021")
+    screen.find_line_containing("JMP $C000")
+    actual = read_rest_memory(rest_host, address, len(entered))
+    if actual != entered:
+        raise Failure(
+            f"ASM entry mismatch at ${address:04X}: expected {entered.hex().upper()}, "
+            f"REST reads {actual.hex().upper()}"
+        )
+
+    # Replace the loop with a typed finite fixture. G must produce this exact
+    # RAM result, rather than merely showing a transient screen effect.
+    screen = session.goto("C003")
+    screen = session.send_char("e")
+    for char in "LDA#$5A":
+        screen = session.send_char(char)
+    screen = session.send_key("ENTER")
+    for char in "STA$C200":
+        screen = session.send_char(char)
+    screen = session.send_key("ENTER")
+    for char in "BRK":
+        screen = session.send_char(char)
+    screen = session.send_key("ENTER")
+    session.send_key("ESC")
+
+    expected = bytes((0xEE, 0x21, 0xD0, 0xA9, 0x5A, 0x8D, 0x00, 0xC2, 0x00))
+    screen = session.goto(f"{address:04X}")
+    screen.find_line_containing("LDA #$5A")
+    screen.find_line_containing("STA $C200")
+    if read_rest_memory(rest_host, address, len(expected)) != expected:
+        raise Failure(f"ASM handoff fixture mismatch at ${address:04X}")
+
+    write_rest_memory_confirmed(rest_host, 0xC200, b"\x00")
+    session.goto_run(f"{address:04X}")
+    wait_for_rest_byte(rest_host, 0xC200, 0x5A)
+    session.enter_monitor()
+
+
 # Per-keystroke output budget for scrolling the opcode dropdown over telnet.
 # Regression guard: on a full-refresh (telnet/VT100) screen the buggy path
 # redrew the WHOLE screen on every cursor up/down keystroke (measured 1727 bytes
@@ -1404,19 +1459,28 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
             screen = session.send_char("o")
             assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
 
-    with check("U2 VIC-bank footer cycles through all four banks"):
+    with check("U2 VIC-bank selection persists after leaving Freeze"):
         if not is_u2:
             check_skip("U2-only: exercises the VIC-only footer form (supports_cpu_banking()==false)")
         else:
             screen = session.capture()
             bank = assert_u2_footer_consistent(screen)
-            for _ in range(4):
-                screen = session.send_char("O")
-                bank = (bank + 1) & 0x03
-                actual = assert_u2_footer_consistent(screen)
-                if actual != bank:
-                    raise Failure(f"U2 VIC bank did not advance to VIC{bank}: "
-                                  f"footer reports VIC{actual}")
+            requested = (bank + 1) & 0x03
+            screen = session.send_char("O")
+            actual = assert_u2_footer_consistent(screen)
+            if actual != requested:
+                raise Failure(f"U2 VIC bank did not advance to VIC{requested}: footer reports VIC{actual}")
+            if mode == MODE_FREEZE:
+                session.send_key("ESC")
+                close_rest_menu(reset_host or rest_host, None, rest_host)
+                dd00 = read_rest_memory(reset_host or rest_host, 0xDD00, 1)[0]
+                persisted = 3 - (dd00 & 0x03)
+                if persisted != requested:
+                    raise Failure(
+                        f"U2 VIC{requested} selection did not survive Freeze release: "
+                        f"$DD00=${dd00:02X} is VIC{persisted}"
+                    )
+                session.enter_monitor()
 
     with check("COMPARE reports differing address"):
         screen = ensure_view(session, "HEX ")
@@ -1424,6 +1488,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool = 
         write_rest_memory_confirmed(rest_host, 0xC200, bytes((0x10, 0x91, 0x10, 0x93)))
         screen = session.compare("C100-C103,C200")
         assert_contains(screen, 4, "C101")
+        session.send_key("ENTER")
+
+    with check("ASM entry reaches screen and RAM, then G executes it"):
+        run_asm_entry_round_trip_test(session, rest_host)
 
     with check("G executes finite loop and returns to monitor"):
         go_address = 0xC000 if is_u2 and mode == MODE_FREEZE else 0x1000
