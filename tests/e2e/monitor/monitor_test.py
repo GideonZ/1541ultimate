@@ -70,6 +70,20 @@ def find_u2_footer_line(snapshot: Snapshot) -> int:
     return snapshot.find_line_matching(U2_STATUS_LINE_RE)
 
 
+def find_any_status_line(snapshot: Snapshot) -> int:
+    """Either footer form is proof the monitor screen is open and rendered.
+
+    Callers that need the CPU-banked fields specifically (assert_status_contains,
+    ensure_status, cycle_cpu_bank_from_cpu7) keep using find_status_line, since on
+    U2 those fields do not exist and callers already gate on is_u2 before reaching
+    them. This helper is for the target-agnostic "did the monitor open" check.
+    """
+    try:
+        return find_status_line(snapshot)
+    except Failure:
+        return find_u2_footer_line(snapshot)
+
+
 class SplitRestBackend(RestBackend):
     """RestBackend for a U2+L cartridge (overlay_host) plugged into a C64U
     (machine_host) that supplies the real C64 bus.
@@ -169,7 +183,7 @@ class MonitorSession:
         self.backend.ensure_ready()
         snapshot = self.send_key("CTRL_O")
         try:
-            find_status_line(snapshot)
+            find_any_status_line(snapshot)
             return snapshot
         except Failure:
             pass
@@ -179,7 +193,7 @@ class MonitorSession:
         snapshot = self.send_key("ENTER")
         snapshot = self.send_key("DOWN")
         snapshot = self.send_key("ENTER")
-        find_status_line(snapshot)
+        find_any_status_line(snapshot)
         return snapshot
 
 
@@ -1029,7 +1043,7 @@ def run_telnet_dropdown_scroll_flood_test(session: MonitorSession, rest_host: st
     screen = session.send_key("ESC")  # close the dropdown (stays in edit mode)
     screen.find_line_containing("MONITOR ASM")
     screen = session.send_key("ESC")  # leave edit mode
-    find_status_line(screen)
+    find_any_status_line(screen)
 
 
 def run_number_arithmetic_test(session: MonitorSession, rest_host: str) -> None:
@@ -1467,9 +1481,14 @@ def main() -> int:
     parser.add_argument("-r", "--rest-host", default=os.environ.get("U64_REST_HOST"))
     parser.add_argument("-c", "--c64-host", default=os.environ.get("U64_C64_HOST"),
                         help="C64U a U2+L cartridge under --host is plugged into. Its "
-                             "own machine:input is compiled out, so keyboard/memory ops "
-                             "in Overlay/Freeze mode are routed here instead; Telnet is "
-                             "unaffected since it talks to --host's own telnet server.")
+                             "own machine:input is compiled out, so keyboard injection in "
+                             "Overlay/Freeze mode is routed here instead. Memory "
+                             "verification is routed here too in Overlay, where the C64U "
+                             "can see live memory normally, but not in Freeze, where the "
+                             "U2+L cartridge itself holds the freeze and only its own "
+                             "machine:readmem sees the frozen contents; the C64U's reads "
+                             "open bus there. Telnet is unaffected since it talks to "
+                             "--host's own telnet server.")
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
@@ -1478,6 +1497,21 @@ def main() -> int:
 
     rest_host = args.rest_host or args.c64_host or args.host
     is_u2 = rest_api(args.host).info().product.startswith("Ultimate II")
+
+    # Memory verification (assert_rest_matches_row, write_rest_memory, ...)
+    # needs a REST endpoint that can actually see live C64 memory. In Freeze
+    # mode the U2+L cartridge itself holds the freeze, so its own REST reads
+    # the frozen contents coherently; the C64U's separate machine:readmem
+    # cannot arbitrate onto a bus another device is holding and reads open
+    # bus instead. Measured on hardware: c64u's machine:readmem at a live
+    # KERNAL address returned FF FF FF FF FF FF FF FF while u2's own
+    # machine:readmem at the same address returned the correct frozen
+    # bytes, matching what the monitor itself already rendered. Overlay
+    # mode does not need this: the C64 keeps running there, so nothing
+    # holds the bus away from the C64U.
+    memory_verify_host = rest_host
+    if args.c64_host and args.mode == MODE_FREEZE:
+        memory_verify_host = args.rest_host or args.host
 
     reset_rest_machine(rest_host, args.password)
 
@@ -1491,7 +1525,7 @@ def main() -> int:
                 telnet_host=args.host, telnet_port=args.port,
             )
         session = MonitorSession(backend)
-        run_tests(session, rest_host, args.mode, is_u2)
+        run_tests(session, memory_verify_host, args.mode, is_u2)
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:
