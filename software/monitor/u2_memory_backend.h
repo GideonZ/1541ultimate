@@ -8,6 +8,7 @@ class C64;
 class U2MemoryBackend : public MemoryBackend
 {
     C64 *machine;
+    // Last sampled CIA2 port-A output; 0x03 is the VIC0 fallback before begin_session().
     uint8_t cached_cia2_porta;
     uint8_t read_cia2_porta(void);
 public:
