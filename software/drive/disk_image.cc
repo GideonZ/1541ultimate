@@ -1296,6 +1296,9 @@ void BinImage :: get_sensible_name(char *buffer)
 
     if (fs->dir_open(NULL, &r) != FR_OK) {
         strcpy(buffer, "Unreadable.");
+        delete fs;   // r was never opened; the three wrappers still need releasing
+        delete prt;
+        delete blk;
         return;
     }
     char *n;

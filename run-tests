@@ -177,6 +177,14 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Drives the browser context menu, which is the only way to reach the PRG
+    # load path the REST surface cannot see: launching a PRG over REST goes
+    # straight to the C64 subsystem. Skips until #766 lands machine:heap.
+    # Listed after listener-soak so it does not collide with the heap-leak
+    # entry #766 adds at the top of this block.
+    Suite("soak", "prg-context-menu-leak",
+          "tests/soak/filemanager/prg_context_menu_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # The stress profile is the bounded one, at about two minutes. The soak
     # profile runs for twelve hours, so it is opt-in through --soak-profile.
     Suite("soak", "network-connection", "tests/soak/network/connection_test.py",
