@@ -102,8 +102,16 @@ public:
 
 static const char *chips[] = { "6581", "8580" };
 
+/* Real ARMSID enum labels. They carry leading spaces so the menu can right
+   align them, and one contains a space in the middle. Both shapes end up in a
+   .cfg verbatim, so both have to survive a round trip. */
+static const char *filtlow8[] = { "  30", " ~45", " ~70", "  100" };
+static const char *filthi8[] = { "12 kHz", "10 kHz", "8 kHz" };
+
 static t_cfg_definition sid_defs[] = {
     { 0x01, CFG_TYPE_ENUM,  "Emulation Mode", "%s", chips, 0, 1, 0 },
+    { 0x02, CFG_TYPE_ENUM,  "8580 Lowest Filt Freq", "%s", filtlow8, 0, 3, 0 },
+    { 0x03, CFG_TYPE_ENUM,  "8580 Highest Filt Freq", "%s", filthi8, 0, 2, 0 },
     { CFG_TYPE_END, CFG_TYPE_END, "", "", NULL, 0, 0, 0 } };
 
 static t_cfg_definition clock_defs[] = {
@@ -151,6 +159,31 @@ int main(int argc, char **argv)
     check(ok, "a well-formed .cfg loads without error");
     check(sid->get_value(0x01) == 0, "the value from the file is applied to the store");
     check(loaded.get_elements() == 1, "only the store named in the file is reported as loaded");
+
+    printf("-- enum labels with spaces survive a round trip\n");
+    /* An ARMSID writes "8580 Lowest Filt Freq= ~45" into a .cfg, padding and
+       all. Nothing trims either side, so the value has to match exactly the
+       way it was written -- including a label whose own name contains spaces. */
+    sid->set_value(0x02, 1);   // " ~45"
+    sid->set_value(0x03, 0);   // "12 kHz"
+    MemFile pad;
+    ConfigIO::S_write_to_file(&pad);
+    check(contains(pad.text(), "8580 Lowest Filt Freq= ~45"),
+          "a padded enum label is written with its spaces intact");
+    check(contains(pad.text(), "8580 Highest Filt Freq=12 kHz"),
+          "an enum label containing a space is written whole");
+
+    sid->set_value(0x02, 0);
+    sid->set_value(0x03, 2);
+    MemFile padback;
+    IndexedList<ConfigStore *> loadedpad(8, NULL);
+    StreamTextLog logpad(4096);
+    padback.load("[SID Socket 1: PDsid]\n8580 Lowest Filt Freq= ~45\n"
+                 "8580 Highest Filt Freq=12 kHz\n\n");
+    check(ConfigIO::S_read_from_file(&padback, &logpad, loadedpad),
+          "reading those values back is not an error");
+    check(sid->get_value(0x02) == 1, "the padded label is matched exactly");
+    check(sid->get_value(0x03) == 0, "the label with an inner space is matched");
 
     printf("-- an unknown item is a warning, not a failure\n");
     MemFile unknown_item;
