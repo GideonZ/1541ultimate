@@ -116,6 +116,12 @@ public:
     virtual void redraw(void);
     virtual void deinit(void);
 
+    // For a subclass whose root screen is not a plain TreeBrowserState. The
+    // constructor here has already made one by then, and it has to go: it is
+    // what state_root still points at otherwise, so cd() would compare state
+    // against a state the browser can never be in.
+    void replace_root_state(TreeBrowserState *s);
+
     virtual int poll(int);
     virtual int poll_inactive(void);
     virtual int handle_key(int);
