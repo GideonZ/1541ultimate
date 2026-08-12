@@ -38,6 +38,19 @@ A package that is missing either fails its suite with a message naming what to
 install, or reports the coverage it had to leave out. Neither case passes
 quietly.
 
+## Measuring heap leaks
+
+`tests/soak/api/heap_leak_test.py` asserts that repeated REST operations give
+their memory back, using `GET /v1/machine:heap`. A device running firmware
+older than that endpoint answers 404 and the suite skips, so it is safe to run
+against any image.
+
+It measures the *slope* over repeated operations after a warmup, not a single
+before/after. A first run legitimately allocates one-time caches and lazy
+singletons that never come back; only a cost that repeats every iteration is a
+leak. Comparing one cold run against another warm one reads those one-time
+costs as a leak and is the easiest way to get this wrong.
+
 ## Command-line conventions
 
 The runner and every suite it starts take the same flags for the same things,
