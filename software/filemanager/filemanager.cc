@@ -522,6 +522,17 @@ FRESULT FileManager::open_directory(const char *path, Directory **dir, FileInfo 
     return res;
 }
 
+// get_directory() fills the list with copies it hands to the caller, so the
+// list and its contents have to be freed separately. Deleting only the list
+// strands every FileInfo in it, each one carrying its own name buffer.
+static void delete_directory_list(IndexedList<FileInfo *> *list)
+{
+    for (int i = 0; i < list->get_elements(); i++) {
+        delete (*list)[i];
+    }
+    delete list;
+}
+
 FRESULT FileManager::get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
 {
     lock();
@@ -1050,7 +1061,7 @@ FRESULT FileManager::delete_recursive(Path *path, const char *name)
             } else {
                 ret = get_dir_result;
             }
-            delete dirlist;
+            delete_directory_list(dirlist);
             path->cd("..");
         }
         // After recursive deletion, the dir should be empty.
@@ -1227,7 +1238,7 @@ FRESULT FileManager::fcopy(const char *path, const char *filename, const char *d
                 else {
                     ret = get_dir_result;
                 }
-                delete dirlist;
+                delete_directory_list(dirlist);
             }
             else {
                 ret = dir_create_result;
