@@ -64,6 +64,15 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root) : UIObject(ui)
     }
 }
 
+void TreeBrowser :: replace_root_state(TreeBrowserState *s)
+{
+    if (state) {
+        delete state;
+    }
+    state = s;
+    state_root = s;
+}
+
 TreeBrowser :: ~TreeBrowser()
 {
 	if(state)

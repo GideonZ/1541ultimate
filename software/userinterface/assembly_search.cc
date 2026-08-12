@@ -37,7 +37,7 @@
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     setCleanup();
-    state = new AssemblySearchForm(root, this, 0);
+    replace_root_state(new AssemblySearchForm(root, this, 0));
     state->reload();
 }
 
