@@ -275,7 +275,6 @@ void TreeBrowser :: checkFileManagerEvent(void)
         }
 
         // printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s, %p, %p, %d\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName(), st, this->state, match_exact_path);
-        Browsable *b;
 
         switch (event->eventType) {
         case eNodeAdded:
@@ -301,11 +300,19 @@ void TreeBrowser :: checkFileManagerEvent(void)
                 state->refresh = true;
             }
             if (match_dir) {
-                b = st->node->findChild(event->newName.c_str());
-                if (b) {
-                    printf("Removing %s\n", b->getName());
-                    st->node->children.remove(b);
-                }
+                // Reload rather than unlinking the entry. IndexedList::remove()
+                // only drops the pointer, and a BrowsableDirEntry owns a
+                // FileInfo, a FileType, its generated FAT name and a
+                // FileManager path reference, so unlinking stranded all of it --
+                // about 300 bytes and one path handle for every file that
+                // disappeared under an open browser. Deleting it here instead
+                // is not safe either: this state's under_cursor, and on some
+                // paths a deeper state's node, still point at it. reload()
+                // already frees the children through killChildren() and
+                // rebuilds the list from the filesystem, and do_refresh() runs
+                // it before anything reads under_cursor again. It is also what
+                // eNodeAdded above does with the same list.
+                st->needs_reload = true;
             }
             break;
 
