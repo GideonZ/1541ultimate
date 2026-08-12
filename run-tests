@@ -185,6 +185,12 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "prg-context-menu-leak",
           "tests/soak/filemanager/prg_context_menu_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Drives the Assembly 64 search browser, for the same reason: its query
+    # path is not reachable over REST. Skips when the Assembly 64 service is
+    # unreachable from the device, since the form cannot open without it.
+    Suite("soak", "assembly-search-leak",
+          "tests/soak/io/c64/assembly_search_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # The stress profile is the bounded one, at about two minutes. The soak
     # profile runs for twelve hours, so it is opt-in through --soak-profile.
     Suite("soak", "network-connection", "tests/soak/network/connection_test.py",
