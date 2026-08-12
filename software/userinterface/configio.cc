@@ -122,7 +122,7 @@ void ConfigIO :: S_write_to_file(File *f)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        if (s->get_page()) { // If the store doesn't have a flash page, we won't write it out either
+        if (s->save_to_cfg_file()) {
             S_write_store_to_file(s, f);
         }
     }
@@ -231,6 +231,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
     uint32_t tr;
     bool allOK = true;
     ConfigStore *store = NULL;
+    bool in_unknown_store = false;
     ConfigManager *cm = ConfigManager :: getConfigManager();
     int linenr = 0;
 
@@ -256,12 +257,18 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
         }
         if (line[0] == '[') {
             store = NULL;
+            in_unknown_store = false;
             for(int i=1;i<128;i++) {
                 if (line[i] == ']') {
                     line[i] = 0;
                     store = cm->find_store(line + 1);
                     if (!store) {
-                        log->format("Line %d: Store name '%s' not found.\n", linenr, line + 1);
+                        // A .cfg saved on a machine with hardware this one does
+                        // not have names stores that are missing here. Warn and
+                        // skip the section rather than failing the whole file.
+                        in_unknown_store = true;
+                        printf("Config: no store named '%s' on this machine; its settings are ignored.\n", line + 1);
+                        log->format("Line %d: Store name '%s' not found; section ignored.\n", linenr, line + 1);
                     }
                     break;
                 }
@@ -271,9 +278,12 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
         // trim line? well for now let's assume correct spacing
         if (strlen(line) > 0) {
             if (store) {
-                bool loaded = S_read_store_element(store, line, linenr, log);
-                allOK &= loaded;
-                if (loaded) {
+                t_cfg_line_result result = S_read_store_element(store, line, linenr, log);
+                if (result == CFG_LINE_MALFORMED) {
+                    allOK = false;
+                }
+                // Only a store that actually took a value is worth effectuating.
+                if (result == CFG_LINE_APPLIED) {
                     bool found = false;
                     for (int n = 0; n < loaded_stores.get_elements(); n++) {
                         if (loaded_stores[n] == store) {
@@ -285,6 +295,10 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
                         loaded_stores.append(store);
                     }
                 }
+            } else if (in_unknown_store) {
+                // Already warned about the section; name the item too, so the
+                // log says exactly what was dropped.
+                printf("Config: '%s' ignored, its store is not on this machine.\n", line);
             } else {
                 log->format("Line %d: Not inside valid store.\n", linenr);
                 allOK = false;
@@ -294,7 +308,7 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
     return allOK;
 }
 
-bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
+t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
     char itemname[40];
     const char *valuestr = 0;
@@ -311,17 +325,22 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
     }
     if (strlen(itemname) == 0) {
         log->format("Line %d: No item name.\n", linenr);
-        return false;
+        return CFG_LINE_MALFORMED;
     }
     if (!valuestr) {
         log->format("Line %d: No value given for item '%s'.\n", linenr, itemname);
-        return false;
+        return CFG_LINE_MALFORMED;
     }
     // now look for the store element with the itemname
     ConfigItem *item = st->find_item(itemname);
     if (!item) {
-        log->format("Line %d: Item '%s' not found in this store [%s].\n", linenr, itemname, st->store_name.c_str());
-        return false;
+        // Not an error: a .cfg from a machine with other hardware, or from
+        // another firmware version, legitimately names items this one lacks.
+        // printf goes to the syslog when one is configured.
+        printf("Config: [%s] has no item '%s' (value '%s'); ignored.\n",
+               st->store_name.c_str(), itemname, valuestr);
+        log->format("Line %d: Item '%s' not found in this store [%s]; ignored.\n", linenr, itemname, st->store_name.c_str());
+        return CFG_LINE_UNKNOWN;
     }
 
     // now we know what item should be configured, and how to 'read' the string
@@ -355,10 +374,10 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
         }
         if (!found) {
             log->format("Line %d: Value '%s' is not a valid choice for item %s\n", linenr, valuestr, item->definition->item_text);
-            return false;
+            return CFG_LINE_MALFORMED;
         }
     }
-    return true;
+    return CFG_LINE_APPLIED;
 }
 
 ConfigIO config_io;
