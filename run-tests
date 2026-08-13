@@ -1132,8 +1132,12 @@ CHILD_FORWARDED_NEGATIVE = (
 # host and targets become the child's one target; jsonl_dir is rewritten per
 # target so two children cannot write the same file; stop_on_fail is forwarded
 # by hand because it is a short flag with a different destination name; list
-# never reaches a child, because the parent prints the registry and stops.
-CHILD_EXCLUDED_OPTIONS = ("host", "targets", "jsonl_dir", "stop_on_fail", "list")
+# never reaches a child, because the parent prints the registry and stops;
+# assume_fix reaches every child through the environment instead, because a
+# suite started by hand has to be able to set it the same way (see
+# machine.ASSUME_ENV).
+CHILD_EXCLUDED_OPTIONS = ("host", "targets", "jsonl_dir", "stop_on_fail", "list",
+                          "assume_fix")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
