@@ -940,6 +940,80 @@ void FileManager::remove_root_entry(CachedTreeNode *obj)
     unlock();
 }
 
+// How many disk images stay mounted. Entering an image costs about 5 KB -- the
+// FatFs handle on the image file plus the embedded filesystem wrappers -- and
+// nothing releases it, so browsing a collection used to consume that per image
+// without bound. Eight covers any realistic working set; the cache still pays
+// for itself, since re-entering a mounted image allocates nothing.
+#define MOUNT_CACHE_MAX 8
+
+// Whether this mount can be released without pulling the ground from under
+// something that is using it. Two ways it can be in use:
+//
+//  - a File is open inside it, so its filesystem is still being read or
+//    written. Note the browser merely listing a directory does NOT hold a
+//    file open, which is why the recency rule below matters as much as this.
+//  - it hosts another mount: an image inside an image. Releasing the outer
+//    one would take the inner one's backing file with it.
+bool FileManager::is_mount_evictable(MountPoint *mp)
+{
+    FileSystem *fs = mp->get_embedded() ? mp->get_embedded()->getFileSystem() : NULL;
+    if (!fs) {
+        return false;
+    }
+    for (int i = 0; i < open_file_list.get_elements(); i++) {
+        File *f = open_file_list[i];
+        if (f && (f->get_file_system() == fs)) {
+            return false;
+        }
+    }
+    for (int i = 0; i < mount_points.get_elements(); i++) {
+        MountPoint *other = mount_points[i];
+        if (other && (other != mp) && other->get_file() &&
+            (other->get_file()->get_file_system() == fs)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Release least-recently-used mounts until the cache is back within its bound.
+//
+// The cap is deliberately soft: if nothing is evictable we keep every mount
+// rather than break one that is in use. Exceeding the bound is a bounded waste;
+// freeing a filesystem out from under an open file is corruption.
+//
+// The mount the user is currently inside is the most recently used one, so
+// least-recently-used never selects it. It only becomes a candidate after
+// eight other images have been entered, which means navigating away from it.
+void FileManager::evict_mount_points(void)
+{
+    while (mount_points.get_elements() > MOUNT_CACHE_MAX) {
+        int victim = -1;
+        uint32_t oldest = 0;
+        for (int i = 0; i < mount_points.get_elements(); i++) {
+            MountPoint *mp = mount_points[i];
+            if (!mp || !is_mount_evictable(mp)) {
+                continue;
+            }
+            if ((victim < 0) || (mp->get_last_used() < oldest)) {
+                victim = i;
+                oldest = mp->get_last_used();
+            }
+        }
+        if (victim < 0) {
+            // Everything still in use. Keep them all and try again next time.
+            break;
+        }
+        printf("FileManager: releasing least recently used mount '%s'\n",
+               mount_points[victim]->get_path());
+        release_mount_point(mount_points[victim]);
+        mount_points.mark_for_removal(victim);
+        mount_points.purge_list();
+    }
+}
+
+
 MountPoint *FileManager::add_mount_point(SubPath *path, File *file, FileSystemInFile *emb)
 {
     printf("FileManager :: add_mount_point: (FS=%p, path='%s')\n", file->get_file_system(), path->get_path());
@@ -955,6 +1029,7 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
     for (int i = 0; i < mount_points.get_elements(); i++) {
         if (mount_points[i]->match(info->fs, path)) {
             //printf("Found!\n");
+            mount_points[i]->touch(++mount_use_seq);
             unlock();
             return mount_points[i];
         }
@@ -975,6 +1050,10 @@ MountPoint *FileManager::find_mount_point(SubPath *path, FileInfo *info)
             emb->init(file);
             if (emb->getFileSystem()) {
                 mp = add_mount_point(path, file, emb);
+                mp->touch(++mount_use_seq);
+                // Trim after adding, never before: the mount just created is
+                // the most recent, so it is never its own victim.
+                evict_mount_points();
             }
             else {
                 delete emb;
