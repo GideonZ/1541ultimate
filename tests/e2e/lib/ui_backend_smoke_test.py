@@ -32,9 +32,12 @@ import pacing
 import rest as rest_lib
 import targets
 from report import Failure, check, format_exception, section, suite_fail, suite_ok
-from ui_backend import (SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
+from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
+                        BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL,
+                        SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
                         Snapshot, TelnetBackend, find_cursor_colour,
-                        find_selected_row_rest, plan_overlay_navigation)
+                        find_overlay_rows, find_selected_row_rest,
+                        plan_overlay_navigation)
 
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
@@ -127,6 +130,186 @@ def build_menu_planes(entries: Sequence[str], selected: int, listing_colour: int
         marked = (background << 4) | code if index == selected else code
         colours[start:start + SCREEN_WIDTH] = bytes([marked]) * SCREEN_WIDTH
     return bytes(chars), bytes(colours)
+
+
+def draw_framed_window(chars: bytearray, colours: bytearray, top: int,
+                       bottom: int, left: int, right: int,
+                       items: Sequence[str], selected: int,
+                       listing_colour: int, selected_colour: int) -> None:
+    """Draw a framed window with its own cursor row over an existing screen.
+
+    The frame codes and geometry are those an Ultimate II+L was measured to
+    return for the F5 task menu: corners at columns 5 and 36, rules on rows 7
+    and 16, and the eight items between them.
+    """
+    for column in range(left + 1, right):
+        chars[top * SCREEN_WIDTH + column] = BOX_HORIZONTAL
+        chars[bottom * SCREEN_WIDTH + column] = BOX_HORIZONTAL
+    chars[top * SCREEN_WIDTH + left] = BOX_TOP_LEFT
+    chars[top * SCREEN_WIDTH + right] = BOX_TOP_RIGHT
+    chars[bottom * SCREEN_WIDTH + left] = BOX_BOTTOM_LEFT
+    chars[bottom * SCREEN_WIDTH + right] = BOX_BOTTOM_RIGHT
+    # Every row inside the frame carries its verticals, whether or not an item
+    # was drawn on it; a window taller than its listing still has sides.
+    for row in range(top + 1, bottom):
+        chars[row * SCREEN_WIDTH + left] = BOX_VERTICAL
+        chars[row * SCREEN_WIDTH + right] = BOX_VERTICAL
+    for index, text in enumerate(items):
+        row = top + 1 + index
+        code = selected_colour if index == selected else listing_colour
+        for column in range(left + 1, right):
+            offset = row * SCREEN_WIDTH + column
+            position = column - left - 1
+            chars[offset] = ord(text[position]) if position < len(text) else 0x20
+            colours[offset] = code
+
+
+def run_overlay_row_checks() -> None:
+    """Reading the cursor out of a framed window drawn over a listing.
+
+    Both the window and the browser underneath it draw a cursor row, so the
+    answer depends on the scan being restricted to the window. Modelled on the
+    Ultimate II+L F5 task menu, whose planes were captured from the device:
+    browser cursor on row 2, menu cursor on row 8, both colour 1, no
+    background nibble anywhere.
+    """
+    entries = ["Flash   Flash Disk             Ready",
+               "Temp    RAM Disk               Ready",
+               "USB0    SanDisk 3.2Gen1        Ready",
+               "Ftp     Remote FTP Servers     Ready",
+               "Net0    MAC 02:15:41:33:C4:51  Link Down",
+               "WiFi    IP: 192.168.1.99       Link Up"]
+    items = ["Assembly 64", "C64 Machine", "Built-in Drive A", "Built-in Drive B",
+             "Software IEC", "Printer", "Configuration", "Developer"]
+
+    with check("a plain listing reports no framed window"):
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        found = find_overlay_rows(chars, ROOT_ENTRY_ROWS_REST)
+        if found is not None:
+            raise Failure(f"expected no window, got rows {found}")
+
+    with check("a framed window's own cursor is read, not the browser's"):
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=0, listing_colour=12,
+                           selected_colour=1)
+        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found != range(8, 16):
+            raise Failure(f"expected the window interior rows 8-15, got {found}")
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST)
+        if row != 8:
+            raise Failure(f"expected the window's cursor row 8, got {row}")
+
+    with check("a cursor further down a framed window is read"):
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=5, listing_colour=12,
+                           selected_colour=1)
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST)
+        if row != 13:
+            raise Failure(f"expected the window's cursor row 13, got {row}")
+
+    with check("the menu's header rule is not taken for a framed window"):
+        # The browser draws a run of the same horizontal code across row 1.
+        # Without corners it is a rule, not a frame, and taking it for one
+        # would narrow every plain browser read to the rows below it.
+        chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
+                                           selected_colour=1)
+        chars = bytearray(chars)
+        for column in range(SCREEN_WIDTH):
+            chars[SCREEN_WIDTH + column] = BOX_HORIZONTAL
+        if find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST) is not None:
+            raise Failure("the header rule was taken for a framed window")
+        row = find_selected_row_rest(bytes(chars), colours, ROOT_ENTRY_ROWS_REST)
+        if row != ROOT_ENTRY_ROWS_REST[0] + 2:
+            raise Failure(f"expected row {ROOT_ENTRY_ROWS_REST[0] + 2}, got {row}")
+
+    with check("a titled window's cursor is read, not its title"):
+        # The Select Path picker showing /Temp/, captured from an Ultimate
+        # II+L. The title and the cursor row each carry a colour no other row
+        # does, and both run the full inside width of the frame, so no colour
+        # rule and no width rule can separate them. The title is centred and
+        # every listing row is left-aligned against the frame, which is what
+        # tells them apart. Reproduced live before the title was excluded: the
+        # picker's cursor read as the title row and the walk never moved.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        listing = ["<< Select Current Dir >>",
+                   "prgmenu46523tgt             DIR",
+                   "prgmenu46523.d64            D64  171K",
+                   "prgmenu46523.prg            PRG   67",
+                   "prgmenu46763.d64            D64  171K",
+                   "prgmenu46763.prg            PRG   67"]
+        draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
+                           items=["          Select Path"] + listing,
+                           selected=1, listing_colour=12, selected_colour=1)
+        for column in range(1, SCREEN_WIDTH - 1):
+            colours[3 * SCREEN_WIDTH + column] = 6
+        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found != range(4, 23):
+            raise Failure(f"expected the listing rows 4-22, got {found}")
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST)
+        if row != 4:
+            raise Failure(f"expected the picker's cursor row 4, got {row}")
+
+    with check("a window's blank rows never win the cursor colour"):
+        # The Select Path picker over an empty directory, captured from an
+        # Ultimate II+L: the window paints every row it is not using in the
+        # same colour it marks the cursor with. The one entry and all the
+        # blank rows below it then carry the same number of cursor-coloured
+        # cells, the count ties, and the tie breaks on the row number, so the
+        # cursor read as the last blank row. Reproduced live: the picker's
+        # only entry was on screen and could not be selected.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
+                           items=["          Select Path", "<< Select Current Dir >>"],
+                           selected=1, listing_colour=12, selected_colour=1)
+        for column in range(1, SCREEN_WIDTH - 1):
+            colours[3 * SCREEN_WIDTH + column] = 6
+        for row in range(5, 23):
+            for column in range(1, SCREEN_WIDTH - 1):
+                colours[row * SCREEN_WIDTH + column] = 1
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != 4:
+            raise Failure(f"expected the picker's only entry on row 4, got {row}")
+
+    with check("an untitled window keeps its first row"):
+        # The task menu has no title, so its first interior row is a menu item
+        # and excluding it would lose the item the cursor starts on.
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=0, listing_colour=12,
+                           selected_colour=1)
+        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found != range(8, 16):
+            raise Failure(f"expected rows 8-15 with no title dropped, got {found}")
+
+    with check("a background-marked window is read on a background-marked browser"):
+        # An Ultimate 64 marks both cursors with a background nibble, and the
+        # browser's row is the wider of the two, so a plain strongest-mark
+        # comparison returns the browser row while a context menu is open.
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1, background=6)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=3, listing_colour=12,
+                           selected_colour=(6 << 4) | 1)
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST)
+        if row != 11:
+            raise Failure(f"expected the window's cursor row 11, got {row}")
 
 
 def run_selected_row_checks() -> None:
@@ -352,6 +535,9 @@ def main() -> int:
 
         section("Cursor row from the colour plane")
         run_selected_row_checks()
+
+        section("Cursor row under a framed window")
+        run_overlay_row_checks()
 
         section("Telnet backend")
         with check("Telnet: connect, navigate, teardown"):

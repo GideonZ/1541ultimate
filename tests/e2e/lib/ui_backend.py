@@ -400,6 +400,78 @@ def char_to_combo(ch: str) -> List[str]:
     raise Failure(f"No REST keyboard mapping for character {ch!r}")
 
 
+# The screen codes UserInterface draws a window frame with (screen.cc
+# draw_border): top-left, horizontal, top-right, vertical, bottom-left,
+# bottom-right. They are screen codes 1 to 6, not the ASCII line-drawing
+# characters a text-mode frame might suggest, so a frame is recognised by
+# these codes rather than by punctuation.
+BOX_TOP_LEFT, BOX_HORIZONTAL, BOX_TOP_RIGHT = 0x01, 0x02, 0x03
+BOX_VERTICAL, BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT = 0x04, 0x05, 0x06
+
+
+def find_overlay_rows(chars: bytes, rows: Sequence[int]) -> Optional[range]:
+    """The interior rows of the frontmost framed window, if one is open.
+
+    A context menu, the F5 task menu and a target picker are all drawn as a
+    framed window over whatever was on screen already. Both the window and the
+    browser underneath it draw a cursor row, so a colour scan over the whole
+    listing has two answers and returns whichever it happens to meet first.
+    Measured on an Ultimate II+L with the task menu open: the browser's cursor
+    row 2 and the menu's cursor row 8 both carried colour 1, so the odd-colour
+    rule found no unique row and the cell count then preferred the wider
+    browser row. Restricting the scan to the window's interior removes the
+    ambiguity instead of trying to rank the two cursors against each other,
+    and it is the right answer besides: while a modal window is up, the
+    browser underneath is not what a caller is asking about.
+
+    A window that carries a title spends its first interior row on it, and a
+    title is no more selectable than the frame around it. It is left out here,
+    because it cannot be told from a cursor row by colour: measured on an
+    Ultimate II+L Select Path picker showing /Temp/, the title "Select Path"
+    was 38 cells of colour 6 and the cursor row "<< Select Current Dir >>" was
+    38 cells of colour 1, both spanning the whole inside width and each
+    carrying a colour no other row had. What separates them is where the text
+    starts. The firmware centres a title and left-aligns every listing row
+    against the frame, so a first interior row that does not start at the
+    frame's first inside column is a title.
+
+    Returns None when no frame is on screen, which leaves every plain browser
+    read exactly as it was. The header rule the menu draws across row 1 is a
+    run of BOX_HORIZONTAL with no corners, so it is not mistaken for a frame.
+    """
+    top: Optional[Tuple[int, int, int]] = None    # (row, left, right)
+    for row in range(SCREEN_HEIGHT):
+        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
+        for left, code in enumerate(line):
+            if code != BOX_TOP_LEFT:
+                continue
+            for right in range(left + 2, SCREEN_WIDTH):
+                if line[right] == BOX_TOP_RIGHT:
+                    if all(code == BOX_HORIZONTAL for code in line[left + 1:right]):
+                        top = (row, left, right)
+                    break
+        if top is not None and top[0] == row:
+            break
+    if top is None:
+        return None
+    top_row, left, right = top
+    for row in range(top_row + 2, SCREEN_HEIGHT):
+        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
+        if line[left] == BOX_BOTTOM_LEFT and line[right] == BOX_BOTTOM_RIGHT:
+            interior = [r for r in rows if top_row < r < row]
+            if interior and interior[0] == top_row + 1:
+                first_inside = chars[interior[0] * SCREEN_WIDTH + left + 1]
+                if (first_inside & 0x7F) in (0x00, 0x20):
+                    interior = interior[1:]
+            # A frame with nothing selectable between its rules carries no
+            # cursor, so leave the caller reading the screen it was reading
+            # before.
+            return range(interior[0], interior[-1] + 1) if interior else None
+        if line[left] != BOX_VERTICAL or line[right] != BOX_VERTICAL:
+            return None
+    return None
+
+
 @dataclass
 class RowMark:
     """How strongly one drawn row is marked, and by what."""
@@ -476,6 +548,10 @@ def find_cursor_colour(chars: bytes, colours: bytes,
     cursor off a two-entry listing, where the colours tie and the screen alone
     cannot say which of them is the cursor.
 
+    A window's title also carries a colour of its own, which would make every
+    titled window ambiguous here. Titles never reach this function: they are
+    left out of the rows a framed window contributes. See find_overlay_rows.
+
     Returns None when the screen cannot answer: when the machine marks the
     cursor with a background nibble instead (every Ultimate 64: color_sel_bg
     is only set under #if U64), and when no single row's colour is unique.
@@ -511,7 +587,14 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
     does, so counting cannot separate them and the odd-colour rule below has
     two answers. Measured on an Ultimate II+L: with the cursor on the second
     of two entries, this returned the first until the colour was supplied.
+
+    When a framed window is open the scan is restricted to its interior; see
+    find_overlay_rows for why the two cursors on screen cannot be ranked
+    against each other.
     """
+    overlay = find_overlay_rows(chars, rows)
+    if overlay is not None:
+        rows = overlay
     marks = row_marks(chars, colours, rows)
     best_background_row, best_background_count = -1, 0
     best_reverse_row, best_reverse_count = -1, 0
@@ -538,7 +621,17 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
         # cells of the cursor colour 1 and 22 cells of colour 7. Asking for the
         # commonest colour therefore skipped the selected row entirely and the
         # count-only fallback below picked the volume row.
-        wearing = [(count_colour(colours, row, cursor_colour), row) for row in rows]
+        #
+        # Only rows that row_marks kept, for the reason given there: a blank
+        # row can never be the selected entry. It matters more here than
+        # anywhere else, because a window paints its unused rows in the
+        # colour the cursor uses. Measured on an Ultimate II+L Select Path
+        # picker over an empty directory: the one entry and all eighteen
+        # blank rows below it each carried 38 cells of the cursor colour, the
+        # count tied, and the tie broke on the row number, so the cursor read
+        # as the last blank row and the entry on screen was never selected.
+        wearing = [(count_colour(colours, row, cursor_colour), row)
+                   for row in rows if row in marks]
         wearing = [(count, row) for count, row in wearing
                    if count >= SELECTED_ROW_MIN_MARKED_CELLS]
         if wearing:
@@ -574,8 +667,8 @@ def cursor_marked_cells(colours: bytes, row: int,
     Ultimate II+L has no background nibble at all and marks the row with
     `color_sel` in the foreground (userinterface.cc only sets color_sel_bg
     under #if U64). A caller that needs the extent of a highlight rather than
-    just which row it is on - to tell a narrow overlay's highlight from the
-    browser's own full-width one, say - asks for it here so it works on both.
+    just which row it is on - a form whose fields are not drawn as listing
+    entries, say - asks for it here so it works on both.
     """
     marked, rightmost = 0, -1
     for column in range(SCREEN_WIDTH):
