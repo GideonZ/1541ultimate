@@ -485,6 +485,17 @@ def seed_files(ctx: Context, entries: Sequence[Tuple[str, int]]) -> None:
 
 
 def drop_names(ctx: Context, names: Sequence[str]) -> None:
+    """Remove a row's fixtures, and wait until every observer has seen them go.
+
+    The wait is what makes each row independent. A row ends by deleting its
+    fixtures and the next row begins by requiring every observer to already
+    agree, so a deletion still working its way through an observer's event
+    queue is reported against the next row's seed rather than this one's
+    teardown. Observed on an Ultimate II+L in a full run: the row that
+    deliberately floods the observers with ten extra files left the Telnet
+    browser still showing that row's renamed file, and the next row's baseline
+    failed with a name it had never heard of.
+    """
     assert ctx.ftp_driver is not None
     ftp = ctx.ftp_driver
     for name in names:
@@ -493,6 +504,7 @@ def drop_names(ctx: Context, names: Sequence[str]) -> None:
             ftp.delete(target)
         except ftplib.all_errors:
             ftp_try(lambda path=target: ftp.rmd(path))
+    ctx.converge("cleanup", "-", expected_snapshot([]), names, record_passes=False)
 
 
 # --------------------------------------------------------------------------
