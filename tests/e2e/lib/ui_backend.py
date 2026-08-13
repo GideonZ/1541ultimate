@@ -2108,13 +2108,20 @@ class Browser:
 
         Both context and task menus draw straight over the browser, so on
         every row the characters that changed are the overlay's own cell.
-        Rows that only gained a border strip to nothing and drop out."""
+        Rows that only gained a border strip to nothing and drop out.
+
+        The changed run stops at the overlay's right border. Everything past
+        it belongs to the row underneath, which the overlay did not cover:
+        measured on a C64 Ultimate, whose task menu is narrower than the
+        browser rows it sits on, every label came back with the listing's size
+        column stuck to it, as "Developer                   |32"."""
         labels = []
         for old, new in zip(before, self.rows()):
             if old == new:
                 continue
             common = len(os.path.commonprefix([old, new]))
-            label = strip_frame(new[common:])
+            changed = new[common:].lstrip(FRAME_CHARS)
+            label = strip_frame(changed.split("|", 1)[0])
             if label:
                 labels.append(label)
         return labels
