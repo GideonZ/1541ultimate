@@ -51,9 +51,18 @@ static const char *TAG = "raw_bridge";
 
 /* Set when the *user* asked to disconnect, so that request is not undone a few
  * seconds later. esp_wifi_disconnect() produces the same event as a dropped
- * link, so intent is the only thing that tells the two apart. Any request to
- * connect clears it again. */
-static bool user_disconnected = false;
+ * link, so intent is the only thing that tells the two apart.
+ *
+ * Only an incoming request clears it -- see handle_connect_command() -- and
+ * never the retry ladder, which reaches attempt_connect() through
+ * wifi_connect_to_scanned() and wifi_connect_to_stored(). Clearing it down
+ * there would let a retry that is already under way erase a disconnect the
+ * user asked for a moment later.
+ *
+ * Written by the dispatcher task, read by the connector task, so volatile:
+ * the read below sits in a loop that the compiler would otherwise be free to
+ * hoist it out of. */
+static volatile bool user_disconnected = false;
 
 void wifi_note_user_disconnect(void)
 {
@@ -416,10 +425,6 @@ esp_err_t wifi_set_last_ap(int index)
 
 esp_err_t attempt_connect(const char *ssid, const char *passwd, uint8_t authmode)
 {
-    // However we got here -- the menu, the Ultimate at boot, or a retry -- the
-    // intent is to be connected, so an earlier explicit disconnect is spent.
-    user_disconnected = false;
-
     if (connected_g) {
         esp_err_t err = esp_wifi_disconnect();
         ESP_LOGW(TAG, "Connect request, but was connected. Waiting now for disconnect event.");
@@ -634,11 +639,16 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
             break;
+        // A request to connect -- from the menu or from the Ultimate at boot --
+        // means the user wants to be on the network, so any earlier explicit
+        // disconnect is spent. Scanning is not such a request and leaves it be.
         case CMD_WIFI_AUTOCONNECT:
+            user_disconnected = false;
             *state = LastAP;
             return 1;
         case CMD_WIFI_CONNECT:
             {
+                user_disconnected = false;
                 last_connect = *cmd;
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;

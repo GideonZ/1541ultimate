@@ -26,7 +26,7 @@ void start_dispatch(QueueHandle_t queue);
 void send_button_event(uint8_t button);
 void send_keepalive();
 
-#define IDENT_STRING "ESP32 WiFi Bridge V1.5"
+#define IDENT_STRING "ESP32 WiFi Bridge V1.6"
 #define IDENT_MAJOR   1
 // 1.6: the connector retries after a dropped link instead of idling in
 // Disconnected forever. The Ultimate's updater only reflashes the module
