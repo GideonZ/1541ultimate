@@ -526,18 +526,29 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
 
     if best_background_count >= SELECTED_ROW_MIN_MARKED_CELLS:
         return best_background_row
+    # Reverse video first. It is how an overlay draws the item under its own
+    # cursor, and an overlay is on top of whatever is behind it, so it is the
+    # answer whenever it is present.
+    #
+    # Known gap: a disk image listing draws its volume header in reverse video
+    # for decoration, which this then reads as the cursor. Measured on an
+    # Ultimate II+L showing a D64 with one program, cursor on the program: the
+    # volume row had 28 reverse-video cells and none of the cursor colour,
+    # while the program row had 28 cells of the cursor colour and no reverse
+    # video, and this returns the volume row. Preferring the measured colour
+    # instead fixes that listing and breaks every overlay, because the browser
+    # row behind an overlay still carries the cursor colour and covers more
+    # cells than the overlay's own narrower highlight. Separating the two needs
+    # the rule ftp_client_test uses, that an overlay's highlight never reaches
+    # the last column, applied here and measured against both cases.
     if best_reverse_count >= SELECTED_ROW_MIN_MARKED_CELLS:
         return best_reverse_row
     if cursor_colour is not None:
         # How many cells carry the cursor colour, not whether it is the row's
-        # commonest one. The marking does not always cover the whole row: in a
-        # disk image listing the cursor colours the name field only, so the row
-        # under the cursor is mostly some other colour. Measured on an Ultimate
-        # II+L showing a D64 with one program, cursor on the program: the
-        # volume row was 38 cells of colour 6, and the selected row was 16
-        # cells of the cursor colour 1 and 22 cells of colour 7. Asking for the
-        # commonest colour therefore skipped the selected row entirely and the
-        # count-only fallback below picked the volume row.
+        # commonest one: the marking does not always cover the whole row. In a
+        # disk image listing it covers the name field and not the size and type
+        # columns beside it, so asking for the commonest colour skipped the
+        # selected row entirely.
         wearing = [(count_colour(colours, row, cursor_colour), row) for row in rows]
         wearing = [(count, row) for count, row in wearing
                    if count >= SELECTED_ROW_MIN_MARKED_CELLS]
