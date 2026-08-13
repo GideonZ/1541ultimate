@@ -579,6 +579,25 @@ def find_cursor_colour(chars: bytes, colours: bytes,
     return odd[0] if len(odd) == 1 else None
 
 
+def measure_cursor_colour(chars: bytes, colours: bytes,
+                          rows: Sequence[int]) -> Optional[int]:
+    """The machine's cursor colour, measured on the rows it will be read from.
+
+    find_cursor_colour asks which colour exactly one row carries, so it has to
+    be asked about one listing at a time. A task menu drawn over the browser
+    puts two listings on screen, each with a cursor and both cursors in the
+    machine's colour, so asking across the whole screen finds that colour
+    twice and gives up. Measured on an Ultimate II+L: a caller that opened the
+    Assembly 64 form straight from the task menu never learnt a colour, and
+    the form marks a ten-cell field rather than a row, which is too narrow for
+    the rules that work without one, so the form's first field was never
+    reachable.
+    """
+    overlay = find_overlay_rows(chars, rows)
+    return find_cursor_colour(chars, colours,
+                              overlay if overlay is not None else rows)
+
+
 def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
                            strict: bool = False,
                            cursor_colour: Optional[int] = None) -> int:
@@ -927,7 +946,7 @@ class RestBackend(Backend):
         # volume colour and every read afterwards returns the volume row.
         # Measured on an Ultimate II+L showing a D64 with one program.
         if self._cursor_colour is None:
-            measured = find_cursor_colour(chars, colours, rows)
+            measured = measure_cursor_colour(chars, colours, rows)
             if measured is not None:
                 self._cursor_colour = measured
         return find_selected_row_rest(chars, colours, rows, strict, self._cursor_colour)

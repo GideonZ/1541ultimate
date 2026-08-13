@@ -37,7 +37,7 @@ from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
                         SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
                         Snapshot, TelnetBackend, find_cursor_colour,
                         find_overlay_rows, find_selected_row_rest,
-                        plan_overlay_navigation)
+                        measure_cursor_colour, plan_overlay_navigation)
 
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
@@ -154,6 +154,15 @@ def draw_framed_window(chars: bytearray, colours: bytearray, top: int,
     for row in range(top + 1, bottom):
         chars[row * SCREEN_WIDTH + left] = BOX_VERTICAL
         chars[row * SCREEN_WIDTH + right] = BOX_VERTICAL
+    # The frame's own cells carry a colour like every other cell. Leaving them
+    # at zero would make the frame rows look like rows of a colour nothing
+    # else on the screen uses, which is what a cursor row looks like.
+    for row in range(top, bottom + 1):
+        for column in (left, right):
+            colours[row * SCREEN_WIDTH + column] = listing_colour
+    for column in range(left + 1, right):
+        colours[top * SCREEN_WIDTH + column] = listing_colour
+        colours[bottom * SCREEN_WIDTH + column] = listing_colour
     for index, text in enumerate(items):
         row = top + 1 + index
         code = selected_colour if index == selected else listing_colour
@@ -305,6 +314,29 @@ def run_overlay_row_checks() -> None:
                                      ROOT_ENTRY_ROWS_REST, cursor_colour=1)
         if row != 13:
             raise Failure(f"expected the dialog's Ok row 13, got {row}")
+
+    with check("an open window is what the cursor colour is measured on"):
+        # Two listings on screen, the browser's and the task menu's, each with
+        # a cursor and both in the machine's colour. Asked about the whole
+        # screen, the colour is found twice and no colour is learnt at all;
+        # asked about the open window, it is learnt. A caller that opens a
+        # form straight from the task menu has no other chance to learn it,
+        # and a form's marking is too narrow for the rules that work without
+        # one.
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=3, listing_colour=12,
+                           selected_colour=1)
+        blind = find_cursor_colour(bytes(chars), bytes(colours),
+                                   ROOT_ENTRY_ROWS_REST)
+        if blind is not None:
+            raise Failure(f"expected the whole screen to teach nothing, got {blind!r}")
+        measured = measure_cursor_colour(bytes(chars), bytes(colours),
+                                         ROOT_ENTRY_ROWS_REST)
+        if measured != 1:
+            raise Failure(f"expected the cursor colour 1, got {measured!r}")
 
     with check("an untitled window keeps its first row"):
         # The task menu has no title, so its first interior row is a menu item
