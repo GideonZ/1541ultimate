@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Find which allocation sites leak, by running the same work twice.
 
-A live block is not a leaked block. The device's own report says what is
+A live allocation is not a leaked one. The device's own report says what is
 outstanding right now, which on any real firmware is mostly legitimate: the
 directory on screen, the current session, cached structures. Reading it once
 and treating the big entries as leaks is how you end up fixing the wrong thing.
 
-So run the work twice and compare. A caller whose block count is the same after
+So run the work twice and compare. A caller whose allocation count is the same after
 one round and after two is holding live objects. A caller whose count grows by
 the same amount each round is leaking that much per round. That difference is
 the whole tool.
@@ -33,20 +33,20 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 
-BLOCKS = "/v1/machine:heapblocks"
-RESET = "/v1/machine:heapblocks_reset"
+ALLOCATIONS = "/v1/machine:heap_allocations"
+RESET = "/v1/machine:heap_allocations_reset"
 HEAP = "/v1/machine:heap"
 
 
 def callers(rest):
-    """Map caller address -> (blocks, bytes), plus the raw report."""
-    data = rest.json(BLOCKS)
+    """Map caller address -> (allocations, bytes), plus the raw report."""
+    data = rest.json(ALLOCATIONS)
     out = {}
     entries = data.get("caller", [])
     if isinstance(entries, str):
         entries = [entries]
     for line in entries:
-        m = re.match(r"(\d+) blocks (\d+) bytes ra ([0-9A-Fa-f]+)", line)
+        m = re.match(r"(\d+) allocations (\d+) bytes ra ([0-9A-Fa-f]+)", line)
         if m:
             out[m.group(3)] = (int(m.group(1)), int(m.group(2)))
     return out, data
@@ -78,8 +78,8 @@ def main():
 
     rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)
 
-    if rest.status("GET", BLOCKS) != 200:
-        print("This firmware has no machine:heapblocks. Rebuild with "
+    if rest.status("GET", ALLOCATIONS) != 200:
+        print("This firmware has no machine:heap_allocations. Rebuild with "
               "EXTRA_DEFINES=-DHEAP_TRACK=1", file=sys.stderr)
         return 2
 
@@ -108,7 +108,7 @@ def main():
 
     print(f"\nfree heap: {before_free} -> {after_free} = {spent} bytes over "
           f"{args.rounds} rounds")
-    print(f"\n{'caller':>10}  {'blocks/round':>13}  {'bytes/round':>12}  verdict")
+    print(f"\n{'caller':>10}  {'allocs/round':>13}  {'bytes/round':>12}  verdict")
     growing = []
     for ra in sorted(set(first) | set(last)):
         b0, y0 = first.get(ra, (0, 0))
@@ -125,7 +125,7 @@ def main():
         print("\nLeaking, largest first. Resolve with:")
         print("  nios2-elf-addr2line -f -C -e <ultimate.elf> 0x<addr>")
         for dy, ra, db in growing:
-            print(f"  0x{ra}  {dy:.0f} bytes/round in {db:.1f} blocks")
+            print(f"  0x{ra}  {dy:.0f} bytes/round in {db:.1f} allocations")
     else:
         print("\nNothing grew between rounds.")
     return 0

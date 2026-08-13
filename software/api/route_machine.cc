@@ -635,19 +635,19 @@ API_CALL(GET, machine, heap, NULL, ARRAY( {  }))
 // build made with EXTRA_DEFINES=-DHEAP_TRACK=1; see software/system/heap_track.h.
 //
 // Read these differentially: reset, exercise the device, read, exercise it
-// again, read again. A block that is live is not a block that is leaked, and
+// again, read again. An allocation that is live is not one that is leaked, and
 // only the growth between two identical rounds separates them.
 #include "heap_track.h"
 
 #define HEAP_TRACK_REPORT_CALLERS 48
 
-API_CALL(PUT, machine, heapblocks_reset, NULL, ARRAY( {  }))
+API_CALL(PUT, machine, heap_allocations_reset, NULL, ARRAY( {  }))
 {
     heap_track_reset();
     resp->json_response(HTTP_OK);
 }
 
-API_CALL(GET, machine, heapblocks, NULL, ARRAY( {  }))
+API_CALL(GET, machine, heap_allocations, NULL, ARRAY( {  }))
 {
     static HeapTrackCaller_t callers[HEAP_TRACK_REPORT_CALLERS];
     HeapTrackTotals_t totals;
@@ -656,11 +656,11 @@ API_CALL(GET, machine, heapblocks, NULL, ARRAY( {  }))
     int n = heap_track_report(callers, HEAP_TRACK_REPORT_CALLERS, &totals);
     for (int i = 0; i < n; i++) {
         // small_printf has no %lu, so every field is printed as %d or %p.
-        sprintf(buf, "%d blocks %d bytes ra %p", (int)callers[i].blocks,
+        sprintf(buf, "%d allocations %d bytes ra %p", (int)callers[i].blocks,
                 (int)callers[i].bytes, callers[i].caller);
         resp->json->add("caller", buf);
     }
-    resp->json->add("live_blocks", (int)totals.live_blocks);
+    resp->json->add("live_allocations", (int)totals.live_blocks);
     resp->json->add("live_bytes", (int)totals.live_bytes);
     resp->json->add("distinct_callers", n);
     // Non-zero means the table dropped records and is under-reporting.
