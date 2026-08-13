@@ -314,6 +314,30 @@ def run_retry_checks(runner, tmpdir):
         expect("verdict", result.verdict, runner.report.FAIL)
         expect("device unhealthy", result.device_unhealthy, True)
 
+    with check("a suite killed by a signal says so instead of reading as a failure"):
+        # A suite that is terminated rather than finished prints no verdict of
+        # its own, because report.check prints one for every exception and a
+        # signal raises none. The runner's FAIL line is then the only thing on
+        # screen, and without the signal in it there is nothing to tell a
+        # killed suite from one whose assertion failed. Seen live on
+        # prg-context-menu: the log ended mid-check-line and the run reported
+        # only "prg-context-menu: failed", while the suite passed 23 of 23
+        # when it was run again on the same firmware.
+        killed = os.path.join(tmpdir, "gets_killed.py")
+        with open(killed, "w", encoding="utf-8") as handle:
+            handle.write("import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n")
+        signalled = runner.Suite("perf", "signalled-suite",
+                                 os.path.relpath(killed, runner.ROOT), "")
+        made = device_that([(True, False)], )
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            result = runner.run_suite(signalled, made, options(retry=False), "", "fixture")
+        printed = captured.getvalue()
+        expect("verdict", result.verdict, runner.report.FAIL)
+        if "SIGTERM" not in printed:
+            detail(printed.rstrip())
+            raise Failure("the FAIL line does not name the signal that ended the suite")
+
 
 def run_jsonl_contract_checks(runner, tmpdir):
     """What a programmatic caller reads has to carry what a person's log does.

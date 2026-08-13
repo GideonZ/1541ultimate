@@ -553,6 +553,31 @@ def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
     return command
 
 
+def describe_exit(returncode: int) -> str:
+    """Why a suite's exit status is not zero, or "" when it merely failed.
+
+    A suite that ended by itself has already said what went wrong: every check
+    prints its own verdict, and report.check prints one for any exception it
+    catches. A suite that was terminated printed nothing, because a signal
+    raises nothing to catch, so the runner's own line is the only record of it
+    and has to carry the reason. subprocess reports this as a negative status
+    (Popen.returncode: "a negative value -N indicates the child was terminated
+    by signal N"), which is the only place the distinction survives.
+
+    Seen live: a stray `pkill -f prg_context_menu_test` aimed at another
+    device's run killed this one's copy of the same suite. The log ended in the
+    middle of a check line and the run said only "prg-context-menu: failed",
+    and the suite passed on the next run against the same firmware.
+    """
+    if returncode >= 0:
+        return ""
+    try:
+        name = signal.Signals(-returncode).name
+    except ValueError:
+        name = f"signal {-returncode}"
+    return f"killed by {name}, so it reported nothing of its own"
+
+
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                     label: str, attempt: int) -> Tuple[str, float, bool]:
     """One go at a suite. Returns (verdict, seconds, device_unhealthy).
@@ -602,7 +627,8 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
         report.suite_ok(suite.name, "", elapsed, **fields)
         verdict = report.OK
     else:
-        report.suite_fail(suite.name, "", elapsed, **fields)
+        report.suite_fail(suite.name, describe_exit(completed.returncode),
+                          elapsed, **fields)
         verdict = report.FAIL
 
     # Attribution only: the precondition owns the state, so leaving the browser
