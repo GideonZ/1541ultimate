@@ -36,8 +36,9 @@ from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
                         BOX_TOP_LEFT, BOX_TOP_RIGHT, BOX_VERTICAL,
                         SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
                         Snapshot, TelnetBackend, find_cursor_colour,
-                        find_overlay_rows, find_selected_row_rest,
-                        measure_cursor_colour, plan_overlay_navigation)
+                        find_open_window, find_selected_row_rest,
+                        measure_cursor_colour, plan_overlay_navigation,
+                        whole_screen)
 
 # The colour the firmware draws a window frame in, distinct from both the
 # listing and the cursor colour; measured on an Ultimate II+L task menu.
@@ -202,9 +203,9 @@ def run_overlay_row_checks() -> None:
     with check("a plain listing reports no framed window"):
         chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
                                            selected_colour=1)
-        found = find_overlay_rows(chars, ROOT_ENTRY_ROWS_REST)
-        if found is not None:
-            raise Failure(f"expected no window, got rows {found}")
+        found = find_open_window(chars, ROOT_ENTRY_ROWS_REST)
+        if found != whole_screen(ROOT_ENTRY_ROWS_REST):
+            raise Failure(f"expected the whole screen, got {found}")
 
     with check("a framed window's own cursor is read, not the browser's"):
         chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
@@ -213,8 +214,8 @@ def run_overlay_row_checks() -> None:
         draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
                            items=items, selected=0, listing_colour=12,
                            selected_colour=1)
-        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
-        if found != range(8, 16):
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(8, 16):
             raise Failure(f"expected the window interior rows 8-15, got {found}")
         row = find_selected_row_rest(bytes(chars), bytes(colours),
                                      ROOT_ENTRY_ROWS_REST)
@@ -242,7 +243,8 @@ def run_overlay_row_checks() -> None:
         chars = bytearray(chars)
         for column in range(SCREEN_WIDTH):
             chars[SCREEN_WIDTH + column] = BOX_HORIZONTAL
-        if find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST) is not None:
+        if find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST) != whole_screen(
+                ROOT_ENTRY_ROWS_REST):
             raise Failure("the header rule was taken for a framed window")
         row = find_selected_row_rest(bytes(chars), colours, ROOT_ENTRY_ROWS_REST)
         if row != ROOT_ENTRY_ROWS_REST[0] + 2:
@@ -269,8 +271,8 @@ def run_overlay_row_checks() -> None:
                            selected=1, listing_colour=12, selected_colour=1)
         for column in range(1, SCREEN_WIDTH - 1):
             colours[3 * SCREEN_WIDTH + column] = 6
-        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
-        if found != range(4, 23):
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(4, 23):
             raise Failure(f"expected the listing rows 4-22, got {found}")
         row = find_selected_row_rest(bytes(chars), bytes(colours),
                                      ROOT_ENTRY_ROWS_REST)
@@ -312,8 +314,8 @@ def run_overlay_row_checks() -> None:
         draw_framed_window(chars, colours, top=10, bottom=14, left=12, right=27,
                            items=["Copy complete.", "", "      Ok"],
                            selected=2, listing_colour=12, selected_colour=1)
-        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
-        if found != range(11, 14):
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(11, 14):
             raise Failure(f"expected the dialog's rows 11-13, got {found}")
         # Two drawn rows, each carrying a colour the other does not, is the
         # tie the odd-colour rule cannot break, so this is asked the way a
@@ -338,7 +340,7 @@ def run_overlay_row_checks() -> None:
                            items=items, selected=3, listing_colour=12,
                            selected_colour=1)
         blind = find_cursor_colour(bytes(chars), bytes(colours),
-                                   ROOT_ENTRY_ROWS_REST)
+                                   whole_screen(ROOT_ENTRY_ROWS_REST))
         if blind is not None:
             raise Failure(f"expected the whole screen to teach nothing, got {blind!r}")
         measured = measure_cursor_colour(bytes(chars), bytes(colours),
@@ -374,6 +376,29 @@ def run_overlay_row_checks() -> None:
         if measured is not None:
             raise Failure(f"expected the form to teach nothing, got {measured!r}")
 
+    with check("a menu beside a highlighted row is read, not the row"):
+        # A context menu opened on a browser row is drawn to the right of that
+        # row's text, not over it, so it shares screen rows with the row it
+        # was opened on. Captured from an Ultimate II+L with the menu on the
+        # Ftp row: the menu occupied rows 5 to 7 and columns 29 to 38, the
+        # browser's highlight on row 5 ran 30 cells and the menu item on row 7
+        # ran 10, so narrowing to the menu's rows alone still returned row 5
+        # and the walk to "New Host" never moved.
+        menu = ["Enter", "Copy to...", "New Host"]
+        chars, colours = build_menu_planes(entries, selected=3, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=4, bottom=8, left=28, right=39,
+                           items=menu, selected=2, listing_colour=12,
+                           selected_colour=1)
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(5, 8) or (found.first_column, found.last_column) != (29, 39):
+            raise Failure(f"expected rows 5-7 and columns 29-38, got {found}")
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != 7:
+            raise Failure(f"expected the menu's New Host row 7, got {row}")
+
     with check("an untitled window keeps its first row"):
         # The task menu has no title, so its first interior row is a menu item
         # and excluding it would lose the item the cursor starts on.
@@ -383,8 +408,8 @@ def run_overlay_row_checks() -> None:
         draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
                            items=items, selected=0, listing_colour=12,
                            selected_colour=1)
-        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
-        if found != range(8, 16):
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(8, 16):
             raise Failure(f"expected rows 8-15 with no title dropped, got {found}")
 
     with check("a background-marked window is read on a background-marked browser"):
@@ -514,8 +539,8 @@ def run_selected_row_checks() -> None:
             for column in range(SCREEN_WIDTH - 11, SCREEN_WIDTH - 1):
                 colours[row * SCREEN_WIDTH + column] = (
                     1 if index == cursor_field else 12)
-        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
-        if found != range(4, 23):
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(4, 23):
             raise Failure(f"expected the form's rows 4-22, got {found}")
         row = find_selected_row_rest(bytes(chars), bytes(colours),
                                      ROOT_ENTRY_ROWS_REST, cursor_colour=1)
@@ -544,7 +569,8 @@ def run_selected_row_checks() -> None:
     with check("a listing of three or more entries says which colour is the cursor"):
         chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
                                            selected_colour=1)
-        measured = find_cursor_colour(chars, colours, ROOT_ENTRY_ROWS_REST)
+        measured = find_cursor_colour(chars, colours,
+                                      whole_screen(ROOT_ENTRY_ROWS_REST))
         if measured != 1:
             raise Failure(f"expected the cursor colour 1, got {measured!r}")
 
@@ -555,7 +581,8 @@ def run_selected_row_checks() -> None:
         # Taking it would then point every later read at the wrong row.
         chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
                                            selected_colour=1, background=6)
-        measured = find_cursor_colour(chars, colours, ROOT_ENTRY_ROWS_REST)
+        measured = find_cursor_colour(chars, colours,
+                                      whole_screen(ROOT_ENTRY_ROWS_REST))
         if measured is not None:
             raise Failure(f"expected no cursor colour, got {measured!r}")
 

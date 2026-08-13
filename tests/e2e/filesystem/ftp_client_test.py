@@ -61,7 +61,7 @@ import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
-    char_to_combo, cursor_marked_cells, find_cursor_colour, find_selected_row_rest)
+    char_to_combo, find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
@@ -274,7 +274,7 @@ class MenuScreen:
         ]
         self.text = "\n".join(self.rows)
         if MenuScreen.cursor_colour is None:
-            MenuScreen.cursor_colour = find_cursor_colour(
+            MenuScreen.cursor_colour = measure_cursor_colour(
                 self.chars, self.colors, range(2, SCREEN_HEIGHT - 1))
         self.selected_row = self._find_selected_row()
         self.selected_text = self.rows[self.selected_row].strip() if self.selected_row >= 0 else ""
@@ -436,27 +436,22 @@ class MenuDriver:
 
     @staticmethod
     def _selected_popup_row(screen):
-        """Locate the highlighted item of any overlay popup (context menu, F5
-        Tasks menu, or a nested Create submenu). They render at different column
-        offsets, but they all share one property that separates them from the
-        browser's own row highlight: the popup's highlight run never reaches the
-        last column, while the browser's full-width highlight does. Among the
-        non-browser rows, the selected popup item is the one whose highlight
-        extends furthest to the right (a persistent category label sits further
-        left than the moving submenu selection, so this tracks the selection)."""
-        best_row, best_rightmost = -1, -1
-        for row in range(2, SCREEN_HEIGHT - 1):
-            # Which nibble carries the marking is the machine's property, so it
-            # is read by the shared rule rather than assumed to be the
-            # background: on a machine that has no background nibble this used
-            # to find nothing at all and every popup walk here went blind.
-            marked, rightmost = cursor_marked_cells(
-                screen.colors, row, MenuScreen.cursor_colour)
-            if marked and rightmost >= SCREEN_WIDTH - 1:
-                continue  # browser full-row highlight reaches the last column
-            if rightmost > best_rightmost:
-                best_rightmost, best_row = rightmost, row
-        return best_row if best_rightmost >= 15 else -1
+        """The highlighted item of any open popup: context menu, F5 Tasks menu,
+        New Host form or a nested Create submenu.
+
+        All of them are framed windows, so the one shared rule already answers
+        this: find_selected_row_rest restricts its scan to the frontmost
+        frame, which is what separates the popup's own cursor from the browser
+        row highlighted underneath it. This used to carry a second heuristic
+        that took the marked run reaching furthest right, having first dropped
+        any run reaching the last column as the browser's. That works only
+        where the browser's highlight is the wider of the two. On an Ultimate
+        II+L the New Host form's Alias field was 10 marked cells against 30 on
+        the browser row behind it, and the browser row did not reach the last
+        column, so the browser row was returned and the form was never filled
+        in.
+        """
+        return screen.selected_row
 
     def _navigate_popup(self, text, max_steps, kind):
         seen = False
