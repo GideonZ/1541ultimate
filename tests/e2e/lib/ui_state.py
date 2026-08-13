@@ -39,6 +39,9 @@ SCREEN_ROWS = 25
 PATH_ROW = SCREEN_ROWS - 1
 ROOT_PATH = "/"
 EMPTY_MARKER = "< No Items >"
+# The frame characters the menu draws a window with, as the screen matrix
+# renders them; a dialog's button sits inside one.
+FRAME_CHARS = " |+-"
 
 # Pacing is shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
@@ -386,6 +389,27 @@ def describe_open_menu(device: Device) -> str:
     return "the root browser is not on top; a nested object still holds the UI"
 
 
+def sole_action_row(rows: List[str]) -> Optional[int]:
+    """The row of a dialog whose only action is Ok, if that is what is showing.
+
+    Some dialogs report a result and offer one button. Back does not dismiss
+    them, so the unwind above presses its way around the object stack for ever
+    and the device is abandoned as unhealthy with a perfectly responsive UI on
+    screen. Observed on a C64 Ultimate, where a CFG load left "There were
+    errors." over the browser and every later suite in the run was skipped.
+
+    RETURN is otherwise refused here because it activates whatever the cursor
+    is on. It is safe on this screen and only this screen: a lone Ok is the
+    single thing the dialog can do, so the keystroke cannot pick anything
+    else. A browser listing never matches, because its rows carry a name and a
+    size rather than one short word.
+    """
+    for index, row in enumerate(rows):
+        if row.strip(FRAME_CHARS).strip().lower() == "ok":
+            return index
+    return None
+
+
 def unwind(device: Device) -> None:
     """Back out of nested objects and directories until the menu closes.
 
@@ -395,9 +419,10 @@ def unwind(device: Device) -> None:
     screen shows instead would stop on the Assembly 64 query form, which reports
     the root browser's own "/" path.
 
-    Never RETURN or F5 here: RETURN activates the entry under the cursor, and F5
-    opens the task menu onto the Assembly 64 entry, which is what creates this
-    mess in the first place.
+    F5 is never pressed here: it opens the task menu onto the Assembly 64
+    entry, which is what creates this mess in the first place. RETURN is
+    pressed only to answer a dialog that offers nothing else; see
+    sole_action_row.
     """
     for _ in range(UNWIND_PRESSES):
         rows = device.screen()
@@ -414,7 +439,12 @@ def unwind(device: Device) -> None:
             # The path did not move, so this is a nested object rather than a
             # directory. Back out of it instead.
             device.tap(["run_stop"])
-            device.wait_screen_change(after)
+            settled = device.wait_screen_change(after)
+            if settled is None:
+                return
+            if settled == after and sole_action_row(settled) is not None:
+                device.tap(["return"])
+                device.wait_screen_change(settled)
 
 
 def repair(device: Device) -> None:
