@@ -531,19 +531,25 @@ void ControlTarget :: load_config(Message *command, Message **reply, Message **s
     }
 
     StreamTextLog log(512);
-    IndexedList<ConfigStore *> loaded_stores(8, NULL);
-    bool ok = ConfigIO :: S_read_from_file(f, &log, loaded_stores);
+    bool ok = ConfigIO :: S_read_from_file(f, &log);
     fm->fclose(f);
 
-    for (int n = 0; n < loaded_stores.get_elements(); n++) {
-        ConfigStore *s = loaded_stores[n];
-        if (s->need_effectuate()) {
-            printf("Effectuating settings of store '%s' after UCI config load.\n", s->get_store_name());
-            s->effectuate();
-            s->set_effectuated();
+    if (ok) {
+        ConfigStore *s;
+        ConfigManager *cm = ConfigManager :: getConfigManager();
+        IndexedList<ConfigStore*> *stores = cm->getStores();
+        for(int n = 0; n < stores->get_elements();n++) {
+            s = (*stores)[n];
+            if (s->need_effectuate()) {
+                printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
+                s->effectuate();
+                s->set_effectuated();
+            } else {
+                printf("Store '%s' is clean after loading.\n", s->get_store_name());
+            }
         }
     }
-
+    
     // Reply data carries the parse log (empty on full success, since
     // S_read_from_file only logs the lines it couldn't apply), so the
     // caller can see exactly what went wrong without needing the GUI.

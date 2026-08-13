@@ -224,7 +224,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
     f->write(buffer, len, &tr);
 }
 
-bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<ConfigStore *> &loaded_stores)
+bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
 {
     char c;
     char line[128];
@@ -281,19 +281,6 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
                 t_cfg_line_result result = S_read_store_element(store, line, linenr, log);
                 if (result == CFG_LINE_MALFORMED) {
                     allOK = false;
-                }
-                // Only a store that actually took a value is worth effectuating.
-                if (result == CFG_LINE_APPLIED) {
-                    bool found = false;
-                    for (int n = 0; n < loaded_stores.get_elements(); n++) {
-                        if (loaded_stores[n] == store) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        loaded_stores.append(store);
-                    }
                 }
             } else if (in_unknown_store) {
                 // Already warned about the section; name the item too, so the
