@@ -52,14 +52,33 @@ class Machine:
     product: str
 
     @property
-    def menu_opens_on_launcher(self) -> bool:
-        """Whether the menu button opens something other than the browser.
+    def launcher_browser_entry(self) -> Optional[str]:
+        """The launcher entry leading to the file browser, or None.
 
-        A C64 Ultimate opens a launcher: the file browser is its first entry,
-        and the Ultimate 64's own detailed menu is on F2. On the other two the
-        menu button opens the file browser directly.
+        A C64 Ultimate does not put the file browser behind the menu button.
+        The button opens a launcher listing the browser, the online search and
+        the settings screens, and the browser is its first entry. The other
+        two machines open the browser directly and have no launcher.
         """
-        return self.kind == C64U
+        return "DISK FILE BROWSER" if self.kind == C64U else None
+
+    @property
+    def menu_opens_on_launcher(self) -> bool:
+        """Whether the menu button opens something other than the browser."""
+        return self.launcher_browser_entry is not None
+
+    @property
+    def back_presses_to_close_menu(self) -> int:
+        """Back presses from the file browser until the menu closes.
+
+        One on most machines: the browser is the top of the object stack, so
+        leaving it leaves the menu. Two on a C64 Ultimate, where the launcher
+        sits between the browser and the closed menu. A caller uses this to
+        prove nothing is stacked on top of the browser, which is a thing the
+        screen cannot show: measured on a C64 Ultimate, RUN/STOP in the
+        browser returns to the launcher rather than closing the menu.
+        """
+        return 2 if self.kind == C64U else 1
 
     @property
     def search_service(self) -> str:

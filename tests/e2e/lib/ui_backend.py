@@ -61,6 +61,16 @@ MENU_BUTTON_PATH = "/v1/machine:menu_button"
 # Names the product, which is how a run discovers which machine it is aimed
 # at; see tests/lib/machine.py.
 INFO_PATH = "/v1/info"
+
+# The browser is the launcher's first entry, so pressing Back to the top of
+# the list and then Return reaches it without reading the cursor. Which entry
+# that is, and whether there is a launcher at all, is a property of the
+# machine; see tests/lib/machine.py.
+LAUNCHER_ENTRY_LIMIT = 24
+# Enough to climb out of the deepest settings screen the launcher leads to and
+# then descend one level; a screen that is neither the browser nor the
+# launcher after this many steps is reported rather than looped on.
+LAUNCHER_DESCENT_STEPS = 10
 INPUT_PATH = "/v1/machine:input"
 CONFIGS_PATH = "/v1/configs"
 UI_STORE = "User Interface Settings"
@@ -961,6 +971,7 @@ class RestBackend(Backend):
 
     def _open_menu(self) -> None:
         if self._menu_open():
+            self._enter_file_browser()
             return
         status, body = self._request("PUT", MENU_BUTTON_PATH)
         if status != 200:
@@ -968,9 +979,52 @@ class RestBackend(Backend):
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._menu_open():
+                self._enter_file_browser()
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
+
+    def _in_file_browser(self) -> bool:
+        """Whether the screen showing is the file browser.
+
+        The browser puts the directory it is showing on the status row and
+        nothing else does, so a leading "/" is what identifies it. True on
+        every machine; the rest of this method only ever runs where it can be
+        false.
+        """
+        rows = self._decode(self._body()).lines
+        return rows[SCREEN_HEIGHT - 1].lstrip().startswith("/")
+
+    def _enter_file_browser(self) -> None:
+        """Leave the menu showing the file browser, whatever it opened on.
+
+        A C64 Ultimate does not put the file browser behind the menu button.
+        The button opens a launcher whose entries are the browser, the online
+        search and the settings screens, and it reopens wherever it was last
+        left, which can be several levels into those settings. Every suite
+        expects the browser, so the descent belongs here rather than in each
+        of them.
+
+        The other two machines open the browser directly and this returns at
+        once. Measured on a C64 Ultimate: RUN/STOP on the launcher closes the
+        whole menu, so the way back up is the Back key, and the browser entry
+        is the launcher's first, so no cursor read is needed to reach it.
+        """
+        entry = self.machine.launcher_browser_entry
+        if entry is None:
+            return
+        for _ in range(LAUNCHER_DESCENT_STEPS):
+            if self._in_file_browser():
+                return
+            rows = self._decode(self._body()).lines
+            if any(entry in row for row in rows):
+                self.send_key_repeat("UP", LAUNCHER_ENTRY_LIMIT)
+                self.send_key("ENTER")
+            else:
+                self.send_key("LEFT")
+        raise Failure(
+            f"could not reach the file browser: no {entry!r} entry and no "
+            f"directory on the status row after {LAUNCHER_DESCENT_STEPS} steps")
 
     def _close_menu(self) -> None:
         if not self._menu_open():
