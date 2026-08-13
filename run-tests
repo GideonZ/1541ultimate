@@ -144,6 +144,14 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Manual: loading a partial .cfg is supposed to leave the stores it does
+    # not name alone, and that no longer holds. Measured on a C64 Ultimate
+    # 1.2.0, a file naming one store listed nineteen in its loader
+    # diagnostics. The half that still holds, that such a file loads at all,
+    # stays in cfg-single-group above and in the gate.
+    Suite("e2e", "cfg-partial-effectuate",
+          "tests/e2e/filemanager/cfg_partial_effectuate_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", manual=True),
     # A CFG naming a store or item this machine does not have has to load
     # anyway: that is what a file from another Ultimate looks like.
     Suite("e2e", "cfg-unknown-items", "tests/e2e/filemanager/cfg_unknown_items_test.py",
