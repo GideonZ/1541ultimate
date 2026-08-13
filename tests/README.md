@@ -11,9 +11,45 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 | [`soak/`](soak/) | Time- and load-based checks for leaks, exhaustion, races and transport degradation. Not the gate. |
 | [`lib/`](lib/) | Support code shared by all three categories, plus the two gate checks that need no device. |
 
-`./run-tests -H <host>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
+`./run-tests <target>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
+
+## Targets
+
+A target names what is being tested:
+
+| Form | Meaning |
+| --- | --- |
+| `host` | a device that is also its own C64-side computer |
+| `cartridge@computer` | a cartridge under test, in the computer that supplies its C64 keyboard and video |
+
+An Ultimate II is a cartridge. It serves its own menu, memory and
+configuration, but has no keyboard of its own: `machine:input` answers HTTP 501
+there, so keys are injected into the computer it is plugged into and reach it
+over the expansion port. Everything else stays with the cartridge.
+
+```sh
+./run-tests u64
+./run-tests u2@c64u
+./run-tests u64 c64u u2@u64-2
+```
+
+Naming several targets runs several ordinary runs of the runner, one child
+process per target, and prefixes every output line with the target it came
+from. A target occupies the machines it names, and two targets that share one
+never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
+`u2@c64u` take turns. `-j DIR` gives each target a subdirectory of its own.
+
+The same token is accepted wherever a device is named, including by a suite
+started by hand:
+
+```sh
+python3 tests/e2e/monitor/monitor_test.py -H u2@c64u -m telnet
+```
+
+[`tests/lib/targets.py`](lib/targets.py) is the one place the grammar and the
+routing live.
 
 ## Host requirements
 
@@ -58,7 +94,7 @@ so a command line reads the same wherever it is typed:
 
 | Flag | Meaning |
 | --- | --- |
-| `-H`, `--host` | Device host name or IP |
+| `-H`, `--host` | Target: a host, or `cartridge@computer` |
 | `-p`, `--password` | REST and FTP password |
 | `-t`, `--timeout` | Per-request REST timeout, in seconds |
 | `-r`, `--rest-host` | REST address, when it differs from `--host` |
@@ -79,7 +115,7 @@ when a suite is started by hand. One name each, used by every suite:
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `U64_HOST` | Device host name or IP | `u64` |
+| `U64_HOST` | Target, when none is given on the command line | `u64` |
 | `U64_PASS` | REST and FTP password | empty |
 | `U64_TIMEOUT` | Per-request REST timeout, in seconds | per suite |
 | `U64_REST_HOST` | REST address, when it differs from `U64_HOST` | `U64_HOST` |
@@ -194,6 +230,9 @@ console output:
 | `2` | The command line was wrong |
 | `3` | Every suite passed, but the device had to be recovered |
 | `4` | The device could not be made healthy, and the run was abandoned |
+
+With several targets the run takes the worst of its children's statuses, in
+that same order.
 
 `-j DIR` writes the same thing as JSONL: one file per suite run, plus
 `run.jsonl` holding the run's own `run` record with `passed`, `failed`,

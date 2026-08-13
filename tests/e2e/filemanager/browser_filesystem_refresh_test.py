@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
 import rest as rest_lib
+import targets
 from report import detail, suite_fail, suite_ok
 
 from menu_screen_test import (
@@ -196,7 +197,9 @@ def restrict(snapshot: Snapshot, names: Sequence[str]) -> Snapshot:
 def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> Dict[str, object]:
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
-        f"http://{host}{path}",
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        f"http://{targets.host_for(host, path)}{path}",
         data=b"" if method == "PUT" else None,
         headers=headers,
         method=method,
@@ -1148,7 +1151,9 @@ def open_observers(ctx: Context) -> None:
 
     ctx.telnet = FilesystemRefreshBrowser(
         ui_backend.TelnetBackend(
-            ctx.host,
+            # Telnet is a session on the device itself, so a cartridge target
+            # connects to the cartridge; see tests/lib/targets.py.
+            targets.device_of(ctx.host),
             23,
             ctx.password,
             ctx.timeout,

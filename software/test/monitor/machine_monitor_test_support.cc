@@ -541,6 +541,11 @@ int UserInterface :: string_box(const char *, char *, int, bool, bool)
     return 0;
 }
 
+int UserInterface :: string_box(const char *, char *, int, bool, bool, const UIStringEditPolicy *)
+{
+    return 0;
+}
+
 int UserInterface :: string_edit(char *, int, Window *, int, int, int)
 {
     return 0;
@@ -1014,7 +1019,8 @@ int CaptureScreen :: count_writes_outside_rect(int left, int top, int right, int
 }
 
 CaptureWindow :: CaptureWindow(Screen *screen, int window_width)
-    : Window(screen, 0, 0, window_width, 1), width(window_width), last_x(-1), last_y(-1)
+    : Window(screen, 0, 0, window_width, 1), width(window_width), last_x(-1), last_y(-1),
+      move_cursor_calls(0), output_calls(0), repeat_calls(0)
 {
 }
 
@@ -1022,14 +1028,24 @@ void CaptureWindow :: move_cursor(int x, int y)
 {
     last_x = x;
     last_y = y;
+    move_cursor_calls++;
 }
 
 void CaptureWindow :: output_length(const char *, int)
 {
+    output_calls++;
 }
 
 void CaptureWindow :: repeat(char, int)
 {
+    repeat_calls++;
+}
+
+void CaptureWindow :: reset_counts(void)
+{
+    move_cursor_calls = 0;
+    output_calls = 0;
+    repeat_calls = 0;
 }
 
 int CaptureWindow :: get_size_x(void)
@@ -1038,10 +1054,14 @@ int CaptureWindow :: get_size_x(void)
 }
 
 TestUserInterface :: TestUserInterface()
-    : UserInterface("test", false), popup_count(0), last_prompt_maxlen(0), prompt_count(0), prompt_index(0)
+    : UserInterface("test", false), popup_count(0), last_prompt_maxlen(0),
+      last_prompt_had_policy(false), prompt_count(0), prompt_index(0)
 {
     last_popup[0] = 0;
     last_prompt_message[0] = 0;
+    last_prompt_policy.accepts = 0;
+    last_prompt_policy.transform = 0;
+    last_prompt_policy.cancel_key = 0;
 }
 
 void TestUserInterface :: set_prompt(const char *text, int result)
@@ -1100,6 +1120,39 @@ int TestUserInterface :: string_box(const char *msg, char *buffer, int maxlen, b
 int TestUserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool, bool)
 {
     return string_box(msg, buffer, maxlen);
+}
+
+int TestUserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode,
+                                    bool uppercase, const UIStringEditPolicy *policy)
+{
+    last_prompt_had_policy = (policy != 0);
+    if (policy) {
+        last_prompt_policy = *policy;
+    }
+    if (prompt_index < prompt_count) {
+        return string_box(msg, buffer, maxlen);
+    }
+    // Nothing scripted, so the test is typing into the prompt: run the real
+    // UIStringBox against the test keyboard, exactly as UserInterface does on
+    // the device, so what the policy accepts and rejects is production code
+    // rather than a re-implementation here.
+    strncpy(last_prompt_message, msg ? msg : "", sizeof(last_prompt_message) - 1);
+    last_prompt_message[sizeof(last_prompt_message) - 1] = 0;
+    last_prompt_maxlen = maxlen;
+
+    UIStringBox box(this, msg, buffer, maxlen, template_mode);
+    box.set_uppercase(uppercase);
+    box.set_policy(policy);
+    box.init();
+    int ret = 0;
+    // A test keyboard that has run out returns -1 for ever, which the field
+    // reads as "nothing pressed". Bounded so that ending the key list ends the
+    // prompt as a cancel rather than hanging the suite.
+    for (int guard = 0; !ret && guard < 4096; guard++) {
+        ret = box.poll(0);
+    }
+    box.deinit();
+    return ret;
 }
 
 int fail(const char *message)

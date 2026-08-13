@@ -38,7 +38,8 @@ import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
@@ -145,7 +146,8 @@ class U64Client:
     """Minimal REST client mirroring temp_auto_cleanup_perf_test.py's style."""
 
     def __init__(self, host, password, timeout=10):
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -169,7 +171,7 @@ class U64Client:
         # once; one with a payload would run a PRG or upload a file again, and
         # so is only resent when it never left the client.
         return rest_lib.retrying_http_request(
-            self.host, method, path,
+            self.target.host_for(path), method, path,
             body=body,
             headers=self._headers(body, extra_headers),
             timeout=timeout or self.timeout,
@@ -458,33 +460,37 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         raise Failure("task menu did not open")
     rows = menu_screen_text(body)
 
-    printer_row = None
-    for index in range(8, SCREEN_HEIGHT):
-        if "Printer" in rows[index]:
-            printer_row = index
-            break
-    if printer_row is None:
+    if not any("Printer" in row for row in rows):
         raise Failure("'Printer' task category not found in task menu")
 
-    downs = printer_row - 8
-    for _ in range(downs):
-        client.tap_key("cursor_up_down")
-        time.sleep(pacing.KEY_SETTLE_SECONDS)
+    # Sought by name rather than walked to by row. The task menu is drawn beside
+    # the browser's cursor, so where it starts moves with the selection: measured
+    # on u2@c64u with the browser cursor on row 15, the menu frame opened at row
+    # 6 and 'Printer' was on row 15, where arithmetic from a fixed first-entry
+    # row put it nowhere near. ContextMenu::seek_char takes the first entry
+    # beginning with the typed letter, which needs no row assumption at all.
+    client.tap_key("p")
+    time.sleep(settle)
 
-    client.tap_key("return")  # expand Printer category (Flush/Eject preselected)
+    client.tap_key("return")  # expand the Printer category
     time.sleep(settle)
 
     body = client.get_menu_screen()
     if body is None:
         raise Failure("printer task submenu did not open")
     rows = menu_screen_text(body)
+    # Only that the item is on screen: the expanded submenu's first item is not
+    # drawn on the category's own row (measured: one above it), so asserting a
+    # row here tested the layout rather than the action.
     assert_or_warn(
         assertions_enabled,
-        "Flush/Eject" in rows[printer_row],
-        f"expected 'Flush/Eject' on row {printer_row}, got: {rows[printer_row]!r}",
+        any("Flush/Eject" in row for row in rows),
+        f"'Flush/Eject' not in the expanded Printer submenu: {rows!r}",
     )
 
-    client.tap_key("return")  # trigger Flush/Eject
+    client.tap_key("f")     # seek Flush/Eject within the submenu
+    time.sleep(settle)
+    client.tap_key("return")  # trigger it
     time.sleep(1.0)
 
     # Close what this function opened, so the caller's teardown does not have to

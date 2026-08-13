@@ -122,6 +122,22 @@ def _hex_address(address: int) -> str:
     return f"{address:04X}"
 
 
+def _padded_label(value: object) -> bool:
+    """An enum label the firmware padded so the menu can right align it.
+
+    The inner space is part of the test: " 0 dB" is padded to the width of the
+    "-6 dB" beside it, and a caller that merely stripped all whitespace would
+    match neither.
+    """
+    return (isinstance(value, str) and value != value.strip()
+            and " " in value.strip())
+
+
+def _plain_label(value: object) -> bool:
+    """An enum label carrying no padding but still containing a space."""
+    return isinstance(value, str) and value == value.strip() and " " in value
+
+
 # ---------------------------------------------------------------------------
 # Endpoint groups
 # ---------------------------------------------------------------------------
@@ -489,6 +505,47 @@ class ConfigsApi:
         if not isinstance(entry, dict):
             raise Failure(f"configs/{category}/{item}: item missing from the answer")
         return entry
+
+    def find_padded_enum(self) -> Optional[Tuple[str, str]]:
+        """A store and enum item this machine serves whose labels are padded.
+
+        The three CFG suites all need one setting of the same shape: an enum
+        whose labels are right aligned, so one of its values carries leading
+        padding and another does not, and both have a space inside the label.
+        That is what makes a hand-edited .cfg a real case rather than a
+        contrived one, because nobody types "Vol Master= 0 dB" with the
+        leading space.
+
+        The volume ladders have that shape on every machine, but the store
+        holding them does not have the same name everywhere. Measured with GET
+        /v1/configs: an Ultimate 64 serves "Audio Mixer", while an Ultimate
+        II+L serves "Audio Output Settings" and has no Audio Mixer category at
+        all. Asking the machine which of its stores has such an item is what
+        lets one suite run on either, and costs one request per category plus
+        one for the first item that looks right.
+
+        Returns None when no store serves one, which is a reason for a suite
+        to skip rather than to fail.
+        """
+        names = self.categories().get("categories")
+        if not isinstance(names, list):
+            raise Failure(f"configs: no category list in the answer: {names!r}")
+        for category in names:
+            if not isinstance(category, str):
+                continue
+            for item, value in self.category(category).items():
+                # The category listing carries every item's current value, so
+                # the candidates can be spotted without a request each. An item
+                # whose current value is padded is an enum with padded labels.
+                if not _padded_label(value):
+                    continue
+                values = self.item(category, item).get("values")
+                if not isinstance(values, list):
+                    continue
+                if (any(_padded_label(v) for v in values)
+                        and any(_plain_label(v) for v in values)):
+                    return category, item
+        return None
 
     def current(self, category: str, item: str) -> str:
         """The item's current value, or "" when the device did not report one.

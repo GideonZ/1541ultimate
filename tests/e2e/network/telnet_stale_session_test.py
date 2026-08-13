@@ -37,6 +37,7 @@ from pathlib import Path
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
+import targets
 from report import detail, suite_fail, suite_ok, warn
 
 SUITE = "telnet_stale_session_test"
@@ -311,7 +312,7 @@ def main() -> int:
 
     # Preflight 2: work out which interface and address the vanishing peer should use.
     try:
-        device_ip = socket.gethostbyname(args.host)
+        device_ip = socket.gethostbyname(targets.device_of(args.host))
     except OSError as exc:
         suite_fail(SUITE, f"cannot resolve device host {args.host!r}: {exc}")
         return 2

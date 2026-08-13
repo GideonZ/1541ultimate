@@ -58,8 +58,10 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
-from ui_backend import char_to_combo  # noqa: E402  (needs tests/e2e/lib first)
+import rest as rest_lib
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
+from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
+    char_to_combo, cursor_marked_cells, find_cursor_colour, find_selected_row_rest)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
@@ -75,7 +77,6 @@ SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # Shared with every suite; see tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
-SELECTED_ROW_MIN_MARKED_CELLS = 12
 
 # C64 keyboard-matrix names from software/api/input_api.h. Cursor keys are a
 # single physical key; shift selects the reverse direction.
@@ -114,7 +115,8 @@ class RestSession:
     MIN_REQUEST_INTERVAL = 0.0
 
     def __init__(self, host, password, timeout=5.0):
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -157,7 +159,10 @@ class RestSession:
                 time.sleep(gap)
             self.rest_requests += 1
             self._last_request_at = time.monotonic()
-            conn = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
+            # Keyboard injection belongs to the C64-side computer on a
+            # cartridge target; see tests/lib/targets.py.
+            conn = http.client.HTTPConnection(self.target.host_for(path),
+                                              timeout=timeout or self.timeout)
             sent = False
             try:
                 conn.connect()
@@ -252,6 +257,12 @@ class RestSession:
 # MenuScreen: decode the 40x25 char/attr planes and locate the selected row.
 # ---------------------------------------------------------------------------
 class MenuScreen:
+    # The foreground colour this machine marks its cursor row with, once a
+    # screen has been seen that can say. A machine that marks with a background
+    # colour never teaches one and does not need it. Held on the class because
+    # it is a property of the machine, and a MenuScreen is built per capture.
+    cursor_colour = None
+
     def __init__(self, body):
         self.body = body
         self.chars = body[:SCREEN_CELLS]
@@ -262,42 +273,28 @@ class MenuScreen:
             for r in range(SCREEN_HEIGHT)
         ]
         self.text = "\n".join(self.rows)
+        if MenuScreen.cursor_colour is None:
+            MenuScreen.cursor_colour = find_cursor_colour(
+                self.chars, self.colors, range(2, SCREEN_HEIGHT - 1))
         self.selected_row = self._find_selected_row()
         self.selected_text = self.rows[self.selected_row].strip() if self.selected_row >= 0 else ""
 
     def _find_selected_row(self):
-        best_bg_row, best_bg = -1, 0
-        best_rev_row, best_rev = -1, 0
-        best_fg_row, best_fg = -1, 0
-        for row in range(2, SCREEN_HEIGHT - 1):
-            bg_counts, fg_counts, rev = {}, {}, 0
-            rc = self.chars[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-            cc = self.colors[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-            for ch, code in zip(rc, cc):
-                if ch & 0x80:
-                    rev += 1
-                fg = code & 0x0F
-                bg = (code >> 4) & 0x0F
-                if bg == 0:
-                    if fg != 0x0F:
-                        fg_counts[fg] = fg_counts.get(fg, 0) + 1
-                    continue
-                bg_counts[bg] = bg_counts.get(bg, 0) + 1
-            bgc = max(bg_counts.values()) if bg_counts else 0
-            fgc = max(fg_counts.values()) if fg_counts else 0
-            if bgc > best_bg:
-                best_bg, best_bg_row = bgc, row
-            if rev > best_rev:
-                best_rev, best_rev_row = rev, row
-            if fgc > best_fg:
-                best_fg, best_fg_row = fgc, row
-        if best_bg >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_bg_row
-        if best_rev >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_rev_row
-        if best_fg >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_fg_row
-        return -1
+        """The cursor row, read by the one shared rule.
+
+        This used to carry its own copy of the heuristic, which had no notion
+        of a machine that marks the cursor with a foreground colour alone. On
+        an Ultimate II+L that copy returned the top of the listing every time,
+        which is what made the browser walk here give up after 40 steps
+        without ever reaching the entry it wanted. See
+        ui_backend.find_selected_row_rest.
+        """
+        try:
+            return find_selected_row_rest(
+                self.chars, self.colors, range(2, SCREEN_HEIGHT - 1),
+                cursor_colour=self.cursor_colour)
+        except Failure:
+            return -1
 
     def contains(self, text):
         return text.lower() in self.text.lower()
@@ -449,13 +446,14 @@ class MenuDriver:
         left than the moving submenu selection, so this tracks the selection)."""
         best_row, best_rightmost = -1, -1
         for row in range(2, SCREEN_HEIGHT - 1):
-            cc = screen.colors[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-            if (cc[SCREEN_WIDTH - 1] >> 4) & 0x0F:
+            # Which nibble carries the marking is the machine's property, so it
+            # is read by the shared rule rather than assumed to be the
+            # background: on a machine that has no background nibble this used
+            # to find nothing at all and every popup walk here went blind.
+            marked, rightmost = cursor_marked_cells(
+                screen.colors, row, MenuScreen.cursor_colour)
+            if marked and rightmost >= SCREEN_WIDTH - 1:
                 continue  # browser full-row highlight reaches the last column
-            rightmost = -1
-            for i in range(1, SCREEN_WIDTH - 1):
-                if (cc[i] >> 4) & 0x0F:
-                    rightmost = i
             if rightmost > best_rightmost:
                 best_rightmost, best_row = rightmost, row
         return best_row if best_rightmost >= 15 else -1
@@ -829,7 +827,9 @@ class ControlledFtpServer:
 # ---------------------------------------------------------------------------
 class DeviceFtpInspector:
     def __init__(self, host, user="user", password="password", timeout=15):
-        self.host = host
+        # The device's own FTP server, so a cartridge target means the
+        # cartridge; see tests/lib/targets.py.
+        self.host = targets.device_of(host)
         self.user = user
         self.password = password
         self.timeout = timeout
@@ -2070,7 +2070,9 @@ def infer_advertised_host(device_host):
     """Find the local source IP the device would see us on."""
     import socket
     try:
-        target = socket.gethostbyname(device_host)
+        # The FTP server is on the device itself, so a cartridge target means
+        # the cartridge; see tests/lib/targets.py.
+        target = socket.gethostbyname(targets.device_of(device_host))
     except OSError:
         return None
     try:

@@ -146,12 +146,18 @@ class CaptureWindow : public Window
 public:
     int last_x;
     int last_y;
+    // Every write and cursor move the field made, so a test can assert that a
+    // rejected keystroke produced none of them.
+    int move_cursor_calls;
+    int output_calls;
+    int repeat_calls;
 
     CaptureWindow(Screen *screen, int width);
     void move_cursor(int x, int y);
     void output_length(const char *, int);
     void repeat(char, int);
     int get_size_x(void);
+    void reset_counts(void);
 };
 
 class TestUserInterface : public UserInterface
@@ -161,6 +167,10 @@ public:
     char last_popup[128];
     char last_prompt_message[128];
     int last_prompt_maxlen;
+    // Copied, not pointed at: the monitor builds its policy as a local, so a
+    // stored pointer would dangle by the time a test read it.
+    UIStringEditPolicy last_prompt_policy;
+    bool last_prompt_had_policy;
     char prompt_texts[8][64];
     int prompt_results[8];
     int prompt_count;
@@ -173,6 +183,8 @@ public:
     int string_box(const char *msg, char *buffer, int maxlen);
     int string_box(const char *msg, char *buffer, int maxlen, bool);
     int string_box(const char *msg, char *buffer, int maxlen, bool, bool);
+    int string_box(const char *msg, char *buffer, int maxlen, bool, bool,
+                   const UIStringEditPolicy *policy);
 };
 
 int fail(const char *message);

@@ -48,6 +48,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
+import targets
 from api import UltimateApi
 from report import Failure
 
@@ -207,6 +208,9 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
     error, and its caller is usually deciding whether to recover the device.
     """
     api = api or UltimateApi(host, password, REST_TIMEOUT_SECONDS)
+    # The listener checks open sockets, so they need a name rather than a
+    # target: on "u2@c64u" every listener under test is the cartridge's.
+    host = targets.device_of(host)
     wanted = set(include)
 
     def skip(name: str) -> bool:

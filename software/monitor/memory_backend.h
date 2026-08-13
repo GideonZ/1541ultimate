@@ -77,6 +77,20 @@ public:
         set_monitor_cpu_port(saved_cpu_port);
     }
 
+    // Whether reads at this address are live I/O registers rather than memory.
+    // The disassembler needs to know: an I/O register answers differently from
+    // one read to the next, so decoding it as an opcode produces a different
+    // instruction, and a different instruction *length*, on every redraw, and
+    // every row below it moves. Derived from source_name so there is one rule
+    // for what lives where, and a backend that names its regions differently
+    // only has to override that one.
+    virtual bool reads_live_io(uint16_t address) const
+    {
+        const char *source = source_name(address);
+
+        return source && source[0] == 'I' && source[1] == 'O' && source[2] == 0;
+    }
+
     virtual const char *source_name(uint16_t address) const
     {
         uint8_t cpu_port = get_monitor_cpu_port();

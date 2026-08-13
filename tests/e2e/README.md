@@ -18,7 +18,7 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), and the UI-state gate (`ui_state.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
@@ -30,10 +30,17 @@ The repository-root runner is the supported entry point.
 
 ```sh
 ./run-tests --list
-./run-tests -H <host> -p <password>
-./run-tests -H <host> -s <suite>
-./run-tests -H <host> -m telnet
+./run-tests <target> -p <password>
+./run-tests <target> -s <suite>
+./run-tests <target> -m telnet
+./run-tests u64 u2@c64u
 ```
+
+A target is a host, or `cartridge@computer` for a cartridge under test in the
+computer that supplies its C64 keyboard and video; see
+[tests/README.md](../README.md) and [`tests/lib/targets.py`](../lib/targets.py).
+Naming several runs one child process per target, scheduled so that two targets
+sharing a machine never run at the same time.
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
 (`telnet`, `freeze`, `overlay`; default `overlay`) for suites that support
@@ -44,12 +51,15 @@ Preserve combined stdout and stderr, keeping the runner's exit status:
 
 ```sh
 set -o pipefail
-./run-tests -H <host> 2>&1 | tee "run-tests-$(date +%Y%m%d-%H%M%S).log"
+./run-tests <target> 2>&1 | tee "run-tests-$(date +%Y%m%d-%H%M%S).log"
 ```
 
 ### Device requirements
 
 - Reachable REST API, an otherwise idle device, and a current firmware build.
+- A cartridge target needs both machines reachable: the cartridge serves its
+  own REST, and the computer takes the C64 keyboard injection the cartridge
+  answers with HTTP 501.
 - Commodore ROMs installed under `C64 and Cartridge Settings`:
   `kernal.901227-03.bin`, `basic.901226-01.bin`, `characters.901225-01.bin`.
   Several suites need the C64 to reach the BASIC prompt with KERNAL interrupts

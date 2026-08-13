@@ -34,7 +34,11 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
+import targets
 from report import Failure, format_exception
+
+# Re-exported so a suite building its own URLs has one name for it.
+INPUT_PATH = targets.INPUT_PATH
 
 DEFAULT_TIMEOUT = 10.0
 TRANSPORT_RETRIES = 3
@@ -94,7 +98,11 @@ def retrying_http_request(host: str, method: str, path: str, *,
     done as its own step: a failure there cannot have been applied, whatever the
     request carries. Returns (status, headers, payload), with an HTTP status of
     any value returned rather than raised.
+
+    `host` may be a target token, so callers that hold whatever the runner gave
+    them do not each have to resolve it; see tests/lib/targets.py.
     """
+    host = targets.host_for(host, path)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
         connection = http.client.HTTPConnection(host, timeout=timeout)
@@ -192,7 +200,15 @@ class RestClient:
 
     def __init__(self, host: str, password: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
-        self.host = host
+        # `host` is a target rather than a bare name: "u2@c64u" resolves to a
+        # cartridge under test and the computer it is plugged into. See
+        # tests/lib/targets.py. Everything addresses the device except
+        # keyboard injection, which the cartridge does not implement and which
+        # therefore goes to the computer.
+        target = targets.parse(host)
+        self.target = target
+        self.host = target.device
+        self.input_host = target.input_host
         self.password = password or ""
         self.timeout = timeout
         # Requests that could have changed the device, counted. A GET does
@@ -204,8 +220,9 @@ class RestClient:
         self.mutations = 0
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
+        host = self.target.host_for(path)
         query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{self.host}{path}{query}"
+        return f"http://{host}{path}{query}"
 
     def request(self, method: str, path: str,
                 params: Optional[Dict[str, object]] = None,

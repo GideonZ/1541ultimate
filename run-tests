@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-# run-tests - hardware test runner for one Ultimate device.
+# run-tests - hardware test runner for Ultimate devices.
 #
 # Runs the E2E gate by default, and can additionally or instead run the perf
 # benchmarks and the soak tests. Every suite drives the real firmware over
 # REST/FTP/Telnet, so a device has to be reachable and idle. Suites run
 # sequentially; the exit status is non-zero if any of them fails.
 #
+# One target runs here. Several targets run as several of these, one child
+# process each, scheduled so that no two of them hold the same physical
+# machine at once. Nothing below run_targets knows about more than one device.
+#
 # Reports through tests/lib/report.py, the same module every suite calls, so
 # harness lines and suite lines follow one set of rules.
 
 import argparse
 import os
+import selectors
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -23,6 +29,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import report  # noqa: E402
+import targets as targets_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -102,6 +109,11 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    # Also needs no device: the Telnet backend decides a redraw is over by
+    # watching the stream go quiet, and the three waits that do that cannot be
+    # told apart by watching a real device, which never produces them on
+    # demand. Scripted bursts can.
+    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", ""),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
@@ -684,14 +696,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run-tests",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        usage="run-tests [OPTIONS] [HOST]",
+        usage="run-tests [OPTIONS] [TARGET ...]",
         description=(
-            "Run hardware test suites against one Ultimate device.\n"
+            "Run hardware test suites against one or more Ultimate devices.\n"
             "\n"
             "Suites execute sequentially as separate processes, each driving the\n"
             "firmware over REST, FTP or Telnet. They share one device and one UI\n"
             "object stack, so the runner re-establishes a known state around each\n"
             "one. With no arguments: the E2E suites once, in overlay mode.\n"
+            "\n"
+            "TARGETS\n"
+            "\n"
+            "  host                a device that is also its own C64-side computer\n"
+            "  cartridge@computer  a cartridge under test, in the computer that\n"
+            "                      supplies its C64 keyboard and video\n"
+            "\n"
+            "An Ultimate II is a cartridge: it serves its own menu, memory and\n"
+            "configuration, but has no keyboard of its own, so keys are injected\n"
+            "into the computer it is plugged into and reach it over the expansion\n"
+            "port. Write that as u2@c64u; nothing else has to be set up.\n"
+            "\n"
+            "Several targets run as several ordinary runs of this program, one\n"
+            "child process per target, with every output line prefixed by the\n"
+            "target it came from. A target occupies the machines it names, and\n"
+            "two targets that share one never run at the same time: u64 and\n"
+            "u2@c64u run together, while c64u and u2@c64u take turns.\n"
             "\n"
             "DEVICE HEALTH\n"
             "\n"
@@ -735,7 +764,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "examples:\n"
             "  run-tests                          the E2E gate, overlay mode\n"
-            "  run-tests -H 192.168.0.64          the same, against another device\n"
+            "  run-tests 192.168.0.64             the same, against another device\n"
+            "  run-tests u2@c64u                  a cartridge, in the computer it is in\n"
+            "  run-tests u64 u2@c64u              both, concurrently: no shared machine\n"
             "  run-tests -s prg-context-menu      one suite\n"
             "  run-tests -m all                   the gate in all three modes\n"
             "  run-tests -m telnet,freeze         two chosen modes\n"
@@ -765,8 +796,11 @@ def build_parser() -> argparse.ArgumentParser:
             "  tests/e2e/README.md        adding or changing a suite\n"
             "  tests/lib/README.md        the JSONL record shapes\n"))
 
-    parser.add_argument("host_positional", nargs="?", metavar="HOST",
-                        help="Device host name or IP. May also be given with -H.")
+    parser.add_argument("targets", nargs="*", metavar="TARGET",
+                        help="What to test: a host, or cartridge@computer for a "
+                             "cartridge under test. Several targets run as several "
+                             "runs, one child process each. May also be given "
+                             "with -H.")
 
     what = parser.add_argument_group(
         "what to run",
@@ -805,7 +839,8 @@ def build_parser() -> argparse.ArgumentParser:
         "device",
         "Target device and request timeouts.")
     device.add_argument("-H", "--host", default=DEFAULT_HOST,
-                        help="Device host name or IP (default: $U64_HOST or u64).")
+                        help="Target, when it is not given as a positional "
+                             "(default: $U64_HOST or u64).")
     device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
                         help="REST and FTP password (default: $U64_PASS, empty).")
     device.add_argument("-t", "--timeout", default=DEFAULT_TIMEOUT,
@@ -1032,6 +1067,256 @@ def apply_colour_choice(choice: str) -> None:
     # auto: the suites share this stdout, so they reach the same answer.
 
 
+# ---------------------------------------------------------------------------
+# Several targets: several ordinary runs of this program, one per target.
+#
+# Nothing below this section knows that more than one device exists. A suite is
+# started the same way, the device is driven the same way, and the report is
+# written the same way; the only thing added here is which of them may be
+# running at the same time, and whose line is whose.
+# ---------------------------------------------------------------------------
+
+# The options a child needs to run the same work its parent was asked for.
+# Every option the parser accepts is either listed here or named in
+# CHILD_EXCLUDED_OPTIONS below, and runner_policy_test.py fails when one is in
+# neither: an option silently dropped here would make a multi-target run quietly
+# different from the single-target run it is supposed to repeat.
+CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual")
+CHILD_FORWARDED_VALUES = (
+    ("modes", "--mode"),
+    ("password", "--password"),
+    ("timeout", "--timeout"),
+    ("soak_profile", "--soak-profile"),
+    ("recover_command", "--recover-command"),
+    ("recover_max_per_suite", "--recover-max-per-suite"),
+    ("recover_max_total", "--recover-max-total"),
+    ("recover_timeout", "--recover-timeout"),
+    ("color", "--color"),
+)
+CHILD_FORWARDED_NEGATIVE = (
+    ("health_check", "--no-health-check"),
+    ("retry", "--no-retry"),
+)
+# host and targets become the child's one target; jsonl_dir is rewritten per
+# target so two children cannot write the same file; stop_on_fail is forwarded
+# by hand because it is a short flag with a different destination name; list
+# never reaches a child, because the parent prints the registry and stops.
+CHILD_EXCLUDED_OPTIONS = ("host", "targets", "jsonl_dir", "stop_on_fail", "list")
+
+
+def child_command(args: argparse.Namespace, target: targets_lib.Target,
+                  jsonl_dir: str) -> List[str]:
+    """The command that runs `target` on its own, with this run's options."""
+    command = [sys.executable, os.path.abspath(__file__)]
+    for name in CHILD_FORWARDED_FLAGS:
+        if getattr(args, name):
+            command.append("--" + name.replace("_", "-"))
+    for name, flag in CHILD_FORWARDED_VALUES:
+        command += [flag, str(getattr(args, name))]
+    for name, flag in CHILD_FORWARDED_NEGATIVE:
+        if not getattr(args, name):
+            command.append(flag)
+    for suite in args.suite:
+        command += ["--suite", suite]
+    if args.stop_on_fail:
+        command.append("--stop-on-fail")
+    if jsonl_dir:
+        command += ["--jsonl-dir", jsonl_dir]
+    command.append(target.token)
+    return command
+
+
+def schedulable(target: targets_lib.Target,
+                active: Sequence[targets_lib.Target]) -> bool:
+    """Whether `target` can start now: no machine it needs is in use."""
+    return not any(target.conflicts_with(other) for other in active)
+
+
+def combine_exit_codes(codes: Sequence[int]) -> int:
+    """One status for the whole run, worst thing first.
+
+    The same order a single run uses, for the same reason: a device that could
+    not be made healthy says nothing ran, which outranks a suite that failed,
+    which outranks a run that needed the device brought back.
+    """
+    if not codes:
+        return EXIT_OK
+    if any(code == EXIT_DEVICE_UNHEALTHY for code in codes):
+        return EXIT_DEVICE_UNHEALTHY
+    if any(code not in (EXIT_OK, EXIT_RECOVERED) for code in codes):
+        return EXIT_SUITE_FAILED
+    if any(code == EXIT_RECOVERED for code in codes):
+        return EXIT_RECOVERED
+    return EXIT_OK
+
+
+def signal_group(process: "subprocess.Popen", number: int) -> None:
+    """Signal a child and the suite process it is running.
+
+    The child is a run-tests of its own, and what actually drives the device is
+    the suite it started. Signalling only the child would leave that suite
+    running against hardware the operator now thinks is free, so the whole
+    session started for the child is signalled instead.
+    """
+    try:
+        os.killpg(os.getpgid(process.pid), number)
+    except (ProcessLookupError, PermissionError):
+        process.send_signal(number)
+
+
+def stop(runs: "Sequence[ChildRun]", first: int) -> None:
+    """End these children, escalating to a kill if they do not go."""
+    runs = list(runs)
+    for run in runs:
+        signal_group(run.process, first)
+    for run in runs:
+        try:
+            run.process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            signal_group(run.process, signal.SIGKILL)
+            run.process.wait()
+
+
+class ChildRun:
+    """One target's run: its process, and the half-line left in its pipe."""
+
+    def __init__(self, target: targets_lib.Target, command: List[str]) -> None:
+        self.target = target
+        self.prefix = f"[{target.token}] "
+        # Its own session, so signalling the child reaches the suite process
+        # the child is running rather than only the child itself.
+        self.process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            start_new_session=True)
+        self.pending = b""
+        self.drained = False
+
+    def consume(self) -> bool:
+        """Print whatever has arrived. Returns whether the pipe is still open.
+
+        read1 rather than read: read would block until it had the whole 64K or
+        the child exited, which is the opposite of streaming its output.
+        """
+        chunk = self.process.stdout.read1(65536)
+        if not chunk:
+            if self.pending:
+                self.emit(self.pending)
+                self.pending = b""
+            self.drained = True
+            return False
+        self.pending += chunk
+        *lines, self.pending = self.pending.split(b"\n")
+        for line in lines:
+            self.emit(line)
+        return True
+
+    def emit(self, line: bytes) -> None:
+        # Prefixed per complete line, so a child's own colour and column
+        # alignment survive and every line says which device it came from.
+        print(self.prefix + line.decode("utf-8", "replace").rstrip("\r"), flush=True)
+
+
+def run_targets(args: argparse.Namespace,
+                wanted: Sequence[targets_lib.Target]) -> int:
+    """Run every target, never two that need the same machine at once."""
+    if args.color == "auto" and report.colour_enabled():
+        # Each child writes into a pipe, so it would decide "not a terminal"
+        # and drop colour even though this process reprints its lines on one.
+        os.environ["FORCE_COLOR"] = "1"
+    report.banner("Ultimate hardware test run")
+    report.detail(f"targets:    {', '.join(t.token for t in wanted)}")
+    serialised = [(a.token, b.token) for index, a in enumerate(wanted)
+                  for b in wanted[index + 1:] if a.conflicts_with(b)]
+    for first, second in serialised:
+        report.detail(f"            {first} and {second} share a machine, so they "
+                      "take turns")
+
+    pending = list(wanted)
+    active: Dict[int, ChildRun] = {}
+    # Keyed by target rather than appended in completion order, so the summary
+    # names the right status for each one.
+    codes: Dict[str, int] = {}
+    selector = selectors.DefaultSelector()
+
+    def start_ready() -> None:
+        for target in list(pending):
+            if schedulable(target, [run.target for run in active.values()]):
+                jsonl_dir = (os.path.join(args.jsonl_dir, target.slug)
+                             if args.jsonl_dir else "")
+                if jsonl_dir:
+                    os.makedirs(jsonl_dir, exist_ok=True)
+                run = ChildRun(target, child_command(args, target, jsonl_dir))
+                pending.remove(target)
+                active[run.process.stdout.fileno()] = run
+                selector.register(run.process.stdout, selectors.EVENT_READ)
+                report.detail(f"started {target.token}")
+
+    def reap() -> None:
+        """Retire the children that have both exited and been read to the end.
+
+        A child that exits still has whatever it wrote last sitting in the
+        pipe. Retiring on the exit status alone would close that pipe unread
+        and drop the tail of the run, which is the part carrying the per-suite
+        verdicts and the summary.
+        """
+        for handle, run in list(active.items()):
+            if not run.drained or run.process.poll() is None:
+                continue
+            selector.unregister(run.process.stdout)
+            run.process.stdout.close()
+            del active[handle]
+            codes[run.target.token] = run.process.returncode
+            report.detail(f"finished {run.target.token} with status "
+                          f"{run.process.returncode}")
+
+    try:
+        while pending or active:
+            start_ready()
+            if not active:
+                # Unreachable: with nothing running, nothing can conflict, so
+                # start_ready always starts at least one pending target.
+                raise Failure(f"{len(pending)} targets could not be started")
+            for key, _ in selector.select(timeout=0.5):
+                run = active.get(key.fileobj.fileno())
+                if run is not None and not run.consume():
+                    # Drained; the process is about to be reaped below.
+                    run.process.wait()
+            reap()
+    except KeyboardInterrupt:
+        report.detail("interrupted; stopping the remaining targets")
+        stop(active.values(), signal.SIGINT)
+        for run in active.values():
+            codes[run.target.token] = run.process.returncode
+        return EXIT_SUITE_FAILED
+    finally:
+        # Whatever brought the loop down, no child outlives this process: a
+        # stray run would keep driving hardware the operator thinks is free.
+        stop([run for run in active.values() if run.process.poll() is None],
+             signal.SIGTERM)
+        selector.close()
+
+    status = combine_exit_codes(list(codes.values()))
+    print()
+    for target in wanted:
+        report.detail(f"{target.token}: exit {codes.get(target.token, 'not started')}")
+    return status
+
+
+def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
+    """Every target this run was asked for, validated before anything starts."""
+    tokens = list(args.targets) or [args.host]
+    resolved: List[targets_lib.Target] = []
+    for token in tokens:
+        try:
+            target = targets_lib.parse(token)
+        except targets_lib.TargetError as exc:
+            die(str(exc))
+        if any(target.token == other.token for other in resolved):
+            die(f"{target.token} is named twice")
+        resolved.append(target)
+    return resolved
+
+
 def main(argv: List[str]) -> int:
     args = build_parser().parse_args(argv)
     apply_colour_choice(args.color)
@@ -1039,6 +1324,13 @@ def main(argv: List[str]) -> int:
     if args.list:
         print_listing()
         return 0
+
+    wanted = resolve_targets(args)
+    if len(wanted) > 1:
+        if args.jsonl_dir:
+            os.makedirs(args.jsonl_dir, exist_ok=True)
+        return run_targets(args, wanted)
+    target = wanted[0]
 
     categories = [c for c in CATEGORIES
                   if args.all or getattr(args, c.replace("-", "_"))]
@@ -1078,7 +1370,7 @@ def main(argv: List[str]) -> int:
         # never see this one's result.
         report.set_jsonl_path(os.path.join(args.jsonl_dir, "run.jsonl"))
 
-    options = Options(host=args.host_positional or args.host, password=args.password,
+    options = Options(host=target.token, password=args.password,
                       timeout=args.timeout, soak_profile=args.soak_profile,
                       jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail,
                       health_check=args.health_check, retry=args.retry,
@@ -1088,7 +1380,9 @@ def main(argv: List[str]) -> int:
                       recover_timeout=args.recover_timeout)
 
     report.banner("Ultimate hardware test run")
-    report.detail(f"host:       {options.host}")
+    report.detail(f"target:     {target.token}"
+                  + ("" if not target.split else
+                     f"  (device {target.device}, computer {target.computer})"))
     report.detail(f"categories: {', '.join(categories)}")
     if "e2e" in categories:
         report.detail(f"modes:      {', '.join(modes)}")

@@ -106,6 +106,11 @@ def _colour_enabled() -> bool:
 _USE_COLOUR = _colour_enabled()
 
 
+def colour_enabled() -> bool:
+    """Whether this run is printing colour."""
+    return _USE_COLOUR
+
+
 def set_colour(enabled: bool) -> None:
     """Override the automatic choice, for a `--color` flag.
 

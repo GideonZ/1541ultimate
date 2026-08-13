@@ -18,6 +18,54 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>
 
+// Rendered by draw_help, one line per row. The line naming the key that opens
+// help carries the only "%s" here: that key comes from the application key
+// mapper rather than from this table, so the help cannot claim a mapping the
+// firmware does not have. Every line has to fit the 38 usable columns of the
+// monitor window on the physical 40-column screen, and the table as a whole has
+// to fit the shortest screen the monitor runs on, which is the 24-row telnet
+// terminal rather than the 25-row C64. A host test enforces both.
+const char *const monitor_help_lines[] = {
+    "{M} Memory    {I} ASCII     {V} Screen",
+    "{A} Assembly  {B} Binary   {U} Undoc/Case",
+    "{J} Jump      {G} Go        {X} Exit",
+    "",
+    "{E} Edit      {F} Fill      {T} Transfer",
+    "{C} Compare   {H} Hunt      {N} Number",
+    "{W} Width     {R} Range     {P} Poll",
+    "{Z} Freeze    {O} CPU Bank  {SH+O} VIC",
+    "{L} Load      {S} Save",
+    "",
+    "Bookmarks:  {C=+B} List   {C=+0-9} Jump",
+    "Help {?}/{%s}   Copy {C=+C}  Paste {C=+V}",
+    "Follow/Return {RETURN}  Edit off {C=+E}",
+    "",
+    "Back = {RSTOP} or {<-}, one level at a",
+    "time: help, popup, edit, monitor.",
+    "Monitor open/close: {C=+O}",
+    NULL
+};
+
+// The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
+const int monitor_key_arrow_left = '`';
+
+int monitor_help_plain_text(const char *text, char *out, int out_len)
+{
+    int written = 0;
+
+    while (text && *text && written < out_len - 1) {
+        if (*text == '{' || *text == '}') {
+            text++;
+            continue;
+        }
+        out[written++] = *text++;
+    }
+    if (out_len > 0) {
+        out[written] = 0;
+    }
+    return written;
+}
+
 namespace {
 
 #ifdef RUNS_ON_PC
@@ -25,31 +73,6 @@ static const uint8_t monitor_cursor_blink_idle_polls = 3;
 #else
 static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
-
-static const char *const monitor_help_lines[] = {
-    "",
-    "M Memory    I ASCII     V Screen",
-    "A Assembly  B Binary    U Undoc/Case",
-    "J Jump      G Go",
-    "",
-    "E Edit      F Fill      T Transfer",
-    "C Compare   H Hunt      N Number",
-    "W Width     R Range     P Poll",
-    "Z Freeze    O CPU Bank  SH+O VIC",
-    "L Load      S Save",
-    "",
-    "Bookmarks:  C=+B List   C=+0-9 Jump",
-    "",
-    "Open monitor:  C=+O",
-    "Close monitor: C=+O/RSTOP",
-    "Leave edit:    C=+E/RSTOP",
-    "Copy/Paste:    C=+C / C=+V",
-    "Follow/Return: RETURN",
-    NULL
-};
-
-// The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
-static const int monitor_key_arrow_left = '`';
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -1502,6 +1525,189 @@ MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16
     return MONITOR_OK;
 }
 
+// ---------------------------------------------------------------------------
+// Command-input descriptors.
+//
+// A structured command prompt refuses a character that could not appear in any
+// command it would accept, before the character reaches the field: nothing is
+// inserted, the cursor does not move, the template is not cleared and nothing
+// is redrawn. One descriptor per prompt holds the title the prompt displays
+// and the shape of the input it takes, so the two cannot drift apart, and one
+// matcher below decides whether a candidate buffer is still on its way to
+// something the command's parser accepts.
+//
+// This is deliberately lexical, not a second parser. Whether a range is
+// backwards, a value too large or a length out of bounds is still the answer
+// of the parsers above, which run on RETURN and remain authoritative.
+//
+// Syntax vocabulary, one character per element:
+//   'A'  hex number: an optional '$' then one to four hex digits
+//   'a'  the same, but the field may also be left empty
+//   'P'  the keyword PRG, or an 'a' hex number
+//   'L'  the keyword AUTO, or an 'a' hex number of up to five digits
+//   'N'  a hunt needle: "quoted text", or hex bytes with optional '$'/spaces
+//   '-'  a literal '-'
+//   ','  a literal ','
+// Spaces are accepted around every element, matching skip_spaces above.
+namespace {
+
+enum {
+    MONITOR_SYNTAX_ADDRESS_DIGITS = 4,
+    MONITOR_SYNTAX_LENGTH_DIGITS = 5,
+};
+
+static void syntax_skip_spaces(const char *&cursor)
+{
+    while (*cursor && is_space_char(*cursor)) {
+        cursor++;
+    }
+}
+
+// How far `text` matches `keyword`. Returns -1 on a mismatch, the number of
+// characters consumed on a full match, and 0 when `text` ran out inside the
+// keyword, which is a valid thing to be part-way through typing.
+static int syntax_keyword_progress(const char *text, const char *keyword)
+{
+    int i;
+    for (i = 0; keyword[i]; i++) {
+        if (!text[i]) {
+            return 0;
+        }
+        if (to_upper_char(text[i]) != keyword[i]) {
+            return -1;
+        }
+    }
+    return i;
+}
+
+// A hex field. `required` rejects an empty one; `max_digits` is the parser's
+// own digit ceiling, so a digit past it is impossible rather than merely long.
+static bool syntax_take_number(const char *&cursor, bool required, int max_digits)
+{
+    if (*cursor == '$') {
+        cursor++;
+        if (!*cursor) {
+            return true;
+        }
+    }
+    int digits = 0;
+    while (is_hex_char(*cursor) && digits < max_digits) {
+        cursor++;
+        digits++;
+    }
+    return digits > 0 || !required || !*cursor;
+}
+
+// The hunt needle: either a quoted string, whose contents are free text and
+// after whose closing quote only spaces may follow, or a run of hex bytes
+// written with optional '$' prefixes and spaces.
+static bool syntax_take_needle(const char *cursor)
+{
+    if (*cursor == '"') {
+        cursor++;
+        while (*cursor && *cursor != '"') {
+            cursor++;
+        }
+        if (!*cursor) {
+            return true; // still inside the quotes
+        }
+        cursor++;
+        syntax_skip_spaces(cursor);
+        return *cursor == 0;
+    }
+    while (*cursor) {
+        if (!is_hex_char(*cursor) && !is_space_char(*cursor) && *cursor != '$') {
+            return false;
+        }
+        cursor++;
+    }
+    return true;
+}
+
+}
+
+bool monitor_syntax_accepts_prefix(const char *syntax, const char *candidate)
+{
+    const char *cursor = candidate;
+
+    for (const char *element = syntax; *element; element++) {
+        syntax_skip_spaces(cursor);
+        if (!*cursor) {
+            return true; // the rest is still to be typed
+        }
+        switch (*element) {
+            case '-':
+            case ',':
+                if (*cursor != *element) {
+                    return false;
+                }
+                cursor++;
+                break;
+            case 'A':
+            case 'a':
+                if (!syntax_take_number(cursor, *element == 'A', MONITOR_SYNTAX_ADDRESS_DIGITS)) {
+                    return false;
+                }
+                break;
+            case 'P':
+            case 'L': {
+                const char *keyword = (*element == 'P') ? "PRG" : "AUTO";
+                int consumed = syntax_keyword_progress(cursor, keyword);
+                if (consumed == 0) {
+                    return true; // part-way through the keyword
+                }
+                if (consumed > 0) {
+                    cursor += consumed;
+                    break;
+                }
+                if (!syntax_take_number(cursor, false,
+                                        (*element == 'L') ? MONITOR_SYNTAX_LENGTH_DIGITS
+                                                          : MONITOR_SYNTAX_ADDRESS_DIGITS)) {
+                    return false;
+                }
+                break;
+            }
+            case 'N':
+                return syntax_take_needle(cursor);
+            default:
+                return false;
+        }
+    }
+    syntax_skip_spaces(cursor);
+    return *cursor == 0;
+}
+
+namespace {
+
+static bool accepts_address(const char *candidate) { return monitor_syntax_accepts_prefix("A", candidate); }
+static bool accepts_range(const char *candidate) { return monitor_syntax_accepts_prefix("A-A", candidate); }
+static bool accepts_range_value(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,A", candidate); }
+static bool accepts_hunt(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,N", candidate); }
+static bool accepts_load(const char *candidate) { return monitor_syntax_accepts_prefix("P,a,L", candidate); }
+
+}
+
+const MonitorCommandInput monitor_input_jump =
+    { "Jump AAAA", "A", accepts_address, 0, true, true };
+const MonitorCommandInput monitor_input_go =
+    { "Go AAAA", "A", accepts_address, 0, true, true };
+const MonitorCommandInput monitor_input_fill =
+    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true };
+const MonitorCommandInput monitor_input_transfer =
+    { "Transfer AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
+const MonitorCommandInput monitor_input_compare =
+    { "Compare AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
+// Hunt keeps its default range and takes the needle after it, so there is no
+// template to replace. Its case is decided per position by the transform:
+// hex outside quotes is uppercased, quoted text is left as typed.
+const MonitorCommandInput monitor_input_hunt =
+    { "Hunt AAAA-BBBB,BB/\"text\"", "A-A,N", accepts_hunt,
+      monitor_hunt_prompt_transform_key, false, false };
+const MonitorCommandInput monitor_input_load =
+    { "Load [PRG|AAAA],[Offs],[Len|AUTO]", "P,a,L", accepts_load, 0, true, true };
+const MonitorCommandInput monitor_input_save =
+    { "Save AAAA-BBBB", "A-A", accepts_range, 0, true, true };
+
 MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
                                         uint32_t length, uint32_t *effective_len)
 {
@@ -1579,6 +1785,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     help_visible = false;
     range_mode = false;
     range_anchor = state.current_addr;
+    asm_baseline = state.current_addr;
     number_picker_active = false;
     number_selected = 0;
     number_preview_value = 0;
@@ -1662,6 +1869,11 @@ void MachineMonitor :: apply_go_local(uint16_t address)
 {
     uint16_t span = row_span();
     state.current_addr = address;
+    // Every way of being sent to an address goes through here, so this is where
+    // the Assembly view learns which boundary it disassembles from. See
+    // decode_row: no row above it may reach across it, which is what keeps a
+    // jump's disassembly on screen while the view is scrolled away and back.
+    asm_baseline = address;
     if (state.view == MONITOR_VIEW_BINARY) {
         if (span == 0) span = 1;
         state.base_addr = (uint16_t)(address - (address % span));
@@ -1908,9 +2120,7 @@ void MachineMonitor :: number_picker_resolve_target(void)
     uint8_t row_bytes[3];
     Disassembled6502 decoded;
 
-    read_row(state.current_addr, row_bytes, 3);
-    disassemble_6502(state.current_addr, row_bytes, state.illegal_enabled, &decoded);
-    monitor_disasm_tail_cutover(state.current_addr, &decoded);
+    decode_row(state.current_addr, row_bytes, &decoded);
     if (!decoded.valid) {
         return;
     }
@@ -2340,7 +2550,13 @@ int MachineMonitor :: number_picker_handle_key(int key)
         return 0;
     }
 
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
+    // The left-arrow key is Back except on the two rows that take it as data:
+    // the ASCII and Screen rows type a character, exactly as the ASCII and
+    // Screen views do. RUN/STOP and Escape close the popup from any row.
+    bool arrow_is_data = (number_selected == MONITOR_NUMBER_ROW_ASCII ||
+                          number_selected == MONITOR_NUMBER_ROW_SCREEN);
+    if (key == KEY_ESCAPE || key == KEY_BREAK ||
+        (key == monitor_key_arrow_left && !arrow_is_data)) {
         number_picker_active = false;
         draw();
         return 0;
@@ -2542,207 +2758,19 @@ void MachineMonitor :: page_move(int lines)
 bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len,
                                       bool template_mode, bool uppercase)
 {
-    return get_ui()->string_box(title, buffer, max_len, template_mode, uppercase) > 0;
+    // Back leaves a monitor prompt exactly as it leaves any other single
+    // interaction layer, so the top-left left-arrow key cancels here too.
+    static const UIStringEditPolicy free_form = { 0, 0, monitor_key_arrow_left };
+
+    return get_ui()->string_box(title, buffer, max_len, template_mode, uppercase, &free_form) > 0;
 }
 
-bool MachineMonitor :: prompt_hunt_command(const char *title, char *buffer, int max_len)
+bool MachineMonitor :: prompt_command(const MonitorCommandInput &input, char *buffer, int max_len)
 {
-    UserInterface *ui = get_ui();
-    Screen *screen = ui ? ui->get_screen() : NULL;
-    Keyboard *keyboard = ui ? ui->get_keyboard() : NULL;
-    Window *window = NULL;
-    int message_width = strlen(title);
-    int window_width = message_width;
-    int max_chars;
-    int x1;
-    int y1;
-    int x_m;
-    int len;
-    int cur;
-    int edit_offs = 0;
-    int key;
-    int i;
-    bool confirmed = false;
-    bool done = false;
+    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left };
 
-    if (!ui || !screen || !keyboard) {
-        return false;
-    }
-    if (max_len > message_width) {
-        window_width = max_len;
-    }
-    window_width += 3;
-    if (window_width >= screen->get_size_x()) {
-        window_width = screen->get_size_x();
-    }
-    max_chars = window_width - 2;
-    x1 = (screen->get_size_x() - window_width) / 2;
-    y1 = (screen->get_size_y() - 5) / 2;
-    x_m = (window_width - message_width) / 2;
-
-    cur = strlen(buffer);
-    if (cur > max_len) {
-        buffer[max_len] = 0;
-        cur = max_len;
-    }
-    len = cur;
-    if (len > (max_chars - 1)) {
-        edit_offs = 1 + len - max_chars;
-    }
-
-    screen->backup();
-    window = new Window(screen, x1, y1, window_width, 5);
-    window->clear();
-    window->draw_border();
-    window->move_cursor(x_m, 0);
-    window->output(title);
-    window->move_cursor(0, 2);
-    window->output_length(buffer + edit_offs, (len < max_chars) ? len : max_chars);
-    window->move_cursor(cur - edit_offs, 2);
-
-    keyboard->wait_free();
-    screen->cursor_visible(1);
-    while (!done && (!ui->host || ui->host->exists())) {
-        key = keyboard->getch();
-        if (key == -1) {
-            continue;
-        }
-        if (key == -2) {
-            done = true;
-            continue;
-        }
-
-        switch (key) {
-            case KEY_RETURN:
-                buffer[len] = 0;
-                confirmed = true;
-                done = true;
-                break;
-            case KEY_LEFT:
-                if (cur > 0) {
-                    cur--;
-                    if (cur - 5 < edit_offs) {
-                        edit_offs -= 5;
-                        if (edit_offs < 0) {
-                            edit_offs = 0;
-                        }
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_RIGHT:
-                if (cur < len) {
-                    cur++;
-                    if ((cur - edit_offs) > (max_chars - 1)) {
-                        edit_offs++;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_BACK:
-                if (cur > 0) {
-                    cur--;
-                    len--;
-                    for (i = cur; i < len; i++) {
-                        buffer[i] = buffer[i + 1];
-                    }
-                    buffer[i] = 0;
-                    if (cur - 5 < edit_offs) {
-                        edit_offs -= 5;
-                        if (edit_offs < 0) {
-                            edit_offs = 0;
-                        }
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                        window->move_cursor(cur - edit_offs, 2);
-                    } else {
-                        window->move_cursor(cur - edit_offs, 2);
-                        window->output_length(buffer + cur, max_chars + edit_offs - cur);
-                        window->move_cursor(cur - edit_offs, 2);
-                    }
-                }
-                break;
-            case KEY_CLEAR:
-                buffer[0] = 0;
-                len = 0;
-                cur = 0;
-                edit_offs = 0;
-                window->move_cursor(0, 2);
-                window->output_length(buffer, max_chars);
-                window->move_cursor(0, 2);
-                break;
-            case KEY_DELETE:
-                if (cur < len) {
-                    len--;
-                    for (i = cur; i < len; i++) {
-                        buffer[i] = buffer[i + 1];
-                    }
-                    buffer[i] = 0;
-                    window->move_cursor(cur - edit_offs, 2);
-                    window->output_length(buffer + cur, max_chars + edit_offs - cur);
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_HOME:
-            case KEY_UP:
-                cur = 0;
-                if (edit_offs) {
-                    edit_offs = 0;
-                    window->move_cursor(0, 2);
-                    window->output_length(buffer, max_chars);
-                }
-                window->move_cursor(0, 2);
-                break;
-            case KEY_DOWN:
-            case KEY_END:
-                if (cur != len) {
-                    cur = len;
-                    if (cur >= (max_chars - 1)) {
-                        edit_offs = 1 + cur - max_chars;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_BREAK:
-            case KEY_ESCAPE:
-                done = true;
-                break;
-            default:
-                if ((key < 32) || (key >= 127)) {
-                    break;
-                }
-                key = monitor_hunt_prompt_transform_key(buffer, cur, key);
-                if (len < max_len) {
-                    for (i = len; i >= cur; i--) {
-                        buffer[i + 1] = buffer[i];
-                    }
-                    buffer[cur] = (char)key;
-                    cur++;
-                    len++;
-                    if (cur - edit_offs < max_chars) {
-                        window->output_length(buffer + cur - 1, max_chars + edit_offs - cur);
-                        window->move_cursor(cur - edit_offs, 2);
-                    } else {
-                        edit_offs++;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                        window->move_cursor(cur - edit_offs, 2);
-                    }
-                }
-                break;
-        }
-    }
-
-    screen->cursor_visible(0);
-    window->getScreen()->restore();
-    delete window;
-    return confirmed;
+    return get_ui()->string_box(input.title, buffer, max_len,
+                                input.template_mode, input.uppercase, &policy) > 0;
 }
 
 void MachineMonitor :: commit_pending_hex_nibble(void)
@@ -2996,9 +3024,7 @@ bool MachineMonitor :: follow_target(uint16_t *target)
             addr = (uint16_t)(addr + len);
         }
 
-        read_row(insn_addr, bytes, 3);
-        disassemble_6502(insn_addr, bytes, state.illegal_enabled, &decoded);
-        monitor_disasm_tail_cutover(insn_addr, &decoded);
+        decode_row(insn_addr, bytes, &decoded);
         if (!decoded.valid) {
             return false;
         }
@@ -3208,14 +3234,57 @@ void MachineMonitor :: reset_poll_deadline(void)
     poll_deadline = (uint16_t)(getMsTimer() + next_poll_interval_ms());
 }
 
+// What one Assembly row at `address` is: the bytes it covers, and how they
+// decode. Every caller goes through here, so the length the view steps by, the
+// text it draws, the target it follows and the operand the number tool edits
+// can never disagree about the same address.
+void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
+                                  Disassembled6502 *decoded) const
+{
+    read_row(address, row_bytes, 3);
+    disassemble_6502(address, row_bytes, state.illegal_enabled, decoded);
+    monitor_disasm_tail_cutover(address, decoded);
+
+    // A live I/O register is not code, and it does not read the same twice.
+    // Decoding one as an opcode gives an instruction length that changes
+    // between redraws, and with it the address of every row below, so the
+    // whole view re-aligns while the user is only scrolling. One byte per row
+    // takes the register values out of the layout entirely: the rows stay
+    // where they are and each one shows what its register holds now.
+    if (backend && backend->reads_live_io(address)) {
+        decoded->valid = false;
+        decoded->illegal = false;
+        decoded->operand_bytes = 0;
+        decoded->has_target = false;
+        decoded->target = 0;
+        decoded->length = 1;
+        sprintf(decoded->text, ".BYTE $%02X", row_bytes[0]);
+        return;
+    }
+
+    // The address the view was last sent to is a known instruction boundary,
+    // so nothing above it may reach across it: an instruction read from the
+    // bytes in front of it would otherwise swallow it, and every row below
+    // would shift with it. The bytes that do not fit are shown as data, which
+    // is what they are in the stream the jump established.
+    if ((address < asm_baseline) &&
+        ((uint16_t)(address + decoded->length) > asm_baseline)) {
+        decoded->valid = false;
+        decoded->illegal = false;
+        decoded->operand_bytes = 0;
+        decoded->has_target = false;
+        decoded->target = 0;
+        decoded->length = 1;
+        sprintf(decoded->text, ".BYTE $%02X", row_bytes[0]);
+    }
+}
+
 uint8_t MachineMonitor :: disasm_length(uint16_t address) const
 {
     Disassembled6502 decoded;
     uint8_t row_bytes[3];
 
-    read_row(address, row_bytes, 3);
-    disassemble_6502(address, row_bytes, state.illegal_enabled, &decoded);
-    monitor_disasm_tail_cutover(address, &decoded);
+    decode_row(address, row_bytes, &decoded);
     return decoded.length ? decoded.length : 1;
 }
 
@@ -3273,11 +3342,7 @@ uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
-    if (addr == address) {
-        return disasm_prev_addr(address);
-    }
-
-    for (int row = 0; row < max_scan; row++) {
+    for (int row = 0; (addr != address) && (row < max_scan); row++) {
         uint16_t next = disasm_next_addr(addr);
         if (next == address) {
             return addr;
@@ -3287,7 +3352,9 @@ uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
         }
         addr = next;
     }
-    return disasm_prev_addr(address);
+    // Above the top row there is nothing on screen to read the boundary off,
+    // so it is measured the same way paging measures it.
+    return disasm_rewind_rows(address, 1);
 }
 
 int MachineMonitor :: disasm_visible_row(uint16_t address) const
@@ -3317,8 +3384,39 @@ uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
     return address;
 }
 
+// The row `rows` above `address`, chosen so that walking forward `rows` rows
+// from the answer arrives back at `address`.
+//
+// A 6502 instruction cannot be found by reading backwards: the byte in front of
+// an opcode may be an operand rather than an opcode. Guessing one boundary at a
+// time, which is what disasm_prev_addr does, can pick a boundary the forward
+// walk never uses, and paging up then stops undoing paging down. Disassembling
+// forward from further back than `rows` instructions can span, and counting the
+// rows that actually land on `address`, replaces the guess with a measurement.
+// The extra lead-in is what gives the stream room to re-synchronise before it
+// reaches the rows that will be shown.
 uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
 {
+    if (rows <= 0) {
+        return address;
+    }
+    for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
+        uint16_t start = (uint16_t)(address - lead_in);
+        uint16_t addr = start;
+        int rows_before = 0;
+
+        // Unsigned subtraction wraps once addr passes address, which ends the
+        // walk on a lead-in that disassembles straight over it.
+        while ((addr != address) && ((uint16_t)(address - addr) <= lead_in)) {
+            addr = disasm_next_addr(addr);
+            rows_before++;
+        }
+        if ((addr == address) && (rows_before >= rows)) {
+            return disasm_advance_rows(start, rows_before - rows);
+        }
+    }
+    // No lead-in landed on `address`, so there is nothing to measure; guess one
+    // instruction at a time, which at least moves the view `rows` rows up.
     while (rows > 0) {
         address = disasm_prev_addr(address);
         rows--;
@@ -3328,9 +3426,6 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
 
 void MachineMonitor :: restore_disasm_cursor_row(int row)
 {
-    uint16_t best_base;
-    int best_visible_row;
-
     if (row < 0) {
         ensure_disasm_visible();
         return;
@@ -3338,26 +3433,9 @@ void MachineMonitor :: restore_disasm_cursor_row(int row)
     if (content_height > 0 && row >= content_height) {
         row = content_height - 1;
     }
-
-    best_base = state.current_addr;
-    best_visible_row = 0;
-    for (int offset = 0; offset <= (row * 3 + 3); offset++) {
-        uint16_t candidate = (uint16_t)(state.current_addr - offset);
-        int visible_row;
-
-        state.base_addr = candidate;
-        visible_row = disasm_visible_row(state.current_addr);
-        if (visible_row == row) {
-            ensure_disasm_visible();
-            return;
-        }
-        if (visible_row >= 0 && visible_row < row && visible_row >= best_visible_row) {
-            best_visible_row = visible_row;
-            best_base = candidate;
-        }
-    }
-
-    state.base_addr = best_base;
+    // The top row is `row` rows above the cursor, measured the way paging
+    // measures it so that scrolling back down retraces the same boundaries.
+    state.base_addr = disasm_rewind_rows(state.current_addr, row);
     ensure_disasm_visible();
 }
 
@@ -3578,8 +3656,50 @@ void MachineMonitor :: draw_status()
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
+// One help line. Anything between braces is a key the reader can press, and is
+// drawn in the accent colour the monitor already uses to pick text out; the
+// braces themselves are markup and are not drawn. Keeping the marks inline
+// means the text and what is emphasised in it stay one thing to edit.
+void MachineMonitor :: draw_help_line(int y, const char *text)
+{
+    int width = window->get_size_x();
+    int drawn = 0;
+    int normal = get_ui()->color_fg;
+
+    window->move_cursor(0, y);
+    while (*text && drawn < width) {
+        bool accent = (*text == '{');
+        const char *run;
+        int len = 0;
+
+        if (accent) {
+            text++;
+        }
+        run = text;
+        while (*text && *text != '{' && *text != '}') {
+            text++;
+            len++;
+        }
+        if (len > width - drawn) {
+            len = width - drawn;
+        }
+        if (len > 0) {
+            window->set_color(accent ? MONITOR_UI_ACCENT_COLOR : normal);
+            window->output_length(run, len);
+            drawn += len;
+        }
+        if (*text == '}') {
+            text++;
+        }
+    }
+    window->set_color(normal);
+    window->repeat(' ', width - drawn);
+}
+
 void MachineMonitor :: draw_help()
 {
+    char formatted[64];
+
     for (int line_idx = 0; line_idx < content_height; line_idx++) {
         const char *text = monitor_help_lines[line_idx];
         if (!text) {
@@ -3588,7 +3708,14 @@ void MachineMonitor :: draw_help()
             }
             break;
         }
-        draw_padded(window, line_idx + 1, text, strlen(text));
+        // One line names the key that opens help, which is the application key
+        // mapper's answer rather than this table's. It is the only line with a
+        // conversion in it.
+        if (strchr(text, '%')) {
+            sprintf(formatted, text, get_ui()->function_key_for(KEY_HELP));
+            text = formatted;
+        }
+        draw_help_line(line_idx + 1, text);
     }
 }
 
@@ -4063,11 +4190,9 @@ void MachineMonitor :: draw_disassembly()
         int source_len;
         int source_pos;
 
-        read_row(addr, row_bytes, 3);
+        decode_row(addr, row_bytes, &decoded);
         memset(line, ' ', sizeof(line));
         line[MONITOR_DISASM_ROW_CHARS] = 0;
-        disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
-        monitor_disasm_tail_cutover(addr, &decoded);
         dump_hex_word(line, 0, addr);
         line[4] = ' ';
         dump_hex_byte(line, 5, row_bytes[0]);
@@ -4802,6 +4927,11 @@ bool MachineMonitor :: opcode_picker_commit_typed()
     for (uint8_t i = 0; i < insn.length; i++) {
         canonical_write((uint16_t)(state.current_addr + i), insn.bytes[i]);
     }
+    // Assembling a line says an instruction starts here, which is exactly what
+    // a baseline is, so this becomes the new one. Without it, a line assembled
+    // above the old baseline and reaching across it would be shown as the data
+    // it displaced rather than as the instruction just typed.
+    asm_baseline = state.current_addr;
 
     opcode_picker_close();
     step_disassembly(1);
@@ -4934,7 +5064,12 @@ int MachineMonitor :: handle_key(int key)
         // execute as a normal monitor command (so e.g. pressing H from the
         // help screen actually launches Hunt instead of leaving help open).
         help_visible = false;
-        if (key == KEY_ESCAPE || key == monitor_key_arrow_left || monitor_key_is_bookmark_action(key)) {
+        // Back closes exactly one layer, and help is a layer: RUN/STOP and the
+        // left-arrow key close it without also leaving the monitor. '?' is the
+        // other way in, so it is also the way out; without this it would fall
+        // through to toggle_help() below and reopen what was just closed.
+        if (key == KEY_BREAK || key == KEY_ESCAPE || key == monitor_key_arrow_left ||
+            key == '?' || monitor_key_is_bookmark_action(key)) {
             draw();
             return 0;
         }
@@ -5414,9 +5549,11 @@ int MachineMonitor :: handle_key(int key)
             return 1;
         case 'j': case 'J':
         {
-            char jump_buffer[5];
+            // Every prompt buffer holds max_len characters plus the
+            // terminator, which is what UIStringEdit writes.
+            char jump_buffer[6];
             strcpy(jump_buffer, "AAAA");
-            if (prompt_command("Jump AAAA", jump_buffer, sizeof(jump_buffer), true)) {
+            if (prompt_command(monitor_input_jump, jump_buffer, sizeof(jump_buffer) - 1)) {
                 error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
                     apply_go_local(address);
@@ -5433,9 +5570,9 @@ int MachineMonitor :: handle_key(int key)
             break;
         case 'f': case 'F':
         {
-            char fill_buffer[13];
+            char fill_buffer[14];
             strcpy(fill_buffer, "AAAA-BBBB,DD");
-            if (prompt_command("Fill AAAA-BBBB,DD", fill_buffer, sizeof(fill_buffer), true)) {
+            if (prompt_command(monitor_input_fill, fill_buffer, sizeof(fill_buffer) - 1)) {
                 error = monitor_parse_fill(fill_buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
                     monitor_fill_memory(backend, start, end, byte_value);
@@ -5447,9 +5584,9 @@ int MachineMonitor :: handle_key(int key)
         }
         case 't': case 'T':
         {
-            char transfer_buffer[15];
+            char transfer_buffer[16];
             strcpy(transfer_buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Transfer AAAA-BBBB,CCCC", transfer_buffer, sizeof(transfer_buffer), true)) {
+            if (prompt_command(monitor_input_transfer, transfer_buffer, sizeof(transfer_buffer) - 1)) {
                 error = monitor_parse_transfer(transfer_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     monitor_transfer_memory(backend, start, end, dest);
@@ -5461,9 +5598,9 @@ int MachineMonitor :: handle_key(int key)
         }
         case 'c': case 'C':
         {
-            char compare_buffer[15];
+            char compare_buffer[16];
             strcpy(compare_buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Compare AAAA-BBBB,CCCC", compare_buffer, sizeof(compare_buffer), true)) {
+            if (prompt_command(monitor_input_compare, compare_buffer, sizeof(compare_buffer) - 1)) {
                 error = monitor_parse_compare(compare_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
                     int found = monitor_compare_collect(backend, start, end, dest,
@@ -5483,7 +5620,7 @@ int MachineMonitor :: handle_key(int key)
         {
             char hunt_buffer[36];
             strcpy(hunt_buffer, "0000-FFFF, ");
-            if (prompt_hunt_command("Hunt AAAA-BBBB,...", hunt_buffer, sizeof(hunt_buffer) - 1)) {
+            if (prompt_command(monitor_input_hunt, hunt_buffer, sizeof(hunt_buffer) - 1)) {
                 error = monitor_parse_hunt(hunt_buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
                     int found = monitor_hunt_collect(backend, start, end, needle, needle_len,
@@ -5596,7 +5733,7 @@ void MachineMonitor::handle_load_command()
         sprintf(tail, "%X", (unsigned)last_load_length);
         strcat(buffer, tail);
     }
-    if (!prompt_command("Load [PRG|AAAA],[Offs],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command(monitor_input_load, buffer, sizeof(buffer) - 1)) {
         redraw_full();
         return;
     }
@@ -5644,7 +5781,7 @@ void MachineMonitor::handle_save_command()
     // before opening the picker on an obviously invalid range.
     char range_buf[16];
     sprintf(range_buf, "%04X-%04X", last_save_start, last_save_end);
-    if (!prompt_command("Save AAAA-BBBB", range_buf, sizeof(range_buf) - 1, true)) {
+    if (!prompt_command(monitor_input_save, range_buf, sizeof(range_buf) - 1)) {
         return;
     }
     uint16_t start = 0;
@@ -5772,7 +5909,7 @@ bool MachineMonitor::handle_go_command()
         return false;
     }
     sprintf(buffer, "%04X", default_addr);
-    if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command(monitor_input_go, buffer, sizeof(buffer) - 1)) {
         return false;
     }
     uint16_t address = 0;

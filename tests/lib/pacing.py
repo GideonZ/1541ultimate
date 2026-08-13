@@ -131,16 +131,28 @@ SEEK_CHANGE_TIMEOUT_SECONDS = _seconds("U64_UI_SEEK_CHANGE_TIMEOUT", 0.4)
 
 # Telnet is a stream, so redraw completion uses quiet periods:
 #
-#   FIRST_BYTE waits for a redraw to start; it stays bounded because some keys
-#              legitimately draw nothing. U2+L session transitions need up to
-#              25s late in a run.
+#   FIRST_BYTE waits for a redraw to start, and is bounded because some keys
+#              legitimately draw nothing at all: a command prompt refusing an
+#              impossible character emits not one byte. Measured over a whole
+#              monitor suite on both an Ultimate 64 and an Ultimate II+L,
+#              logging send-to-first-byte for every keystroke: the worst was
+#              101ms, entering the monitor with C=+O, and ordinary keys were
+#              25 to 60ms. 1s is ten times the worst measurement.
+#
+#              It was 25s for a while, to cover late-run U2+L transitions. That
+#              was two separate mistakes. A send that draws nothing now says so
+#              (Backend.send_key/send_char take expect_redraw=False), so it
+#              costs the quiet check below instead of the whole budget; and a
+#              caller waiting for a screen to reach a particular state polls
+#              for that state rather than for a redraw, which is both faster
+#              when it is already there and more patient when it is late.
 #   IDLE_GAP   ends an ordinary redraw. 0.15s is well above its observed
 #              intra-redraw byte gap.
 #   SETTLE_GAP ends a committed prompt or selected two-burst command. Its echo
 #              and redraw have content-dependent sizes, so elapsed quiet time,
 #              not bytes received, distinguishes the bursts. It is bounded by
 #              the caller timeout; 6s exceeds the observed inter-burst gap.
-TELNET_FIRST_BYTE_TIMEOUT_SECONDS = _seconds("U64_UI_TELNET_FIRST_BYTE", 25.0)
+TELNET_FIRST_BYTE_TIMEOUT_SECONDS = _seconds("U64_UI_TELNET_FIRST_BYTE", 1.0)
 TELNET_IDLE_GAP_SECONDS = _seconds("U64_UI_TELNET_IDLE_GAP", 0.15)
 TELNET_SETTLE_GAP_SECONDS = _seconds("U64_UI_TELNET_SETTLE_GAP", 6.0)
 
@@ -160,7 +172,33 @@ TELNET_QUIET_CHECK_SECONDS = _seconds("U64_UI_TELNET_QUIET_CHECK", 0.15)
 # is what a "Save as" field in the machine monitor was intermittently read
 # empty without: the screen was captured after the field had been cleared but
 # before any of the typed name had arrived.
+#
+# That measurement is of a machine that is its own computer, where a key sent
+# while the menu owns the keyboard is put straight into the firmware's own key
+# queue (software/api/route_input.cc apply_keyboard_menu_event -> push_head)
+# and never touches a keyboard matrix. See SPLIT_KEY_DRAIN_SECONDS for the
+# cartridge case, which is five times slower.
 KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
+
+# The same, for a cartridge target such as "u2@c64u".
+#
+# There the key is not delivered to the device under test at all. It is queued
+# as a tap on the live keyboard matrix of the computer the cartridge is plugged
+# into (route_input.cc apply_keyboard_event -> restQueueTap), and the cartridge
+# picks it up on its next scan of that matrix. The firmware holds each tap for
+# REST_KEYBOARD_TAP_HOLD_TICKS (60ms) and then waits REST_KEYBOARD_TAP_GAP_TICKS
+# (40ms) before the next one, so 100ms a key is the floor the hardware sets.
+#
+# Measured on u2@c64u, from a drained queue, as the time until the cursor had
+# moved by the whole batch: 1 key 69ms, 2 keys 186ms, 5 keys 458ms, 10 keys
+# 986ms, 15 keys 1462ms. That is 100ms a key after the first.
+#
+# Charging a batch the 20ms figure above is what made a quick-seek read its own
+# result before the seek had finished typing. The cursor moves on every
+# character, so a prefix whose leading characters match a different entry parks
+# the cursor on that entry until the rest of the prefix arrives, and the check
+# that reads it there concludes the search failed.
+SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.1)
 
 # A fixed pause, used only where there is nothing observable to poll: the C64
 # screen behind the menu, a config write with no readback, a popup that draws

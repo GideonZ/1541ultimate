@@ -27,6 +27,7 @@ from typing import Optional
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
@@ -77,7 +78,9 @@ def cleanup(host: str, directory: str, names) -> int:
     removed = 0
     try:
         ftp = ftplib.FTP()
-        ftp.connect(host, 21, timeout=20)
+        # The device's own FTP server, so a cartridge target means the
+        # cartridge; see tests/lib/targets.py.
+        ftp.connect(targets.device_of(host), 21, timeout=20)
         ftp.login()
         ftp.cwd(f"/{directory}")
         for n in names:

@@ -695,8 +695,15 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase)
 {
+    return string_box(msg, buffer, maxlen, template_mode, uppercase, 0);
+}
+
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
+                                const UIStringEditPolicy *policy)
+{
     UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen, template_mode);
     box->set_uppercase(uppercase);
+    box->set_policy(policy);
     box->init();
     screen->cursor_visible(1);
     int ret = 0;

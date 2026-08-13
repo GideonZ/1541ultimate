@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 
 SCREEN_BYTES = 2000
 SCREEN_COLS = 40
@@ -54,8 +55,23 @@ class Unrecoverable(RuntimeError):
 
 
 class Device:
+    """The device this gate drives, addressed through its target.
+
+    The two halves of this gate belong to different machines on a cartridge
+    target such as "u2@c64u": the menu screen, the menu button and the reset
+    are the cartridge's, while the keys that back out of a nested object have
+    to be injected into the computer it is plugged into, because the cartridge
+    answers machine:input with HTTP 501. Assuming one host for both is what
+    made the gate report "the root browser is not on top; a nested object
+    still holds the UI" for the whole of a U2 run: every unwind key went to the
+    cartridge, was refused, and nothing on the menu ever moved. See
+    tests/lib/targets.py.
+    """
+
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
+        self.input_host = self.target.input_host
         self.password = password
         self.timeout = timeout
 
@@ -68,7 +84,8 @@ class Device:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
-            f"http://{self.host}{path}", data=body, headers=headers, method=method
+            f"http://{self.target.host_for(path)}{path}",
+            data=body, headers=headers, method=method
         )
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry. The device serves few concurrent HTTP connections, so
@@ -152,6 +169,54 @@ class Device:
             pass
         time.sleep(1.0)
 
+    def computer_menu_open(self) -> bool:
+        """Whether the C64-side computer has its own menu up.
+
+        Only meaningful for a cartridge target. The computer's menu takes the
+        keyboard while it is open, so keys meant for the cartridge never reach
+        the C64 matrix it reads, and the cartridge's menu sits there unmoved
+        while every key is answered with HTTP 200. Reproduced directly: with
+        the computer's menu left open, RUN/STOP changed nothing on the
+        cartridge; with it closed, the same key closed the cartridge's menu.
+        """
+        if not self.target.split:
+            return False
+        headers = {"X-Password": self.password} if self.password else {}
+        request = urllib.request.Request(
+            f"http://{self.target.computer}/v1/machine:menu_screen",
+            headers=headers, method="GET")
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout):
+                return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise Unrecoverable(
+                f"the computer's menu_screen returned HTTP {exc.code}") from exc
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Unrecoverable(f"the computer stopped answering: {exc}") from exc
+
+    def clear_computer_menu(self) -> None:
+        """Get the computer's own menu out of the way of the cartridge."""
+        for _ in range(2):
+            if not self.computer_menu_open():
+                return
+            headers = {"X-Password": self.password} if self.password else {}
+            request = urllib.request.Request(
+                f"http://{self.target.computer}/v1/machine:menu_button",
+                data=b"", headers=headers, method="PUT")
+            try:
+                with rest_lib.retrying_urlopen(request, self.timeout):
+                    pass
+            except (OSError, TimeoutError, urllib.error.URLError,
+                    urllib.error.HTTPError):
+                pass
+            time.sleep(MENU_SETTLE_SECONDS)
+        if self.computer_menu_open():
+            raise Unrecoverable(
+                f"{self.target.computer} keeps its own menu open, so keys "
+                f"cannot reach {self.target.device}")
+
     def wait_menu(self, want_open: bool) -> bool:
         deadline = time.monotonic() + MENU_TOGGLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
@@ -159,6 +224,29 @@ class Device:
                 return True
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return False
+
+    def wait_screen_change(self, before: List[str]) -> Optional[List[str]]:
+        """The screen once it differs from `before`.
+
+        Returns None if the menu closed, and `before` unchanged if the screen
+        never moved within the timeout, so a caller that only needs the latest
+        state can use the result without checking which happened.
+
+        A keystroke does not land at the same speed everywhere. Injected into
+        the machine it drives, it is applied almost at once; injected into the
+        computer a cartridge is plugged into, it goes out over REST, into that
+        computer's C64 keyboard matrix, and is picked up when the cartridge
+        next scans it. One sample taken straight after the key reads the
+        screen the key has not reached yet, and every decision made from it is
+        about a state that no longer exists a moment later.
+        """
+        deadline = time.monotonic() + MENU_TOGGLE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            after = self.screen()
+            if after is None or after != before:
+                return after
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        return before
 
 
 def describe(rows: List[str]) -> str:
@@ -226,10 +314,13 @@ def describe_open_menu(device: Device) -> str:
         close_menu(device)
         return problem
     device.tap(["run_stop"])
-    if device.menu_is_open():
-        close_menu(device)
-        return "the root browser is not on top; a nested object still holds the UI"
-    return ""
+    # Waited for rather than sampled: see Device.wait_screen_change. Reading
+    # once here called a cartridge target dirty on every suite, and then
+    # pressed the menu button against a RUN/STOP that was still in flight.
+    if device.wait_menu(want_open=False):
+        return ""
+    close_menu(device)
+    return "the root browser is not on top; a nested object still holds the UI"
 
 
 def unwind(device: Device) -> None:
@@ -249,18 +340,18 @@ def unwind(device: Device) -> None:
         rows = device.screen()
         if rows is None:
             return
-        before = rows[PATH_ROW]
         # LEFT leaves a directory or disk, which is what the menu's own help
         # calls "go one level up". RUN/STOP leaves the menu or backs out of a
         # nested object, so it cannot walk the path.
         device.tap(["left_shift", "cursor_left_right"])
-        after = device.screen()
+        after = device.wait_screen_change(rows)
         if after is None:
             return
-        if after[PATH_ROW] == before:
+        if after[PATH_ROW] == rows[PATH_ROW]:
             # The path did not move, so this is a nested object rather than a
             # directory. Back out of it instead.
             device.tap(["run_stop"])
+            device.wait_screen_change(after)
 
 
 def repair(device: Device) -> None:
@@ -318,6 +409,9 @@ def verify(device: Device) -> str:
     Observing costs one menu open and close, and leaves the menu closed on every
     path.
     """
+    # On a cartridge target the computer's own menu has to be out of the way
+    # first, or every key below is delivered to it instead.
+    device.clear_computer_menu()
     if device.menu_is_open():
         close_menu(device)
         return "the menu was left open"
@@ -355,7 +449,7 @@ def diagnose(device: Device) -> List[str]:
     # stopped reading them. RUN/STOP is used because it is the one key that
     # cannot activate anything.
     device.tap(["run_stop"])
-    after = device.screen()
+    after = device.wait_screen_change(rows)
     if after is None:
         lines.append("RUN/STOP closed the menu, so the UI is reading keys")
     elif after == rows:

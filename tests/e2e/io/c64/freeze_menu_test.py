@@ -25,9 +25,11 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
-from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok, warn
+from report import (Failure, check, check_skip, check_start, detail, format_exception,
+                    section, suite_fail, suite_ok, warn)
 
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
@@ -65,7 +67,8 @@ WEDGE_HINT = (
 
 class RestSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -76,7 +79,9 @@ class RestSession:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        return f"http://{self.target.host_for(path)}{path}{query}"
 
     def request(
         self,
@@ -134,6 +139,23 @@ class RestSession:
         if not isinstance(current, str):
             raise Failure(f"config '{item}' has no string 'current': {data!r}")
         return current
+
+    def has_config(self, store: str, item: str) -> bool:
+        """Whether this machine serves that setting at all.
+
+        Hardware with no Overlay mode has no "Interface Type" to choose, so the
+        setting is simply absent rather than present and fixed: an Ultimate
+        II+L answers GET /v1/configs/User Interface Settings with an empty
+        object. Everything this suite does is about switching between the two
+        interface types, so its absence is a reason to skip rather than a
+        failure to report.
+        """
+        status, _, body = self.request("GET", self.config_path(store, item))
+        if status != 200:
+            return False
+        data = json_object(f"config {item}", body)
+        entry = data.get(store, {})
+        return isinstance(entry, dict) and isinstance(entry.get(item), dict)
 
     def set_config(self, store: str, item: str, value: str) -> None:
         status, _, body = self.request("PUT", self.config_path(store, item), params={"value": value})
@@ -500,6 +522,12 @@ def main() -> int:
 
     session.close_menu_from_anywhere()
     session.reset()
+    if not session.has_config(UI_STORE, UI_ITEM):
+        check_start(f"this machine offers a '{UI_ITEM}' to switch")
+        check_skip(f"no '{UI_ITEM}' setting on this machine, so there is no "
+                   f"Overlay mode to switch away from and back to")
+        suite_ok("freeze_menu_test")
+        return 0
     initial_interface = session.get_config(UI_STORE, UI_ITEM)
     initial_mirroring = session.get_config(SID_STORE, SID_ITEM)
     detail(f"captured '{UI_ITEM}'={initial_interface}, '{SID_ITEM}'={initial_mirroring}")

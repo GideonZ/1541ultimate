@@ -20,6 +20,7 @@ other suite relies on it.
 import argparse
 import os
 import sys
+import time
 from typing import Sequence
 
 # tests/lib holds the reporting rules every suite shares; ui_backend sits
@@ -27,13 +28,23 @@ from typing import Sequence
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pacing
 import rest as rest_lib
+import targets
 from report import Failure, check, format_exception, section, suite_fail, suite_ok
-from ui_backend import (Backend, RestBackend, Snapshot, TelnetBackend,
-                        plan_overlay_navigation)
+from ui_backend import (SCREEN_CELLS, SCREEN_WIDTH, Backend, RestBackend,
+                        Snapshot, TelnetBackend, find_cursor_colour,
+                        find_selected_row_rest, plan_overlay_navigation)
 
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
+
+# How long a quick-seek gets to show up on screen. A key does not land at the
+# same speed on every target: injected into the machine it drives it is applied
+# almost at once, while on a cartridge target it goes out over REST, into the
+# keyboard matrix of the computer the cartridge is plugged into, and reaches
+# the cartridge on its next scan of that matrix. See tests/lib/targets.py.
+SEEK_TIMEOUT_SECONDS = 5.0
 
 # Root-browser entry rows, by transport: REST's menu_screen is the full
 # 25-row physical screen (row 24 is the status/help line); Telnet's remote
@@ -102,6 +113,122 @@ def run_navigation_planner_checks() -> None:
             raise Failure(f"expected at most two keys, got {prefix!r} {delta:+d}")
 
 
+def build_menu_planes(entries: Sequence[str], selected: int, listing_colour: int,
+                      selected_colour: int, background: int = 0) -> "tuple[bytes, bytes]":
+    """The char and colour planes machine:menu_screen would return for a listing."""
+    chars = bytearray(b" " * SCREEN_CELLS)
+    colours = bytearray(SCREEN_CELLS)
+    for index, text in enumerate(entries):
+        row = ROOT_ENTRY_ROWS_REST[0] + index
+        padded = text.ljust(SCREEN_WIDTH)[:SCREEN_WIDTH]
+        start = row * SCREEN_WIDTH
+        chars[start:start + SCREEN_WIDTH] = padded.encode("ascii")
+        code = selected_colour if index == selected else listing_colour
+        marked = (background << 4) | code if index == selected else code
+        colours[start:start + SCREEN_WIDTH] = bytes([marked]) * SCREEN_WIDTH
+    return bytes(chars), bytes(colours)
+
+
+def run_selected_row_checks() -> None:
+    """Reading the cursor row out of a colour plane, without a device.
+
+    The rule is that a listing draws every unselected entry in one colour and
+    the selected one in another. Both halves matter: firmware that marks the
+    cursor with a background colour, and firmware whose menu_screen carries no
+    background nibble at all, which is what an Ultimate II+L returns.
+    """
+    entries = ["Flash   Flash Disk             Ready",
+               "Temp    RAM Disk               Ready",
+               "USB0    SanDisk 3.2Gen1        Ready",
+               "Ftp     Remote FTP Servers     Ready"]
+
+    with check("a background-marked cursor row is found"):
+        chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
+                                           selected_colour=1, background=6)
+        row = find_selected_row_rest(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if row != ROOT_ENTRY_ROWS_REST[0] + 2:
+            raise Failure(f"expected row {ROOT_ENTRY_ROWS_REST[0] + 2}, got {row}")
+
+    with check("a cursor row marked by foreground colour alone is found"):
+        # No background nibble anywhere, so every entry row has the same number
+        # of coloured cells and only the colour itself tells them apart.
+        chars, colours = build_menu_planes(entries, selected=1, listing_colour=12,
+                                           selected_colour=1)
+        row = find_selected_row_rest(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if row != ROOT_ENTRY_ROWS_REST[0] + 1:
+            raise Failure(f"expected row {ROOT_ENTRY_ROWS_REST[0] + 1}, got {row}")
+
+    with check("the first entry is found when it is the selected one"):
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        row = find_selected_row_rest(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if row != ROOT_ENTRY_ROWS_REST[0]:
+            raise Failure(f"expected row {ROOT_ENTRY_ROWS_REST[0]}, got {row}")
+
+    with check("a cursor that colours only the name field is still found"):
+        # A disk image listing, copied from an Ultimate II+L showing a D64 with
+        # one program: the volume row is one colour across its whole width, and
+        # the selected row carries the cursor colour on its name and another
+        # colour on the size and type columns. The cursor colour is therefore
+        # not the selected row's commonest colour, and the volume row has more
+        # coloured cells than it.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        volume = ROOT_ENTRY_ROWS_REST[0]
+        program = volume + 1
+        for row, text, plan in (
+                (volume, "DMATEST           64 2A       VOLUME", [(0, SCREEN_WIDTH, 6)]),
+                (program, "DMATESTPROGRAM01              PRG  254",
+                 [(0, 16, 1), (16, SCREEN_WIDTH, 7)])):
+            start = row * SCREEN_WIDTH
+            chars[start:start + SCREEN_WIDTH] = text.ljust(SCREEN_WIDTH).encode("ascii")
+            for first, last, code in plan:
+                for column in range(first, last):
+                    colours[start + column] = code
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != program:
+            raise Failure(f"expected the program row {program}, got {row}")
+
+    with check("a listing of three or more entries says which colour is the cursor"):
+        chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
+                                           selected_colour=1)
+        measured = find_cursor_colour(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if measured != 1:
+            raise Failure(f"expected the cursor colour 1, got {measured!r}")
+
+    with check("a background-marked screen teaches no foreground cursor colour"):
+        # An Ultimate 64 marks the cursor row with a background nibble, and
+        # those cells are not counted as foreground at all, so the colour a
+        # foreground scan would find there belongs to some unselected row.
+        # Taking it would then point every later read at the wrong row.
+        chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
+                                           selected_colour=1, background=6)
+        measured = find_cursor_colour(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if measured is not None:
+            raise Failure(f"expected no cursor colour, got {measured!r}")
+
+    with check("two entries need the colour the machine was measured to mark with"):
+        # The case a browser fixture directory produces: one seeded entry
+        # beside the Temp cache directory. Each row's colour is then unique, so
+        # the odd-colour rule has two answers and the screen alone cannot say
+        # which is the cursor. Reproduced on an Ultimate II+L before the colour
+        # was carried: the cursor sat on the second entry and the first was
+        # reported, so a caller looking for the second never found it.
+        pair = ["cache                         DIR",
+                "zbfr636996653                 DIR"]
+        chars, colours = build_menu_planes(pair, selected=1, listing_colour=12,
+                                           selected_colour=1)
+        blind = find_selected_row_rest(chars, colours, ROOT_ENTRY_ROWS_REST)
+        if blind != ROOT_ENTRY_ROWS_REST[0]:
+            raise Failure(f"expected the ambiguous answer {ROOT_ENTRY_ROWS_REST[0]}, "
+                          f"got {blind}")
+        row = find_selected_row_rest(chars, colours, ROOT_ENTRY_ROWS_REST,
+                                     cursor_colour=1)
+        if row != ROOT_ENTRY_ROWS_REST[0] + 1:
+            raise Failure(f"expected row {ROOT_ENTRY_ROWS_REST[0] + 1}, got {row}")
+
+
 def assert_looks_like_root_browser(snapshot: Snapshot) -> None:
     text = snapshot.text()
     printable = sum(1 for ch in text if ch not in (" ",))
@@ -121,6 +248,24 @@ def path_row(snapshot: Snapshot) -> str:
         if text.startswith("/"):
             return text.split()[0]
     raise Failure(f"no path row found after {snapshot.last_command}\n{snapshot.text()}")
+
+
+def seek_to(backend: Backend, entry_rows: Sequence[int], character: str,
+            label: str) -> "tuple[Snapshot, int]":
+    """Quick-seek on `character` and wait until the cursor is on `label`.
+
+    Returns the snapshot the cursor was found in and its row. A single capture
+    taken straight after the key would read the screen the key has not reached
+    yet on a target where it travels through another machine's keyboard matrix.
+    """
+    snapshot = backend.send_char(character)
+    deadline = time.monotonic() + SEEK_TIMEOUT_SECONDS
+    while True:
+        row = backend.selected_row(entry_rows)
+        if label in snapshot.line(row) or time.monotonic() >= deadline:
+            return snapshot, row
+        time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        snapshot = backend.capture()
 
 
 def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
@@ -150,7 +295,7 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         # wrong directory, which the resulting path would catch. "Temp"
         # already appears as a row label at the root, so this checks the
         # browser's own path indicator rather than screen content generally.
-        backend.send_char("t")
+        seek_to(backend, entry_rows, "t", "Temp")
         entered_path = path_row(backend.send_key("RIGHT"))
         if not entered_path.startswith("/Temp"):
             raise Failure(f"quick-seek on 't' + RIGHT did not enter /Temp: path was {entered_path!r}")
@@ -167,8 +312,7 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         # that REST and Telnet implement with different colour encodings.
         # This must be checked directly: it can regress while every check
         # above stays green, since none of them call selected_row().
-        snapshot = backend.send_char("t")
-        row = backend.selected_row(entry_rows)
+        snapshot, row = seek_to(backend, entry_rows, "t", "Temp")
         if "Temp" not in snapshot.line(row):
             raise Failure(
                 f"selected_row() returned row {row} ({snapshot.line(row)!r}) after quick-seeking to 't'; "
@@ -177,7 +321,9 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
 
 
 def run_telnet_smoke(host: str, port: int, password: str, timeout: float) -> None:
-    backend = TelnetBackend(host, port, password or None, timeout)
+    # Telnet is a session on the device itself, so a cartridge target connects
+    # to the cartridge; only REST keyboard injection needs the companion.
+    backend = TelnetBackend(targets.device_of(host), port, password or None, timeout)
     try:
         run_backend_smoke(backend, ROOT_ENTRY_ROWS_TELNET)
     finally:
@@ -203,6 +349,9 @@ def main() -> int:
     try:
         section("Overlay navigation planner")
         run_navigation_planner_checks()
+
+        section("Cursor row from the colour plane")
+        run_selected_row_checks()
 
         section("Telnet backend")
         with check("Telnet: connect, navigate, teardown"):

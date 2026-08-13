@@ -108,6 +108,10 @@ public:
     virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
     virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode); // blocking
     virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase); // blocking
+    // The same blocking string box, with an opt-in input policy: see
+    // UIStringEditPolicy. A NULL policy is the ordinary field above.
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
+                            const UIStringEditPolicy *policy); // blocking
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)

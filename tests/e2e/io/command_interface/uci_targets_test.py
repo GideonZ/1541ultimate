@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 import ftp as ftp_lib
 import rest as rest_lib
+import targets
 from report import (
     FAIL, Failure, OK, SKIP, check, detail, format_exception, section, suite_fail, suite_ok, warn)
 
@@ -206,13 +207,23 @@ def as_int32(reply: bytes) -> int:
 
 class RestSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
+        # The command interface registers are decoded on the C64 expansion bus,
+        # not inside the cartridge, so the machine that reads them back has to
+        # be the one driving that bus. A cartridge cannot read its own decode
+        # through its own DMA cycle: measured on u2@c64u with the interface
+        # enabled, $DF1B-$DF1F read back 0B 00 DD 00 1C from the cartridge and
+        # 0B 00 C9 00 00 from the computer, where $DF1D = $C9 is the
+        # identification byte. Only these registers move; everything else this
+        # suite reads is ordinary memory and stays with the cartridge.
+        self.register_host = self.target.computer
         self.password = password
         self.timeout = timeout
 
     def request(self, method: str, path: str, params: Optional[Dict[str, object]] = None,
-                repeatable: bool = False) -> Tuple[int, bytes]:
-        url = f"http://{self.host}{path}"
+                repeatable: bool = False, host: Optional[str] = None) -> Tuple[int, bytes]:
+        url = f"http://{host or self.target.host_for(path)}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
         headers = {"X-Password": self.password} if self.password else {}
@@ -237,7 +248,8 @@ class RestSession:
 
     def peek(self, address: int, repeatable: bool = False) -> int:
         status, body = self.request(
-            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": 1}, repeatable=repeatable
+            "GET", READMEM_PATH, params={"address": f"{address:04x}", "length": 1},
+            repeatable=repeatable, host=self.register_host
         )
         if status != 200 or len(body) != 1:
             raise Failure(f"readmem(${address:04X}) failed with HTTP {status}: {body[:200]!r}")
@@ -245,7 +257,8 @@ class RestSession:
 
     def poke(self, address: int, value: int) -> None:
         status, body = self.request(
-            "PUT", WRITEMEM_PATH, params={"address": f"{address:04x}", "data": f"{value:02x}"}
+            "PUT", WRITEMEM_PATH, params={"address": f"{address:04x}", "data": f"{value:02x}"},
+            host=self.register_host
         )
         if status != 200:
             raise Failure(f"writemem(${address:04X}, ${value:02X}) failed with HTTP {status}: {body[:200]!r}")
@@ -290,7 +303,7 @@ class FtpFixture:
     """Files this suite puts on the device, over FTP because REST cannot delete."""
 
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.host = targets.device_of(host)
         self.password = password or ""
         self.timeout = timeout
         self.created: List[str] = []

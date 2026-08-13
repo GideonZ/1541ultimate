@@ -13,13 +13,32 @@ To open the monitor, use one of the following:
 - Press `C=+O`.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`.
 
-Open the built-in help with `?`.
+`C=+O` also closes the monitor from the memory views and from the Number,
+Hunt-result and opcode popups. It is not read while a command prompt, the
+Number calculator or the Bookmarks popup is open; leave those with Back first.
 
-To close the monitor:
+Open the built-in help with `?` or with the mapped help key, which is `F3` in
+the default key mapping. `?`, the help key, `RUN/STOP` and `←` all close help
+again without leaving the monitor. Any other command key closes help and then
+runs that command.
 
-- Press `C=+O` again.
-- Press `RUN/STOP` when no edit operation or popup is active.
-- Press the top-left `←` key to leave a popup or edit mode, then close the monitor. In ASCII and Screen edit views it enters that character.
+### Back
+
+`RUN/STOP` and the C64's top-left `←` key are the same Back action, and each
+press removes exactly one active interaction layer:
+
+| What is active | What Back does |
+| --- | --- |
+| Help | Closes help |
+| A number expression | Returns to the Number popup |
+| A popup: Number, Bookmarks, opcode completion, Hunt or Compare results | Closes that popup |
+| A command prompt | Cancels the prompt |
+| Inline edit mode | Leaves edit mode |
+| Nothing of the above | Leaves the monitor |
+
+There is one exception. Where `←` is valid data it stays data: in ASCII and
+Screen edit mode it types its character, and on the ASCII and Screen rows of
+the Number popup it types its value. `RUN/STOP` is still Back in those places.
 
 ## Screen Layout
 
@@ -42,6 +61,13 @@ The monitor screen has three fixed regions:
 - `CPU0`..`CPU7` identify the selected CPU memory configuration.
 - `VIC0`..`VIC3` identify the selected VIC bank and its base address.
 - When jumping to a bookmark, the footer briefly shows bookmark information.
+- On a target without monitor-selected CPU banking, such as the Ultimate II+,
+  the footer reads `CPU VIEW` instead of `CPU0`..`CPU7`: the monitor shows the
+  memory the CPU currently sees and cannot select a different configuration.
+  VIC-bank selection remains available there, so the `VIC0`..`VIC3` half of the
+  footer is unchanged.
+- A target without VIC-bank support shows `VIC N/A` in place of `VIC0`..`VIC3`,
+  and one with neither shows `CPU VIEW  CPU BANK N/A  VIC N/A`.
 
 Example layout:
 
@@ -60,7 +86,7 @@ The monitor provides five primary views:
 | Key | View     | ID  | Purpose                         |
 | --- | -------- | --- | ------------------------------- |
 | `M` | Memory   | HEX | Hexadecimal byte view           |
-| `A` | Assembly | ASM | Disassembly and inline assembly |
+| `A`, `D` | Assembly | ASM | Disassembly and inline assembly |
 | `B` | Binary   | BIN | Bit-level byte view             |
 | `I` | ASCII    | ASC | ASCII byte view                 |
 | `V` | Screen   | SCR | Screen code view                |
@@ -100,18 +126,35 @@ Example:
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
 
+### I/O is data, not code
+
+While I/O is banked in, `$D000-$DFFF` is not memory: each read returns whatever
+the register holds at that instant, and the same address answers differently
+from one read to the next. Decoding those bytes as instructions would give a
+different instruction, and a different instruction length, on every redraw, and
+every row below would move with it while you were only scrolling.
+
+Assembly view therefore shows one row per address there, as `.BYTE $xx`, with
+the source marked `[IO]`. The rows stay where they are and each one shows what
+its register holds now.
+
+This follows what the address reads rather than where it is: with CHAR ROM or
+RAM banked into `$D000-$DFFF` instead, those addresses hold stable bytes that
+may well be code, and are disassembled normally. Every other region is always
+disassembled.
+
 Example:
 
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF9 FF           ???             [IO]|
-|DFFA 00           BRK             [IO]|
-|DFFB 00           BRK             [IO]|
-|DFFC FF           ???             [IO]|
-|DFFD 00           BRK             [IO]|
-|DFFE 00           BRK             [IO]|
-|DFFF 00           BRK             [IO]|
+|DFF9 FF           .BYTE $FF       [IO]|
+|DFFA 00           .BYTE $00       [IO]|
+|DFFB 12           .BYTE $12       [IO]|
+|DFFC FF           .BYTE $FF       [IO]|
+|DFFD 00           .BYTE $00       [IO]|
+|DFFE 3C           .BYTE $3C       [IO]|
+|DFFF 00           .BYTE $00       [IO]|
 |E000 85 56        STA $56     [KERNAL]|
 |E002 20 0F BC     JSR $BC0F   [KERNAL]|
 |E005 A5 61        LDA $61     [KERNAL]|
@@ -267,7 +310,7 @@ Some keys modify the current view instead of switching to another view.
 | ----------- | ---------------------------------------------------------------- |
 | Assembly    | Toggles undocumented opcodes                                     |
 | Screen      | Toggles the monitor-local screen charset between `U/G` and `L/U` |
-| Other views | Ignored                                                          |
+| Other views | Shows `UNDOC IN ASM, CASE IN SCR`                                |
 
 In Assembly view, enabling undocumented opcodes affects how bytes are decoded and how assembly completion behaves.
 
@@ -281,9 +324,9 @@ In Screen view, `U` changes only the monitor-local interpretation of screen code
 | -------- | ------------------------------------ |
 | Memory   | Cycles `8 <-> 16` bytes per row      |
 | Binary   | Cycles `1 -> 2 -> 3 -> 3S -> 4 -> 1` |
-| ASCII    | Fixed-width, 32 bytes per row        |
-| Screen   | Fixed-width, 32 bytes per row        |
-| Assembly | Variable-width, 1 to 3 bytes         |
+| ASCII    | Fixed-width, 32 bytes per row; shows `WIDTH ONLY IN MEMORY/BINARY VIEW` |
+| Screen   | Fixed-width, 32 bytes per row; shows the same message |
+| Assembly | Variable-width, 1 to 3 bytes; shows the same message |
 
 Binary width details:
 
@@ -297,12 +340,48 @@ Binary width details:
 - `G`: exit the monitor and execute from an address.
 - Use the configured page-up/page-down keys, `Shift+Space`, or `Space` to page.
 - `Enter`: in Assembly view, follow the target of a jumpable instruction, or return to the most recent saved source location when the current instruction is not jumpable and the follow stack is non-empty.
-- `O`: cycle CPU port banking, `CPU0`..`CPU7`.
-- `Shift+O`: cycle the VIC bank override.
-- `Z`: toggle freeze when the backend supports it.
-- `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet.
+
+Assembly view disassembles forward from the address it was last sent to. `J`,
+`G`, a bookmark jump, a hunt result and a follow or return all set that
+baseline; moving with the cursor or the page keys does not.
+
+Two rules follow from it. No row may reach across the baseline. Everything
+above it still disassembles normally; the exception is the one or two bytes
+immediately in front of it, and only when they would decode as an instruction
+whose last byte falls on or past the baseline. Those are shown as `.BYTE`,
+because an instruction read from them would swallow the baseline row and shift
+every row below it. Nothing further up is affected. And moving up is
+measured rather than guessed: the view disassembles forward from further back
+than the rows being moved over can span and counts the rows that land on the
+current one, so moving back down retraces the same instruction boundaries.
+Walking up from a baseline and back down therefore returns to it and shows the
+same instructions it showed before.
+- `O`: cycle CPU port banking, `CPU0`..`CPU7`. On a target without
+  monitor-selected CPU banking this shows `CPU BANK UNAVAILABLE`.
+- `Shift+O`: cycle the VIC bank override. Without VIC-bank support this shows
+  `VIC BANK UNAVAILABLE`.
+- `Z`: toggle freeze. Outside Overlay mode this shows
+  `FREEZE ONLY IN OVERLAY MODE`, and on a target with no freezer at all,
+  `FREEZE UNAVAILABLE`.
+- `P`: toggle poll mode in the local monitor. Over telnet this shows
+  `POLL MODE UNAVAILABLE OVER TELNET`.
 
 Addresses in command prompts are hexadecimal.
+
+### Command prompt input
+
+A command prompt refuses a character that could not appear in any command it
+would accept. Nothing is inserted, the cursor does not move, and a pre-filled
+template is left alone, so an impossible key has no effect at all rather than
+producing an error after `Return`.
+
+Anything that could still become a valid command stays typeable, so a partly
+typed `0800-`, `PRG,` or `"unfinished text` is accepted while it is being
+written. Range, value and length errors are still reported when the command is
+submitted, because those depend on meaning rather than on spelling.
+
+`Save as` filenames and bookmark labels are free text and take any printable
+character.
 
 ### Follow/Return
 
@@ -348,7 +427,7 @@ Cartridges can further affect the CPU-visible memory map through the expansion-p
 All views support editing:
 
 - `E`: enter edit mode.
-- `C=+E`, `RUN/STOP`, or the top-left `←` key: leave edit mode. In ASCII and Screen views that key enters its character.
+- `C=+E`, `RUN/STOP`, or the top-left `←` key: leave edit mode. In ASCII and Screen views `←` enters its character instead; use `RUN/STOP` or `C=+E` there.
 
 Edit behavior is view-specific:
 
@@ -357,7 +436,7 @@ Edit behavior is view-specific:
 | Memory   | Type two hex nibbles to write one byte                                      |
 | ASCII    | Type printable ASCII characters directly                                    |
 | Screen   | Type screen characters using the active Screen charset mode                 |
-| Binary   | Type `0` or `Space` to clear the selected bit; type `1` or `*` to set it    |
+| Binary   | Type `0`, `.` or `Space` to clear the selected bit; type `1` or `*` to set it |
 | Assembly | Edit instructions inline with mnemonic completion and direct operand typing |
 
 In edit mode, `Space` remains view-specific data entry and does not page.
@@ -366,8 +445,8 @@ In edit mode, `Space` remains view-specific data entry and does not page.
 
 | View         | `DEL` behavior                                  |
 | ------------ | ----------------------------------------------- |
-| Memory       | Writes `$00` and advances                       |
-| ASCII/Screen | Writes a space                                  |
+| Memory       | Writes `$00` and moves right                    |
+| ASCII/Screen | Writes a space and moves left                   |
 | Binary       | Clears the selected bit                         |
 | Assembly     | Replaces the current instruction with `NOP` bytes |
 
@@ -400,13 +479,13 @@ The number tool is a compact base-conversion and overwrite popup for the current
 
 In Assembly view, the number tool targets the operand bytes of the current instruction when possible.
 
-The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views.
+The ASCII and Screen rows in the number tool use the same mappings as the ASCII and Screen views, including the top-left `←` key, which types its character on those two rows instead of closing the popup.
 
 ### Calculator
 
 In the Number popup, press `+`, `-`, `*`, or `/` to open the calculator. The expression is initialized with the current value and the selected operator.
 
-Press `Return` or `=` to evaluate the expression. Press `RUN/STOP` to cancel. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
+Press `Return` or `=` to evaluate the expression. Press `RUN/STOP` or `←` to leave the expression and return to the Number popup. On success, the popup returns to the compact conversion layout and refreshes all rows with the result.
 
 Expressions may contain one or more values separated by `+`, `-`, `*`, or `/`.  * and / are evaluated before + and -. Division is unsigned integer division and truncates toward zero.
 
@@ -440,14 +519,19 @@ The monitor includes direct bulk memory commands:
 | Key | Command  | Syntax                                   | Result                                                                |
 | --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest`                         | Copy a range to a destination                                         |
-| `C` | Compare  | `start-end,dest`                         | Compare a range against another location and list differing addresses |
+| `T` | Transfer | `start-end,dest`                         | Copy `end - start` bytes to a destination. Unlike Fill, Hunt and Save, the byte at `end` is not included |
+| `C` | Compare  | `start-end,dest`                         | Compare `end - start` bytes against another location and list differing addresses, on the same exclusive end |
 | `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
 
-`Hunt` opens a result picker:
+Every address and value is hexadecimal and may carry a `$` prefix, and spaces
+around the fields are ignored. `Hunt` bytes are written as hex pairs separated
+by spaces or run together; quoted text keeps the case it was typed in, while
+everything outside the quotes is normalised to upper case.
+
+`Hunt` and `Compare` open a result picker:
 
 - `Return`: jump to the selected match.
-- `RUN/STOP`: close the picker.
+- `RUN/STOP` or `←`: close the picker.
 
 ## File I/O
 
@@ -542,6 +626,7 @@ Bookmark popup controls:
 | `L`         | Edit the label                                    |
 | `DEL`       | Reset the slot to its default                     |
 | `0`..`9`    | Jump directly to that slot                        |
+| `RUN/STOP` or `←` | Close the popup                             |
 
 Default slots are aimed at common C64 locations:
 
