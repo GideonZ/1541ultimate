@@ -308,6 +308,39 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log, IndexedList<Confi
     return allOK;
 }
 
+// A .cfg written by this firmware never puts spaces around '=', so a file that
+// has been round-tripped is unaffected by any of this. A hand-edited one is
+// another matter, and enum labels make it worse: several are padded so the menu
+// can right align them ("  30", " ~45"), which means writing the obvious thing
+// by hand produces a value that used to be rejected outright.
+static const char *skip_leading_space(const char *s)
+{
+    while ((*s == ' ') || (*s == '\t')) {
+        s++;
+    }
+    return s;
+}
+
+static int length_without_trailing_space(const char *s)
+{
+    int n = (int)strlen(s);
+    while ((n > 0) && ((s[n - 1] == ' ') || (s[n - 1] == '\t'))) {
+        n--;
+    }
+    return n;
+}
+
+// Compares what is between the spaces, so " ~45" and "~45" are the same choice
+// while "12 kHz" keeps the space that belongs to it.
+static bool equal_ignoring_outer_space(const char *a, const char *b)
+{
+    a = skip_leading_space(a);
+    b = skip_leading_space(b);
+    int la = length_without_trailing_space(a);
+    int lb = length_without_trailing_space(b);
+    return (la == lb) && (strncasecmp(a, b, la) == 0);
+}
+
 t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
     char itemname[40];
@@ -323,23 +356,28 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
         }
         itemname[i] = line[i];
     }
-    if (strlen(itemname) == 0) {
+    // No config item is defined with padding around its name, so trimming the
+    // name can only help: it makes "Item = value" find the same item as
+    // "Item=value".
+    itemname[length_without_trailing_space(itemname)] = 0;
+    const char *name = skip_leading_space(itemname);
+    if (strlen(name) == 0) {
         log->format("Line %d: No item name.\n", linenr);
         return CFG_LINE_MALFORMED;
     }
     if (!valuestr) {
-        log->format("Line %d: No value given for item '%s'.\n", linenr, itemname);
+        log->format("Line %d: No value given for item '%s'.\n", linenr, name);
         return CFG_LINE_MALFORMED;
     }
     // now look for the store element with the itemname
-    ConfigItem *item = st->find_item(itemname);
+    ConfigItem *item = st->find_item(name);
     if (!item) {
         // Not an error: a .cfg from a machine with other hardware, or from
         // another firmware version, legitimately names items this one lacks.
         // printf goes to the syslog when one is configured.
         printf("Config: [%s] has no item '%s' (value '%s'); ignored.\n",
-               st->store_name.c_str(), itemname, valuestr);
-        log->format("Line %d: Item '%s' not found in this store [%s]; ignored.\n", linenr, itemname, st->store_name.c_str());
+               st->store_name.c_str(), name, valuestr);
+        log->format("Line %d: Item '%s' not found in this store [%s]; ignored.\n", linenr, name, st->store_name.c_str());
         return CFG_LINE_UNKNOWN;
     }
 
@@ -354,6 +392,10 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
             st->staleFlash = true;
         }
     } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC) || (item->definition->type == CFG_TYPE_STRPASS)) {
+        // Taken exactly as written, unlike an enum choice: a space in a string
+        // value can be deliberate, and a password is a string. Trimming here
+        // would silently change data rather than accept a different spelling of
+        // the same choice.
         if (strncmp(item->string, valuestr, item->definition->max) != 0) {
             strncpy(item->string, valuestr, item->definition->max);
             st->staleEffect = true;
@@ -362,7 +404,7 @@ t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *
     } else if (item->definition->type == CFG_TYPE_ENUM) {
         // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings
         for(int n = item->definition->min; n <= item->definition->max; n++) {
-            if (strcasecmp(valuestr, item->definition->items[n]) == 0) {
+            if (equal_ignoring_outer_space(valuestr, item->definition->items[n])) {
                 if (n != item->value) {
                     item->value = n;
                     st->staleEffect = true;

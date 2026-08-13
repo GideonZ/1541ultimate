@@ -162,8 +162,8 @@ int main(int argc, char **argv)
 
     printf("-- enum labels with spaces survive a round trip\n");
     /* An ARMSID writes "8580 Lowest Filt Freq= ~45" into a .cfg, padding and
-       all. Nothing trims either side, so the value has to match exactly the
-       way it was written -- including a label whose own name contains spaces. */
+       all. The padding is written verbatim and read back as the same choice,
+       including a label whose own name contains spaces. */
     sid->set_value(0x02, 1);   // " ~45"
     sid->set_value(0x03, 0);   // "12 kHz"
     MemFile pad;
@@ -184,6 +184,37 @@ int main(int argc, char **argv)
           "reading those values back is not an error");
     check(sid->get_value(0x02) == 1, "the padded label is matched exactly");
     check(sid->get_value(0x03) == 0, "the label with an inner space is matched");
+
+    printf("-- a hand-edited file may space things how it likes\n");
+    /* Nobody types the menu's alignment padding. "8580 Lowest Filt Freq=30" is
+       what a person writes for the choice the firmware spells "  30", and it
+       used to be rejected as an invalid choice. */
+    sid->set_value(0x02, 3);
+    sid->set_value(0x03, 2);
+    sid->set_value(0x01, 0);
+    MemFile hand;
+    IndexedList<ConfigStore *> loaded_hand(8, NULL);
+    StreamTextLog log_hand(4096);
+    hand.load("[SID Socket 1: PDsid]\n"
+              "8580 Lowest Filt Freq=30\n"          /* label is "  30" */
+              "8580 Highest Filt Freq=  12 kHz  \n" /* inner space kept */
+              "  Emulation Mode  =  8580  \n"       /* spaces around both */
+              "\n");
+    check(ConfigIO::S_read_from_file(&hand, &log_hand, loaded_hand),
+          "a hand-spaced file loads without error");
+    check(sid->get_value(0x02) == 0, "an unpadded value matches a padded label");
+    check(sid->get_value(0x03) == 0, "outer spaces are ignored, the inner one is not");
+    check(sid->get_value(0x01) == 1, "a padded item name finds its item");
+
+    printf("-- tolerance is not laxity\n");
+    sid->set_value(0x02, 1);
+    MemFile bogus;
+    IndexedList<ConfigStore *> loaded_bogus(8, NULL);
+    StreamTextLog log_bogus(4096);
+    bogus.load("[SID Socket 1: PDsid]\n8580 Lowest Filt Freq=31\n\n");
+    check(!ConfigIO::S_read_from_file(&bogus, &log_bogus, loaded_bogus),
+          "a value that is not a choice is still an error");
+    check(sid->get_value(0x02) == 1, "and the store keeps its previous value");
 
     printf("-- an unknown item is a warning, not a failure\n");
     MemFile unknown_item;
