@@ -439,37 +439,49 @@ def find_overlay_rows(chars: bytes, rows: Sequence[int]) -> Optional[range]:
     read exactly as it was. The header rule the menu draws across row 1 is a
     run of BOX_HORIZONTAL with no corners, so it is not mistaken for a frame.
     """
-    top: Optional[Tuple[int, int, int]] = None    # (row, left, right)
-    for row in range(SCREEN_HEIGHT):
-        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-        for left, code in enumerate(line):
-            if code != BOX_TOP_LEFT:
+    frames = _find_frames(chars)
+    if not frames:
+        return None
+    # The smallest frame is the one drawn last and the one with the keyboard:
+    # a dialog opened from a picker sits inside the picker's own frame, and
+    # the picker is no longer what a key would move.
+    top_row, bottom_row, left, _right = min(
+        frames, key=lambda frame: (frame[1] - frame[0]) * (frame[3] - frame[2]))
+    interior = [r for r in rows if top_row < r < bottom_row]
+    if interior and interior[0] == top_row + 1:
+        first_inside = chars[interior[0] * SCREEN_WIDTH + left + 1]
+        if (first_inside & 0x7F) in (0x00, 0x20):
+            interior = interior[1:]
+    # A frame with nothing selectable between its rules carries no cursor, so
+    # leave the caller reading the screen it was reading before.
+    return range(interior[0], interior[-1] + 1) if interior else None
+
+
+def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
+    """Every complete window frame on screen, as (top, bottom, left, right)."""
+    frames = []
+    for top_row in range(SCREEN_HEIGHT - 2):
+        line = chars[top_row * SCREEN_WIDTH:(top_row + 1) * SCREEN_WIDTH]
+        for left in range(SCREEN_WIDTH - 2):
+            if line[left] != BOX_TOP_LEFT:
                 continue
             for right in range(left + 2, SCREEN_WIDTH):
-                if line[right] == BOX_TOP_RIGHT:
-                    if all(code == BOX_HORIZONTAL for code in line[left + 1:right]):
-                        top = (row, left, right)
+                if line[right] != BOX_TOP_RIGHT:
+                    continue
+                if not all(code == BOX_HORIZONTAL
+                           for code in line[left + 1:right]):
                     break
-        if top is not None and top[0] == row:
-            break
-    if top is None:
-        return None
-    top_row, left, right = top
-    for row in range(top_row + 2, SCREEN_HEIGHT):
-        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-        if line[left] == BOX_BOTTOM_LEFT and line[right] == BOX_BOTTOM_RIGHT:
-            interior = [r for r in rows if top_row < r < row]
-            if interior and interior[0] == top_row + 1:
-                first_inside = chars[interior[0] * SCREEN_WIDTH + left + 1]
-                if (first_inside & 0x7F) in (0x00, 0x20):
-                    interior = interior[1:]
-            # A frame with nothing selectable between its rules carries no
-            # cursor, so leave the caller reading the screen it was reading
-            # before.
-            return range(interior[0], interior[-1] + 1) if interior else None
-        if line[left] != BOX_VERTICAL or line[right] != BOX_VERTICAL:
-            return None
-    return None
+                for bottom_row in range(top_row + 2, SCREEN_HEIGHT):
+                    below = chars[bottom_row * SCREEN_WIDTH:
+                                  (bottom_row + 1) * SCREEN_WIDTH]
+                    if (below[left] == BOX_BOTTOM_LEFT
+                            and below[right] == BOX_BOTTOM_RIGHT):
+                        frames.append((top_row, bottom_row, left, right))
+                        break
+                    if below[left] != BOX_VERTICAL or below[right] != BOX_VERTICAL:
+                        break
+                break
+    return frames
 
 
 @dataclass

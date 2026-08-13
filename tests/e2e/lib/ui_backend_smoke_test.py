@@ -283,6 +283,29 @@ def run_overlay_row_checks() -> None:
         if row != 4:
             raise Failure(f"expected the picker's only entry on row 4, got {row}")
 
+    with check("a dialog inside a picker is read, not the picker"):
+        # What the screen looks like after a copy completes: the Select Path
+        # picker is still drawn and an Ok dialog sits inside it. The dialog
+        # has the keyboard, so it is the window a caller is asking about.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
+                           items=["          Select Path", "<< Select Current Dir >>"],
+                           selected=1, listing_colour=12, selected_colour=1)
+        draw_framed_window(chars, colours, top=10, bottom=14, left=12, right=27,
+                           items=["Copy complete.", "", "      Ok"],
+                           selected=2, listing_colour=12, selected_colour=1)
+        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found != range(11, 14):
+            raise Failure(f"expected the dialog's rows 11-13, got {found}")
+        # Two drawn rows, each carrying a colour the other does not, is the
+        # tie the odd-colour rule cannot break, so this is asked the way a
+        # Browser asks it once the machine's cursor colour has been measured.
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != 13:
+            raise Failure(f"expected the dialog's Ok row 13, got {row}")
+
     with check("an untitled window keeps its first row"):
         # The task menu has no title, so its first interior row is a menu item
         # and excluding it would lose the item the cursor starts on.
