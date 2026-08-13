@@ -200,6 +200,14 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "assembly-search-leak",
           "tests/soak/io/c64/assembly_search_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Drives the filesystem-refresh matrix, the only way to reach the browser's
+    # bookkeeping for files that change underneath it: the entry it drops when a
+    # file is removed, and the listings the file manager builds to delete a
+    # directory recursively. Neither is visible over REST. Each iteration is a
+    # full matrix run, so this is the slowest suite in the soak set.
+    Suite("soak", "browser-refresh-leak",
+          "tests/soak/filemanager/browser_refresh_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # The stress profile is the bounded one, at about two minutes. The soak
     # profile runs for twelve hours, so it is opt-in through --soak-profile.
     Suite("soak", "network-connection", "tests/soak/network/connection_test.py",

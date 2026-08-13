@@ -149,6 +149,11 @@ void SystemInfo :: storage_info(StreamTextLog& b)
             b.format("%14s%s\n", inf->lfname, FileSystem :: get_error_string(fres));
         }
     }
+
+    // The list is a local, but the FileInfos in it are ours to free.
+    for(int i=0; i<dir.get_elements(); i++) {
+        delete dir[i];
+    }
 }
 
 void SystemInfo :: generate(UserInterface *ui)

@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+# Soak: asserts the browser gives back the heap it spends tracking file changes.
+
+"""Repeat the filesystem-refresh matrix and require the free heap to come back.
+
+Two leaks lived on this path, and neither is visible over REST -- both need a
+browser open on a directory while its contents change underneath:
+
+  1. A removed entry was unlinked from the browser's list and left. A
+     BrowsableDirEntry owns a FileInfo, a FileType, its generated FAT name and a
+     FileManager path reference, so every file that disappeared under an open
+     browser stranded all of it, about 300 bytes and one path handle.
+
+  2. FileManager::get_directory() fills the caller's list with FileInfo copies
+     the caller owns. delete_recursive() and fcopy() freed the list and not its
+     contents, so a recursively deleted directory stranded one FileInfo per
+     entry.
+
+Together they cost 16,656 bytes per run of the e2e suite this one drives.
+
+The suite is run the way the runner runs it, as a subprocess, rather than by
+importing it and re-driving its rows: it opens a Menu, a Telnet session and an
+FTP connection on the same directory and its setup is what makes those three
+agree. Reproducing that here would fork the part most likely to drift.
+
+Method: measure the steady-state slope, never a single before/after. The first
+iteration pays one-time costs -- lazy singletons, first-touch filesystem
+structures, the browser's own caches -- that never come back and are not leaks,
+so those land entirely in the warmup. Each measured block settles before its
+closing sample, because an FTP session borrows several KB and returns it
+seconds later.
+
+Uses GET /v1/machine:heap. Firmware predating that endpoint answers 404 and
+every check here skips, so the suite is safe to run against any image.
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# tests/lib holds the reporting rules and the shared REST client.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+
+import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+from report import (  # noqa: E402
+    Failure, check, check_ok, check_skip, check_start, detail, format_exception,
+    section, suite_fail, suite_ok)
+
+HEAP_PATH = "/v1/machine:heap"
+SUITE = (Path(__file__).resolve().parents[2]
+         / "e2e" / "filemanager" / "browser_filesystem_refresh_test.py")
+
+# One-time costs land here.
+WARMUP = 1
+# Each iteration is a full matrix run of about two minutes, so three is the most
+# a soak run should spend on this. It is enough: what this guards was 16.6 KB
+# per run, and the fixed firmware sits within a few dozen bytes of flat.
+MEASURED = 3
+# Comfortably above the observed noise (28, -8, -24 bytes across three runs on
+# the fixed firmware) and far below either leak. The smaller of the two was 696
+# bytes per run on its own, so this still fails if only that one comes back.
+TOLERANCE_BYTES_PER_OP = 250
+SETTLE_SECONDS = 8.0
+
+
+def heap_free(rest: rest_lib.RestClient) -> int:
+    return int(rest.json(HEAP_PATH)["free"])
+
+
+def run_suite(host: str, password: str, timeout: float) -> None:
+    """One full matrix run. A failing run is not a leak verdict, so it stops us."""
+    result = subprocess.run(
+        [sys.executable, str(SUITE), "-H", host, "-p", password or "", "-t", str(timeout)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if result.returncode != 0:
+        tail = "\n".join(result.stdout.splitlines()[-15:])
+        raise Failure(
+            "the filesystem-refresh suite failed, so its heap figure means "
+            f"nothing:\n{tail}")
+
+
+def measure_slope(rest: rest_lib.RestClient, host: str, password: str,
+                  timeout: float) -> bool:
+    section("the browser returns the heap it spends tracking file changes")
+
+    with check(f"warm up ({WARMUP} matrix run, one-time costs land here)"):
+        for _ in range(WARMUP):
+            run_suite(host, password, timeout)
+        time.sleep(SETTLE_SECONDS)
+
+    seen = {}
+    try:
+        with check(f"free heap is flat across {MEASURED} more matrix runs"):
+            before = heap_free(rest)
+            for _ in range(MEASURED):
+                run_suite(host, password, timeout)
+            time.sleep(SETTLE_SECONDS)
+            after = heap_free(rest)
+            consumed = before - after
+            seen.update(before=before, after=after, consumed=consumed,
+                        per_op=consumed / MEASURED)
+            if seen["per_op"] > TOLERANCE_BYTES_PER_OP:
+                raise Failure(
+                    f"the browser leaks about {seen['per_op']:.0f} bytes per "
+                    f"matrix run ({consumed} bytes over {MEASURED} runs)")
+        ok = True
+    except Failure:
+        ok = False
+    if seen:
+        detail(f"free before {seen['before']}, after {seen['after']}")
+        detail(f"consumed {seen['consumed']} bytes over {MEASURED} runs "
+               f"= {seen['per_op']:.0f} bytes/run "
+               f"(tolerance {TOLERANCE_BYTES_PER_OP})")
+    return ok
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Assert that repeated filesystem-refresh runs do not consume "
+                    "heap. Skips if the firmware has no machine:heap endpoint.")
+    parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
+    parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
+    parser.add_argument("-t", "--timeout", type=float,
+                        default=float(os.environ.get("U64_TIMEOUT", "30.0")))
+    args = parser.parse_args()
+
+    rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)
+
+    check_start("device exposes GET /v1/machine:heap")
+    if rest.status("GET", HEAP_PATH) != 200:
+        check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
+        section("summary")
+        detail("skipped: device firmware has no machine:heap endpoint")
+        suite_ok("browser_refresh_leak_test")
+        return 0
+    check_ok()
+
+    ok = measure_slope(rest, args.host, args.password, args.timeout)
+
+    section("summary")
+    detail(f"filesystem-refresh slope: {'OK' if ok else 'FAIL'}")
+    if ok:
+        suite_ok("browser_refresh_leak_test")
+        return 0
+    suite_fail("browser_refresh_leak_test", "see the summary above")
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Failure as exc:
+        suite_fail("browser_refresh_leak_test", format_exception(exc))
+        raise SystemExit(1)
