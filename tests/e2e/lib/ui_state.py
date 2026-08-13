@@ -25,11 +25,15 @@ import urllib.error
 import urllib.request
 from typing import List, Optional
 
-# tests/lib holds the pacing every suite shares.
+# tests/lib holds the pacing every suite shares; this directory holds the
+# window parser this gate borrows rather than writing a second one. Both are
+# added here because this module is imported from elsewhere in the tree as
+# well as run directly.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
-import ui_backend  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+import ui_backend  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
