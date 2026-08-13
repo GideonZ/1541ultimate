@@ -200,6 +200,19 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 # that reads it there concludes the search failed.
 SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.1)
 
+
+def key_drain_seconds(split: bool) -> float:
+    """What one key of a batch costs on this target, in seconds.
+
+    Named here rather than chosen at each call site, because the two constants
+    differ by a factor of five and picking the wrong one is not visible in the
+    result: the keys all arrive, just later than the caller reads. Charging a
+    cartridge the device rate truncated a 14-character form field by its last
+    character, because the RETURN that committed the field was sent while that
+    character was still crossing the computer's keyboard matrix.
+    """
+    return SPLIT_KEY_DRAIN_SECONDS if split else KEY_DRAIN_SECONDS
+
 # A fixed pause, used only where there is nothing observable to poll: the C64
 # screen behind the menu, a config write with no readback, a popup that draws
 # identically to what it replaced.

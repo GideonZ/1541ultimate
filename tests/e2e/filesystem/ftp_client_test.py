@@ -360,8 +360,13 @@ class MenuDriver:
         self.s.key_events += len(combos)
         menu_lib.send_taps(self.s.post_input, combos)
         # The batch is accepted at once and drains through the matrix after, so
-        # the caller must not read the field back until it has arrived.
-        time.sleep(len(combos) * pacing.KEY_DRAIN_SECONDS)
+        # the caller must not read the field back, or commit it, until it has
+        # arrived. The rate depends on the target: this charged every target
+        # the device's own rate, and on a cartridge that is five times too
+        # fast, so the RETURN committing a form field was sent while the
+        # field's last character was still on its way and the field was stored
+        # one character short.
+        time.sleep(len(combos) * pacing.key_drain_seconds(self.s.target.split))
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):

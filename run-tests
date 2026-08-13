@@ -1206,14 +1206,24 @@ def stop(runs: "Sequence[ChildRun]", first: int) -> None:
 class ChildRun:
     """One target's run: its process, and the half-line left in its pipe."""
 
-    def __init__(self, target: targets_lib.Target, command: List[str]) -> None:
+    def __init__(self, target: targets_lib.Target, command: List[str],
+                 slot: int) -> None:
         self.target = target
+        self.slot = slot
         self.prefix = f"[{target.token}] "
+        # Which of the concurrent runs this one is, so a suite that has to
+        # listen on a port of its own can pick one no other run will pick.
+        # The ftp-client suite runs a real FTP server for the device to
+        # connect back to, and two of them bound the same control port: the
+        # second died with "Address already in use" before its first check.
+        # Slots are reused as runs finish, so this is the lowest free index
+        # rather than the target's position in the list.
+        environment = dict(os.environ, E2E_PORT_SLOT=str(slot))
         # Its own session, so signalling the child reaches the suite process
         # the child is running rather than only the child itself.
         self.process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            start_new_session=True)
+            start_new_session=True, env=environment)
         self.pending = b""
         self.drained = False
 
@@ -1271,7 +1281,9 @@ def run_targets(args: argparse.Namespace,
                              if args.jsonl_dir else "")
                 if jsonl_dir:
                     os.makedirs(jsonl_dir, exist_ok=True)
-                run = ChildRun(target, child_command(args, target, jsonl_dir))
+                taken = {run.slot for run in active.values()}
+                slot = next(i for i in range(len(wanted) + 1) if i not in taken)
+                run = ChildRun(target, child_command(args, target, jsonl_dir), slot)
                 pending.remove(target)
                 active[run.process.stdout.fileno()] = run
                 selector.register(run.process.stdout, selectors.EVENT_READ)

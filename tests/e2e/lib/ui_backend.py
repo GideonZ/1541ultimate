@@ -500,30 +500,52 @@ def find_open_window(chars: bytes, rows: Sequence[int]) -> Window:
 
 
 def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
-    """Every complete window frame on screen, as (top, bottom, left, right)."""
+    """Every complete window frame on screen, as (top, bottom, left, right).
+
+    Found from the bottom rule upward. The bottom corners are the two codes a
+    frame always carries: measured on an Ultimate II+L, the context menu for a
+    configured FTP host was drawn with BOX_HORIZONTAL where its top-left
+    corner should be, so a search that began at the top-left corner found no
+    frame there at all and the menu was invisible to every caller. The top
+    rule is therefore only required to be a run of horizontals, with whatever
+    the firmware chose to end it with.
+    """
     frames = []
-    for top_row in range(SCREEN_HEIGHT - 2):
-        line = chars[top_row * SCREEN_WIDTH:(top_row + 1) * SCREEN_WIDTH]
+    for bottom_row in range(2, SCREEN_HEIGHT):
+        line = chars[bottom_row * SCREEN_WIDTH:(bottom_row + 1) * SCREEN_WIDTH]
         for left in range(SCREEN_WIDTH - 2):
-            if line[left] != BOX_TOP_LEFT:
+            if line[left] != BOX_BOTTOM_LEFT:
                 continue
             for right in range(left + 2, SCREEN_WIDTH):
-                if line[right] != BOX_TOP_RIGHT:
+                if line[right] != BOX_BOTTOM_RIGHT:
                     continue
-                if not all(code == BOX_HORIZONTAL
-                           for code in line[left + 1:right]):
+                if not all(code == BOX_HORIZONTAL for code in line[left + 1:right]):
                     break
-                for bottom_row in range(top_row + 2, SCREEN_HEIGHT):
-                    below = chars[bottom_row * SCREEN_WIDTH:
-                                  (bottom_row + 1) * SCREEN_WIDTH]
-                    if (below[left] == BOX_BOTTOM_LEFT
-                            and below[right] == BOX_BOTTOM_RIGHT):
-                        frames.append((top_row, bottom_row, left, right))
-                        break
-                    if below[left] != BOX_VERTICAL or below[right] != BOX_VERTICAL:
-                        break
+                top_row = _frame_top(chars, bottom_row, left, right)
+                if top_row is not None:
+                    frames.append((top_row, bottom_row, left, right))
                 break
     return frames
+
+
+def _frame_top(chars: bytes, bottom_row: int, left: int,
+               right: int) -> Optional[int]:
+    """The row carrying the top rule of the frame closed at `bottom_row`.
+
+    The nearest row above whose whole span is frame characters. Walking up
+    while the border cells are verticals is not enough: measured on an
+    Ultimate II+L, a context menu drew BOX_TOP_RIGHT where the left border of
+    its first item should have been, and a walk that insisted on a vertical
+    there stopped one row early and found no rule. A row of window content
+    always holds text, so a span that is entirely frame characters is the
+    rule and nothing else is.
+    """
+    for row in range(bottom_row - 2, -1, -1):
+        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
+        if all(code in (BOX_TOP_LEFT, BOX_HORIZONTAL, BOX_TOP_RIGHT)
+               for code in line[left:right + 1]):
+            return row
+    return None
 
 
 @dataclass
@@ -800,8 +822,7 @@ class RestBackend(Backend):
         # What one key of a batch costs on this target. A cartridge target
         # pays the computer's matrix tap rate rather than the device's own key
         # queue; see tests/lib/pacing.py.
-        self.key_drain_seconds = (pacing.SPLIT_KEY_DRAIN_SECONDS if self.target.split
-                                  else pacing.KEY_DRAIN_SECONDS)
+        self.key_drain_seconds = pacing.key_drain_seconds(self.target.split)
         # The foreground colour this machine marks the cursor row with, once a
         # screen has shown it unambiguously. See find_cursor_colour.
         self._cursor_colour: Optional[int] = None
