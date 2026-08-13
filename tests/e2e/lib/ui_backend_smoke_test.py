@@ -217,10 +217,12 @@ def draw_framed_window(chars: bytearray, colours: bytearray, top: int,
     for column in range(left + 1, right):
         chars[top * SCREEN_WIDTH + column] = BOX_HORIZONTAL
         chars[bottom * SCREEN_WIDTH + column] = BOX_HORIZONTAL
-    chars[top * SCREEN_WIDTH + left] = BOX_TOP_LEFT
-    chars[top * SCREEN_WIDTH + right] = BOX_TOP_RIGHT
-    chars[bottom * SCREEN_WIDTH + left] = BOX_BOTTOM_LEFT
-    chars[bottom * SCREEN_WIDTH + right] = BOX_BOTTOM_RIGHT
+    # The first of each machine's two corner sets; find_open_window accepts
+    # either, and a check below draws the other to prove it.
+    chars[top * SCREEN_WIDTH + left] = BOX_TOP_LEFT[0]
+    chars[top * SCREEN_WIDTH + right] = BOX_TOP_RIGHT[0]
+    chars[bottom * SCREEN_WIDTH + left] = BOX_BOTTOM_LEFT[0]
+    chars[bottom * SCREEN_WIDTH + right] = BOX_BOTTOM_RIGHT[0]
     # Every row inside the frame carries its verticals, whether or not an item
     # was drawn on it; a window taller than its listing still has sides.
     for row in range(top + 1, bottom):
@@ -465,6 +467,33 @@ def run_overlay_row_checks() -> None:
                                      ROOT_ENTRY_ROWS_REST, cursor_colour=1)
         if row != 7:
             raise Failure(f"expected the menu's New Host row 7, got {row}")
+
+    with check("a window with rounded corners is a window too"):
+        # screen.h defines two corner sets and BORD_*_CORNER picks one: sharp
+        # on an Ultimate 64 and an Ultimate II+, rounded on a C64 Ultimate.
+        # A parser that knows only the sharp set finds no frame at all on a
+        # C64 Ultimate, so every window there reads as the whole screen.
+        chars, colours = build_menu_planes(entries, selected=0, listing_colour=12,
+                                           selected_colour=1)
+        chars, colours = bytearray(chars), bytearray(colours)
+        draw_framed_window(chars, colours, top=7, bottom=16, left=5, right=36,
+                           items=items, selected=3, listing_colour=12,
+                           selected_colour=1)
+        for row, column, sharp, rounded in (
+                (7, 5, BOX_TOP_LEFT, BOX_TOP_LEFT),
+                (7, 36, BOX_TOP_RIGHT, BOX_TOP_RIGHT),
+                (16, 5, BOX_BOTTOM_LEFT, BOX_BOTTOM_LEFT),
+                (16, 36, BOX_BOTTOM_RIGHT, BOX_BOTTOM_RIGHT)):
+            if chars[row * SCREEN_WIDTH + column] != sharp[0]:
+                raise Failure(f"expected the sharp corner at {row},{column}")
+            chars[row * SCREEN_WIDTH + column] = rounded[1]
+        found = find_open_window(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found.rows != range(8, 16):
+            raise Failure(f"expected the same rows 8-15 as with sharp corners, got {found}")
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != 11:
+            raise Failure(f"expected the window's cursor row 11, got {row}")
 
     with check("an untitled window keeps its first row"):
         # The task menu has no title, so its first interior row is a menu item

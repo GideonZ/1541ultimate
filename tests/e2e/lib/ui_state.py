@@ -29,6 +29,7 @@ from typing import List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import ui_backend  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
@@ -39,9 +40,6 @@ SCREEN_ROWS = 25
 PATH_ROW = SCREEN_ROWS - 1
 ROOT_PATH = "/"
 EMPTY_MARKER = "< No Items >"
-# The frame characters the menu draws a window with, as the screen matrix
-# renders them; a dialog's button sits inside one.
-FRAME_CHARS = " |+-"
 
 # Pacing is shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
@@ -163,6 +161,13 @@ class Device:
             for c in body[: SCREEN_ROWS * SCREEN_COLS]
         )
         return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
+
+    def showing_ok_dialog(self) -> bool:
+        """Whether a dialog offering only Ok is on top; see showing_ok_dialog."""
+        body = self._request("GET", "/v1/machine:menu_screen")
+        if body is None or len(body) != SCREEN_BYTES:
+            return False
+        return showing_ok_dialog(body)
 
     def menu_is_open(self) -> bool:
         return self.screen() is not None
@@ -389,25 +394,41 @@ def describe_open_menu(device: Device) -> str:
     return "the root browser is not on top; a nested object still holds the UI"
 
 
-def sole_action_row(rows: List[str]) -> Optional[int]:
-    """The row of a dialog whose only action is Ok, if that is what is showing.
+def showing_ok_dialog(body: bytes) -> bool:
+    """Whether the frontmost window is a dialog whose only action is Ok.
 
     Some dialogs report a result and offer one button. Back does not dismiss
-    them, so the unwind above presses its way around the object stack for ever
+    them, so the unwind below presses its way around the object stack for ever
     and the device is abandoned as unhealthy with a perfectly responsive UI on
     screen. Observed on a C64 Ultimate, where a CFG load left "There were
-    errors." over the browser and every later suite in the run was skipped.
+    errors." over the browser and every later suite in that run was skipped.
+
+    Read from the character plane rather than the text rows, because those
+    render the window frame as spaces: the dialog is drawn over a listing, so
+    its row reads "base_7.bin         Ok         N  750K" and the button
+    cannot be told from a file called Ok. Inside the window's own columns it
+    is the only thing there. The frame parser is the one the suites use; see
+    ui_backend.find_open_window.
 
     RETURN is otherwise refused here because it activates whatever the cursor
     is on. It is safe on this screen and only this screen: a lone Ok is the
-    single thing the dialog can do, so the keystroke cannot pick anything
-    else. A browser listing never matches, because its rows carry a name and a
-    size rather than one short word.
+    single thing the window can do, so the keystroke cannot pick anything
+    else.
     """
-    for index, row in enumerate(rows):
-        if row.strip(FRAME_CHARS).strip().lower() == "ok":
-            return index
-    return None
+    rows = range(2, SCREEN_ROWS - 1)
+    chars = body[:ui_backend.SCREEN_CELLS]
+    window = ui_backend.find_open_window(chars, rows)
+    if window == ui_backend.whole_screen(rows):
+        return False
+    said = []
+    for row in window.rows:
+        start = row * ui_backend.SCREEN_WIDTH
+        text = "".join(
+            chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " "
+            for c in chars[start + window.first_column:start + window.last_column])
+        if text.strip():
+            said.append(text.strip())
+    return bool(said) and said[-1].lower() == "ok"
 
 
 def unwind(device: Device) -> None:
@@ -442,7 +463,7 @@ def unwind(device: Device) -> None:
             settled = device.wait_screen_change(after)
             if settled is None:
                 return
-            if settled == after and sole_action_row(settled) is not None:
+            if settled == after and device.showing_ok_dialog():
                 device.tap(["return"])
                 device.wait_screen_change(settled)
 

@@ -466,13 +466,23 @@ def char_to_combo(ch: str) -> List[str]:
     raise Failure(f"No REST keyboard mapping for character {ch!r}")
 
 
-# The screen codes UserInterface draws a window frame with (screen.cc
-# draw_border): top-left, horizontal, top-right, vertical, bottom-left,
-# bottom-right. They are screen codes 1 to 6, not the ASCII line-drawing
-# characters a text-mode frame might suggest, so a frame is recognised by
-# these codes rather than by punctuation.
-BOX_TOP_LEFT, BOX_HORIZONTAL, BOX_TOP_RIGHT = 0x01, 0x02, 0x03
-BOX_VERTICAL, BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT = 0x04, 0x05, 0x06
+# The screen codes Window::draw_border writes for a frame (io/c64/screen.cc).
+# They are screen codes, not the ASCII line-drawing characters a text-mode
+# frame might suggest, so a frame is recognised by these rather than by
+# punctuation.
+#
+# screen.h defines two sets of corners, sharp and rounded, and which one a
+# machine uses is a matter of style: BORD_*_CORNER aliases the sharp set on an
+# Ultimate 64 and an Ultimate II+, and the rounded set on a C64 Ultimate.
+# Both are accepted, because the alternative is a frame parser that silently
+# finds nothing on one of the three. The horizontal and vertical rules are the
+# same everywhere.
+BOX_HORIZONTAL = 0x02                    # CHR_HORIZONTAL_LINE
+BOX_VERTICAL = 0x04                      # CHR_VERTICAL_LINE
+BOX_TOP_LEFT = (0x01, 0x07)              # CHR_[ROUNDED_]LOWER_RIGHT_CORNER
+BOX_TOP_RIGHT = (0x03, 0x09)             # CHR_[ROUNDED_]LOWER_LEFT_CORNER
+BOX_BOTTOM_LEFT = (0x05, 0x0E)           # CHR_[ROUNDED_]UPPER_RIGHT_CORNER
+BOX_BOTTOM_RIGHT = (0x06, 0x0F)          # CHR_[ROUNDED_]UPPER_LEFT_CORNER
 
 
 @dataclass
@@ -580,10 +590,10 @@ def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
     for bottom_row in range(2, SCREEN_HEIGHT):
         line = chars[bottom_row * SCREEN_WIDTH:(bottom_row + 1) * SCREEN_WIDTH]
         for left in range(SCREEN_WIDTH - 2):
-            if line[left] != BOX_BOTTOM_LEFT:
+            if line[left] not in BOX_BOTTOM_LEFT:
                 continue
             for right in range(left + 2, SCREEN_WIDTH):
-                if line[right] != BOX_BOTTOM_RIGHT:
+                if line[right] not in BOX_BOTTOM_RIGHT:
                     continue
                 if not all(code == BOX_HORIZONTAL for code in line[left + 1:right]):
                     break
@@ -608,7 +618,8 @@ def _frame_top(chars: bytes, bottom_row: int, left: int,
     """
     for row in range(bottom_row - 2, -1, -1):
         line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-        if all(code in (BOX_TOP_LEFT, BOX_HORIZONTAL, BOX_TOP_RIGHT)
+        if all(code in BOX_TOP_LEFT or code in BOX_TOP_RIGHT
+               or code == BOX_HORIZONTAL
                for code in line[left:right + 1]):
             return row
     return None
