@@ -354,10 +354,23 @@ def open_menu(device: Device) -> List[str]:
 
 
 def close_menu(device: Device) -> None:
-    if device.menu_is_open():
+    if not device.menu_is_open():
+        return
+    device.press_menu_button()
+    if device.wait_menu(want_open=False):
+        return
+    # A dialog offering only Ok holds the menu open and ignores the button.
+    # Answering it is the only way past, and this is the first place that
+    # notices: every caller below reaches for close_menu before it reaches for
+    # the unwind that also knows about such a dialog. Observed on a C64
+    # Ultimate, where a CFG load left "There were errors." on screen and the
+    # gate reported a UI that was not reading keys at all.
+    if device.showing_ok_dialog():
+        device.tap(["return"])
         device.press_menu_button()
-        if not device.wait_menu(want_open=False):
-            raise Unrecoverable("the menu will not close")
+        if device.wait_menu(want_open=False):
+            return
+    raise Unrecoverable("the menu will not close")
 
 
 def describe_open_menu(device: Device) -> str:
