@@ -28,7 +28,11 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.5"
 #define IDENT_MAJOR   1
-#define IDENT_MINOR   5
+// 1.6: the connector retries after a dropped link instead of idling in
+// Disconnected forever. The Ultimate's updater only reflashes the module
+// when this differs from what the module reports, so a module change that
+// does not bump it is silently never installed.
+#define IDENT_MINOR   6
 #define MULTITHREADED 0
 #define DISPATCHER_STACK 3072
 
