@@ -37,7 +37,7 @@
 AssemblySearch :: AssemblySearch(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     setCleanup();
-    state = new AssemblySearchForm(root, this, 0);
+    replace_root_state(new AssemblySearchForm(root, this, 0));
     state->reload();
 }
 
@@ -190,11 +190,16 @@ int AssemblySearch :: handle_key(int c)
 AssemblySearchForm :: AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
     //default_color = 7;
+    results = NULL;
 }
 
 AssemblySearchForm :: ~AssemblySearchForm()
 {
-
+    // Runs after ~TreeBrowserState has torn the results view down, because the
+    // view deletes its 'previous' (this form) last.
+    if (results) {
+        delete results;
+    }
 }
 
 
@@ -248,7 +253,13 @@ void AssemblySearchForm :: send_query(void)
     if (response) {
         if (response->type() == eList) {
             printf("Creating results view...\n");
+            // The previous query's results view is already gone by the time the
+            // form can be used again, so its results object is ours to drop.
+            if (results) {
+                delete results;
+            }
             BrowsableQueryResults *rb = new BrowsableQueryResults((JSON_List *)response);
+            results = rb;
             deeper = new AssemblyResultsView(rb, browser, 1);
             deeper->previous = this;
             int error;
@@ -261,9 +272,6 @@ void AssemblySearchForm :: send_query(void)
     } else {
         browser->window->getScreen()->set_status("** Connection FAILED **", 10);
     }
-    t_BufferedBody *body = (t_BufferedBody *)assembly.get_user_context();
-    if (body)
-        delete body;
 }
 
 // The form mixes unselectable spacers in with the query fields, and the cast is
@@ -393,6 +401,11 @@ IndexedList<Browsable *> *BrowsableQueryResult :: getSubItems(int &error)
             }
         } else {
             error = 1;
+        }
+        // Each entry copied what it needs out of the tree, so nothing below
+        // points into it once the loop is done.
+        if (j) {
+            delete j;
         }
     }
     return &children;

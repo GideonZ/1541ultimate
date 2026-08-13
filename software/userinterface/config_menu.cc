@@ -19,7 +19,7 @@ ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root, int level) : 
     setCleanup();
     has_path = false;
     start_level = level;
-    state = new ConfigBrowserState(root, this, level);
+    replace_root_state(new ConfigBrowserState(root, this, level));
 }
 
 ConfigBrowser :: ~ConfigBrowser()

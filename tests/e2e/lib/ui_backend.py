@@ -1537,7 +1537,14 @@ class Browser:
         See plan_overlay_navigation for what the firmware does with the keys.
         """
         if label not in labels:
-            raise Failure(f"overlay has no {label!r}; it offers {labels}")
+            # Some entries carry a right-hand value column, which overlay_items
+            # renders as "Label||value" -- and the value changes at runtime, so
+            # "Clear Debug Log" is an exact match only while the log is empty.
+            # Match on the label side when that names exactly one entry.
+            matches = [l for l in labels if l.split("||", 1)[0].strip() == label]
+            if len(matches) != 1:
+                raise Failure(f"overlay has no {label!r}; it offers {labels}")
+            label = matches[0]
         prefix, delta = plan_overlay_navigation(labels, label)
         for character in prefix:
             self.type_char(character)

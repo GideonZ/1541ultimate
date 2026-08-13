@@ -413,6 +413,7 @@ FRESULT write_zeros(File *f, int size, uint32_t &written)
             break;
         }
     }
+    delete[] buffer;
     return fres;
 }
 

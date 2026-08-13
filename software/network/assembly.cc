@@ -62,6 +62,7 @@ int Assembly :: connect_to_server(void)
 
     if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
         printf("Connection failed.\n");
+        close(sock_fd);
         return -1;
     }
     // printf("Connection succeeded.\n");
@@ -96,11 +97,25 @@ JSON *Assembly :: get_presets(void)
         get_response(this->socket_fd, collect_in_buffer, response);
         close_connection();
 
-        body = (t_BufferedBody *) response.userContext;
-        presets = convert_buffer_to_json(body);
+        presets = take_response_json();
         return presets;
     }
     return NULL;
+}
+
+// The JSON tree copies every key and value out of the response buffer, so the
+// 16 KB body has no owner once the tree is built. Freeing it here keeps that
+// out of every caller; only request_binary() hands its user context onwards.
+JSON *Assembly :: take_response_json(void)
+{
+    t_BufferedBody *body = (t_BufferedBody *) response.userContext;
+    if (!body) {
+        return NULL;
+    }
+    JSON *json = convert_buffer_to_json(body);
+    response.userContext = NULL;
+    delete body;
+    return json;
 }
 
 JSON *Assembly :: send_query(const char *query)
@@ -123,9 +138,7 @@ JSON *Assembly :: send_query(const char *query)
         get_response(socket_fd, collect_in_buffer, response);
         close_connection();
 
-        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-        JSON *json = convert_buffer_to_json(body);
-        return json;
+        return take_response_json();
     }
     return NULL;
 }
@@ -175,9 +188,7 @@ JSON *Assembly :: request_entries(const char *id, int cat)
         get_response(this->socket_fd, collect_in_buffer, response);
         close_connection();
 
-        t_BufferedBody *body = (t_BufferedBody *) response.userContext;
-        JSON *json = convert_buffer_to_json(body);
-        return json;
+        return take_response_json();
     }
     return NULL;
 }
@@ -239,29 +250,16 @@ int main(int argc, char **argv)
         delete results;
     }
 
-    t_BufferedBody *body2 = (t_BufferedBody *) assembly.get_user_context();
-    if (body2) {
-        delete body2;
-    }
-
     JSON *json = assembly.request_entries("237033", 0);
     if (json) {
         puts(json->render());
         delete json;
-    }
-    t_BufferedBody *body = (t_BufferedBody *) assembly.get_user_context();
-    if (body) {
-        delete body;
     }
 
     JSON *json3 = assembly.request_entries("145050", 3);
     if (json3) {
         puts(json3->render());
         delete json3;
-    }
-    t_BufferedBody *body3 = (t_BufferedBody *) assembly.get_user_context();
-    if (body3) {
-        delete body3;
     }
 
     assembly.request_binary("237033", 0, 0);

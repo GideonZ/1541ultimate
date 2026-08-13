@@ -131,6 +131,10 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # A CFG naming a store or item this machine does not have has to load
+    # anyway: that is what a file from another Ultimate looks like.
+    Suite("e2e", "cfg-unknown-items", "tests/e2e/filemanager/cfg_unknown_items_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
@@ -171,8 +175,26 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
 
     # --------------------------------------------------------------- soak --
+    # Creates disk images to measure whether the heap comes back, so it needs a
+    # writable directory. Skips entirely on firmware without machine:heap.
+    Suite("soak", "heap-leak", "tests/soak/api/heap_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Drives the browser context menu, which is the only way to reach the PRG
+    # load path the REST surface cannot see: launching a PRG over REST goes
+    # straight to the C64 subsystem. Skips until #766 lands machine:heap.
+    # Listed after listener-soak so it does not collide with the heap-leak
+    # entry #766 adds at the top of this block.
+    Suite("soak", "prg-context-menu-leak",
+          "tests/soak/filemanager/prg_context_menu_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Drives the Assembly 64 search browser, for the same reason: its query
+    # path is not reachable over REST. Skips when the Assembly 64 service is
+    # unreachable from the device, since the form cannot open without it.
+    Suite("soak", "assembly-search-leak",
+          "tests/soak/io/c64/assembly_search_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # The stress profile is the bounded one, at about two minutes. The soak
     # profile runs for twelve hours, so it is opt-in through --soak-profile.
     Suite("soak", "network-connection", "tests/soak/network/connection_test.py",
