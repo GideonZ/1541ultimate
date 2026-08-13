@@ -28,6 +28,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
 import health  # noqa: E402  (needs tests/lib on sys.path first)
+import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
@@ -860,6 +861,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Include suites excluded from the default run because "
                           "they need an operator decision, elevated privileges or "
                           "a long wall-clock wait.")
+    e2e.add_argument("--assume-fix", action="append", default=[], metavar="NAME",
+                     help="Run the checks normally skipped on a machine that "
+                          "lacks this firmware fix, which is how a backport is "
+                          "found. Repeatable, and 'all' assumes every fix. The "
+                          "names are the tags in tests/lib/machine.py.")
 
     device = parser.add_argument_group(
         "device",
@@ -1358,6 +1364,16 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
 def main(argv: List[str]) -> int:
     args = build_parser().parse_args(argv)
     apply_colour_choice(args.color)
+    if args.assume_fix:
+        # Exported rather than passed on: the suites are child processes, and
+        # a misspelt tag has to stop the run here, because a run that quietly
+        # went on skipping the checks looks exactly like one where the fix had
+        # not landed.
+        try:
+            assumed = machine_lib.parse_assumptions(" ".join(args.assume_fix))
+        except machine_lib.UnknownFix as exc:
+            die(str(exc))
+        os.environ[machine_lib.ASSUME_ENV] = " ".join(sorted(assumed))
 
     if args.list:
         print_listing()

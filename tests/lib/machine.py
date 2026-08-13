@@ -16,12 +16,80 @@ browser is asks `menu_opens_on_launcher`, not `is_c64u`.
 
 The answer is a property of the machine and cannot change during a run, so it
 is fetched once per host and kept.
+
+Two axes, and they answer different questions
+---------------------------------------------
+
+*Capability* is what a machine has. An Ultimate II+ is a cartridge with no
+keyboard of its own and no Interface Type to choose. A C64 Ultimate keeps its
+file browser inside a launcher, searches CommoServe rather than Assembly 64,
+draws rounded window corners and maps the function keys differently. None of
+that moves when firmware moves: it is what the product is. Capability is
+answered by a property on `Machine`, and by a probe wherever a cheap and
+reliable probe exists, which is the rule `api.find_padded_enum` already
+follows: it asks the device which of its stores holds a padded enum rather
+than assuming a name.
+
+*Firmware vintage* is what a release does. The Ultimate 64 and the Ultimate
+II+ under test run firmware built from this branch. A C64 Ultimate serves the
+same endpoints from a separate release line that lags behind it: 1.2.0 has
+neither the FTP listing fix nor the readmem length check below. That gap
+closes when the fix is backported, so it describes a release rather than a
+product.
+
+One question decides which axis a difference belongs to: would flashing this
+branch's firmware on the machine give it the behaviour? Yes makes it vintage,
+no makes it a capability. A cartridge will never grow a keyboard, so that is a
+capability; a C64 Ultimate will list long FTP names as soon as it takes the
+commit, so that is vintage.
+
+Tagging a check with the fix it needs
+-------------------------------------
+
+Vintage is declared rather than probed, and deliberately so: a probe for "does
+readmem refuse length=0" is the assertion the check makes, so a check that
+probed first would skip in exactly the cases where it would otherwise fail and
+prove nothing at all. Capability keeps the probe; vintage gets the table.
+
+FIXES below is that table. Each entry is one outstanding gap: a fix named
+after the behaviour a machine gains from it rather than after a date, and the
+machine kinds that do not have it yet. A fix every machine has is not in the
+table at all. A check declares what it depends on in one line:
+
+    LABEL = "a 100-character name survives the listing"
+    if device.machine.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, LABEL):
+        return
+    with check(LABEL):
+        ...
+
+Where the machine lacks the fix, that line reports the check as SKIP with the
+fix name and the machine in the reason, so it stands out in the log and never
+reads as a pass. Everywhere else it runs as usual. The same line in front of a
+scenario skips the group with one reason, for a scenario whose checks all need
+the same fix.
+
+To find out whether a backport has arrived, run with the fix assumed present:
+
+    E2E_ASSUME_FIX=ftp-listing-full-length     one fix, or a list of them
+    E2E_ASSUME_FIX=all                         every fix in the table
+
+`run-tests --assume-fix NAME` sets that variable for the suites it starts. The
+tagged checks then run on the machine that was skipping them and either pass,
+which says the fix has landed and the entry can be amended, or fail, which
+says it has not. Running them as expected failures, so that a landed backport
+is reported without anyone having to ask, is the natural next step; it is not
+built, because it needs a verdict the report library does not have and a
+runner that counts an expected failure as a pass.
 """
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, FrozenSet, Optional, Tuple, Union
+
+from report import check_skip, check_start
 
 # The three machines, by the name used in messages and in this module's API.
 U64 = "Ultimate 64"
@@ -44,12 +112,118 @@ class UnknownMachine(ValueError):
     """A product string this module has no rules for. The message is shown."""
 
 
+class UnknownFix(ValueError):
+    """A fix name the table does not define. The message lists the real ones."""
+
+
+@dataclass(frozen=True)
+class Fix:
+    """One firmware fix and the machines that do not have it yet."""
+
+    name: str
+    behaviour: str
+    lacking: Tuple[str, ...]
+
+
+# The one table. Every entry is an outstanding gap, so an unlisted fix is one
+# every machine has and its checks run everywhere.
+#
+# Amending it when a backport lands: confirm first with
+# `run-tests --assume-fix <name>`, which runs the tagged checks on the machine
+# that was skipping them, then delete that kind from `lacking`. Delete the
+# whole entry once `lacking` would be empty; the checks tagged with it then
+# run everywhere again and no suite needs editing.
+FIXES: Dict[str, Fix] = {}
+
+
+def _fix(name: str, behaviour: str, lacking: Tuple[str, ...]) -> str:
+    """Add one entry to the table and hand back its tag, for a named constant."""
+    FIXES[name] = Fix(name=name, behaviour=behaviour, lacking=lacking)
+    return name
+
+
+# What tests/e2e/network/ftp_server_test.py asserts: a 100-character name is
+# stored, listed unchanged, and removed by the name the listing reported. A
+# C64 Ultimate copies 63 characters and a terminator into the listing, and
+# DELE then refuses the truncated name, so the file cannot be removed at all.
+FTP_LISTING_FULL_LENGTH = _fix(
+    "ftp-listing-full-length",
+    "the FTP server lists a name of up to 127 characters in full, so a name "
+    "taken from a listing addresses the file it names",
+    (C64U,))
+
+# What the bounds scenario of tests/e2e/api/readmem_writemem_test.py asserts.
+# The rejection keeps a zero-size request away from the allocator, because
+# malloc returns NULL for one; a C64 Ultimate answers 200 with an empty body.
+READMEM_REJECTS_ZERO_LENGTH = _fix(
+    "readmem-rejects-zero-length",
+    "GET /v1/machine:readmem answers HTTP 400 to length=0 rather than 200 "
+    "with an empty body",
+    (C64U,))
+
+# Every fix at once, for a sweep that asks whether the lagging line has caught
+# up rather than about one behaviour.
+ASSUME_ALL = "all"
+# Read at import, because run-tests starts each suite as its own process and a
+# flag it parsed cannot reach them any other way. Same convention as
+# report.py's E2E_SUITE and E2E_JSONL.
+ASSUME_ENV = "E2E_ASSUME_FIX"
+
+
+def parse_assumptions(text: str) -> FrozenSet[str]:
+    """The fix names in a comma or space separated list, checked against the table.
+
+    A typo has to be refused rather than ignored. An assumption naming nothing
+    leaves the check skipped, which is the answer the caller was trying to get
+    past, and a run that silently did nothing is the hardest kind to notice.
+    """
+    names = {part for part in re.split(r"[,\s]+", text or "") if part}
+    unknown = sorted(name for name in names
+                     if name != ASSUME_ALL and name not in FIXES)
+    if unknown:
+        raise UnknownFix(
+            f"no such fix: {', '.join(repr(name) for name in unknown)}; "
+            f"tests/lib/machine.py lists {', '.join(sorted(FIXES))} "
+            f"and {ASSUME_ALL!r}. A name that has gone from the table is a fix "
+            f"every machine has, so its checks already run everywhere")
+    return frozenset(names)
+
+
+_assumed: FrozenSet[str] = parse_assumptions(os.environ.get(ASSUME_ENV, ""))
+
+
+def assume(*names: str) -> None:
+    """Treat these fixes as present wherever a check asks for one.
+
+    For a harness taking the flag in its own process. The suites it starts as
+    child processes are told through ASSUME_ENV, which is read at import.
+    """
+    global _assumed
+    _assumed = _assumed | parse_assumptions(" ".join(names))
+
+
+def assumed() -> FrozenSet[str]:
+    """The fixes this run has been told to treat as present."""
+    return _assumed
+
+
+def forget_assumptions() -> None:
+    """Drop them again, for a test that sets its own."""
+    global _assumed
+    _assumed = frozenset()
+
+
 @dataclass(frozen=True)
 class Machine:
     """What a device is, and the properties a suite adapts to."""
 
     kind: str
     product: str
+    # What /v1/info reported, when the caller had it. It names the machine in
+    # a skip reason and decides nothing: which firmware carries which fix is
+    # the table's business, because the two release lines number themselves
+    # independently and 1.2.0 is not an older 3.15.
+    firmware: str = ""
 
     @property
     def launcher_browser_entry(self) -> Optional[str]:
@@ -107,15 +281,67 @@ class Machine:
         """The key that scrolls a listing on by a screen."""
         return "F5" if self.kind == C64U else "PGDN"
 
+    @property
+    def described(self) -> str:
+        """The machine and its firmware, for a reason someone has to act on."""
+        return f"{self.product} {self.firmware}".strip()
+
+    def has_fix(self, name: str) -> bool:
+        """Whether this machine's firmware carries the fix `name` tags.
+
+        A name with no table entry is a fix nothing lacks, so it answers True:
+        that is what makes deleting a propagated fix from the table a one-line
+        edit rather than an edit per tagged check.
+        """
+        entry = FIXES.get(name)
+        if entry is None:
+            return True
+        return (ASSUME_ALL in _assumed or name in _assumed
+                or self.kind not in entry.lacking)
+
+    def missing_fix(self, name: str) -> Optional[str]:
+        """Why a check tagged `name` cannot run here, or None when it can."""
+        if self.has_fix(name):
+            return None
+        return f"needs the {name} fix, which {self.described} does not have"
+
+    def skip_without_fix(self, name: str, label: str) -> bool:
+        """Report `label` as skipped, and answer True, when the fix is absent.
+
+        The one line a tagged check needs, and the caller returns on True:
+
+            if device.machine.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH,
+                                               LABEL):
+                return
+            with check(LABEL):
+                ...
+
+        The skipped check keeps its own numbered line, and the reason on it
+        names both the fix and the machine, so a check that did not run is
+        never left looking green. Answering with a bool rather than raising is
+        what keeps this to the reporting the library already has.
+        """
+        reason = self.missing_fix(name)
+        if reason is None:
+            return False
+        check_start(label)
+        check_skip(reason)
+        return True
+
     def __str__(self) -> str:
         return self.product
 
 
-def classify(product: str) -> Machine:
+# What a caller can hand back from `fetch_product`: the product on its own, or
+# the product and the firmware version when it has both.
+Reported = Union[str, Tuple[str, str]]
+
+
+def classify(product: str, firmware: str = "") -> Machine:
     """The machine a `/v1/info` product string names."""
     for needle, kind in _PRODUCTS:
         if needle.lower() in product.lower():
-            return Machine(kind=kind, product=product)
+            return Machine(kind=kind, product=product, firmware=firmware)
     raise UnknownMachine(
         f"unknown product {product!r}: this run cannot tell which machine it "
         f"is aimed at, so it cannot choose the right menu layout")
@@ -124,16 +350,23 @@ def classify(product: str) -> Machine:
 _cache: Dict[str, Machine] = {}
 
 
-def identify(host: str, fetch_product: Callable[[], str]) -> Machine:
+def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
     """The machine `host` is, fetching its product string at most once.
 
     `fetch_product` is supplied by the caller rather than built here, so this
     module needs no REST client of its own and a test can drive it without a
-    device.
+    device. It returns the product, or the product and the firmware version as
+    a pair when the caller has both: one `/v1/info` answer carries the two, and
+    the version is what a skip reason names the machine by.
     """
     cached = _cache.get(host)
     if cached is None:
-        cached = classify(fetch_product())
+        reported = fetch_product()
+        if isinstance(reported, str):
+            cached = classify(reported)
+        else:
+            product, firmware = reported
+            cached = classify(product, firmware)
         _cache[host] = cached
     return cached
 

@@ -101,9 +101,11 @@ class Device:
         if body is None:
             raise Unrecoverable("/v1/info returned nothing")
         try:
-            return str(json.loads(body.decode("utf-8")).get("product", ""))
+            payload = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
             raise Unrecoverable(f"/v1/info returned no readable product: {exc}")
+        return (str(payload.get("product", "")),
+                str(payload.get("firmware_version", "")))
 
     def enter_file_browser(self) -> None:
         """Descend from a launcher into the file browser, where there is one.

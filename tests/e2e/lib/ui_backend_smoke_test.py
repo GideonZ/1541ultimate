@@ -19,6 +19,7 @@ other suite relies on it.
 
 import argparse
 import os
+import re
 import sys
 import time
 from typing import Sequence
@@ -129,6 +130,11 @@ def run_machine_checks() -> None:
     layout, and getting it wrong sends a run down the wrong path on hardware
     that is working correctly. The product strings are the ones the three
     machines were measured to return.
+
+    The second half covers the fix table, which decides which checks a machine
+    on a lagging firmware line skips. A mistake there is quiet in a way a menu
+    mistake is not: it either hides a real defect behind a skip or fails a
+    machine for a fix it was never going to have.
     """
     with check("each machine is recognised from its product string"):
         expected = {
@@ -186,6 +192,137 @@ def run_machine_checks() -> None:
         if kinds != {machine.C64U} or len(calls) != 1:
             raise Failure(f"expected one fetch and one answer, got {len(calls)} "
                           f"fetches and {kinds}")
+
+    with check("the firmware version is kept when the caller has it"):
+        # One /v1/info answer carries the product and the version, and the
+        # version is how a skip reason names the machine someone then has to
+        # go and flash. A caller that can only reach the product still gets a
+        # machine, with the version left empty.
+        machine.forget("fixture-host")
+        found = machine.identify("fixture-host", lambda: ("C64 Ultimate", "1.2.0"))
+        machine.forget("fixture-host")
+        if (found.firmware, found.described) != ("1.2.0", "C64 Ultimate 1.2.0"):
+            raise Failure(f"expected the version to be kept, got {found.described!r}")
+        if machine.classify("Ultimate II+L").described != "Ultimate II+L":
+            raise Failure("a machine with no reported version described itself with one")
+
+    with check("every fix in the table names a behaviour and a machine that lacks it"):
+        # The tag is typed on a command line as --assume-fix and read in a skip
+        # reason by whoever decides the entry can go, so it has to say what the
+        # firmware does. A date tag such as "2026-08-bugfixes" names nothing a
+        # check depends on and goes stale without anyone noticing, which is why
+        # a tag has to start with a letter rather than a year.
+        for name, entry in machine.FIXES.items():
+            if name != entry.name:
+                raise Failure(f"{name!r} is filed under the name {entry.name!r}")
+            if not re.fullmatch(r"[a-z][a-z0-9]*(-[a-z0-9]+)+", name):
+                raise Failure(f"{name!r} is not a lower-case kebab-case tag "
+                              f"naming a behaviour")
+            if not entry.behaviour.strip() or "\n" in entry.behaviour:
+                raise Failure(f"{name!r} has no one-line behaviour: {entry.behaviour!r}")
+            if not entry.lacking:
+                raise Failure(f"{name!r} lists no machine that lacks it, so it "
+                              f"only skips checks that had no reason to skip")
+            for kind in entry.lacking:
+                if kind not in (machine.U64, machine.U2, machine.C64U):
+                    raise Failure(f"{name!r} lists an unknown machine kind {kind!r}")
+
+    # Every check below asserts which machine skips what, and an assumption is
+    # exactly the switch that stops a machine skipping, so the ones the run was
+    # started with are cleared here and put back afterwards. Without this, the
+    # suite would fail on the run it is most needed on: `--assume-fix all`, the
+    # sweep someone does to find out whether a backport has landed.
+    asked_for = machine.assumed()
+    machine.forget_assumptions()
+    try:
+        with check("the table decides which machine skips a tagged check"):
+            # Both entries are fixes this branch carries and the C64 Ultimate's
+            # 1.2.0 line does not, so an Ultimate 64 and an Ultimate II+L run
+            # the checks tagged with them and a C64 Ultimate skips them.
+            for name in (machine.FTP_LISTING_FULL_LENGTH,
+                         machine.READMEM_REJECTS_ZERO_LENGTH):
+                for product, expected in (("Ultimate 64 Elite", True),
+                                          ("Ultimate II+L", True),
+                                          ("C64 Ultimate", False)):
+                    found = machine.classify(product).has_fix(name)
+                    if found != expected:
+                        raise Failure(f"{product!r} and {name}: expected has_fix="
+                                      f"{expected}, got {found}")
+
+        with check("a fix no entry lists is one every machine has"):
+            # What makes a propagated fix a one-line deletion: with the entry
+            # gone every check tagged with it runs everywhere again, and no
+            # suite is edited. It also means a mistyped tag runs the check
+            # rather than skipping it for good, so the mistake shows up as a
+            # failure on the machine that lacks the fix instead of hiding.
+            for product in ("Ultimate 64 Elite", "Ultimate II+L", "C64 Ultimate"):
+                if not machine.classify(product).has_fix("no-entry-defines-this"):
+                    raise Failure(f"{product!r} skipped a check for a fix the "
+                                  f"table does not list as missing anywhere")
+
+        with check("a skipped check names the fix and the machine in its reason"):
+            # A bare SKIP in a log of ninety checks says nothing anyone can act
+            # on. The reason carries the tag to pass to --assume-fix and the
+            # machine and version to compare against the table.
+            lagging = machine.classify("C64 Ultimate", "1.2.0")
+            reason = lagging.missing_fix(machine.READMEM_REJECTS_ZERO_LENGTH)
+            for needle in ("readmem-rejects-zero-length", "C64 Ultimate", "1.2.0"):
+                if reason is None or needle not in reason:
+                    raise Failure(f"expected {needle!r} in the skip reason, "
+                                  f"got {reason!r}")
+            current = machine.classify("Ultimate 64 Elite", "3.15")
+            if current.missing_fix(machine.READMEM_REJECTS_ZERO_LENGTH) is not None:
+                raise Failure("a machine that has the fix was given a reason to skip")
+
+        with check("skip_without_fix answers True only where the check cannot run"):
+            # The one line a tagged check needs: it reports the skipped check
+            # itself, through the same check_start and check_skip pair every
+            # other skip in the tree uses, and the caller returns on True.
+            # Called from inside this check the line it reports is nested, so
+            # the report library holds it back and only the answer is visible.
+            lagging = machine.classify("C64 Ultimate", "1.2.0")
+            current = machine.classify("Ultimate II+L", "3.15")
+            if not lagging.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, "fixture"):
+                raise Failure("a machine without the fix was not skipped")
+            if current.skip_without_fix(machine.FTP_LISTING_FULL_LENGTH, "fixture"):
+                raise Failure("a machine with the fix was skipped anyway")
+
+        with check("an assumed fix runs the checks it gates, which is how a "
+                   "backport is found"):
+            machine.forget_assumptions()
+            lagging = machine.classify("C64 Ultimate", "1.2.0")
+            machine.assume(machine.FTP_LISTING_FULL_LENGTH)
+            if not lagging.has_fix(machine.FTP_LISTING_FULL_LENGTH):
+                raise Failure("the assumed fix still skipped its checks")
+            if lagging.has_fix(machine.READMEM_REJECTS_ZERO_LENGTH):
+                raise Failure("assuming one fix ran the checks of another")
+            machine.forget_assumptions()
+            machine.assume(machine.ASSUME_ALL)
+            missing = [name for name in machine.FIXES if not lagging.has_fix(name)]
+            if missing:
+                raise Failure(f"assuming every fix left {missing} skipped")
+
+        with check("an assumption list is parsed as a list, and a typo is refused"):
+            machine.forget_assumptions()
+            listed = machine.parse_assumptions(
+                f"{machine.FTP_LISTING_FULL_LENGTH}, "
+                f"{machine.READMEM_REJECTS_ZERO_LENGTH}")
+            if listed != {machine.FTP_LISTING_FULL_LENGTH,
+                          machine.READMEM_REJECTS_ZERO_LENGTH}:
+                raise Failure(f"expected both fixes, got {sorted(listed)}")
+            # A misspelt name that was quietly ignored would leave the checks
+            # skipped, which is the answer the flag was run to get past, and
+            # the run would look exactly like one where the fix had not landed.
+            try:
+                machine.parse_assumptions("ftp-listing-ful-length")
+            except machine.UnknownFix:
+                pass
+            else:
+                raise Failure("a misspelt fix name was accepted")
+    finally:
+        machine.forget_assumptions()
+        if asked_for:
+            machine.assume(*asked_for)
 
 
 def build_menu_planes(entries: Sequence[str], selected: int, listing_colour: int,

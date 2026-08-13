@@ -116,8 +116,9 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 CURSOR_SETTLE_ATTEMPTS = 4
 
 
-def fetch_product(host: str, password: Optional[str], timeout: float) -> str:
-    """The `product` field of a device's /v1/info, over plain REST.
+def fetch_product(host: str, password: Optional[str],
+                  timeout: float) -> Tuple[str, str]:
+    """The `product` and `firmware_version` of a device, over plain REST.
 
     Free of any backend, because both transports need it and a Telnet session
     has no way to ask: identity is the device's, whatever is being driven.
@@ -130,7 +131,10 @@ def fetch_product(host: str, password: Optional[str], timeout: float) -> str:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise Failure(f"{INFO_PATH} on {host} failed: {exc}")
-    return str(payload.get("product", ""))
+    # The firmware version comes back with it, and a skip reason names the
+    # machine by both: "C64 Ultimate 1.2.0" says which release lacks a fix,
+    # where the product alone would not.
+    return str(payload.get("product", "")), str(payload.get("firmware_version", ""))
 
 
 class NoCursorDrawn(Failure):
