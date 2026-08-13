@@ -682,7 +682,10 @@ def assert_looks_like_root_browser(snapshot: Snapshot) -> None:
     distinct_glyphs = len(set(text))
     if distinct_glyphs > MAX_DISTINCT_GLYPHS:
         raise Failure(f"screen looks like garbage after {snapshot.last_command}: {distinct_glyphs} distinct glyphs\n{text}")
-    snapshot.find_line_containing("Ultimate")
+    # Every machine names itself in its banner, and the case differs: an
+    # Ultimate 64 writes "Ultimate 64 Elite", a C64 Ultimate "COMMODORE 64
+    # ULTIMATE". What is being checked is that the banner is there at all.
+    snapshot.find_line_containing("ultimate", ignore_case=True)
     snapshot.find_line_containing("/")
 
 
@@ -718,7 +721,7 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         snapshot = backend.capture()
         assert_looks_like_root_browser(snapshot)
 
-    with check("F5 opens the task menu and RUN/STOP restores the browser"):
+    with check("the task-menu key opens it and RUN/STOP restores the browser"):
         # The browser marks the selected row by colour, not by the character
         # matrix's reverse-video bit, and the two transports use different
         # colour encodings (a real C64 colour nibble over REST, an
@@ -726,13 +729,20 @@ def run_backend_smoke(backend: Backend, entry_rows: Sequence[int]) -> None:
         # key alone is not a transport-uniform text signal. Opening the task
         # menu replaces the visible text outright, which both transports
         # render identically in the character matrix.
+        #
+        # Which key that is depends on the machine, and asking the wrong one
+        # looks exactly like a broken transport: a C64 Ultimate puts paging on
+        # F5, so pressing it over a listing that fits on one screen changes
+        # nothing at all. See tests/lib/machine.py.
+        key = backend.machine.task_menu_key
         before = backend.capture().text()
-        opened = backend.send_key("F5").text()
+        opened = backend.send_key(key).text()
         if opened == before:
-            raise Failure("F5 had no visible effect on the screen")
+            raise Failure(f"{key} had no visible effect on the screen; it was\n{before}")
         closed = backend.send_key("RUNSTOP").text()
         if closed != before:
-            raise Failure("RUN/STOP did not restore the original screen after F5")
+            raise Failure(f"RUN/STOP did not restore the original screen after "
+                          f"{key}; expected\n{before}\nactual\n{closed}")
 
     with check("typing a character quick-seeks to the matching entry"):
         # Proves send_char delivers the *correct* character, not merely *a*

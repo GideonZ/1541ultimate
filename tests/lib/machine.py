@@ -82,8 +82,30 @@ class Machine:
 
     @property
     def search_service(self) -> str:
-        """The name of the online search this machine's task menu offers."""
+        """The name of the online search this machine offers."""
         return "CommoServe" if self.kind == C64U else "Assembly 64"
+
+    @property
+    def task_menu_key(self) -> str:
+        """The key that opens the task menu over the file browser.
+
+        F5 on an Ultimate 64 and an Ultimate II+. A C64 Ultimate maps the
+        function keys differently and says so on its own status row: "F1=MENU
+        F3/F5=PGUP/DN F7=HELP". F5 there is Page Down, so pressing it over a
+        listing shorter than a screen does nothing at all, which is what a
+        suite written for the other two sees.
+        """
+        return "F1" if self.kind == C64U else "F5"
+
+    @property
+    def page_up_key(self) -> str:
+        """The key that scrolls a listing back by a screen."""
+        return "F3" if self.kind == C64U else "PGUP"
+
+    @property
+    def page_down_key(self) -> str:
+        """The key that scrolls a listing on by a screen."""
+        return "F5" if self.kind == C64U else "PGDN"
 
     def __str__(self) -> str:
         return self.product

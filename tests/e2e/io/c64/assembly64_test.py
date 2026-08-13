@@ -50,7 +50,6 @@ from ui_backend import (
     Backend,
     MODE_TELNET,
     Snapshot,
-    TELNET_SELECTED_SGR,
     add_mode_argument,
     make_backend,
     strip_frame,
@@ -443,7 +442,8 @@ def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]
     """
     rows = device.rows()
     colours = device.backend.screen.colours
-    if rows is None:
+    marker = device.backend.selected_sgr
+    if rows is None or marker is None:
         return None
     title_row = row_of(device, FORM_TITLE)
     for row in entry_rows:
@@ -453,7 +453,10 @@ def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]
         if bounds is None:
             continue
         left, right = bounds
-        if any(colours[row][col] == TELNET_SELECTED_SGR for col in range(left, right)):
+        # The colour is the machine's, measured by the backend from a listing
+        # rather than pinned here: an Ultimate 64 marks the cursor 0;32;1 and
+        # a C64 Ultimate 0;37;1.
+        if any(colours[row][col] == marker for col in range(left, right)):
             return row
     return None
 

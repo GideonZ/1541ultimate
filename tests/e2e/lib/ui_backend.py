@@ -103,12 +103,10 @@ MENU_GLYPHS = {
     0x0E: "+", 0x0F: "+", 0x10: "a", 0x11: "b", 0x12: "^", 0x13: "*",
 }
 
-# The box/window frame characters MENU_GLYPHS decodes low control codes to, and
-# the SGR colour string Screen_VT100::set_color emits for the browser's
-# cursor row (observed stable across browser contexts; see
-# TelnetBackend.selected_row).
+# The box/window frame characters MENU_GLYPHS decodes low control codes to.
+# Which colour Screen_VT100::set_color emits for the cursor row is not fixed
+# here: it belongs to the machine, and TelnetBackend._marked_row measures it.
 FRAME_CHARS = " |+-"
-TELNET_SELECTED_SGR = "0;32;1"
 
 # find_selected_row's minimum marked-cell count before trusting a candidate
 # row: below this, a row that merely borrows the previous row's background
@@ -116,6 +114,23 @@ TELNET_SELECTED_SGR = "0;32;1"
 SELECTED_ROW_MIN_MARKED_CELLS = 12
 # How many times to re-read the screen while no cursor marker is drawn at all.
 CURSOR_SETTLE_ATTEMPTS = 4
+
+
+def fetch_product(host: str, password: Optional[str], timeout: float) -> str:
+    """The `product` field of a device's /v1/info, over plain REST.
+
+    Free of any backend, because both transports need it and a Telnet session
+    has no way to ask: identity is the device's, whatever is being driven.
+    """
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        f"http://{targets.host_for(host, INFO_PATH)}{INFO_PATH}", headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise Failure(f"{INFO_PATH} on {host} failed: {exc}")
+    return str(payload.get("product", ""))
 
 
 class NoCursorDrawn(Failure):
@@ -140,9 +155,10 @@ class Snapshot:
     def text(self) -> str:
         return "\n".join(self.lines)
 
-    def find_line_containing(self, expected: str) -> int:
+    def find_line_containing(self, expected: str, ignore_case: bool = False) -> int:
+        needle = expected.lower() if ignore_case else expected
         for index, line in enumerate(self.lines):
-            if expected in line:
+            if needle in (line.lower() if ignore_case else line):
                 return index
         raise Failure(
             f"Snapshot mismatch after {self.last_command}: expected any line to contain\n"
@@ -214,6 +230,29 @@ class Backend:
         self.send_key(key)
         return self.send_text(text, label)
 
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this backend drives, asked once of the device.
+
+        Three machines answer this API and their menus and keymaps differ, so
+        a suite that has to allow for that asks here rather than being told on
+        the command line. See tests/lib/machine.py.
+        """
+        return machine_lib.identify(self.machine_host, self._fetch_product)
+
+    @property
+    def machine_host(self) -> str:
+        """The host that answers for the device under test."""
+        raise NotImplementedError
+
+    def _fetch_product(self) -> str:
+        """The product string of `machine_host`, over REST on either transport."""
+        return fetch_product(self.machine_host, self.machine_password, self.timeout)
+
+    @property
+    def machine_password(self) -> Optional[str]:
+        return None
+
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 
@@ -283,6 +322,10 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "DOWN": ["cursor_up_down"],
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
+    # The physical key, named for itself because what it does depends on the
+    # machine: PGUP on an Ultimate 64 and an Ultimate II+, the task menu on a
+    # C64 Ultimate. Callers ask Machine which key plays which role.
+    "F1": ["f1"],
     "PGUP": ["f1"],
     "PGDN": ["f7"],
     "F5": ["f5"],
@@ -880,24 +923,12 @@ class RestBackend(Backend):
         return f"http://{self.target.host_for(path)}{path}{query}"
 
     @property
-    def machine(self) -> machine_lib.Machine:
-        """Which machine this backend drives, asked once of the device.
+    def machine_host(self) -> str:
+        return self.host
 
-        Three machines answer this API and their menus differ, so a suite that
-        has to allow for that asks here rather than being told on the command
-        line. Fetched from /v1/info on first use and kept for the process; see
-        tests/lib/machine.py.
-        """
-        return machine_lib.identify(self.host, self._fetch_product)
-
-    def _fetch_product(self) -> str:
-        status, body = self._request("GET", INFO_PATH)
-        if status != 200:
-            raise Failure(f"{INFO_PATH} failed with HTTP {status}: {body[:160]!r}")
-        try:
-            return str(json.loads(body.decode("utf-8")).get("product", ""))
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise Failure(f"{INFO_PATH} returned no readable product: {exc}")
+    @property
+    def machine_password(self) -> Optional[str]:
+        return self.password
 
     def _request(
         self, method: str, path: str,
@@ -1279,6 +1310,10 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "LEFT": b"\x1b[D",
     "PGUP": b"\x1b[5~",
     "PGDN": b"\x1b[6~",
+    # keyboard_vt100.cc getch() indexes its `numeric` table by the escape
+    # value, so 11 is KEY_F1, 13 KEY_F3, 15 KEY_F5 and 19 KEY_F8. F1 is here
+    # because a C64 Ultimate puts the task menu on it; see tests/lib/machine.py.
+    "F1": b"\x1b[11~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     "F8": b"\x1b[19~",
@@ -1472,6 +1507,13 @@ class TelnetBackend(Backend):
         self, host: str, port: int, password: Optional[str] = None, timeout: float = 5.0,
         width: int = WIDTH, height: int = HEIGHT,
     ) -> None:
+        # Kept so this backend can ask the device what it is; see
+        # Backend.machine. The identity is the device's, not the transport's.
+        self.host = host
+        self.password = password
+        # The colour this machine's browser marks its cursor row with, once a
+        # listing has shown it unambiguously; see _marked_row.
+        self._selected_sgr: Optional[str] = None
         self.sock = self._connect_with_retry(host, port, timeout)
         self.sock.setblocking(False)
         self.timeout = timeout
@@ -1483,6 +1525,14 @@ class TelnetBackend(Backend):
             if password is None:
                 raise Failure("Telnet password prompt received but no password was provided")
             self.send_text(password + "\r", "password")
+
+    @property
+    def machine_host(self) -> str:
+        return self.host
+
+    @property
+    def machine_password(self) -> Optional[str]:
+        return self.password
 
     @staticmethod
     def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
@@ -1518,18 +1568,60 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command)
 
+    @property
+    def selected_sgr(self) -> Optional[str]:
+        """The colour this machine marks a cursor row with, once measured.
+
+        None until a listing has shown it. A caller that has to find the
+        selection on a screen this reader does not handle - a form, where the
+        marking covers one field rather than a row - asks for the colour here
+        rather than pinning one machine's.
+        """
+        return self._selected_sgr
+
+    def _content_sgr(self, row: int, text: str) -> Optional[str]:
+        """The colour the browser drew this row's first content cell in.
+
+        The first cell is not always column zero: a C64 Ultimate draws its
+        browser inside a frame, so column zero is the frame's own colour on
+        every row and says nothing about the selection.
+        """
+        for column, character in enumerate(text):
+            if character not in FRAME_CHARS:
+                return self.screen.colours[row][column]
+        return None
+
     def _marked_row(self, entry_rows: Sequence[int], rows: List[str]) -> int:
-        marked = [
-            row for row in entry_rows
-            if strip_frame(rows[row])
-            and TELNET_SELECTED_SGR in (self.screen.colours[row][0], self.screen.colours[row][1])
-        ]
-        if len(marked) != 1:
-            raise Failure(
-                f"Telnet: expected exactly one selected row among {list(entry_rows)}, "
-                f"found {marked}; screen was:\n{chr(10).join(rows)}"
-            )
-        return marked[0]
+        """The cursor row, as the one row drawn in a colour of its own.
+
+        The same rule the REST reader uses, for the same reason: a listing
+        draws every unselected entry in one colour and the selected one in
+        another, and which colours those are belongs to the machine. Pinning
+        the cursor's own colour string worked on an Ultimate 64, whose browser
+        marks the row `0;32;1` against `0;37;2`, and found nothing at all on a
+        C64 Ultimate, which marks `0;37;1` against `0;31;2`.
+
+        Learnt once and then kept, so a two-entry listing stays readable: the
+        colours tie there and the screen alone cannot say which is the cursor.
+        """
+        drawn = {row: self._content_sgr(row, rows[row]) for row in entry_rows
+                 if strip_frame(rows[row])}
+        drawn = {row: sgr for row, sgr in drawn.items() if sgr is not None}
+        tally: Dict[str, int] = {}
+        for sgr in drawn.values():
+            tally[sgr] = tally.get(sgr, 0) + 1
+        odd = [row for row, sgr in drawn.items() if tally[sgr] == 1]
+        if len(odd) == 1:
+            self._selected_sgr = drawn[odd[0]]
+            return odd[0]
+        if self._selected_sgr is not None:
+            wearing = [row for row, sgr in drawn.items() if sgr == self._selected_sgr]
+            if len(wearing) == 1:
+                return wearing[0]
+        raise Failure(
+            f"Telnet: expected exactly one selected row among {list(entry_rows)}, "
+            f"found {odd}; screen was:\n{chr(10).join(rows)}"
+        )
 
     def selected_row(self, entry_rows: Optional[Sequence[int]] = None) -> int:
         if entry_rows is None:
@@ -2062,9 +2154,13 @@ class Browser:
     def invoke_context_action(self, label: str) -> None:
         self.choose_overlay_item(self.open_context_menu(), label)
 
+    def press_task_menu(self) -> None:
+        """Open the task menu with whichever key this machine puts it on."""
+        self.press(self.backend.machine.task_menu_key)
+
     def invoke_task_action(self, category: str, item: str) -> None:
         before = self.rows()
-        self.press("F5")
+        self.press_task_menu()
         categories = self.wait_for_overlay(before)
         if not categories:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")
