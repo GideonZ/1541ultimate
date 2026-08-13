@@ -396,6 +396,83 @@ def run_selected_row_checks() -> None:
         if row != program:
             raise Failure(f"expected the program row {program}, got {row}")
 
+    with check("a volume header in reverse video is not taken for a cursor"):
+        # The same disk image listing as the device draws it. The volume
+        # header is in reverse video, which is styling: the browser marks its
+        # cursor row by colour and never by the reverse-video bit. Measured on
+        # an Ultimate II+L, cursor on the program: the volume row carried 28
+        # reverse cells and none of the cursor colour, and the program row the
+        # other way round. Ranking reverse video above the machine's own
+        # marking returned the volume header and the program was never
+        # selectable.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        volume = ROOT_ENTRY_ROWS_REST[0]
+        program = volume + 1
+        for row, text, code in (
+                (volume, "DMATEST           64 2A       VOLUME", 6),
+                (program, "DMATESTPROGRAM01              PRG  254", 1)):
+            start = row * SCREEN_WIDTH
+            padded = text.ljust(SCREEN_WIDTH).encode("ascii")
+            for column in range(SCREEN_WIDTH):
+                glyph = padded[column]
+                # The volume header's cells carry the reverse-video bit.
+                chars[start + column] = glyph | 0x80 if row == volume else glyph
+                colours[start + column] = code
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != program:
+            raise Failure(f"expected the program row {program}, got {row}")
+
+    with check("a form marks a field, not a row, and the field is found"):
+        # The Assembly 64 query form, captured from an Ultimate II+L: labelled
+        # fields inside a framed window. Every row is drawn the same way, 28
+        # cells of the listing colour and a ten-cell value field, so no row
+        # stands out by width or by its commonest colour. Only the value field
+        # of the row under the cursor carries the cursor colour, and ten cells
+        # is under the minimum a row highlight has to clear. Nothing else on
+        # the screen carries that colour, and that is what identifies the
+        # field.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        fields = ["Name:", "Group:", "Handle:", "Event:", "Repo:", "Category:"]
+        cursor_field = 2
+        draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
+                           items=["      Assembly 64 Query Form", ""]
+                                 + [f.ljust(10) + "_" * 18 for f in fields],
+                           selected=-1, listing_colour=11, selected_colour=11)
+        for index in range(len(fields)):
+            row = 5 + index
+            for column in range(SCREEN_WIDTH - 11, SCREEN_WIDTH - 1):
+                colours[row * SCREEN_WIDTH + column] = (
+                    1 if index == cursor_field else 12)
+        found = find_overlay_rows(bytes(chars), ROOT_ENTRY_ROWS_REST)
+        if found != range(4, 23):
+            raise Failure(f"expected the form's rows 4-22, got {found}")
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST, cursor_colour=1)
+        if row != 5 + cursor_field:
+            raise Failure(f"expected the Handle: field on row {5 + cursor_field}, "
+                          f"got {row}")
+
+    with check("reverse video still marks the cursor when nothing else does"):
+        # With no cursor colour measured for the machine, reverse video is the
+        # only marking on the screen and stays the answer.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        marked = ROOT_ENTRY_ROWS_REST[0] + 1
+        for index, text in enumerate(entries):
+            row = ROOT_ENTRY_ROWS_REST[0] + index
+            start = row * SCREEN_WIDTH
+            padded = text.ljust(SCREEN_WIDTH).encode("ascii")
+            for column in range(SCREEN_WIDTH):
+                glyph = padded[column]
+                chars[start + column] = glyph | 0x80 if row == marked else glyph
+        row = find_selected_row_rest(bytes(chars), bytes(colours),
+                                     ROOT_ENTRY_ROWS_REST)
+        if row != marked:
+            raise Failure(f"expected the reverse-video row {marked}, got {row}")
+
     with check("a listing of three or more entries says which colour is the cursor"):
         chars, colours = build_menu_planes(entries, selected=2, listing_colour=12,
                                            selected_colour=1)

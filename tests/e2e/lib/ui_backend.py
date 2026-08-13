@@ -621,9 +621,17 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
 
     if best_background_count >= SELECTED_ROW_MIN_MARKED_CELLS:
         return best_background_row
-    if best_reverse_count >= SELECTED_ROW_MIN_MARKED_CELLS:
-        return best_reverse_row
     if cursor_colour is not None:
+        # Ahead of the reverse-video rule below, because this says what the
+        # machine actually marks a cursor with and that rule only guesses.
+        # The browser marks its cursor row by colour, not by the character
+        # matrix's reverse-video bit (see Backend.selected_row), so a row in
+        # reverse video is something else drawn that way. Measured on an
+        # Ultimate II+L showing a D64: the volume header carried 28 reverse
+        # cells and no cursor colour, the program row under the cursor
+        # carried 28 cells of the cursor colour and no reverse cells, and the
+        # reverse rule returned the volume header every time.
+        #
         # How many cells carry the cursor colour, not whether it is the row's
         # commonest one. The marking does not always cover the whole row: in a
         # disk image listing the cursor colours the name field only, so the row
@@ -644,10 +652,22 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
         # as the last blank row and the entry on screen was never selected.
         wearing = [(count_colour(colours, row, cursor_colour), row)
                    for row in rows if row in marks]
+        wearing = [(count, row) for count, row in wearing if count]
+        # One row and no other carrying the machine's cursor colour is a
+        # stronger statement than any number of cells, so it is taken without
+        # the minimum below. A form marks a field rather than a row: measured
+        # on an Ultimate II+L Assembly 64 query form, the cursor coloured the
+        # ten-cell value field of "Name:" and nothing else on the screen
+        # carried that colour, which the minimum rejected as noise, so the
+        # form's first field was never reachable.
+        if len(wearing) == 1:
+            return wearing[0][1]
         wearing = [(count, row) for count, row in wearing
                    if count >= SELECTED_ROW_MIN_MARKED_CELLS]
         if wearing:
             return max(wearing)[1]
+    if best_reverse_count >= SELECTED_ROW_MIN_MARKED_CELLS:
+        return best_reverse_row
     if strict:
         # Only the foreground fallback is left, which cannot tell a real
         # selection from a screen whose cursor is not drawn yet. Say so, so the
