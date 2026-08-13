@@ -687,6 +687,25 @@ void connect_thread(void *a)
     static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected" }; 
 
     while(1) {
+        // A disconnect the user asked for can arrive while the ladder is
+        // already walking, and the ladder cannot notice: every state below
+        // blocks on connect_events until its current attempt resolves. Testing
+        // the flag only where the retry timer is armed is therefore not
+        // enough -- an attempt that was already in flight goes on to succeed
+        // and puts the link back up seconds after the user asked for it down.
+        //
+        // So check here, between states, which is the one point the ladder
+        // passes through with nothing in flight. An attempt that landed in the
+        // meantime has to be undone rather than prevented; it had already been
+        // accepted by the time the request arrived.
+        if (user_disconnected && (state != Disconnected)) {
+            if (connected_g) {
+                ESP_LOGI(TAG, "Disconnect requested while reconnecting; undoing.");
+                esp_wifi_disconnect();
+            }
+            state = Disconnected;
+        }
+
         switch (state) {
             case LastAP:
                 err = wifi_connect_to_last();
