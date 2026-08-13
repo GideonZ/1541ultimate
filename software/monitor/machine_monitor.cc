@@ -27,7 +27,7 @@ extern "C" {
 // terminal rather than the 25-row C64. A host test enforces both.
 const char *const monitor_help_lines[] = {
     "{M} Memory    {I} ASCII     {V} Screen",
-    "{A} Assembly  {B} Binary   {U} Undoc/Case",
+    "{A} Assembly  {B} Binary    {U} Undoc/Case",
     "{J} Jump      {G} Go        {X} Exit",
     "",
     "{E} Edit      {F} Fill      {T} Transfer",
@@ -37,12 +37,14 @@ const char *const monitor_help_lines[] = {
     "{L} Load      {S} Save",
     "",
     "Bookmarks:  {C=+B} List   {C=+0-9} Jump",
-    "Help {?}/{%s}   Copy {C=+C}  Paste {C=+V}",
-    "Follow/Return {RETURN}  Edit off {C=+E}",
     "",
-    "Back = {RSTOP} or {<-}, one level at a",
-    "time: help, popup, edit, monitor.",
-    "Monitor open/close: {C=+O}",
+    // Labelled lines rather than a third grid column, with every value on the
+    // same column, which is how this block has always been laid out.
+    "Help:          {?}/{%s}",
+    "Monitor:       {C=+O}   Edit off {C=+E}",
+    "Back a level:  {RSTOP} or {<-}",
+    "Copy/Paste:    {C=+C} / {C=+V}",
+    "Follow/Return: {RETURN}",
     NULL
 };
 

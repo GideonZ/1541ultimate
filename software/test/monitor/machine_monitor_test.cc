@@ -6832,6 +6832,14 @@ static const int MONITOR_CONTENT_WIDTH = 38;
 // screen title, the window border, the header and the status line.
 static const int MONITOR_HELP_LINES_ON_SHORTEST_SCREEN = 24 - 7;
 
+// The three-column grid the help's command lines are laid out on: three
+// columns of 12 in the 38 usable columns, leaving the last two for the widest
+// entry to spill into.
+static const int MONITOR_HELP_COLUMN_WIDTH = 12;
+
+// Where the labelled lines below the grid put their values.
+static const int MONITOR_HELP_VALUE_COLUMN = 15;
+
 static int expect_help_hidden(CaptureScreen &screen, const char *message)
 {
     char line[40];
@@ -7489,6 +7497,61 @@ static int test_monitor_interaction_text_is_a_contract(void)
         }
     }
 
+    // The command lines are a three-column grid, and the markup that picks out
+    // the keys must not move them. A line that begins with a key is one of
+    // those lines, and its keys start at columns 0, 12 and 24; the prose lines
+    // lower down mention keys mid-sentence and are not part of the grid. The
+    // brace markup is invisible on screen, so getting this wrong is easy and
+    // shows up only as a column that no longer lines up with the ones above
+    // it: "{B} Binary   {U}" put Undoc at column 23 instead of 24.
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        int column = 0;
+        bool grid = (text[0] == '{');
+
+        for (const char *at = text; *at; at++) {
+            if (*at == '}') {
+                continue;
+            }
+            if (*at != '{') {
+                column++;
+                continue;
+            }
+            if (grid && expect((column % MONITOR_HELP_COLUMN_WIDTH) == 0,
+                               "A help key does not start on the column grid.")) {
+                printf("  column %d: %s\n", column, text);
+                return 1;
+            }
+        }
+    }
+
+    // The labelled lines below the grid put every value on one column, which
+    // is what makes that block read as a list rather than as prose. A line
+    // ending its label with a colon is one of them.
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        const char *colon = strchr(text, ':');
+        char plain[64];
+        int value;
+
+        if (!colon || text[0] == '{') {
+            continue;
+        }
+        monitor_help_plain_text(text, plain, sizeof(plain));
+        value = (int)(strchr(plain, ':') - plain) + 1;
+        while (plain[value] == ' ') {
+            value++;
+        }
+        if ((value % MONITOR_HELP_COLUMN_WIDTH) == 0) {
+            continue;   // a grid line whose first column happens to be a label
+        }
+        if (expect(value == MONITOR_HELP_VALUE_COLUMN,
+                   "A labelled help line does not put its value on the value column.")) {
+            printf("  column %d: %s\n", value, plain);
+            return 1;
+        }
+    }
+
     // Help has to name both ways in and the Back key, because those are what
     // section 1 of the interaction contract promises.
     {
@@ -7505,7 +7568,7 @@ static int test_monitor_interaction_text_is_a_contract(void)
             strcat(all, rendered);
             strcat(all, "\n");
         }
-        if (expect(strstr(all, "Help ?/") != NULL,
+        if (expect(strstr(all, "Help:") != NULL && strstr(all, "?/") != NULL,
                    "Help must name '?' as a way to open it.")) return 1;
         if (expect(strstr(all, ui.function_key_for(KEY_HELP)) != NULL,
                    "Help must name the mapped help key.")) return 1;
