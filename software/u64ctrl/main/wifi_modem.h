@@ -19,6 +19,7 @@ typedef struct {
     uint8_t event_code;
 } ConnectEvent_t;
 
+void wifi_note_user_disconnect(void);
 esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
 esp_err_t wifi_clear_aps(void);
 void enable_hook();

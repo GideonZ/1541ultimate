@@ -144,6 +144,8 @@ void cmd_wifi_disconnect(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
     ESP_LOGI(TAG, "Disconnecting from WiFi.");
+    // Asked for, so the connector must not undo it on its retry timer.
+    wifi_note_user_disconnect();
     resp->esp_err = esp_wifi_disconnect();
     ESP_LOGI(TAG, "Disconnected from WiFi, sending response. (%d)", resp->esp_err);
     buf->size = sizeof(rpc_espcmd_resp);
