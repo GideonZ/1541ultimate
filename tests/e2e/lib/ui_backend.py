@@ -564,6 +564,18 @@ def find_cursor_colour(chars: bytes, colours: bytes,
     titled window ambiguous here. Titles never reach this function: they are
     left out of the rows a framed window contributes. See find_overlay_rows.
 
+    The odd row also has to be drawn like the rows it stands out from, because
+    a screen that is not a listing at all can satisfy the rule above and teach
+    a colour that is not a cursor's. A form is the case that matters, since
+    the answer is kept for the session: measured on an Ultimate II+L Assembly
+    64 query form, thirteen field rows carried 28 cells of one colour and the
+    one button row below them 38 cells of another, which reads exactly like a
+    listing whose cursor is on its last row. The colour of the button was
+    learnt as the machine's cursor colour and every later read returned the
+    button row. A listing draws its selected row to the same width as the
+    rest, so requiring that rejects the button and leaves the colour to be
+    learnt from a screen that really is a listing.
+
     Returns None when the screen cannot answer: when the machine marks the
     cursor with a background nibble instead (every Ultimate 64: color_sel_bg
     is only set under #if U64), and when no single row's colour is unique.
@@ -574,9 +586,14 @@ def find_cursor_colour(chars: bytes, colours: bytes,
     tally: Dict[int, int] = {}
     for mark in marks.values():
         tally[mark.colour] = tally.get(mark.colour, 0) + 1
-    odd = [mark.colour for mark in marks.values()
+    odd = [mark for mark in marks.values()
            if tally[mark.colour] == 1 and mark.colour_cells >= SELECTED_ROW_MIN_MARKED_CELLS]
-    return odd[0] if len(odd) == 1 else None
+    listing = [mark.colour_cells for mark in marks.values() if tally[mark.colour] > 1]
+    if not listing:
+        return None
+    width = max(set(listing), key=listing.count)
+    odd = [mark for mark in odd if mark.colour_cells == width]
+    return odd[0].colour if len(odd) == 1 else None
 
 
 def measure_cursor_colour(chars: bytes, colours: bytes,

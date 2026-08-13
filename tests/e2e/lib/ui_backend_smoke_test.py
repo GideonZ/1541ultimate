@@ -39,6 +39,10 @@ from ui_backend import (BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT, BOX_HORIZONTAL,
                         find_overlay_rows, find_selected_row_rest,
                         measure_cursor_colour, plan_overlay_navigation)
 
+# The colour the firmware draws a window frame in, distinct from both the
+# listing and the cursor colour; measured on an Ultimate II+L task menu.
+FRAME_COLOUR = 13
+
 MIN_PRINTABLE_CELLS = 20
 MAX_DISTINCT_GLYPHS = 160
 
@@ -154,15 +158,19 @@ def draw_framed_window(chars: bytearray, colours: bytearray, top: int,
     for row in range(top + 1, bottom):
         chars[row * SCREEN_WIDTH + left] = BOX_VERTICAL
         chars[row * SCREEN_WIDTH + right] = BOX_VERTICAL
-    # The frame's own cells carry a colour like every other cell. Leaving them
-    # at zero would make the frame rows look like rows of a colour nothing
-    # else on the screen uses, which is what a cursor row looks like.
+    # The frame's own cells carry a colour like every other cell, and it is
+    # neither the listing's nor the cursor's: on an Ultimate II+L task menu
+    # the items were 28 cells of colour 1 or 12 and the frame was drawn in
+    # colour 13. Leaving these at zero would make the frame rows look like
+    # rows of a colour nothing else uses, which is what a cursor row looks
+    # like; drawing them in the listing colour would instead make every
+    # unselected row two cells wider than the row under the cursor.
     for row in range(top, bottom + 1):
         for column in (left, right):
-            colours[row * SCREEN_WIDTH + column] = listing_colour
+            colours[row * SCREEN_WIDTH + column] = FRAME_COLOUR
     for column in range(left + 1, right):
-        colours[top * SCREEN_WIDTH + column] = listing_colour
-        colours[bottom * SCREEN_WIDTH + column] = listing_colour
+        colours[top * SCREEN_WIDTH + column] = FRAME_COLOUR
+        colours[bottom * SCREEN_WIDTH + column] = FRAME_COLOUR
     for index, text in enumerate(items):
         row = top + 1 + index
         code = selected_colour if index == selected else listing_colour
@@ -337,6 +345,34 @@ def run_overlay_row_checks() -> None:
                                          ROOT_ENTRY_ROWS_REST)
         if measured != 1:
             raise Failure(f"expected the cursor colour 1, got {measured!r}")
+
+    with check("a form teaches no cursor colour at all"):
+        # The Assembly 64 query form again. Thirteen field rows of one colour
+        # and one button row below them of another reads exactly like a
+        # listing whose cursor is on its last row, so the odd-colour rule has
+        # an answer here and it is the wrong one. The answer is kept for the
+        # session, so learning it here pointed every later read at the button.
+        # The button's colour runs the full inside width while a field's stops
+        # short, and a listing draws its cursor row like the rest, so the
+        # button is rejected and nothing is learnt.
+        chars = bytearray(b" " * SCREEN_CELLS)
+        colours = bytearray(SCREEN_CELLS)
+        fields = ["Name:", "Group:", "Handle:", "Event:", "Repo:", "Category:"]
+        draw_framed_window(chars, colours, top=2, bottom=23, left=0, right=39,
+                           items=["      Assembly 64 Query Form", ""]
+                                 + [f.ljust(10) + "_" * 18 for f in fields]
+                                 + ["", "", "            << Search >>"],
+                           selected=-1, listing_colour=11, selected_colour=11)
+        for index in range(len(fields)):
+            row = 5 + index
+            for column in range(SCREEN_WIDTH - 11, SCREEN_WIDTH - 1):
+                colours[row * SCREEN_WIDTH + column] = 1 if index == 0 else 12
+        for column in range(1, SCREEN_WIDTH - 1):
+            colours[13 * SCREEN_WIDTH + column] = 12
+        measured = measure_cursor_colour(bytes(chars), bytes(colours),
+                                         ROOT_ENTRY_ROWS_REST)
+        if measured is not None:
+            raise Failure(f"expected the form to teach nothing, got {measured!r}")
 
     with check("an untitled window keeps its first row"):
         # The task menu has no title, so its first interior row is a menu item
