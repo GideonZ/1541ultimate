@@ -503,7 +503,11 @@ def drop_names(ctx: Context, names: Sequence[str]) -> None:
         try:
             ftp.delete(target)
         except ftplib.all_errors:
-            ftp_try(lambda path=target: ftp.rmd(path))
+            # RMD alone leaves a directory with contents in place, and the
+            # rows that rename or move a directory put a file inside it. The
+            # failure was silent until the wait below started checking, and
+            # the directory stayed on the device for the rest of the run.
+            remove_tree(ftp, target)
     ctx.converge("cleanup", "-", expected_snapshot([]), names, record_passes=False)
 
 
