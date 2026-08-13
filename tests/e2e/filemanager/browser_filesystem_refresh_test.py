@@ -163,6 +163,23 @@ def format_snapshot(snapshot: Snapshot) -> str:
     return ", ".join(repr(snapshot[name]) for name in sorted(snapshot))
 
 
+def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
+    """A browser row without the window frame, and the width that leaves.
+
+    A C64 Ultimate draws its file browser inside a framed window, so every
+    field sits one column to the right of where the other two machines put it
+    and the row is two columns narrower. parse_browser_row measures its fields
+    from the first content column, so the frame has to come off first.
+    Measured on a C64 Ultimate: with the frame left on, every row parsed as
+    empty, so all three observers reported an empty directory while the screen
+    plainly listed the file, and all 35 matrix rows failed to converge.
+    """
+    row = row.ljust(width)
+    if row[0] == "|" and row[width - 1] == "|":
+        return row[1:width - 1], width - 2
+    return row, width
+
+
 def parse_browser_row(row: str, width: int) -> Optional[Entry]:
     """Split one rendered browser line.
 
@@ -319,7 +336,7 @@ class FilesystemRefreshBrowser(ui_backend.Browser):
         result: Snapshot = {}
         rows = self.capture().lines
         for index in self.entry_rows:
-            entry = parse_browser_row(rows[index], self.width)
+            entry = parse_browser_row(*strip_browser_frame(rows[index], self.width))
             if entry:
                 result[entry.name] = entry
         return result
