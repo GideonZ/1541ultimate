@@ -44,6 +44,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import machine as machine_lib
 import pacing
 import rest as rest_lib
 import targets
@@ -57,6 +58,9 @@ SCREEN_BYTES = SCREEN_CELLS * 2
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
+# Names the product, which is how a run discovers which machine it is aimed
+# at; see tests/lib/machine.py.
+INFO_PATH = "/v1/info"
 INPUT_PATH = "/v1/machine:input"
 CONFIGS_PATH = "/v1/configs"
 UI_STORE = "User Interface Settings"
@@ -864,6 +868,26 @@ class RestBackend(Backend):
     def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = "?" + urllib.parse.urlencode(params) if params else ""
         return f"http://{self.target.host_for(path)}{path}{query}"
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this backend drives, asked once of the device.
+
+        Three machines answer this API and their menus differ, so a suite that
+        has to allow for that asks here rather than being told on the command
+        line. Fetched from /v1/info on first use and kept for the process; see
+        tests/lib/machine.py.
+        """
+        return machine_lib.identify(self.host, self._fetch_product)
+
+    def _fetch_product(self) -> str:
+        status, body = self._request("GET", INFO_PATH)
+        if status != 200:
+            raise Failure(f"{INFO_PATH} failed with HTTP {status}: {body[:160]!r}")
+        try:
+            return str(json.loads(body.decode("utf-8")).get("product", ""))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise Failure(f"{INFO_PATH} returned no readable product: {exc}")
 
     def _request(
         self, method: str, path: str,

@@ -28,6 +28,7 @@ from typing import Sequence
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine
 import pacing
 import rest as rest_lib
 import targets
@@ -119,6 +120,72 @@ def run_navigation_planner_checks() -> None:
         prefix, delta = plan_overlay_navigation(menu, "Load", start=3)
         if len(prefix) + abs(delta) > 2:
             raise Failure(f"expected at most two keys, got {prefix!r} {delta:+d}")
+
+
+def run_machine_checks() -> None:
+    """Telling the three machines apart from what /v1/info reports.
+
+    Needs no device: it is the rule every suite now relies on to choose a menu
+    layout, and getting it wrong sends a run down the wrong path on hardware
+    that is working correctly. The product strings are the ones the three
+    machines were measured to return.
+    """
+    with check("each machine is recognised from its product string"):
+        expected = {
+            "Ultimate 64": machine.U64,
+            "Ultimate 64 Elite": machine.U64,
+            "Ultimate II+": machine.U2,
+            "Ultimate II+L": machine.U2,
+            "C64 Ultimate": machine.C64U,
+        }
+        for product, kind in expected.items():
+            found = machine.classify(product).kind
+            if found != kind:
+                raise Failure(f"{product!r}: expected {kind}, got {found}")
+
+    with check("only the C64 Ultimate opens on a launcher"):
+        # Its menu button opens a launcher whose first entry is the file
+        # browser; the other two open the browser itself.
+        for product, launcher in (("Ultimate 64 Elite", False),
+                                  ("Ultimate II+L", False),
+                                  ("C64 Ultimate", True)):
+            found = machine.classify(product).menu_opens_on_launcher
+            if found != launcher:
+                raise Failure(f"{product!r}: expected launcher={launcher}, got {found}")
+
+    with check("the C64 Ultimate searches CommoServe, the others Assembly 64"):
+        for product, service in (("Ultimate 64 Elite", "Assembly 64"),
+                                 ("Ultimate II+L", "Assembly 64"),
+                                 ("C64 Ultimate", "CommoServe")):
+            found = machine.classify(product).search_service
+            if found != service:
+                raise Failure(f"{product!r}: expected {service}, got {found}")
+
+    with check("an unrecognised product is refused rather than guessed"):
+        # Guessing would send the run down one machine's menu layout on
+        # another's hardware and report the mismatch as a firmware defect.
+        try:
+            machine.classify("Commodore PET")
+        except machine.UnknownMachine:
+            pass
+        else:
+            raise Failure("an unknown product was classified rather than refused")
+
+    with check("the product is fetched once and then kept"):
+        # It cannot change during a run, and every screen read would otherwise
+        # pay for a REST round trip.
+        machine.forget("fixture-host")
+        calls = []
+
+        def fetch() -> str:
+            calls.append(1)
+            return "C64 Ultimate"
+
+        kinds = {machine.identify("fixture-host", fetch).kind for _ in range(3)}
+        machine.forget("fixture-host")
+        if kinds != {machine.C64U} or len(calls) != 1:
+            raise Failure(f"expected one fetch and one answer, got {len(calls)} "
+                          f"fetches and {kinds}")
 
 
 def build_menu_planes(entries: Sequence[str], selected: int, listing_colour: int,
@@ -725,6 +792,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        section("Machine identification")
+        run_machine_checks()
+
         section("Overlay navigation planner")
         run_navigation_planner_checks()
 
