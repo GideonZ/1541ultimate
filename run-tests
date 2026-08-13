@@ -135,6 +135,11 @@ SUITES: Sequence[Suite] = (
     # anyway: that is what a file from another Ultimate looks like.
     Suite("e2e", "cfg-unknown-items", "tests/e2e/filemanager/cfg_unknown_items_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # A hand-edited .cfg spaces things the way a person would, which the padded
+    # enum labels in the Audio Mixer make a real case rather than a contrived
+    # one: nobody types "Vol Master= 0 dB" with the leading space.
+    Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
