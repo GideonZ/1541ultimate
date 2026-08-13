@@ -943,29 +943,44 @@ class RestBackend(Backend):
         body = self._menu_screen_body()
         if body is None:
             raise Failure(f"menu screen unavailable after {self.last_command}")
+        self._learn_cursor_colour(body, None)
         return body
+
+    def _learn_cursor_colour(self, body: bytes,
+                             entry_rows: Optional[Sequence[int]]) -> None:
+        """Take the machine's cursor colour from this screen, if it teaches one.
+
+        Every screen the backend fetches is offered, not just the ones a
+        caller asks a row of, because a caller can reach a screen that needs
+        the colour without ever having asked for a row on one that teaches it.
+        Measured on an Ultimate II+L: a suite that opened the Assembly 64 form
+        from the task menu asked for its first row on the form itself, and a
+        form marks a ten-cell field, which no rule can find without the colour.
+        The task menu it passed through would have taught it.
+
+        Learnt once and then kept. The colour scheme belongs to the machine
+        (userinterface.cc effectuate_settings), not to the screen, and a later
+        screen can answer confidently and wrongly: a disk image listing draws
+        its volume row in one colour across the full width, which is unique
+        among the rows on that screen, so re-learning there adopts the volume
+        colour and every read afterwards returns the volume row. Measured on
+        an Ultimate II+L showing a D64 with one program.
+        """
+        if self._cursor_colour is not None:
+            return
+        rows = entry_rows if entry_rows is not None else range(2, SCREEN_HEIGHT - 1)
+        measured = measure_cursor_colour(body[:SCREEN_CELLS], body[SCREEN_CELLS:], rows)
+        if measured is not None:
+            self._cursor_colour = measured
 
     def _selected_row_from_body(self, body: bytes, entry_rows: Optional[Sequence[int]],
                                 strict: bool = False) -> int:
         chars = body[:SCREEN_CELLS]
         colours = body[SCREEN_CELLS:]
         rows = entry_rows if entry_rows is not None else range(2, SCREEN_HEIGHT - 1)
-        # Kept for the screens that cannot answer for themselves: a listing of
-        # two entries ties, and a colour learnt from any earlier screen of this
-        # session breaks the tie. It is only ever taken from a screen that said
-        # so unambiguously, so a screen that is mid-repaint cannot teach a wrong
-        # one; find_cursor_colour returns None there instead.
-        # Learnt once and then kept. The colour scheme belongs to the machine
-        # (userinterface.cc effectuate_settings), not to the screen, and a
-        # later screen can answer confidently and wrongly: a disk image listing
-        # draws its volume row in one colour across the full width, which is
-        # unique among the rows on that screen, so re-learning there adopts the
-        # volume colour and every read afterwards returns the volume row.
-        # Measured on an Ultimate II+L showing a D64 with one program.
-        if self._cursor_colour is None:
-            measured = measure_cursor_colour(chars, colours, rows)
-            if measured is not None:
-                self._cursor_colour = measured
+        # Offered again with the caller's own row range, which is narrower and
+        # more likely to hold exactly one listing than the default above.
+        self._learn_cursor_colour(body, entry_rows)
         return find_selected_row_rest(chars, colours, rows, strict, self._cursor_colour)
 
     def _settled_selection(self, entry_rows: Optional[Sequence[int]]) -> Tuple[bytes, int]:
