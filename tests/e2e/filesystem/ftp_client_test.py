@@ -74,6 +74,13 @@ SCREEN_PLANES = 2
 SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 
 # Shared with every suite; see tests/lib/pacing.py.
+# Ports each concurrent run of this suite reserves. The suite serves the
+# device from its own FTP server, using the control port and the one after it
+# (a second server, for the alternate-port checks), and the passive range plus
+# six ports above it. The blocks below leave room around both.
+CONTROL_PORTS_PER_RUN = 8
+PASSIVE_PORTS_PER_RUN = 32
+
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # Shared with every suite; see tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
@@ -2045,8 +2052,18 @@ def parse_args(argv=None):
     p.add_argument("--ftp-bind-host", default="0.0.0.0", help="local FTP bind address")
     p.add_argument("--ftp-advertised-host", default=None,
                    help="address the Ultimate should connect to (required unless inferable)")
-    p.add_argument("--ftp-port", type=int, default=2121, help="local FTP control port")
-    p.add_argument("--ftp-passive-ports", default="30000-30019", help="passive port range lo-hi")
+    # Two targets tested at once are two runs of this suite, each serving the
+    # device it drives from its own FTP server, so the ports have to differ.
+    # The runner gives every concurrent run an index and this shifts both the
+    # control port and the passive range by it. Without it the second run died
+    # on "Address already in use" before its first check. A run started by
+    # hand has no index and keeps the ports this suite has always used.
+    slot = int(os.environ.get("E2E_PORT_SLOT", "0"))
+    passive_lo = 30000 + slot * PASSIVE_PORTS_PER_RUN
+    p.add_argument("--ftp-port", type=int, default=2121 + slot * CONTROL_PORTS_PER_RUN,
+                   help="local FTP control port")
+    p.add_argument("--ftp-passive-ports", default=f"{passive_lo}-{passive_lo + 19}",
+                   help="passive port range lo-hi")
     p.add_argument("--ftp-user", default="u64e2e", help="remote FTP username")
     p.add_argument("--ftp-password", default="u64e2e", help="remote FTP password")
     p.add_argument("--remote-root", default=None, help="serve an existing local directory instead of a temp one")
