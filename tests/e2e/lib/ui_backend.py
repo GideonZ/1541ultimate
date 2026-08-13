@@ -253,6 +253,15 @@ class Backend:
     def machine_password(self) -> Optional[str]:
         return None
 
+    def enter_file_browser(self) -> None:
+        """Land on the file browser if the UI is showing something above it.
+
+        A no-op where the browser is the top of the UI stack, which is every
+        machine but the C64 Ultimate. There the launcher sits above it, so
+        backing out of the root directory leaves the browser entirely rather
+        than doing nothing. See RestBackend.enter_file_browser.
+        """
+
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
 
@@ -1002,7 +1011,7 @@ class RestBackend(Backend):
 
     def _open_menu(self) -> None:
         if self._menu_open():
-            self._enter_file_browser()
+            self.enter_file_browser()
             return
         status, body = self._request("PUT", MENU_BUTTON_PATH)
         if status != 200:
@@ -1010,7 +1019,7 @@ class RestBackend(Backend):
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._menu_open():
-                self._enter_file_browser()
+                self.enter_file_browser()
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
@@ -1026,7 +1035,7 @@ class RestBackend(Backend):
         rows = self._decode(self._body()).lines
         return rows[SCREEN_HEIGHT - 1].lstrip().startswith("/")
 
-    def _enter_file_browser(self) -> None:
+    def enter_file_browser(self) -> None:
         """Leave the menu showing the file browser, whatever it opened on.
 
         A C64 Ultimate does not put the file browser behind the menu button.
@@ -1928,6 +1937,12 @@ class Browser:
     # -- navigation --
     def go_to_root(self) -> None:
         for _ in range(12):
+            # Backing out of the root directory does not always stay in the
+            # browser: a C64 Ultimate keeps a launcher above it, so one LEFT
+            # too many leaves the browser and every later read is of a screen
+            # that has no path at all. Asking to be put back is a no-op on the
+            # machines where the browser is the top of the stack.
+            self.backend.enter_file_browser()
             if self.current_path() == "/":
                 return
             try:
