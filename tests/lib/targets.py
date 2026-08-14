@@ -80,10 +80,18 @@ VIDEO_PORT_ENV = "U64_VIDEO_PORT"
 AUDIO_GROUP_ENV = "U64_AUDIO_GROUP"
 AUDIO_PORT_ENV = "U64_AUDIO_PORT"
 
-# The one REST path that belongs to the C64-side computer. Everything else -
-# identity, the menu screen, the menu button, memory, the machine reset,
-# configuration - is the device under test's.
+# The REST paths that belong to the C64-side computer rather than to the
+# device under test. Everything else - identity, the menu screen, the menu
+# button, memory, the machine reset, configuration - is the device's.
+#
+# The keyboard, because a cartridge has no keyboard matrix of its own and
+# answers HTTP 501 here.
 INPUT_PATH = "/v1/machine:input"
+# The streams, because a cartridge has no VIC and no streaming hardware:
+# route_streams.cc and data_streamer.cc are absent from every U2 makefile, so
+# `streams:start` sent to a cartridge fails and the picture that shows what
+# the cartridge is doing is the computer's anyway.
+STREAM_PREFIX = "/v1/streams/"
 
 # Conservative, and deliberately not a host-name authority: it rejects the
 # things a mistyped target actually looks like (an empty half, a stray space,
@@ -166,8 +174,14 @@ class Target:
         For a suite that builds its own URLs. tests/lib/rest.py,
         tests/e2e/lib/ui_backend.py and tests/e2e/lib/ui_state.py apply the
         same rule to the requests they make.
+
+        Two paths belong to the computer: the keyboard and the streams. See
+        INPUT_PATH and STREAM_PREFIX.
         """
-        return self.input_host if path.split("?")[0] == INPUT_PATH else self.device
+        bare = path.split("?")[0]
+        if bare == INPUT_PATH or bare.startswith(STREAM_PREFIX):
+            return self.computer
+        return self.device
 
     @property
     def slug(self) -> str:

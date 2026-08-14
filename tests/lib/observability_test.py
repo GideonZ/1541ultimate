@@ -177,8 +177,13 @@ def target_carries_every_port() -> str:
     expect("telnet", target.telnet_port, 23)
     expect("dma", target.dma_port, 64)
     # A cartridge has no VIC and no streams route, so the picture and the
-    # audio are the computer's.
+    # audio are the computer's, and so is the request that starts them.
     expect("the video is the computer's", cartridge.video_host, "c64u")
+    expect("and so is the stream it asks for",
+           cartridge.host_for("/v1/streams/video:start"), "c64u")
+    expect("the keyboard too", cartridge.host_for("/v1/machine:input"), "c64u")
+    expect("everything else is the cartridge's",
+           cartridge.host_for("/v1/machine:menu_screen"), "u2")
     # Both machines of a cartridge target log, and the order says which is
     # the device under test.
     expect("both logs, the cartridge first", cartridge.log_hosts,
