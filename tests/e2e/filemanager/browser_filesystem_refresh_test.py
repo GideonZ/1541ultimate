@@ -1011,6 +1011,29 @@ def row_short_write(ctx: Context, name: str) -> None:
 # --------------------------------------------------------------------------
 
 
+# The rows that cannot converge without a given firmware fix. Kept beside the
+# rows themselves so a label renamed below is renamed here too.
+ROWS_NEEDING_FIX = {
+    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
+        "rename under observer-queue pressure from the Menu",
+        "rename under observer-queue pressure from Telnet",
+    ),
+    machine_lib.BROWSER_REFRESH_ON_DIRECTORY_CHANGE: (
+        "rename a directory from the Menu",
+        "rename a directory from Telnet",
+        "delete a non-empty directory from the Menu",
+        "delete a non-empty directory from Telnet",
+        "remove a directory from FTP",
+        "create from FTP (mkd)",
+        "failed write creates nothing",
+    ),
+    machine_lib.BROWSER_REFRESH_FROM_TELNET_WRITER: (
+        "write from Telnet",
+        "copy over an existing file from Telnet",
+    ),
+}
+
+
 def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[str]]]:
     """Every matrix row, in run order. Labels are what -r/--row matches on."""
     return [
@@ -1274,12 +1297,18 @@ def main() -> int:
         # against a listing that never caught up. Skipped rather than failed
         # where the firmware lacks the fix, because one failure there costs
         # twelve.
-        pressure = "observer-queue pressure"
-        if ctx.machine.missing_fix(machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW):
-            for label, _, _ in [row for row in rows if pressure in row[0]]:
-                ctx.machine.skip_without_fix(
-                    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW, label)
-            rows = [row for row in rows if pressure not in row[0]]
+        # Named one by one rather than matched on the label, because the row
+        # that needs a fix is not always the row that says so: "failed write
+        # creates nothing" blocks its STOR with a directory it creates first,
+        # so it needs the directory notification like the rows that say
+        # "directory" in their name.
+        for fix, labels in ROWS_NEEDING_FIX.items():
+            if not ctx.machine.missing_fix(fix):
+                continue
+            for label in labels:
+                if any(row[0] == label for row in rows):
+                    ctx.machine.skip_without_fix(fix, label)
+            rows = [row for row in rows if row[0] not in labels]
 
         if args.row:
             wanted = [text.lower() for text in args.row]

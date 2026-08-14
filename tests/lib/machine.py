@@ -201,6 +201,30 @@ BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW = _fix(
     "still shows the committed directory afterwards",
     (C64U,))
 
+# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py, and
+# directly: with a browser open on /Temp, a file created over FTP appeared in
+# its listing after 0.42s, while a directory created the same way never
+# appeared at all in twelve seconds, though FTP and REST both listed it. The
+# rows that rename, delete or create a directory therefore cannot converge,
+# and neither can the seed that puts one there in the first place.
+BROWSER_REFRESH_ON_DIRECTORY_CHANGE = _fix(
+    "browser-refresh-on-directory-change",
+    "a directory added or removed by another writer appears in, or leaves, an "
+    "open browser's listing without leaving and re-entering the directory",
+    (C64U,))
+
+# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py. Only
+# one direction is affected, which is what makes it a distinct gap rather than
+# part of the two above: a write made from the Telnet browser did not reach
+# the on-screen menu browser, which went on showing the old size, while the
+# same write made from the menu or over FTP reached every observer including
+# the menu.
+BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
+    "browser-refresh-from-telnet-writer",
+    "a file written from the Telnet browser is re-read by the on-screen menu "
+    "browser, so both show the committed size",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
