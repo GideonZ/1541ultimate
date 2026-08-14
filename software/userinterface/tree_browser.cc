@@ -465,23 +465,8 @@ int TreeBrowser :: handle_key(int c)
             reset_quick_seek();
             ret = swap_interface_type(user_interface);
             break;
-        case KEY_CTRL_O:
-            reset_quick_seek();
-            state->refresh = true;
-            if (get_machine_monitor_task) {
-                TaskMenu::ensure_task_actions_created(path ? FileManager :: getFileManager()->is_path_writable(path) : false);
-                Action *monitorAction = get_machine_monitor_task(SUBSYSID_U64);
-                if (!monitorAction) {
-                    monitorAction = get_machine_monitor_task(SUBSYSID_C64);
-                }
-                if (monitorAction) {
-                    const char *currentPath = path ? path->get_path() : "";
-                    SubsysCommand *cmd = new SubsysCommand(user_interface, monitorAction, currentPath, "");
-                    cmd->execute();
-                    ret = (int)(user_interface->menu_response_to_action);
-                }
-            }
-            break;
+        // KEY_CTRL_O is not here: opening the monitor is a global shortcut and
+        // is handled once, for every UI context, in UserInterface::keymapper.
         case KEY_CONFIG: // F2 -> config
             config();
             break;

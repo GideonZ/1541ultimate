@@ -10,7 +10,9 @@ It supports hexadecimal, ASCII, screen-code, binary, and assembly views, plus in
 
 To open the monitor, use one of the following:
 
-- Press `C=+O`.
+- Press `C=+O`. A popup, a string box, the help and system-information text
+  and the monitor itself own the screen while they are up, so the shortcut is
+  inert until they close.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`.
 
 `C=+O` also closes the monitor from the memory views and from the Number,

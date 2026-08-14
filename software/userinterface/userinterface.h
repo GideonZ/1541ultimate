@@ -66,6 +66,12 @@ private:
     bool initialized;
     bool doBreak;
     bool available;
+    // How many blocking sub-objects are running above the focussed object: a
+    // popup, a string box, the help and system-info text, or the monitor
+    // itself. Each of those owns the screen and is polled outside ui_objects,
+    // so a global shortcut cannot restore what it drew over and does not run
+    // while one is up. See run_global_shortcut.
+    int modal_depth;
     mstring title;
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
@@ -78,6 +84,8 @@ private:
     void peel_off(void);
     bool buttonDownFor(uint32_t ms);
     void run_editor(Editor *);
+    bool run_global_shortcut(int key);
+    void open_machine_monitor(void);
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
@@ -115,6 +123,11 @@ public:
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
+
+    // Bracket a blocking sub-object that owns the screen: a popup, a string
+    // box, an editor or the monitor. Global shortcuts are inert in between.
+    void enter_modal(void);
+    void leave_modal(void);
 
     void init(GenericHost *h);
     void appear(void);

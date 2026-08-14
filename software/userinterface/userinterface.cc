@@ -15,6 +15,13 @@
 #include "filemanager.h"
 #ifndef UPDATER
 #ifndef RECOVERYAPP
+#include "task_menu.h"
+#include "monitor_init.h"
+#include "subsys.h"
+#endif // RECOVERYAPP
+#endif // UPDATER
+#ifndef UPDATER
+#ifndef RECOVERYAPP
 #include "c1541.h"
 #endif // RECOVERYAPP
 #endif // UPDATER
@@ -152,6 +159,7 @@ UserInterface :: UserInterface(const char *title, bool use_logo) : title(title)
     color_sel_bg = 0;
     filename_overflow_squeeze = 0;
     menu_response_to_action = MENU_NOP;
+    modal_depth = 0;
     logo = use_logo;
     register_store(CFG_USERIF_STORE_ID, "User Interface Settings", user_if_config);
     cfg->set_sort_order(SORT_ORDER_CFG_USERIF);
@@ -648,6 +656,7 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     UIPopup *pop = new UIPopup(this, msg, flags, 5, c_button_names, c_button_keys);
     pop->init();
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = pop->poll(0);
@@ -655,6 +664,7 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
             break;
         }
     }
+    leave_modal();
     pop->deinit();
     if ((ret > 0) && keyboard) {
         keyboard->wait_free();
@@ -668,6 +678,7 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
     UIPopup *pop = new UIPopup(this, msg, (1 << (count + 1))-1, count, names, keys);
     pop->init();
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = pop->poll(0);
@@ -675,6 +686,7 @@ int  UserInterface :: popup(const char *msg, int count, const char **names, cons
             break;
         }
     }
+    leave_modal();
     pop->deinit();
     if ((ret > 0) && keyboard) {
         keyboard->wait_free();
@@ -707,6 +719,7 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
     box->init();
     screen->cursor_visible(1);
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = box->poll(0);
@@ -714,6 +727,7 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
             break;
         }
     }
+    leave_modal();
     screen->cursor_visible(0);
     box->deinit();
     delete box;
@@ -729,6 +743,7 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
     edit->init(w, keyboard, x, y, max_chars); 
     screen->cursor_visible(1);
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = edit->poll(0);
@@ -736,6 +751,7 @@ int UserInterface :: string_edit(char *buffer, int maxlen, Window *w, int x, int
             break;
         }
     }
+    leave_modal();
     screen->cursor_visible(0);
     delete edit;
     return ret;
@@ -747,6 +763,7 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
     box->init();
     screen->cursor_visible(0);
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = box->poll(0);
@@ -754,6 +771,7 @@ int UserInterface :: choice(const char *msg, const char **choices, int count)
             break;
         }
     }
+    leave_modal();
     delete box;
     // Return values are 1 based, unless it's an error
     if (!ret && !host->exists()) {
@@ -783,6 +801,7 @@ void UserInterface :: run_editor(Editor *editor)
 {
     editor->init(screen, keyboard);
     int ret = 0;
+    enter_modal();
     discardPendingMenuButton();
     while(!ret && host->exists()) {
         ret = editor->poll(0);
@@ -790,6 +809,7 @@ void UserInterface :: run_editor(Editor *editor)
             break;
         }
     }
+    leave_modal();
     editor->deinit();
     delete editor;
 }
@@ -833,8 +853,90 @@ mstring *UserInterface :: getMessage(void)
     return msg;
 }
 
+void UserInterface :: enter_modal(void)
+{
+    modal_depth++;
+}
+
+void UserInterface :: leave_modal(void)
+{
+    if (modal_depth > 0) {
+        modal_depth--;
+    }
+}
+
+// The updater and the recovery application carry the menu but not the
+// subsystem command layer the monitor is reached through, so there the
+// shortcut has nothing to open.
+#if !defined(NO_FILE_ACCESS) && !defined(UPDATER) && !defined(RECOVERYAPP)
+#define UI_HAS_MACHINE_MONITOR 1
+#endif
+
+void UserInterface :: open_machine_monitor(void)
+{
+#ifdef UI_HAS_MACHINE_MONITOR
+    if (!get_machine_monitor_task) {
+        return;
+    }
+    Action *action = get_machine_monitor_task(SUBSYSID_U64);
+    if (!action) {
+        action = get_machine_monitor_task(SUBSYSID_C64);
+    }
+    if (!action) {
+        // The task actions are built the first time something needs them, so
+        // a session that has not opened the task menu yet has no monitor
+        // action to find. The flag only enables items that act on the
+        // browser's current directory, which the monitor is not one of, and
+        // the task menu recomputes it whenever it opens.
+        TaskMenu::ensure_task_actions_created(false);
+        action = get_machine_monitor_task(SUBSYSID_U64);
+        if (!action) {
+            action = get_machine_monitor_task(SUBSYSID_C64);
+        }
+    }
+    if (!action) {
+        return;
+    }
+    SubsysCommand *cmd = new SubsysCommand(this, action, "", "");
+    cmd->execute();
+    // The monitor draws straight onto the screen and puts nothing back, so
+    // what it covered is redrawn here. Root object upwards, which is the order
+    // appear() uses, so a context menu is drawn over the browser under it
+    // rather than beneath it.
+    for (int i = 0; i <= focus; i++) {
+        if (ui_objects[i]) {
+            ui_objects[i]->redraw();
+        }
+    }
+#endif
+}
+
+bool UserInterface :: run_global_shortcut(int key)
+{
+    // A shortcut that answers the same way wherever the user is. It lives in
+    // the mapper every UI context already passes its keys through, rather than
+    // in each object's handle_key, because a shortcut each screen has to
+    // implement for itself is not a global one: before this, C= plus O reached
+    // the monitor from the file browser and from nowhere else, so the task
+    // menu, the settings screens and every context menu swallowed it.
+    if (key != KEY_CTRL_O) {
+        return false;
+    }
+    // A popup, a string box, an editor or the monitor itself owns the screen
+    // and is polled outside the ui_objects stack, so there is nothing here
+    // that could put back what the monitor drew over.
+    if (modal_depth) {
+        return false;
+    }
+    open_machine_monitor();
+    return true;
+}
+
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
+    if ((map == e_keymap_default) && run_global_shortcut(c)) {
+        return -1; // consumed: the same value a poll with no key sees
+    }
     if ((navmode == 1) && (map != e_keymap_monitor)) { // WASD cursors enabled
         if (c >= 'A' && c <= 'Z') {
             c |= 0x20; // make uppercase lowercase

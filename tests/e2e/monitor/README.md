@@ -7,7 +7,10 @@ shared UI facade in [`tests/e2e/lib/ui_backend.py`](../lib/ui_backend.py).
 ## How the monitor is reached
 
 Open it with `C=+O` (`Ctrl+O` over Telnet) while the on-device menu is up, or
-through `F5` -> `Developer` -> `Machine Code Monitor`. `C=+O`, `RUN/STOP` and
+through `F5` -> `Developer` -> `Machine Code Monitor`. The shortcut is handled
+in `UserInterface::keymapper`, which every UI context passes its keys through;
+a popup, a string box, an editor and the monitor itself own the screen while
+they are up and do not answer it. `C=+O`, `RUN/STOP` and
 the top-left `←` key all leave it; see
 [`doc/machine_code_monitor.md`](../../../doc/machine_code_monitor.md) for the
 full Back hierarchy this suite verifies.

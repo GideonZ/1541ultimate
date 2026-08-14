@@ -2010,6 +2010,60 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
+def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
+    """Press C=+O and require that the monitor came up, then leave it again.
+
+    The shortcut only, with no fallback: `MonitorSession.enter_monitor` falls
+    back to the task menu when C=+O does not work, which is the behaviour this
+    check exists to distinguish.
+    """
+    snapshot = session.send_key("CTRL_O", settle=True)
+    try:
+        find_any_status_line(snapshot)
+    except Failure:
+        raise Failure(
+            f"C=+O did not open the monitor from {context}\n{snapshot.text()}")
+    leave_monitor_fully(session)
+
+
+def run_global_monitor_shortcut_test(session: MonitorSession, mode: str) -> None:
+    """C=+O opens the monitor from the ordinary menu contexts, not the browser alone.
+
+    The shortcut was a case in `TreeBrowser::handle_key`, so the file browser
+    answered it and nothing else did: measured on an Ultimate 64, the task
+    menu, the settings screens and the system-information screen all read the
+    key and did nothing with it. It is handled once now, in
+    `UserInterface::keymapper`, which every UI context passes its keys through.
+
+    Each context is left the way it was entered, so the checks after this one
+    meet the same monitor they would have without it.
+    """
+    leave_monitor_fully(session)
+    session.backend.ensure_ready()
+
+    # The context that always worked, so a regression there is not hidden by
+    # the new ones passing.
+    enter_monitor_with_shortcut(session, "the file browser")
+
+    session.backend.ensure_ready()
+    task_key = session.backend.machine.task_menu_key
+    session.send_key(task_key, settle=True)
+    enter_monitor_with_shortcut(session, f"the task menu ({task_key})")
+    # The task menu is still open under the monitor that covered it.
+    session.send_key("RUNSTOP", settle=True)
+
+    if mode != MODE_TELNET:
+        # F2 is Shift+F1 on a C64 keyboard, which only the REST transport can
+        # send: keyboard_vt100.cc has no escape sequence for it.
+        session.backend.ensure_ready()
+        session.backend.send_combo(["left_shift", "f1"])
+        enter_monitor_with_shortcut(session, "the settings screens (F2)")
+        session.send_key("RUNSTOP", settle=True)
+
+    session.backend.ensure_ready()
+    session.enter_monitor()
+
+
 def run_back_navigation_test(session: MonitorSession) -> None:
     """Back removes one interaction layer, from either of its two keys."""
     ensure_view(session, "HEX ")
@@ -2382,6 +2436,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("Help is KEY-first, and its two grids stay on their columns"):
         run_help_layout_test(session)
+
+    with check("C=+O opens the monitor from menu contexts other than the browser"):
+        run_global_monitor_shortcut_test(session, mode)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)
