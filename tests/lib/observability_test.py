@@ -2882,7 +2882,20 @@ def every_path_the_document_names_exists() -> str:
     """A file the report points at is a file in the tree."""
     import re
 
+    import subprocess
+
     require_fixture()
+    # Every file in the fixture is tracked, not just present. A file the golden
+    # document names but .gitignore excludes is there for whoever recorded it
+    # and missing for everybody who checks the branch out, and the byte-for-byte
+    # test then fails for them and passes here.
+    listed = subprocess.run(["git", "ls-files", "--others", "--exclude-standard",
+                             os.path.relpath(FIXTURE, ROOT)],
+                            cwd=ROOT, capture_output=True, text=True)
+    stray = [line for line in listed.stdout.splitlines() if line.strip()]
+    if stray:
+        raise Failure(f"the fixture holds untracked files, so a fresh checkout "
+                      f"has a different tree: {stray[:4]}")
     document = generated_document()
     section = document.split("## Files in this run", 1)[1].split("\n\n", 2)[2]
     named = re.findall(r"^\| `([^`]+)`", section, flags=re.M)
