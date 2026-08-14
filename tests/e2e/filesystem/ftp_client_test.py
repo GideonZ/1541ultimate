@@ -65,7 +65,7 @@ from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
-    section, suite_fail, warn)
+    section, suite_fail, suite_ok, warn)
 
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -2185,8 +2185,14 @@ def main(argv=None):
         server.cleanup()
 
     if crashed:
+        suite_fail("ftp_client_test", "hard crash; manual recovery needed")
         return 3
-    return 1 if failed or fails else 0
+    if failed or fails:
+        suite_fail("ftp_client_test",
+                   f"{len(fails)} operation(s) failed" if fails else "failed")
+        return 1
+    suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
+    return 0
 
 
 if __name__ == "__main__":

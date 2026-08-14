@@ -44,7 +44,8 @@ import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_fail, check_ok, check_start, detail, section, warn)
+    Failure, check_fail, check_ok, check_start, detail, section,
+    suite_fail, suite_ok, warn)
 
 try:
     from PIL import Image, ImageOps
@@ -1087,6 +1088,7 @@ def main():
         prg_bytes = load_prg(prg_path)
     except Failure as exc:
         check_fail(str(exc))
+        suite_fail("printer_test", str(exc))
         return 1
     check_ok(f"{len(prg_bytes)} bytes")
 
@@ -1122,7 +1124,12 @@ def main():
         detail(f"{emulation:10s} {mode:6s} {classification:20s} {output_base}")
 
     failed = [r for r in results if r[2] not in ("PASS", "PASS_NO_VERIFY")]
-    return 1 if failed else 0
+    if failed:
+        suite_fail("printer_test",
+                   ", ".join(f"{e}/{m} {c}" for e, m, c, _ in failed))
+        return 1
+    suite_ok("printer_test", f"{len(results)} combination(s)")
+    return 0
 
 
 if __name__ == "__main__":

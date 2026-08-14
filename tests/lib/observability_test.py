@@ -428,6 +428,37 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(1, "OBS-2.1", "OBS-3.17")
+def every_registered_suite_reports_a_closing_line() -> str:
+    """A suite's own records have to carry its verdict, not only the runner's.
+
+    The report reads a run's directory, and a suite file with no closing
+    record is what a killed run leaves, which is how the completeness section
+    describes it. A suite that simply never reported one is then
+    indistinguishable from one that died: measured here, ftp-client, printer
+    and the network soak all passed and left no verdict in their own files.
+
+    Static, so it catches a suite that never reports a verdict at all. It
+    cannot catch one that reports on its failing path and not its passing one,
+    which is what ftp-client did; that came out of reading a real run's
+    directory, and `the report says what the run left behind` is the case that
+    would notice it again.
+    """
+    runner = load_runner()
+    closing = ("suite_ok", "suite_fail", "suite_skip", "suite_warn")
+    silent = []
+    for suite in runner.SUITES:
+        path = os.path.join(ROOT, suite.path)
+        if not os.path.exists(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        if not any(call in text for call in closing):
+            silent.append(suite.name)
+    if silent:
+        raise Failure("suites that report no closing line: " + ", ".join(silent))
+    return f"{len(runner.SUITES)} suites"
+
+
 @case(3, "OBS-2.1")
 def a_check_that_answers_for_itself_is_reported_once() -> str:
     """One check is one line and one record, whoever produced the verdict.
