@@ -22,6 +22,7 @@ import platform
 import re
 import selectors
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -546,8 +547,9 @@ def run_and_capture(command: List[str], environment: Dict[str, str],
 SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
 
 # The port the collector actually bound, exported to every suite the run
-# starts. A suite that wants to reach the collector cannot be told the number
-# beforehand: choosing a free port and handing it on is a race, and two runs
+# starts. The device-free gate is what uses it: a stub suite sends a datagram
+# into the running collector to prove the file it writes is the file the `log`
+# record names. The number cannot be chosen in advance, because two runs
 # starting at the same moment are handed the same one, which is what a
 # multi-target gate does by design. The collector binds first and says which
 # port it got.
@@ -606,15 +608,15 @@ def finish_syslog(collector) -> None:
     """
     already = len(collector.problems)
     collector.stop()
-    for gap in collector.gaps():
+    gaps = collector.gaps()
+    for gap in gaps:
         report.gap_result("syslog", gap["started"], gap.get("ended"),
                           target=gap["target"], machine=gap["machine"],
                           reason=f"no line from {gap['machine']}")
     report.detail(f"device log:  {collector.lines} line(s) collected"
                   + (f", {collector.unmapped} from an unmapped address"
                      if collector.unmapped else "")
-                  + (f", {len(collector.gaps())} silence(s)"
-                     if collector.gaps() else ""))
+                  + (f", {len(gaps)} silence(s)" if gaps else ""))
     for problem in collector.problems[already:]:
         report.warn(f"device log: {problem}")
 
@@ -1513,118 +1515,168 @@ def record_plan(args: argparse.Namespace, categories: Sequence[str],
     report.plan_result(entries, sequence, **extra)
 
 
+# The help page, on one grid: every heading is flush left, lower case and
+# followed by a colon, which is what argparse renders for its own argument
+# groups, and every body line sits two columns in. argparse passes the
+# description and the epilog through untouched, so those are written to the
+# same shape by hand.
+HELP_WIDTH = 80               # the page never uses more columns than this
+HELP_INDENT = 2               # where a section's body starts
+HELP_DESCRIPTION_COLUMN = 26  # where an option's description starts
+
+
+class HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Write each option the way a GNU tool does.
+
+    argparse repeats the value's name once per spelling, as in
+    "-s NAME, --suite NAME" and "-m LIST, --mode LIST, --modes LIST". That
+    is hard to read and it pushes the descriptions across the page. This
+    names the value once, after the last spelling, and holds the whole page
+    to one width whatever the terminal's is.
+    """
+
+    def __init__(self, prog, indent_increment=HELP_INDENT,
+                 max_help_position=HELP_DESCRIPTION_COLUMN, width=None):
+        if width is None:
+            width = min(shutil.get_terminal_size().columns, HELP_WIDTH) - 2
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+    def _format_action_invocation(self, action) -> str:
+        if not action.option_strings:                      # a positional
+            return self._metavar_formatter(action, action.dest)(1)[0]
+        if action.nargs == 0:                              # a flag
+            return ", ".join(action.option_strings)
+        value = self._format_args(
+            action, self._get_default_metavar_for_optional(action))
+        spellings = list(action.option_strings)
+        last = spellings.pop()
+        # "--suite=NAME", as GNU writes it; "-s NAME" for a short spelling.
+        spellings.append(last + ("=" if last.startswith("--") else " ") + value)
+        return ", ".join(spellings)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run-tests",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=HelpFormatter,
         usage="run-tests [OPTIONS] [TARGET ...]",
+        add_help=False,  # added below, so that it sits in a named section
         description=(
             "Run the hardware test suites against one or more Ultimate devices.\n"
             "\n"
-            "Each suite is a separate process driving the firmware over REST, FTP\n"
-            "or Telnet, and they share one device, so the runner puts it back into\n"
-            "a known state around each one. With no options: the E2E gate, once,\n"
-            "in overlay mode, against $U64_HOST.\n"
+            "Each suite is a separate process driving the firmware over REST, FTP or\n"
+            "Telnet. The suites share one device, so the runner puts it back into a\n"
+            "known state around each one. With no options the runner runs the E2E gate\n"
+            "once, in overlay mode, against $U64_HOST.\n"
             "\n"
-            "TARGETS\n"
-            "  host                 a device that is also its own C64, as u64\n"
-            "  cartridge@computer   a cartridge, in the computer that supplies its\n"
-            "                       keyboard and video, as u2@c64u\n"
+            "targets:\n"
+            "  host                    a device that is also its own C64, as u64\n"
+            "  cartridge@computer      a cartridge, in the computer that supplies its\n"
+            "                          keyboard and video, as u2@c64u\n"
             "\n"
-            "Naming several runs one child process each, with every line prefixed\n"
-            "by the target it came from. Independent targets run at the same time;\n"
-            "targets sharing a machine take turns, so u64 and u2@c64u run together\n"
-            "and c64u and u2@c64u do not.\n"),
+            "  Each target runs in a child process of its own, and every line of\n"
+            "  output names the target it came from. Independent targets run at the\n"
+            "  same time; targets sharing a machine take turns, so u64 and u2@c64u run\n"
+            "  together and c64u and u2@c64u do not.\n"),
         epilog=(
-            "EXAMPLES\n"
-            "  run-tests                          the E2E gate, overlay mode\n"
-            "  run-tests u2@c64u                  a cartridge, in its computer\n"
-            "  run-tests u64 u2@c64u              both, at the same time\n"
-            "  run-tests -s prg-context-menu      one suite\n"
-            "  run-tests -m telnet,freeze         two UI transports\n"
-            "  run-tests --list                   every registered suite\n"
+            "examples:\n"
+            "  run-tests                           the E2E gate, overlay mode\n"
+            "  run-tests u2@c64u                   a cartridge, in its computer\n"
+            "  run-tests u64 u2@c64u               both, at the same time\n"
+            "  run-tests -s prg-context-menu       one suite\n"
+            "  run-tests -m telnet,freeze          two UI transports\n"
+            "  run-tests --list                    every registered suite\n"
             "\n"
-            "  Keeping the run, and reading it afterwards:\n"
+            "  Keeping a run, and reading it afterwards:\n"
             "\n"
-            "  run-tests -o runs/ u64             keep every artifact\n"
-            "  run-tests -o runs/ --syslog u64    and the device's own log\n"
-            "  run-tests -o runs/ --record u64    and a video of the run\n"
-            "  python3 tools/e2e_report.py runs/  write runs/index.md\n"
-            "  less runs/index.md                 read it; no device needed\n"
+            "  run-tests -o runs/ u64              keep every artifact\n"
+            "  run-tests -o runs/ --syslog u64     and the device's own log\n"
+            "  run-tests -o runs/ --record u64     and a video of the run\n"
+            "  python3 tools/e2e_report.py runs/   write runs/index.md\n"
+            "  less runs/index.md                  read it; no device needed\n"
             "\n"
             "  Less often:\n"
             "\n"
-            "  run-tests --recover-command \'build u64\' -o runs/\n"
-            "                                     bring a wedged device back\n"
-            "  U64_LOG_ADDRESSES=\'u64=192.0.2.71\' run-tests -o runs/ --syslog u64\n"
-            "                                     log from a second interface\n"
-            "  mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4\n"
-            "                                     watch it, subtitled per check\n"
+            "  Bring a wedged device back:\n"
+            "    run-tests --recover-command 'build u64' -o runs/\n"
             "\n"
-            "EXIT STATUS\n"
-            f"  {EXIT_OK}  every suite passed, no recovery needed\n"
+            "  Take the device log from a second interface:\n"
+            "    U64_LOG_ADDRESSES='u64=192.0.2.71' run-tests -o runs/ --syslog u64\n"
+            "\n"
+            "  Watch a recording, subtitled with the check that was running:\n"
+            "    mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4\n"
+            "\n"
+            "exit status:\n"
+            f"  {EXIT_OK}  every suite passed, and nothing needed recovering\n"
             f"  {EXIT_SUITE_FAILED}  a suite failed\n"
-            f"  {EXIT_USAGE}  invalid command line\n"
+            f"  {EXIT_USAGE}  the command line was invalid\n"
             f"  {EXIT_RECOVERED}  every suite passed, but a device needed recovering\n"
-            f"  {EXIT_DEVICE_UNHEALTHY}  a device could not be made healthy; run abandoned\n"
+            f"  {EXIT_DEVICE_UNHEALTHY}  a device could not be made healthy; the run was abandoned\n"
             "\n"
-            "NOTES\n"
-            "  The devices must be otherwise idle: suites open the menu, reset the\n"
-            "  machine, mount images and put settings back afterwards.\n"
-            "  Suite order is fixed and significant; see the registry at the top of\n"
-            "  this file.\n"
+            "notes:\n"
+            "  The devices must be otherwise idle. The suites open the menu, reset the\n"
+            "  machine, mount images, and put the settings back afterwards.\n"
             "\n"
-            "SEE ALSO\n"
-            "  tests/README.md                  categories, environment, exit status\n"
-            "  tests/e2e/README.md              adding or changing a suite\n"
-            "  tests/lib/README.md              the JSONL record shapes\n"
-            "  tests/e2e/doc/                   what a run records, and why\n"))
+            "  Suite order is fixed and significant. The registry at the top of this\n"
+            "  file sets it.\n"
+            "\n"
+            "see also:\n"
+            "  tests/README.md         categories, environment, exit status\n"
+            "  tests/e2e/README.md     adding or changing a suite\n"
+            "  tests/lib/README.md     the JSONL record shapes\n"
+            "  tests/e2e/doc/          what a run records, and why\n"))
 
-    parser.add_argument("targets", nargs="*", metavar="TARGET",
-                        help="Name a host, or cartridge@computer. Several "
-                             "targets run one child process each. May also be "
-                             "given with -H.")
+    arguments = parser.add_argument_group("arguments")
+    arguments.add_argument("targets", nargs="*", metavar="TARGET",
+                           help="Name a host, or cartridge@computer, in the "
+                                "forms listed under targets. May also be "
+                                "given with -H.")
+
+    general = parser.add_argument_group("general")
+    general.add_argument("-h", "--help", action="help",
+                         help="Show this help and exit.")
 
     selection = parser.add_argument_group(
         "run selection",
         "Which categories run. With none of these, the E2E gate runs.")
     selection.add_argument("--e2e", action="store_true",
-                      help="Run the functional and regression suites. The "
-                           "release gate, and the default.")
+                      help="Run the functional and regression suites. They "
+                           "are the release gate, and the default.")
     selection.add_argument("--perf", action="store_true",
-                      help="Run the benchmarks. They report a measurement, not "
-                           "a verdict.")
+                      help="Run the benchmarks. They report a measurement, "
+                           "not a verdict.")
     selection.add_argument("--soak", action="store_true",
                       help="Run the duration and load tests: leaks, "
                            "exhaustion, transport degradation.")
     selection.add_argument("--all", action="store_true",
-                      help="Run all three, in the order e2e, perf, soak.")
+                      help="Run all three categories, in the order e2e, "
+                           "perf, soak.")
     selection.add_argument("-l", "--list", action="store_true",
-                      help="List every registered suite with its category and "
-                           "path, then exit.")
+                      help="List every registered suite with its category "
+                           "and path, then exit.")
 
     e2e = parser.add_argument_group(
         "e2e options",
-        "Which suites, and which UI transport drives them.")
+        "Which suites run, and which UI transport drives them.")
     e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
-                     help="Run only this suite. Repeatable, and selects manual "
-                          "suites as well. Names are in --list.")
+                     help="Run only this suite. Repeatable, and it selects "
+                          "manual suites as well. The names are in --list.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
                      default=DEFAULT_MODE, metavar="LIST",
                      help="Drive the suites through this UI transport: "
-                          "overlay, freeze, telnet, a comma-separated list, or "
-                          "all. Each is a full pass over the selected suites "
-                          f"(default: {DEFAULT_MODE}).")
+                          "overlay, freeze, telnet, a comma-separated list, "
+                          "or all. Each transport is a full pass over the "
+                          f"selected suites (default: {DEFAULT_MODE}).")
     e2e.add_argument("--manual", action="store_true",
                      help="Also run the suites kept out of the default run: "
                           "those needing an operator, root, or a long wait.")
     e2e.add_argument("--assume-fix", action="append", default=[], metavar="NAME",
-                     help="Run the checks this machine normally skips for want "
-                          "of a firmware fix, which is how a backport is found. "
-                          "Repeatable, and 'all' assumes every fix. Names are "
-                          "in tests/lib/machine.py.")
+                     help="Run the checks this machine normally skips for "
+                          "want of a firmware fix, which is how a backport "
+                          "is found. Repeatable, and 'all' assumes every "
+                          "fix. The names are in tests/lib/machine.py.")
     e2e.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
-                     help="Choose how long the network soak runs: stress is "
+                     help="Set how long the network soak runs: stress takes "
                           "about two minutes, soak twelve hours (default: "
                           "stress).")
 
@@ -1639,32 +1691,32 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Authenticate REST and FTP with this password "
                              "(default: $U64_PASS, empty).")
     device.add_argument("-t", "--timeout", metavar="SECONDS", default=DEFAULT_TIMEOUT,
-                        help="Give one REST request this long to answer, in "
-                             f"every suite (default: {DEFAULT_TIMEOUT}).")
+                        help="Wait this long for one REST request to answer, "
+                             f"in every suite (default: {DEFAULT_TIMEOUT}).")
 
     health = parser.add_argument_group(
         "health and recovery",
-        "Before each E2E suite, and again after one fails, the device must\n"
-        "be reachable, drivable and functional. A suite that fails on a\n"
-        "healthy device found something; one that fails on an unhealthy\n"
-        "device showed nothing, so the device is recovered and the suite\n"
-        "runs again. A run that needed a recovery exits 3, not 0.")
+        "Before each E2E suite, and again after one fails, the device must be\n"
+        "reachable, drivable and functional. A suite that fails on a healthy device\n"
+        "found something; one that fails on an unhealthy device showed nothing, so\n"
+        "the device is recovered and the suite runs again. A run that needed a\n"
+        "recovery exits 3, not 0.")
     health.add_argument("--recover-command", default="", metavar="CMD",
                          help="Run this shell command to bring an unhealthy "
-                              "device back, e.g. 'build u64'. No default: the "
-                              "mechanism is site-specific, so without it "
-                              "nothing is recovered. Its exit status is "
-                              "advisory; the health check decides whether the "
-                              "device came back."),
+                              "device back, for example 'build u64'. There is "
+                              "no default: the mechanism is site-specific, so "
+                              "without it nothing is recovered. Its exit "
+                              "status is advisory; the health check decides "
+                              "whether the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
                          help="Allow one suite this many recoveries, which is "
-                              "also its extra attempts (default: "
-                              f"{DEFAULT_RECOVER_MAX_PER_SUITE}).")
+                              "also the number of extra attempts it gets "
+                              f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
     health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
                          help="Allow the whole run this many recoveries; "
-                              "exhausting it abandons the run (default: "
+                              "exhausting them abandons the run (default: "
                               f"{DEFAULT_RECOVER_MAX_TOTAL}).")
     health.add_argument("--recover-timeout", type=float,
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SECONDS",
@@ -1673,7 +1725,7 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
                          help="Reduce health to reachable and drivable. Use "
-                              "when a listener is off on this device by "
+                              "it when a listener is off on this device by "
                               "design; the full sweep costs about 150ms per "
                               "suite.")
     health.add_argument("--no-retry", dest="retry", action="store_false", default=True,
@@ -1683,16 +1735,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     artifacts = parser.add_argument_group(
         "run artifacts",
-        "What the run keeps for reading afterwards. tools/e2e_report.py\n"
-        "turns an output directory into runs/index.md, which needs no\n"
-        "device: a status line, then every failing check with the screen,\n"
-        "the log tail and the command that runs it again.")
+        "What the run keeps for reading afterwards. tools/e2e_report.py turns an\n"
+        "output directory into runs/index.md, which needs no device: a status line,\n"
+        "then every failing check with the screen, the log tail and the command that\n"
+        "runs it again.")
     artifacts.add_argument("-o", "--output-dir", default="", metavar="DIR",
                         help="Keep the whole run under DIR, one directory per "
                              "target: every check, suite, health sweep and "
                              "device request as JSONL, each suite's console "
-                             "log, and the screens it read. Record shapes are "
-                             "in tests/lib/README.md.")
+                             "log, and the screens it read. The record shapes "
+                             "are in tests/lib/README.md.")
     artifacts.add_argument("--syslog", action="store_true",
                         help="Collect the devices' own log into DIR, and check "
                              "at both ends of the run that each is still "
@@ -1713,12 +1765,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     recording = parser.add_argument_group(
         "recording",
-        "A video of the run. Off by default: it costs the device two\n"
-        "streams and the LAN their bandwidth for the whole run.")
+        "A video of the run. Off by default: it costs the device two streams and\n"
+        "the LAN their bandwidth for the whole run.")
     recording.add_argument("--record", action="store_true",
-                           help="Record the harness's screen beside the device's "
-                                "video, with the device's audio, one file per "
-                                "target. Needs ffmpeg with libx264rgb.")
+                           help="Record the harness's screen beside the "
+                                "device's video, with the device's audio, one "
+                                "file per target. Needs ffmpeg with "
+                                "libx264rgb.")
     recording.add_argument("--no-record-video", dest="record_video",
                            action="store_false", default=True,
                            help="Drop the device's video and its stream.")
@@ -1758,9 +1811,9 @@ def build_parser() -> argparse.ArgumentParser:
     recording.add_argument("--record-fps", type=int, default=RECORD_FPS,
                            metavar="N",
                            help="Write this many frames a second (default: "
-                                f"{RECORD_FPS}). Well below 50: a static screen "
-                                "encoded fifty times a second costs a reader "
-                                "nothing.")
+                                f"{RECORD_FPS}). Well below 50: a mostly "
+                                "static screen shows a reader no more at fifty "
+                                "frames a second than at ten.")
     recording.add_argument("--record-keyint", type=float,
                            default=RECORD_KEYINT_SECONDS, metavar="SECONDS",
                            help="Place a keyframe this often while the screen "
@@ -1768,8 +1821,8 @@ def build_parser() -> argparse.ArgumentParser:
                                 "Bounds how far a player decodes when stepping "
                                 "backwards.")
     recording.add_argument("--record-ffmpeg-args", default="", metavar="ARGS",
-                           help="Append these arguments to the encoder "
-                                "command. Appended, so they override everything "
+                           help="Add these arguments to the encoder command. "
+                                "They go last, so they override everything "
                                 "above, including the pixel exactness the "
                                 "lossless default is for.")
 
