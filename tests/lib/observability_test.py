@@ -428,6 +428,35 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(3, "OBS-2.1")
+def a_check_that_answers_for_itself_is_reported_once() -> str:
+    """One check is one line and one record, whoever produced the verdict.
+
+    A check whose body reports its own verdict, `check_skip` inside a
+    `with check(...)` being the common one, closed the line itself and then
+    the block closed it again: the console showed the verdict and a bare
+    `OK (0.000s)` under it, and the records held two entries for one index,
+    the second claiming OK for a check that had skipped. Counted from the
+    records, a suite of 39 checks reported 43.
+    """
+    records = records_from_a_stub_suite(
+        {"E2E_SUITE": "fixture"},
+        body=("with report.check('answers for itself'):\n"
+              "    report.check_skip('not applicable here')\n"
+              "with report.check('answers for itself, failing'):\n"
+              "    report.check_fail('no')\n"
+              "with report.check('left to the block'):\n"
+              "    pass\n"))
+    checks = [r for r in records if r["kind"] == "check"]
+    # The stub writes one check of its own before the body runs.
+    labelled = [r for r in checks if r["label"] != "a check"]
+    expect("one record each", len(labelled), 3)
+    expect("indices", sorted(r["index"] for r in labelled), [2, 3, 4])
+    expect("the skip stayed a skip",
+           [r["verdict"] for r in labelled], ["SKIP", "FAIL", "OK"])
+    return "three checks, three records"
+
+
 @case(1, "OBS-8.30", "OBS-8.11")
 def the_stamped_timecode_is_where_the_frame_is() -> str:
     """The timecode burned into a frame is the one a player reports for it.

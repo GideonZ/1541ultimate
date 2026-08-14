@@ -187,6 +187,11 @@ _last_label = ""
 # Detail lines produced while a check line is still open.
 _pending: List[str] = []
 _check_started = 0.0
+# Whether a check or step line is open and still owes a verdict. A body that
+# reports its own verdict, `check_skip` inside a `with check(...)` being the
+# common one, closes the line itself, and the block's own closing call must
+# then do nothing rather than print a second line and write a second record.
+_line_open = False
 _suite_started = time.monotonic()
 # The open scenario: its title, start time, check count and worst verdict.
 _scenario: Optional[dict] = None
@@ -321,13 +326,14 @@ def last_label() -> str:
 
 def check_start(label: str) -> None:
     """Open a check line as `[NN] label ... `, leaving the verdict for later."""
-    global _count, _depth, _last_label, _check_started
+    global _count, _depth, _last_label, _check_started, _line_open
     _depth += 1
     if _depth > 1:
         return
     _count += 1
     _last_label = label
     _check_started = time.monotonic()
+    _line_open = True
     print(f"[{_count:02d}] {label} ... ", end="", flush=True)
 
 
@@ -337,20 +343,27 @@ def step_start(label: str) -> None:
     A harness's precondition and teardown gates run around the suites rather
     than inside one, so numbering them would interleave two counters.
     """
-    global _depth, _check_started, _last_label
+    global _depth, _check_started, _last_label, _line_open
     _depth += 1
     if _depth > 1:
         return
     _last_label = label
     _check_started = time.monotonic()
+    _line_open = True
     print(f"{label} ... ", end="", flush=True)
 
 
 def _close(verdict: str, extra: str = "") -> None:
-    global _depth
+    global _depth, _line_open
     _depth = max(0, _depth - 1)
     if _depth:
         return
+    if not _line_open:
+        # Already answered by the block itself. Closing again would print a
+        # second verdict for one check and record a second, contradictory one:
+        # a skipped check was written as SKIP and then as OK.
+        return
+    _line_open = False
     elapsed = time.monotonic() - _check_started
     parts = [extra] if extra else []
     duration = format_duration(elapsed)
