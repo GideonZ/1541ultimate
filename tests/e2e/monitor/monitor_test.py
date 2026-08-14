@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import rest as rest_lib
+import machine as machine_lib
 import targets
 from api import UltimateApi
 from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, video_frames
@@ -2119,7 +2120,14 @@ def main() -> int:
     device_host = args.rest_host or target.device
     live_host = target.computer
     control = target.token
-    is_u2 = rest_api(device_host).info().product.startswith("Ultimate II")
+    info = rest_api(device_host).info()
+    device = machine_lib.identify(
+        device_host, lambda: (info.product, info.firmware_version))
+    if device.skip_without_fix(machine_lib.MONITOR_EXIT_AND_BACK_KEYS,
+                               "this machine runs the monitor revision this suite drives"):
+        suite_ok("monitor_test")
+        return 0
+    is_u2 = info.product.startswith("Ultimate II")
     if is_u2 and not target.split:
         parser.error("an Ultimate II is a cartridge: name the computer it is "
                      "plugged into, as u2@<computer>")

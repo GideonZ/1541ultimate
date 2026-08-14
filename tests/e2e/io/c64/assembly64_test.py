@@ -39,6 +39,7 @@ from report import (
     Failure,
     check,
     check_skip,
+    check_start,
     detail,
     section,
     suite_fail,
@@ -758,6 +759,19 @@ def main() -> int:
         telnet_width=60,
     )
     device = Device(backend, args.mode, args.host, password, args.timeout)
+    # Which online search a machine offers is a property of the product, not
+    # of its firmware version: a C64 Ultimate serves CommoServe from its
+    # launcher and has no Assembly 64 entry at all, so every scenario here
+    # asks for something that machine does not have. Reported once, with the
+    # name of what it does serve, rather than as eighteen failures.
+    offered = backend.machine.search_service
+    if offered != TASK_MENU_ENTRY:
+        check_start(f"this machine offers {TASK_MENU_ENTRY}")
+        check_skip(f"this machine searches {offered} instead, which this suite "
+                   f"does not drive")
+        suite_ok("assembly64_test")
+        backend.close()
+        return 0
 
     try:
         for name in names:
