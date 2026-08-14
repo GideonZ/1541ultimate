@@ -757,6 +757,13 @@ class UltimateApi:
     def host(self) -> str:
         return self.rest.host
 
+    @property
+    def target(self):
+        """The resolved handle this was built from, for a caller that needs
+        more of a target than its device's host name: which machine has the
+        VIC, where the streams are, which ports this device serves."""
+        return self.rest.target
+
     def version(self) -> str:
         return str(_errors(self.rest.json("/v1/version"), "version").get("version", ""))
 

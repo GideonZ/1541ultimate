@@ -112,8 +112,11 @@ extern "C" void ultimate_main(void *a)
 	InitFunction :: executeAll();
     if (!syslog.init(syslog_bufsize)) {
         // Nothing is configured, so the buffer is never drained. Stop writing
-        // into it rather than filling it once and overflowing.
+        // into it and give it back: on the U2, whose heap is the tightest,
+        // 16 KB held for the life of a device that logs nowhere is worth
+        // reclaiming.
         custom_outbyte = outbyte_log;
+        syslog.close_buffer();
     }
    
     printf("%s ", rtc.get_long_date(time_buffer, 32));

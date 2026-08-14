@@ -112,7 +112,10 @@ def source_addresses(host) -> Set[str]:
     interleaved, and every packet in order with zero apparent loss from each
     sender's point of view. Nothing in the receive path looks wrong.
     """
-    name = targets_lib.resolve(host).device if not isinstance(host, str) else host
+    # The machine with the VIC, which for a cartridge target is the computer
+    # it is plugged into: a U2 has no streaming hardware, so the picture that
+    # shows what the cartridge is doing comes from the computer's address.
+    name = targets_lib.resolve(host).video_host
     try:
         found = socket.getaddrinfo(name, 0, socket.AF_INET, socket.SOCK_DGRAM)
     except OSError:

@@ -99,7 +99,10 @@ def assert_tone_ladder(capture: AvStreamCapture, start: float) -> None:
 def run_tone_ladder(device: UltimateApi) -> None:
     device.machine.reset(force=True)
     program = assemble("tone_ladder.asm")
-    with AvStreamCapture(device.host) as capture:
+    # The handle rather than the host name: for a cartridge target the video,
+    # the audio and the request that starts them belong to the computer, and
+    # only the handle knows which machine that is.
+    with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
         started = time.monotonic()
         device.runners.upload("run_prg", program)
@@ -118,7 +121,7 @@ def run_tone_ladder(device: UltimateApi) -> None:
 def run_key_pop(device: UltimateApi) -> None:
     device.machine.reset(force=True)
     program = assemble("av_pop_key.asm")
-    with AvStreamCapture(device.host) as capture:
+    with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
         device.runners.upload("run_prg", program)
         capture.capture(1.5)

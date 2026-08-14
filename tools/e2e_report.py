@@ -1070,8 +1070,12 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
     state = read_state(os.path.join(directory, stem + "-state.json"))
     lines: List[str] = []
     if screen:
-        lines += ["", f"{SCREEN_SOURCE.get(str(state.get('source')), 'The screen')}"
-                      f" when this suite ended "
+        source = str(state.get("source"))
+        # "when this suite ended" is not true of the earlier screen, which is
+        # the whole reason that source has a name of its own.
+        ended = "" if source == "telnet-spool-earlier" else " when this suite ended"
+        lines += ["", f"{SCREEN_SOURCE.get(source, 'The screen')}"
+                      f"{ended} "
                       f"(`{target.slug}/capture/{stem}-screen.txt`):", ""]
         lines += fenced([redact(row) for row in screen])
     summary = describe_state(state)
@@ -1090,6 +1094,11 @@ SCREEN_SOURCE = {
                "codes, which is best effort because the matrix moves with the "
                "VIC bank and with $D018,",
     "telnet-spool": "The Telnet screen the suite was driving, from the spool,",
+    # A session that dropped mid-suite publishes an empty screen last, so the
+    # capture takes the one before it. Named apart, because a reader has to
+    # know this is not the screen the suite ended on.
+    "telnet-spool-earlier": "The last Telnet screen with anything on it "
+                            "before the session dropped, from the spool,",
     "unavailable": "No screen could be read,",
 }
 
@@ -1840,11 +1849,21 @@ def screens_section(run: Run) -> List[str]:
     """
     lines: List[str] = []
     for target in run.targets:
+        shown = set()
+        groups = []
         for made in sorted(target_suites(run, target), key=lambda s: s.time):
             chosen = stills_for(run, target, made)
-            if not chosen:
-                continue
-            lines += [f"### {made.key}", ""]
+            if chosen:
+                shown.update(relative for _kind, relative, _text in chosen)
+                groups.append((made.key, chosen))
+        # Anything in the capture directory that no suite run claimed. The
+        # recorder writes a still under the identity it had when it took it,
+        # and a run that ended between a retry and its records leaves one
+        # behind; showing it under its own name beats not showing it.
+        for stem, chosen in orphan_stills(run, target, shown):
+            groups.append((f"{target.token}/{stem} (no suite record)", chosen))
+        for heading, chosen in groups:
+            lines += [f"### {heading}", ""]
             for kind, relative, text in chosen:
                 image = relative[:-len(".txt")] + ".png"
                 exists = os.path.exists(os.path.join(run.directory, image))
@@ -1854,6 +1873,29 @@ def screens_section(run: Run) -> List[str]:
     if not lines:
         return []
     return ["## Screens", ""] + lines
+
+
+def orphan_stills(run: Run, target: TargetRun,
+                  shown: "set") -> List[Tuple[str, List[Tuple[str, str, List[str]]]]]:
+    """Stills in the capture directory that no suite run in the report claimed."""
+    directory = os.path.join(run.directory, target.slug, "capture")
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return []
+    found: Dict[str, List[Tuple[str, str, List[str]]]] = {}
+    for name in names:
+        if not name.endswith(".txt"):
+            continue
+        parts = name[:-len(".txt")].rsplit("-", 2)
+        if len(parts) != 3 or parts[2] not in ("first", "change", "last"):
+            continue
+        relative = f"{target.slug}/capture/{name}"
+        if relative in shown:
+            continue
+        found.setdefault(parts[0], []).append(
+            (parts[2], relative, read_text(os.path.join(directory, name))))
+    return sorted(found.items())
 
 
 def failing_stills(run: Run, made: SuiteRun) -> List[str]:

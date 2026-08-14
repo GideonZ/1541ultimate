@@ -51,7 +51,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import targets as targets_lib
 
@@ -151,6 +151,18 @@ class Collector:
                             f"{taken.target}")
                         continue
                     self.routes[address] = Route(path, machine, target.token)
+
+        # A name in U64_LOG_ADDRESSES that no target has is almost always a
+        # typo, and its symptom is exactly the one the variable exists to
+        # remove: every line from that device in syslog-unmapped.txt with
+        # nothing saying why.
+        machines = {machine for target in wanted for machine in target.log_hosts}
+        for entry in (os.environ.get(ADDRESS_ENV) or "").split(","):
+            name = entry.partition("=")[0].strip()
+            if name and name not in machines:
+                self.problems.append(
+                    f"{ADDRESS_ENV} names {name!r}, which is not a machine of "
+                    f"any target in this run: {sorted(machines)}")
 
         # 0.0.0.0 rather than a chosen interface: the runner host may have more
         # than one, and a datagram's source address is what identifies a
@@ -278,7 +290,7 @@ def resolve(machine: str) -> List[str]:
     return sorted(addresses | declared(machine))
 
 
-def declared(machine: str) -> "set":
+def declared(machine: str) -> "Set[str]":
     """Addresses an operator has attached to a machine by hand.
 
     A device with two interfaces logs from whichever one the route picks, and

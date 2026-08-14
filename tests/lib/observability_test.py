@@ -797,7 +797,16 @@ def a_dropped_telnet_session_does_not_capture_a_blank_screen() -> str:
                                            suite="browse", attempt=1,
                                            non_blank=True)
         expect("and the one before it is not", earlier["text"], ["READY."])
-    return "the blank screen is not the only answer"
+    # The report has to say which of the two it is showing, or a reader takes
+    # the second-to-last screen for the one the suite ended on.
+    generator = load_report_tool()
+    for source in ("telnet-spool", "telnet-spool-earlier"):
+        if source not in generator.SCREEN_SOURCE:
+            raise Failure(f"the report has no wording for source={source}")
+    if "ended" in generator.SCREEN_SOURCE["telnet-spool-earlier"]:
+        raise Failure("the earlier screen is described as the one the suite "
+                      "ended on")
+    return "the blank screen is not the only answer, and the report says so"
 
 
 @case(3, "OBS-3.4", "OBS-8.22")
@@ -826,7 +835,7 @@ def the_screen_spool_is_not_a_suite() -> str:
         generator.write_report(made.directory)
         with open(made.path(generator.INDEX_NAME), encoding="utf-8") as handle:
             document = handle.read()
-    if "/screens/" in document or "browse" in document:
+    if "/screens/" in document or "/browse/" in document:
         raise Failure("the spool is rendered as a suite run of its own")
     expect("the real suite is there", "/overlay/held/1" in document, True)
     return "one suite, not two"
@@ -850,12 +859,24 @@ def a_second_interface_can_be_declared() -> str:
             raise Failure(f"the declared address is not in {found}")
         if "192.0.2.9" in found:
             raise Failure("another machine's declared address was taken")
+        # A name no target has is a typo, and its symptom is the one this
+        # variable exists to remove, so the run says so once at the start.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            collector = syslog_collector.Collector(directory=directory, port=0)
+            collector.bind([targets.parse("u64")])
+            collector.stop()
+        if not any("is not a machine of any target" in problem
+                   for problem in collector.problems):
+            raise Failure(f"a declared name nobody has went unreported: "
+                          f"{collector.problems}")
     finally:
         if previous is None:
             os.environ.pop(syslog_collector.ADDRESS_ENV, None)
         else:
             os.environ[syslog_collector.ADDRESS_ENV] = previous
-    return "the second interface is attributed"
+    return "the second interface is attributed, a typo is reported"
 
 
 @case(1, "OBS-2.5")
@@ -3138,6 +3159,34 @@ def a_recorder_flag_without_record_is_refused() -> str:
             if wanted not in completed.stderr:
                 raise Failure(f"{arguments}: {completed.stderr.strip()[:120]}")
     return "4 usage errors"
+
+
+@case(1, "OBS-3.23", "OBS-8.28")
+def a_still_no_suite_claims_is_still_shown() -> str:
+    """A run that ended between a retry and its records leaves one behind.
+
+    The recorder writes a still under the identity it held when it took it,
+    which is read from the records the run has written so far. A report that
+    only showed stills belonging to a suite run it knows about would drop it,
+    and the file index would then name a file the document never explains.
+    """
+    import tempfile
+
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        capture = os.path.join(directory, "u64", "capture")
+        os.makedirs(capture)
+        with open(os.path.join(capture, "overlay-noisy-2-1-first.txt"), "w",
+                  encoding="utf-8") as handle:
+            handle.write("READY.\n")
+        target = generator.TargetRun(token="u64", slug="u64")
+        run = generator.Run(directory=directory, targets=[target])
+        document = "\n".join(generator.screens_section(run))
+    if "overlay-noisy-2-1-first.txt" not in document:
+        raise Failure("a still nobody claimed is not in the report")
+    if "no suite record" not in document:
+        raise Failure("it is shown without saying that no suite claimed it")
+    return "shown, and named as unclaimed"
 
 
 @case(1, "OBS-3.30")

@@ -58,7 +58,8 @@ class PacketSequence:
 class AvStreamCapture:
     """Receive short, simultaneous audio and video captures from one C64U."""
 
-    def __init__(self, host: str, password: Optional[str] = None) -> None:
+    def __init__(self, host, password: Optional[str] = None) -> None:
+        """`host` is a target token or a resolved handle; see targets.py."""
         self.device = UltimateApi(host, password)
         self.source_addresses = streams.source_addresses(host)
         self.video_socket = streams.stream_socket(VIDEO_GROUP, VIDEO_PORT,

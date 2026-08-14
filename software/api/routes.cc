@@ -162,7 +162,8 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
     // Datagrams the stack refused. A device logging to an address where
     // nothing is listening is harmless to a run and silent, so this is the
     // only way to tell a lossy link from a quiet device.
-    resp->json->add("syslog_failed_sends", syslog.failures());
+    resp->json->add("syslog_failed_sends", syslog.failures())
+        ->add("syslog_overflows", syslog.overflowed());
 
     const char *unique_id = networkConfig.cfg->get_string(CFG_NETWORK_UNIQUE_ID);
     if (unique_id && *unique_id) {
