@@ -428,6 +428,55 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(4, "OBS-5.3", "OBS-3.24")
+def a_failure_whose_menu_had_closed_still_shows_what_it_was_driving() -> str:
+    """The C64's own screen is not what a menu suite was looking at.
+
+    When no menu is open the capture reads $0400, which is right for a suite
+    that was driving the C64 and useless for one that was driving the menu and
+    whose session closed on the way out. Seen on a real run: a check failed
+    with a context menu open, the suite closed its session, and the report
+    showed the BASIC prompt.
+
+    The screen it was driving is in the spool the run already wrote, so this
+    costs no device read, which is the same argument OBS-5.9 makes for the
+    Telnet capture.
+    """
+    import json
+    import shutil
+    import tempfile
+
+    require_fixture()
+    generator = load_report_tool()
+    marker = "A WINDOW THE SUITE HAD OPEN"
+    with tempfile.TemporaryDirectory() as directory:
+        tree = os.path.join(directory, "run")
+        shutil.copytree(FIXTURE, tree)
+        # `broken` fails, and its capture in the fixture is a readmem one.
+        state_path = os.path.join(tree, "127.0.0.1", "capture",
+                                  "overlay-broken-1-state.json")
+        with open(state_path, encoding="utf-8") as handle:
+            state = json.load(handle)
+        state["source"] = "readmem"
+        with open(state_path, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+        with open(os.path.join(tree, "127.0.0.1", "screens.jsonl"), "a",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "kind": "menu", "suite": "broken", "attempt": 1,
+                "time": 1.0, "cols": 40, "rows": 25,
+                "text": [marker]}) + "\n")
+        generator.write_report(tree)
+        with open(os.path.join(tree, generator.INDEX_NAME),
+                  encoding="utf-8") as handle:
+            document = handle.read()
+    if marker not in document:
+        raise Failure("the screen the suite was driving is not in the report")
+    if "The last menu screen this suite read" not in document:
+        raise Failure("the spooled screen is not named as such")
+    return "the spooled screen is shown beside the C64's"
+
+
 @case(4, "OBS-7.6", "OBS-3.11")
 def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
     """A non-empty syslog-unmapped.txt is told to the reader, not left in a file.

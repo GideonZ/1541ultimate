@@ -1088,11 +1088,50 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
                       f"{ended} "
                       f"(`{target.slug}/capture/{stem}-screen.txt`):", ""]
         lines += fenced([redact(row) for row in screen])
+    if str(state.get("source")) == "readmem":
+        # The menu was already closed when the capture ran, so the C64's own
+        # screen is what the device could still be asked for. For a suite that
+        # was driving the menu that is not what it was looking at, and the
+        # screen it was looking at is in the spool the run already wrote. No
+        # device read: the same argument OBS-5.9 makes for the Telnet capture.
+        spooled = last_menu_screen(run, target, made)
+        if spooled:
+            lines += ["", "The last menu screen this suite read, from "
+                          f"`{target.slug}/{SPOOL_NAME}`, which is what it was "
+                          "driving before the menu closed:", ""]
+            lines += fenced([redact(row) for row in spooled])
     summary = describe_state(state)
     if summary:
         lines += ["", summary + f" Everything the capture read is in "
                                 f"`{target.slug}/capture/{stem}-state.json`."]
     return lines
+
+
+def last_menu_screen(run: Run, target: TargetRun,
+                     made: SuiteRun) -> List[str]:
+    """The final menu screen this suite run spooled, or nothing.
+
+    Keyed on the suite and the attempt, so a suite that read no menu screen at
+    all is shown none rather than the previous suite's presented as its own.
+    """
+    path = os.path.join(run.directory, target.slug, SPOOL_NAME)
+    best: List[str] = []
+    best_at = -1.0
+    for record in read_records(path)[0]:
+        if record.get("kind") != "menu":
+            continue
+        if record.get("suite") != made.suite:
+            continue
+        if as_int(record.get("attempt"), 1) != made.attempt:
+            continue
+        when = as_float(record.get("time"))
+        text = record.get("text")
+        # The rows themselves, not `as_list`, which keeps only the dicts of a
+        # record list and would drop every line of a screen.
+        rows = [str(row) for row in text] if isinstance(text, list) else []
+        if when >= best_at and any(row.strip() for row in rows):
+            best, best_at = rows, when
+    return best
 
 
 # What the capture read, said in the report rather than left for the reader to
