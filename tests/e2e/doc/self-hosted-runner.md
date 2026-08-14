@@ -46,11 +46,27 @@ Two routes, and they are not equivalent.
 
 `nios2-download` writes the built ELF into the running device over a USB
 Blaster and starts it. Nothing is written to flash, so the worst case is a
-device that has to be power cycled back to its flashed image.
-[`tooling/build_and_deploy_u64.sh`](../../../tooling/build_and_deploy_u64.sh)
-does this for an Ultimate 64 in about 30 seconds and needs no device
-cooperation at all: it works on a device whose UI has wedged, which is exactly
-when a deploy is needed most.
+device that has to be power cycled back to its flashed image. It needs no
+device cooperation at all: it works on a device whose UI has wedged, which is
+exactly when a deploy is needed most.
+
+`tooling/build_and_deploy_u64.sh` here does that for an Ultimate 64 in about
+30 seconds. It is a local script rather than a tracked file, because the
+toolchain path and the cable are properties of one bench, so what it does
+matters more than where it is. Five steps, none of them repository-specific:
+
+1. Refuse unless `target/u64/nios2/ultimate/result/ultimate.elf` exists and is
+   non-empty, so a failed build cannot be deployed as a stale one.
+2. Refuse unless `jtagconfig` and `nios2-download` are present under the
+   Quartus install (`INTEL_FPGA_ROOT`, default `/home/chris/altera_lite/18.1`).
+3. Put the Quartus and Nios II tool directories on `PATH` and export
+   `QUARTUS_ROOTDIR` and `QSYS_ROOTDIR`.
+4. Run `jtagconfig` and refuse if it lists no cable, so "no hardware" is a
+   message rather than a confusing download error.
+5. Run `nios2-download -g <elf>`, which pauses the Nios, writes, verifies and
+   starts it.
+
+A runner that wants this needs the same five steps and its own paths.
 
 The cost is physical. Each device needs a JTAG cable to the runner, and the
 runner needs the vendor toolchain installed (Quartus and the Nios II tools for
@@ -66,8 +82,6 @@ than once when the machine was set up.
 Without JTAG, firmware is installed the way a user installs it: upload the
 update image over FTP, then drive the device's own updater through its menu
 with injected keystrokes.
-[`tools/api/u2_flash.py`](../../../tools/api/u2_flash.py) automates that for a
-U2+L, including the power cycle its updater cannot perform for itself.
 
 This writes flash. An image that is wrong for the device, or a run interrupted
 partway through, leaves a device that does not boot and that no amount of
@@ -75,10 +89,35 @@ network access can recover: the fix is a JTAG cable or a return to the vendor.
 It also depends on the device's UI answering injected keys, which is precisely
 what fails when the device is in the state that needed a deploy.
 
-Prefer JTAG. Where the menu route is the only one available, keep to a tool
-that refuses rather than guesses: `u2_flash.py` verifies the uploaded image
-before it navigates, requires `--confirm-flash` to press the final key, and
-aborts safely on anything it did not expect rather than continuing.
+`tools/api/u2_flash.py` here automates it for a U2+L. It is also a local script
+rather than a tracked file. What it does is worth knowing whether or not a
+runner reuses it, because every step exists to make a wrong flash impossible
+rather than merely unlikely:
+
+- It reads the screen from the cartridge and sends every keystroke to the
+  computer. The cartridge serves its own `machine:menu_screen`, which no other
+  device can see, and answers `machine:input` with HTTP 501, because that
+  endpoint is compiled only for Ultimate 64 hardware. The keyboard matrix is a
+  real signal that reaches the cartridge over the expansion port, so keys go to
+  the computer and are read back off the cartridge's own screen.
+- It uploads the artifact over FTP to a path naming the branch, the date and
+  the commit, verifies the upload, and refuses to overwrite an artifact already
+  there rather than flashing something it did not just upload.
+- It navigates to the file and stops. `--confirm-flash` is what presses `Run
+  Update`; without it the tool proves the navigation and backs out.
+- During the flash the cartridge's own REST goes away, so it follows progress
+  by reading the C64's screen RAM through the computer, and treats
+  `PLEASE TURN OFF YOUR MACHINE` on three consecutive reads as completion.
+- The U2+L updater cannot restart itself, so completing the update means
+  power-cycling the computer that powers the cartridge port.
+  `--confirm-power-cycle` is what allows that, through the computer's own
+  `Power & Reset` menu.
+- Every failure path aborts with the state it reached and what it observed,
+  rather than continuing on a guess. An abort before `Run Update` has changed
+  nothing.
+
+Prefer JTAG. Where the menu route is the only one available, use a tool that
+refuses rather than guesses.
 
 ## Collecting the devices' own log
 
