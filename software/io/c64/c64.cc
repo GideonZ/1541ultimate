@@ -644,7 +644,12 @@ uint8_t C64::peek(uint16_t address)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         value = ((uint8_t *)color_backup)[address - 0xD800];
     } else {
-        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+        // The freezer's own Ultimax cart, banked in to give it bus access while
+        // frozen, decodes only $0000-$0FFF, the I/O space and its own ROM
+        // windows: $1000-$7FFF and $A000-$CFFF have no device on the bus under
+        // it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of them needs
+        // the C64 mode put back to the one it was frozen in first.
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
@@ -682,7 +687,8 @@ void C64::poke(uint16_t address, uint8_t value)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         ((uint8_t *)color_backup)[address - 0xD800] = value;
     } else {
-        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+        // See the matching branch in peek().
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
@@ -712,9 +718,13 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
         int remaining = length - pos;
         int chunk = remaining;
 
-        if ((addr >= 0x8000) && ((addr < 0xD000) || (addr >= 0xE000))) {
-            // ROM/cart range: the freezer menu may have its own ultimax cart banked
-            // in, so temporarily restore the C64 mode it had when frozen.
+        if ((addr >= 0x1000) && ((addr < 0xD000) || (addr >= 0xE000))) {
+            // The freezer's own Ultimax cart, banked in to give it bus access
+            // while frozen, decodes only $0000-$0FFF, the I/O space and its own
+            // ROM windows: $1000-$7FFF and $A000-$CFFF have no device on the bus
+            // under it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of
+            // them needs the C64 mode temporarily put back to the one it was
+            // frozen in.
             int region_end = (addr < 0xD000) ? 0xD000 : 0x10000;
             if ((region_end - addr) < chunk) {
                 chunk = region_end - addr;

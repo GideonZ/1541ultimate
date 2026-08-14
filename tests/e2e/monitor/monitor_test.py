@@ -644,6 +644,81 @@ def goto_and_read_byte(
     return value
 
 
+def leave_monitor_fully(session: MonitorSession) -> None:
+    """Press Back until the monitor's own status line is gone from the screen.
+
+    Bounded rather than a fixed count of presses: a mode the caller left open
+    (Edit, a popup) costs one more Back than a plain view does, and a fixed
+    count either leaves one open or spends a spare press on whatever the
+    surrounding menu does with it.
+    """
+    for _ in range(4):
+        try:
+            find_any_status_line(session.capture())
+        except Failure:
+            return
+        session.send_key("ARROW_LEFT", settle=True)
+    raise Failure("the monitor was still on screen after 4 Back presses")
+
+
+def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
+                                    frozen: bool) -> None:
+    """A hex edit at an ordinary main-RAM address reaches C64 memory itself.
+
+    $1000 is plain main RAM: no ROM overlay, no I/O, and no banking, but the
+    monitor being open is not a neutral vantage point to check it from: while
+    it holds the machine, a U2's freezer banks its own scratch RAM over
+    exactly $1000-$3FFF (`banked_ram_reason`), so a read through the device
+    would pass on freezer state that looks like a persisted edit whether or
+    not the underlying write did anything. Once the monitor is closed that
+    banking is gone and `device_host` reads the C64's own RAM; a C64 Ultimate
+    host's own REST view of the same address does not reliably see a byte a
+    cartridge wrote to it over DMA, verified live against this device, so it
+    is not used as the second oracle here. `device_host` still is one: it is
+    read again only after being navigated to and away from in the editor and,
+    for a U2, after the monitor that was driving the edit has actually closed,
+    so neither read is the same call path as the one the editor's own display
+    used to draw the byte.
+    """
+    address = 0x1000
+    if frozen:
+        leave_monitor_fully(session)
+    original = read_rest_memory(device_host, address, 1)
+    replacement = bytes((original[0] ^ 0xFF,))
+    try:
+        if frozen:
+            session.enter_monitor()
+        session.goto(f"{address:04X}")
+        screen = ensure_view(session, "HEX ")
+        screen = session.send_char("e")
+        assert_highlight(screen, [(6, 4), (7, 4)], "e")
+        digits = f"{replacement[0]:02X}"
+        screen = session.send_char(digits[0], settle=True)
+        screen = session.send_char(digits[1], settle=True)
+        session.send_key("ESC", settle=True)
+
+        if frozen:
+            leave_monitor_fully(session)
+        else:
+            # Away and back: the same forced redraw goto_and_read_byte uses,
+            # so a value that only ever changed in the editor's local state
+            # cannot pass this far even before the independent read below.
+            session.goto("E000")
+            session.goto(f"{address:04X}")
+
+        actual = wait_for_rest_data(device_host, address, replacement)
+        if actual != replacement:
+            raise Failure(
+                f"${address:04X} holds {actual.hex().upper()} on the device "
+                f"after the edit{' and leaving the monitor' if frozen else ''}, "
+                f"expected {replacement.hex().upper()}"
+            )
+    finally:
+        write_rest_memory_confirmed(device_host, address, original)
+        if frozen:
+            session.enter_monitor()
+
+
 def run_go_repeat_test(session: MonitorSession, rest_host: str, frozen: bool, control: str) -> None:
     sentinel_addr = 0xC200
     sentinel = 0x5A
@@ -1931,6 +2006,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         screen = enter_hex_nibble(session, "A", snapshots["hex_first_nibble"]["contains"]["4"])
         screen = enter_hex_nibble(session, "B", snapshots["hex_second_nibble"]["contains"]["4"])
         session.send_key("ESC")
+
+    with check("a main-RAM hex edit reaches C64 memory, not just the editor"):
+        run_main_ram_edit_persists_test(session, rest_host, frozen)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)
