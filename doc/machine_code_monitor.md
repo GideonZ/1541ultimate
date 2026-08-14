@@ -427,7 +427,7 @@ Cartridges can further affect the CPU-visible memory map through the expansion-p
 All views support editing:
 
 - `E`: enter edit mode.
-- `C=+E`, `RUN/STOP`, or the top-left `←` key: leave edit mode. In ASCII and Screen views `←` enters its character instead; use `RUN/STOP` or `C=+E` there.
+- `C=+E`, `RUN/STOP`, `ESC` on a USB keyboard, or the top-left `←` key: leave edit mode. In ASCII and Screen views `←` enters its character instead; use `RUN/STOP`, `ESC` or `C=+E` there.
 
 Edit behavior is view-specific:
 

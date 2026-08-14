@@ -1762,6 +1762,38 @@ static int test_monitor_interaction(void)
         arrow_monitor.deinit();
     }
 
+    {
+        // Ctrl+E leaves edit mode on its own, separately from the shared Back
+        // action, so that edit mode can be left without also unwinding
+        // whatever other layer the monitor is in. The ASCII view is the case
+        // that matters: left-arrow is edit data there, so Ctrl+E and RUN/STOP
+        // are the two keys that have to end edit mode.
+        char edit_header[39];
+        const int ctrl_e_keys[] = { 'I', 'e', KEY_CTRL_E, KEY_BREAK };
+        FakeKeyboard ctrl_e_keyboard(ctrl_e_keys, 4);
+        ui.keyboard = &ctrl_e_keyboard;
+        screen.clear();
+        backend.write(0x0000, 0x00);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor ctrl_e_monitor(&ui, &backend);
+        ctrl_e_monitor.init(&screen, &ctrl_e_keyboard);
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: ASCII view switch failed.")) return 1;
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: ASCII edit entry failed.")) return 1;
+        screen.get_slice(1, 3, 38, edit_header);
+        if (expect(strstr(edit_header, "EDIT") != NULL,
+                   "Ctrl+E test: edit mode should be active before Ctrl+E.")) return 1;
+        if (expect(ctrl_e_monitor.poll(0) == 0, "Ctrl+E test: Ctrl+E poll failed.")) return 1;
+        screen.get_slice(1, 3, 38, edit_header);
+        if (expect(strstr(edit_header, "EDIT") == NULL,
+                   "Ctrl+E must leave ASCII edit mode, where left-arrow is edit data.")) return 1;
+        // Edit mode is gone rather than merely hidden: Back now closes the
+        // monitor instead of spending a press on the edit layer.
+        if (expect(ctrl_e_monitor.poll(0) == 1,
+                   "After Ctrl+E, RUN/STOP must close the monitor, not leave edit mode again.")) return 1;
+        ctrl_e_monitor.deinit();
+    }
+
     const int hex_keys[] = { 'e', 'A', 'B', '`', '`' };
     FakeKeyboard hex_keyboard(hex_keys, 5);
     ui.keyboard = &hex_keyboard;
