@@ -65,6 +65,8 @@ pip install -r tests/requirements.txt
 | `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
+| `ffmpeg`, `ffprobe` | `./run-tests --record` only. Not Python packages. The lossless default needs the `libx264rgb` encoder, which keeps the frames pixel exact; a build without it is refused at startup rather than after half an hour of capture. |
+| `pandoc`, `weasyprint` | Optional, never installed in CI: one command turns `index.md` into a PDF. |
 
 `pytesseract` is a wrapper around a separate binary, so it also needs
 `tesseract` on `PATH` (`brew install tesseract`, or `apt install
@@ -255,6 +257,17 @@ whole run, every target included. It needs no device and runs afterwards:
 ```sh
 python3 tools/e2e_report.py runs/
 less runs/index.md
+```
+
+`--record` adds a video of the run: the harness's screen and the device's video
+side by side with the device's audio, one file per target, subtitles naming the
+check at each moment, chapters per suite run, and a handful of stills the report
+inlines as text. It is off by default because it costs the device two streams
+and the LAN their bandwidth for the length of the run.
+
+```sh
+mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4
+grep FAIL runs/u64/video.srt
 ```
 
 `runs/index.md` opens with one greppable status line, then the verdicts, what

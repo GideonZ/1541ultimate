@@ -184,6 +184,9 @@ DIR/
     <label>-<suite>.log        that suite run's console output
     <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
     screens.jsonl              every distinct screen the harness read
+    video.mp4                  the recording, with --record
+    video.srt                  subtitles naming the suite and check
+    capture/<key>-<n>-<kind>.png   a still, with its .txt beside it
     syslog.txt                 the device's own log, with --syslog
     syslog-<host>.txt          a cartridge target's computer's log
     capture/<label>-<suite>-<attempt>-screen.txt
@@ -212,6 +215,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
 | `warning` | `message` |
 | `log` | `target`, `path`, `started`, `port` |
+| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
 
@@ -233,6 +237,15 @@ device that never sent anything. `--syslog` turns it on and needs each device's
 `Network Settings` / `Log to Syslog Server` pointed at the runner host; that is
 boot-time state on the device, so the runner reads it at both ends of a run and
 corrects it at neither.
+
+`capture` is the recording's own health. It carries every option in force and
+every count the receive path kept: packets, packets dropped, packets malformed,
+frames completed, frames lost, frames shed, frames padded for a geometry
+change, stream re-arms, and the same set for the audio. A file with thousands
+of padded frames or hundreds of re-arms is telling a reader that the run fought
+the recorder for the stream, which is worth knowing before drawing conclusions
+from what it shows. `started` and `lead_in` are what convert a wall-clock time
+into a position in the file.
 
 `plan` is what the run intended before it ran anything: every suite the
 registry names, whether this run meant to run it, and one of `manual`,

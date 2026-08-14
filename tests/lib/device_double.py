@@ -27,7 +27,8 @@ What it serves:
 
     REST      version, info, machine:menu_screen, machine:readmem,
               machine:heap, machine:input, machine:reset and the other machine
-              actions, the drives listing and a few configuration items
+              actions, the drives listing, a few configuration items, and
+              streams:start and streams:stop
     FTP       the 220 banner the health sweep reads, and nothing else
     Telnet    an accepted connection, which is all the health sweep asks for
     DMA       the IDENTIFY exchange on the control port
@@ -197,6 +198,9 @@ class DeviceDouble:
         # When set, a keystroke moves which row carries the reverse-video bit
         # rather than changing any text, which is what moving a cursor through
         # a listing looks like on the wire.
+        self.streams_started: List[str] = []
+        self.streams_stopped: List[str] = []
+        self.stream_address: Dict[str, str] = {}
         self.move_selection_on_input = False
         self.selected_row = 0
         # The settings the observability code and the UI backend read. Not the
@@ -311,6 +315,8 @@ class DeviceDouble:
             return self._ok_json
         if method == "GET" and path.startswith("/v1/configs"):
             return lambda params, path=path: self._config(path)
+        if method == "PUT" and path.startswith("/v1/streams/"):
+            return lambda params, path=path: self._stream(path, params)
         if method == "PUT" and path.startswith("/v1/drives/"):
             return lambda params, path=path: self._drive_action(path, params)
         if method == "PUT" and path.startswith("/v1/configs"):
@@ -397,6 +403,23 @@ class DeviceDouble:
             self.menu_rows[1] = f"key {keys}".ljust(SCREEN_COLS)
         return 200, self._json({}), "application/json"
 
+    def _stream(self, path, params):
+        """streams:start and streams:stop, which are PUT rather than POST.
+
+        Where the device sends is what `start` sets, so the last writer wins
+        and a `stop` stops it for everyone. That is why a caller has to ask
+        before arming and stop only what it started.
+        """
+        name, _, action = path[len("/v1/streams/"):].partition(":")
+        name = urllib.parse.unquote(name)
+        with self._lock:
+            if action == "start":
+                self.streams_started.append(name)
+                self.stream_address[name] = str(params.get("ip", ""))
+            elif action == "stop":
+                self.streams_stopped.append(name)
+        return 200, self._json({}), "application/json"
+
     def _drive_action(self, path, params):
         slot, _, action = path[len("/v1/drives/"):].partition(":")
         with self._lock:
@@ -407,6 +430,9 @@ class DeviceDouble:
         # When set, a keystroke moves which row carries the reverse-video bit
         # rather than changing any text, which is what moving a cursor through
         # a listing looks like on the wire.
+        self.streams_started: List[str] = []
+        self.streams_stopped: List[str] = []
+        self.stream_address: Dict[str, str] = {}
         self.move_selection_on_input = False
         self.selected_row = 0
         return 200, self._json({}), "application/json"
@@ -553,3 +579,95 @@ class _DmaListener(_BannerListener):
                 pass
             finally:
                 connection.close()
+
+
+# ---------------------------------------------------------------------------
+# The UDP faces: what a device sends, including what it sends wrongly
+# ---------------------------------------------------------------------------
+#
+# Scripted rather than interactive, because that is the only way to reach the
+# conditions a receiver has to survive: no real device can be asked to reorder
+# a packet, duplicate one, wrap a 16-bit counter or change its video mode on
+# demand, and every one of those is a defect a recorder can have that a real
+# run would find weeks later.
+
+VIDEO_PACKET_BYTES = 780
+VIDEO_LINE_BYTES = 192
+VIDEO_LINES_PER_PACKET = 4
+VIDEO_WIDTH = 384
+PAL_LINES = 272
+NTSC_LINES = 240
+
+AUDIO_PACKET_BYTES = 770
+AUDIO_SAMPLE_BYTES = 768
+
+
+def video_packets(frame: int, first_sequence: int = 0, height: int = PAL_LINES,
+                  pattern: int = 0) -> List[bytes]:
+    """One frame's datagrams, in order.
+
+    `pattern` fills every nibble, so a test can tell one frame's pixels from
+    another's without building an image.
+    """
+    made = []
+    fill = bytes([(pattern & 0x0F) | ((pattern & 0x0F) << 4)]) * (
+        VIDEO_LINE_BYTES * VIDEO_LINES_PER_PACKET)
+    for index, line in enumerate(range(0, height, VIDEO_LINES_PER_PACKET)):
+        last = line + VIDEO_LINES_PER_PACKET >= height
+        header = struct.pack(
+            "<HHHHBBH", (first_sequence + index) & 0xFFFF, frame & 0xFFFF,
+            line | (0x8000 if last else 0), VIDEO_WIDTH,
+            VIDEO_LINES_PER_PACKET, 4, 0)
+        made.append(header + fill)
+    return made
+
+
+def audio_packets(first_sequence: int = 0, count: int = 1,
+                  sample: int = 1000) -> List[bytes]:
+    """`count` audio datagrams carrying one repeated sample value."""
+    body = struct.pack("<h", sample) * (AUDIO_SAMPLE_BYTES // 2)
+    return [struct.pack("<H", (first_sequence + n) & 0xFFFF) + body
+            for n in range(count)]
+
+
+class UdpSender:
+    """Sends what a device sends, from an address a test chooses.
+
+    The source address is bound rather than left to the kernel, because it is
+    what a receiver filters on: a second machine streaming into the same group
+    is the fault that looks like nothing at all in the receive path.
+    """
+
+    def __init__(self, host: str, port: int, source: str = LOOPBACK) -> None:
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind((source, 0))
+
+    def send(self, packets: List[bytes]) -> int:
+        for packet in packets:
+            self.socket.sendto(packet, (self.host, self.port))
+        return len(packets)
+
+    def close(self) -> None:
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+
+    def __enter__(self) -> "UdpSender":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
+
+
+def syslog_lines(sender: UdpSender, lines: List[str]) -> int:
+    """One datagram per line, which is what Syslog::forwardLogging sends.
+
+    No priority prefix, no version, no timestamp, no hostname and no trailing
+    newline: the firmware sends the bare line text, which is why the collector
+    is a plain UDP sink rather than an RFC syslog daemon.
+    """
+    return sender.send([line.encode("utf-8") for line in lines])

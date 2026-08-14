@@ -122,6 +122,33 @@ def publish(kind: str, rows: Sequence[str], raw: Optional[bytes] = None,
         pass
 
 
+def publish_event(kind: str, **fields) -> None:
+    """Record something the harness did to a device stream.
+
+    The same spool the screens go into, because a reader following what the
+    harness was looking at also needs to know when a suite took a stream away:
+    that is the difference between "the av suite stopped this stream here" and
+    an unexplained gap in a recording.
+    """
+    if not SPOOL_PATH:
+        return
+    try:
+        record = {"time": time.time(), "suite": report.SUITE_NAME, "kind": kind}
+        if report.TARGET_NAME:
+            record["target"] = report.TARGET_NAME
+        if report.ATTEMPT is not None:
+            record["attempt"] = report.ATTEMPT
+        index = report.current_check()
+        if index is not None:
+            record["check"] = index
+        record.update(fields)
+        line = json.dumps(report.masked(record))
+        with open(SPOOL_PATH, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 def publish_stream(data: bytes) -> None:
     """Append what a Telnet session sent, unparsed.
 

@@ -1,9 +1,14 @@
-"""Short hardware captures of the C64U audio and VIC UDP streams."""
+"""Short hardware captures of the C64U audio and VIC UDP streams.
+
+The wire constants, the socket options, the source-address filter and the
+arming discipline are `streams.py`'s, which the recorder shares. What stays
+here is what a suite does with the packets: the assertions and the
+measurements.
+"""
 
 from __future__ import annotations
 
 import select
-import socket
 import struct
 import time
 from collections import Counter, defaultdict
@@ -13,13 +18,16 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from api import UltimateApi
 from report import Failure
 
+import streams
 
-VIDEO_GROUP = "239.0.1.64"
-VIDEO_PORT = 11000
-AUDIO_GROUP = "239.0.1.65"
-AUDIO_PORT = 11001
-VIDEO_PACKET_BYTES = 780
-AUDIO_PACKET_BYTES = 770
+# The public names a suite already imports, answered by the one place that
+# knows them.
+VIDEO_GROUP = streams.VIDEO_GROUP
+VIDEO_PORT = streams.VIDEO_PORT
+AUDIO_GROUP = streams.AUDIO_GROUP
+AUDIO_PORT = streams.AUDIO_PORT
+VIDEO_PACKET_BYTES = streams.VIDEO_PACKET_BYTES
+AUDIO_PACKET_BYTES = streams.AUDIO_PACKET_BYTES
 
 
 @dataclass(frozen=True)
@@ -47,35 +55,30 @@ class PacketSequence:
     reordered: int
 
 
-def _stream_socket(group: str, port: int) -> socket.socket:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("", port))
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
-                    struct.pack("4sL", socket.inet_aton(group), socket.INADDR_ANY))
-    return sock
-
-
 class AvStreamCapture:
     """Receive short, simultaneous audio and video captures from one C64U."""
 
     def __init__(self, host: str, password: Optional[str] = None) -> None:
         self.device = UltimateApi(host, password)
-        self.source_addresses = {
-            address[4][0] for address in socket.getaddrinfo(host, 0, socket.AF_INET, socket.SOCK_DGRAM)
-        }
-        self.video_socket = _stream_socket(VIDEO_GROUP, VIDEO_PORT)
-        self.audio_socket = _stream_socket(AUDIO_GROUP, AUDIO_PORT)
+        self.source_addresses = streams.source_addresses(host)
+        self.video_socket = streams.stream_socket(VIDEO_GROUP, VIDEO_PORT,
+                                                  timeout=None)
+        self.audio_socket = streams.stream_socket(AUDIO_GROUP, AUDIO_PORT,
+                                                  timeout=None)
+        # Ask before arming, stop only what this started, and write down every
+        # arm and stop so a reader can attribute a gap in a recording to the
+        # suite that took the stream.
+        self.arming = streams.Arming(self.device, host)
         self.video_packets: List[Packet] = []
         self.audio_packets: List[Packet] = []
         self.started = False
 
     def start(self) -> None:
-        self.device.streams.start("video", ip=f"{VIDEO_GROUP}:{VIDEO_PORT}")
+        self.arming.start("video")
         try:
-            self.device.streams.start("audio", ip=f"{AUDIO_GROUP}:{AUDIO_PORT}")
+            self.arming.start("audio")
         except Exception:
-            self.device.streams.stop("video")
+            self.arming.stop("video")
             raise
         self.started = True
 
@@ -114,10 +117,9 @@ class AvStreamCapture:
 
     def close(self) -> None:
         if self.started:
-            try:
-                self.device.streams.stop("audio")
-            finally:
-                self.device.streams.stop("video")
+            # Only what this started: a stream a suite found already running
+            # belongs to whoever started it.
+            self.arming.stop_all()
             self.started = False
         self.video_socket.close()
         self.audio_socket.close()

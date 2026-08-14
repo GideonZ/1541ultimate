@@ -1,9 +1,12 @@
-"""Multicast VIC video capture and frame assertions for hardware E2E tests."""
+"""Multicast VIC video capture and frame assertions for hardware E2E tests.
+
+The wire format, the socket options and the frame assembly are `streams.py`'s,
+which the recorder shares. What stays here is what a suite does with a frame:
+a palette-indexed image and the assertions that go with it.
+"""
 
 from collections import Counter
 import os
-import socket
-import struct
 import sys
 from typing import List
 
@@ -13,21 +16,22 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 from report import Failure
 
+import streams
 
-MULTICAST_GROUP = "239.0.1.64"
-VIDEO_PORT = 11000
+# The public names a suite already imports, answered by the one place that
+# knows them.
+MULTICAST_GROUP = streams.VIDEO_GROUP
+VIDEO_PORT = streams.VIDEO_PORT
 
 
 class VicStreamCapture:
     """Capture one complete palette-indexed VIC frame from the multicast stream."""
 
     def __init__(self, port: int = VIDEO_PORT) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(2.0)
-        self.sock.bind(("", port))
-        group = socket.inet_aton(MULTICAST_GROUP)
-        membership = struct.pack("4sL", group, socket.INADDR_ANY)
-        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        # The socket sets SO_REUSEADDR and, where the platform has it,
+        # SO_REUSEPORT. Multicast delivers to every subscriber that joined, so
+        # that is what lets a suite and a recorder both receive this stream.
+        self.sock = streams.stream_socket(MULTICAST_GROUP, port, timeout=2.0)
 
     def close(self) -> None:
         try:
@@ -35,36 +39,24 @@ class VicStreamCapture:
         except OSError:
             pass
 
-    def _drain_partial_frame(self) -> None:
-        while True:
-            data, _ = self.sock.recvfrom(1024)
-            _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-            if line & 0x8000:
-                return
-
     def capture_image(self) -> Image.Image:
-        for _ in range(8):
-            self._drain_partial_frame()
-            raw = bytearray()
-            while True:
-                data, _ = self.sock.recvfrom(1024)
-                _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-                raw.extend(data[12:])
-                if line & 0x8000:
-                    break
+        """One complete frame, as a palette-indexed image.
 
-            lines = len(raw) // 192
-            if lines < 180:
+        Assembled by header offset rather than by concatenating payloads in
+        arrival order, so a lost or reordered packet leaves an incomplete
+        frame rather than shifting the rest of the picture upward.
+        """
+        assembler = streams.FrameAssembler()
+        for _ in range(streams.VIDEO_PACKET_BYTES):
+            try:
+                data, _sender = self.sock.recvfrom(2048)
+            except OSError as exc:
+                raise Failure(f"the VIC stream stopped: {exc}") from exc
+            frame = assembler.push(data)
+            if frame is None:
                 continue
-
-            image = Image.new("P", (384, lines))
-            i = 0
-            for y in range(lines):
-                for x in range(192):
-                    value = raw[i]
-                    image.putpixel((2 * x, y), value & 0x0F)
-                    image.putpixel((2 * x + 1, y), value >> 4)
-                    i += 1
+            image = Image.frombytes("P", (frame.width, frame.height),
+                                    streams.unpack(frame.packed))
             return image
         raise Failure("Did not receive a complete VIC frame.")
 

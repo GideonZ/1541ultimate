@@ -46,6 +46,17 @@ REST_PORT = 80
 FTP_PORT = 21
 TELNET_PORT = 23
 DMA_PORT = 64
+# Where the device sends its video and audio when they are started. Every
+# target streams to the one group and port pair, and a receiver separates
+# devices by the source address of each packet: `streams:start` sets where the
+# device sends, three suites start the streams themselves at these addresses,
+# and multicast forwarding is decided by group address alone with the UDP port
+# not considered, so per-target ports separate nothing and lose the stream the
+# moment one of those suites runs.
+VIDEO_GROUP = "239.0.1.64"
+VIDEO_PORT = 11000
+AUDIO_GROUP = "239.0.1.65"
+AUDIO_PORT = 11001
 
 # Each port's environment override, so a caller can address a device serving
 # somewhere else without every suite growing a flag. U64_TELNET_PORT already
@@ -59,6 +70,15 @@ REST_PORT_ENV = "U64_REST_PORT"
 FTP_PORT_ENV = "U64_FTP_PORT"
 TELNET_PORT_ENV = "U64_TELNET_PORT"
 DMA_PORT_ENV = "U64_DMA_PORT"
+# The stream addresses move for the same reason: a receiver cannot rely on
+# multicast working in a container, and the vendor's documentation lists
+# unicast as supported and recommends it where IGMP snooping is absent, so
+# pointing a stream at a loopback address is a real mode rather than a
+# test-only path.
+VIDEO_GROUP_ENV = "U64_VIDEO_GROUP"
+VIDEO_PORT_ENV = "U64_VIDEO_PORT"
+AUDIO_GROUP_ENV = "U64_AUDIO_GROUP"
+AUDIO_PORT_ENV = "U64_AUDIO_PORT"
 
 # The one REST path that belongs to the C64-side computer. Everything else -
 # identity, the menu screen, the menu button, memory, the machine reset,
@@ -86,6 +106,10 @@ class Target:
     ftp_port: int = FTP_PORT
     telnet_port: int = TELNET_PORT
     dma_port: int = DMA_PORT
+    video_group: str = VIDEO_GROUP
+    video_port: int = VIDEO_PORT
+    audio_group: str = AUDIO_GROUP
+    audio_port: int = AUDIO_PORT
 
     @property
     def split(self) -> bool:
@@ -95,6 +119,18 @@ class Target:
     @property
     def input_host(self) -> str:
         """Where C64 keyboard injection goes for this target."""
+        return self.computer
+
+    @property
+    def video_host(self) -> str:
+        """Which machine's video this target's picture comes from.
+
+        A U2 has no `streams` route and no streaming hardware: `route_streams`
+        and `data_streamer` are absent from every U2 makefile, so
+        `streams:start` sent to a cartridge fails. The computer is the machine
+        with the VIC, and what it renders is what the cartridge under test is
+        doing, so it is also the right picture.
+        """
         return self.computer
 
     @property
@@ -173,7 +209,17 @@ def parse(token: str) -> Target:
                   rest_port=_port(REST_PORT_ENV, REST_PORT),
                   ftp_port=_port(FTP_PORT_ENV, FTP_PORT),
                   telnet_port=_port(TELNET_PORT_ENV, TELNET_PORT),
-                  dma_port=_port(DMA_PORT_ENV, DMA_PORT))
+                  dma_port=_port(DMA_PORT_ENV, DMA_PORT),
+                  video_group=_address(VIDEO_GROUP_ENV, VIDEO_GROUP),
+                  video_port=_port(VIDEO_PORT_ENV, VIDEO_PORT),
+                  audio_group=_address(AUDIO_GROUP_ENV, AUDIO_GROUP),
+                  audio_port=_port(AUDIO_PORT_ENV, AUDIO_PORT))
+
+
+def _address(variable: str, default: str) -> str:
+    """One stream address, honouring its environment override."""
+    raw = (os.environ.get(variable) or "").strip()
+    return raw if _HOST_RE.match(raw) else default
 
 
 def _port(variable: str, default: int) -> int:

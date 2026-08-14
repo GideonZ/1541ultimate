@@ -51,6 +51,7 @@ DEVICE_ERRORS = (Failure, OSError, TimeoutError, ValueError, TypeError,
                  http.client.HTTPException)
 
 sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+import recorder as recorder_lib  # noqa: E402
 import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import syslog_collector  # noqa: E402
 
@@ -84,6 +85,16 @@ DEFAULT_RECOVER_TIMEOUT_SECONDS = 900.0
 # for a reason no amount of recovering will fix.
 DEFAULT_RECOVER_MAX_PER_SUITE = 3
 DEFAULT_RECOVER_MAX_TOTAL = 10
+
+# What the recorder writes when nothing says otherwise. The rate is well below
+# the device's 50 Hz because the material is a screen that is static for
+# seconds at a time and then changes completely in one frame: encoding an
+# unchanged screen fifty times a second costs a reader nothing and costs the
+# host, which is a Raspberry Pi, everything. The keyframe interval bounds how
+# far a player decodes back when it steps backwards through a stretch where no
+# scene cut fired.
+RECORD_FPS = 10
+RECORD_KEYINT_SECONDS = 1.0
 
 # Exit statuses. Documented in --help and in tests/README.md, because a
 # programmatic caller reads these rather than the console output.
@@ -589,6 +600,128 @@ def check_syslog_setting(device: "Device", when: str) -> str:
         report.warn(f"device log: this device is not configured to send its log "
                     f"anywhere ({when})")
     return value
+
+
+# Every recorder option except --record itself, and what makes each one a
+# non-default. A run given one of these without --record would otherwise
+# produce no recording and no complaint, which is the shape of mistake that
+# costs a whole gate run to discover.
+RECORDING_OPTIONS = (
+    ("record_video", True, "--no-record-video"),
+    ("record_audio", True, "--no-record-audio"),
+    ("record_menu", True, "--no-record-menu"),
+    ("record_stamp", True, "--no-record-stamp"),
+    ("record_menu_min_interval_ms", 0, "--record-menu-min-interval-ms"),
+    ("record_layout", "combined", "--record-layout"),
+    ("record_quality", "lossless", "--record-quality"),
+    ("record_scale", 1, "--record-scale"),
+    ("record_fps", RECORD_FPS, "--record-fps"),
+    ("record_keyint", RECORD_KEYINT_SECONDS, "--record-keyint"),
+    ("record_ffmpeg_args", "", "--record-ffmpeg-args"),
+)
+
+
+def check_recording_options(args: argparse.Namespace) -> None:
+    """Refuse a recorder option given without --record, before the run starts."""
+    if not args.record:
+        given = [flag for name, default, flag in RECORDING_OPTIONS
+                 if getattr(args, name) != default]
+        if given:
+            die(f"{', '.join(given)} needs --record; without it nothing is "
+                "recorded and these do nothing")
+        return
+    if not (args.record_video or args.record_audio or args.record_menu):
+        die("--record with every source dropped records nothing; keep at least "
+            "one of the video, the audio and the harness pane")
+    if args.record_scale < 1:
+        die("--record-scale is an integer factor of 1 or more; a fractional "
+            "scale resamples pixel art")
+    if args.record_fps < 1:
+        die("--record-fps must be at least 1")
+    if not args.jsonl_dir:
+        die("--record needs -j DIR to write the recording into")
+
+
+def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
+                   device: "Device") -> Optional["recorder_lib.Recorder"]:
+    """Open this target's recording, or say why it did not open.
+
+    In the process that owns one target: the output is per target, multicast
+    is delivered to every socket that joined, and one per target needs no
+    coordination.
+    """
+    if not (args.record and args.jsonl_dir):
+        return None
+    options = recorder_lib.Options(
+        video=args.record_video, audio=args.record_audio, menu=args.record_menu,
+        stamp=args.record_stamp, layout=args.record_layout,
+        quality=args.record_quality, scale=args.record_scale, fps=args.record_fps,
+        keyint=args.record_keyint,
+        menu_min_interval_ms=args.record_menu_min_interval_ms,
+        ffmpeg_args=args.record_ffmpeg_args)
+    made = recorder_lib.Recorder(args.jsonl_dir, target, device.probe, options,
+                                 identity=recording_identity(target, device))
+    problem = made.start()
+    if problem:
+        report.warn(f"recording: {problem}")
+        return None
+    report.detail("recording:  " + ", ".join(made.files))
+    return made
+
+
+def recording_identity(target: targets_lib.Target,
+                       device: "Device") -> Dict[str, str]:
+    """What every frame's stamp and the title card say about this run.
+
+    A single frame travels: somebody screenshots a failure into an issue,
+    somebody shares the video, an agent is handed one still. Any of those has
+    to answer which device, which firmware, which run and when, without the
+    file it came from.
+    """
+    found = {"target": target.token, "host": socket.gethostname()}
+    for address in sorted(syslog_collector.resolve(target.video_host)):
+        found["address"] = address
+        break
+    try:
+        info = device.probe.info()
+        found["firmware"] = f"{info.product} {info.firmware_version}"
+        found["fpga"] = info.fpga_version
+    except Failure:
+        # A device that will not say is not a reason to record nothing.
+        pass
+    for name, variable in (("ci", "GITHUB_RUN_ID"), ("branch", "GITHUB_REF_NAME")):
+        value = os.environ.get(variable)
+        if value:
+            found[name] = value
+    if "branch" not in found:
+        branch = git_answer("rev-parse", "--abbrev-ref", "HEAD")
+        if branch:
+            found["branch"] = branch
+    commit = os.environ.get("GITHUB_SHA") or git_answer("rev-parse", "--short",
+                                                        "HEAD")
+    if commit:
+        found["commit"] = commit
+    return {name: value for name, value in found.items() if value}
+
+
+def stop_recorder(made: Optional["recorder_lib.Recorder"],
+                  directory: str, token: str) -> None:
+    """End the recording, write its sidecars and record its own health."""
+    if made is None:
+        return
+    capture = made.stop()
+    problems = recorder_lib.finish(directory, token, made.started_wall,
+                                   made.lead_in, made.files,
+                                   audio=made.audio_path())
+    for problem in problems:
+        report.warn(f"recording: {problem}")
+    if problems:
+        capture.setdefault("problems", []).extend(problems)
+    if made.stills:
+        capture["stills"] = sorted(made.stills)
+    report.capture_result(**capture)
+    report.detail(f"recording:  {capture['frames']} frames, "
+                  f"{capture['frames_shed']} shed")
 
 
 def die(message: str) -> None:
@@ -1513,6 +1646,71 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Halt after the first failing suite. The default runs "
                              "every selected suite, so one failure does not mask "
                              "the others.")
+    recording = parser.add_argument_group(
+        "recording",
+        "A video of what the harness and the device were looking at.\n"
+        "Off by default: it costs the device two streams and the LAN their\n"
+        "bandwidth for the length of the run.")
+    recording.add_argument("--record", action="store_true",
+                           help="Record the run: the harness's screen and the "
+                                "device's video side by side, with the device's "
+                                "audio, one file per target. Needs ffmpeg.")
+    recording.add_argument("--no-record-video", dest="record_video",
+                           action="store_false", default=True,
+                           help="Drop the device's video and its stream, "
+                                "leaving the harness's screen alone.")
+    recording.add_argument("--no-record-audio", dest="record_audio",
+                           action="store_false", default=True,
+                           help="Drop the audio track and its stream.")
+    recording.add_argument("--no-record-menu", dest="record_menu",
+                           action="store_false", default=True,
+                           help="Drop the harness pane. The screens are still "
+                                "spooled under -j; --no-screens is what turns "
+                                "that off.")
+    recording.add_argument("--record-menu-min-interval-ms", type=int, default=0,
+                           metavar="MS",
+                           help="Floor between two menu_screen requests the "
+                                "recorder makes for itself, which it does only "
+                                "while no suite is reading one (default: 0, no "
+                                "floor). The device serves about four "
+                                "concurrent HTTP connections.")
+    recording.add_argument("--record-layout", choices=("combined", "separate"),
+                           default="combined",
+                           help="One file with both panes, or one file each "
+                                "(default: combined). Separate files are frame "
+                                "aligned and carry the same audio.")
+    recording.add_argument("--no-record-stamp", dest="record_stamp",
+                           action="store_false", default=True,
+                           help="Draw nothing into the frames: no timecode, no "
+                                "failure edge, no progress bar and no cards. "
+                                "For a reader who wants the device's pixels "
+                                "and nothing else.")
+    recording.add_argument("--record-quality", default="lossless", metavar="Q",
+                           help="lossless, or a quality number for a lossy "
+                                "encode (default: lossless). The material is "
+                                "40-column text, which a lossy encode blurs.")
+    recording.add_argument("--record-scale", type=int, default=1, metavar="N",
+                           help="Integer upscale of the whole canvas, nearest "
+                                "neighbour (default: 1). A fractional scale "
+                                "resamples pixel art.")
+    recording.add_argument("--record-fps", type=int, default=RECORD_FPS,
+                           metavar="N",
+                           help=f"Output frame rate (default: {RECORD_FPS}). "
+                                "Well below 50: a static screen encoded fifty "
+                                "times a second costs a reader nothing and the "
+                                "encoder everything.")
+    recording.add_argument("--record-keyint", type=float,
+                           default=RECORD_KEYINT_SECONDS, metavar="SECONDS",
+                           help="Keyframe interval during a static stretch "
+                                f"(default: {RECORD_KEYINT_SECONDS:g}s). Bounds "
+                                "how far back a player decodes when stepping "
+                                "backwards.")
+    recording.add_argument("--record-ffmpeg-args", default="", metavar="ARGS",
+                           help="Extra arguments appended to the encoder "
+                                "command. Appended, so they override anything "
+                                "chosen here, including the pixel exactness "
+                                "the lossless default is for.")
+
     output.add_argument("--syslog", action="store_true",
                         help="Collect the devices' own log off the network "
                              "into DIR, and check at both ends of the run that "
@@ -1716,7 +1914,8 @@ def apply_colour_choice(choice: str) -> None:
 # CHILD_EXCLUDED_OPTIONS below, and runner_policy_test.py fails when one is in
 # neither: an option silently dropped here would make a multi-target run quietly
 # different from the single-target run it is supposed to repeat.
-CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog")
+CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
+                         "record")
 CHILD_FORWARDED_VALUES = (
     ("modes", "--mode"),
     ("password", "--password"),
@@ -1728,11 +1927,22 @@ CHILD_FORWARDED_VALUES = (
     ("recover_timeout", "--recover-timeout"),
     ("color", "--color"),
     ("syslog_port", "--syslog-port"),
+    ("record_menu_min_interval_ms", "--record-menu-min-interval-ms"),
+    ("record_layout", "--record-layout"),
+    ("record_quality", "--record-quality"),
+    ("record_scale", "--record-scale"),
+    ("record_fps", "--record-fps"),
+    ("record_keyint", "--record-keyint"),
+    ("record_ffmpeg_args", "--record-ffmpeg-args"),
 )
 CHILD_FORWARDED_NEGATIVE = (
     ("health_check", "--no-health-check"),
     ("retry", "--no-retry"),
     ("screens", "--no-screens"),
+    ("record_video", "--no-record-video"),
+    ("record_audio", "--no-record-audio"),
+    ("record_menu", "--no-record-menu"),
+    ("record_stamp", "--no-record-stamp"),
 )
 # host and targets become the child's one target; jsonl_dir is rewritten per
 # target so two children cannot write the same file; stop_on_fail is forwarded
@@ -2036,6 +2246,10 @@ def main(argv: List[str]) -> int:
         print_listing()
         return 0
 
+    # Before anything is resolved or started, so a flag that would have done
+    # nothing is a message rather than a run that quietly recorded nothing.
+    check_recording_options(args)
+
     wanted = resolve_targets(args)
     if len(wanted) > 1:
         if args.jsonl_dir:
@@ -2137,6 +2351,7 @@ def main(argv: List[str]) -> int:
                     recover_timeout=options.recover_timeout)
     before_syslog = check_syslog_setting(device, "at the start of the run") \
         if args.syslog else ""
+    recording = start_recorder(args, target, device)
 
     results: List[Result] = []
     started = time.monotonic()
@@ -2197,6 +2412,7 @@ def main(argv: List[str]) -> int:
             report.warn(f"device log: the syslog setting changed during the "
                         f"run, from {before_syslog!r} to {after!r}. The next "
                         "run's log depends on what it is at the next boot.")
+    stop_recorder(recording, options.jsonl_dir, target.token)
     if collector is not None:
         collector.stop()
         report.detail(f"device log:  {collector.lines} line(s) collected"

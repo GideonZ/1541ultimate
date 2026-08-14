@@ -1,5 +1,5 @@
 Traceback (most recent call last):
-  File "/tmp/e2e-observability-fixture/suites/browse.py", line 18, in <module>
+  File "/tmp/e2e-observability-fixture/suites/browse.py", line 20, in <module>
     backend = ui_backend.make_backend('overlay', ARGS.host,
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   File "/home/chris/dev/c64/1541u-e2e-obs/tests/e2e/lib/ui_backend.py", line 1947, in make_backend

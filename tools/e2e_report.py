@@ -243,6 +243,9 @@ class TargetRun:
     # Where the collector put this device's own log, from the `log` record it
     # wrote when it started, and empty when no collector ran.
     log: Optional[dict] = None
+    # The recorder's own record: where the files are, when the capture started
+    # and how the recording went. Absent from a run with no recorder.
+    capture: Optional[dict] = None
     skipped_lines: int = 0
 
     @property
@@ -427,6 +430,8 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.warnings.append(record)
         elif kind == "action":
             target.actions.append(record)
+        elif kind == "capture":
+            target.capture = record
         elif kind == "log":
             target.log = record
         elif kind == "plan":
@@ -598,6 +603,23 @@ def fenced(lines: Sequence[str], language: str = "") -> List[str]:
     """One fenced block, with any fence inside it defused."""
     body = [line.replace("```", "'''") for line in lines]
     return ["```" + language] + body + ["```"]
+
+
+def position_in(target: TargetRun, when: float) -> str:
+    """Where a moment is in this target's recording, as mm:ss.
+
+    Every mm:ss anywhere in this document is a position in the file rather
+    than an elapsed time in the run: the JSONL is where wall-clock time lives,
+    the recording is where file positions live, and `started` and `lead_in`
+    on the capture record are the two numbers that convert between them.
+    """
+    if not target.capture or not when:
+        return ""
+    started = as_float(target.capture.get("started"))
+    if not started:
+        return ""
+    seconds = max(0.0, as_float(target.capture.get("lead_in")) + (when - started))
+    return f"{int(seconds) // 60:02d}:{int(seconds) % 60:02d}"
 
 
 def duration(seconds: Optional[float]) -> str:
@@ -1110,8 +1132,11 @@ def failing_section(run: Run) -> List[str]:
 
     lines = ["## Failing checks", ""]
     for made, check in sorted(failures, key=lambda pair: (pair[1].time,)):
+        target = next((t for t in run.targets if t.token == check.target), None)
+        at = position_in(target, check.started) if target else ""
         lines += [f"### {check.key} - {check.check_label}", "",
                   f"`FAIL` after {duration(check.seconds)}, at {clock(check.time)}"
+                  + (f", {at} into the recording" if at else "")
                   + (f", scenario `{check.scenario}`" if check.scenario else "")
                   + (f", reported `{redact(check.extra)}`" if check.extra else "")
                   + "."]
@@ -1119,6 +1144,7 @@ def failing_section(run: Run) -> List[str]:
         if known:
             lines += [""] + known
         lines += capture_block(run, made)
+        lines += failing_stills(run, made)
         lines += ["", "Reproduce: `" + reproduce_command(made) + "`"]
         path = suite_path(run, made)
         if path:
@@ -1576,6 +1602,7 @@ def render(run: Run, previous: Optional[Run] = None) -> str:
     lines += timeline_section(run)
     lines += checks_section(run)
     lines += time_section(run)
+    lines += screens_section(run)
     lines += log_section(run)
 
     text = "\n".join(line.rstrip() for line in lines)
@@ -1762,3 +1789,74 @@ def main(argv: Sequence[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+
+# ---------------------------------------------------------------------------
+# The stills, which are the artefact most readers will actually look at
+# ---------------------------------------------------------------------------
+
+
+def stills_for(run: Run, target: TargetRun,
+               made: SuiteRun) -> List[Tuple[str, str, List[str]]]:
+    """One suite run's stills as (kind, relative path, text), in capture order."""
+    directory = os.path.join(run.directory, target.slug, "capture")
+    found = []
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return found
+    prefix = f"{made.stem}-{made.attempt}-"
+    for name in names:
+        if not name.startswith(prefix) or not name.endswith(".txt"):
+            continue
+        kind = name[len(prefix):-len(".txt")].split("-")[-1]
+        if kind not in ("first", "change", "last"):
+            continue
+        found.append((kind, f"{target.slug}/capture/{name}",
+                      read_text(os.path.join(directory, name))))
+    return found
+
+
+def screens_section(run: Run) -> List[str]:
+    """Each suite run's stills, as text, with the image beside them.
+
+    This is what makes a recording useful to a reader who never opens it: a
+    handful of stills answers "what did this suite see" at a glance, with no
+    download and no player. The text is what the report inlines and what a
+    program or an agent can match on; the image is what a person opens.
+    """
+    lines: List[str] = []
+    for target in run.targets:
+        for made in sorted(target_suites(run, target), key=lambda s: s.time):
+            chosen = stills_for(run, target, made)
+            if not chosen:
+                continue
+            lines += [f"### {made.key}", ""]
+            for kind, relative, text in chosen:
+                image = relative[:-len(".txt")] + ".png"
+                exists = os.path.exists(os.path.join(run.directory, image))
+                lines.append(f"**{kind}** (`{relative}`"
+                             + (f", image `{image}`" if exists else "") + "):")
+                lines += [""] + fenced([redact(row) for row in text]) + [""]
+    if not lines:
+        return []
+    return ["## Screens", ""] + lines
+
+
+def failing_stills(run: Run, made: SuiteRun) -> List[str]:
+    """A failing suite's first and last still, where a reader is already looking.
+
+    The transition stills stay in the detail part: they are the most numerous
+    and the least likely to be the one a reader needs, and the summary part
+    has to budget for what it carries per failure.
+    """
+    target = next((t for t in run.targets if t.token == made.target), None)
+    if target is None:
+        return []
+    chosen = [entry for entry in stills_for(run, target, made)
+              if entry[0] in ("first", "last")]
+    lines: List[str] = []
+    for kind, relative, text in chosen:
+        lines += ["", f"The {kind} frame of this suite run (`{relative}`):", ""]
+        lines += fenced([redact(row) for row in text])
+    return lines

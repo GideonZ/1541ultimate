@@ -6,7 +6,39 @@ Telnet, the on-device UI, C64 memory, mounted media or physical-device services
 in one scenario. These are the hardware release gate.
 
 What a run records about itself, and why each artefact is the shape it is, is
-in [doc/observability-spec.md](doc/observability-spec.md). `./run-tests -j DIR`
+in [doc/observability-spec.md](doc/observability-spec.md).
+
+## Watching a recorded run
+
+`./run-tests --record -j DIR <target>` writes `DIR/<slug>/video.mp4`: the
+harness's screen on the left, the device's video on the right, the device's
+audio over both. The left pane is what the harness was looking at, which under
+`overlay` and `telnet` is not what the VIC stream carries.
+
+```sh
+mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4
+```
+
+`--scale=nearest` keeps 40-column text sharp when the window is larger than the
+frame; a smooth scale blurs the glyphs, which is the one thing the recording is
+for. The two panes do not share a clock: the right pane advances at the output
+frame rate and the left advances when the harness read a different screen.
+
+Three ways to find a test in it, and a reader who has the report needs none of
+the others:
+
+- the chapter list in the player, one per suite run and one per failing check,
+  titled with the same identity key the report prints;
+- `grep FAIL runs/u64/video.srt`, or grep for a suite name, which gives the
+  timecodes to seek to without opening the video;
+- the `mm:ss` the report prints beside every failing check.
+
+A PDF of the report, for sending a run to somebody with no access to the
+repository or the build page, is one command and is never run in CI:
+
+```sh
+pandoc runs/index.md -o runs/index.pdf --pdf-engine=weasyprint
+``` `./run-tests -j DIR`
 writes that record and `python3 tools/e2e_report.py DIR` turns it into one
 Markdown document; see [tests/README.md](../README.md).
 

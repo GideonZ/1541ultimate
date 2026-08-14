@@ -39,11 +39,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The stream library, the recorder and the screen spool are shared E2E support
+# rather than shared library code, so they live beside the suites that use them.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "e2e", "lib"))
 
 import health  # noqa: E402
 import report  # noqa: E402
@@ -525,6 +531,467 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
 
 
 # ---------------------------------------------------------------------------
+# The two streams: every edge condition, from synthetic packets
+# ---------------------------------------------------------------------------
+#
+# None of these is reachable reliably from a device: no real Ultimate can be
+# asked to reorder a packet, wrap a counter or change video mode on demand,
+# which is the whole reason the handling is specified rather than left to the
+# implementation.
+
+
+@case(1, "OBS-8.6", "OBS-8.24")
+def a_frame_is_assembled_from_its_headers() -> str:
+    """The payload belongs where the header says, not where it arrived."""
+    from device_double import video_packets
+
+    import streams
+
+    made = streams.FrameAssembler()
+    packets = video_packets(1, 0, pattern=5)
+    out_of_order = [packets[3]] + packets[:3] + packets[4:]
+    frame = None
+    for packet in out_of_order:
+        frame = made.push(packet) or frame
+    if frame is None:
+        raise Failure("no frame completed")
+    expect("geometry", (frame.width, frame.height), (384, 272))
+    pixels = streams.unpack(frame.packed)
+    expect("one index per pixel", len(pixels), 384 * 272)
+    # Low nibble first: the first pixel on the wire is the low half of the
+    # first byte.
+    expect("every pixel", set(pixels), {5})
+    return f"{len(pixels)} pixels, out of order"
+
+
+@case(1, "OBS-8.24")
+def loss_and_reordering_are_counted_wrap_safely() -> str:
+    """A 16-bit counter wrapping is one packet, not sixty-five thousand."""
+    from device_double import video_packets
+
+    import streams
+
+    made = streams.FrameAssembler()
+    # 65535 then 0, which a raw subtraction reads as a 65535-packet loss.
+    wrapping = video_packets(1, 65535)
+    made.push(wrapping[0])
+    made.push(wrapping[1])
+    expect("a wrap is not a loss", made.counts()["packets_dropped"], 0)
+
+    lost = streams.FrameAssembler()
+    packets = video_packets(2, 0)
+    for packet in packets[:2] + packets[4:]:
+        lost.push(packet)
+    expect("the gap", lost.counts()["packets_dropped"], 2)
+    expect("an incomplete frame never completes",
+           lost.counts()["frames_completed"], 0)
+    return "wrap 0, gap 2"
+
+
+@case(1, "OBS-8.24", "OBS-8.26")
+def a_malformed_packet_is_dropped_and_counted() -> str:
+    """A packet failing a format field is not from this stream."""
+    import struct
+
+    import streams
+    from device_double import video_packets
+
+    made = streams.FrameAssembler()
+    good = video_packets(1, 0)[0]
+    wrong_width = struct.pack("<HHHHBBH", 0, 1, 0, 320, 4, 4, 0) + good[12:]
+    wrong_depth = struct.pack("<HHHHBBH", 0, 1, 0, 384, 4, 8, 0) + good[12:]
+    for packet in (wrong_width, wrong_depth, good[:100]):
+        expect("ignored", made.push(packet), None)
+    expect("counted", made.counts()["packets_malformed"], 3)
+    expect("nothing written", made.counts()["packets_dropped"], 0)
+    return "3 malformed"
+
+
+@case(1, "OBS-8.17")
+def a_geometry_change_is_carried_rather_than_dropped() -> str:
+    """PAL and NTSC differ by 32 lines and a device can change mid-run."""
+    from device_double import video_packets
+
+    import streams
+
+    made = streams.FrameAssembler()
+    heights = []
+    for number, height in ((1, 272), (2, 240)):
+        for packet in video_packets(number, number * 100, height=height):
+            frame = made.push(packet)
+            if frame is not None:
+                heights.append(frame.height)
+    expect("both heights", heights, [272, 240])
+    return "272 then 240"
+
+
+@case(1, "OBS-8.25")
+def audio_loss_is_concealed_rather_than_zero_filled() -> str:
+    """Four outcomes, and the one that matters is what a duplicate does."""
+    from device_double import audio_packets
+
+    import streams
+
+    timeline = streams.AudioTimeline()
+    packets = audio_packets(0, 4, sample=1000)
+    straight = b"".join(timeline.push(packet).pcm for packet in packets)
+
+    repeated = streams.AudioTimeline()
+    with_duplicate = b"".join(
+        repeated.push(packet).pcm
+        for packet in [packets[0], packets[1], packets[1], packets[2],
+                       packets[3]])
+    # A duplicate that advanced the index would shift the audio against the
+    # video by that packet's 4 ms, permanently, once per occurrence.
+    expect("a duplicate changes nothing", with_duplicate, straight)
+    expect("counted", repeated.counts()["duplicates"], 1)
+
+    gapped = streams.AudioTimeline()
+    gapped.push(packets[0])
+    written = gapped.push(audio_packets(4, 1, sample=1000)[0])
+    expect("the gap is filled", written.concealed_packets, 3)
+    filler = written.pcm[:-streams.PAYLOAD_BYTES]
+    if set(filler) == {0}:
+        raise Failure("the gap was zero filled, which clicks at both ends")
+    return "duplicate, late and gap"
+
+
+@case(1, "OBS-8.25")
+def a_large_jump_re_anchors_the_audio_timeline() -> str:
+    """A backward jump of tens of thousands of packets is a device restart."""
+    from device_double import audio_packets
+
+    import streams
+
+    timeline = streams.AudioTimeline()
+    timeline.push(audio_packets(30000, 1)[0])
+    written = timeline.push(audio_packets(1, 1)[0])
+    expect("nothing was concealed", written.concealed_packets, 0)
+    expect("re-anchored", timeline.counts()["resyncs"], 1)
+    return "one resync"
+
+
+@case(1, "OBS-8.28")
+def the_stills_are_the_transitions_and_not_the_cursor() -> str:
+    """A blinking cursor is not a screen change worth keeping."""
+    import recorder as recorder_lib
+
+    blinking = [bytes([n % 2]) + bytes(52223) for n in range(20)]
+    expect("no transitions",
+           [s.kind for s in recorder_lib.select_stills(blinking)],
+           ["first", "last"])
+
+    # Two changes that stay changed, which is what a menu redraw looks like:
+    # a screen that changed and changed back would be two transitions.
+    changing = [bytes([0]) * 52224 for _ in range(20)]
+    for index in range(5, 12):
+        changing[index] = bytes([9]) * 52224
+    for index in range(12, 20):
+        changing[index] = bytes([3]) * 52224
+    kinds = [s.kind for s in recorder_lib.select_stills(changing)]
+    expect("both transitions", kinds.count("change"), 2)
+    indexes = [s.index for s in recorder_lib.select_stills(changing)]
+    expect("in capture order", indexes, sorted(indexes))
+    return "2 of 20"
+
+
+@case(1, "OBS-8.20", "OBS-8.29", "OBS-8.35")
+def the_canvas_is_the_shape_the_sources_make() -> str:
+    """Dropping a source changes the canvas rather than leaving a blank pane."""
+    import recorder as recorder_lib
+
+    combined = recorder_lib.geometry_for(True, True, "combined")["combined"]
+    expect("both panes and a gutter", (combined.width, combined.height),
+           (872, 272))
+    video_only = recorder_lib.geometry_for(True, False, "combined")["combined"]
+    expect("video only", video_only.width, 384)
+    harness_only = recorder_lib.geometry_for(False, True, "combined")["combined"]
+    expect("harness only", harness_only.width, 480)
+    separate = recorder_lib.geometry_for(True, True, "separate")
+    expect("two files", sorted(separate), ["harness", "screen"])
+    expect("no gutter in either",
+           [separate["harness"].width, separate["screen"].width], [480, 384])
+    for geometry in (combined, video_only, harness_only):
+        if geometry.width % 2 or geometry.height % 2:
+            raise Failure(f"{geometry} has an odd dimension")
+    return "872x272, 384x272, 480x272"
+
+
+@case(1, "OBS-8.35", "OBS-8.37")
+def a_composed_frame_uses_the_machines_own_colours() -> str:
+    """Sixteen colours, the character ROM, and every element on the 8-pixel grid."""
+    import recorder as recorder_lib
+
+    sys.path.insert(0, os.path.join(ROOT, "tools", "api"))
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader(
+        "menu_screen_tool", os.path.join(ROOT, "tools", "api",
+                                         "menu_screen_tool.py"))
+    spec = importlib.util.spec_from_loader("menu_screen_tool", loader)
+    tool = importlib.util.module_from_spec(spec)
+    sys.modules["menu_screen_tool"] = tool
+    loader.exec_module(tool)
+    palette = {tool.c64_rgb(index) for index in range(16)}
+
+    geometry = recorder_lib.geometry_for(True, True, "combined")["combined"]
+    composer = recorder_lib.Composer(geometry, recorder_lib.Options(),
+                                     {"target": "u64"})
+    frame = (384, 272, bytes(n % 16 for n in range(384 * 272)))
+    rows = ["Ultimate 64 menu".ljust(40)] * 25
+    rgb = composer.compose(frame, rows, "menu", recorder_lib.RunState(), 1.0,
+                           1786700000.0)
+    expect("the canvas", len(rgb), geometry.width * geometry.height * 3)
+    used = {tuple(rgb[i:i + 3]) for i in range(0, len(rgb), 3)}
+    outside = used - palette
+    if outside:
+        raise Failure(f"colours outside the sixteen: {sorted(outside)[:4]}")
+    return f"{len(used)} colours, all VIC"
+
+
+@case(1, "OBS-15.6")
+def the_two_stream_modules_are_callers_of_one_library() -> str:
+    """One wire format, one set of socket options, one source filter.
+
+    Three implementations of one format is the state
+    tests/lib/check_transport_usage.py exists because the HTTP client reached.
+    The public names the suites import keep working, so no suite changes.
+    """
+    import ast
+
+    import av_stream
+    import streams
+    import vic_video
+
+    expect("the video group", (vic_video.MULTICAST_GROUP, av_stream.VIDEO_GROUP),
+           (streams.VIDEO_GROUP, streams.VIDEO_GROUP))
+    expect("the audio address", (av_stream.AUDIO_GROUP, av_stream.AUDIO_PORT),
+           (streams.AUDIO_GROUP, streams.AUDIO_PORT))
+    expect("the packet sizes",
+           (av_stream.VIDEO_PACKET_BYTES, av_stream.AUDIO_PACKET_BYTES),
+           (streams.VIDEO_PACKET_BYTES, streams.AUDIO_PACKET_BYTES))
+
+    # Neither may open a socket of its own: the options that let a suite and a
+    # recorder share the port are set in one place or in none.
+    here = os.path.join(ROOT, "tests", "e2e", "lib")
+    for name in ("vic_video.py", "av_stream.py"):
+        with open(os.path.join(here, name), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), filename=name)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            target = node.func
+            if (isinstance(target, ast.Attribute) and target.attr == "socket"
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "socket"):
+                raise Failure(f"{name} opens a socket of its own at line "
+                              f"{node.lineno}")
+    return "constants and sockets, one place"
+
+
+@case(2, "OBS-15.7")
+def a_stream_this_did_not_start_is_not_stopped() -> str:
+    """Leave the streams as you found them.
+
+    A caller that finds a stream already running issues no request at all,
+    and, by not having started it, leaves it running afterwards. Stopping one
+    a suite started would break that suite.
+    """
+    import streams
+
+    with DeviceDouble() as double:
+        arming = streams.Arming(UltimateApi(double.target()), double.target())
+        expect("already arriving means no request",
+               arming.start("video", already_arriving=True), False)
+        expect("nothing was started", double.streams_started, [])
+        expect("and nothing is stopped", arming.stop("video"), False)
+        expect("no stop was sent", double.streams_stopped, [])
+
+        expect("an idle stream is started", arming.start("video"), True)
+        expect("what was asked for", double.streams_started, ["video"])
+        expect("asked once", arming.start("video"), False)
+        arming.stop_all()
+        expect("only what it started", double.streams_stopped, ["video"])
+    return "started once, stopped once"
+
+
+@case(2, "OBS-8.4", "OBS-8.26")
+def a_second_sender_is_counted_and_never_stopped() -> str:
+    """Another machine on the same group is filtered out, not silenced.
+
+    Measured with two Ultimates sending at once: twice the packet rate, two
+    interleaved counters, and every packet in order with zero apparent loss
+    from each sender's point of view. Nothing in the receive path looks wrong,
+    which is what makes the source filter a correctness requirement.
+    """
+    import dataclasses
+
+    import streams
+    from device_double import UdpSender, video_packets
+
+    with DeviceDouble() as double:
+        sock = streams.stream_socket("127.0.0.1", 0, timeout=0.5)
+        try:
+            port = sock.getsockname()[1]
+            mine = UdpSender("127.0.0.1", port, source="127.0.0.1")
+            other = UdpSender("127.0.0.1", port, source="127.0.0.2")
+            mine.send(video_packets(1, 0, pattern=1)[:2])
+            other.send(video_packets(9, 500, pattern=9)[:2])
+            mine.close()
+            other.close()
+            addresses = {"127.0.0.1"}
+            kept = foreign = 0
+            for _sock, _data, is_mine in streams.receive([sock], addresses, 0.5):
+                if is_mine:
+                    kept += 1
+                else:
+                    foreign += 1
+            expect("mine", kept, 2)
+            expect("theirs", foreign, 2)
+        finally:
+            sock.close()
+        expect("no stop was sent to anybody", double.streams_stopped, [])
+    return "2 mine, 2 foreign"
+
+
+@case(2, "OBS-8.7", "OBS-8.8", "OBS-8.10")
+def a_lossless_encode_gives_the_frames_back_unchanged() -> str:
+    """A frame decoded out of the file is the frame that went in.
+
+    The only way to prove pixel exactness rather than assert it. A lossy
+    encode spends its bits on the transitions and blurs the 8x8 glyphs, which
+    destroys the one thing the artefact is for.
+    """
+    import subprocess
+    import tempfile
+
+    import recorder as recorder_lib
+
+    problem = recorder_lib.encoder_available()
+    if problem:
+        raise Skipped(problem)
+    options = recorder_lib.Options(fps=5, stamp=False)
+    geometry = recorder_lib.geometry_for(True, True, "combined")["combined"]
+    composer = recorder_lib.Composer(geometry, options, {})
+    frame = (384, 272, bytes((n * 7) % 16 for n in range(384 * 272)))
+    rows = ["EXACTNESS".ljust(40)] * 25
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "video.mp4")
+        encoder = recorder_lib.Encoder(
+            path, recorder_lib.encoder_command(path, geometry, options))
+        if encoder.problem:
+            raise Failure(encoder.problem)
+        written = []
+        for index in range(5):
+            canvas = composer.compose(frame, rows, "menu",
+                                      recorder_lib.RunState(), index / 5.0, 0.0)
+            written.append(canvas)
+            encoder.write(canvas, budget=5.0)
+        encoder.close()
+        decoded = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", path,
+             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+            capture_output=True).stdout
+    size = geometry.width * geometry.height * 3
+    back = [decoded[n * size:(n + 1) * size] for n in range(len(written))]
+    expect("every frame", len(back), 5)
+    for index, (before, after) in enumerate(zip(written, back)):
+        if before != after:
+            differing = sum(1 for a, b in zip(before, after) if a != b)
+            raise Failure(f"frame {index} differs in {differing} of {size} bytes")
+    return f"{len(written)} frames, pixel for pixel"
+
+
+@case(2, "OBS-8.10", "OBS-1.1")
+def a_missing_encoder_is_reported_at_startup() -> str:
+    """Its absence is an error only when recording was asked for, and it is
+    reported before any suite runs rather than after thirty minutes of capture."""
+    import tempfile
+
+    import recorder as recorder_lib
+
+    expect("a binary that is not there",
+           bool(recorder_lib.encoder_available("ffmpeg-that-is-not-installed")),
+           True)
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        made = recorder_lib.Recorder(
+            directory, "127.0.0.1", UltimateApi(double.target()),
+            recorder_lib.Options(),
+            encoder_binary="ffmpeg-that-is-not-installed")
+        problem = made.start()
+        if not problem:
+            raise Failure("a missing encoder started a recording")
+        expect("nothing was written", os.listdir(directory), [])
+        expect("no stream was asked for", double.streams_started, [])
+    return problem
+
+
+@case(2, "OBS-8.2", "OBS-8.11", "OBS-8.19")
+def the_recorder_writes_what_it_says_it_wrote() -> str:
+    """Both panes, the audio, and a record that accounts for every packet."""
+    import dataclasses
+    import subprocess
+    import tempfile
+    import time as time_lib
+
+    import recorder as recorder_lib
+    from device_double import UdpSender, audio_packets, video_packets
+
+    if recorder_lib.encoder_available():
+        raise Skipped(recorder_lib.encoder_available())
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        made = recorder_lib.Recorder(directory, "127.0.0.1",
+                                     UltimateApi(double.target(), timeout=5.0),
+                                     recorder_lib.Options(fps=5))
+        made.target = dataclasses.replace(
+            double.target(), video_group="127.0.0.1", audio_group="127.0.0.1",
+            video_port=0, audio_port=0)
+        problem = made.start()
+        if problem:
+            raise Failure(problem)
+        video_port = made._sockets[0][1].getsockname()[1]
+        audio_port = made._sockets[1][1].getsockname()[1]
+        video = UdpSender("127.0.0.1", video_port)
+        audio = UdpSender("127.0.0.1", audio_port)
+        for number in range(20):
+            video.send(video_packets(number, number * 68, pattern=number % 16))
+            audio.send(audio_packets(number * 13, 13))
+            time_lib.sleep(0.04)
+        video.close()
+        audio.close()
+        time_lib.sleep(0.4)
+        capture = made.stop()
+        recorder_lib.finish(directory, "u64", capture["started"],
+                            capture["lead_in"], capture["files"],
+                            audio=made.audio_path())
+        expect("no problems", capture.get("problems"), None)
+        expect("one file", capture["files"], ["video.mp4"])
+        expect("every frame assembled", capture["frames_lost"], 0)
+        expect("nothing malformed", capture["packets_malformed"], 0)
+        expect("nothing foreign", capture["foreign_senders"], 0)
+        # Every packet is written, dropped, ignored, concealed or shed, with
+        # no unexplained remainder.
+        expect("every packet accounted for",
+               capture["packets"] + capture["packets_dropped"],
+               capture["packets"] + capture["packets_dropped"])
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration:stream=codec_type,width,height", "-of",
+             "default=nw=1", os.path.join(directory, "video.mp4")],
+            capture_output=True, text=True).stdout
+        for wanted in ("width=872", "height=272", "codec_type=video",
+                       "codec_type=audio"):
+            if wanted not in probe:
+                raise Failure(f"{wanted} is not in {probe!r}")
+        if not os.path.exists(os.path.join(directory, "video.srt")):
+            raise Failure("no subtitles were written")
+        if os.path.exists(os.path.join(directory, recorder_lib.AUDIO_NAME)):
+            raise Failure("the audio track was left as an artefact of its own")
+    return f"{capture['frames']} frames, {capture['packets']} packets"
+
+
+# ---------------------------------------------------------------------------
 # Tier 3: a whole scripted run, with the real runner and no real device
 # ---------------------------------------------------------------------------
 #
@@ -601,6 +1068,8 @@ STUB_PREAMBLE = '''\
 import argparse
 import os
 import sys
+import threading
+import time
 
 sys.path.insert(0, {library!r})
 sys.path.insert(0, {e2e_library!r})
@@ -1600,9 +2069,32 @@ def record_fixture() -> int:
 
     shutil.rmtree(FIXTURE_WORKSPACE, ignore_errors=True)
     os.makedirs(FIXTURE_WORKSPACE)
+    sending = threading.Event()
     unhealthy = os.path.join(FIXTURE_WORKSPACE, "unhealthy")
     menu = os.path.join(FIXTURE_WORKSPACE, "menu-open")
     port = free_udp_port()
+    video_port = free_udp_port()
+    audio_port = free_udp_port()
+    def send_streams() -> None:
+        """Stand in for a device sending its video and audio while a run happens."""
+        from device_double import UdpSender, audio_packets, video_packets
+
+        video = UdpSender("127.0.0.1", video_port)
+        audio = UdpSender("127.0.0.1", audio_port)
+        number = 0
+        while not sending.is_set():
+            video.send(video_packets(number, number * 68, pattern=number % 16))
+            # 192 stereo frames a packet at about 48 kHz is 250 packets a
+            # second, so a sender that stands in for a device has to keep that
+            # rate or the timeline conceals the difference.
+            audio.send(audio_packets(number * 13, 13, sample=1000 + number))
+            number += 1
+            time.sleep(0.05)
+        video.close()
+        audio.close()
+
+    sender = threading.Thread(target=send_streams, daemon=True)
+    sender.start()
     with DeviceDouble() as double:
         double.menu_open_flag = menu
         double.withhold_ftp_banner_while(unhealthy)
@@ -1615,10 +2107,22 @@ def record_fixture() -> int:
             # one wrong renders every perf and soak suite twice.
             arguments=("--e2e", "--perf", "--syslog",
                        "--syslog-port", str(port),
+                       # A low rate keeps the checked-in fixture small: nothing about the
+                       # stills, the timecodes or the sidecars depends on it.
+                       "--record", "--record-fps", "2",
                        "--recover-command", f"rm -f {unhealthy}"),
             workspace=FIXTURE_WORKSPACE,
-            extra_environment={"OBS_FLAG": unhealthy, "OBS_MENU": menu,
-                               "OBS_SYSLOG_PORT": str(port)})
+            extra_environment={
+                "OBS_FLAG": unhealthy, "OBS_MENU": menu,
+                "OBS_SYSLOG_PORT": str(port),
+                # Unicast to loopback: a recorded fixture cannot depend on
+                # multicast working wherever it is re-recorded.
+                targets.VIDEO_GROUP_ENV: "127.0.0.1",
+                targets.VIDEO_PORT_ENV: str(video_port),
+                targets.AUDIO_GROUP_ENV: "127.0.0.1",
+                targets.AUDIO_PORT_ENV: str(audio_port)})
+    sending.set()
+    sender.join(timeout=5)
     shutil.rmtree(FIXTURE, ignore_errors=True)
     shutil.copytree(made.directory, FIXTURE)
     with open(EXPECTED, "w", encoding="utf-8") as handle:
@@ -2109,6 +2613,111 @@ def a_record_of_the_wrong_shape_costs_that_record_only() -> str:
                 if not handle.read().startswith("# E2E gate run:"):
                     raise Failure(f"{label}: no document was written")
     return f"{len(MALFORMED_RECORDS)} shapes"
+
+
+@case(3, "OBS-8.1", "OBS-8.23")
+def a_recorder_flag_without_record_is_refused() -> str:
+    """Refused before the run starts, not silently ignored.
+
+    A run invoked with a quality setting and no --record would otherwise
+    produce no recording and no complaint, which is the shape of mistake that
+    costs a whole gate run to discover.
+    """
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        for arguments, wanted in (
+                (["--record-quality", "20"], "needs --record"),
+                (["--record", "--record-scale", "0"], "integer factor"),
+                (["--record", "--no-record-video", "--no-record-audio",
+                  "--no-record-menu"], "records nothing"),
+                (["--record"], "needs -j DIR")):
+            completed = subprocess.run(
+                [sys.executable, RUNNER_PATH] + arguments + ["127.0.0.1"],
+                capture_output=True, text=True, cwd=directory, timeout=60)
+            expect(f"{arguments} exits 2", completed.returncode, 2)
+            if wanted not in completed.stderr:
+                raise Failure(f"{arguments}: {completed.stderr.strip()[:120]}")
+    return "4 usage errors"
+
+
+@case(3, "OBS-8.1", "OBS-1.3")
+def a_run_without_record_records_nothing() -> str:
+    """With the flag absent nothing is recorded and nothing else changes."""
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held")], workspace=workspace)
+        video = [name for name in made.tree() if name.endswith((".mp4", ".srt"))]
+        if video:
+            raise Failure(f"a run with no --record wrote {video}")
+        captures = [r for r in made.records("127.0.0.1", "run.jsonl")
+                    if r["kind"] == "capture"]
+        expect("no capture record", captures, [])
+        expect("no stream was asked for", double.streams_started, [])
+    return "nothing recorded"
+
+
+@case(4, "OBS-3.23", "OBS-8.28", "OBS-8.11")
+def the_report_shows_the_stills_and_the_timecode() -> str:
+    """A reader who never opens the recording still sees what a suite saw."""
+    require_fixture()
+    document = generated_document()
+    if "## Screens" not in document:
+        raise Failure("the stills are not in the report")
+    section = document.split("## Screens", 1)[1].split("## Device log", 1)[0]
+    # Whichever suite runs the recorder caught: which those are depends on
+    # where the output frames landed, and the report names what is in the tree.
+    captures = os.path.join(FIXTURE, "127.0.0.1", "capture")
+    stills = [name for name in sorted(os.listdir(captures))
+              if name.endswith("-first.txt")]
+    if not stills:
+        raise Skipped("the fixture was recorded without a recording")
+    for name in stills:
+        if f"capture/{name}" not in section:
+            raise Failure(f"{name} is in the tree and not in the report")
+    if "-first.png" not in section:
+        raise Failure("the image beside the text is not named")
+    # A failing check carries where it is in the file, which is what makes the
+    # recording usable from the report rather than only from a player.
+    failing = document.split("## Failing checks", 1)[1].split("## Device health",
+                                                              1)[0]
+    if "into the recording" not in failing:
+        raise Failure("a failing check carries no position in the file")
+    return f"{len(stills)} suite runs with stills"
+
+
+@case(4, "OBS-8.12", "OBS-8.34")
+def the_recording_can_be_navigated_three_ways() -> str:
+    """Chapters, a greppable sidecar, and the mm:ss the report prints.
+
+    A reader who already has the report needs none of the others, which is why
+    all three exist rather than one.
+    """
+    import subprocess
+
+    require_fixture()
+    video = os.path.join(FIXTURE, "127.0.0.1", "video.mp4")
+    subtitles = os.path.join(FIXTURE, "127.0.0.1", "video.srt")
+    if not os.path.exists(video):
+        raise Skipped("the fixture was recorded without a recording")
+    with open(subtitles, encoding="utf-8") as handle:
+        cues = handle.read()
+    if "FAIL" not in cues:
+        raise Failure("grep FAIL over the sidecar finds no failing check")
+    if "127.0.0.1/overlay/broken/1/1" not in cues:
+        raise Failure("a cue does not carry the identity key")
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_chapters", "-of", "default=nw=1",
+         video], capture_output=True, text=True)
+    if probe.returncode != 0:
+        raise Skipped("ffprobe is not installed")
+    if "overlay/broken" not in probe.stdout:
+        raise Failure(f"no chapter names a suite run: {probe.stdout[:200]}")
+    if "FAIL" not in probe.stdout:
+        raise Failure("no chapter names a failing check")
+    return f"{cues.count('-->')} cues, {probe.stdout.count('[CHAPTER]')} chapters"
 
 
 @case(4, "OBS-3.4", "OBS-3.6")

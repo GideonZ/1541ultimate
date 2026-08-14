@@ -546,6 +546,17 @@ def log_result(target: str, path: str, started: float, port: int) -> None:
     _record(kind="log", target=target, path=path, started=started, port=port)
 
 
+def capture_result(**fields) -> None:
+    """The recording's own health, for a reader of the file it produced.
+
+    The counts are what makes a recording readable as evidence: a file with
+    thousands of padded frames or hundreds of re-arms is telling a reader that
+    the run fought the recorder for the stream, which is worth knowing before
+    drawing conclusions from what it shows.
+    """
+    _record(kind="capture", **fields)
+
+
 def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:
     """The JSONL record for one device health sweep.
 
