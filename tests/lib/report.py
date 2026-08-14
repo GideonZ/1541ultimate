@@ -546,6 +546,25 @@ def log_result(target: str, path: str, started: float, port: int) -> None:
     _record(kind="log", target=target, path=path, started=started, port=port)
 
 
+def gap_result(component: str, started: float, ended: Optional[float] = None,
+               **fields) -> None:
+    """One interval an observability component could not observe anything.
+
+    A device that stopped answering, a stream that went quiet and a log that
+    stopped arriving are one shape of event: a resource was unavailable from
+    time A to time B. Recorded that way the timeline puts it beside the suite
+    that was running, which is almost always the explanation. Recorded as a
+    line per failed attempt it would be noise, and recorded not at all a reader
+    could not tell an empty file from a quiet device.
+
+    A gap still open when the run ends carries no `ended`, and the report says
+    so rather than inventing one.
+    """
+    if ended is not None:
+        fields["ended"] = ended
+    _record(kind="gap", component=component, started=started, **fields)
+
+
 def capture_result(**fields) -> None:
     """The recording's own health, for a reader of the file it produced.
 

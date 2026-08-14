@@ -236,6 +236,10 @@ class TargetRun:
     suites: List[SuiteRun] = field(default_factory=list)
     health: List[dict] = field(default_factory=list)
     warnings: List[dict] = field(default_factory=list)
+    # Every interval an observability component could not observe anything:
+    # a device that stopped answering, a stream that went quiet, a log that
+    # stopped arriving. A gap still open when the run ended carries no `ended`.
+    gaps: List[dict] = field(default_factory=list)
     # What the runner itself did to the device, outside any suite: the health
     # sweeps, the UI-state gate and the teardown. A suite's own actions sit on
     # the suite run that made them.
@@ -430,6 +434,8 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.health.append(record)
         elif kind == "warning":
             target.warnings.append(record)
+        elif kind == "gap":
+            target.gaps.append(record)
         elif kind == "action":
             target.actions.append(record)
         elif kind == "capture":
@@ -1443,6 +1449,24 @@ def timeline_section(run: Run) -> List[str]:
             events.append((as_float(warning.get("time")), DURING, False,
                            f"{target.token} warning: "
                            + redact(str(warning.get("message") or ""))))
+        for gap in target.gaps:
+            # Both ends, as two events, so a reader sees what was running when
+            # it opened and what was running when it closed rather than one
+            # line naming two times. A gap with no end is still open: the run
+            # finished without the resource coming back, and saying "to the end
+            # of the run" would be inventing the end this record does not have.
+            component = str(gap.get("component") or "a component")
+            reason = redact(str(gap.get("reason") or "unavailable"))
+            named = f"{target.token} {component}"
+            events.append((as_float(gap.get("started")), DURING, False,
+                           f"{named} gap opened: {reason}"))
+            if gap.get("ended") is None:
+                events.append((as_float(gap.get("started")), DURING, False,
+                               f"{named} gap still open when the run ended"))
+            else:
+                events.append((as_float(gap.get("ended")), DURING, False,
+                               f"{named} gap closed after "
+                               f"{as_float(gap['ended']) - as_float(gap['started']):.1f}s"))
         for action in target.actions:
             events.append((as_float(action.get("time")), DURING, True,
                            f"{target.token} " + describe_action(action)))

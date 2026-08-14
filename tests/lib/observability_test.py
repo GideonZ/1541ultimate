@@ -312,6 +312,122 @@ def a_device_that_stops_answering_raises_rather_than_hangs() -> str:
     return "offline then back"
 
 
+@case(2, "OBS-1.1", "OBS-1.2", "OBS-16.6")
+def an_unwritable_output_directory_does_not_end_the_run() -> str:
+    """Where a run records itself is not part of what the run is testing.
+
+    An unguarded makedirs made the observability output location decide the
+    gate's process result: `-o /dev/null/e2e` ended the run with a traceback
+    before any device was touched.
+    """
+    import tempfile
+
+    runner = load_runner()
+    with tempfile.TemporaryDirectory() as directory:
+        blocker = os.path.join(directory, "file")
+        with open(blocker, "w", encoding="utf-8") as handle:
+            handle.write("not a directory")
+        made = runner.make_output_tree(os.path.join(blocker, "e2e"))
+    expect("refused", made, False)
+    expect("and made one it can", runner.make_output_tree(
+        os.path.join(tempfile.mkdtemp(), "e2e")), True)
+    return "reported, not raised"
+
+
+@case(2, "OBS-1.1", "OBS-1.2", "OBS-16.6")
+def a_collector_output_file_that_cannot_be_written_is_reported_at_startup() -> str:
+    """An unwritable log file is a startup problem, not a silent discard.
+
+    `bind` opened nothing, so an unwritable path was found by the first
+    datagram, recorded in `problems` that nobody read again, and every line
+    from that device was dropped with the run saying nothing about it.
+    """
+    import tempfile
+
+    sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+    import syslog_collector
+
+    with tempfile.TemporaryDirectory() as directory:
+        blocker = os.path.join(directory, "127.0.0.1")
+        with open(blocker, "w", encoding="utf-8") as handle:
+            handle.write("not a directory")
+        collector = syslog_collector.Collector(directory=directory, port=0)
+        opened = collector.bind([targets.parse("127.0.0.1")])
+        try:
+            expect("the port still opened", opened, True)
+            if not any("could not be written" in problem
+                       for problem in collector.problems):
+                raise Failure(f"the unwritable file went unreported: "
+                              f"{collector.problems}")
+            # And the run carries on: a datagram is discarded, not raised.
+            collector.deliver("127.0.0.1", b"a line")
+            expect("counted anyway", collector.lines, 1)
+        finally:
+            collector.stop()
+    return "reported before the first datagram"
+
+
+@case(2, "OBS-15.11", "OBS-16.6")
+def a_device_that_stops_logging_leaves_a_gap() -> str:
+    """A log that stops is an interval with a start and an end, or an open one.
+
+    Why it is worth recording: an assertion failure disables interrupts and
+    the syslog task never runs again, so the log stopping is the only signal
+    it produces (OBS-7.15, whose other half is firmware work and stays in the
+    deliberately-untested table). A collector that recorded nothing about the
+    silence would leave a reader unable to tell an empty file from a quiet
+    device.
+    """
+    import tempfile
+
+    sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+    import syslog_collector
+
+    clock = [1000.0]
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(directory=directory, port=0,
+                                               clock=lambda: clock[0])
+        collector.bind([targets.parse("127.0.0.1")])
+        try:
+            collector.deliver("127.0.0.1", b"first")
+            clock[0] += 1.0
+            collector.deliver("127.0.0.1", b"a moment later")
+            expect("a quiet moment is not a gap", collector.gaps(), [])
+
+            clock[0] += syslog_collector.SILENT_SECONDS + 1.0
+            open_gaps = collector.gaps()
+            expect("one gap", len(open_gaps), 1)
+            if "ended" in open_gaps[0]:
+                raise Failure(f"a silence still running was closed: {open_gaps[0]}")
+            expect("from the last line it sent", open_gaps[0]["started"], 1001.0)
+
+            collector.deliver("127.0.0.1", b"back")
+            closed = collector.gaps()
+            expect("still one gap", len(closed), 1)
+            expect("closed when it spoke again", closed[0]["ended"], clock[0])
+        finally:
+            collector.stop()
+    return "one silence, opened and closed"
+
+
+@case(2, "OBS-15.11")
+def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
+    """The record shape carries a start, and an end only when there is one."""
+    records = records_from_a_stub_suite(
+        {}, body=("report.gap_result('syslog', 10.0, 12.5, target='u64',\n"
+                  "                  reason='the device stopped logging')\n"
+                  "report.gap_result('recorder', 20.0, target='u64',\n"
+                  "                  reason='the stream stopped')\n"))
+    gaps = [record for record in records if record["kind"] == "gap"]
+    expect("two gaps", len(gaps), 2)
+    expect("component", gaps[0]["component"], "syslog")
+    expect("started", gaps[0]["started"], 10.0)
+    expect("ended", gaps[0]["ended"], 12.5)
+    if "ended" in gaps[1]:
+        raise Failure(f"an open gap was given an end: {gaps[1]}")
+    return "one closed, one open"
+
+
 @case(2, "OBS-14.2", "OBS-16.2")
 def health_sweep_runs_against_the_double() -> str:
     """Every listener the sweep asks for is on the handle, so the sweep passes."""
@@ -3240,6 +3356,53 @@ def a_record_of_the_wrong_shape_costs_that_record_only() -> str:
                 if not handle.read().startswith("# E2E gate run:"):
                     raise Failure(f"{label}: no document was written")
     return f"{len(MALFORMED_RECORDS)} shapes"
+
+
+@case(4, "OBS-15.11", "OBS-3.26")
+def the_timeline_shows_a_gap_at_both_of_its_ends() -> str:
+    """A gap is two events on the timeline, or one that says it never closed.
+
+    Both ends rather than one line naming two times, so a reader sees what was
+    running when the resource went away and what was running when it came
+    back. The fixture has no gap of its own, since nothing in it goes quiet
+    for long enough, so the two shapes are appended to a copy of it.
+    """
+    import json
+    import shutil
+    import tempfile
+
+    require_fixture()
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        tree = os.path.join(directory, "run")
+        shutil.copytree(FIXTURE, tree)
+        anchor_time = 0.0
+        for record in ScriptedRun(tree, 0, "").records("127.0.0.1", "run.jsonl"):
+            if record.get("kind") == "run":
+                anchor_time = float(record.get("time") or 0.0)
+        with open(os.path.join(tree, "127.0.0.1", "run.jsonl"), "a",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "kind": "gap", "time": anchor_time, "suite": "run-tests",
+                "target": "127.0.0.1", "component": "syslog",
+                "started": anchor_time - 30.0, "ended": anchor_time - 18.0,
+                "reason": "the device stopped logging"}) + "\n")
+            handle.write(json.dumps({
+                "kind": "gap", "time": anchor_time, "suite": "run-tests",
+                "target": "127.0.0.1", "component": "recorder",
+                "started": anchor_time - 10.0,
+                "reason": "the video stream stopped"}) + "\n")
+        generator.write_report(tree)
+        with open(os.path.join(tree, generator.INDEX_NAME),
+                  encoding="utf-8") as handle:
+            document = handle.read()
+    for wanted in ("syslog gap opened: the device stopped logging",
+                   "syslog gap closed after 12.0s",
+                   "recorder gap opened: the video stream stopped",
+                   "recorder gap still open when the run ended"):
+        if wanted not in document:
+            raise Failure(f"the timeline does not say {wanted!r}")
+    return "one closed, one still open"
 
 
 @case(3, "OBS-8.1", "OBS-8.23")

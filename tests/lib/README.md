@@ -221,6 +221,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
 | `warning` | `message` |
+| `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
 | `log` | `target`, `path`, `started`, `port` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
@@ -236,6 +237,14 @@ they are absent rather than zero.
 `attempt` is which go at the suite this is, from `E2E_ATTEMPT`. `run-tests`
 exports both for every suite it starts. A suite started by hand has neither in
 its environment and records neither, rather than a guessed value.
+
+`gap` is one interval a component could not observe anything: a device that
+stopped answering, a stream that went quiet, a log that stopped arriving. One
+shape for all of them, so the report's timeline can put each beside the suite
+that was running, which is almost always the explanation. A gap still open when
+the run ended carries no `ended`, and the report says so rather than inventing
+one. The collector calls a device silent after ten seconds, which is far above
+the tens of milliseconds between its ordinary lines and far below a suite.
 
 `log` says where a device's own log is being collected and from when, so a
 reader who finds no log file can tell a collector that never started from a

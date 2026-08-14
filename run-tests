@@ -584,6 +584,30 @@ def start_syslog(args: argparse.Namespace,
     return collector
 
 
+def finish_syslog(collector) -> None:
+    """Stop the collector and record what it saw, including what it missed.
+
+    Three things a reader needs and only this knows: how much arrived, every
+    interval a device that had been logging went quiet, and any problem the
+    collector hit after it started. The last of those used to be reported only
+    at startup, so a file that became unwritable mid-run discarded the rest of
+    that device's log and said so nowhere.
+    """
+    already = len(collector.problems)
+    collector.stop()
+    for gap in collector.gaps():
+        report.gap_result("syslog", gap["started"], gap.get("ended"),
+                          target=gap["target"], machine=gap["machine"],
+                          reason="the device stopped logging")
+    report.detail(f"device log:  {collector.lines} line(s) collected"
+                  + (f", {collector.unmapped} from an unmapped address"
+                     if collector.unmapped else "")
+                  + (f", {len(collector.gaps())} silence(s)"
+                     if collector.gaps() else ""))
+    for problem in collector.problems[already:]:
+        report.warn(f"device log: {problem}")
+
+
 def check_syslog_setting(device: "Device", when: str) -> str:
     """What this device says it is sending its log to, and a warning when it is
     not sending it anywhere.
@@ -643,8 +667,8 @@ def make_output_tree(directory: str) -> bool:
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError as exc:
-        report.warn(f"-j {directory} could not be created ({exc}); this run "
-                    "records no JSONL, no logs and no capture")
+        report.warn(f"-o {directory} could not be created ({exc}); this run "
+                    "keeps no artifacts")
         return False
     return True
 
@@ -2206,10 +2230,7 @@ def run_targets(args: argparse.Namespace,
         selector.close()
 
     if collector is not None:
-        collector.stop()
-        report.detail(f"device log:  {collector.lines} line(s) collected"
-                      + (f", {collector.unmapped} from an unmapped address"
-                         if collector.unmapped else ""))
+        finish_syslog(collector)
     status = combine_exit_codes(list(codes.values()))
     print()
     for target in wanted:
@@ -2435,10 +2456,7 @@ def main(argv: List[str]) -> int:
         # and an unstopped collector holds its UDP port.
         stop_recorder(recording, options.output_dir, target.token)
         if collector is not None:
-            collector.stop()
-            report.detail(f"device log:  {collector.lines} line(s) collected"
-                          + (f", {collector.unmapped} from an unmapped address"
-                             if collector.unmapped else ""))
+            finish_syslog(collector)
     return summarise(results, started, device.recoveries,
                      run_identity(sys.argv, started_wall))
 

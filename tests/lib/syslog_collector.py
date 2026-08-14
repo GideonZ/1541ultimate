@@ -83,6 +83,18 @@ MAX_DATAGRAM = 2048
 # How long the receive loop blocks before looking at whether it should stop.
 POLL_SECONDS = 0.25
 
+# How long a device that has been logging may say nothing before that counts as
+# a gap rather than as a quiet moment.
+#
+# The devices log continuously while a suite drives them: a menu redraw, an HTTP
+# request and a drive step each produce lines, and the gaps between them are
+# tens or hundreds of milliseconds. Ten seconds is far above that and far below
+# a suite's length, so an interval this long is a device that stopped, not one
+# that had nothing to say. OBS-7.15 is why it is worth recording at all: an
+# assertion failure disables interrupts and the syslog task never runs again,
+# so the log stopping is the only signal the assertion produces.
+SILENT_SECONDS = 10.0
+
 
 @dataclass
 class Route:
@@ -111,6 +123,10 @@ class Collector:
     lines: int = 0
     unmapped: int = 0
     problems: List[str] = field(default_factory=list)
+    # When each machine last said anything, and the silences that followed.
+    # See `gaps` for what counts as one.
+    seen: Dict[str, float] = field(default_factory=dict)
+    silences: List[dict] = field(default_factory=list)
     _socket: Optional[socket.socket] = None
     _thread: Optional[threading.Thread] = None
     _running: bool = False
@@ -179,6 +195,13 @@ class Collector:
         self._socket = sock
         self.port = sock.getsockname()[1]
         self.started = self.clock()
+        # Opened now rather than on the first datagram. A file that cannot be
+        # written is a startup problem the operator can act on; discovered
+        # later it is a silently discarded log, reported nowhere, in a run that
+        # has already cost 15 to 30 minutes.
+        for path in sorted({route.path for route in self.routes.values()}
+                           | {self.unmapped_path}):
+            self._open(path)
         self._running = True
         self._thread = threading.Thread(target=self._receive, name="syslog",
                                         daemon=True)
@@ -235,19 +258,34 @@ class Collector:
         self._append(route.path, f"{when:.3f} {text}\n")
         with self._lock:
             self.lines += 1
+            previous = self.seen.get(route.machine)
+            if previous is not None and when - previous >= SILENT_SECONDS:
+                self.silences.append({"machine": route.machine,
+                                      "target": route.target,
+                                      "started": previous, "ended": when})
+            self.seen[route.machine] = when
+
+    def _open(self, path: str) -> None:
+        """Open one output file, or record why it could not be opened.
+
+        A file that cannot be opened is replaced by a sink that discards, so
+        the collector keeps running and the run is unaffected, which is what
+        an observability component owes the run it is watching.
+        """
+        with self._lock:
+            if path in self._handles:
+                return
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                self._handles[path] = open(path, "a", encoding="utf-8")
+            except OSError as exc:
+                self.problems.append(f"{path} could not be written: {exc}")
+                self._handles[path] = _Discard()
 
     def _append(self, path: str, line: str) -> None:
+        self._open(path)
         with self._lock:
-            handle = self._handles.get(path)
-            if handle is None:
-                try:
-                    os.makedirs(os.path.dirname(path), exist_ok=True)
-                    handle = open(path, "a", encoding="utf-8")
-                except OSError as exc:
-                    self.problems.append(f"{path} could not be written: {exc}")
-                    self._handles[path] = _Discard()
-                    return
-                self._handles[path] = handle
+            handle = self._handles[path]
             try:
                 handle.write(line)
                 handle.flush()
@@ -260,6 +298,27 @@ class Collector:
         """Each target token and the file its lines went to."""
         found = {(route.target, route.path) for route in self.routes.values()}
         return sorted(found)
+
+    def gaps(self, until: Optional[float] = None) -> List[dict]:
+        """Every interval a device that had been logging said nothing.
+
+        A machine still silent when the run ends carries no `ended`, which is
+        the shape OBS-15.11 asks for: a gap that is still open is recorded as
+        open rather than closed at an invented time. A machine that never sent
+        anything at all is not a gap here, because there is no interval to
+        bound; the run already records that the collector started and the
+        report says the file is empty.
+        """
+        when = self.clock() if until is None else until
+        with self._lock:
+            found = list(self.silences)
+            for machine, last in sorted(self.seen.items()):
+                if when - last >= SILENT_SECONDS:
+                    target = next((route.target for route in self.routes.values()
+                                   if route.machine == machine), "")
+                    found.append({"machine": machine, "target": target,
+                                  "started": last})
+        return found
 
 
 class _Discard:
