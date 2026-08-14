@@ -1468,119 +1468,101 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Run hardware test suites against one or more Ultimate devices.\n"
             "\n"
-            "Suites execute sequentially as separate processes, each driving the\n"
-            "firmware over REST, FTP or Telnet. They share one device and one UI\n"
-            "object stack, so the runner re-establishes a known state around each\n"
-            "one. With no arguments: the E2E suites once, in overlay mode.\n"
+            "Each suite is a separate process driving the firmware over REST, FTP\n"
+            "or Telnet. They share one device, so the runner puts it back into a\n"
+            "known state around each one. With no arguments: the E2E gate, once,\n"
+            "in overlay mode.\n"
             "\n"
             "TARGETS\n"
+            "  host                a device that is also its own C64\n"
+            "  cartridge@computer  a cartridge, in the computer supplying its\n"
+            "                      keyboard and video, written u2@c64u\n"
             "\n"
-            "  host                a device that is also its own C64-side computer\n"
-            "  cartridge@computer  a cartridge under test, in the computer that\n"
-            "                      supplies its C64 keyboard and video\n"
+            "Several targets run one child process each, every line prefixed with\n"
+            "the target it came from. Targets sharing a machine take turns: u64\n"
+            "and u2@c64u run together, c64u and u2@c64u do not.\n"
             "\n"
-            "An Ultimate II is a cartridge: it serves its own menu, memory and\n"
-            "configuration, but has no keyboard of its own, so keys are injected\n"
-            "into the computer it is plugged into and reach it over the expansion\n"
-            "port. Write that as u2@c64u; nothing else has to be set up.\n"
+            "OBSERVABILITY\n"
+            "  -j DIR      the whole run as JSONL, one directory per target:\n"
+            "              checks, suites, health sweeps, requests and verdicts\n"
+            "  --syslog    the devices' own log, collected off the network\n"
+            "  --record    video of the harness's screen beside the device's\n"
             "\n"
-            "Several targets run as several ordinary runs of this program, one\n"
-            "child process per target, with every output line prefixed by the\n"
-            "target it came from. A target occupies the machines it names, and\n"
-            "two targets that share one never run at the same time: u64 and\n"
-            "u2@c64u run together, while c64u and u2@c64u take turns.\n"
+            "A -j tree is what a failure is read from afterwards. Turn one into a\n"
+            "single Markdown report, no device needed:\n"
             "\n"
-            "DEVICE HEALTH\n"
+            "  python3 tools/e2e_report.py runs/ && less runs/index.md\n"
             "\n"
-            "Every E2E suite is preceded by a health check, and any suite that\n"
-            "fails is followed by a second one. Three predicates, evaluated in\n"
-            "order, short-circuiting on the first failure:\n"
+            "It opens with a greppable status line, then every failing check with\n"
+            "the screen, the log tail and the command that runs it again.\n"
             "\n"
-            "  reachable   GET /v1/version succeeds, polled for up to 60s. The\n"
-            "              device serves few concurrent connections and reclaims\n"
-            "              an abandoned one after roughly 18s, so a single\n"
-            "              timeout is not conclusive.\n"
-            "  drivable    The on-device UI returns to the documented state:\n"
-            "              menu closed, root browser at /, listing non-empty.\n"
-            "              Independent of reachability, since a UI task that has\n"
-            "              stopped consuming injected keys still serves REST.\n"
-            "  functional  ICMP, REST, FTP (21), Telnet (23), /v1/info and the\n"
-            "              DMA control port (64) all respond, and $D012 and $00A2\n"
-            "              advance, evidencing that the VIC is scanning and the\n"
-            "              KERNAL interrupt is running. Emitted as one line per\n"
-            "              suite with per-check latency.\n"
+            "HEALTH AND RECOVERY\n"
+            "  Before each E2E suite, and again after one fails, the device must\n"
+            "  be reachable (REST answers), drivable (the UI returns to the\n"
+            "  documented state) and functional (every listener answers, and the\n"
+            "  raster and jiffy counters advance).\n"
             "\n"
-            "The health check is both the precondition for running a suite and\n"
-            "the sole trigger for recovery. A non-zero exit status alone cannot\n"
-            "distinguish these three outcomes; the health check can:\n"
-            "\n"
-            "  suite failed, device healthy    the suite found a defect and the\n"
-            "                                  result stands\n"
-            "  suite failed, device unhealthy  the result is uninformative, so\n"
-            "                                  recover the device and re-run\n"
-            "  device cannot be made healthy   abandon the run rather than\n"
-            "                                  attribute one device fault to\n"
-            "                                  every remaining suite\n"
-            "\n"
-            "RECOVERY\n"
-            "\n"
-            "--recover-command supplies the recovery action; the runner has no\n"
-            "default, since the mechanism is site-specific (JTAG download, power\n"
-            "cycle, flash tool). It is invoked only for an unhealthy device,\n"
-            "never for a failing suite, and is bounded per suite and per run.\n"
-            "Recovery is not free: a run requiring one exits 3, not 0.\n"),
+            "  A suite that fails on a healthy device found something. One that\n"
+            "  fails on an unhealthy device showed nothing, so --recover-command\n"
+            "  runs and the suite runs again; a device that will not come back\n"
+            "  abandons the run rather than failing every suite after it. The\n"
+            "  command is site-specific and has no default. A run that needed one\n"
+            "  exits 3, not 0.\n"),
         epilog=(
             "examples:\n"
-            "  run-tests                          the E2E gate, overlay mode\n"
-            "  run-tests 192.168.0.64             the same, against another device\n"
-            "  run-tests u2@c64u                  a cartridge, in the computer it is in\n"
-            "  run-tests u64 u2@c64u              both, concurrently: no shared machine\n"
-            "  run-tests -s prg-context-menu      one suite\n"
-            "  run-tests -m all                   the gate in all three modes\n"
-            "  run-tests -m telnet,freeze         two chosen modes\n"
-            "  run-tests --perf --soak            perf and soak only, no E2E\n"
-            "  run-tests --all -m all             everything; takes hours\n"
-            "  run-tests --list                   show every registered suite\n"
+            "  run-tests                            the E2E gate, overlay mode\n"
+            "  run-tests u2@c64u                    a cartridge, in its computer\n"
+            "  run-tests u64 u2@c64u                both, concurrently\n"
+            "  run-tests -s prg-context-menu        one suite\n"
+            "  run-tests -m telnet,freeze           two UI transports\n"
+            "  run-tests --list                     every registered suite\n"
+            "\n"
+            "  run-tests -j runs/ u64               keep the run as JSONL\n"
+            "  run-tests -j runs/ --syslog u64      and the device's own log\n"
+            "  run-tests -j runs/ --record u64      and a video of it\n"
+            "  U64_LOG_ADDRESSES=\"u64=192.0.2.71\" run-tests -j runs/ --syslog u64\n"
+            "                                       attribute a second interface\n"
+            "  python3 tools/e2e_report.py runs/    read the result as one document\n"
+            "  mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4\n"
+            "                                       watch it, subtitled per check\n"
+            "\n"
             "  run-tests --recover-command 'build u64' -j runs/\n"
-            "                                     recover an unhealthy device, and write\n"
-            "                                     machine-readable results\n"
+            "                                       bring a wedged device back\n"
             "\n"
             "exit status:\n"
-            f"  {EXIT_OK}  all suites passed, no recovery required\n"
-            f"  {EXIT_SUITE_FAILED}  at least one suite failed\n"
+            f"  {EXIT_OK}  every suite passed, no recovery needed\n"
+            f"  {EXIT_SUITE_FAILED}  a suite failed\n"
             f"  {EXIT_USAGE}  invalid command line\n"
-            f"  {EXIT_RECOVERED}  all suites passed, but the device required recovery\n"
+            f"  {EXIT_RECOVERED}  every suite passed, but the device needed recovering\n"
             f"  {EXIT_DEVICE_UNHEALTHY}  the device could not be made healthy; run abandoned\n"
             "\n"
             "notes:\n"
             "  The device must be otherwise idle: suites open the menu, reset the\n"
-            "  machine and mount disk images, and some mutate device settings and\n"
-            "  restore them on exit.\n"
-            "  Suite ordering is significant and fixed; see the comments in the\n"
-            "  registry at the top of this file.\n"
+            "  machine, mount images and change settings back afterwards.\n"
+            "  Suite order is fixed and significant; see the registry at the top\n"
+            "  of this file.\n"
             "\n"
             "see also:\n"
-            "  tests/README.md            categories, environment and exit status\n"
-            "  tests/e2e/README.md        adding or changing a suite\n"
-            "  tests/lib/README.md        the JSONL record shapes\n"))
+            "  tests/README.md                categories, environment, exit status\n"
+            "  tests/e2e/README.md            adding or changing a suite\n"
+            "  tests/lib/README.md            the JSONL record shapes\n"
+            "  tests/e2e/doc/                 what the run records, and why\n"))
 
     parser.add_argument("targets", nargs="*", metavar="TARGET",
-                        help="What to test: a host, or cartridge@computer for a "
-                             "cartridge under test. Several targets run as several "
-                             "runs, one child process each. May also be given "
-                             "with -H.")
+                        help="A host, or cartridge@computer. Several targets run "
+                             "one child process each. May also be given with -H.")
 
     what = parser.add_argument_group(
         "what to run",
         "Categories to run. With none given, E2E only.")
     what.add_argument("--e2e", action="store_true",
-                      help="Functional and regression suites; the release gate. "
-                           "This is the default.")
+                      help="Functional and regression suites: the release gate, "
+                           "and the default.")
     what.add_argument("--perf", action="store_true",
-                      help="Benchmarks. These report measurements rather than "
-                           "pass/fail verdicts.")
+                      help="Benchmarks. They report a measurement, not a "
+                           "verdict.")
     what.add_argument("--soak", action="store_true",
-                      help="Duration and load tests, for leaks, exhaustion and "
+                      help="Duration and load tests: leaks, exhaustion, "
                            "transport degradation.")
     what.add_argument("--all", action="store_true",
                       help="All three categories, in the order e2e, perf, soak.")
@@ -1590,183 +1572,163 @@ def build_parser() -> argparse.ArgumentParser:
         "Suite selection and UI transport.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
                      default=DEFAULT_MODE, metavar="LIST",
-                     help="UI transport to drive the E2E suites through: overlay, "
-                          "freeze, telnet, a comma-separated list, or all. Each "
-                          "listed mode is a full pass over the selected suites "
-                          f"(default: {DEFAULT_MODE}). Same flag and values as the "
-                          "suites take. Suites bound to one transport ignore it.")
+                     help="UI transport: overlay, freeze, telnet, a comma-"
+                          "separated list, or all. Each is a full pass over the "
+                          f"selected suites (default: {DEFAULT_MODE}).")
     e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
-                     help="Restrict the run to this suite. Repeatable, and "
-                          "selects manual suites as well. Names are in --list.")
+                     help="Run only this suite. Repeatable; selects manual "
+                          "suites too. Names are in --list.")
     e2e.add_argument("--manual", action="store_true",
-                     help="Include suites excluded from the default run because "
-                          "they need an operator decision, elevated privileges or "
-                          "a long wall-clock wait.")
+                     help="Also run the suites kept out of the default run: "
+                          "those needing an operator, root, or a long wait.")
     e2e.add_argument("--assume-fix", action="append", default=[], metavar="NAME",
-                     help="Run the checks normally skipped on a machine that "
-                          "lacks this firmware fix, which is how a backport is "
-                          "found. Repeatable, and 'all' assumes every fix. The "
-                          "names are the tags in tests/lib/machine.py.")
+                     help="Run the checks this machine normally skips for want "
+                          "of a firmware fix, which is how a backport is found. "
+                          "Repeatable; 'all' assumes every fix. Names are in "
+                          "tests/lib/machine.py.")
 
     device = parser.add_argument_group(
         "device",
         "Target device and request timeouts.")
     device.add_argument("-H", "--host", default=DEFAULT_HOST,
-                        help="Target, when it is not given as a positional "
-                             "(default: $U64_HOST or u64).")
+                        help="Target, when not given as a positional (default: "
+                             "$U64_HOST or u64).")
     device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
                         help="REST and FTP password (default: $U64_PASS, empty).")
     device.add_argument("-t", "--timeout", default=DEFAULT_TIMEOUT,
                         help="Per-request REST timeout in seconds, passed to each "
                              f"suite (default: {DEFAULT_TIMEOUT}).")
     device.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
-                        help="Duration profile for the network connection soak: "
-                             "stress is about two minutes, soak is twelve hours "
-                             "(default: stress).")
+                        help="How long the network soak runs: stress is about "
+                             "two minutes, soak twelve hours (default: stress).")
 
     health = parser.add_argument_group(
         "device health",
-        "Predicates for a usable device, and the response when one fails.\n"
-        "See DEVICE HEALTH above.")
+        "What a usable device means, and what happens when it is not.\n"
+        "See HEALTH AND RECOVERY above.")
     health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
-                         help="Drop the 'functional' predicate, reducing health to "
-                              "reachable and drivable. The check costs about 150ms "
-                              "per suite. Use when a listener is disabled on this "
-                              "device by design and would otherwise report unhealthy "
-                              "before every suite.")
+                         help="Health means reachable and drivable only. Use "
+                              "when a listener is off on this device by design; "
+                              "the full sweep costs about 150ms per suite.")
     health.add_argument("--no-retry", dest="retry", action="store_false", default=True,
-                         help="Report a failure from an unhealthy device as-is "
-                              "instead of re-running the suite. Recovery still "
-                              "happens, so subsequent suites get a working device.")
+                         help="Do not re-run a suite that failed on an unhealthy "
+                              "device. Recovery still runs, so later suites get a "
+                              "working device.")
     health.add_argument("--recover-command", default="", metavar="CMD",
-                         help="Shell command that restores the device, e.g. "
-                              "'build u64'. Invoked only for an unhealthy device. "
-                              "No default: the mechanism is site-specific. Exit "
-                              "status is advisory; the health check decides whether "
-                              "the device came back."),
+                         help="Shell command that brings the device back, e.g. "
+                              "'build u64'. Run only for an unhealthy device. No "
+                              "default. Its exit status is advisory; the health "
+                              "check decides whether the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
-                         help="Recovery budget for one suite. Also caps its "
-                              "re-runs, since a re-run follows each recovery "
+                         help="Recoveries allowed for one suite, which is also "
+                              "its extra attempts "
                               f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
     health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
-                         help="Recovery budget for the whole run; exhausting it "
-                              "abandons the run "
-                              f"(default: {DEFAULT_RECOVER_MAX_TOTAL}).")
+                         help="Recoveries allowed for the whole run; exhausting "
+                              f"it abandons the run (default: {DEFAULT_RECOVER_MAX_TOTAL}).")
     health.add_argument("--recover-timeout", type=float,
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SEC",
-                         help="Wall-clock limit for the recovery command, after "
-                              "which it is terminated "
-                              f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}s).")
+                         help="How long the recovery command may take before it "
+                              f"is killed (default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}s).")
 
     output = parser.add_argument_group(
         "output",
-        "Console rendering, and machine-readable output.")
+        "What the console shows, and when to stop.")
     output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
-                        help="auto emits ANSI colour to a terminal and plain text "
-                             "when redirected. NO_COLOR and FORCE_COLOR are honoured "
-                             "and are propagated to the suites (default: auto).")
+                        help="Colour the console. auto means a terminal only; "
+                             "NO_COLOR and FORCE_COLOR are honoured and passed to "
+                             "the suites (default: auto).")
     output.add_argument("-l", "--list", action="store_true",
-                        help="Print the suite registry, one per line with its "
-                             "category, path and whether it is manual, then exit.")
+                        help="List every registered suite with its category and "
+                             "path, then exit.")
     output.add_argument("-x", "--stop-on-fail", action="store_true",
-                        help="Halt after the first failing suite. The default runs "
-                             "every selected suite, so one failure does not mask "
-                             "the others.")
+                        help="Stop at the first failing suite instead of running "
+                             "the rest.")
+
+    observability = parser.add_argument_group(
+        "observability",
+        "What the run keeps about itself. See OBSERVABILITY above.")
+    observability.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
+                        help="Write the run to DIR as JSONL, one directory per "
+                             "target: a file per suite run, its console log, the "
+                             "screens read, and run.jsonl with the counts and exit "
+                             "status. Record shapes: tests/lib/README.md.")
+    observability.add_argument("--syslog", action="store_true",
+                        help="Collect the devices' own log into DIR, and check at "
+                             "both ends of the run that each is still configured to "
+                             "send it. Needs Network Settings / Log to Syslog Server "
+                             "pointed here, which takes effect at device boot.")
+    observability.add_argument("--syslog-port", type=int,
+                        default=syslog_collector.DEFAULT_PORT, metavar="PORT",
+                        help="Port to collect the log on (default: "
+                             f"{syslog_collector.DEFAULT_PORT}). Not 514, which "
+                             "needs root.")
+    observability.add_argument("--no-screens", dest="screens", action="store_false",
+                        default=True,
+                        help="Stop spooling the screens the suites read into "
+                             "DIR/screens.jsonl. They are free, since the suites "
+                             "fetch them anyway, and are the only record of what "
+                             "was on screen when a check failed.")
     recording = parser.add_argument_group(
         "recording",
-        "A video of what the harness and the device were looking at.\n"
-        "Off by default: it costs the device two streams and the LAN their\n"
-        "bandwidth for the length of the run.")
+        "A video of the run. Off by default: it costs the device two\n"
+        "streams and the LAN their bandwidth for the whole run.")
     recording.add_argument("--record", action="store_true",
-                           help="Record the run: the harness's screen and the "
-                                "device's video side by side, with the device's "
-                                "audio, one file per target. Needs ffmpeg.")
+                           help="Record the harness's screen beside the device's "
+                                "video, with the device's audio, one file per "
+                                "target. Needs ffmpeg with libx264rgb.")
     recording.add_argument("--no-record-video", dest="record_video",
                            action="store_false", default=True,
-                           help="Drop the device's video and its stream, "
-                                "leaving the harness's screen alone.")
+                           help="Drop the device's video and its stream.")
     recording.add_argument("--no-record-audio", dest="record_audio",
                            action="store_false", default=True,
                            help="Drop the audio track and its stream.")
     recording.add_argument("--no-record-menu", dest="record_menu",
                            action="store_false", default=True,
                            help="Drop the harness pane. The screens are still "
-                                "spooled under -j; --no-screens is what turns "
-                                "that off.")
+                                "spooled under -j.")
     recording.add_argument("--record-menu-min-interval-ms", type=int, default=0,
                            metavar="MS",
-                           help="Floor between two menu_screen requests the "
+                           help="Least time between two menu_screen requests the "
                                 "recorder makes for itself, which it does only "
-                                "while no suite is reading one (default: 0, no "
-                                "floor). The device serves about four "
-                                "concurrent HTTP connections.")
+                                "while no suite is reading one (default: 0). The "
+                                "device serves about four HTTP connections.")
     recording.add_argument("--record-layout", choices=("combined", "separate"),
                            default="combined",
-                           help="One file with both panes, or one file each "
-                                "(default: combined). Separate files are frame "
+                           help="Both panes in one file, or one file each "
+                                "(default: combined). Separate files stay frame "
                                 "aligned and carry the same audio.")
     recording.add_argument("--no-record-stamp", dest="record_stamp",
                            action="store_false", default=True,
-                           help="Draw nothing into the frames: no timecode, no "
-                                "failure edge, no progress bar and no cards. "
-                                "For a reader who wants the device's pixels "
-                                "and nothing else.")
+                           help="Draw nothing into the frames: no timecode, "
+                                "failure edge, progress bar or cards. The device's "
+                                "pixels and nothing else.")
     recording.add_argument("--record-quality", default="lossless", metavar="Q",
-                           help="lossless, or a quality number for a lossy "
-                                "encode (default: lossless). The material is "
-                                "40-column text, which a lossy encode blurs.")
+                           help="lossless, or a number for a lossy encode "
+                                "(default: lossless). The material is 40-column "
+                                "text, which a lossy encode blurs.")
     recording.add_argument("--record-scale", type=int, default=1, metavar="N",
-                           help="Integer upscale of the whole canvas, nearest "
+                           help="Whole-number upscale of the canvas, nearest "
                                 "neighbour (default: 1). A fractional scale "
                                 "resamples pixel art.")
     recording.add_argument("--record-fps", type=int, default=RECORD_FPS,
                            metavar="N",
-                           help=f"Output frame rate (default: {RECORD_FPS}). "
-                                "Well below 50: a static screen encoded fifty "
-                                "times a second costs a reader nothing and the "
-                                "encoder everything.")
+                           help=f"Output frame rate (default: {RECORD_FPS}). Well "
+                                "below 50: a static screen encoded fifty times a "
+                                "second costs a reader nothing.")
     recording.add_argument("--record-keyint", type=float,
                            default=RECORD_KEYINT_SECONDS, metavar="SECONDS",
-                           help="Keyframe interval during a static stretch "
-                                f"(default: {RECORD_KEYINT_SECONDS:g}s). Bounds "
-                                "how far back a player decodes when stepping "
-                                "backwards.")
+                           help="Keyframe interval while the screen is static "
+                                f"(default: {RECORD_KEYINT_SECONDS:g}s). Bounds how "
+                                "far a player decodes when stepping backwards.")
     recording.add_argument("--record-ffmpeg-args", default="", metavar="ARGS",
-                           help="Extra arguments appended to the encoder "
-                                "command. Appended, so they override anything "
-                                "chosen here, including the pixel exactness "
-                                "the lossless default is for.")
+                           help="Extra encoder arguments. Appended, so they "
+                                "override everything above, including the pixel "
+                                "exactness the lossless default is for.")
 
-    output.add_argument("--syslog", action="store_true",
-                        help="Collect the devices' own log off the network "
-                             "into DIR, and check at both ends of the run that "
-                             "each device is still configured to send it. Needs "
-                             "each device's Network Settings / Log to Syslog "
-                             "Server pointed at this host, which is boot-time "
-                             "state on the device and cannot be set per run.")
-    output.add_argument("--syslog-port", type=int,
-                        default=syslog_collector.DEFAULT_PORT, metavar="PORT",
-                        help="Port to collect the device log on (default: "
-                             f"{syslog_collector.DEFAULT_PORT}). Not 514, which "
-                             "needs root; the devices are configured to this "
-                             "port instead.")
-    output.add_argument("--no-screens", dest="screens", action="store_false",
-                        default=True,
-                        help="Do not spool the screens the suites read into "
-                             "DIR/screens.jsonl. They cost the device nothing, "
-                             "since the suites fetch them anyway, and they are "
-                             "the only record of what was on screen when a "
-                             "check failed. About 5 KB per distinct screen.")
-    output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
-                        help="Emit JSONL into DIR, under one subdirectory per "
-                             "target: one file per suite run, plus run.jsonl "
-                             "carrying that target's counts, recovery total and "
-                             "exit status. A run of several targets also writes "
-                             "DIR/run.jsonl for the run as a whole. Record shapes "
-                             "are documented in tests/lib/README.md.")
     return parser
 
 

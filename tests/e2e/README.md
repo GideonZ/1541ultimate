@@ -45,7 +45,9 @@ Markdown document; see [tests/README.md](../README.md).
 The gate runs in CI from [.github/workflows/e2e.yml](../../.github/workflows/e2e.yml),
 on a self-hosted runner carrying the `e2e` label. Until a runner carries that
 label the workflow is valid and never runs, which is the correct failure: the
-file lands and the devices decide when it does anything.
+file lands and the devices decide when it does anything. What such a machine
+has to provide, and how the firmware under test gets onto the devices before a
+run, is in [doc/self-hosted-runner.md](doc/self-hosted-runner.md).
 
 ## Structure
 
