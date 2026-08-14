@@ -109,7 +109,7 @@ architecture gideon of all_carts_v5 is
     constant c_blackbox_v8  : std_logic_vector(4 downto 0) := "01100";
     constant c_zaxxon       : std_logic_vector(4 downto 0) := "01101";
     constant c_blackbox_v9  : std_logic_vector(4 downto 0) := "01110";
-    constant c_megabyter    : std_logic_vector(4 downto 0) := "01111";
+    constant c_megabyter    : std_logic_vector(4 downto 0) := "01111"; -- new
 
     -- Simple bankers with RAM
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10000";
