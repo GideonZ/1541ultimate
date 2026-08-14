@@ -1765,10 +1765,7 @@ def build_parser() -> argparse.ArgumentParser:
     console = parser.add_argument_group(
         "output and execution",
         "What the console shows, and when to stop.")
-    console.add_argument("--color", choices=("auto", "always", "never"), default="auto",
-                        help="Colour the console. auto means a terminal only; "
-                             "NO_COLOR and FORCE_COLOR are honoured and passed "
-                             "to the suites (default: auto).")
+    report.add_colour_argument(console)
     console.add_argument("-x", "--stop-on-fail", action="store_true",
                         help="Stop at the first failing suite instead of "
                              "running the rest.")
@@ -1920,19 +1917,13 @@ def summarise(results: List[Result], started: float, recoveries: int,
 def apply_colour_choice(choice: str) -> None:
     """Honour --color here and in every suite this process starts.
 
-    The suites are child processes, so the choice is exported rather than only
-    applied locally: NO_COLOR and FORCE_COLOR are the conventional names and
-    report.py reads both.
+    One implementation for every program in this tree, in report.py: the
+    suites are child processes, so the choice is exported rather than only
+    applied locally, and NO_COLOR and FORCE_COLOR are the names report.py
+    reads. Under `auto` the suites share this stdout and reach the same
+    answer on their own.
     """
-    if choice == "always":
-        os.environ["FORCE_COLOR"] = "1"
-        os.environ.pop("NO_COLOR", None)
-        report.set_colour(True)
-    elif choice == "never":
-        os.environ["NO_COLOR"] = "1"
-        os.environ.pop("FORCE_COLOR", None)
-        report.set_colour(False)
-    # auto: the suites share this stdout, so they reach the same answer.
+    report.apply_colour(choice)
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,15 @@ NO_GLYPH = -1
 # root, so this works whatever the caller's current working directory is.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHAR_ROM_PATH = _REPO_ROOT / "roms" / "characters.901225-01.bin"
+# The character set the firmware links into its own build and draws its menu
+# with (software/io/c64/c64.cc, _chars_bin_start). It is indexed by the byte
+# machine:menu_screen carries rather than by a C64 screen code, because
+# Screen_MemMappedCharMatrix stores literal characters, and its first 32
+# entries are the UI's own shapes: box corners and edges, the filled block of
+# a progress bar, the diamond of a selection marker. The stock C64 ROM has
+# none of those, so a menu pane drawn from it loses every window frame on
+# screen.
+_MENU_CHAR_SET_PATH = _REPO_ROOT / "roms" / "chars.bin"
 _MENU_SCREEN_TOOL_PATH = _REPO_ROOT / "tools" / "api" / "menu_screen_tool.py"
 
 _CHARS_PER_SET = 256
@@ -90,6 +99,7 @@ def _load_unshifted_rom_rows(path: Path) -> List[bytes]:
 
 
 _ROM_ROWS: List[bytes] = _load_unshifted_rom_rows(_CHAR_ROM_PATH)
+_MENU_ROM_ROWS: List[bytes] = _load_unshifted_rom_rows(_MENU_CHAR_SET_PATH)
 _BLANK_GLYPH_ROWS: bytes = bytes(GLYPH_HEIGHT)
 
 # Per-index RGB translate tables for blit_indices. c64_rgb only defines 16
@@ -139,19 +149,9 @@ _GLYPH_ROWS: "dict" = {}
 
 
 def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> "list":
-    key = (character, fg_rgb, bg_rgb)
-    made = _GLYPH_ROWS.get(key)
-    if made is None:
-        made = []
-        for row_bits in _rom_rows_for(character):
-            row = bytearray()
-            for col_offset in range(GLYPH_WIDTH):
-                # Bit 7 is the leftmost pixel of the row, per the ROM layout
-                # note: col_offset 0 must read bit 7, not bit 0.
-                row += fg_rgb if (row_bits >> (7 - col_offset)) & 1 else bg_rgb
-            made.append(bytes(row))
-        _GLYPH_ROWS[key] = made
-    return made
+    # Bit 7 is the leftmost pixel of the row, per the ROM layout note, which
+    # is what _expanded_rows implements.
+    return _expanded_rows(_rom_rows_for(character), fg_rgb, bg_rgb)
 
 
 def _rom_rows_for(character: str) -> bytes:
@@ -160,6 +160,25 @@ def _rom_rows_for(character: str) -> bytes:
     if index == NO_GLYPH:
         return _BLANK_GLYPH_ROWS
     return _ROM_ROWS[index]
+
+
+def _expanded_rows(rows: bytes, fg_rgb: bytes, bg_rgb: bytes) -> "list":
+    """One glyph's eight rows as RGB, cached on the rows and the colour pair.
+
+    Keyed on the row bitmask rather than on a character, so a caller drawing
+    from a character set by index shares the cache with one drawing text.
+    """
+    key = (rows, fg_rgb, bg_rgb)
+    made = _GLYPH_ROWS.get(key)
+    if made is None:
+        made = []
+        for row_bits in rows:
+            row = bytearray()
+            for col_offset in range(GLYPH_WIDTH):
+                row += fg_rgb if (row_bits >> (7 - col_offset)) & 1 else bg_rgb
+            made.append(bytes(row))
+        _GLYPH_ROWS[key] = made
+    return made
 
 
 class Canvas:
@@ -295,6 +314,37 @@ class Canvas:
                         self._set_pixel(px, py, bg_rgb)
             cursor_x += GLYPH_WIDTH
 
+    def blit_glyph(self, x: int, y: int, rows: bytes, colour: int,
+                   background: int) -> None:
+        """Draw one glyph, given its eight row bitmasks rather than a character.
+
+        For a caller holding an index into a character set: the menu payload
+        carries the byte the firmware drew, and turning that into a character
+        and back loses every shape the firmware has and a text encoding does
+        not.
+        """
+        fg_rgb = bytes(c64_rgb(colour))
+        bg_rgb = bytes(c64_rgb(background))
+        if (x < 0 or x + GLYPH_WIDTH > self.width
+                or y < 0 or y + GLYPH_HEIGHT > self.height):
+            for row_offset in range(GLYPH_HEIGHT):
+                py = y + row_offset
+                if py < 0 or py >= self.height:
+                    continue
+                row_bits = rows[row_offset]
+                for col_offset in range(GLYPH_WIDTH):
+                    px = x + col_offset
+                    if px < 0 or px >= self.width:
+                        continue
+                    bit_set = (row_bits >> (7 - col_offset)) & 1
+                    self._set_pixel(px, py, fg_rgb if bit_set else bg_rgb)
+            return
+        stride = self.width * 3
+        offset = y * stride + x * 3
+        for row in _expanded_rows(rows, fg_rgb, bg_rgb):
+            self._pixels[offset:offset + GLYPH_WIDTH * 3] = row
+            offset += stride
+
     def _draw_opaque_text(self, x: int, y: int, text: str,
                           fg_rgb: bytes, bg_rgb: bytes) -> None:
         """The whole-cell path: one slice assignment per glyph row.
@@ -391,8 +441,14 @@ def render_menu_screen(
             if char_byte & 0x80:
                 foreground, cell_background = cell_background, foreground
 
-            glyph_char = menu_char_to_glyph(char_byte)
-            canvas.draw_text(cell_x, cell_y, glyph_char, foreground, cell_background)
+            # Straight into the firmware's own character set with the byte
+            # the payload carries, rather than through a printable character
+            # and back: menu_char_to_glyph exists to put a menu on a terminal,
+            # where a box corner has to become some Unicode approximation, and
+            # those approximations have no shape in any character set.
+            canvas.blit_glyph(cell_x, cell_y,
+                              _MENU_ROM_ROWS[char_byte & 0x7F],
+                              foreground, cell_background)
 
 
 def render_text_screen(

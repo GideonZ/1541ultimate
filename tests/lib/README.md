@@ -262,6 +262,11 @@ address to a machine for the run. Without it those lines are still kept, in
 `syslog-unmapped.txt` with the address that sent them, which is what makes the
 omission visible rather than silent.
 
+`capture` carries `geometry`, the canvas the recorder composed, and
+`output_geometry`, the frame size the file carries: `--record-scale`
+multiplies the second and not the first, so a reader comparing the record
+against `ffprobe` on the file needs both.
+
 `capture` is the recording's own health. It carries every option in force and
 every count the receive path kept: packets, packets dropped, packets malformed,
 frames completed, frames lost, frames shed because the host could not keep up,

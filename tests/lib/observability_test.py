@@ -428,6 +428,82 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(1, "OBS-8.2", "OBS-8.12")
+def two_subtitle_cues_never_cover_the_same_moment() -> str:
+    """One identity key on screen at a time, whatever the check durations.
+
+    A cue for a check shorter than the minimum dwell is held on screen so it
+    can be read. Held past the next check's start it overlaps it, and a player
+    stacks overlapping cues, so the viewer sees two identity keys at once and
+    cannot tell which one the frame belongs to.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import recorder as recorder_lib
+
+    cues = [(3.705, 3.725, "one"), (3.725, 4.385, "two"),
+            (4.385, 4.390, "three"), (4.390, 4.400, "four"),
+            (10.0, 10.05, "last")]
+    spans = []
+    for block in recorder_lib.subtitles(cues).strip().split("\n\n"):
+        window = block.splitlines()[1]
+        start, _, end = window.partition(" --> ")
+
+        def seconds(stamp: str) -> float:
+            clock, _, millis = stamp.partition(",")
+            hours, minutes, secs = (int(part) for part in clock.split(":"))
+            return hours * 3600 + minutes * 60 + secs + int(millis) / 1000.0
+
+        spans.append((seconds(start), seconds(end)))
+    expect("one cue each", len(spans), len(cues))
+    for index in range(1, len(spans)):
+        if spans[index - 1][1] > spans[index][0]:
+            raise Failure(f"cue {index} ends at {spans[index - 1][1]} and cue "
+                          f"{index + 1} starts at {spans[index][0]}")
+    for (start, end) in spans:
+        if end < start:
+            raise Failure(f"a cue ends before it starts: {start} to {end}")
+    # The last cue has nothing after it, so it keeps the whole dwell.
+    expect("the last cue is held", round(spans[-1][1] - spans[-1][0], 3),
+           recorder_lib.MINIMUM_CUE_SECONDS)
+    return f"{len(spans)} cues, none overlapping"
+
+
+@case(1, "OBS-8.22", "OBS-8.20")
+def the_harness_pane_draws_the_firmware_own_character_set() -> str:
+    """A window frame on the device is a window frame in the recording.
+
+    The menu payload carries the byte the firmware drew, and the firmware
+    draws with its own character set, whose first 32 entries are the UI's
+    shapes: box corners and edges, a filled block, a selection diamond. Drawn
+    through a printable character and a stock C64 ROM instead, every one of
+    them is blank, so a recorded menu pane lost every frame on screen while
+    the device pane beside it showed them.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import glyphs
+
+    for label, code in (("top-left corner", 0x01), ("horizontal edge", 0x02),
+                        ("vertical edge", 0x04), ("filled block", 0x0B)):
+        rows = glyphs._MENU_ROM_ROWS[code]
+        if not any(rows):
+            raise Failure(f"the {label} at ${code:02X} has no pixels")
+    # And lower case is lower case: the firmware's set has both, where the
+    # stock ROM's unshifted half folds a-z onto A-Z.
+    if glyphs._MENU_ROM_ROWS[ord("a")] == glyphs._MENU_ROM_ROWS[ord("A")]:
+        raise Failure("lower case draws the upper-case shape")
+
+    # One cell, end to end: the payload byte reaches the canvas as its own
+    # shape rather than as a blank.
+    payload = bytearray(2000)
+    payload[0] = 0x01
+    payload[1000] = 0x01  # white on black
+    canvas = glyphs.Canvas(glyphs.GLYPH_WIDTH, glyphs.GLYPH_HEIGHT, 0)
+    glyphs.render_menu_screen(bytes(payload), canvas, 0, 0)
+    if not any(canvas._pixels):
+        raise Failure("a corner glyph drew nothing onto the canvas")
+    return "frames, blocks and lower case all draw"
+
+
 @case(2, "OBS-14.2", "OBS-16.2")
 def health_sweep_runs_against_the_double() -> str:
     """Every listener the sweep asks for is on the handle, so the sweep passes."""
@@ -2897,8 +2973,13 @@ def canonicalize_document(text: str) -> str:
     text = re.sub(r"/tmp/e2e-observability-fixture-\S+?(?=[\s`'\"/])", "/FIXTURE",
                   text)
     # Where this checkout lives on disk, wherever a real traceback names one
-    # of its own files.
+    # of its own files, and which line of it the frame landed on. The file and
+    # the function are what the frame says; the line number moves whenever
+    # anything above it in that file changes, so a fixture recorded before an
+    # unrelated edit to ui_backend.py would otherwise have to be re-recorded
+    # for a rendering that did not change.
     text = re.sub(r'File "[^"]*?(?=/tests/(?:e2e|lib)/)', 'File "/REPO', text)
+    text = re.sub(r'(File "/REPO[^"]*", line )\d+', r"\g<1>N", text)
     # Python 3.11 added a caret line under a traceback frame pinpointing the
     # failing sub-expression; the CI image runs 3.10 and has no such line.
     # Neither this substitution nor the line count beside it is what this
@@ -3950,7 +4031,9 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-k", "--only", action="append", default=[],
                         help="Run only cases whose label or requirement matches. "
                              "Repeatable.")
+    report.add_colour_argument(parser)
     args = parser.parse_args(argv)
+    report.apply_colour(args.color)
     if args.record_fixture:
         return record_fixture()
 

@@ -87,6 +87,9 @@ def _colour_enabled() -> bool:
       `less -R` or a CI viewer that renders escapes itself. FORCE_COLOR=0 means
       off, the way the npm ecosystem that introduced the variable reads it, so
       a value of "0" is not treated as "force it on".
+    - GITHUB_ACTIONS is a redirected stream that does render escapes, so the
+      verdicts are coloured there rather than left plain. Same rule as
+      tools/app_space.py, which reads the same three variables.
 
     Decided once for the whole run rather than per stream: run-tests and the
     suites it starts share this stdout, so they agree with each other, and a
@@ -97,6 +100,8 @@ def _colour_enabled() -> bool:
     forced = os.environ.get("FORCE_COLOR")
     if forced:
         return forced != "0"
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return True
     try:
         return sys.stdout.isatty()
     except (AttributeError, ValueError):
@@ -109,6 +114,40 @@ _USE_COLOUR = _colour_enabled()
 def colour_enabled() -> bool:
     """Whether this run is printing colour."""
     return _USE_COLOUR
+
+
+COLOUR_CHOICES = ("auto", "always", "never")
+
+
+def add_colour_argument(parser) -> None:
+    """Give a suite the one --color flag every harness here takes.
+
+    One spelling and one set of values wherever a verdict is printed, so a
+    caller does not have to remember which program takes which.
+    """
+    parser.add_argument("--color", choices=COLOUR_CHOICES, default="auto",
+                        help="Colour the verdicts. auto means a terminal, or "
+                             "GitHub Actions, which renders the escapes "
+                             "itself; NO_COLOR and FORCE_COLOR are honoured "
+                             "(default: auto).")
+
+
+def apply_colour(choice: str) -> None:
+    """Act on what --color was given, and tell any child process the same.
+
+    The environment is set as well as the module state, because a suite that
+    starts another program has no other way to pass the decision on.
+    """
+    if choice == "always":
+        os.environ.pop("NO_COLOR", None)
+        os.environ["FORCE_COLOR"] = "1"
+        set_colour(True)
+    elif choice == "never":
+        os.environ.pop("FORCE_COLOR", None)
+        os.environ["NO_COLOR"] = "1"
+        set_colour(False)
+    else:
+        set_colour(_colour_enabled())
 
 
 def set_colour(enabled: bool) -> None:

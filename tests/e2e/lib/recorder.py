@@ -1688,8 +1688,16 @@ class Recorder:
             "started": self.started_wall,
             "lead_in": self.lead_in,
             "fps": self.options.fps,
+            # The canvas the recorder composed, and beside it the frame size
+            # the file actually carries. --record-scale multiplies one and not
+            # the other, so a reader comparing the record with ffprobe on the
+            # file needs both to agree with what they see.
             "geometry": {name: f"{g.width}x{g.height}"
                          for name, g in sorted(self.geometry.items())},
+            "output_geometry": {
+                name: (f"{g.width * self.options.scale}"
+                       f"x{g.height * self.options.scale}")
+                for name, g in sorted(self.geometry.items())},
             "options": self.options.as_record(),
             "frames": self.slots,
             "frames_shed": self.shed,
@@ -1754,6 +1762,12 @@ def position_of(when: float, started: float, lead_in: float) -> float:
     return max(0.0, lead_in + (when - started))
 
 
+# How long a cue is held on screen when the check it names was shorter. Below
+# this a cue flashes past unreadably; above it, a run of quick checks would be
+# one long cue naming the first of them.
+MINIMUM_CUE_SECONDS = 0.5
+
+
 def srt_time(seconds: float) -> str:
     whole = int(seconds)
     return (f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
@@ -1770,8 +1784,18 @@ def subtitles(cues: Sequence[Tuple[float, float, str]]) -> str:
     """
     parts = []
     for index, (start, end, text) in enumerate(cues, start=1):
+        # A check shorter than the minimum dwell is held on screen, but only
+        # as far as the next cue: a player stacks two overlapping cues, so a
+        # dwell that ran into the following check put two identity keys on
+        # screen at once and left a reader unable to tell which one the frame
+        # belonged to.
+        shown = max(end, start + MINIMUM_CUE_SECONDS)
+        if index < len(cues):
+            following = cues[index][0]
+            if following > start:
+                shown = min(shown, following)
         parts.append(f"{index}\n{srt_time(start)} --> "
-                     f"{srt_time(max(end, start + 0.5))}\n{text}\n")
+                     f"{srt_time(shown)}\n{text}\n")
     return "\n".join(parts)
 
 

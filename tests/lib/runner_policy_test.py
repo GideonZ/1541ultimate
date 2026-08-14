@@ -21,6 +21,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import argparse
 import os
 import sys
 import tempfile
@@ -803,6 +804,11 @@ def run_ui_state_routing_checks():
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
+                                     if __doc__ else "")
+    report_module = sys.modules["report"]
+    report_module.add_colour_argument(parser)
+    report_module.apply_colour(parser.parse_args().color)
     if not os.path.isfile(RUNNER_PATH):
         suite_fail("runner_policy_test", f"missing {RUNNER_PATH}")
         return 1
