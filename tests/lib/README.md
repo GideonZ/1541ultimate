@@ -15,6 +15,7 @@ repository-root `run-tests` all use it.
 | `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
 | `targets.py` | What a run is aimed at: which of a target's machines serves what, and where each surface is |
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests |
+| `fixtures/e2e-run/` | A reduced real run's `-j` tree, written by the runner, and the report generated from it |
 
 Two registered suites live here as well, because both check the test tree
 itself rather than the device and so need no hardware. They run first, where a
@@ -27,7 +28,22 @@ failure lands as a clear message instead of as a confusing one later:
 | `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
 
 `observability_test.py` also runs as `make observability_test` and as a step in
-`.github/workflows/build.yml`. One implementation, invoked three ways.
+`.github/workflows/build.yml`. One implementation, invoked three ways. It needs
+no device and no network beyond loopback.
+
+`tests/lib/fixtures/e2e-run/` is a `-j` tree written by the runner against the
+device double, with stub suites scripted to fail, to be retried, to be killed
+mid-line and to skip, and `e2e-run.expected.md` is the report generated from
+it. A change to a record shape or to a rendering rule shows up as a diff of
+that document, which is exactly the diff a reader of a real report would see.
+Re-record both with:
+
+```sh
+python3 tests/lib/observability_test.py --record-fixture
+```
+
+That is a deliberate act. Regenerating the expected document is how a rendering
+change is reviewed, so it is never a side effect of running the suite.
 
 ## Where a device is
 
@@ -156,11 +172,26 @@ The tree has one shape whether the run was asked for one target or several:
 
 ```
 DIR/
+  index.md                     the report, written by tools/e2e_report.py
   run.jsonl                    the parent's own record, multi-target runs only
+  run.log                      the parent's console output, multi-target only
   <slug>/
     run.jsonl                  this target's runner records
+    run.log                    this target's runner console output
     <label>-<suite>.jsonl      one file per suite run
+    <label>-<suite>.log        that suite run's console output
+    <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
+    screens.jsonl              every distinct screen the harness read
+    capture/<label>-<suite>-<attempt>-screen.txt
+    capture/<label>-<suite>-<attempt>-screen.bin
+    capture/<label>-<suite>-<attempt>-state.json
 ```
+
+A `.log` holds what a suite printed, stderr merged in and ANSI stripped, and is
+appended to across attempts. A `capture/` set is written only for a suite that
+failed: the screen it left as text and as the device's own bytes, and the free
+heap and drive state beside it. `screens.jsonl` is every distinct screen any
+suite read, from the fetches it was making anyway; `--no-screens` turns it off.
 
 `<slug>` is `targets.Target.slug`, the target token with `@` written `-at-`,
 and `<label>` is the UI mode for an E2E suite or the category name for a perf

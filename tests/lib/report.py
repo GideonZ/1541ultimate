@@ -186,6 +186,15 @@ def secrets() -> tuple:
     return tuple(_secrets)
 
 
+def masked(value):
+    """`value` with every registered secret replaced, however deeply nested.
+
+    For a component that writes something other than a record and has to
+    honour the same rule: the screen spool is the case.
+    """
+    return _masked(value)
+
+
 def _masked(value):
     """`value` with every registered secret replaced, however deeply nested."""
     if not _secrets:

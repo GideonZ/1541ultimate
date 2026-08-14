@@ -1,0 +1,2 @@
+{"kind": "check", "index": 1, "label": "the row survives a redraw", "verdict": "FAIL", "extra": "0 rows, expected 20", "seconds": 0.0, "scenario": null, "time": 1786698842.42514, "suite": "broken", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "check", "index": 2, "label": "the name is listed in full", "verdict": "SKIP", "extra": "needs the ftp-listing-full-length fix, which this machine does not have", "seconds": 0.0, "scenario": null, "time": 1786698842.4252133, "suite": "broken", "target": "127.0.0.1@localhost", "attempt": 1}

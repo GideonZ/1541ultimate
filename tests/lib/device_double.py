@@ -26,7 +26,8 @@ answering halfway through a run.
 What it serves:
 
     REST      version, info, machine:menu_screen, machine:readmem,
-              machine:input, machine:reset and the other machine actions
+              machine:heap, machine:input, machine:reset and the other machine
+              actions, the drives listing and a few configuration items
     FTP       the 220 banner the health sweep reads, and nothing else
     Telnet    an accepted connection, which is all the health sweep asks for
     DMA       the IDENTIFY exchange on the control port
@@ -83,6 +84,8 @@ class Faults:
     # machine:menu_screen answers 404, which on this endpoint means no menu is
     # open rather than old firmware. The ordinary case, not the rare one.
     menu_screen_404: bool = False
+    # machine:heap answers 404, which is firmware predating the endpoint.
+    heap_404: bool = False
     # Close the connection without answering, which is what a device that has
     # gone off the network looks like to a client that can still route to it.
     offline: bool = False
@@ -132,7 +135,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         double.record(Request(method, parsed.path, params))
 
         faults = double.faults
-        if faults.offline:
+        if faults.offline or (double.offline_flag
+                              and os.path.exists(double.offline_flag)):
             # No status line at all: the client sees the connection close,
             # which is what a device that has stopped answering produces.
             self.close_connection = True
@@ -182,10 +186,29 @@ class DeviceDouble:
         # withhold_ftp_banner_while takes one: the processes that have to agree about it are a scripted
         # suite and this object, and they share no memory.
         self.menu_open_flag = ""
+        self.heap_free = 1_500_000
+        self.heap_min_ever_free = 1_200_000
+        self.heap_total = 2_000_000
+        self.mounted_image = ""
+        # The settings the observability code and the UI backend read. Not the
+        # whole tree: a fake of several hundred items would be a second
+        # implementation of the device's configuration rather than a stand-in
+        # for the few things anything here asks about.
+        self.configs: Dict[str, Dict[str, str]] = {
+            # The value tests/e2e/lib/ui_backend.py asks for under --mode
+            # overlay, so a session starts without switching the setting.
+            "User Interface Settings": {"Interface Type": "Overlay on HDMI"},
+            "Network Settings": {"Log to Syslog Server": ""},
+        }
+        # When set, the device counts as gone for as long as this path exists.
+        # A file for the same reason the other two switches take one: a
+        # scripted suite and this object share no memory.
+        self.offline_flag = ""
         # Every readmem answer counts up, so the health sweep's raster and
         # jiffy checks see a value that moves without the test waiting for a
         # real machine.
         self._tick = 0
+        self._keys = 0
         self._lock = threading.Lock()
 
         self._http = _Server((LOOPBACK, 0), _Handler)
@@ -265,8 +288,10 @@ class DeviceDouble:
             ("GET", "/v1/info"): self._info,
             ("GET", "/v1/machine:menu_screen"): self._menu_screen,
             ("GET", "/v1/machine:readmem"): self._readmem,
+            ("GET", "/v1/machine:heap"): self._heap,
+            ("GET", "/v1/drives"): self._drives,
             ("GET", "/v1/machine:input"): self._ok_json,
-            ("POST", "/v1/machine:input"): self._ok_json,
+            ("POST", "/v1/machine:input"): self._input,
             ("PUT", "/v1/machine:writemem"): self._ok_json,
             ("POST", "/v1/machine:writemem"): self._ok_json,
         }
@@ -275,6 +300,12 @@ class DeviceDouble:
             return found
         if method == "PUT" and path.startswith("/v1/machine:"):
             return self._ok_json
+        if method == "GET" and path.startswith("/v1/configs"):
+            return lambda params, path=path: self._config(path)
+        if method == "PUT" and path.startswith("/v1/drives/"):
+            return lambda params, path=path: self._drive_action(path, params)
+        if method == "PUT" and path.startswith("/v1/configs"):
+            return lambda params, path=path: self._set_config(path, params)
         return None
 
     def _version(self, params):
@@ -335,6 +366,73 @@ class DeviceDouble:
             # budget before reporting the machine dead.
             body = bytes((tick + i) & 0xFF for i in range(length))
         return 200, body, "application/octet-stream"
+
+    def _input(self, params):
+        """A keystroke, which redraws one row of the menu.
+
+        A real menu changes when a key reaches it, and the settle loops in
+        tests/e2e/lib/ui_backend.py wait for exactly that: they poll until the
+        screen changes and then until it stops. A double whose screen never
+        moved would make every one of those waits run to its timeout.
+        """
+        with self._lock:
+            self._keys += 1
+            keys = self._keys
+        self.menu_rows[1] = f"key {keys}".ljust(SCREEN_COLS)
+        return 200, self._json({}), "application/json"
+
+    def _drive_action(self, path, params):
+        slot, _, action = path[len("/v1/drives/"):].partition(":")
+        with self._lock:
+            if action == "mount":
+                self.mounted_image = str(params.get("image", ""))
+            elif action in ("remove", "unlink"):
+                self.mounted_image = ""
+        return 200, self._json({}), "application/json"
+
+    def _config(self, path):
+        # /v1/configs[/<category>[/<item>]], so the category is the third part
+        # and the item the fourth.
+        parts = [urllib.parse.unquote(part) for part in path.split("/") if part]
+        if len(parts) <= 2:
+            return 200, self._json({"categories": sorted(self.configs)}), \
+                "application/json"
+        category = parts[2]
+        values = self.configs.get(category)
+        if values is None:
+            return 404, self._json({"errors": ["no such category"]}), \
+                "application/json"
+        if len(parts) == 3:
+            # The category listing maps each item straight to its value, which
+            # is the shape ConfigsApi.get reads.
+            return 200, self._json({category: dict(values)}), "application/json"
+        item = parts[3]
+        return 200, self._json({category: {item: {
+            "current": values.get(item, ""), "values": [], "default": ""}}}), \
+            "application/json"
+
+    def _set_config(self, path, params):
+        parts = [urllib.parse.unquote(part) for part in path.split("/") if part]
+        if len(parts) >= 4:
+            with self._lock:
+                self.configs.setdefault(parts[2], {})[parts[3]] = \
+                    params.get("value", "")
+        return 200, self._json({}), "application/json"
+
+    def _heap(self, params):
+        if self.faults.heap_404:
+            return 404, b"Not found", "text/plain"
+        return 200, self._json({"free": self.heap_free,
+                                "min_ever_free": self.heap_min_ever_free,
+                                "total": self.heap_total}), "application/json"
+
+    def _drives(self, params):
+        return 200, self._json({"drives": [
+            {"a": {"enabled": True, "bus_id": 8, "type": "1541", "rom": "1541",
+                   "image_file": self.mounted_image, "image_path": ""}},
+            {"b": {"enabled": False, "bus_id": 9, "type": "1541", "rom": "1541",
+                   "image_file": "", "image_path": ""}},
+        ]}), "application/json"
 
     def _ok_json(self, params):
         return 200, self._json({}), "application/json"

@@ -1,0 +1,2 @@
+[01] the row survives a redraw ... FAIL (0 rows, expected 20, 0.000s)
+[02] the name is listed in full ... SKIP (needs the ftp-listing-full-length fix, which this machine does not have, 0.000s)

@@ -249,6 +249,21 @@ tree.
 jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/u64/run.jsonl
 ```
 
+`tools/e2e_report.py` turns that tree into one Markdown document covering the
+whole run, every target included. It needs no device and runs afterwards:
+
+```sh
+python3 tools/e2e_report.py runs/
+less runs/index.md
+```
+
+`runs/index.md` opens with one greppable status line, then the verdicts, what
+the run did not run, every failing check with the facts the run recorded about
+it and the command that runs it again, and every health sweep. Below the
+`<!-- detail -->` marker it carries the whole timeline, every check and where
+the time went. Why each part is the shape it is, is in
+[tests/e2e/doc/observability-spec.md](e2e/doc/observability-spec.md).
+
 ## Rules
 
 - Put a test in the narrowest matching category. Keep isolated logic tests

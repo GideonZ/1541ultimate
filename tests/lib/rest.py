@@ -195,6 +195,24 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     raise last_exc
 
 
+def url_for(host: "str | targets.Target", path: str,
+            params: Optional[Dict[str, object]] = None) -> str:
+    """The URL for `path` on `host`, from the handle alone.
+
+    One builder, because a caller that assembles its own URL is a caller that
+    addresses port 80 of whatever it was given, and the handle is the thing
+    that knows where a device actually is. The port is written only when it is
+    not the default, so a URL against an ordinary device reads with no port in
+    it.
+    """
+    target = targets.resolve(host)
+    authority = target.host_for(path)
+    if target.rest_port != targets.REST_PORT:
+        authority = f"{authority}:{target.rest_port}"
+    query = "?" + urllib.parse.urlencode(params) if params else ""
+    return f"http://{authority}{path}{query}"
+
+
 def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
     """A single-file multipart/form-data body, and the Content-Type for it.
 
@@ -298,13 +316,7 @@ class RestClient:
         self.mutations = 0
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        host = self.target.host_for(path)
-        # A device on port 80 carries no port in its URL, so the port appears
-        # in a failure message only when it is the surprising part.
-        authority = host if self.target.rest_port == targets.REST_PORT \
-            else f"{host}:{self.target.rest_port}"
-        query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{authority}{path}{query}"
+        return url_for(self.target, path, params)
 
     def request(self, method: str, path: str,
                 params: Optional[Dict[str, object]] = None,

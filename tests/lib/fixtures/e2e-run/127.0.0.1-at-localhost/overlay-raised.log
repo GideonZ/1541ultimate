@@ -1,0 +1,4 @@
+[01] the device answers ... Traceback (most recent call last):
+  File "/tmp/e2e-observability-fixture/suites/raised.py", line 16, in <module>
+    raise RuntimeError('the device stopped answering mid-check')
+RuntimeError: the device stopped answering mid-check

@@ -1,0 +1,32 @@
+{
+  "drives": {
+    "a": {
+      "bus_id": 8,
+      "enabled": true,
+      "extra": {},
+      "image_file": "/Usb0/game.d64",
+      "image_path": "",
+      "rom": "1541",
+      "slot": "a",
+      "type": "1541"
+    },
+    "b": {
+      "bus_id": 9,
+      "enabled": false,
+      "extra": {},
+      "image_file": "",
+      "image_path": "",
+      "rom": "1541",
+      "slot": "b",
+      "type": "1541"
+    }
+  },
+  "errors": [],
+  "heap": {
+    "free": 1500000,
+    "min_ever_free": 1200000,
+    "total": 2000000
+  },
+  "mode": "overlay",
+  "source": "menu_screen"
+}

@@ -137,7 +137,7 @@ class Device:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
-            f"http://{self.target.host_for(path)}{path}",
+            rest_lib.url_for(self.target, path),
             data=body, headers=headers, method=method
         )
         # Transport and retry policy come from tests/lib/rest.py; see
@@ -243,7 +243,7 @@ class Device:
             return False
         headers = {"X-Password": self.password} if self.password else {}
         request = urllib.request.Request(
-            f"http://{self.target.computer}/v1/machine:menu_screen",
+            rest_lib.url_for(self.target.computer, "/v1/machine:menu_screen"),
             headers=headers, method="GET")
         try:
             with rest_lib.retrying_urlopen(request, self.timeout):
@@ -263,7 +263,8 @@ class Device:
                 return
             headers = {"X-Password": self.password} if self.password else {}
             request = urllib.request.Request(
-                f"http://{self.target.computer}/v1/machine:menu_button",
+                rest_lib.url_for(self.target.computer,
+                                 "/v1/machine:menu_button"),
                 data=b"", headers=headers, method="PUT")
             try:
                 with rest_lib.retrying_urlopen(request, self.timeout):

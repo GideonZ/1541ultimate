@@ -43,6 +43,8 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -64,22 +66,37 @@ LOG_TAIL_LINES = 40
 # the timeline. Actions are by far the most numerous entry, and a reader
 # following what happened wants the shape rather than every request.
 TIMELINE_ACTION_RUN = 3
-# How many actions around a failure are listed individually, on each side.
-TIMELINE_ACTIONS_AROUND_FAILURE = 8
+# A request the harness repeats all run long is shown once and counted after
+# that. The menu-open probe in every health sweep is the case: without this the
+# timeline is that one line between every pair of events.
+TIMELINE_REPEAT_LIMIT = 2
 
 # The slowest few of each, for "where the time went". Enough to see the shape
 # without the section becoming a second copy of the run.
 SLOWEST_ROWS = 10
 
-# What replaces a device password anywhere this document copies text a run
-# recorded. The run masks its own command line, and this catches a password
-# that reached a console log through a suite's own argument list.
+# The password is taken out of a record when the record is written, by
+# report.mask_secret, which is the writer that knows what the password is.
+# These patterns are a second net over text this document copies out of a
+# console log, which nothing masked on the way in because a suite may print
+# anything. They match where a password is conventionally written and cannot
+# match where it is not, so they are a guard rather than the guarantee.
 PASSWORD_MASK = "***"
 PASSWORD_PATTERNS = (
-    re.compile(r"(--password[= ])(\S+)"),
-    re.compile(r"(-p\s+)(\S+)"),
-    re.compile(r"(X-Password:\s*)(\S+)"),
+    re.compile(r"(--password[=\s]+)(\S+)"),
+    re.compile(r"(-p\s+)(\S+)", re.NOFLAG),
+    re.compile(r"([Xx]-[Pp]assword:\s*)(\S+)"),
+    re.compile(r"(['\"]?password['\"]?\s*[:=]\s*['\"]?)([^\s'\",}]+)"),
 )
+
+# GitHub displays at most 1 MiB per step summary and a step summary cannot be
+# modified by a later step, so the whole thing is written once and this is the
+# ceiling it is written under. A green run's summary part is a few kilobytes
+# and a run with ten failures is around fifty, so truncating is a guard rather
+# than the normal case; it is a guard a genuinely bad run can reach.
+SUMMARY_LIMIT_BYTES = 1024 * 1024
+# Room for the two lines OBS-4.1 permits the summary step to append.
+SUMMARY_APPENDED_MARGIN = 512
 
 VERDICT_ORDER = ("FAIL", "WARN", "SKIP", "OK")
 # A word this document prints for a suite whose closing record never arrived.
@@ -111,6 +128,35 @@ FOUNDATION_SUITES = ("transport-usage", "runner-policy", "observability",
 # ---------------------------------------------------------------------------
 # Reading a run
 # ---------------------------------------------------------------------------
+#
+# Every value read out of a record goes through one of the four conversions
+# below. A tree is written by a run that may have been killed mid-write, and by
+# a version of the harness that may not be this one, so a field of the wrong
+# type has to cost that field rather than the whole document. Refusing the tree
+# would remove the report exactly when the evidence matters most.
+
+
+def as_int(value, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def as_float(value, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def as_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def as_list(value) -> list:
+    return [item for item in value if isinstance(item, dict)] \
+        if isinstance(value, list) else []
 
 
 @dataclass
@@ -133,9 +179,6 @@ class Check:
     def key(self) -> str:
         return f"{self.target}/{self.label}/{self.suite}/{self.attempt}/{self.index}"
 
-    @property
-    def suite_key(self) -> str:
-        return f"{self.target}/{self.label}/{self.suite}/{self.attempt}"
 
     @property
     def started(self) -> float:
@@ -164,8 +207,9 @@ class SuiteRun:
     checks: List[Check] = field(default_factory=list)
     actions: List[dict] = field(default_factory=list)
     log_name: str = ""
-    jsonl_name: str = ""
-    skipped_lines: int = 0
+    # Whether a failure capture exists for this suite run, so the timeline can
+    # say the run stopped to look at the device.
+    captured: bool = False
 
     @property
     def key(self) -> str:
@@ -190,6 +234,10 @@ class TargetRun:
     suites: List[SuiteRun] = field(default_factory=list)
     health: List[dict] = field(default_factory=list)
     warnings: List[dict] = field(default_factory=list)
+    # What the runner itself did to the device, outside any suite: the health
+    # sweeps, the UI-state gate and the teardown. A suite's own actions sit on
+    # the suite run that made them.
+    actions: List[dict] = field(default_factory=list)
     plan: Optional[dict] = None
     run: Optional[dict] = None
     skipped_lines: int = 0
@@ -220,7 +268,7 @@ class TargetRun:
 
     def _ident_details(self) -> Iterable[str]:
         for sweep in self.health:
-            for check in sweep.get("checks") or []:
+            for check in as_list(sweep.get("checks")):
                 if check.get("name") == "ident" and check.get("detail"):
                     yield str(check["detail"])
 
@@ -248,22 +296,22 @@ class Run:
         totals = {"targets": len(self.targets), "suites": 0, "ok": 0, "fail": 0,
                   "warn": 0, "skip": 0, "recoveries": 0}
         for record in self.run_records:
-            totals["suites"] += int(record.get("suites") or 0)
-            totals["ok"] += int(record.get("passed") or 0)
-            totals["fail"] += int(record.get("failed") or 0)
-            totals["warn"] += int(record.get("dirty") or 0)
-            totals["skip"] += int(record.get("skipped") or 0)
-            totals["recoveries"] += int(record.get("recoveries") or 0)
+            totals["suites"] += as_int(record.get("suites"))
+            totals["ok"] += as_int(record.get("passed"))
+            totals["fail"] += as_int(record.get("failed"))
+            totals["warn"] += as_int(record.get("dirty"))
+            totals["skip"] += as_int(record.get("skipped"))
+            totals["recoveries"] += as_int(record.get("recoveries"))
         return totals
 
     @property
     def exit_code(self) -> Optional[int]:
         """The status the run exited with, from whoever combined it."""
         if self.parent and self.parent.get("exit_code") is not None:
-            return int(self.parent["exit_code"])
+            return as_int(self.parent["exit_code"], -1)
         for record in self.run_records:
             if record.get("exit_code") is not None:
-                return int(record["exit_code"])
+                return as_int(record["exit_code"], -1)
         return None
 
     @property
@@ -277,7 +325,7 @@ class Run:
     def started(self) -> float:
         for record in [self.identity] + self.run_records:
             if record.get("started"):
-                return float(record["started"])
+                return as_float(record["started"])
         earliest = [s.started for t in self.targets for s in t.suites]
         return min(earliest) if earliest else 0.0
 
@@ -324,10 +372,36 @@ def split_stem(stem: str, suite: str) -> Tuple[str, str]:
     falls back to the first hyphen, which is right for every label the runner
     produces: the three UI modes and the three category names.
     """
+    if suite and stem == suite:
+        return "", suite
     if suite and stem.endswith("-" + suite):
         return stem[:-(len(suite) + 1)], suite
     label, _, rest = stem.partition("-")
     return label, rest or stem
+
+
+def suite_categories(records: Sequence[dict]) -> Dict[str, str]:
+    """Which category each registered suite belongs to, from the plan record."""
+    found: Dict[str, str] = {}
+    for record in records:
+        if record.get("kind") != "plan":
+            continue
+        for entry in as_list(record.get("suites")):
+            if entry.get("name"):
+                found[str(entry["name"])] = str(entry.get("category") or "")
+    return found
+
+
+def label_for(suite: str, mode: str, categories: Dict[str, str]) -> str:
+    """What names this suite run everywhere: its UI mode, or its category.
+
+    A `suite` record carries the mode the runner passed, which for a perf or
+    soak suite is the default mode rather than anything that suite has. The
+    plan says which category each suite is in, and the category is the label
+    for everything outside e2e, which is also how the per-suite file is named.
+    """
+    category = categories.get(suite, "e2e")
+    return mode if category in ("", "e2e") else category
 
 
 def load_target(directory: str, slug: str) -> TargetRun:
@@ -339,6 +413,7 @@ def load_target(directory: str, slug: str) -> TargetRun:
             token = str(record["target"])
             break
     target = TargetRun(token=token, slug=slug, skipped_lines=skipped)
+    categories = suite_categories(records)
 
     by_key: Dict[Tuple[str, str, int], SuiteRun] = {}
     for record in records:
@@ -347,23 +422,26 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.health.append(record)
         elif kind == "warning":
             target.warnings.append(record)
+        elif kind == "action":
+            target.actions.append(record)
         elif kind == "plan":
             target.plan = record
         elif kind == "run":
             target.run = record
         elif kind == "suite":
             name = str(record.get("name", ""))
-            attempt = int(record.get("attempt") or 1)
-            label = str(record.get("mode") or "")
+            attempt = as_int(record.get("attempt"), 1)
+            mode = str(record.get("mode") or "")
+            label = label_for(name, mode, categories)
             made = SuiteRun(
                 target=token, label=label, suite=name, attempt=attempt,
                 verdict=str(record.get("verdict", "")),
-                seconds=float(record["seconds"]) if record.get("seconds") is not None
-                else None,
+                seconds=as_float(record["seconds"])
+                if record.get("seconds") is not None else None,
                 note=str(record.get("note") or ""),
-                mode=str(record.get("mode") or ""),
-                recoveries=int(record.get("recoveries") or 0),
-                time=float(record.get("time") or 0.0))
+                mode=mode,
+                recoveries=as_int(record.get("recoveries")),
+                time=as_float(record.get("time")))
             by_key[(label, name, attempt)] = made
             target.suites.append(made)
 
@@ -384,7 +462,12 @@ def load_target(directory: str, slug: str) -> TargetRun:
                 break
         label, suite_name = split_stem(name[:-len(".jsonl")], suite_name)
         attach_suite_records(target, by_key, label, suite_name, name,
-                             file_records, file_skipped)
+                             file_records)
+
+    captures = os.path.join(directory, "capture")
+    for made in target.suites:
+        made.captured = os.path.exists(
+            os.path.join(captures, f"{made.stem}-{made.attempt}-screen.txt"))
 
     target.suites.sort(key=lambda s: (s.time, s.suite, s.attempt))
     return target
@@ -393,7 +476,7 @@ def load_target(directory: str, slug: str) -> TargetRun:
 def attach_suite_records(target: TargetRun,
                          by_key: Dict[Tuple[str, str, int], SuiteRun],
                          label: str, suite: str, file_name: str,
-                         records: Sequence[dict], skipped: int) -> None:
+                         records: Sequence[dict]) -> None:
     """Put one per-suite file's records on the suite runs they belong to.
 
     A retried suite writes into one file, so the attempt on each record is
@@ -402,11 +485,14 @@ def attach_suite_records(target: TargetRun,
     is the run the evidence matters most for.
     """
     stem = file_name[:-len(".jsonl")]
-    seen_attempts = set()
-    for record in records:
-        attempt = int(record.get("attempt") or 1)
-        seen_attempts.add(attempt)
-    for attempt in sorted(seen_attempts) or [1]:
+    seen_attempts = {as_int(record.get("attempt"), 1) for record in records}
+    # Every attempt this file holds records for, and every attempt the runner
+    # recorded. A suite that was killed before it wrote anything has the
+    # second and not the first, and its console log is the whole of what it
+    # left behind.
+    known = {attempt for (one_label, one_suite, attempt) in by_key
+             if one_label == label and one_suite == suite}
+    for attempt in sorted(seen_attempts | known):
         key = (label, suite, attempt)
         made = by_key.get(key)
         if made is None:
@@ -414,26 +500,24 @@ def attach_suite_records(target: TargetRun,
             # runner or the suite was killed before it said how it went.
             made = SuiteRun(target=target.token, label=label, suite=suite,
                             attempt=attempt, verdict=INCOMPLETE, seconds=None,
-                            note="", mode=label, recoveries=0,
-                            time=max((float(r.get("time") or 0.0)
+                            note="", mode="", recoveries=0,
+                            time=max((as_float(r.get("time"))
                                       for r in records), default=0.0))
             by_key[key] = made
             target.suites.append(made)
         made.log_name = stem + ".log"
-        made.jsonl_name = file_name
-        made.skipped_lines = skipped
         for record in records:
-            if int(record.get("attempt") or 1) != attempt:
+            if as_int(record.get("attempt"), 1) != attempt:
                 continue
             if record.get("kind") == "check":
                 made.checks.append(Check(
-                    target=target.token, label=label, suite=suite,
-                    attempt=attempt, index=int(record.get("index") or 0),
+                    target=target.token, label=made.label, suite=suite,
+                    attempt=attempt, index=as_int(record.get("index")),
                     check_label=str(record.get("label") or ""),
                     verdict=str(record.get("verdict") or ""),
                     extra=str(record.get("extra") or ""),
-                    seconds=float(record.get("seconds") or 0.0),
-                    time=float(record.get("time") or 0.0),
+                    seconds=as_float(record.get("seconds")),
+                    time=as_float(record.get("time")),
                     scenario=str(record.get("scenario") or "")))
             elif record.get("kind") == "action":
                 made.actions.append(record)
@@ -512,9 +596,7 @@ def clock(when: float) -> str:
     """A wall-clock time of day, in UTC, so two runs read the same anywhere."""
     if not when:
         return "-"
-    import time as time_lib
-
-    return time_lib.strftime("%Y-%m-%d %H:%M:%S", time_lib.gmtime(when))
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(when))
 
 
 def offset(when: float, start: float) -> str:
@@ -543,12 +625,6 @@ def read_text(path: str) -> List[str]:
         return []
 
 
-def worst(verdicts: Iterable[str]) -> str:
-    found = set(verdicts)
-    for verdict in VERDICT_ORDER:
-        if verdict in found:
-            return verdict
-    return "OK"
 
 
 # ---------------------------------------------------------------------------
@@ -559,25 +635,21 @@ def worst(verdicts: Iterable[str]) -> str:
 PREAMBLE = """\
 ## How to read this
 
-- The status line under the title is the whole run in one greppable line. Its
-  keys are fixed, its order is fixed, and its counts come from the runner's own
-  records rather than from a recount here.
-- A check is named `target/label/suite/attempt/index` everywhere: in
-  this document, in the recording's subtitles and in the capture file names,
-  where `/` is written `-` and the target is dropped because the file already
-  sits under that target's directory. The label is the UI mode for an E2E
-  suite and the category name for a perf or soak suite.
-- `Verdict` is what happened. `Coverage` is what did not run and what was
-  skipped, which is the section a green run most needs. `Failing checks`
-  carries each failure with the screen it left, the facts the run recorded
-  about it and the command that runs it again. `Device health` is every sweep
-  the run took, so a device that was already degraded is visible.
-- Everything below the detail marker is for a reader who has downloaded the
-  whole tree: the timeline, every check, and where the time went.
-- Nothing here diagnoses anything. Every line is a fact the run recorded, and
-  deciding what a failure means is yours.
-- `Files in this run` names every sibling file by relative path. Start there
-  when this document does not carry what you need."""
+- The line under the title is the whole run, greppable, counted by the runner.
+- A suite run is `target/label/suite/attempt` and a check is that plus its
+  index. The label is the UI mode for an E2E suite and the category for a perf
+  or soak one. A suite run's files are that key with the target dropped and
+  `/` written `-`: `overlay-prg-context-menu.log` for its console,
+  `-1-screen.txt` under `capture/` for the screen its first attempt left.
+- Which section answers what, and what to open when it does not:
+  `Verdict` what happened, then `<slug>/<label>-<suite>.jsonl`;
+  `Coverage` what did not run or was skipped;
+  `Failing checks` one entry each, then that suite's `.log`;
+  `Device health` every sweep, then `<slug>/run.jsonl`;
+  `Files in this run` everything else this run wrote.
+- Below the detail marker: the whole timeline, every check including the
+  passing ones and their measurements, and where the time went.
+- Nothing here diagnoses anything. Every line is a fact the run recorded."""
 
 
 def status_line(run: Run) -> str:
@@ -629,7 +701,8 @@ def header(run: Run) -> List[str]:
         rows.append(["exit status",
                      f"{exit_code}: {EXIT_MEANING.get(exit_code, 'unknown')}"])
     if identity.get("argv"):
-        rows.append(["command", "`" + " ".join(str(a) for a in identity["argv"]) + "`"])
+        rows.append(["command",
+                     "`" + redact(" ".join(str(a) for a in identity["argv"])) + "`"])
     lines += table(["Field", "Value"], rows)
 
     lines += [""] + completeness(run)
@@ -651,7 +724,11 @@ def completeness(run: Run) -> List[str]:
     if missing_run:
         lines.append("This run wrote no closing record for "
                      + ", ".join(missing_run)
-                     + ", so it did not finish or was killed.")
+                     + ", so it did not finish or was killed, and the counts "
+                       "on the status line above cover the "
+                     + str(len(run.run_records))
+                     + " of " + str(len(run.targets))
+                     + " target(s) that did record one.")
     open_suites = [s.key for s in run.all_suites() if s.verdict == INCOMPLETE]
     if open_suites:
         lines.append("No closing record for " + ", ".join(sorted(open_suites))
@@ -687,18 +764,23 @@ def coverage_section(run: Run) -> List[str]:
     for target in run.targets:
         if not target.plan:
             continue
-        planned += len(target.plan.get("sequence") or [])
-        for entry in target.plan.get("suites") or []:
+        planned += len(as_list(target.plan.get("sequence")))
+        for entry in as_list(target.plan.get("suites")):
             if not entry.get("run"):
                 absent.append([target.token, str(entry.get("name")),
                                str(entry.get("category")),
                                str(entry.get("reason") or "-")])
-    completed = len([s for s in run.all_suites() if s.verdict != INCOMPLETE])
+    # One planned suite run is one entry in the sequence, and a retry is not an
+    # entry: the plan says what the run set out to do, and running a suite
+    # twice is the runner deciding the first attempt proved nothing.
+    completed = len({(s.target, s.label, s.suite) for s in run.all_suites()
+                     if s.verdict != INCOMPLETE})
     if planned:
         lines.append(f"- {completed} of {planned} planned suite runs completed.")
 
-    assumptions = sorted({name for record in run.run_records
-                          for name in (record.get("assumptions") or [])})
+    assumptions = sorted({str(name) for record in run.run_records
+                          for name in (record.get("assumptions") or [])
+                          if isinstance(name, str)})
     if assumptions:
         lines.append("- Assumed present rather than proved: "
                      + ", ".join(f"`{name}`" for name in assumptions)
@@ -765,35 +847,51 @@ def unmatched_changes(run: Run) -> List[List[str]]:
     config_writes: Dict[Tuple[str, str], List[str]] = {}
     created: List[List[str]] = []
 
-    for made in sorted(run.all_suites(), key=lambda s: (s.target, s.time)):
-        for action in made.actions:
-            method = str(action.get("method", ""))
-            path = str(action.get("path", ""))
-            if method == "GET" or action.get("status") != 200:
-                continue
-            if path.startswith(CONFIG_PREFIX):
-                config_writes.setdefault((made.target, path), []).append(made.key)
-                continue
-            if path.startswith(FILE_ACTION):
-                created.append([made.target, made.key, "created",
-                                str((action.get("params") or {}).get("path", path))])
-                continue
-            resource, verb = split_action(path)
-            if verb in INVERSE_ACTIONS:
-                open_by_resource.setdefault((made.target, resource), []).append(
-                    (verb, made.key))
-            elif any(verb in closers for closers in INVERSE_ACTIONS.values()):
-                opened = open_by_resource.get((made.target, resource))
-                if opened:
-                    opened.pop()
+    everything = [(made.target, made.key, action)
+                  for made in sorted(run.all_suites(),
+                                     key=lambda s: (s.target, s.time))
+                  for action in made.actions]
+    everything += [(target.token, f"{target.token} (the runner itself)", action)
+                   for target in run.targets for action in target.actions]
+    everything.sort(key=lambda item: as_float(item[2].get("time")))
+
+    for target_token, made_key, action in everything:
+        method = str(action.get("method", ""))
+        path = str(action.get("path", ""))
+        status = as_int(action.get("status"), 0)
+        if method == "GET" or not 200 <= status < 300:
+            continue
+        if path.startswith(CONFIG_PREFIX):
+            config_writes.setdefault((target_token, path), []).append(made_key)
+            continue
+        if path.startswith(FILE_ACTION):
+            created.append([target_token, made_key, "created",
+                            str(as_dict(action.get("params")).get("path")
+                                or action.get("params") or path)])
+            continue
+        resource, verb = split_action(path)
+        if verb in INVERSE_ACTIONS:
+            open_by_resource.setdefault((target_token, resource), []).append(
+                (verb, made_key))
+        else:
+            # Only the verb that undoes this one closes it: a stopped stream
+            # does not put back a mounted image.
+            opened = open_by_resource.get((target_token, resource)) or []
+            for index in range(len(opened) - 1, -1, -1):
+                if verb in INVERSE_ACTIONS.get(opened[index][0], ()):
+                    opened.pop(index)
+                    break
 
     rows: List[List[str]] = []
     for (target, resource), opened in sorted(open_by_resource.items()):
         for verb, suite_key in opened:
             rows.append([target, suite_key, f"{verb} not undone", resource])
     for (target, path), writers in sorted(config_writes.items()):
-        if len(writers) % 2:
-            rows.append([target, writers[-1], "set and not restored", path])
+        # Which value a setting had before the run is not in any record, so
+        # this states what the run wrote rather than guessing at whether it put
+        # it back. A suite that sets a value and sets it back writes twice.
+        rows.append([target, writers[-1], f"written {len(writers)} time(s)",
+                     urllib.parse.unquote(path)])
     rows += created
     return rows
 
@@ -803,9 +901,10 @@ def changes_section(run: Run) -> List[str]:
     if not rows:
         return []
     return (["## What this run changed", "",
-             "Mutations the action log carries with no matching restore. A "
-             "suite may leave one behind on purpose, so this is a list rather "
-             "than a verdict.", ""]
+             "What the action log says the run did to the device and, where "
+             "a mutation has an undoing request, whether that request was "
+             "made. A suite may leave something behind on purpose, so this is "
+             "a list for a reader to judge rather than a verdict.", ""]
             + table(["Target", "Suite run", "What", "Where"], rows) + [""])
 
 
@@ -830,10 +929,12 @@ def what_the_run_knows(run: Run, check: Check,
 
     before = sweep_before(run, made)
     if before and not before.get("ok"):
-        failed = ", ".join(c.get("name", "") for c in (before.get("checks") or [])
+        failed = ", ".join(str(c.get("name") or "") for c in
+                           as_list(before.get("checks"))
                            if c.get("state") == "fail")
-        lines.append(f"- Unhealthy before: the health sweep `{before.get('label')}` "
-                     f"reported {failed} failing.")
+        lines.append("- Unhealthy before: the health sweep "
+                     f"`{redact(str(before.get('label')))}` reported {failed} "
+                     "failing.")
     if made.recoveries:
         lines.append(f"- Recovered: the device was recovered {made.recoveries} "
                      "time(s) around this suite.")
@@ -874,7 +975,7 @@ def what_the_run_knows(run: Run, check: Check,
 
     earlier = [c for c in made.checks
                if c.index < check.index and c.verdict == "FAIL"]
-    if not earlier:
+    if not earlier and len(made.checks) > 1:
         lines.append("- First failure: no other check in this suite run failed "
                      "before it.")
     return lines
@@ -885,7 +986,7 @@ def sweep_before(run: Run, made: SuiteRun) -> Optional[dict]:
     target = next((t for t in run.targets if t.token == made.target), None)
     if target is None:
         return None
-    earlier = [s for s in target.health if float(s.get("time") or 0) <= made.started]
+    earlier = [s for s in target.health if as_float(s.get("time")) <= made.started]
     return earlier[-1] if earlier else None
 
 
@@ -895,7 +996,7 @@ def reproduce_command(made: SuiteRun) -> str:
     The password is not in it; the reader supplies their own.
     """
     command = f"./run-tests -H {made.target} -s {made.suite}"
-    if made.mode:
+    if made.mode in ("overlay", "freeze", "telnet"):
         command += f" --mode {made.mode}"
     return command
 
@@ -903,7 +1004,7 @@ def reproduce_command(made: SuiteRun) -> str:
 def suite_path(run: Run, made: SuiteRun) -> str:
     """Where the code that produced this failure lives, from the plan record."""
     for target in run.targets:
-        for entry in (target.plan or {}).get("suites") or []:
+        for entry in as_list(as_dict(target.plan).get("suites")):
             if entry.get("name") == made.suite and entry.get("path"):
                 return str(entry["path"])
     return ""
@@ -917,16 +1018,70 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
     stem = f"{made.stem}-{made.attempt}"
     directory = os.path.join(run.directory, target.slug, "capture")
     screen = read_text(os.path.join(directory, stem + "-screen.txt"))
-    state = read_text(os.path.join(directory, stem + "-state.json"))
+    state = read_state(os.path.join(directory, stem + "-state.json"))
     lines: List[str] = []
     if screen:
-        lines += ["", f"Screen when this suite ended (`{target.slug}/capture/"
-                      f"{stem}-screen.txt`):", ""]
-        lines += fenced(screen)
-    if state:
-        lines += ["", f"Device state (`{target.slug}/capture/{stem}-state.json`):", ""]
-        lines += fenced(state, "json")
+        lines += ["", f"{SCREEN_SOURCE.get(str(state.get('source')), 'The screen')}"
+                      f" when this suite ended "
+                      f"(`{target.slug}/capture/{stem}-screen.txt`):", ""]
+        lines += fenced([redact(row) for row in screen])
+    summary = describe_state(state)
+    if summary:
+        lines += ["", summary + f" Everything the capture read is in "
+                                f"`{target.slug}/capture/{stem}-state.json`."]
     return lines
+
+
+# What the capture read, said in the report rather than left for the reader to
+# work out. The two screens are different encodings of different things, and
+# presenting one as the other is the mistake this naming exists to prevent.
+SCREEN_SOURCE = {
+    "menu_screen": "The menu screen",
+    "readmem": "The C64's own screen, read from $0400 and decoded as screen "
+               "codes, which is best effort because the matrix moves with the "
+               "VIC bank and with $D018,",
+    "telnet-spool": "The Telnet screen the suite was driving, from the spool,",
+    "unavailable": "No screen could be read,",
+}
+
+
+def read_state(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            decoded = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def describe_state(state: dict) -> str:
+    """The heap and the drives in one line, rather than as a JSON dump.
+
+    A build page carries the summary part of this document, and a run with ten
+    failures would otherwise put ten copies of a forty-line object on it.
+    """
+    if not state:
+        return ""
+    parts = []
+    heap = state.get("heap")
+    if isinstance(heap, dict):
+        parts.append(f"free heap {int(heap.get('free', 0))} B, low-water "
+                     f"{int(heap.get('min_ever_free', 0))} B of "
+                     f"{int(heap.get('total', 0))} B")
+    elif "heap" in state:
+        parts.append("no machine:heap on this firmware")
+    drives = state.get("drives")
+    if isinstance(drives, dict):
+        mounted = sorted(f"{slot}: {info.get('image_file')}"
+                         for slot, info in drives.items()
+                         if isinstance(info, dict) and info.get("image_file"))
+        parts.append("drives " + (", ".join(mounted) if mounted
+                                  else "with nothing mounted"))
+    for problem in state.get("errors") or []:
+        parts.append(f"the capture could not read {redact(str(problem))}")
+    if not parts:
+        return ""
+    return "Device state: " + "; ".join(parts) + "."
 
 
 def failing_section(run: Run) -> List[str]:
@@ -952,8 +1107,8 @@ def failing_section(run: Run) -> List[str]:
         lines += ["", "Reproduce: `" + reproduce_command(made) + "`"]
         path = suite_path(run, made)
         if path:
-            lines.append(f"Source: `{path}`, which carries the check's label as "
-                         "a literal string.")
+            lines += ["", f"Source: `{path}`, which carries the check's label "
+                          "as a literal string."]
         lines += log_tail_block(run, made)
         lines.append("")
 
@@ -986,7 +1141,12 @@ def log_tail_block(run: Run, made: SuiteRun) -> List[str]:
                  LOG_TAIL_LINES)
     if not found:
         return []
-    return (["", f"Last {len(found)} line(s) of `{relative}`:", ""]
+    attempts = len({s.attempt for s in run.all_suites()
+                    if s.target == made.target and s.label == made.label
+                    and s.suite == made.suite})
+    covering = ("" if attempts < 2 else
+                f", which holds all {attempts} attempts appended in order")
+    return (["", f"Last {len(found)} line(s) of `{relative}`{covering}:", ""]
             + fenced([redact(line) for line in found]))
 
 
@@ -1007,13 +1167,15 @@ def health_section(run: Run) -> List[str]:
             continue
         names: List[str] = []
         for sweep in target.health:
-            for check in sweep.get("checks") or []:
-                if check.get("name") not in names:
-                    names.append(str(check["name"]))
+            for check in as_list(sweep.get("checks")):
+                name = str(check.get("name") or "")
+                if name and name not in names:
+                    names.append(name)
         rows = []
         for sweep in target.health:
-            by_name = {str(c.get("name")): c for c in sweep.get("checks") or []}
-            row = [str(sweep.get("label") or "-"),
+            by_name = {str(c.get("name") or ""): c
+                       for c in as_list(sweep.get("checks"))}
+            row = [redact(str(sweep.get("label") or "-")),
                    "OK" if sweep.get("ok") else "DEGRADED"]
             for name in names:
                 row.append(render_health_check(by_name.get(name)))
@@ -1034,9 +1196,10 @@ def render_health_check(check: Optional[dict]) -> str:
         return "skip"
     if state == "fail":
         return "FAIL"
-    if check.get("heap"):
-        return f"{int(check['heap'].get('free', 0))}B"
-    return f"{float(check.get('ms') or 0.0):.0f}ms"
+    heap = as_dict(check.get("heap"))
+    if heap:
+        return f"{as_int(heap.get('free'))}B"
+    return f"{as_float(check.get('ms')):.0f}ms"
 
 
 # What each file in the tree is, keyed by how its name is built. The index is
@@ -1051,14 +1214,14 @@ def describe_file(relative: str) -> str:
                 "verdicts and the run result, written by run-tests")
     if name == "run.log":
         return "run-tests' own console output"
+    if name == "screens.jsonl":
+        return "every distinct screen the harness read, as text and as raw bytes"
     if name.endswith(".telnet.log"):
         return "the raw Telnet session stream, unparsed"
     if name.endswith(".jsonl"):
         return "one suite run's checks, scenarios and device actions"
     if name.endswith(".log"):
         return "that suite run's console output, stderr merged in, ANSI stripped"
-    if name == "screens.jsonl":
-        return "every distinct screen the harness read, as text and as raw bytes"
     if name.startswith("syslog"):
         return "the device's own log, as the collector received it"
     if name.endswith("-screen.txt"):
@@ -1100,7 +1263,11 @@ def files_section(run: Run) -> List[str]:
     return (["## Files in this run", "",
              "A capture file's name is its suite run's key with `/` written `-` "
              "and the target dropped, because the file already sits under that "
-             "target's directory.", ""]
+             "target's directory.", "",
+             "Reaching one of these from a build page is a download and an "
+             "unzip: GitHub serves no URL for a single file inside a zipped "
+             "artifact, so the artifact link on the build page is the last "
+             "click there is.", ""]
             + table(["Path", "Bytes", "What it is"], rows) + [""])
 
 
@@ -1120,53 +1287,81 @@ def timeline_section(run: Run) -> List[str]:
     # Rank orders events that share a wall-clock time, which a zero-duration
     # record makes common: a suite starts before it acts and closes after it.
     START, DURING, CLOSING = 0, 1, 2
-    events: List[Tuple[float, int, str]] = []
+    # (time, rank, whether it is a device request, text). The flag is a field
+    # rather than something read back out of the text, because the collapsing
+    # below has to be able to tell them apart without parsing what it wrote.
+    events: List[Tuple[float, int, bool, str]] = []
     for target in run.targets:
         for sweep in target.health:
             state = "OK" if sweep.get("ok") else "DEGRADED"
-            events.append((float(sweep.get("time") or 0.0), DURING,
+            events.append((as_float(sweep.get("time")), DURING, False,
                            f"{target.token} sweep {sweep.get('label')}: {state}"))
         for warning in target.warnings:
-            events.append((float(warning.get("time") or 0.0), DURING,
+            events.append((as_float(warning.get("time")), DURING, False,
                            f"{target.token} warning: "
                            + redact(str(warning.get("message") or ""))))
+        for action in target.actions:
+            events.append((as_float(action.get("time")), DURING, True,
+                           f"{target.token} " + describe_action(action)))
     for made in run.all_suites():
-        events.append((made.started, START, f"{made.key} started"))
-        events.append((made.time, CLOSING,
+        events.append((made.started, START, False, f"{made.key} started"))
+        if made.recoveries:
+            events.append((made.time, DURING, False,
+                           f"{made.target} was recovered {made.recoveries} "
+                           f"time(s) around {made.suite}"))
+        if made.captured:
+            events.append((made.time, CLOSING, False,
+                           f"{made.key} device state captured"))
+        events.append((made.time, CLOSING, False,
                        f"{made.key} {made.verdict}"
                        + (f": {redact(made.note)}" if made.note else "")))
         for check in made.checks:
             if check.verdict in ("FAIL", "WARN"):
-                events.append((check.time, DURING,
+                events.append((check.time, DURING, False,
                                f"{check.key} {check.verdict} "
                                f"{check.check_label}"))
         for action in made.actions:
-            events.append((float(action.get("time") or 0.0), DURING,
-                           "device request: " + describe_action(action)))
+            events.append((as_float(action.get("time")), DURING, True,
+                           f"{made.key} " + describe_action(action)))
 
-    events.sort(key=lambda item: (item[0], item[1], item[2]))
+    events.sort(key=lambda item: (item[0], item[1], item[3]))
     if not events:
         return []
 
     start = run.started
     lines = ["## Timeline", ""]
-    pending: List[Tuple[float, int, str]] = []
+    pending: List[Tuple[float, int, bool, str]] = []
+    # A request the harness makes once per sweep would otherwise sit between
+    # every pair of events for the length of the run.
+    repeats: Dict[str, int] = {}
+    for _when, _rank, is_action, text in events:
+        if is_action:
+            repeats[text] = repeats.get(text, 0) + 1
+    shown: Dict[str, int] = {}
 
     def flush() -> None:
         if not pending:
             return
         if len(pending) <= TIMELINE_ACTION_RUN:
-            for when, _rank, text in pending:
-                lines.append(f"{offset(when, start)}  {text}")
+            for when, _rank, _is_action, text in pending:
+                seen = shown.get(text, 0)
+                shown[text] = seen + 1
+                if seen >= TIMELINE_REPEAT_LIMIT:
+                    continue
+                total = repeats.get(text, 1)
+                suffix = ("" if total <= TIMELINE_REPEAT_LIMIT
+                          else f"  (this request is made {total} times in this "
+                               "run and is shown twice)")
+                lines.append(f"{offset(when, start)}  {text}{suffix}")
         else:
-            kinds = sorted({text.split()[2] for _w, _r, text in pending})
+            methods = sorted({text.split()[1] for _w, _r, _a, text in pending})
             lines.append(f"{offset(pending[0][0], start)}  {len(pending)} device "
-                         f"requests ({', '.join(kinds)})")
+                         f"requests ({', '.join(methods)})")
         pending.clear()
 
-    for when, rank, text in events:
-        if text.startswith("device request: "):
-            pending.append((when, kind, text))
+    for when, rank, is_action, text in events:
+        if is_action:
+            pending.append((when, rank, is_action, text))
             continue
         flush()
         lines.append(f"{offset(when, start)}  {text}")
@@ -1178,8 +1373,12 @@ def describe_action(action: dict) -> str:
     """One harness action, in the words the timeline reads best in."""
     text = f"{action.get('method')} {action.get('path')}"
     params = action.get("params")
+    if isinstance(params, dict):
+        # A query may reach a record as an object or as one string, and both
+        # read the same here.
+        params = " ".join(f"{k}={v}" for k, v in sorted(params.items()))
     if params:
-        text += " " + " ".join(f"{k}={v}" for k, v in sorted(params.items()))
+        text += " " + str(params)
     if action.get("status") not in (None, 200):
         text += f" -> {action['status']}"
     if action.get("retries"):
@@ -1203,16 +1402,24 @@ def checks_section(run: Run) -> List[str]:
     for made in sorted(run.all_suites(), key=lambda s: (s.target, s.time)):
         if not made.checks:
             continue
-        rows = []
-        for check in made.checks:
-            rows.append([str(check.index), check.check_label,
-                         check.verdict + (" SLOW" if check.slow else ""),
-                         duration(check.seconds),
-                         clock(check.time), check.scenario or "-",
-                         redact(check.extra) or "-"])
         lines += [f"### {made.key}", ""]
-        lines += table(["#", "Check", "Verdict", "Duration", "Closed at",
-                        "Scenario", "Reported"], rows) + [""]
+        # Grouped by scenario, which is how the suite grouped them and how its
+        # console output reads, with everything a suite reported outside one
+        # under a heading of its own.
+        scenarios: List[str] = []
+        for check in made.checks:
+            if check.scenario not in scenarios:
+                scenarios.append(check.scenario)
+        for scenario in scenarios:
+            rows = [[str(c.index), c.check_label,
+                     c.verdict + (" SLOW" if c.slow else ""),
+                     duration(c.seconds), clock(c.started), clock(c.time),
+                     redact(c.extra) or "-"]
+                    for c in made.checks if c.scenario == scenario]
+            if len(scenarios) > 1 or scenario:
+                lines += [f"**{scenario or 'outside any scenario'}**", ""]
+            lines += table(["#", "Check", "Verdict", "Duration", "Opened at",
+                            "Closed at", "Reported"], rows) + [""]
     if not lines:
         return []
     return ["## Checks", ""] + lines
@@ -1238,9 +1445,12 @@ def time_section(run: Run) -> List[str]:
                        [[c.key, c.check_label, duration(c.seconds)]
                         for c in checks]) + [""]
     if slow:
-        lines += [f"{len(slow)} check(s) passed "
-                  f"{report_lib.SLOW_CHECK_SECONDS:g}s, which the console marks "
-                  "SLOW. That is a prompt to look, not a verdict.", ""]
+        lines += [f"Checks over {report_lib.SLOW_CHECK_SECONDS:g}s, which the "
+                  "console marks SLOW. A prompt to look, not a verdict.", ""]
+        lines += table(["Check", "Label", "Duration"],
+                       [[c.key, c.check_label, duration(c.seconds)]
+                        for c in sorted(slow, key=lambda c: c.seconds,
+                                        reverse=True)]) + [""]
     return lines
 
 
@@ -1249,7 +1459,7 @@ def time_section(run: Run) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def render(run: Run) -> str:
+def render(run: Run, previous: Optional[Run] = None) -> str:
     """The whole document. Deterministic: two runs over one tree agree.
 
     A section whose source does not exist in this run is omitted rather than
@@ -1262,6 +1472,8 @@ def render(run: Run) -> str:
     lines += verdict_section(run)
     lines += coverage_section(run)
     lines += changes_section(run)
+    if previous is not None:
+        lines += compare_section(run, previous)
     lines += failing_section(run)
     lines += health_section(run)
     lines += files_section(run)
@@ -1276,13 +1488,155 @@ def render(run: Run) -> str:
     return text.rstrip("\n") + "\n"
 
 
-def write_report(directory: str) -> str:
+def write_report(directory: str, compare: str = "") -> str:
     """Render `directory` and write its index.md. Returns the path written."""
     run = load_tree(directory)
+    previous = load_tree(compare) if compare else None
     path = os.path.join(directory, INDEX_NAME)
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(render(run))
+        handle.write(render(run, previous))
     return path
+
+
+# ---------------------------------------------------------------------------
+# The GitHub job summary: a copy of part of the report, never a second render
+# ---------------------------------------------------------------------------
+
+
+def summary_part(document: str) -> str:
+    """Everything above the detail marker, or the whole document without one."""
+    marker = document.find(DETAIL_MARKER)
+    if marker < 0:
+        return document
+    return document[:marker]
+
+
+def job_summary(directory: str) -> int:
+    """Append the report's summary part to the CI job summary.
+
+    A copy, not a render. There is one authored report and every other format
+    is derived from it by a program, because two renderers of one fact drift
+    and the drift is invisible until somebody compares them.
+
+    Exactly two lines may follow the copy, and nothing else ever: the artifact
+    link, and a note when the copy was truncated. The link cannot be in the
+    report, because the report is generated before the artifact exists; putting
+    a placeholder there for the job to substitute would make the report a
+    template and the summary a renderer, which is what having one authored
+    report exists to prevent.
+
+    Writes nothing and exits zero when there is no job summary to write to,
+    which is every run outside CI.
+    """
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return 0
+    try:
+        with open(os.path.join(directory, INDEX_NAME), encoding="utf-8") as handle:
+            document = handle.read()
+    except OSError as exc:
+        print(f"e2e_report: no report to summarise: {exc}", file=sys.stderr)
+        return 0
+
+    text = summary_part(document)
+    appended = []
+    limit = SUMMARY_LIMIT_BYTES - SUMMARY_APPENDED_MARGIN
+    if len(text.encode("utf-8")) > limit:
+        kept = []
+        used = 0
+        for line in text.splitlines(keepends=True):
+            size = len(line.encode("utf-8"))
+            if used + size > limit:
+                break
+            kept.append(line)
+            used += size
+        text = "".join(kept)
+        appended.append(f"\n_Truncated at a line boundary to stay under "
+                        f"{SUMMARY_LIMIT_BYTES // 1024} KiB. The whole report is "
+                        f"in the artifact._\n")
+
+    url = os.environ.get("E2E_ARTIFACT_URL")
+    if url:
+        appended.append(f"\n[Download the full report and the run's JSONL]({url}) "
+                        "(you must be logged in to GitHub).\n")
+
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(text + "".join(appended))
+    except OSError as exc:
+        print(f"e2e_report: could not write the job summary: {exc}",
+              file=sys.stderr)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Comparing two runs
+# ---------------------------------------------------------------------------
+
+
+def comparison_key(check: Check) -> str:
+    """A check's identity across two runs.
+
+    The attempt is dropped. It is what makes a key unique inside one run, where
+    a retried suite repeats its check indices, and it is a property of that
+    run's flakiness rather than of the check, so keeping it would report every
+    retried check as newly run.
+    """
+    return f"{check.target}/{check.label}/{check.suite}/{check.index}"
+
+
+def final_verdicts(run: Run) -> Dict[str, Tuple[str, str]]:
+    """Each check's last verdict in this run, and its label."""
+    found: Dict[str, Tuple[str, str]] = {}
+    for check in sorted(run.all_checks(), key=lambda c: (c.attempt, c.time)):
+        found[comparison_key(check)] = (check.verdict, check.check_label)
+    return found
+
+
+def compare_section(run: Run, previous: Run) -> List[str]:
+    """What changed since another run of the same gate.
+
+    A reader looking at a red build asks "is this new" before anything else,
+    and a reader looking at a green one asks "did we lose coverage". Both are a
+    comparison of two trees, and the identity key is what joins them. No
+    service, no retention and no accumulation: two directories on disk, which
+    is what a CI job already has when it downloads the previous run's artifact.
+    """
+    now = final_verdicts(run)
+    before = final_verdicts(previous)
+    groups = (
+        ("Newly failing", [k for k, v in now.items()
+                           if v[0] == "FAIL" and before.get(k, ("",))[0] != "FAIL"
+                           and k in before]),
+        ("Newly passing", [k for k, v in now.items()
+                           if v[0] == "OK" and k in before
+                           and before[k][0] != "OK"]),
+        ("Newly skipped", [k for k, v in now.items()
+                           if v[0] == "SKIP" and k in before
+                           and before[k][0] != "SKIP"]),
+        ("No longer run", [k for k in before if k not in now]),
+        ("New in this run", [k for k in now if k not in before]),
+    )
+    if not any(members for _title, members in groups):
+        return []
+
+    identity = previous.identity
+    named = identity.get("commit") or clock(previous.started)
+    lines = [f"## Changes since {named}", "",
+             "Joined on each check's identity key without its attempt, so a "
+             "retried check compares as one.", ""]
+    for title, members in groups:
+        if not members:
+            continue
+        rows = []
+        for key in sorted(members):
+            was = before.get(key, ("-", ""))[0]
+            is_now = now.get(key, ("-", ""))[0]
+            label = (now.get(key) or before.get(key))[1]
+            rows.append([key, label, was, is_now])
+        lines += [f"### {title}", ""]
+        lines += table(["Check", "Label", "Was", "Now"], rows) + [""]
+    return lines
 
 
 def main(argv: Sequence[str]) -> int:
@@ -1293,11 +1647,20 @@ def main(argv: Sequence[str]) -> int:
         epilog="The exit status is zero whenever a document was written.")
     parser.add_argument("directory", metavar="DIR",
                         help="A run's -j directory. index.md is written into it.")
+    parser.add_argument("--compare", default="", metavar="DIR",
+                        help="Another run's -j directory. Adds a section naming "
+                             "every check whose verdict differs between the two.")
+    parser.add_argument("--job-summary", action="store_true",
+                        help="Append the report's summary part to the file named "
+                             "by GITHUB_STEP_SUMMARY, and do nothing without it. "
+                             "A copy of part of index.md, never a second render.")
     args = parser.parse_args(list(argv))
     if not os.path.isdir(args.directory):
         print(f"e2e_report: {args.directory} is not a directory", file=sys.stderr)
         return 2
-    print(write_report(args.directory))
+    if args.job_summary:
+        return job_summary(args.directory)
+    print(write_report(args.directory, args.compare))
     return 0
 
 

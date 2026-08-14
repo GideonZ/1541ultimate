@@ -1,0 +1,83 @@
+
+============================================================
+Ultimate hardware test run
+============================================================
+     target:     127.0.0.1@localhost  (device 127.0.0.1, computer localhost)
+     categories: e2e, perf
+     modes:      overlay
+     timeout:    30.0s
+     on failure: continue
+     health:    answers + health sweep, retry after recovery
+     recovery:   rm -f /tmp/e2e-observability-fixture/unhealthy (up to 3 per suite, 10 in the run)
+     jsonl:      /tmp/e2e-observability-fixture/run/127.0.0.1-at-localhost/
+
+============================================================
+E2E  held  (overlay)
+============================================================
+     held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+held: OK (0.034s)
+
+============================================================
+E2E  broken  (overlay)
+============================================================
+     broken: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+broken: FAIL (0.031s)
+     broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+
+============================================================
+E2E  raised  (overlay)
+============================================================
+     raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+raised: FAIL (0.101s)
+     raised: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+
+============================================================
+E2E  flaky  (overlay)
+============================================================
+     flaky: health: ping=1ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+flaky: FAIL (0.035s)
+     flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=0ms dma=0ms raster=1ms jiffy=1ms -> DEGRADED (ftp)
+         ftp: expected b'220', got b''
+     flaky: after failure, the device is unhealthy: it is degraded: ftp
+recovery: rm -f /tmp/e2e-observability-fixture/unhealthy ... OK (0.001s)
+recovery: device answers again ... OK (0.001s)
+     flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms raster=1ms jiffy=1ms -> OK
+     flaky: the device was recovered, so this failure proves nothing; running it again
+
+============================================================
+E2E  flaky  (overlay)  (attempt 2)
+============================================================
+     flaky: health: ping=1ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+flaky: OK (0.035s)
+
+============================================================
+E2E  browse  (overlay)
+============================================================
+     browse: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+browse: FAIL (6.147s)
+     browse: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+
+============================================================
+E2E  menu-left-open  (overlay)
+============================================================
+     menu-left-open: health: ping=2ms rest=0ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+menu-left-open: OK (0.035s)
+
+============================================================
+E2E  menu-closed-again  (overlay)
+============================================================
+     menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+menu-closed-again: OK (0.039s)
+
+============================================================
+E2E  leaves-things-behind  (overlay)
+============================================================
+     leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+leaves-things-behind: OK (0.105s)
+
+missing-file: SKIP (missing /tmp/e2e-observability-fixture/suites/missing_file.py, 0.000s)
+
+============================================================
+E2E  cut-short  (overlay)
+============================================================
+     cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK

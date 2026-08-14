@@ -1,0 +1,2 @@
+{"kind": "check", "index": 1, "label": "the device is well", "verdict": "FAIL", "extra": "the listener is gone", "seconds": 0.0001, "scenario": null, "time": 1786698842.5915995, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the device is well", "verdict": "OK", "extra": "recovered", "seconds": 0.0, "scenario": null, "time": 1786698842.6502876, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 2}

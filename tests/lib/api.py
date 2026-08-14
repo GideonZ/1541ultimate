@@ -289,6 +289,28 @@ class MachineApi:
             raise Failure(f"writemem ${address:04X} ({len(data)} bytes) returned "
                           f"HTTP {code}: {body[:160]!r}")
 
+    def heap(self) -> Optional[Dict[str, int]]:
+        """Free, low-water and total FreeRTOS heap, or None on firmware without it.
+
+        `free` is the figure to diff. `min_ever_free` is the low-water mark
+        since boot and never recovers, so it says whether a run came close to
+        running out but cannot tell a leak from a transient peak. `total` is
+        configTOTAL_HEAP_SIZE and is constant.
+
+        None means the endpoint answered 404, which is firmware predating it.
+        A transport failure raises, because a caller deciding whether to skip
+        needs those two apart: one is a device that cannot answer this, and the
+        other is a device that is not answering.
+        """
+        code, _, body = self._rest.request("GET", "/v1/machine:heap")
+        if code == 404:
+            return None
+        if code != 200:
+            raise Failure(f"machine:heap returned HTTP {code}: {body[:160]!r}")
+        payload = _errors(_json(body, "machine:heap"), "machine:heap")
+        return {name: int(payload.get(name, 0))
+                for name in ("free", "min_ever_free", "total")}
+
     def menu_screen(self) -> Optional[bytes]:
         """The rendered menu screen, or None when no menu is open (HTTP 404)."""
         code, _, body = self._rest.request("GET", "/v1/machine:menu_screen")

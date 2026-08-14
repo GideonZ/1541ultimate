@@ -6,7 +6,14 @@ Telnet, the on-device UI, C64 memory, mounted media or physical-device services
 in one scenario. These are the hardware release gate.
 
 What a run records about itself, and why each artefact is the shape it is, is
-in [doc/observability-spec.md](doc/observability-spec.md).
+in [doc/observability-spec.md](doc/observability-spec.md). `./run-tests -j DIR`
+writes that record and `python3 tools/e2e_report.py DIR` turns it into one
+Markdown document; see [tests/README.md](../README.md).
+
+The gate runs in CI from [.github/workflows/e2e.yml](../../.github/workflows/e2e.yml),
+on a self-hosted runner carrying the `e2e` label. Until a runner carries that
+label the workflow is valid and never runs, which is the correct failure: the
+file lands and the devices decide when it does anything.
 
 ## Structure
 
@@ -21,7 +28,7 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).

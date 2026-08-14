@@ -15,6 +15,10 @@
 **/v*.str
 **/v*.jou
 **/*.log
+# The recorded E2E run the observability tests read. Its console logs are part
+# of the fixture: one of them ends in a traceback, which is what the report
+# inlines under a failing suite and what the JSONL does not carry.
+!tests/lib/fixtures/**/*.log
 **/*.xrpt
 **/_xmsgs
 **/output

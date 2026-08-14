@@ -1,0 +1,2 @@
+{"kind": "check", "index": 1, "label": "the first half", "verdict": "OK", "extra": "", "seconds": 0.0, "scenario": null, "time": 1786698849.0460773, "suite": "cut-short", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "check", "index": 2, "lab

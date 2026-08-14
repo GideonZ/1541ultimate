@@ -14,6 +14,8 @@
 # harness lines and suite lines follow one set of rules.
 
 import argparse
+import dataclasses
+import json
 import os
 import platform
 import re
@@ -37,6 +39,9 @@ import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
+
+sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 
 CATEGORIES = ("e2e", "perf", "soak")
 MODES = ("overlay", "freeze", "telnet")
@@ -282,6 +287,9 @@ class Options:
     recover_max_per_suite: int
     recover_max_total: int
     recover_timeout: float
+    # Whether the suites spool the screens they read. Defaulted, because it is
+    # the only option here a caller can reasonably leave alone.
+    screens: bool = True
 
 
 def git_answer(*arguments: str) -> Optional[str]:
@@ -339,6 +347,15 @@ def run_identity(argv: Sequence[str], started: float) -> Dict[str, object]:
         git_answer("rev-parse", "--abbrev-ref", "HEAD")
     if branch:
         fields["branch"] = branch
+    # The only join from a downloaded artifact back to the build page that
+    # produced it, and it comes from the environment alone: an identifier the
+    # runner generated for itself could not be traced back to anything, which
+    # is worse than none.
+    for name, variable in (("ci_run_id", "GITHUB_RUN_ID"),
+                           ("ci_run_attempt", "GITHUB_RUN_ATTEMPT")):
+        value = os.environ.get(variable)
+        if value:
+            fields[name] = value
     status = git_answer("status", "--porcelain")
     if status is not None:
         # Not `dirty`: report.run_result already spends that name on the count
@@ -810,6 +827,122 @@ def describe_exit(returncode: int) -> str:
     return f"killed by {name}, so it reported nothing of its own"
 
 
+# What the capture reads out of the C64's own screen when no menu is open. The
+# screen matrix is at $0400 and 1000 bytes is one 40x25 plane, well inside the
+# API's own read limit, so it needs no chunking.
+SCREEN_RAM = 0x0400
+SCREEN_CELLS = 1000
+
+
+def capture_failure(device: Device, options: Options, mode: str, label: str,
+                    suite_name: str, attempt: int) -> None:
+    """Write what the device looked like after a suite failed.
+
+    Unconditional and needing no flag, because on a green run it costs nothing:
+    no suite failed. Three reads, all GET, all on the runner's five-second
+    probe client, so a device that has just been taken down cannot make this
+    outlast the run's own budget.
+
+    Taken here rather than later because `ui_state.verify` presses RUN/STOP,
+    opens the file browser and closes the menu, so by the time the gate has run
+    the screen a suite left is gone.
+
+    Nothing here can fail a run. A suite that has just taken the device down is
+    exactly the case where these calls will not answer, and a capture that
+    propagated would turn a suite failure into a harness failure.
+    """
+    directory = os.path.join(options.jsonl_dir, "capture")
+    stem = f"{label}-{suite_name}-{attempt}"
+    state: Dict[str, object] = {"mode": mode, "source": "", "errors": []}
+    screen_text: List[str] = []
+    screen_raw = b""
+
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        report.detail(f"{suite_name}: the capture could not be written: {exc}")
+        return
+
+    api = device.probe
+    if mode == "telnet":
+        # machine:menu_screen returns the first live user interface whose
+        # screen is exactly 40x25, and a Telnet session is 60x24, so it answers
+        # with the overlay's screen or with 404 and neither is what the suite
+        # was looking at. The suite published every screen it read, so the last
+        # record before it ended is exactly that, and reading a file the run
+        # already wrote costs the device nothing.
+        spool = os.path.join(options.jsonl_dir, "screens.jsonl")
+        record = screens.last_before(spool, time.time(), screens.TELNET)
+        if record:
+            state["source"] = "telnet-spool"
+            screen_text = [str(row) for row in record.get("text") or []]
+        else:
+            state["source"] = "unavailable"
+            state["errors"].append(
+                "no Telnet screen was spooled for this suite, and "
+                "machine:menu_screen would answer with a screen nobody drove")
+    else:
+        try:
+            body = api.machine.menu_screen()
+            if body is not None:
+                state["source"] = "menu_screen"
+                screen_raw = body
+                screen_text = api.machine.menu_rows()
+            else:
+                # 404 here means no menu is open rather than old firmware, so
+                # this is the ordinary path: most suites leave the menu closed
+                # and the interesting screen is the C64's.
+                state["source"] = "readmem"
+                screen_raw = api.machine.readmem(SCREEN_RAM, SCREEN_CELLS)
+                screen_text = c64_screen_rows(screen_raw)
+        except Failure as exc:
+            state["source"] = state["source"] or "unavailable"
+            state["errors"].append(f"screen: {report.format_exception(exc)}")
+
+    try:
+        state["heap"] = api.machine.heap()
+    except Failure as exc:
+        state["errors"].append(f"heap: {report.format_exception(exc)}")
+    try:
+        state["drives"] = {slot: dataclasses.asdict(info)
+                           for slot, info in api.drives.list().items()}
+    except Failure as exc:
+        state["errors"].append(f"drives: {report.format_exception(exc)}")
+
+    write_capture(directory, stem, screen_text, screen_raw, state)
+
+
+def c64_screen_rows(data: bytes) -> List[str]:
+    """The C64 screen matrix as 25 rows of 40 characters.
+
+    Best effort, and the report says so: these are screen codes rather than
+    the literal ASCII the menu plane carries, and the matrix moves with the VIC
+    bank and with $D018, so a program that has moved it is not rendered here.
+    """
+    text = "".join(chr(byte + 0x40) if 0x01 <= byte <= 0x1A
+                   else (chr(byte) if 0x20 <= byte <= 0x5F else " ")
+                   for byte in data[:SCREEN_CELLS])
+    return [text[row * 40:(row + 1) * 40] for row in range(SCREEN_CELLS // 40)]
+
+
+def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
+                  state: Dict[str, object]) -> None:
+    """The three artefacts, named so the report finds them with no lookup table."""
+    try:
+        with open(os.path.join(directory, f"{stem}-screen.txt"), "w",
+                  encoding="utf-8") as handle:
+            handle.write("\n".join(text) + ("\n" if text else ""))
+        if raw:
+            with open(os.path.join(directory, f"{stem}-screen.bin"), "wb") as handle:
+                handle.write(raw)
+        with open(os.path.join(directory, f"{stem}-state.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump(report.masked(state), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+    except (OSError, TypeError, ValueError) as exc:
+        report.detail(f"the capture could not be written: {exc}")
+
+
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                     label: str, attempt: int) -> Tuple[str, float, bool]:
     """One go at a suite. Returns (verdict, seconds, device_unhealthy).
@@ -829,6 +962,13 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     # identifier of its own. Both are values this function already holds.
     environment["E2E_TARGET"] = options.host
     environment["E2E_ATTEMPT"] = str(attempt)
+    if options.jsonl_dir and options.screens:
+        # Every distinct screen the suite reads, published from the fetches it
+        # was making anyway. One file per target, appended to by every suite.
+        environment["E2E_SCREENS"] = os.path.join(options.jsonl_dir,
+                                                  "screens.jsonl")
+    else:
+        environment.pop("E2E_SCREENS", None)
     # Tell the suite whether the device has just been reset and nothing has
     # touched it since, so it does not open with a reset of its own. One suite
     # ending with a reset and the next starting with one is the common case,
@@ -874,6 +1014,9 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
         report.suite_fail(suite.name, describe_exit(returncode),
                           elapsed, **fields)
         verdict = report.FAIL
+
+    if returncode != 0 and options.jsonl_dir:
+        capture_failure(device, options, mode, label, suite.name, attempt)
 
     # Attribution only: the precondition owns the state, so leaving the browser
     # elsewhere is not a defect. Naming who left what is what makes an
@@ -1258,6 +1401,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Halt after the first failing suite. The default runs "
                              "every selected suite, so one failure does not mask "
                              "the others.")
+    output.add_argument("--no-screens", dest="screens", action="store_false",
+                        default=True,
+                        help="Do not spool the screens the suites read into "
+                             "DIR/screens.jsonl. They cost the device nothing, "
+                             "since the suites fetch them anyway, and they are "
+                             "the only record of what was on screen when a "
+                             "check failed. About 5 KB per distinct screen.")
     output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
                         help="Emit JSONL into DIR, under one subdirectory per "
                              "target: one file per suite run, plus run.jsonl "
@@ -1456,6 +1606,7 @@ CHILD_FORWARDED_VALUES = (
 CHILD_FORWARDED_NEGATIVE = (
     ("health_check", "--no-health-check"),
     ("retry", "--no-retry"),
+    ("screens", "--no-screens"),
 )
 # host and targets become the child's one target; jsonl_dir is rewritten per
 # target so two children cannot write the same file; stop_on_fail is forwarded
@@ -1806,6 +1957,7 @@ def main(argv: List[str]) -> int:
                       timeout=args.timeout, soak_profile=args.soak_profile,
                       jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail,
                       health_check=args.health_check, retry=args.retry,
+                      screens=args.screens,
                       recover_command=args.recover_command,
                       recover_max_per_suite=args.recover_max_per_suite,
                       recover_max_total=args.recover_max_total,

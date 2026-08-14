@@ -46,6 +46,7 @@ sys.path.insert(0, os.path.join(
 
 import machine as machine_lib
 import pacing
+import screens as screen_spool
 import rest as rest_lib
 import targets
 from report import Failure
@@ -130,7 +131,7 @@ def host_menu_open(host: str, password: Optional[str], timeout: float) -> bool:
     """
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
-        f"http://{host}{MENU_SCREEN_PATH}", headers=headers)
+        rest_lib.url_for(host, MENU_SCREEN_PATH), headers=headers)
     try:
         with rest_lib.retrying_urlopen(request, timeout) as response:
             response.read()
@@ -158,7 +159,8 @@ def close_host_menu(host: str, password: Optional[str], timeout: float) -> None:
         return
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
-        f"http://{host}{MENU_BUTTON_PATH}", headers=headers, method="PUT")
+        rest_lib.url_for(host, MENU_BUTTON_PATH), headers=headers,
+        method="PUT")
     try:
         with rest_lib.retrying_urlopen(request, timeout) as response:
             response.read()
@@ -183,7 +185,7 @@ def fetch_product(host: str, password: Optional[str],
     """
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
-        f"http://{targets.host_for(host, INFO_PATH)}{INFO_PATH}", headers=headers)
+        rest_lib.url_for(host, INFO_PATH), headers=headers)
     try:
         with rest_lib.retrying_urlopen(request, timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -1006,8 +1008,9 @@ class RestBackend(Backend):
 
     # -- transport --
     def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{self.target.host_for(path)}{path}{query}"
+        # The handle says where the device is, ports included, so one builder
+        # answers for every caller here.
+        return rest_lib.url_for(self.target, path, params)
 
     @property
     def machine_host(self) -> str:
@@ -1079,6 +1082,11 @@ class RestBackend(Backend):
             raise Failure(f"menu_screen failed with HTTP {status}: {body[:160]!r}")
         if len(body) != SCREEN_BYTES:
             raise Failure(f"menu_screen returned {len(body)} bytes, expected {SCREEN_BYTES}")
+        # The screens this suite already fetched, spooled for whoever reads the
+        # run afterwards. It costs the device nothing and is the only record of
+        # what was on screen when a check failed.
+        screen_spool.publish(screen_spool.MENU, self._decode(body).lines, body,
+                             cols=SCREEN_WIDTH)
         return body
 
     def _menu_open(self) -> bool:
@@ -1849,6 +1857,9 @@ class TelnetBackend(Backend):
                 return
             drained += len(chunk)
             self.screen.feed(chunk)
+            screen_spool.publish_stream(chunk)
+            screen_spool.publish(screen_spool.TELNET, self.screen.rows(),
+                                 cols=self.screen.width)
             last_data = time.time()
         # The caller's own timeout ran out. With no byte at all that is the
         # same answer the first-byte budget gives, and reporting it as a
