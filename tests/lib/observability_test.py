@@ -676,10 +676,19 @@ def the_stills_are_the_transitions_and_not_the_cursor() -> str:
     """A blinking cursor is not a screen change worth keeping."""
     import recorder as recorder_lib
 
+    def picked(frames):
+        """The kinds the recorder's own picker chooses, in capture order.
+
+        Driven through StillPicker rather than through a copy of the rule, so
+        this fails when the code that ships changes.
+        """
+        picker = recorder_lib.StillPicker()
+        for frame in frames:
+            picker.offer(frame, None, frame)
+        return [kind for kind, _canvas, _rows in picker.stills()]
+
     blinking = [bytes([n % 2]) + bytes(52223) for n in range(20)]
-    expect("no transitions",
-           [s.kind for s in recorder_lib.select_stills(blinking)],
-           ["first", "last"])
+    expect("no transitions", picked(blinking), ["first", "last"])
 
     # Two changes that stay changed, which is what a menu redraw looks like:
     # a screen that changed and changed back would be two transitions.
@@ -688,11 +697,170 @@ def the_stills_are_the_transitions_and_not_the_cursor() -> str:
         changing[index] = bytes([9]) * 52224
     for index in range(12, 20):
         changing[index] = bytes([3]) * 52224
-    kinds = [s.kind for s in recorder_lib.select_stills(changing)]
+    kinds = picked(changing)
     expect("both transitions", kinds.count("change"), 2)
-    indexes = [s.index for s in recorder_lib.select_stills(changing)]
-    expect("in capture order", indexes, sorted(indexes))
+    expect("first and last as well", (kinds[0], kinds[-1]), ("first", "last"))
     return "2 of 20"
+
+
+@case(1, "OBS-8.27")
+def frames_are_decimated_by_a_phase_accumulator() -> str:
+    """The output rate is reached exactly, and the same way every run."""
+    import recorder as recorder_lib
+
+    def taken(fps: int, source_frames: int) -> int:
+        phase = 0
+        kept = 0
+        for _ in range(source_frames):
+            phase, keep = recorder_lib.decimate(phase, fps)
+            kept += 1 if keep else 0
+        return kept
+
+    # One second of a PAL device at each rate the recorder offers.
+    for fps in (1, 2, 5, 10, 25, 50):
+        expect(f"{fps} of 50 kept", taken(fps, 50), fps)
+    # A ratio that divides into nothing: 7 in 50 is 7 every second, where
+    # "take one in N" would give 7 in the first second and drift after it.
+    expect("no drift over a minute", taken(7, 50 * 60), 7 * 60)
+    return "exact at every rate"
+
+
+@case(1, "OBS-8.16", "OBS-15.1")
+def a_rearm_waits_for_the_suite_and_backs_off() -> str:
+    """A suite owns the stream from its first record, and a dead device is cheap."""
+    import json
+    import tempfile
+
+    import recorder as recorder_lib
+
+    with tempfile.TemporaryDirectory() as directory:
+        tail = recorder_lib.JsonlTail(directory)
+        expect("nothing has run yet", tail.poll().between_suites, True)
+        # One action record, which is what a suite writes long before its
+        # first check closes. av/stream_test.py and api/input_test.py own the
+        # stream in exactly that window.
+        path = os.path.join(directory, "overlay-stream.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "action", "suite": "stream",
+                                     "time": 1.0}) + "\n")
+        expect("a suite is running", tail.poll().between_suites, False)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "suite", "name": "stream",
+                                     "verdict": "OK", "time": 2.0}) + "\n")
+        expect("and has finished", tail.poll().between_suites, True)
+
+    # The back-off: a device that answers nothing is asked a handful of times
+    # over ten minutes rather than a hundred.
+    wait = recorder_lib.REARM_AFTER_SECONDS
+    ceiling = recorder_lib.REARM_BACKOFF_CEILING_SECONDS
+    asked, elapsed = 0, 0.0
+    while elapsed < 600:
+        asked += 1
+        elapsed += wait
+        wait = min(ceiling, wait * 2)
+    if asked > 12:
+        raise Failure(f"{asked} re-arms in ten minutes is not a back-off")
+    return f"{asked} re-arms in ten minutes"
+
+
+@case(1, "OBS-8.27", "OBS-8.38")
+def an_encoder_that_takes_nothing_cannot_stall_the_loop() -> str:
+    """The frame is shed inside its budget rather than blocking on the pipe."""
+    import subprocess
+
+    import recorder as recorder_lib
+
+    # A process that reads nothing at all, so its pipe fills and stays full.
+    encoder = recorder_lib.Encoder.__new__(recorder_lib.Encoder)
+    encoder.path = "stalled"
+    encoder.frames = 0
+    encoder.shed = 0
+    encoder.problem = ""
+    encoder.finishing = None
+    encoder.process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, bufsize=0)
+    try:
+        frame = b"\x00" * (872 * 272 * 3)
+        started = time.monotonic()
+        # The first write fills the pipe; the second has nowhere to go.
+        for _ in range(2):
+            encoder.write(frame, budget=0.2)
+        took = time.monotonic() - started
+    finally:
+        # Killed rather than closed: this one is sleeping on purpose and
+        # would hold the suite for the encoder's whole exit budget.
+        if encoder.process is not None:
+            encoder.process.kill()
+            encoder.process.wait()
+        encoder.close(wait=False)
+    if took > 2.0:
+        raise Failure(f"two writes of one budget took {took:.1f}s, so the "
+                      f"loop blocks on a full pipe")
+    expect("shed rather than written", encoder.shed >= 1, True)
+    return f"{took:.2f}s for two 0.2s budgets"
+
+
+@case(1, "OBS-8.20")
+def the_harness_pane_has_four_states() -> str:
+    """Each says something different, and the menu is drawn from its payload."""
+    import recorder as recorder_lib
+
+    geometry = recorder_lib.geometry_for(False, True, "combined")["combined"]
+    options = recorder_lib.Options(stamp=False, video=False)
+    composer = recorder_lib.Composer(geometry, options, {})
+    state = recorder_lib.RunState()
+
+    def drawn(rows, kind, raw=b"", stale=False):
+        return composer.compose(None, rows, kind, state, 0.0, 0.0,
+                                harness_raw=raw, stale=stale)
+
+    nothing = drawn(None, "")
+    closed = drawn(None, "closed")
+    if nothing == closed:
+        raise Failure("a menu that is closed looks like one never read")
+    # A payload with the selected row marked by bit 7, which is the only
+    # thing that says where the cursor is.
+    payload = bytearray(b" " * 1000 + b"\x01" * 1000)
+    payload[40:48] = b"SELECTED"
+    marked = bytearray(payload)
+    for index in range(40, 48):
+        marked[index] |= 0x80
+    rows = [" " * 40] * 25
+    plain = drawn(rows, "menu", bytes(payload))
+    reversed_row = drawn(rows, "menu", bytes(marked))
+    if plain == reversed_row:
+        raise Failure("the selected row is not visible in the pane, so the "
+                      "pane is drawn from the text rather than the payload")
+    if drawn(rows, "menu", bytes(payload), stale=True) == plain:
+        raise Failure("a stale screen is not marked")
+    return "four states, and the cursor is in the picture"
+
+
+@case(1, "OBS-8.19", "OBS-8.25")
+def a_slot_of_audio_is_the_rate_it_declares() -> str:
+    """The track and the video stay the same length, remainder included."""
+    import recorder as recorder_lib
+    import streams
+
+    timeline = streams.AudioTimeline()
+    rate = streams.RATE_PAL_HZ
+    cursor = recorder_lib.AudioCursor(timeline, rate, 10)
+    wanted = sum(cursor.wanted() for _ in range(600)) // streams.FRAME_BYTES
+    # A minute at 10 slots a second. Rounding each slot down would lose about
+    # 175 frames of it, which is drift the file cannot be corrected for.
+    expect("a minute of frames", wanted, int(round(rate * 60)))
+
+    # A slot that is one packet short is jitter, not loss.
+    cursor = recorder_lib.AudioCursor(timeline, rate, 10)
+    cursor.push(b"\x00" * (cursor.wanted() - streams.PAYLOAD_BYTES))
+    cursor.owed = 0.0
+    cursor.take()
+    expect("no loss reported", timeline.counts()["packets_lost"], 0)
+    if not cursor.filled_bytes:
+        raise Failure("the shortfall was not counted at all")
+    return "exact length, jitter is not loss"
 
 
 @case(1, "OBS-8.20", "OBS-8.29", "OBS-8.35")

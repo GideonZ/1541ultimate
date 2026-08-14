@@ -113,6 +113,22 @@ BAR_GAP = 2
 # at the top on NTSC and 35 on PAL, so it fits on every geometry.
 STAMP_ROWS = 2
 
+# How long the recording thread is given to finish after it is asked to stop.
+# One slot's work plus one encoder write, with room for a host under load.
+THREAD_JOIN_SECONDS = 30.0
+
+# How long the recorder waits for a video frame before opening the audio file.
+# One frame is 20 ms on a device that is sending, so this only ever expires on
+# a device that is not.
+TIMING_WAIT_SECONDS = 2.0
+
+# How long a closing encoder is given to finish its file before it is killed.
+# An mp4 is unplayable without the trailer ffmpeg writes on exit, and writing
+# it costs a fraction of a second, so this only ever expires on a process that
+# is not going to finish at all. Below the join budget of `Recorder.stop`, so
+# the finishing pass cannot be what makes the join time out.
+ENCODER_EXIT_SECONDS = 20.0
+
 # How long the title and summary cards are held. Two seconds is long enough to
 # read and short enough that a reader seeking to the start is not waiting.
 CARD_SECONDS = 2.0
@@ -120,17 +136,52 @@ CARD_SECONDS = 2.0
 # The device sends 50 frames a second on PAL. The recording does not need them:
 # the material is a screen that is static for seconds at a time and then
 # changes completely in one frame.
-SOURCE_FPS = 50.0
+# Whole frames per second, and an integer on purpose: the decimation
+# accumulator below counts in source frames, and the same accumulator in
+# floating point loses a frame a second at 10 fps, where 5 x 0.2 sums to just
+# under one.
+SOURCE_FPS = 50
+
+# How short a slot's audio has to be before the shortfall is treated as a
+# stream that stopped rather than as packets that have not arrived yet. Two
+# packets is 8 ms, which is more jitter than a LAN produces and less than any
+# real gap.
+SILENCE_AFTER_PACKETS = 2
 
 # How long a stream may be silent before the recorder asks for it again. Longer
 # than the gap a suite leaves between its own stop and start, so the recorder
 # does not fight a suite for the stream mid-check.
 REARM_AFTER_SECONDS = 6.0
 REARM_BACKOFF_CEILING_SECONDS = 120.0
+# Both requests the recorder makes of the device are issued from the slot loop,
+# so each is bounded well under the loop's own budget and neither is retried:
+# a failure is an answer here, and the next slot will ask again.
+REARM_TIMEOUT_SECONDS = 2.0
+MENU_TIMEOUT_SECONDS = 2.0
+
+# How long the screen tap may be silent before the recorder reads the menu
+# itself. Its own interval rather than the stream's: the two answer different
+# questions, and a suite that is navigating publishes a screen far more often
+# than this.
+MENU_QUIET_SECONDS = 6.0
 
 # What the placeholder cards say, which is as much as the run knows.
 NO_SCREEN_YET = "no screen has been read yet"
 NO_MENU_OPEN = "no menu is open"
+NO_VIDEO = "waiting for the device's video"
+# Drawn above a harness pane showing a screen older than the poll that should
+# have replaced it.
+STALE_MARK = "STALE"
+
+# How long the health-warning edge is held after the sweep that raised it. The
+# edge answers "was the device in trouble around here", and a device is
+# recovered between suites, so holding it to the end of a run would mark the
+# rest of the recording for a condition that had already been dealt with.
+UNHEALTHY_DWELL_SECONDS = 60.0
+# How long a screen may go unrefreshed before the pane is marked stale. Longer
+# than the interval a suite polls the menu at, so an ordinary quiet moment in
+# a suite is not marked.
+STALE_AFTER_SECONDS = 15.0
 
 
 @dataclass
@@ -177,6 +228,27 @@ class Geometry:
         return self.width // glyphs.GLYPH_WIDTH
 
 
+def decimate(phase: int, fps: int) -> Tuple[int, bool]:
+    """Whether this source frame is one of the ones the output keeps.
+
+    Deterministic decimation, and the reason it is a phase accumulator rather
+    than a threshold on elapsed time: the accumulator gains the output rate on
+    every source frame and a frame is taken when the total crosses the source
+    rate, which is exact at simple ratios and bounded at every other. A
+    threshold on elapsed time drifts, and two runs of one suite would then not
+    decimate the same way, which is what makes two recordings comparable frame
+    by frame.
+
+    Counted in whole frames rather than in a fraction of one, because the same
+    accumulator in floating point loses a frame a second at 10 fps: five
+    additions of 0.2 sum to just under one.
+    """
+    phase += fps
+    if phase < SOURCE_FPS:
+        return phase, False
+    return phase - SOURCE_FPS, True
+
+
 def geometry_for(video: bool, menu: bool, layout: str) -> Dict[str, Geometry]:
     """The canvas for each output file this run will write.
 
@@ -218,6 +290,7 @@ class RunState:
     check: str = ""
     failed_at: float = 0.0
     unhealthy: bool = False
+    unhealthy_at: float = 0.0
     segments: List[str] = field(default_factory=list)
     verdicts: Dict[str, str] = field(default_factory=dict)
     current_segment: int = -1
@@ -278,6 +351,19 @@ class JsonlTail:
                 self._apply(record, name)
         return self.state
 
+    def _entered_suite(self, source: str) -> None:
+        """A suite is running from its first record, not from its first check.
+
+        Deriving this from checks would leave the recorder believing it was
+        between suites for everything before the first one closed, which for
+        `av/stream_test.py` and `api/input_test.py` is the part of the suite
+        that owns the stream. The recorder would then re-arm into it and
+        change what the suite sees, which OBS-15.1 forbids.
+        """
+        if source == "run.jsonl":
+            return
+        self.state.between_suites = False
+
     def _files(self) -> List[str]:
         try:
             names = sorted(name for name in os.listdir(self.directory)
@@ -326,6 +412,8 @@ class JsonlTail:
 
     def _apply(self, record: dict, source: str) -> None:
         kind = record.get("kind")
+        if kind != "suite":
+            self._entered_suite(source)
         if record.get("attempt"):
             try:
                 self.state.attempt = int(record["attempt"])
@@ -337,7 +425,6 @@ class JsonlTail:
                 f"{entry.get('label')}/{entry.get('suite')}"
                 for entry in sequence if isinstance(entry, dict)]
         elif kind == "check":
-            self.state.between_suites = False
             self.state.check = f"check {record.get('index')}"
             self.state.scenario = str(record.get("scenario") or "")
             if record.get("verdict") == "FAIL":
@@ -351,6 +438,7 @@ class JsonlTail:
             self.state.between_suites = True
         elif kind == "health":
             self.state.unhealthy = not record.get("ok", True)
+            self.state.unhealthy_at = float(record.get("time") or 0.0)
         if record.get("suite") and source != "run.jsonl":
             # The per-suite file's own name is the only thing that carries the
             # label, which for an e2e suite is its UI mode and for a perf or
@@ -360,8 +448,12 @@ class JsonlTail:
             self.state.suite = suite
             self.state.label = (stem[:-(len(suite) + 1)]
                                 if stem.endswith("-" + suite) else "")
+        # Matched on label and suite together. Under `--mode all` one suite
+        # has a segment per mode, and matching on the name alone would mark
+        # the first mode's segment for every pass over it.
+        wanted = f"{self.state.label}/{self.state.suite}"
         for index, segment in enumerate(self.state.segments):
-            if segment.endswith("/" + self.state.suite):
+            if segment == wanted:
                 self.state.current_segment = index
                 break
 
@@ -369,6 +461,30 @@ class JsonlTail:
 # ---------------------------------------------------------------------------
 # Stage 4: composing one canvas per slot
 # ---------------------------------------------------------------------------
+
+
+def _payload(value: object) -> bytes:
+    """The `raw` field of a spooled screen, which is hex, as bytes."""
+    if not isinstance(value, str):
+        return b""
+    try:
+        return bytes.fromhex(value)
+    except ValueError:
+        return b""
+
+
+def _why_no_video(cause: Optional[Dict[str, str]]) -> str:
+    """What the card in an empty screen pane says.
+
+    A gap the run can explain names the suite that caused it. A gap it cannot
+    explain says only that there is no video, which is itself the answer: an
+    unexplained gap is a device that went quiet on its own.
+    """
+    if not cause or cause.get("action") != "stop":
+        return NO_VIDEO
+    suite = cause.get("suite") or "a suite"
+    return truncate(f"{suite} stopped this stream",
+                    SCREEN_PANE_WIDTH // glyphs.GLYPH_WIDTH)
 
 
 class Composer:
@@ -396,27 +512,40 @@ class Composer:
         self.options = options
         self.identity = identity
         self.canvas = glyphs.Canvas(geometry.width, geometry.height, CHROME)
+        # The last frame composed without the annotations. See compose.
+        self.plain = b""
 
     def compose(self, screen: Optional[Tuple[int, int, bytes]],
                 harness: Optional[Sequence[str]], harness_kind: str,
-                state: RunState, position: float, wall: float) -> bytes:
-        """One canvas, as RGB bytes, for one slot."""
+                state: RunState, position: float, wall: float,
+                harness_raw: bytes = b"", stale: bool = False,
+                cause: Optional[Dict[str, str]] = None) -> bytes:
+        """One canvas, as RGB bytes, for one slot.
+
+        `self.plain` is left holding the same frame without the annotations,
+        which is what the stills are written from: a still is what the machine
+        showed, and a stamp burned into it is this module's own text on top of
+        the evidence.
+        """
         self.canvas.fill(0, 0, self.geometry.width, self.geometry.height, CHROME)
         if self.geometry.screen_x >= 0:
-            self._draw_screen(screen)
+            self._draw_screen(screen, cause)
         if self.geometry.harness_x >= 0:
-            self._draw_harness(harness, harness_kind)
+            self._draw_harness(harness, harness_kind, harness_raw, stale)
+        self.plain = self.canvas.to_rgb()
         if self.options.stamp:
             self._draw_stamp(state, position, wall)
             self._draw_labels(harness_kind)
             self._draw_edge(state, wall)
             self._draw_bar(state)
-        return self.canvas.to_rgb()
+            return self.canvas.to_rgb()
+        return self.plain
 
-    def _draw_screen(self, screen: Optional[Tuple[int, int, bytes]]) -> None:
+    def _draw_screen(self, screen: Optional[Tuple[int, int, bytes]],
+                     cause: Optional[Dict[str, str]] = None) -> None:
         x = self.geometry.screen_x
         if screen is None:
-            self._card(x, SCREEN_PANE_WIDTH, "waiting for the device's video")
+            self._card(x, SCREEN_PANE_WIDTH, _why_no_video(cause))
             return
         width, height, indices = screen
         # A frame of a different height is padded to the fixed geometry rather
@@ -427,14 +556,30 @@ class Composer:
         self.canvas.blit_indices(x, max(top, 0), width,
                                  min(height, PANE_HEIGHT), indices)
 
-    def _draw_harness(self, rows: Optional[Sequence[str]], kind: str) -> None:
+    def _draw_harness(self, rows: Optional[Sequence[str]], kind: str,
+                      raw: bytes = b"", stale: bool = False) -> None:
+        """The four states of OBS-8.20, each saying something different."""
         x = self.geometry.harness_x
         top = (PANE_HEIGHT - HARNESS_TEXT_HEIGHT) // 2
         if not rows:
             self._card(x, HARNESS_PANE_WIDTH,
                        NO_MENU_OPEN if kind == "closed" else NO_SCREEN_YET)
             return
-        glyphs.render_text_screen(rows, self.canvas, x, top, CHROME_TEXT, CHROME)
+        if raw and kind == screen_spool.MENU:
+            # The payload carries the colour plane and the reverse-video bit
+            # that marks the selected row, so the menu is drawn from it and
+            # the rows are the fallback for a screen that has no payload,
+            # which is every Telnet one.
+            glyphs.render_menu_screen(raw, self.canvas, x, top,
+                                      background=CHROME)
+        else:
+            glyphs.render_text_screen(rows, self.canvas, x, top,
+                                      CHROME_TEXT, CHROME)
+        if stale:
+            # The screen is the last one that was read rather than the current
+            # one, and a reader looking at a still has no other way to know.
+            self.canvas.draw_text(x, top - glyphs.GLYPH_HEIGHT, STALE_MARK,
+                                  CHROME_TEXT, STAMP_BACKGROUND)
 
     def _card(self, x: int, width: int, text: str) -> None:
         """A pane with no source says why, which is itself the answer."""
@@ -493,7 +638,9 @@ class Composer:
         colour = None
         if state.failed_at and wall - state.failed_at <= EDGE_DWELL_SECONDS:
             colour = FAILURE_COLOUR
-        elif state.unhealthy:
+        elif state.unhealthy and (not state.unhealthy_at
+                                  or wall - state.unhealthy_at
+                                  <= UNHEALTHY_DWELL_SECONDS):
             colour = WARNING_COLOUR
         if colour is None:
             return
@@ -527,9 +674,17 @@ class Composer:
                 colour = WARNING_COLOUR
             else:
                 colour = PASSED_COLOUR
+            left = index * width
+            self.canvas.fill(left, top, width - 1, BAR_HEIGHT, colour)
             if index == state.current_segment:
-                colour = RUNNING_COLOUR
-            self.canvas.fill(index * width, top, width - 1, BAR_HEIGHT, colour)
+                # Outlined rather than filled, so the segment still carries
+                # whatever verdict its previous attempt reached.
+                self.canvas.fill(left, top, width - 1, 1, RUNNING_COLOUR)
+                self.canvas.fill(left, top + BAR_HEIGHT - 1, width - 1, 1,
+                                 RUNNING_COLOUR)
+                self.canvas.fill(left, top, 1, BAR_HEIGHT, RUNNING_COLOUR)
+                self.canvas.fill(left + width - 2, top, 1, BAR_HEIGHT,
+                                 RUNNING_COLOUR)
 
     def card(self, lines: Sequence[str]) -> bytes:
         """A title or summary card, composed like any other frame.
@@ -573,7 +728,14 @@ def format_position(seconds: float) -> str:
 
 
 def format_wall(when: float) -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(when))
+    """The stamp's wall clock, in the zone the run's other timestamps are in.
+
+    Local rather than UTC, because every other time in the bundle is
+    `time.time()` rendered by the report on this host, and a frame whose clock
+    disagreed with the report's would be worse than useless for joining one to
+    the other.
+    """
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +862,8 @@ class Encoder:
         self.frames = 0
         self.shed = 0
         self.problem = ""
+        # Set when the slot loop closed the process without waiting for it.
+        self.finishing: "subprocess.Popen | None" = None
         try:
             self.process = subprocess.Popen(
                 list(command), stdin=subprocess.PIPE,
@@ -724,6 +888,13 @@ class Encoder:
         # With bufsize=0 this is already the raw descriptor; with any other it
         # is a buffered wrapper whose own buffer would defeat the budget.
         stream = getattr(self.process.stdin, "raw", self.process.stdin)
+        # The descriptor has to be non-blocking for the budget to mean
+        # anything. A blocking write of more than PIPE_BUF returns only once
+        # every byte has been taken, so one frame of 711 KB against a 64 KB
+        # pipe would sit in the kernel until the encoder had drained all of it,
+        # however much budget was left. Non-blocking, the same write returns
+        # what it could take and the loop re-checks the deadline.
+        self._unblock(stream)
         view = memoryview(payload)
         deadline = time.monotonic() + budget
         while view:
@@ -736,26 +907,65 @@ class Encoder:
                 continue
             try:
                 written = stream.write(view)
+            except BlockingIOError:
+                # The pipe filled between select saying it was writable and
+                # the write. Not an error, and not progress either.
+                continue
             except (BrokenPipeError, OSError) as exc:
                 self.problem = f"{self.path}: the encoder stopped: {exc}"
-                self.close()
+                # Closed without waiting for the process, because this runs on
+                # the slot loop: a dead encoder must cost the loop nothing.
+                # The finishing pass reaps it.
+                self.close(wait=False)
                 return False
             if written:
                 view = view[written:]
         self.frames += 1
         return True
 
-    def close(self) -> None:
+    @staticmethod
+    def _unblock(stream) -> None:
+        """Put the encoder's input into non-blocking mode, if it has an fd."""
+        try:
+            os.set_blocking(stream.fileno(), False)
+        except (OSError, AttributeError, ValueError):
+            # A stand-in stream in a test, or a descriptor already gone. The
+            # budget then behaves as it did before, which is the failure this
+            # is protecting against rather than a new one.
+            pass
+
+    def close(self, wait: bool = True) -> None:
+        """Shut the encoder down. `wait` is false on the slot loop's path.
+
+        The finishing pass waits, because an ffmpeg still writing its moov
+        atom needs to finish or the file is unplayable. The slot loop does
+        not, because waiting there is the stall this class exists to avoid.
+        """
         if self.process is None:
             return
         process, self.process = self.process, None
+        self.finishing = process
         try:
             if process.stdin is not None:
                 process.stdin.close()
         except OSError:
             pass
+        if not wait:
+            return
         try:
-            process.wait(timeout=60)
+            process.wait(timeout=ENCODER_EXIT_SECONDS)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        self.finishing = None
+
+    def reap(self) -> None:
+        """Wait for an encoder the slot loop closed without waiting."""
+        process, self.finishing = self.finishing, None
+        if process is None:
+            return
+        try:
+            process.wait(timeout=ENCODER_EXIT_SECONDS)
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
@@ -786,23 +996,6 @@ MAX_TRANSITIONS = 6
 # redraw or a mode switch (which rewrites a large fraction of the screen)
 # clears it easily.
 TRANSITION_THRESHOLD = 0.02
-
-
-@dataclass(frozen=True)
-class Still:
-    """One frame chosen as worth keeping.
-
-    Attributes:
-        index: Position of the frame in the sequence it was chosen from.
-        kind: One of "first", "last" or "change".
-        changed: Sampled bytes that differed from the frame captured
-            immediately before it. 0 for the "first" still, since there is
-            no prior frame to compare against.
-    """
-
-    index: int
-    kind: str
-    changed: int
 
 
 def difference(previous: bytes, current: bytes, stride: int = SAMPLE_STRIDE) -> int:
@@ -840,56 +1033,6 @@ def difference(previous: bytes, current: bytes, stride: int = SAMPLE_STRIDE) -> 
     return length - xor_bytes.count(0)
 
 
-def select_stills(
-    frames: Sequence[bytes],
-    limit: int = MAX_TRANSITIONS,
-    threshold: float = TRANSITION_THRESHOLD,
-) -> List[Still]:
-    """Pick the stills worth keeping from one suite's captured frames.
-
-    frames is the sequence of complete frames captured during a single
-    suite run, in capture order. Returns the chosen stills, also in capture
-    order: the first frame, up to `limit` of the largest changes between
-    consecutive frames (each clearing `threshold` as a fraction of sampled
-    bytes), and the last frame. A frame already returned as "first" or
-    "last" is never also returned as a "change", so a two-frame run (where
-    the only candidate change is between the first and last frame) yields
-    no transitions.
-    """
-    if not frames:
-        return []
-
-    if len(frames) == 1:
-        return [Still(index=0, kind="first", changed=0)]
-
-    last_index = len(frames) - 1
-    sampled_length = len(frames[0]) // SAMPLE_STRIDE
-    if sampled_length == 0:
-        return [Still(index=0, kind="first", changed=0)]
-    candidates = []
-    for index in range(1, last_index):
-        changed = difference(frames[index - 1], frames[index])
-        if changed / sampled_length >= threshold:
-            candidates.append((changed, index))
-
-    # Sort by changed count descending, earlier index first on a tie, so
-    # ties resolve the same way every run and the result is reproducible.
-    candidates.sort(key=lambda item: (-item[0], item[1]))
-    chosen = sorted(candidates[:limit], key=lambda item: item[1])
-
-    stills = [Still(index=0, kind="first", changed=0)]
-    for changed, index in chosen:
-        stills.append(Still(index=index, kind="change", changed=changed))
-    stills.append(
-        Still(
-            index=last_index,
-            kind="last",
-            changed=difference(frames[last_index - 1], frames[last_index]),
-        )
-    )
-    return stills
-
-
 # ---------------------------------------------------------------------------
 # Stage 3: the slot loop, which is the spine
 # ---------------------------------------------------------------------------
@@ -910,9 +1053,18 @@ class SpoolTail:
         self.path = path
         self.offset = 0
         self.rows: Optional[List[str]] = None
+        # The menu payload the screen was rendered from. The pane is drawn
+        # from this rather than from the rows: the selected row is bit 7 of a
+        # character byte and the colours are the colour plane, and neither
+        # survives into text, so a pane drawn from the rows shows a menu with
+        # no cursor in it.
+        self.raw: bytes = b""
         self.kind = ""
         self.last_at = 0.0
         self.taken = 0
+        # The last thing a suite did to a device stream, so a pane with no
+        # source can say who took it rather than that it is unavailable.
+        self.stream_event: Dict[str, str] = {}
 
     def poll(self, now: float) -> None:
         try:
@@ -939,11 +1091,22 @@ class SpoolTail:
                 continue
             if not isinstance(record, dict):
                 continue
-            if record.get("kind") in (screen_spool.MENU, screen_spool.TELNET):
+            kind = record.get("kind")
+            if kind in (screen_spool.MENU, screen_spool.TELNET):
                 self.rows = [str(row) for row in record.get("text") or []]
-                self.kind = str(record["kind"])
+                self.raw = _payload(record.get("raw"))
+                self.kind = str(kind)
                 self.last_at = now
                 self.taken += 1
+            elif kind == "stream":
+                # Published by tests/e2e/lib/streams.py for every arm and
+                # every stop a suite made, which is where the answer to "why
+                # did the video stop here" already is.
+                self.stream_event = {
+                    "action": str(record.get("action") or ""),
+                    "stream": str(record.get("stream") or ""),
+                    "suite": str(record.get("suite") or ""),
+                }
 
 
 class AudioCursor:
@@ -960,25 +1123,51 @@ class AudioCursor:
     def __init__(self, timeline: "streams.AudioTimeline", rate: float,
                  fps: int) -> None:
         self.timeline = timeline
-        self.per_slot = int(round(rate / max(1, fps))) * streams.FRAME_BYTES
+        self.rate = rate
+        self.fps = max(1, fps)
+        # Carried as a fraction of a frame rather than rounded away. At 47983
+        # Hz and 10 slots a second a slot is 4798.29 frames, and rounding each
+        # slot to 4798 runs the track about a tenth of a second short over
+        # half an hour, which is drift the file cannot be corrected for
+        # afterwards.
+        self.owed = 0.0
         self.buffer = bytearray()
         self.concealed_bytes = 0
+        # Bytes filled because the buffer was a few packets short of a slot,
+        # which is ordinary jitter rather than loss. Counted apart from the
+        # timeline's own loss figures so a healthy run does not report packets
+        # the device never failed to send.
+        self.filled_bytes = 0
 
     def push(self, pcm: bytes) -> None:
         self.buffer += pcm
 
+    def wanted(self) -> int:
+        """How many bytes this slot is owed, remainder included."""
+        self.owed += self.rate / self.fps
+        frames = int(self.owed)
+        self.owed -= frames
+        return frames * streams.FRAME_BYTES
+
     def take(self) -> bytes:
         """The bytes that belong in this slot, topped up when the device is quiet."""
-        if len(self.buffer) >= self.per_slot:
-            out = bytes(self.buffer[:self.per_slot])
-            del self.buffer[:self.per_slot]
+        want = self.wanted()
+        if len(self.buffer) >= want:
+            out = bytes(self.buffer[:want])
+            del self.buffer[:want]
             return out
         out = bytes(self.buffer)
         self.buffer.clear()
-        short = self.per_slot - len(out)
+        short = want - len(out)
         packets = -(-short // streams.PAYLOAD_BYTES)
-        filler = self.timeline.silence(packets)[:short]
-        self.concealed_bytes += len(filler)
+        if short >= streams.PAYLOAD_BYTES * SILENCE_AFTER_PACKETS:
+            # Enough missing that the stream has stopped rather than arrived
+            # late, which is the case the concealment counters are about.
+            filler = self.timeline.silence(packets)[:short]
+            self.concealed_bytes += len(filler)
+        else:
+            filler = self.timeline.fill(packets)[:short]
+            self.filled_bytes += len(filler)
         return out + filler
 
 
@@ -1023,6 +1212,9 @@ class Recorder:
         self.rearms: Dict[str, int] = {"video": 0, "audio": 0}
         self.menu_requests = 0
         self.menu_failures = 0
+        # Which video timing the audio rate was taken from. See _observe_pal.
+        self.timing = ""
+        self.audio_rate = 0.0
         self.problems: List[str] = []
         self.files: List[str] = []
         self.geometry: Dict[str, Geometry] = {}
@@ -1043,6 +1235,13 @@ class Recorder:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_canvas: Dict[str, bytes] = {}
+        # The same frames without the annotations, which is what a still is.
+        self._plain_canvas: Dict[str, bytes] = {}
+        # The decimation phase of OBS-8.27, and what it dropped.
+        self._phase = 0
+        self.decimated = 0
+        self._rearm_wait = {"video": REARM_AFTER_SECONDS,
+                            "audio": REARM_AFTER_SECONDS}
         # One picker per suite run, so a long suite gets the same number of
         # stills as a short one and the set stays readable.
         self._picker = StillPicker()
@@ -1081,8 +1280,16 @@ class Recorder:
             self.close_sockets()
             return self.problems[-1]
 
+        # Both streams are armed before the audio encoder is built, because
+        # the encoder has to declare a sample rate and the rate follows the
+        # device's video timing.
+        for stream in ("video", "audio"):
+            if getattr(self.options, stream):
+                self._arming.start(stream)
+
         if self.options.audio:
-            rate = streams.RATE_PAL_HZ
+            rate = streams.rate_for(self._observe_pal())
+            self.audio_rate = rate
             self._cursor = AudioCursor(self._audio, rate, self.options.fps)
             self._audio_path = os.path.join(self.directory, AUDIO_NAME)
             self._audio_encoder = Encoder(
@@ -1108,9 +1315,6 @@ class Recorder:
             self.close_sockets()
             return "no encoder could be started"
 
-        for stream in ("video", "audio"):
-            if getattr(self.options, stream):
-                self._arming.start(stream)
         self._running = True
         self._thread = threading.Thread(target=self._loop, name="recorder",
                                         daemon=True)
@@ -1120,19 +1324,72 @@ class Recorder:
     def stop(self) -> Dict[str, object]:
         """End the recording and return its own health record."""
         self._running = False
+        alive = False
         if self._thread is not None:
-            self._thread.join(timeout=30)
+            self._thread.join(timeout=THREAD_JOIN_SECONDS)
+            alive = self._thread.is_alive()
         self._arming.stop_all()
         self.close_sockets()
-        self._write_stills(self._picking)
-        if self.options.stamp:
-            self._write_cards_tail()
+        if alive:
+            # The loop is still composing into the same canvases and writing
+            # to the same encoders. Writing the cards and the stills here
+            # would interleave with it, and every count below would be read
+            # while it was being changed, so the recording is left as it
+            # stands and the record says why it is short.
+            self.problems.append(
+                f"the recording thread was still running after "
+                f"{THREAD_JOIN_SECONDS:.0f}s, so the file has no summary card")
+        else:
+            self._write_stills(self._picking)
+            if self.options.stamp:
+                self._write_cards_tail()
         for encoder in list(self._encoders.values()) + (
                 [self._audio_encoder] if self._audio_encoder else []):
             encoder.close()
+            encoder.reap()
             if encoder.problem:
                 self.problems.append(encoder.problem)
         return self.record()
+
+    def _observe_pal(self) -> bool:
+        """Whether this device is sending PAL frames, from the stream itself.
+
+        The audio sample clock is derived from the video clock, so the rate
+        the audio file declares depends on which timing the device is in. The
+        stream is the only place that says: no route reports it, and a wrong
+        rate is drift the file cannot be corrected for afterwards.
+
+        A device that sends nothing inside the wait is recorded as PAL, which
+        is what every device on this LAN is, and the wait is bounded because a
+        device that is not sending is the case this runs into most.
+        """
+        video = [sock for name, sock in self._sockets if name == "video"]
+        if not video:
+            return True
+        deadline = self.clock() + TIMING_WAIT_SECONDS
+        while self.clock() < deadline:
+            for sock, data, mine in streams.receive(
+                    video, self._addresses, deadline - self.clock()):
+                if not mine:
+                    continue
+                frame = self._assembler.push(data)
+                if frame is None:
+                    continue
+                # Kept rather than dropped: this is a complete frame, and the
+                # first one the recording shows.
+                self._sources.frame = (frame.width, frame.height,
+                                       streams.unpack(frame.packed))
+                self._sources.frame_at = self.clock()
+                self._sources.video_at = self._sources.frame_at
+                self.timing = ("pal" if frame.height > streams.HEIGHT_NTSC
+                               else "ntsc")
+                return self.timing == "pal"
+        # Not a problem: a device that is not sending yet is the ordinary case
+        # for a run whose first suite has not started. The record says the
+        # rate was assumed rather than observed, and `frames_completed` says
+        # whether any video arrived at all.
+        self.timing = "assumed-pal"
+        return True
 
     def close_sockets(self) -> None:
         for _name, sock in self._sockets:
@@ -1206,6 +1463,10 @@ class Recorder:
             self._sources.video_at = now
             frame = self._assembler.push(data)
             if frame is not None:
+                self._phase, keep = decimate(self._phase, self.options.fps)
+                if not keep:
+                    self.decimated += 1
+                    continue
                 if (self._sources.frame is not None
                         and frame.height != self._sources.frame[1]):
                     # A device can change video mode mid-run, and a raw stream
@@ -1218,17 +1479,30 @@ class Recorder:
                 self._sources.frame_at = now
 
     def _emit(self, state: RunState, recompose: bool) -> None:
-        wall = self.started_wall + self.slots / max(1, self.options.fps)
+        # The real clock rather than a slot count: under sustained shedding a
+        # count of slots falls behind the records the stamp is there to be
+        # joined to.
+        wall = self.wall_clock()
         position = self.lead_in + self.slots / max(1, self.options.fps)
         budget = 1.0 / max(1, self.options.fps)
         if self._audio_encoder is not None and self._cursor is not None:
             self._audio_encoder.write(self._cursor.take(), budget=budget)
+        stale = bool(self._spool.last_at
+                     and self.clock() - self._spool.last_at
+                     > STALE_AFTER_SECONDS)
         for name, encoder in self._encoders.items():
             if recompose or name not in self._last_canvas:
-                canvas = self._composers[name].compose(
+                composer = self._composers[name]
+                canvas = composer.compose(
                     self._sources.frame, self._spool.rows,
-                    self._spool.kind or "closed", state, position, wall)
+                    self._spool.kind or "closed", state, position, wall,
+                    harness_raw=self._spool.raw, stale=stale,
+                    cause=self._spool.stream_event)
                 self._last_canvas[name] = canvas
+                self._plain_canvas[name] = composer.plain
+            # One per encoder per slot, so a separate layout counts two for a
+            # slot neither file took. Whether the encoder was slow or has
+            # died is in `problems`, which is where the difference is.
             if not encoder.write(self._last_canvas[name], budget=budget):
                 self.shed += 1
         self.slots += 1
@@ -1249,12 +1523,15 @@ class Recorder:
             self._picking = key
         if not key:
             return
-        name = sorted(self._last_canvas)[0] if self._last_canvas else ""
+        name = sorted(self._plain_canvas)[0] if self._plain_canvas else ""
         if not name:
             return
         ranked = (self._sources.frame[2] if self._sources.frame
                   else "\n".join(self._spool.rows or []).encode())
-        self._picker.offer(self._last_canvas[name], self._spool.rows, ranked)
+        # The frame without the stamp, the edge and the bar. A still is what
+        # the machine showed, and this module's own text burned across it is
+        # not evidence of anything.
+        self._picker.offer(self._plain_canvas[name], self._spool.rows, ranked)
 
     def _write_stills(self, stem: str) -> None:
         if not stem:
@@ -1284,17 +1561,25 @@ class Recorder:
                              ("audio", self._sources.audio_at)):
             if not getattr(self.options, stream):
                 continue
-            if last and now - last < REARM_AFTER_SECONDS:
+            wait = self._rearm_wait[stream]
+            if last and now - last < wait:
                 continue
-            if not last and now - (self.slots / max(1, self.options.fps)) < \
-                    REARM_AFTER_SECONDS:
+            if not last and now - (self.slots / max(1, self.options.fps)) < wait:
                 continue
-            # One PUT, no retry, from outside the loop's own budget, so a
+            # One PUT, one attempt, with a timeout well under a slot, so a
             # device that accepts a connection and never answers cannot stall
-            # the recording.
+            # the loop that has to keep draining the sockets.
             self._arming.started.discard(stream)
-            if self._arming.start(stream):
+            if self._arming.start(stream, timeout=REARM_TIMEOUT_SECONDS,
+                                  retries=1):
                 self.rearms[stream] += 1
+                self._rearm_wait[stream] = REARM_AFTER_SECONDS
+            else:
+                # A device that is off the network is the case this runs into
+                # most, and asking it every six seconds for ten minutes is a
+                # hundred requests that all fail the same way.
+                self._rearm_wait[stream] = min(
+                    REARM_BACKOFF_CEILING_SECONDS, wait * 2)
             if stream == "video":
                 self._sources.video_at = now
             else:
@@ -1310,23 +1595,29 @@ class Recorder:
         """
         if not self.options.menu or not self._tail.state.between_suites:
             return
-        if self._spool.last_at and now - self._spool.last_at < REARM_AFTER_SECONDS:
+        if self._spool.last_at and now - self._spool.last_at < MENU_QUIET_SECONDS:
             return
         floor = self.options.menu_min_interval_ms / 1000.0
         if floor and now - getattr(self, "_last_menu_at", 0.0) < floor:
             return
         self._last_menu_at = now
         try:
-            body = self.api.machine.menu_screen()
+            body = self.api.machine.menu_screen(
+                timeout=MENU_TIMEOUT_SECONDS, retries=1)
         except Exception:  # noqa: BLE001 - a read may not end a recording
             self.menu_failures += 1
             return
         self.menu_requests += 1
         if body is None:
             self._spool.rows = None
+            self._spool.raw = b""
             self._spool.kind = "closed"
             return
-        self._spool.rows = self.api.machine.menu_rows()
+        # Decoded from the payload this already holds. Asking the device for
+        # the rows would be a second request for the screen it just answered
+        # with, against a device that serves about four connections at once.
+        self._spool.rows = self.api.machine.rows_of(body)
+        self._spool.raw = body
         self._spool.kind = screen_spool.MENU
         self._spool.last_at = now
 
@@ -1340,9 +1631,20 @@ class Recorder:
         which is why the stamp's own row is truncated from the right rather
         than shortened.
         """
-        lines = ["E2E GATE RUN"] + [
-            f"{name}: {value}" for name, value in sorted(self.identity.items())
-            if value]
+        # In the order a reader asks the questions in, rather than
+        # alphabetically: which machine, then what was on it, then which run
+        # this was and when it started.
+        order = ("target", "address", "product", "firmware", "fpga", "commit",
+                 "branch", "ci", "host")
+        named = [(name, self.identity[name]) for name in order
+                 if self.identity.get(name)]
+        named += [(name, value) for name, value in sorted(self.identity.items())
+                  if value and name not in order]
+        lines = ["E2E GATE RUN"] + [f"{name}: {value}" for name, value in named]
+        lines.append(f"started: {format_wall(self.started_wall)}")
+        planned = len(self._tail.poll().segments)
+        if planned:
+            lines.append(f"suite runs planned: {planned}")
         self._hold(lines, interval)
         self.lead_in = self.slots * interval
 
@@ -1392,15 +1694,25 @@ class Recorder:
             "frames": self.slots,
             "frames_shed": self.shed,
             "frames_padded": self.padded,
+            "frames_decimated": self.decimated,
             "rearms": dict(self.rearms),
             "menu_from_tap": self._spool.taken,
             "menu_requested": self.menu_requests,
             "menu_failed": self.menu_failures,
             "foreign_senders": sum(self.foreign.values()),
         }
+        if self.audio_rate:
+            found["audio_rate"] = self.audio_rate
+            found["timing"] = self.timing
         found.update(self._assembler.counts())
         found.update({f"audio_{name}": value
                       for name, value in self._audio.counts().items()})
+        if self._cursor is not None:
+            # Apart from the loss figures above: these are the bytes a slot
+            # was short because a packet had not arrived yet, which is jitter
+            # rather than a stream that stopped.
+            found["audio_filled_bytes"] = self._cursor.filled_bytes
+            found["audio_concealed_bytes"] = self._cursor.concealed_bytes
         if self.problems:
             found["problems"] = list(self.problems)
         return found
@@ -1525,9 +1837,6 @@ class StillPicker:
     Online rather than over a stored sequence, because a suite run is minutes
     of frames and holding them all would cost more memory than the whole
     recording. It keeps the first, the last, and the largest changes so far,
-    which is the same answer `select_stills` gives over a sequence and the same
-    ranking.
-
     Ranked on the device's packed frame when there is one and on the harness
     screen when there is not, so a run with `--no-record-video` still gets the
     set the report inlines.

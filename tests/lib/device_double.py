@@ -195,12 +195,14 @@ class DeviceDouble:
         self.heap_min_ever_free = 1_200_000
         self.heap_total = 2_000_000
         self.mounted_image = ""
-        # When set, a keystroke moves which row carries the reverse-video bit
-        # rather than changing any text, which is what moving a cursor through
-        # a listing looks like on the wire.
+        # What the double was asked to stream, and where to. A caller that has
+        # to leave the streams as it found them is tested against these.
         self.streams_started: List[str] = []
         self.streams_stopped: List[str] = []
         self.stream_address: Dict[str, str] = {}
+        # When set, a keystroke moves which row carries the reverse-video bit
+        # rather than changing any text, which is what moving a cursor through
+        # a listing looks like on the wire.
         self.move_selection_on_input = False
         self.selected_row = 0
         # The settings the observability code and the UI backend read. Not the
@@ -427,14 +429,6 @@ class DeviceDouble:
                 self.mounted_image = str(params.get("image", ""))
             elif action in ("remove", "unlink"):
                 self.mounted_image = ""
-        # When set, a keystroke moves which row carries the reverse-video bit
-        # rather than changing any text, which is what moving a cursor through
-        # a listing looks like on the wire.
-        self.streams_started: List[str] = []
-        self.streams_stopped: List[str] = []
-        self.stream_address: Dict[str, str] = {}
-        self.move_selection_on_input = False
-        self.selected_row = 0
         return 200, self._json({}), "application/json"
 
     def _config(self, path):

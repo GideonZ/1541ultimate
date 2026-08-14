@@ -18,6 +18,9 @@ from report import Failure
 
 import streams
 
+# A PAL frame is 272 lines and every packet carries four of them.
+MAX_PACKETS_PER_FRAME = -(-272 // streams.LINES_PER_PACKET)
+
 # The public names a suite already imports, answered by the one place that
 # knows them.
 MULTICAST_GROUP = streams.VIDEO_GROUP
@@ -47,7 +50,10 @@ class VicStreamCapture:
         frame rather than shifting the rest of the picture upward.
         """
         assembler = streams.FrameAssembler()
-        for _ in range(streams.VIDEO_PACKET_BYTES):
+        # Two frames' worth of packets at the largest geometry, which is the
+        # bound on how many packets one complete frame can cost when the read
+        # starts partway through a frame or the network drops a few.
+        for _ in range(MAX_PACKETS_PER_FRAME * 2):
             try:
                 data, _sender = self.sock.recvfrom(2048)
             except OSError as exc:

@@ -1,2 +1,2 @@
-{"kind": "check", "index": 1, "label": "the device is well", "verdict": "FAIL", "extra": "the listener is gone", "seconds": 0.0001, "scenario": null, "time": 1786703009.3979294, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 1}
-{"kind": "check", "index": 1, "label": "the device is well", "verdict": "OK", "extra": "recovered", "seconds": 0.0, "scenario": null, "time": 1786703009.473286, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 2}
+{"kind": "check", "index": 1, "label": "the device is well", "verdict": "FAIL", "extra": "the listener is gone", "seconds": 0.0001, "scenario": null, "time": 1786705369.9654737, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the device is well", "verdict": "OK", "extra": "recovered", "seconds": 0.0, "scenario": null, "time": 1786705370.028939, "suite": "flaky", "target": "127.0.0.1@localhost", "attempt": 2}

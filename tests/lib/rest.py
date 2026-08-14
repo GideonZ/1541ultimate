@@ -325,7 +325,16 @@ class RestClient:
                 headers: Optional[Dict[str, str]] = None,
                 use_password: bool = True,
                 idempotent: bool = False,
-                timeout: Optional[float] = None) -> Response:
+                timeout: Optional[float] = None,
+                retries: Optional[int] = None) -> Response:
+        """One request, with the transport's retry rule applied.
+
+        `retries` is for a caller that must bound how long one call can take
+        rather than get an answer: the recorder issues its requests from a
+        loop that has to keep draining sockets, so it asks for one attempt and
+        treats a failure as an answer. Everything else takes the default,
+        which is the transport rule the rest of the harness relies on.
+        """
         if payload is not None and body is not None:
             raise Failure("request takes payload or body, not both")
 
@@ -349,7 +358,8 @@ class RestClient:
         # writing them once.
         # Retryability is decided by may_retry, the one copy of that rule.
         last_exc: Optional[BaseException] = None
-        for attempt in range(TRANSPORT_RETRIES):
+        allowed = TRANSPORT_RETRIES if retries is None else max(1, retries)
+        for attempt in range(allowed):
             started = time.monotonic()
             try:
                 with urllib.request.urlopen(
@@ -361,7 +371,7 @@ class RestClient:
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
                 sent = not isinstance(exc, urllib.error.URLError)
-                if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                if may_retry(method, sent, idempotent) and attempt + 1 < allowed:
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                     continue
                 record_action(method, path, started, attempt + 1, None, None, exc,

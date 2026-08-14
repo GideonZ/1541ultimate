@@ -311,9 +311,15 @@ class MachineApi:
         return {name: int(payload.get(name, 0))
                 for name in ("free", "min_ever_free", "total")}
 
-    def menu_screen(self) -> Optional[bytes]:
-        """The rendered menu screen, or None when no menu is open (HTTP 404)."""
-        code, _, body = self._rest.request("GET", "/v1/machine:menu_screen")
+    def menu_screen(self, timeout: Optional[float] = None,
+                    retries: Optional[int] = None) -> Optional[bytes]:
+        """The rendered menu screen, or None when no menu is open (HTTP 404).
+
+        `timeout` and `retries` are for a caller that has to bound how long
+        the call can take; see rest.RestClient.request.
+        """
+        code, _, body = self._rest.request("GET", "/v1/machine:menu_screen",
+                                           timeout=timeout, retries=retries)
         if code == 404:
             return None
         if code != 200:
@@ -358,8 +364,16 @@ class MachineApi:
         wherever the firmware drew it.
         """
         body = self.menu_screen()
-        if body is None:
-            return []
+        return [] if body is None else self.rows_of(body)
+
+    @staticmethod
+    def rows_of(body: bytes) -> List[str]:
+        """The same decode, for a caller that already holds the payload.
+
+        Separate so that reading the screen and reading its text is one
+        request rather than two: the device serves about four concurrent HTTP
+        connections, and a caller that wants both was paying twice.
+        """
         chars = "".join(chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " "
                         for c in body[:SCREEN_CELLS])
         return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
@@ -704,15 +718,19 @@ class StreamsApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def start(self, stream: str, **params: object) -> None:
+    def start(self, stream: str, timeout: Optional[float] = None,
+              retries: Optional[int] = None, **params: object) -> None:
         path = f"/v1/streams/{_quote(stream)}:start"
-        code, _, body = self._rest.request("PUT", path, params=params or None)
+        code, _, body = self._rest.request("PUT", path, params=params or None,
+                                           timeout=timeout, retries=retries)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def stop(self, stream: str) -> None:
+    def stop(self, stream: str, timeout: Optional[float] = None,
+             retries: Optional[int] = None) -> None:
         path = f"/v1/streams/{_quote(stream)}:stop"
-        code, _, body = self._rest.request("PUT", path)
+        code, _, body = self._rest.request("PUT", path, timeout=timeout,
+                                           retries=retries)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 

@@ -26,9 +26,8 @@ GLYPH_HEIGHT = 8
 # (0-255) so callers can tell "no glyph" apart from "glyph 0".
 NO_GLYPH = -1
 
-# This file lives at <repo>/tests/e2e/lib/_glyphs_draft.py; both the ROM
-# image and menu_screen_tool.py are addressed from the repo root so the
-# module works regardless of the caller's current working directory.
+# Both the ROM image and menu_screen_tool.py are addressed from the repository
+# root, so this works whatever the caller's current working directory is.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHAR_ROM_PATH = _REPO_ROOT / "roms" / "characters.901225-01.bin"
 _MENU_SCREEN_TOOL_PATH = _REPO_ROOT / "tools" / "api" / "menu_screen_tool.py"
@@ -52,7 +51,7 @@ def _load_module_by_path(module_name: str, path: Path) -> types.ModuleType:
     return module
 
 
-_menu_screen_tool = _load_module_by_path("_glyphs_draft_menu_screen_tool", _MENU_SCREEN_TOOL_PATH)
+_menu_screen_tool = _load_module_by_path("glyphs_menu_screen_tool", _MENU_SCREEN_TOOL_PATH)
 c64_rgb = _menu_screen_tool.c64_rgb
 menu_char_to_glyph = _menu_screen_tool.menu_char_to_glyph
 split_colour_byte = _menu_screen_tool.split_colour_byte
@@ -131,6 +130,28 @@ def screen_code_for(character: str) -> int:
         return code - 0x60
 
     return NO_GLYPH
+
+
+# One glyph's eight rows, already expanded to RGB, keyed by the character and
+# the colour pair it is drawn in. Bounded by the character set times the pairs
+# a caller actually uses, which for this module's callers is a handful.
+_GLYPH_ROWS: "dict" = {}
+
+
+def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> "list":
+    key = (character, fg_rgb, bg_rgb)
+    made = _GLYPH_ROWS.get(key)
+    if made is None:
+        made = []
+        for row_bits in _rom_rows_for(character):
+            row = bytearray()
+            for col_offset in range(GLYPH_WIDTH):
+                # Bit 7 is the leftmost pixel of the row, per the ROM layout
+                # note: col_offset 0 must read bit 7, not bit 0.
+                row += fg_rgb if (row_bits >> (7 - col_offset)) & 1 else bg_rgb
+            made.append(bytes(row))
+        _GLYPH_ROWS[key] = made
+    return made
 
 
 def _rom_rows_for(character: str) -> bytes:
@@ -249,6 +270,10 @@ class Canvas:
         fg_rgb = bytes(c64_rgb(colour))
         bg_rgb = bytes(c64_rgb(background)) if background is not None else None
 
+        if bg_rgb is not None:
+            self._draw_opaque_text(x, y, text, fg_rgb, bg_rgb)
+            return
+
         cursor_x = x
         for character in text:
             rows = _rom_rows_for(character)
@@ -269,6 +294,52 @@ class Canvas:
                     elif bg_rgb is not None:
                         self._set_pixel(px, py, bg_rgb)
             cursor_x += GLYPH_WIDTH
+
+    def _draw_opaque_text(self, x: int, y: int, text: str,
+                          fg_rgb: bytes, bg_rgb: bytes) -> None:
+        """The whole-cell path: one slice assignment per glyph row.
+
+        A 60x24 harness screen is 1440 cells, and a per-pixel loop over it is
+        about 92,000 interpreted writes on every frame that is recomposed. The
+        rows of one glyph in one colour pair are the same every time they are
+        drawn, so they are built once and cached, and drawing becomes one
+        slice assignment per row.
+        """
+        stride = self.width * 3
+        cursor_x = x
+        for character in text:
+            if (cursor_x >= self.width or cursor_x + GLYPH_WIDTH <= 0
+                    or y >= self.height or y + GLYPH_HEIGHT <= 0):
+                cursor_x += GLYPH_WIDTH
+                continue
+            if (cursor_x < 0 or cursor_x + GLYPH_WIDTH > self.width
+                    or y < 0 or y + GLYPH_HEIGHT > self.height):
+                # Partly outside the canvas, which the cached whole rows
+                # cannot express. Rare enough to be worth no second cache.
+                self._draw_clipped_glyph(cursor_x, y, character, fg_rgb, bg_rgb)
+                cursor_x += GLYPH_WIDTH
+                continue
+            rows = _glyph_rows(character, fg_rgb, bg_rgb)
+            offset = y * stride + cursor_x * 3
+            for row in rows:
+                self._pixels[offset:offset + GLYPH_WIDTH * 3] = row
+                offset += stride
+            cursor_x += GLYPH_WIDTH
+
+    def _draw_clipped_glyph(self, x: int, y: int, character: str,
+                            fg_rgb: bytes, bg_rgb: bytes) -> None:
+        rows = _rom_rows_for(character)
+        for row_offset in range(GLYPH_HEIGHT):
+            py = y + row_offset
+            if py < 0 or py >= self.height:
+                continue
+            row_bits = rows[row_offset]
+            for col_offset in range(GLYPH_WIDTH):
+                px = x + col_offset
+                if px < 0 or px >= self.width:
+                    continue
+                bit_set = (row_bits >> (7 - col_offset)) & 1
+                self._set_pixel(px, py, fg_rgb if bit_set else bg_rgb)
 
     def to_rgb(self) -> bytes:
         """Return the buffer as width*height*3 bytes, row major, for an encoder."""

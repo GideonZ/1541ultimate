@@ -1278,6 +1278,11 @@ def describe_file(relative: str) -> str:
         return "subtitles naming the suite and check at each moment"
     if name.endswith(".mp4"):
         return "the recording: the harness pane, the device's video and its audio"
+    if name == "audio.m4a":
+        # The finishing pass muxes this into every video file and removes it,
+        # so a tree that still has one is a tree whose run did not finish.
+        return ("the run's audio track, left behind by a recording that was "
+                "not finished")
     return "part of this run"
 
 

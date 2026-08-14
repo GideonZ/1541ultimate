@@ -74,12 +74,17 @@ class AvStreamCapture:
         self.started = False
 
     def start(self) -> None:
+        """Arm both streams, or leave neither armed.
+
+        Arming reports a refusal rather than raising, so this checks the
+        answer. A capture that carried on with one stream armed would fail
+        later as an empty capture, which says nothing about what went wrong.
+        """
         self.arming.start("video")
-        try:
-            self.arming.start("audio")
-        except Exception:
+        if not self.arming.start("audio") and "audio" not in self.arming.started:
             self.arming.stop("video")
-            raise
+            raise Failure("the audio stream could not be started: "
+                          + self.arming.failures.get("audio", "no reason given"))
         self.started = True
 
     def capture(self, seconds: float) -> None:

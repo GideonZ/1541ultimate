@@ -39,9 +39,11 @@ Two rules about the addressing, both of which look like accidents and are not:
 """
 
 import os
+import select
 import socket
 import struct
 import sys
+import time
 from array import array
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Set
@@ -54,14 +56,6 @@ import targets as targets_lib  # noqa: E402
 from report import Failure  # noqa: E402
 
 import screens as screen_spool  # noqa: E402
-
-# The wire formats, from the vendor's data-streams documentation and confirmed
-# against what the device sends.
-VIDEO_PACKET_BYTES = 780
-VIDEO_HEADER_BYTES = 12
-VIDEO_LINE_BYTES = 192
-AUDIO_PACKET_BYTES = 770
-AUDIO_HEADER_BYTES = 2
 
 # Re-exported so a caller has one name for each.
 VIDEO_GROUP = targets_lib.VIDEO_GROUP
@@ -154,7 +148,9 @@ class Arming:
             port = handle.video_port if handle else VIDEO_PORT
         return f"{group}:{port}"
 
-    def start(self, stream: str, already_arriving: bool = False) -> bool:
+    def start(self, stream: str, already_arriving: bool = False,
+              timeout: Optional[float] = None,
+              retries: Optional[int] = None) -> bool:
         """Ask the device to send `stream`, unless it already is.
 
         `already_arriving` is the caller saying it has seen packets from its
@@ -166,7 +162,11 @@ class Arming:
         if already_arriving or stream in self.started:
             return False
         try:
-            self.api.streams.start(stream, ip=self.address(stream))
+            # `timeout` and `retries` are how a caller on a loop that must
+            # keep draining sockets bounds this call; see
+            # rest.RestClient.request.
+            self.api.streams.start(stream, ip=self.address(stream),
+                                   timeout=timeout, retries=retries)
         except Failure as exc:
             self.failures[stream] = str(exc)
             self.publish("start-failed", stream)
@@ -177,15 +177,22 @@ class Arming:
         return True
 
     def stop(self, stream: str) -> bool:
-        """Stop `stream`, and only when this started it."""
+        """Stop `stream`, and only when this started it.
+
+        The stream stays in `started` until the device has answered. A stop
+        that failed left the stream running, and forgetting it here would
+        leave the device sending to a socket nobody is reading with nothing
+        recording that it does.
+        """
         if stream not in self.started:
             return False
-        self.started.discard(stream)
         try:
             self.api.streams.stop(stream)
         except Failure as exc:
             self.failures[stream] = str(exc)
+            self.publish("stop-failed", stream)
             return False
+        self.started.discard(stream)
         self.publish("stop", stream)
         return True
 
@@ -209,16 +216,13 @@ class Arming:
 
 def receive(sockets: Sequence[socket.socket], addresses: Set[str],
             timeout: float) -> Iterable:
-    """Every packet from `addresses` that arrives within `timeout`.
+    """Every packet that arrives within `timeout`.
 
-    Yields `(socket, data)`. A packet from anywhere else is not this device's
-    and is dropped by the caller, which counts it: on a multi-target run the
-    other sender is another target of the same run, and stopping it would break
-    that recording.
+    Yields `(socket, data, mine)`, where `mine` says the sender was one of
+    `addresses`. A packet from anywhere else is dropped by the caller, which
+    counts it: on a multi-target run the other sender is another target of the
+    same run, and stopping it would break that recording.
     """
-    import select
-    import time
-
     deadline = time.monotonic() + timeout
     while True:
         remaining = deadline - time.monotonic()
@@ -238,22 +242,23 @@ def receive(sockets: Sequence[socket.socket], addresses: Set[str],
 # -------------------------------------------------------------------------
 
 
-"""Reassemble VIC video frames from the raw UDP packet stream.
-
-Each datagram on the wire is 12 bytes of header followed by 768 bytes of
-4-bit-per-pixel VIC colour indices, packed two pixels to a byte, low nibble
-first. A frame is many packets; packets can be lost, duplicated or delivered
-out of order by the network, and the 16-bit sequence and frame counters both
-wrap. This module turns that packet stream into complete, correctly placed
-`Frame` objects and keeps loss/reorder counters that account for every
-packet pushed into it.
-"""
+# Each datagram is 12 bytes of header followed by 768 bytes of 4-bit-per-pixel
+# VIC colour indices, packed two pixels to a byte, low nibble first. A frame is
+# many packets; packets can be lost, duplicated or delivered out of order, and
+# the 16-bit sequence and frame counters both wrap. FrameAssembler turns that
+# packet stream into complete, correctly placed Frame objects and keeps
+# loss and reorder counters that account for every packet pushed into it.
 
 # Wire layout, all little-endian (see module docstring). "<HHHHBBH" reads:
 # seq(2) frame(2) line+last-flag(2) width(2) lines_per_packet(1) bits_per_pixel(1) encoding(2)
 # which is exactly the 12 header bytes; struct.calcsize confirms this at import time below.
 _HEADER_FORMAT = "<HHHHBBH"
 HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
+
+# How many frames may be part-assembled at once. Two is enough for the one
+# real case, which is the tail of one frame arriving after the head of the
+# next; more would hold on to frames whose last packet was lost.
+MAX_FRAMES_IN_PROGRESS = 2
 
 # Fixed by the hardware encoder, not negotiated, so a packet advertising any
 # other value is not a packet from this stream and gets dropped as malformed.
@@ -410,9 +415,10 @@ class FrameAssembler:
     """
 
     def __init__(self) -> None:
-        self._builder: Optional[_FrameBuilder] = None
         self._last_seq: Optional[int] = None
         self._last_completed_frame: Optional[int] = None
+        # Keyed by frame number, in arrival order. See push.
+        self._builders: "Dict[int, _FrameBuilder]" = {}
         self._counts: Dict[str, int] = {
             "packets": 0,
             "packets_dropped": 0,
@@ -454,22 +460,29 @@ class FrameAssembler:
 
         self._account_packet_sequence(seq)
 
-        if self._builder is None or self._builder.frame_number != frame_number:
-            # Either the first packet seen, or a packet for a different
-            # frame than the one in progress. The frame in progress (if any)
-            # never got its last packet and all its lines while it was
-            # current, so it is abandoned rather than force-completed: a
-            # short frame would misreport what the hardware actually sent.
-            self._builder = _FrameBuilder(frame_number)
+        # A few frames are kept in progress at once rather than one. The
+        # network can deliver the tail of frame N after the head of frame
+        # N+1, and a single builder would throw N+1 away on that packet and
+        # then throw N away on the next one, so a stream with any reordering
+        # in it completes almost nothing. Bounded, because a frame whose last
+        # packet was lost is never completed and would otherwise be held for
+        # the length of the run.
+        builder = self._builders.get(frame_number)
+        if builder is None:
+            builder = _FrameBuilder(frame_number)
+            self._builders[frame_number] = builder
+            while len(self._builders) > MAX_FRAMES_IN_PROGRESS:
+                # The oldest by arrival, which is what dict order is here.
+                self._builders.pop(next(iter(self._builders)))
 
         payload = data[HEADER_SIZE:]
-        self._builder.add_packet(line, is_last, payload)
+        builder.add_packet(line, is_last, payload)
 
-        if not self._builder.is_complete():
+        if not builder.is_complete():
             return None
 
-        frame = self._builder.finish()
-        self._builder = None
+        frame = builder.finish()
+        self._builders.pop(frame_number, None)
         self._account_completed_frame(frame.number)
         return frame
 
@@ -517,25 +530,16 @@ class FrameAssembler:
 # -------------------------------------------------------------------------
 
 
-"""Concealment timeline for the device's UDP audio stream.
-
-The stream carries no timestamp. Each datagram is 770 bytes: a 2-byte
-little-endian sequence number followed by 768 bytes of PCM (192 stereo
-frames, 16-bit signed little-endian, left then right per frame). The
-sequence number is the only thing that says where a packet belongs in
-time, so it is the clock this module reconstructs against.
-
-The sample rate is derived from the video clock, not a fixed 48 kHz, and
-differs between PAL and NTSC (see RATE_PAL_HZ / RATE_NTSC_HZ below). That
-matters for callers computing durations from a frame count; it does not
-change how this module orders packets, since ordering runs purely off the
-16-bit sequence counter.
-
-AudioTimeline takes packets in arrival order (which need not be sequence
-order) and produces the PCM that should be appended to a continuous
-recording, concealing loss with a decaying fill instead of leaving a gap
-or a hole of zeros.
-"""
+# The audio stream carries no timestamp. Each datagram is 770 bytes: a 2-byte
+# little-endian sequence number followed by 768 bytes of PCM (192 stereo
+# frames, 16-bit signed little-endian, left then right per frame). The sequence
+# number is the only thing that says where a packet belongs in time, so it is
+# the clock AudioTimeline reconstructs against.
+#
+# The sample rate is derived from the video clock, not a fixed 48 kHz, and
+# differs between PAL and NTSC (see RATE_PAL_HZ and RATE_NTSC_HZ below). That
+# matters for a caller computing durations from a frame count; it does not
+# change how packets are ordered, which runs purely off the 16-bit counter.
 
 # Wire format
 #
@@ -548,6 +552,15 @@ FRAME_BYTES = CHANNELS * BYTES_PER_SAMPLE  # 4 bytes per interleaved L/R frame
 FRAMES_PER_PACKET = 192  # fixed by the device; ~4ms of audio per datagram
 PAYLOAD_BYTES = FRAMES_PER_PACKET * FRAME_BYTES  # 768
 PACKET_BYTES = HEADER_BYTES + PAYLOAD_BYTES  # 770, the only valid datagram size
+
+# One name per wire constant for a caller outside this module, each bound to
+# the value this module derives rather than restating it. Two spellings of one
+# wire fact are two chances to disagree about it.
+VIDEO_PACKET_BYTES = PACKET_SIZE
+VIDEO_HEADER_BYTES = HEADER_SIZE
+VIDEO_LINE_BYTES = BYTES_PER_LINE
+AUDIO_PACKET_BYTES = PACKET_BYTES
+AUDIO_HEADER_BYTES = HEADER_BYTES
 
 # The sequence number is a 16-bit counter, so it wraps at 65536 and every
 # delta between packets must be taken modulo this to mean anything.
@@ -632,8 +645,8 @@ def _fade_channel(last_sample: int, next_sample: int, n: int) -> List[int]:
     """Build n concealment samples for one channel bridging a gap.
 
     The shape is: hold-and-fade the last real sample toward zero for most
-    of the gap (this is REQUIREMENT: real SID output rides on a DC offset,
-    so silence is not zero for this signal; fading toward zero rather than
+    of the gap (real SID output rides on a DC
+    offset, so silence is not zero for this signal, and fading toward zero rather than
     stepping to it avoids a click at the start of the gap), then a short
     linear ramp (RAMP_IN_FRAMES) from near-zero into next_sample so the
     packet that ends the gap is not itself a step away from the fill.
@@ -837,6 +850,16 @@ class AudioTimeline:
         self._counts["packets_written"] += 1
         return Written(pcm=payload, concealed_packets=0)
 
+    def fill(self, packets: int) -> bytes:
+        """Concealment for a gap the caller does not attribute to loss.
+
+        The same fade as `silence`, without the loss accounting: a slot-based
+        consumer asks for a fixed number of bytes every slot and is a packet
+        or two short whenever one arrives late, and counting that as loss
+        would report a healthy stream as lossy.
+        """
+        return self._fade(packets)
+
     def silence(self, packets: int) -> bytes:
         """Concealment for a caller-observed gap with no packet at all.
 
@@ -851,6 +874,14 @@ class AudioTimeline:
         """
         if packets <= 0:
             return b""
+        self._counts["packets_lost"] += packets
+        self._counts["packets_concealed"] += packets
+        return self._fade(packets)
+
+    def _fade(self, packets: int) -> bytes:
+        """The concealment itself, with no accounting of its own."""
+        if packets <= 0:
+            return b""
         n = packets * FRAMES_PER_PACKET
         last_l = self._last_l if self._has_samples else 0
         last_r = self._last_r if self._has_samples else 0
@@ -860,8 +891,6 @@ class AudioTimeline:
             self._last_l = left[-1]
             self._last_r = right[-1]
             self._has_samples = True
-        self._counts["packets_lost"] += packets
-        self._counts["packets_concealed"] += packets
         return _interleave(left, right)
 
     def counts(self) -> Dict[str, int]:

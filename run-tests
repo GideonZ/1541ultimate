@@ -75,6 +75,10 @@ DEVICE_RECOVERY_POLL_SECONDS = 2.0
 # 30 second default one probe could outlast the whole budget on a device that
 # accepts connections but never answers, and the budget would mean nothing.
 DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS = 5.0
+# How long the recorder's own requests wait. Short, because both of them are
+# issued from a loop that has to keep draining the device's streams, and short
+# again because a failure there is an answer: the next slot asks again.
+RECORDER_TIMEOUT_SECONDS = 2.0
 # After the recovery command has run, the device is booting rather than busy,
 # so it gets its own longer budget to come back in.
 POST_RECOVERY_BUDGET_SECONDS = 180.0
@@ -659,7 +663,12 @@ def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
         keyint=args.record_keyint,
         menu_min_interval_ms=args.record_menu_min_interval_ms,
         ffmpeg_args=args.record_ffmpeg_args)
-    made = recorder_lib.Recorder(args.jsonl_dir, target, device.probe, options,
+    # Its own client rather than the runner's probe. The recorder's PUTs run
+    # on its own thread and would advance the probe's mutation counter, which
+    # api.MachineApi.reset compares against to decide whether the device has
+    # been touched since the last reset.
+    api = UltimateApi(target, device.password, RECORDER_TIMEOUT_SECONDS)
+    made = recorder_lib.Recorder(args.jsonl_dir, target, api, options,
                                  identity=recording_identity(target, device))
     problem = made.start()
     if problem:
@@ -2353,71 +2362,77 @@ def main(argv: List[str]) -> int:
         if args.syslog else ""
     recording = start_recorder(args, target, device)
 
-    results: List[Result] = []
-    started = time.monotonic()
-    stopped = False
-    device_unhealthy = False
+    try:
+        results: List[Result] = []
+        started = time.monotonic()
+        stopped = False
+        device_unhealthy = False
 
-    for index, category in enumerate(categories):
-        suites = selected_suites(category, args.suite, args.manual)
-        if not suites:
-            continue
-        # The device needs a moment between categories. The perf benchmark
-        # leaves the httpd saturated: measured live, listener-soak's first REST
-        # call timed out at 30 seconds when it started straight after one, while
-        # the same suite passes on its own. The device frees an abandoned HTTP
-        # connection after about 18 seconds, so waiting for it to answer again
-        # is what makes --all mean anything. It costs nothing when it is idle.
-        if index:
-            print()
-            report.step_start(f"settle: device answers before {category}")
-            if device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
-                report.check_ok()
-            else:
-                report.check_warn("still busy; starting anyway")
-        passes = modes if category == "e2e" else [""]
-        for mode in passes:
-            for suite in suites:
-                result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
-                results.append(result)
-                if result.device_unhealthy:
-                    print()
-                    report.detail("the device could not be made healthy; abandoning the "
-                                  "run rather than failing every suite left for the "
-                                  "same reason")
-                    if not options.recover_command:
-                        report.detail("--recover-command names a command that could "
-                                      "have been tried here")
-                    stopped = True
-                    device_unhealthy = True
-                    break
-                if result.verdict == report.FAIL and options.stop_on_fail:
-                    stopped = True
-                    break
-            # Teardown still runs after --stop-on-fail, where the device is
-            # there to be cleaned; it is only pointless once the device is gone.
-            if category == "e2e" and not device_unhealthy:
+        for index, category in enumerate(categories):
+            suites = selected_suites(category, args.suite, args.manual)
+            if not suites:
+                continue
+            # The device needs a moment between categories. The perf benchmark
+            # leaves the httpd saturated: measured live, listener-soak's first REST
+            # call timed out at 30 seconds when it started straight after one, while
+            # the same suite passes on its own. The device frees an abandoned HTTP
+            # connection after about 18 seconds, so waiting for it to answer again
+            # is what makes --all mean anything. It costs nothing when it is idle.
+            if index:
                 print()
-                if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
-                    results.append(Result(category, mode, "teardown", report.FAIL, 0.0))
+                report.step_start(f"settle: device answers before {category}")
+                if device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
+                    report.check_ok()
+                else:
+                    report.check_warn("still busy; starting anyway")
+            passes = modes if category == "e2e" else [""]
+            for mode in passes:
+                for suite in suites:
+                    result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
+                    results.append(result)
+                    if result.device_unhealthy:
+                        print()
+                        report.detail("the device could not be made healthy; abandoning the "
+                                      "run rather than failing every suite left for the "
+                                      "same reason")
+                        if not options.recover_command:
+                            report.detail("--recover-command names a command that could "
+                                          "have been tried here")
+                        stopped = True
+                        device_unhealthy = True
+                        break
+                    if result.verdict == report.FAIL and options.stop_on_fail:
+                        stopped = True
+                        break
+                # Teardown still runs after --stop-on-fail, where the device is
+                # there to be cleaned; it is only pointless once the device is gone.
+                if category == "e2e" and not device_unhealthy:
+                    print()
+                    if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
+                        results.append(Result(category, mode, "teardown", report.FAIL, 0.0))
+                if stopped:
+                    break
             if stopped:
                 break
-        if stopped:
-            break
 
-    if args.syslog:
-        # Read at both ends, and corrected at neither.
-        after = check_syslog_setting(device, "at the end of the run")
-        if before_syslog and after and before_syslog != after:
-            report.warn(f"device log: the syslog setting changed during the "
-                        f"run, from {before_syslog!r} to {after!r}. The next "
-                        "run's log depends on what it is at the next boot.")
-    stop_recorder(recording, options.jsonl_dir, target.token)
-    if collector is not None:
-        collector.stop()
-        report.detail(f"device log:  {collector.lines} line(s) collected"
-                      + (f", {collector.unmapped} from an unmapped address"
-                         if collector.unmapped else ""))
+        if args.syslog:
+            # Read at both ends, and corrected at neither.
+            after = check_syslog_setting(device, "at the end of the run")
+            if before_syslog and after and before_syslog != after:
+                report.warn(f"device log: the syslog setting changed during the "
+                            f"run, from {before_syslog!r} to {after!r}. The next "
+                            "run's log depends on what it is at the next boot.")
+    finally:
+        # In a finally, because whatever ends the run early is exactly when
+        # this matters: an unstopped recorder leaves the device streaming to a
+        # socket nobody is reading and leaves its ffmpeg children unreaped,
+        # and an unstopped collector holds its UDP port.
+        stop_recorder(recording, options.jsonl_dir, target.token)
+        if collector is not None:
+            collector.stop()
+            report.detail(f"device log:  {collector.lines} line(s) collected"
+                          + (f", {collector.unmapped} from an unmapped address"
+                             if collector.unmapped else ""))
     return summarise(results, started, device.recoveries,
                      run_identity(sys.argv, started_wall))
 
