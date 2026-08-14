@@ -119,7 +119,25 @@ class MonitorSession:
 
     def goto(self, address: str) -> Snapshot:
         self.send_char("J")
-        return self.send_text(address + "\r", f"J {address}")
+        snapshot = self.send_text(address + "\r", f"J {address}")
+        # Where the monitor actually went, checked here rather than left to
+        # whatever the caller asserts next. A cartridge target's keys are
+        # tapped into its computer's keyboard matrix and read by the cartridge
+        # on its own scan, and one lost character turns "C003" into "0C03":
+        # seen once on u2@c64u inside the ASM entry check, where every
+        # assertion afterwards then measured the wrong address and the failure
+        # named a missing instruction rather than a missing keystroke.
+        wanted = address.upper().lstrip("$").zfill(4)
+        try:
+            header = monitor_header(snapshot)
+        except Failure:
+            return snapshot
+        landed = re.search(r"\$([0-9A-F]{4})", header)
+        if landed and landed.group(1) != wanted:
+            raise Failure(
+                f"J {address} landed on ${landed.group(1)}: a keystroke of the "
+                f"address did not reach the monitor\n{snapshot.text()}")
+        return snapshot
 
     def fill(self, expr: str) -> Snapshot:
         self.send_char("F")
@@ -128,6 +146,10 @@ class MonitorSession:
     def compare(self, expr: str) -> Snapshot:
         self.send_char("C")
         return self.send_text(expr + "\r", f"C {expr}")
+
+    def transfer(self, expr: str) -> Snapshot:
+        self.send_char("T")
+        return self.send_text(expr + "\r", f"T {expr}")
 
     def goto_run(self, address: str) -> Snapshot:
         self.send_char("G")
@@ -2493,13 +2515,29 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
                     raise Failure(f"U2 VIC bank did not restore to VIC{default_bank}")
                 session.enter_monitor()
 
-    with check("COMPARE reports differing address"):
+    with check("COMPARE reports every differing address, both ends included"):
         screen = ensure_view(session, "HEX ")
         write_rest_memory_confirmed(rest_host, 0xC100, bytes((0x10,) * 4))
         write_rest_memory_confirmed(rest_host, 0xC200, bytes((0x10, 0x91, 0x10, 0x93)))
         screen = session.compare("C100-C103,C200")
         assert_contains(screen, 4, "C101")
+        # $C103 is the end of the range and differs, so a Compare that stopped
+        # short of it would leave this line off the picker.
+        screen.find_line_containing("C103")
         session.send_key("ENTER")
+
+    with check("TRANSFER copies the whole range, both ends included"):
+        ensure_view(session, "HEX ")
+        write_rest_memory_confirmed(rest_host, 0xC100,
+                                    bytes((0x11, 0x22, 0x33, 0x44)))
+        write_rest_memory_confirmed(rest_host, 0xC300, bytes((0x00,) * 5))
+        session.transfer("C100-C103,C300")
+        copied = read_rest_memory(rest_host, 0xC300, 5)
+        if copied[:4] != bytes((0x11, 0x22, 0x33, 0x44)):
+            raise Failure(f"transfer copied {copied[:4].hex()}, expected 11223344")
+        if copied[4] != 0x00:
+            raise Failure(f"transfer wrote past the end of the range: "
+                          f"${0xC304:04X} is ${copied[4]:02X}")
 
     with check("ASM entry reaches screen and RAM, then G executes it"):
         run_asm_entry_round_trip_test(session, rest_host, video_host, control,

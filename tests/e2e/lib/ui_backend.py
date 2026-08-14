@@ -923,6 +923,18 @@ def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
     # menu_screen returns: every full-width entry row then has the same number
     # of coloured cells, the comparison above keeps the first one it saw, and
     # the answer is the top of the listing rather than the cursor.
+    #
+    # That is the display, not a gap in the API. Both machines draw the menu
+    # into the same 40x25 char matrix, and menu_screen serves the firmware's
+    # own copy of it, which has room for a background nibble either way
+    # (software/io/c64/screen.cc, cell_colour_codes). On an Ultimate 64 the
+    # FPGA renders that matrix as an overlay layer, which has a background per
+    # cell, so userinterface.cc sets color_sel_bg. On an Ultimate II+ the same
+    # bytes go to a real C64's colour RAM, which is four bits wide and carries
+    # the foreground only; the background is one VIC register for the whole
+    # screen. Reporting a background there would describe a colour nothing on
+    # screen can show, so the II+ marks its cursor row with a distinct
+    # foreground colour and this is what reads it.
     colour = find_cursor_colour(chars, colours, window)
     if colour is not None:
         for row, mark in marks.items():

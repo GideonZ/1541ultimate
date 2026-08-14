@@ -1145,7 +1145,8 @@ MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t 
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
     }
-    if (*end <= *start) {
+    // start == end is one byte, not none: the range includes both ends.
+    if (*end < *start) {
         return MONITOR_RANGE;
     }
     error = expect_separator(cursor, ',', MONITOR_SYNTAX);
@@ -1236,11 +1237,11 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
 
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest)
 {
-    uint32_t length = (uint16_t)(end - start);
-    if (length == 0) {
-        return;
-    }
-    if (dest > start && dest < end) {
+    // Both ends, as everywhere else a range is typed: "T C000-CFFF,2000"
+    // copies the byte at $CFFF too. The 32-bit length is what lets
+    // $0000-$FFFF be the whole 65536 bytes rather than none of them.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
+    if (dest > start && dest <= end) {
         while (length) {
             length--;
             backend->write((uint16_t)(dest + length), backend->read((uint16_t)(start + length)));
@@ -1255,7 +1256,8 @@ void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t en
 
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len)
 {
-    uint32_t length = (uint16_t)(end - start);
+    // Both ends, as Transfer, Fill, Hunt and Save all do.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
     uint32_t index;
     int count = 0;
     int pos = 0;
@@ -1275,7 +1277,8 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
 
 int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, uint16_t *out_addrs, int max_addrs)
 {
-    uint32_t length = (uint16_t)(end - start);
+    // Both ends, as Transfer, Fill, Hunt and Save all do.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
     uint32_t index;
     int count = 0;
 

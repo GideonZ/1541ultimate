@@ -545,20 +545,34 @@ static int test_memory_helpers(void)
     if (expect(backend.read(0xC000) == 0xAA && backend.read(0xC00F) == 0xAA && backend.read(0xC010) == 0x00,
                "Fill command memory range failed.")) return 1;
 
-    for (value = 0; value < 16; value++) {
+    for (value = 0; value < 17; value++) {
         backend.write((uint16_t)(0xC100 + value), (uint8_t)value);
     }
     monitor_transfer_memory(&backend, 0xC100, 0xC110, 0xC101);
-    for (value = 0; value < 16; value++) {
+    // 17 bytes, not 16: the byte at the end of the range is copied too, and
+    // the overlap makes the copy run backwards.
+    for (value = 0; value < 17; value++) {
         if (expect(backend.read((uint16_t)(0xC101 + value)) == (uint8_t)value, "Transfer overlap-safe copy failed.")) return 1;
     }
+    // A one-byte range copies that byte and no other.
+    backend.write(0xC150, 0x5A);
+    backend.write(0xC160, 0x00);
+    backend.write(0xC161, 0x00);
+    monitor_transfer_memory(&backend, 0xC150, 0xC150, 0xC160);
+    if (expect(backend.read(0xC160) == 0x5A && backend.read(0xC161) == 0x00,
+               "Transfer of a one-byte range failed.")) return 1;
 
     backend.write(0xC200, 0x01);
     backend.write(0xC201, 0x02);
+    backend.write(0xC202, 0x03);
     backend.write(0xC300, 0x01);
     backend.write(0xC301, 0x09);
+    backend.write(0xC302, 0x07);
     monitor_compare_memory(&backend, 0xC200, 0xC202, 0xC300, output, sizeof(output));
-    if (expect(strstr(output, "$C201") != NULL && strstr(output, "$C200") == NULL, "Compare differences output failed.")) return 1;
+    // $C202 is the end of the range and differs, so it is reported: Compare
+    // reads both ends like every other range command.
+    if (expect(strstr(output, "$C201") != NULL && strstr(output, "$C202") != NULL &&
+               strstr(output, "$C200") == NULL, "Compare differences output failed.")) return 1;
 
     backend.write(0xC400, 0xDE);
     backend.write(0xC401, 0xAD);
@@ -615,10 +629,17 @@ static int test_parsers_and_formatters(void)
                "Hunt quoted ASCII must preserve mixed-case bytes.")) return 1;
     if (expect(monitor_parse_transfer("C000-C010,C100", &start, &end, &dest) == MONITOR_OK, "Transfer parser failed.")) return 1;
     if (expect(start == 0xC000 && end == 0xC010 && dest == 0xC100, "Transfer parser values failed.")) return 1;
-    if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
-               "Transfer parser should reject zero-length ranges.")) return 1;
-    if (expect(monitor_parse_compare("C000-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
-               "Compare parser should reject zero-length ranges.")) return 1;
+    // A range includes both of its ends everywhere in the monitor, so
+    // start == end is one byte rather than none.
+    if (expect(monitor_parse_transfer("C000-C000,C100", &start, &end, &dest) == MONITOR_OK &&
+               start == 0xC000 && end == 0xC000,
+               "Transfer parser should accept a one-byte range.")) return 1;
+    if (expect(monitor_parse_compare("C000-C000,C100", &start, &end, &dest) == MONITOR_OK,
+               "Compare parser should accept a one-byte range.")) return 1;
+    if (expect(monitor_parse_transfer("C010-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Transfer parser should reject an end below the start.")) return 1;
+    if (expect(monitor_parse_compare("C010-C000,C100", &start, &end, &dest) == MONITOR_RANGE,
+               "Compare parser should reject an end below the start.")) return 1;
 
     if (expect(monitor_format_evaluate("$00ff", output, sizeof(output)) == MONITOR_OK && output[0] == '$',
                "Evaluate formatter failed.")) return 1;

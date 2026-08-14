@@ -520,10 +520,14 @@ The monitor includes direct bulk memory commands:
 
 | Key | Command  | Syntax                                   | Result                                                                |
 | --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
-| `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest`                         | Copy `end - start` bytes to a destination. Unlike Fill, Hunt and Save, the byte at `end` is not included |
-| `C` | Compare  | `start-end,dest`                         | Compare `end - start` bytes against another location and list differing addresses, on the same exclusive end |
-| `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
+| `F` | Fill     | `start-end,value`                        | Fill the range with one byte                                          |
+| `T` | Transfer | `start-end,dest`                         | Copy the range to a destination, overlap-safe in either direction     |
+| `C` | Compare  | `start-end,dest`                         | Compare the range against another location and list differing addresses |
+| `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search the range for a byte sequence or quoted ASCII string           |
+
+Every range includes both of its ends, here and in `Save`: `C000-CFFF` is the
+4096 bytes from `$C000` to `$CFFF`, and `C000-C000` is the single byte at
+`$C000`. An end below the start is refused.
 
 Every address and value is hexadecimal and may carry a `$` prefix, and spaces
 around the fields are ignored. `Hunt` bytes are written as hex pairs separated
