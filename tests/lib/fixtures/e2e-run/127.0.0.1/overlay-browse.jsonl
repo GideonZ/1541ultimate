@@ -1,2 +1,0 @@
-{"kind": "action", "ms": 0.5, "status": 200, "method": "POST", "path": "/v1/machine:input", "check": 1, "time": 1786709530.385336, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
-{"kind": "check", "index": 1, "label": "the cursor moves", "verdict": "OK", "extra": "one row", "seconds": 0.0158, "scenario": null, "time": 1786709530.3998451, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
