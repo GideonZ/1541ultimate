@@ -205,7 +205,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `check` | `index`, `label`, `verdict`, `extra`, `seconds`, `scenario` |
 | `scenario` | `title`, `verdict`, `checks`, `seconds` |
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
-| `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail` |
+| `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
 | `warning` | `message` |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
@@ -270,6 +270,11 @@ own, and a zero there would be summed as if it were a result.
 file is truncated on the first attempt and appended to afterwards, so a retried
 suite's file holds two records carrying `index: 26`, and only this field
 distinguishes them.
+
+The `heap` check carries `free`, `min_ever_free` and `total` rather than a
+latency, and it can never make a sweep degraded: a degraded sweep is what fires
+the recovery command, and free heap moves for a dozen ordinary reasons. It
+reports `OK` with the figure, or `SKIP` on firmware without the endpoint.
 
 `health` is one device sweep, the same one the console shows as a single line,
 with a latency per check. A run consumed programmatically would otherwise have

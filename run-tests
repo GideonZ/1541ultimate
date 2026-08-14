@@ -726,8 +726,7 @@ class Device:
                 report.detail(f"    {name}: {note}")
         report.health_result(
             label.rstrip(": ") or "device", sweep.ok,
-            ({"name": c.name, "state": c.state, "ms": round(c.ms, 1),
-              "detail": c.detail} for c in sweep.checks))
+            (health_entry(c) for c in sweep.checks))
         return sweep
 
     def close_active_menu(self) -> bool:
@@ -743,6 +742,22 @@ class Device:
             return True
         except Failure:
             return False
+
+
+def health_entry(check: "health.Check") -> Dict[str, object]:
+    """One health check as a record, with its figures when it has any.
+
+    A sweep with nothing but latencies writes exactly what it always has: the
+    heap entry is added when it is there rather than as a null beside the
+    other eight. The figures go here rather than into `detail`, which is a
+    human sentence printed under a failing check's name, because packing three
+    numbers into prose would make every consumer parse it back out.
+    """
+    entry: Dict[str, object] = {"name": check.name, "state": check.state,
+                                "ms": round(check.ms, 1), "detail": check.detail}
+    if check.figures:
+        entry["heap"] = dict(check.figures)
+    return entry
 
 
 def reset_to_clean_slate(device: Device, phase: str) -> bool:

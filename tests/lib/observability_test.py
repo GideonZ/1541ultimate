@@ -307,6 +307,80 @@ def a_refused_listener_degrades_the_sweep() -> str:
     return "ftp"
 
 
+@case(2, "OBS-6.1", "OBS-6.3", "OBS-6.4")
+def the_sweep_reports_the_free_heap() -> str:
+    """A ninth check, rendered as the figure rather than as a latency."""
+    with DeviceDouble() as double:
+        target = double.target()
+        sweep = health.probe(target, api=UltimateApi(target, timeout=5.0))
+        names = [check.name for check in sweep.checks]
+        if health.HEAP not in names:
+            raise Failure(f"the sweep did not read the heap: {names}")
+        heap = next(c for c in sweep.checks if c.name == health.HEAP)
+        expect("state", heap.state, health.OK)
+        expect("figures", heap.figures,
+               {"free": double.heap_free,
+                "min_ever_free": double.heap_min_ever_free,
+                "total": double.heap_total})
+        expect("rendered", heap.render(), f"heap={double.heap_free}B")
+        # The other eight are latencies and stay latencies: this is a special
+        # case on one check's name, not a rule about carrying a detail.
+        ident = next(c for c in sweep.checks if c.name == "ident")
+        if not ident.render().endswith("ms"):
+            raise Failure(f"another check's line changed: {ident.render()}")
+    return heap.render()
+
+
+@case(2, "OBS-6.5")
+def the_heap_check_can_never_fail_a_sweep() -> str:
+    """404 and a device that has gone both leave the sweep passing.
+
+    A degraded sweep fires the operator's recovery command, which reboots or
+    reflashes hardware, so a figure that moves for a dozen ordinary reasons
+    must not be able to reach it.
+    """
+    with DeviceDouble() as double:
+        target = double.target()
+        api = UltimateApi(target, timeout=2.0)
+        double.faults.heap_404 = True
+        sweep = health.probe(target, api=api, include=("heap",))
+        expect("404 skips", [c.state for c in sweep.checks], [health.SKIP])
+        expect("still healthy", sweep.ok, True)
+        if "no machine:heap" not in sweep.detail_for(health.HEAP):
+            raise Failure(f"the reason is missing: {sweep.detail_for('heap')}")
+
+        double.faults.heap_404 = False
+        double.faults.offline = True
+        sweep = health.probe(target, api=api, include=("heap",))
+        expect("a gone device skips", [c.state for c in sweep.checks],
+               [health.SKIP])
+        expect("still healthy", sweep.ok, True)
+    return "SKIP twice, never FAIL"
+
+
+@case(3, "OBS-6.4")
+def the_heap_figures_reach_the_health_record() -> str:
+    """The figures ride in the health record, not in a record of their own."""
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held")], workspace=workspace)
+        sweeps = [r for r in made.records("127.0.0.1", "run.jsonl")
+                  if r["kind"] == "health"]
+        if not sweeps:
+            raise Failure("no sweep was recorded")
+        entries = [c for c in sweeps[0]["checks"] if c["name"] == "heap"]
+        expect("one heap entry", len(entries), 1)
+        expect("free", entries[0]["heap"]["free"], double.heap_free)
+        for other in sweeps[0]["checks"]:
+            if other["name"] != "heap" and "heap" in other:
+                raise Failure(f"{other['name']} grew a heap entry")
+        kinds = {r["kind"] for r in made.records("127.0.0.1", "run.jsonl")}
+        if "heap" in kinds:
+            raise Failure("the figures were given a record kind of their own")
+    return "inside the health record"
+
+
 # ---------------------------------------------------------------------------
 # Tier 3: a whole scripted run, with the real runner and no real device
 # ---------------------------------------------------------------------------

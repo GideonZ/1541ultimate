@@ -1,1 +1,1 @@
-{"kind": "check", "index": 1, "label": "the menu closes", "verdict": "OK", "extra": "", "seconds": 0.0, "scenario": null, "time": 1786698841.545495, "suite": "menu-closed-again", "target": "127.0.0.1", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the menu closes", "verdict": "OK", "extra": "", "seconds": 0.0, "scenario": null, "time": 1786699279.3258948, "suite": "menu-closed-again", "target": "127.0.0.1", "attempt": 1}

@@ -1,1 +1,1 @@
-{"kind": "action", "ms": 0.6, "status": 200, "method": "PUT", "path": "/v1/machine:menu_button", "time": 1786698842.7454114, "suite": "browse", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "action", "ms": 0.6, "status": 200, "method": "PUT", "path": "/v1/machine:menu_button", "time": 1786699280.5594006, "suite": "browse", "target": "127.0.0.1@localhost", "attempt": 1}

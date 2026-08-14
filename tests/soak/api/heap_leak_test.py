@@ -26,13 +26,13 @@ from typing import Optional
 # tests/lib holds the reporting rules and the one shared REST client.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
-HEAP_PATH = "/v1/machine:heap"
 # A disk image is the cheapest REST call that allocates a large buffer, which
 # is what makes it a good canary: create_file_of_size -> write_zeros.
 CREATE_PATH = "/v1/files/{dir}/{name}:create_d64"
@@ -58,11 +58,16 @@ class Device:
         self.rest = rest_lib.RestClient(host, password, timeout)
 
     def heap_free(self) -> int:
-        data = self.rest.json(HEAP_PATH)
-        return int(data["free"])
+        return int(api_lib.MachineApi(self.rest).heap()["free"])
 
     def heap_available(self) -> bool:
-        return self.rest.status("GET", HEAP_PATH) == 200
+        """Whether this firmware has the endpoint at all.
+
+        None is the 404 answer and means exactly that; a transport failure
+        raises, because a device that is not answering is not a device without
+        the endpoint.
+        """
+        return api_lib.MachineApi(self.rest).heap() is not None
 
     def create_d64(self, directory: str, name: str) -> None:
         path = CREATE_PATH.format(dir=urllib.parse.quote(directory),

@@ -4,13 +4,13 @@ RESULT: FAIL  targets=2  suites=11  ok=8  fail=2  warn=0  skip=1  recoveries=1  
 
 | Field                      | Value                                                                                                                                                                                         |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| commit                     | 6cbfef8646882a749228a37a098b6193553cafbf                                                                                                                                                      |
+| commit                     | 46a265d30879dda8ebf837c1eb0b209c3bf73a74                                                                                                                                                      |
 | branch                     | agent/e2e-observability                                                                                                                                                                       |
 | worktree                   | dirty                                                                                                                                                                                         |
 | host                       | mickey                                                                                                                                                                                        |
 | python                     | 3.12.3                                                                                                                                                                                        |
-| started                    | 2026-08-14 09:14:00                                                                                                                                                                           |
-| duration                   | 8.257s                                                                                                                                                                                        |
+| started                    | 2026-08-14 09:21:18                                                                                                                                                                           |
+| duration                   | 8.270s                                                                                                                                                                                        |
 | device 127.0.0.1           | Ultimate 64 3.15                                                                                                                                                                              |
 | device 127.0.0.1@localhost | Ultimate 64 3.15                                                                                                                                                                              |
 | exit status                | 1: at least one suite failed                                                                                                                                                                  |
@@ -40,28 +40,28 @@ RESULT: FAIL  targets=2  suites=11  ok=8  fail=2  warn=0  skip=1  recoveries=1  
 
 | Target              | Label   | Suite                | Attempt | Verdict    | Duration | Recoveries | Note                                                          |
 | ------------------- | ------- | -------------------- | ------- | ---------- | -------- | ---------- | ------------------------------------------------------------- |
-| 127.0.0.1           | overlay | held                 | 1       | OK         | 0.036s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | held                 | 1       | OK         | 0.032s   | 0          | -                                                             |
 | 127.0.0.1           | overlay | broken               | 1       | FAIL       | 0.033s   | 0          | -                                                             |
-| 127.0.0.1           | overlay | raised               | 1       | FAIL       | 0.113s   | 0          | -                                                             |
-| 127.0.0.1           | overlay | flaky                | 1       | FAIL       | 0.037s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | raised               | 1       | FAIL       | 0.102s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | flaky                | 1       | FAIL       | 0.035s   | 0          | -                                                             |
 | 127.0.0.1           | overlay | flaky                | 2       | OK         | 0.036s   | 1          | -                                                             |
 | 127.0.0.1           | screens | screens              | 1       | incomplete | -        | 0          | -                                                             |
-| 127.0.0.1           | overlay | browse               | 1       | OK         | 0.228s   | 0          | -                                                             |
-| 127.0.0.1           | overlay | menu-left-open       | 1       | OK         | 0.038s   | 0          | -                                                             |
-| 127.0.0.1           | overlay | menu-closed-again    | 1       | OK         | 0.037s   | 0          | -                                                             |
-| 127.0.0.1           | overlay | leaves-things-behind | 1       | OK         | 0.091s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | browse               | 1       | OK         | 0.238s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | menu-left-open       | 1       | OK         | 0.040s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | menu-closed-again    | 1       | OK         | 0.035s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | leaves-things-behind | 1       | OK         | 0.095s   | 0          | -                                                             |
 | 127.0.0.1           | overlay | missing-file         | 1       | SKIP       | 0.000s   | 0          | missing /tmp/e2e-observability-fixture/suites/missing_file.py |
-| 127.0.0.1           | overlay | cut-short            | 1       | OK         | 0.032s   | 0          | -                                                             |
-| 127.0.0.1           | perf    | a-benchmark          | 1       | OK         | 0.032s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | held                 | 1       | OK         | 0.034s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | broken               | 1       | FAIL       | 0.032s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | raised               | 1       | FAIL       | 0.101s   | 0          | -                                                             |
+| 127.0.0.1           | overlay | cut-short            | 1       | OK         | 0.033s   | 0          | -                                                             |
+| 127.0.0.1           | perf    | a-benchmark          | 1       | OK         | 0.039s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | held                 | 1       | OK         | 0.031s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | broken               | 1       | FAIL       | 0.031s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | raised               | 1       | FAIL       | 0.098s   | 0          | -                                                             |
 | 127.0.0.1@localhost | overlay | flaky                | 1       | FAIL       | 0.035s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | flaky                | 2       | OK         | 0.035s   | 1          | -                                                             |
-| 127.0.0.1@localhost | overlay | browse               | 1       | FAIL       | 6.147s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | flaky                | 2       | OK         | 0.037s   | 1          | -                                                             |
+| 127.0.0.1@localhost | overlay | browse               | 1       | FAIL       | 6.145s   | 0          | -                                                             |
 | 127.0.0.1@localhost | overlay | menu-left-open       | 1       | OK         | 0.035s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | menu-closed-again    | 1       | OK         | 0.039s   | 0          | -                                                             |
-| 127.0.0.1@localhost | overlay | leaves-things-behind | 1       | OK         | 0.105s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | menu-closed-again    | 1       | OK         | 0.036s   | 0          | -                                                             |
+| 127.0.0.1@localhost | overlay | leaves-things-behind | 1       | OK         | 0.096s   | 0          | -                                                             |
 | 127.0.0.1@localhost | overlay | missing-file         | 1       | SKIP       | 0.000s   | 0          | missing /tmp/e2e-observability-fixture/suites/missing_file.py |
 | 127.0.0.1@localhost | overlay | cut-short            | 1       | incomplete | -        | 0          | -                                                             |
 
@@ -99,7 +99,7 @@ What the action log says the run did to the device and, where a mutation has an 
 
 ### 127.0.0.1/overlay/broken/1/1 - the row survives a redraw
 
-`FAIL` after 0.000s, at 2026-08-14 09:14:00, reported `0 rows, expected 20`.
+`FAIL` after 0.000s, at 2026-08-14 09:21:18, reported `0 rows, expected 20`.
 
 - Failed elsewhere: the same check FAIL on 127.0.0.1@localhost.
 - First failure: no other check in this suite run failed before it.
@@ -126,7 +126,7 @@ Last 2 line(s) of `127.0.0.1/overlay-broken.log`:
 
 ### 127.0.0.1/overlay/flaky/1/1 - the device is well
 
-`FAIL` after 0.000s, at 2026-08-14 09:14:01, reported `the listener is gone`.
+`FAIL` after 0.000s, at 2026-08-14 09:21:18, reported `the listener is gone`.
 
 - Passed on retry: this check passed on another attempt.
 - Failed elsewhere: the same check FAIL on 127.0.0.1@localhost.
@@ -154,7 +154,7 @@ Last 2 line(s) of `127.0.0.1/overlay-flaky.log`, which holds all 2 attempts appe
 
 ### 127.0.0.1@localhost/overlay/broken/1/1 - the row survives a redraw
 
-`FAIL` after 0.000s, at 2026-08-14 09:14:02, reported `0 rows, expected 20`.
+`FAIL` after 0.000s, at 2026-08-14 09:21:20, reported `0 rows, expected 20`.
 
 - Failed elsewhere: the same check FAIL on 127.0.0.1.
 - First failure: no other check in this suite run failed before it.
@@ -181,7 +181,7 @@ Last 2 line(s) of `127.0.0.1-at-localhost/overlay-broken.log`:
 
 ### 127.0.0.1@localhost/overlay/flaky/1/1 - the device is well
 
-`FAIL` after 0.000s, at 2026-08-14 09:14:02, reported `the listener is gone`.
+`FAIL` after 0.000s, at 2026-08-14 09:21:20, reported `the listener is gone`.
 
 - Passed on retry: this check passed on another attempt.
 - Failed elsewhere: the same check FAIL on 127.0.0.1.
@@ -332,42 +332,42 @@ Last 1 line(s) of `127.0.0.1-at-localhost/overlay-cut-short.log`:
 
 ### 127.0.0.1
 
-| Sweep                                 | Verdict  | ping | rest | ftp  | telnet | ident | dma | raster | jiffy |
-| ------------------------------------- | -------- | ---- | ---- | ---- | ------ | ----- | --- | ------ | ----- |
-| held                                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 2ms   | 0ms | 1ms    | 1ms   |
-| broken                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| broken: after failure,                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| raised                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| raised: after failure,                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky                                 | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky: after failure,                 | DEGRADED | 2ms  | 1ms  | FAIL | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| flaky: after failure, after recovery, | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky                                 | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| browse                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| menu-left-open                        | OK       | 4ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| menu-closed-again                     | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | skip   | skip  |
-| leaves-things-behind                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| cut-short                             | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
+| Sweep                                 | Verdict  | ping | rest | ftp  | telnet | ident | dma | heap     | raster | jiffy |
+| ------------------------------------- | -------- | ---- | ---- | ---- | ------ | ----- | --- | -------- | ------ | ----- |
+| held                                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| broken                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| broken: after failure,                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| raised                                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| raised: after failure,                | OK       | 2ms  | 2ms  | 1ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky                                 | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky: after failure,                 | DEGRADED | 2ms  | 0ms  | FAIL | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky: after failure, after recovery, | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky                                 | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| browse                                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| menu-left-open                        | OK       | 4ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 2ms    | 1ms   |
+| menu-closed-again                     | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | skip   | skip  |
+| leaves-things-behind                  | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| cut-short                             | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
 
 ### 127.0.0.1@localhost
 
-| Sweep                                 | Verdict  | ping | rest | ftp  | telnet | ident | dma | raster | jiffy |
-| ------------------------------------- | -------- | ---- | ---- | ---- | ------ | ----- | --- | ------ | ----- |
-| held                                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| broken                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 2ms   |
-| broken: after failure,                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| raised                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| raised: after failure,                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky                                 | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky: after failure,                 | DEGRADED | 2ms  | 1ms  | FAIL | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky: after failure, after recovery, | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| flaky                                 | OK       | 1ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| browse                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1ms    | 1ms   |
-| browse: after failure,                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | skip   | skip  |
-| menu-left-open                        | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | skip   | skip  |
-| menu-closed-again                     | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | skip   | skip  |
-| leaves-things-behind                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
-| cut-short                             | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1ms    | 1ms   |
+| Sweep                                 | Verdict  | ping | rest | ftp  | telnet | ident | dma | heap     | raster | jiffy |
+| ------------------------------------- | -------- | ---- | ---- | ---- | ------ | ----- | --- | -------- | ------ | ----- |
+| held                                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| broken                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| broken: after failure,                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| raised                                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| raised: after failure,                | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky                                 | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky: after failure,                 | DEGRADED | 2ms  | 0ms  | FAIL | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky: after failure, after recovery, | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| flaky                                 | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 1ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| browse                                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| browse: after failure,                | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | skip   | skip  |
+| menu-left-open                        | OK       | 2ms  | 0ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | skip   | skip  |
+| menu-closed-again                     | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | skip   | skip  |
+| leaves-things-behind                  | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
+| cut-short                             | OK       | 2ms  | 1ms  | 0ms  | 0ms    | 0ms   | 0ms | 1500000B | 1ms    | 1ms   |
 
 ## Files in this run
 
@@ -379,29 +379,29 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 | ------------------------------------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------- |
 | `index.md`                                                   | -     | this report, written by tools/e2e_report.py                                                                     |
 | `run.jsonl`                                                  | 3118  | the run's own records: the plan, the health sweeps, the suite verdicts and the run result, written by run-tests |
-| `run.log`                                                    | 17017 | run-tests' own console output                                                                                   |
-| `127.0.0.1/overlay-broken.jsonl`                             | 527   | one suite run's checks, scenarios and device actions                                                            |
+| `run.log`                                                    | 17423 | run-tests' own console output                                                                                   |
+| `127.0.0.1/overlay-broken.jsonl`                             | 526   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-broken.log`                               | 193   | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1/overlay-browse.jsonl`                             | 405   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-browse.log`                               | 47    | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1/overlay-cut-short.jsonl`                          | 416   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-cut-short.log`                            | 73    | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/overlay-flaky.jsonl`                              | 449   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1/overlay-flaky.jsonl`                              | 450   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-flaky.log`                                | 115   | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/overlay-held.jsonl`                               | 464   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1/overlay-held.jsonl`                               | 465   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-held.log`                                 | 126   | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/overlay-leaves-things-behind.jsonl`               | 977   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1/overlay-leaves-things-behind.jsonl`               | 975   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-leaves-things-behind.log`                 | 77    | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/overlay-menu-closed-again.jsonl`                  | 216   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1/overlay-menu-closed-again.jsonl`                  | 217   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-menu-closed-again.log`                    | 37    | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1/overlay-menu-left-open.jsonl`                     | 225   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-menu-left-open.log`                       | 47    | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1/overlay-raised.jsonl`                             | 0     | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/overlay-raised.log`                               | 260   | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/perf-a-benchmark.jsonl`                           | 243   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1/perf-a-benchmark.jsonl`                           | 244   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1/perf-a-benchmark.log`                             | 72    | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1/run.jsonl`                                        | 20654 | the run's own records: the plan, the health sweeps, the suite verdicts and the run result, written by run-tests |
-| `127.0.0.1/run.log`                                          | 5263  | run-tests' own console output                                                                                   |
+| `127.0.0.1/run.jsonl`                                        | 22463 | the run's own records: the plan, the health sweeps, the suite verdicts and the run result, written by run-tests |
+| `127.0.0.1/run.log`                                          | 5459  | run-tests' own console output                                                                                   |
 | `127.0.0.1/screens.jsonl`                                    | 10503 | every distinct screen the harness read, as text and as raw bytes                                                |
 | `127.0.0.1/capture/overlay-broken-1-screen.bin`              | 1000  | the same screen, as the device's own bytes                                                                      |
 | `127.0.0.1/capture/overlay-broken-1-screen.txt`              | 1025  | the screen a failing suite left, as text                                                                        |
@@ -412,7 +412,7 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 | `127.0.0.1/capture/overlay-raised-1-screen.bin`              | 1000  | the same screen, as the device's own bytes                                                                      |
 | `127.0.0.1/capture/overlay-raised-1-screen.txt`              | 1025  | the screen a failing suite left, as text                                                                        |
 | `127.0.0.1/capture/overlay-raised-1-state.json`              | 547   | the drive state and free heap when a suite failed                                                               |
-| `127.0.0.1-at-localhost/overlay-broken.jsonl`                | 545   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1-at-localhost/overlay-broken.jsonl`                | 547   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1-at-localhost/overlay-broken.log`                  | 193   | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1-at-localhost/overlay-browse.jsonl`                | 191   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1-at-localhost/overlay-browse.log`                  | 925   | that suite run's console output, stderr merged in, ANSI stripped                                                |
@@ -426,12 +426,12 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 | `127.0.0.1-at-localhost/overlay-leaves-things-behind.log`    | 77    | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1-at-localhost/overlay-menu-closed-again.jsonl`     | 227   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1-at-localhost/overlay-menu-closed-again.log`       | 37    | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1-at-localhost/overlay-menu-left-open.jsonl`        | 232   | one suite run's checks, scenarios and device actions                                                            |
+| `127.0.0.1-at-localhost/overlay-menu-left-open.jsonl`        | 233   | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1-at-localhost/overlay-menu-left-open.log`          | 47    | that suite run's console output, stderr merged in, ANSI stripped                                                |
 | `127.0.0.1-at-localhost/overlay-raised.jsonl`                | 0     | one suite run's checks, scenarios and device actions                                                            |
 | `127.0.0.1-at-localhost/overlay-raised.log`                  | 260   | that suite run's console output, stderr merged in, ANSI stripped                                                |
-| `127.0.0.1-at-localhost/run.jsonl`                           | 18450 | the run's own records: the plan, the health sweeps, the suite verdicts and the run result, written by run-tests |
-| `127.0.0.1-at-localhost/run.log`                             | 4381  | run-tests' own console output                                                                                   |
+| `127.0.0.1-at-localhost/run.jsonl`                           | 20382 | the run's own records: the plan, the health sweeps, the suite verdicts and the run result, written by run-tests |
+| `127.0.0.1-at-localhost/run.log`                             | 4591  | run-tests' own console output                                                                                   |
 | `127.0.0.1-at-localhost/capture/overlay-broken-1-screen.bin` | 1000  | the same screen, as the device's own bytes                                                                      |
 | `127.0.0.1-at-localhost/capture/overlay-broken-1-screen.txt` | 1025  | the screen a failing suite left, as text                                                                        |
 | `127.0.0.1-at-localhost/capture/overlay-broken-1-state.json` | 561   | the drive state and free heap when a suite failed                                                               |
@@ -559,65 +559,65 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 
 | # | Check                       | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | --------------------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the listing is complete     | OK      | 0.000s   | 2026-08-14 09:14:00 | 2026-08-14 09:14:00 | 20 rows  |
-| 2 | the first row is the header | OK      | 0.000s   | 2026-08-14 09:14:00 | 2026-08-14 09:14:00 | -        |
+| 1 | the listing is complete     | OK      | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | 20 rows  |
+| 2 | the first row is the header | OK      | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | -        |
 
 ### 127.0.0.1/overlay/broken/1
 
 | # | Check                      | Verdict | Duration | Opened at           | Closed at           | Reported                                                                |
 | - | -------------------------- | ------- | -------- | ------------------- | ------------------- | ----------------------------------------------------------------------- |
-| 1 | the row survives a redraw  | FAIL    | 0.000s   | 2026-08-14 09:14:00 | 2026-08-14 09:14:00 | 0 rows, expected 20                                                     |
-| 2 | the name is listed in full | SKIP    | 0.000s   | 2026-08-14 09:14:00 | 2026-08-14 09:14:00 | needs the ftp-listing-full-length fix, which this machine does not have |
+| 1 | the row survives a redraw  | FAIL    | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | 0 rows, expected 20                                                     |
+| 2 | the name is listed in full | SKIP    | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | needs the ftp-listing-full-length fix, which this machine does not have |
 
 ### 127.0.0.1/overlay/flaky/1
 
 | # | Check              | Verdict | Duration | Opened at           | Closed at           | Reported             |
 | - | ------------------ | ------- | -------- | ------------------- | ------------------- | -------------------- |
-| 1 | the device is well | FAIL    | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | the listener is gone |
+| 1 | the device is well | FAIL    | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | the listener is gone |
 
 ### 127.0.0.1/overlay/flaky/2
 
 | # | Check              | Verdict | Duration | Opened at           | Closed at           | Reported  |
 | - | ------------------ | ------- | -------- | ------------------- | ------------------- | --------- |
-| 1 | the device is well | OK      | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | recovered |
+| 1 | the device is well | OK      | 0.000s   | 2026-08-14 09:21:18 | 2026-08-14 09:21:18 | recovered |
 
 ### 127.0.0.1/overlay/browse/1
 
 | # | Check            | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | ---------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the cursor moves | OK      | 0.110s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | one row  |
+| 1 | the cursor moves | OK      | 0.111s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | one row  |
 
 ### 127.0.0.1/overlay/menu-left-open/1
 
 | # | Check          | Verdict | Duration | Opened at           | Closed at           | Reported  |
 | - | -------------- | ------- | -------- | ------------------- | ------------------- | --------- |
-| 1 | the menu opens | OK      | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | on screen |
+| 1 | the menu opens | OK      | 0.000s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | on screen |
 
 ### 127.0.0.1/overlay/menu-closed-again/1
 
 | # | Check           | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | --------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the menu closes | OK      | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | -        |
+| 1 | the menu closes | OK      | 0.000s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | -        |
 
 ### 127.0.0.1/overlay/leaves-things-behind/1
 
 | # | Check             | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | ----------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the image mounts  | OK      | 0.023s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | -        |
-| 2 | the setting takes | OK      | 0.001s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | -        |
+| 1 | the image mounts  | OK      | 0.023s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | -        |
+| 2 | the setting takes | OK      | 0.001s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | -        |
 
 ### 127.0.0.1/overlay/cut-short/1
 
 | # | Check           | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | --------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the first half  | OK      | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | -        |
-| 2 | the second half | OK      | 0.000s   | 2026-08-14 09:14:01 | 2026-08-14 09:14:01 | -        |
+| 1 | the first half  | OK      | 0.000s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | -        |
+| 2 | the second half | OK      | 0.000s   | 2026-08-14 09:21:19 | 2026-08-14 09:21:19 | -        |
 
 ### 127.0.0.1/perf/a-benchmark/1
 
 | # | Check                    | Verdict | Duration | Opened at           | Closed at           | Reported                 |
 | - | ------------------------ | ------- | -------- | ------------------- | ------------------- | ------------------------ |
-| 1 | typing reaches the field | OK      | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | 11.2 characters a second |
+| 1 | typing reaches the field | OK      | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | 11.2 characters a second |
 
 ### 127.0.0.1@localhost/overlay/held/1
 
@@ -625,52 +625,52 @@ Reaching one of these from a build page is a download and an unzip: GitHub serve
 
 | # | Check                       | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | --------------------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the listing is complete     | OK      | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | 20 rows  |
-| 2 | the first row is the header | OK      | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | -        |
+| 1 | the listing is complete     | OK      | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | 20 rows  |
+| 2 | the first row is the header | OK      | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | -        |
 
 ### 127.0.0.1@localhost/overlay/broken/1
 
 | # | Check                      | Verdict | Duration | Opened at           | Closed at           | Reported                                                                |
 | - | -------------------------- | ------- | -------- | ------------------- | ------------------- | ----------------------------------------------------------------------- |
-| 1 | the row survives a redraw  | FAIL    | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | 0 rows, expected 20                                                     |
-| 2 | the name is listed in full | SKIP    | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | needs the ftp-listing-full-length fix, which this machine does not have |
+| 1 | the row survives a redraw  | FAIL    | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | 0 rows, expected 20                                                     |
+| 2 | the name is listed in full | SKIP    | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | needs the ftp-listing-full-length fix, which this machine does not have |
 
 ### 127.0.0.1@localhost/overlay/flaky/1
 
 | # | Check              | Verdict | Duration | Opened at           | Closed at           | Reported             |
 | - | ------------------ | ------- | -------- | ------------------- | ------------------- | -------------------- |
-| 1 | the device is well | FAIL    | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | the listener is gone |
+| 1 | the device is well | FAIL    | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | the listener is gone |
 
 ### 127.0.0.1@localhost/overlay/flaky/2
 
 | # | Check              | Verdict | Duration | Opened at           | Closed at           | Reported  |
 | - | ------------------ | ------- | -------- | ------------------- | ------------------- | --------- |
-| 1 | the device is well | OK      | 0.000s   | 2026-08-14 09:14:02 | 2026-08-14 09:14:02 | recovered |
+| 1 | the device is well | OK      | 0.000s   | 2026-08-14 09:21:20 | 2026-08-14 09:21:20 | recovered |
 
 ### 127.0.0.1@localhost/overlay/menu-left-open/1
 
 | # | Check          | Verdict | Duration | Opened at           | Closed at           | Reported  |
 | - | -------------- | ------- | -------- | ------------------- | ------------------- | --------- |
-| 1 | the menu opens | OK      | 0.000s   | 2026-08-14 09:14:08 | 2026-08-14 09:14:08 | on screen |
+| 1 | the menu opens | OK      | 0.000s   | 2026-08-14 09:21:26 | 2026-08-14 09:21:26 | on screen |
 
 ### 127.0.0.1@localhost/overlay/menu-closed-again/1
 
 | # | Check           | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | --------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the menu closes | OK      | 0.000s   | 2026-08-14 09:14:08 | 2026-08-14 09:14:08 | -        |
+| 1 | the menu closes | OK      | 0.000s   | 2026-08-14 09:21:26 | 2026-08-14 09:21:26 | -        |
 
 ### 127.0.0.1@localhost/overlay/leaves-things-behind/1
 
 | # | Check             | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | ----------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the image mounts  | OK      | 0.023s   | 2026-08-14 09:14:08 | 2026-08-14 09:14:08 | -        |
-| 2 | the setting takes | OK      | 0.001s   | 2026-08-14 09:14:08 | 2026-08-14 09:14:09 | -        |
+| 1 | the image mounts  | OK      | 0.024s   | 2026-08-14 09:21:26 | 2026-08-14 09:21:26 | -        |
+| 2 | the setting takes | OK      | 0.001s   | 2026-08-14 09:21:26 | 2026-08-14 09:21:26 | -        |
 
 ### 127.0.0.1@localhost/overlay/cut-short/1
 
 | # | Check          | Verdict | Duration | Opened at           | Closed at           | Reported |
 | - | -------------- | ------- | -------- | ------------------- | ------------------- | -------- |
-| 1 | the first half | OK      | 0.000s   | 2026-08-14 09:14:09 | 2026-08-14 09:14:09 | -        |
+| 1 | the first half | OK      | 0.000s   | 2026-08-14 09:21:26 | 2026-08-14 09:21:26 | -        |
 
 ## Where the time went
 
@@ -678,28 +678,28 @@ Slowest suite runs:
 
 | Suite run                                          | Duration |
 | -------------------------------------------------- | -------- |
-| 127.0.0.1@localhost/overlay/browse/1               | 6.147s   |
-| 127.0.0.1/overlay/browse/1                         | 0.228s   |
-| 127.0.0.1/overlay/raised/1                         | 0.113s   |
-| 127.0.0.1@localhost/overlay/leaves-things-behind/1 | 0.105s   |
-| 127.0.0.1@localhost/overlay/raised/1               | 0.101s   |
-| 127.0.0.1/overlay/leaves-things-behind/1           | 0.091s   |
-| 127.0.0.1@localhost/overlay/menu-closed-again/1    | 0.039s   |
-| 127.0.0.1/overlay/menu-left-open/1                 | 0.038s   |
-| 127.0.0.1/overlay/flaky/1                          | 0.037s   |
-| 127.0.0.1/overlay/menu-closed-again/1              | 0.037s   |
+| 127.0.0.1@localhost/overlay/browse/1               | 6.145s   |
+| 127.0.0.1/overlay/browse/1                         | 0.238s   |
+| 127.0.0.1/overlay/raised/1                         | 0.102s   |
+| 127.0.0.1@localhost/overlay/raised/1               | 0.098s   |
+| 127.0.0.1@localhost/overlay/leaves-things-behind/1 | 0.096s   |
+| 127.0.0.1/overlay/leaves-things-behind/1           | 0.095s   |
+| 127.0.0.1/overlay/menu-left-open/1                 | 0.040s   |
+| 127.0.0.1/perf/a-benchmark/1                       | 0.039s   |
+| 127.0.0.1@localhost/overlay/flaky/2                | 0.037s   |
+| 127.0.0.1/overlay/flaky/2                          | 0.036s   |
 
 Slowest checks:
 
-| Check                                                | Label                       | Duration |
-| ---------------------------------------------------- | --------------------------- | -------- |
-| 127.0.0.1/overlay/browse/1/1                         | the cursor moves            | 0.110s   |
-| 127.0.0.1@localhost/overlay/leaves-things-behind/1/1 | the image mounts            | 0.023s   |
-| 127.0.0.1/overlay/leaves-things-behind/1/1           | the image mounts            | 0.023s   |
-| 127.0.0.1/overlay/leaves-things-behind/1/2           | the setting takes           | 0.001s   |
-| 127.0.0.1@localhost/overlay/leaves-things-behind/1/2 | the setting takes           | 0.001s   |
-| 127.0.0.1/overlay/flaky/1/1                          | the device is well          | 0.000s   |
-| 127.0.0.1/overlay/menu-left-open/1/1                 | the menu opens              | 0.000s   |
-| 127.0.0.1@localhost/overlay/flaky/1/1                | the device is well          | 0.000s   |
-| 127.0.0.1/overlay/held/1/1                           | the listing is complete     | 0.000s   |
-| 127.0.0.1/overlay/held/1/2                           | the first row is the header | 0.000s   |
+| Check                                                | Label                   | Duration |
+| ---------------------------------------------------- | ----------------------- | -------- |
+| 127.0.0.1/overlay/browse/1/1                         | the cursor moves        | 0.111s   |
+| 127.0.0.1@localhost/overlay/leaves-things-behind/1/1 | the image mounts        | 0.024s   |
+| 127.0.0.1/overlay/leaves-things-behind/1/1           | the image mounts        | 0.023s   |
+| 127.0.0.1/overlay/leaves-things-behind/1/2           | the setting takes       | 0.001s   |
+| 127.0.0.1@localhost/overlay/leaves-things-behind/1/2 | the setting takes       | 0.001s   |
+| 127.0.0.1/overlay/flaky/1/1                          | the device is well      | 0.000s   |
+| 127.0.0.1/overlay/menu-left-open/1/1                 | the menu opens          | 0.000s   |
+| 127.0.0.1@localhost/overlay/flaky/1/1                | the device is well      | 0.000s   |
+| 127.0.0.1@localhost/overlay/menu-left-open/1/1       | the menu opens          | 0.000s   |
+| 127.0.0.1/overlay/held/1/1                           | the listing is complete | 0.000s   |

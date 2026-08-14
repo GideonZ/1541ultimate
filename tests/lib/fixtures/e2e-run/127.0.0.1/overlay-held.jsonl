@@ -1,2 +1,2 @@
-{"kind": "check", "index": 1, "label": "the listing is complete", "verdict": "OK", "extra": "20 rows", "seconds": 0.0, "scenario": "the ordinary case", "time": 1786698840.9322045, "suite": "held", "target": "127.0.0.1", "attempt": 1}
-{"kind": "check", "index": 2, "label": "the first row is the header", "verdict": "OK", "extra": "", "seconds": 0.0, "scenario": "the ordinary case", "time": 1786698840.932283, "suite": "held", "target": "127.0.0.1", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the listing is complete", "verdict": "OK", "extra": "20 rows", "seconds": 0.0, "scenario": "the ordinary case", "time": 1786699278.7079291, "suite": "held", "target": "127.0.0.1", "attempt": 1}
+{"kind": "check", "index": 2, "label": "the first row is the header", "verdict": "OK", "extra": "", "seconds": 0.0, "scenario": "the ordinary case", "time": 1786699278.7080069, "suite": "held", "target": "127.0.0.1", "attempt": 1}

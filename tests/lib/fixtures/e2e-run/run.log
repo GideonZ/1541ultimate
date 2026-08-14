@@ -21,92 +21,92 @@ Ultimate hardware test run
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  held  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=2ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] 
 [127.0.0.1] --- the ordinary case
 [127.0.0.1] [01] the listing is complete ... OK (20 rows, 0.000s)
 [127.0.0.1] [02] the first row is the header ... OK (0.000s)
-[127.0.0.1] held: OK (0.036s)
+[127.0.0.1] held: OK (0.032s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  broken  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      broken: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      broken: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the row survives a redraw ... FAIL (0 rows, expected 20, 0.000s)
 [127.0.0.1] [02] the name is listed in full ... SKIP (needs the ftp-listing-full-length fix, which this machine does not have, 0.000s)
 [127.0.0.1] broken: FAIL (0.033s)
-[127.0.0.1]      broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  raised  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the device answers ... Traceback (most recent call last):
 [127.0.0.1]   File "/tmp/e2e-observability-fixture/suites/raised.py", line 16, in <module>
 [127.0.0.1]     raise RuntimeError('the device stopped answering mid-check')
 [127.0.0.1] RuntimeError: the device stopped answering mid-check
-[127.0.0.1] raised: FAIL (0.113s)
-[127.0.0.1]      raised: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1] raised: FAIL (0.102s)
+[127.0.0.1]      raised: after failure, health: ping=2ms rest=2ms ftp=1ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  flaky  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the device is well ... FAIL (the listener is gone, 0.000s)
-[127.0.0.1] flaky: FAIL (0.037s)
-[127.0.0.1]      flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> DEGRADED (ftp)
+[127.0.0.1] flaky: FAIL (0.035s)
+[127.0.0.1]      flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> DEGRADED (ftp)
 [127.0.0.1]          ftp: expected b'220', got b''
 [127.0.0.1]      flaky: after failure, the device is unhealthy: it is degraded: ftp
-[127.0.0.1] recovery: rm -f /tmp/e2e-observability-fixture/unhealthy ... OK (0.004s)
+[127.0.0.1] recovery: rm -f /tmp/e2e-observability-fixture/unhealthy ... OK (0.003s)
 [127.0.0.1] recovery: device answers again ... OK (0.001s)
-[127.0.0.1]      flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1]      flaky: the device was recovered, so this failure proves nothing; running it again
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  flaky  (overlay)  (attempt 2)
 [127.0.0.1] ============================================================
-[127.0.0.1]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the device is well ... OK (recovered, 0.000s)
 [127.0.0.1] flaky: OK (0.036s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  browse  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      browse: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
-[127.0.0.1] [01] the cursor moves ... OK (one row, 0.110s)
-[127.0.0.1] browse: OK (0.228s)
+[127.0.0.1]      browse: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+[127.0.0.1] [01] the cursor moves ... OK (one row, 0.111s)
+[127.0.0.1] browse: OK (0.238s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  menu-left-open  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      menu-left-open: health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      menu-left-open: health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=2ms jiffy=1ms -> OK
 [127.0.0.1] [01] the menu opens ... OK (on screen, 0.000s)
-[127.0.0.1] menu-left-open: OK (0.038s)
+[127.0.0.1] menu-left-open: OK (0.040s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  menu-closed-again  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+[127.0.0.1]      menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
 [127.0.0.1] [01] the menu closes ... OK (0.000s)
-[127.0.0.1] menu-closed-again: OK (0.037s)
+[127.0.0.1] menu-closed-again: OK (0.035s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  leaves-things-behind  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the image mounts ... OK (0.023s)
 [127.0.0.1] [02] the setting takes ... OK (0.001s)
-[127.0.0.1] leaves-things-behind: OK (0.091s)
+[127.0.0.1] leaves-things-behind: OK (0.095s)
 [127.0.0.1] 
 [127.0.0.1] missing-file: SKIP (missing /tmp/e2e-observability-fixture/suites/missing_file.py, 0.000s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] E2E  cut-short  (overlay)
 [127.0.0.1] ============================================================
-[127.0.0.1]      cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1]      cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1] [01] the first half ... OK (0.000s)
 [127.0.0.1] [02] the second half ... OK (0.000s)
-[127.0.0.1] cut-short: OK (0.032s)
+[127.0.0.1] cut-short: OK (0.033s)
 [127.0.0.1] 
 [127.0.0.1] TEARDOWN (overlay): release input ... OK (0.001s)
 [127.0.0.1] TEARDOWN (overlay): close active menu UI ... OK (0.001s)
@@ -118,21 +118,21 @@ Ultimate hardware test run
 [127.0.0.1] PERF  a-benchmark
 [127.0.0.1] ============================================================
 [127.0.0.1] [01] typing reaches the field ... OK (11.2 characters a second, 0.000s)
-[127.0.0.1] a-benchmark: OK (0.032s)
+[127.0.0.1] a-benchmark: OK (0.039s)
 [127.0.0.1] 
 [127.0.0.1] ============================================================
 [127.0.0.1] Summary
 [127.0.0.1] ============================================================
 [127.0.0.1]      FAIL e2e overlay    0.643s (7 ok, 2 failed, 1 skipped)
-[127.0.0.1]      OK   perf           0.032s (1 ok)
+[127.0.0.1]      OK   perf           0.039s (1 ok)
 [127.0.0.1]      FAIL e2e overlay broken: failed
 [127.0.0.1]      FAIL e2e overlay raised: failed
 [127.0.0.1]      SKIP e2e overlay missing-file: skipped
 [127.0.0.1]      RCVR flaky: the device was recovered 1 time around this suite
-[127.0.0.1]      slowest: browse 0.228s, raised 0.113s, leaves-things-behind 0.091s
-[127.0.0.1]      0.676s in suites, 0.710s in health checks, the UI-state gate and teardown
+[127.0.0.1]      slowest: browse 0.238s, raised 0.102s, leaves-things-behind 0.095s
+[127.0.0.1]      0.682s in suites, 0.721s in health checks, the UI-state gate and teardown
 [127.0.0.1]      the device was recovered 1 time during the run
-[127.0.0.1]      1.385s total
+[127.0.0.1]      1.403s total
 [127.0.0.1] 
 [127.0.0.1] FAIL  2 of 11 suite runs failed.
      finished 127.0.0.1 with status 1
@@ -153,58 +153,58 @@ Ultimate hardware test run
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  held  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] --- the ordinary case
 [127.0.0.1@localhost] [01] the listing is complete ... OK (20 rows, 0.000s)
 [127.0.0.1@localhost] [02] the first row is the header ... OK (0.000s)
-[127.0.0.1@localhost] held: OK (0.034s)
+[127.0.0.1@localhost] held: OK (0.031s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  broken  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      broken: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      broken: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] [01] the row survives a redraw ... FAIL (0 rows, expected 20, 0.000s)
 [127.0.0.1@localhost] [02] the name is listed in full ... SKIP (needs the ftp-listing-full-length fix, which this machine does not have, 0.000s)
 [127.0.0.1@localhost] broken: FAIL (0.031s)
-[127.0.0.1@localhost]      broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  raised  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] [01] the device answers ... Traceback (most recent call last):
 [127.0.0.1@localhost]   File "/tmp/e2e-observability-fixture/suites/raised.py", line 16, in <module>
 [127.0.0.1@localhost]     raise RuntimeError('the device stopped answering mid-check')
 [127.0.0.1@localhost] RuntimeError: the device stopped answering mid-check
-[127.0.0.1@localhost] raised: FAIL (0.101s)
-[127.0.0.1@localhost]      raised: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost] raised: FAIL (0.098s)
+[127.0.0.1@localhost]      raised: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  flaky  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      flaky: health: ping=1ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] [01] the device is well ... FAIL (the listener is gone, 0.000s)
 [127.0.0.1@localhost] flaky: FAIL (0.035s)
-[127.0.0.1@localhost]      flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=0ms dma=0ms raster=1ms jiffy=1ms -> DEGRADED (ftp)
+[127.0.0.1@localhost]      flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> DEGRADED (ftp)
 [127.0.0.1@localhost]          ftp: expected b'220', got b''
 [127.0.0.1@localhost]      flaky: after failure, the device is unhealthy: it is degraded: ftp
 [127.0.0.1@localhost] recovery: rm -f /tmp/e2e-observability-fixture/unhealthy ... OK (0.001s)
 [127.0.0.1@localhost] recovery: device answers again ... OK (0.001s)
-[127.0.0.1@localhost]      flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost]      flaky: the device was recovered, so this failure proves nothing; running it again
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  flaky  (overlay)  (attempt 2)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      flaky: health: ping=1ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] [01] the device is well ... OK (recovered, 0.000s)
-[127.0.0.1@localhost] flaky: OK (0.035s)
+[127.0.0.1@localhost] flaky: OK (0.037s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  browse  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      browse: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      browse: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] Traceback (most recent call last):
 [127.0.0.1@localhost]   File "/tmp/e2e-observability-fixture/suites/browse.py", line 18, in <module>
 [127.0.0.1@localhost]     backend = ui_backend.make_backend('overlay', ARGS.host,
@@ -217,37 +217,37 @@ Ultimate hardware test run
 [127.0.0.1@localhost]   File "/home/chris/dev/c64/1541u-e2e-obs/tests/e2e/lib/ui_backend.py", line 174, in close_host_menu
 [127.0.0.1@localhost]     raise Failure(
 [127.0.0.1@localhost] report.Failure: the menu on localhost would not close, so keys sent to it would be consumed by that menu instead of reaching the cartridge
-[127.0.0.1@localhost] browse: FAIL (6.147s)
-[127.0.0.1@localhost]      browse: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+[127.0.0.1@localhost] browse: FAIL (6.145s)
+[127.0.0.1@localhost]      browse: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  menu-left-open  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      menu-left-open: health: ping=2ms rest=0ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+[127.0.0.1@localhost]      menu-left-open: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
 [127.0.0.1@localhost] [01] the menu opens ... OK (on screen, 0.000s)
-[127.0.0.1@localhost] menu-left-open: OK (0.035s)
+[127.0.0.1@localhost] menu-left-open: OK (0.036s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  menu-closed-again  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=skip jiffy=skip -> OK
+[127.0.0.1@localhost]      menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
 [127.0.0.1@localhost] [01] the menu closes ... OK (0.000s)
-[127.0.0.1@localhost] menu-closed-again: OK (0.039s)
+[127.0.0.1@localhost] menu-closed-again: OK (0.036s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  leaves-things-behind  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
-[127.0.0.1@localhost] [01] the image mounts ... OK (0.023s)
+[127.0.0.1@localhost]      leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost] [01] the image mounts ... OK (0.024s)
 [127.0.0.1@localhost] [02] the setting takes ... OK (0.001s)
-[127.0.0.1@localhost] leaves-things-behind: OK (0.105s)
+[127.0.0.1@localhost] leaves-things-behind: OK (0.095s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] missing-file: SKIP (missing /tmp/e2e-observability-fixture/suites/missing_file.py, 0.000s)
 [127.0.0.1@localhost] 
 [127.0.0.1@localhost] ============================================================
 [127.0.0.1@localhost] E2E  cut-short  (overlay)
 [127.0.0.1@localhost] ============================================================
-[127.0.0.1@localhost]      cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms raster=1ms jiffy=1ms -> OK
+[127.0.0.1@localhost]      cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 [127.0.0.1@localhost] [01] the first half ... OK (0.000s)
      finished 127.0.0.1@localhost with status -9
 

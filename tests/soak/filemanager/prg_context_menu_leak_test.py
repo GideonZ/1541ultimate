@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "api"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
 
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
@@ -43,7 +44,6 @@ from ui_backend import add_mode_argument, make_browser  # noqa: E402
 from menu_screen_test import RestSession  # noqa: E402
 import prg_context_menu_test as ctx  # noqa: E402
 
-HEAP_PATH = "/v1/machine:heap"
 
 # One-time costs land here.
 WARMUP = 3
@@ -59,7 +59,7 @@ TOLERANCE_BYTES_PER_OP = 1500
 
 
 def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(rest.json(HEAP_PATH)["free"])
+    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 def run_once(machine, fixtures) -> None:
@@ -124,7 +124,7 @@ def main() -> int:
     rest = rest_lib.RestClient(rest_host, args.password or None, args.timeout)
 
     check_start("device exposes GET /v1/machine:heap")
-    if rest.status("GET", HEAP_PATH) != 200:
+    if api_lib.MachineApi(rest).heap() is None:
         check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
         section("summary")
         detail("skipped: device firmware has no machine:heap endpoint")

@@ -26,6 +26,10 @@ What it covers, and why each one is here:
            the machine is alive: a C64 stopped in Ultimax mode still serves
            REST perfectly well.
 - `jiffy`  `$00A2` moves, so the KERNAL interrupt is running as well.
+- `heap`   free FreeRTOS heap. One GET, roughly 10ms on a sweep costing about
+           150ms, and it gives every suite a before and an after by
+           construction: suite N's before sample is suite N-1's after sample.
+           It can never fail the sweep; see `_heap`.
 
 Both are skipped rather than failed while the menu is open, because under
 Freeze the menu has stopped the machine on purpose.
@@ -47,7 +51,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import targets
 from api import UltimateApi
@@ -64,6 +68,9 @@ SKIP = "skip"
 # length, answered by a length-prefixed title. Which port it is on is the
 # handle's answer; see tests/lib/targets.py.
 DMA_CMD_IDENTIFY = 0xFF0E
+
+# The ninth check, named here because Check.render treats it differently.
+HEAP = "heap"
 
 # Every check is bounded well below a second, because this runs before each of
 # seventeen suites and a slow sweep would be paid seventeen times.
@@ -91,12 +98,22 @@ class Check:
     state: str
     ms: float
     detail: str = ""
+    # The figures a check measured rather than timed. Only the heap check has
+    # any; the other eight are latencies.
+    figures: Optional[Dict[str, int]] = None
 
     def render(self) -> str:
         if self.state == SKIP:
             return f"{self.name}=skip"
         if self.state == FAIL:
             return f"{self.name}=FAIL"
+        if self.name == HEAP and self.figures:
+            # A latency for this one says nothing anybody wants; the figure is
+            # the point. The special case is on the check's name, not on
+            # whether a check carries a detail: `ident` and `dma` both carry
+            # one, and rendering those would rewrite two existing checks'
+            # output and lengthen the sweep line as a side effect.
+            return f"{self.name}={self.figures['free']}B"
         return f"{self.name}={self.ms:.0f}ms"
 
 
@@ -205,6 +222,32 @@ def _dma_identify(host: str, port: int) -> str:
     return title.decode("utf-8", "replace").strip()
 
 
+def _heap(api: UltimateApi) -> Check:
+    """Free heap, which can never make a device unhealthy.
+
+    `Health.ok` is `not self.failed`, and a degraded sweep is what fires the
+    operator's recovery command in `Device.ensure_healthy`, which reboots or
+    reflashes hardware. A number that moves for a dozen ordinary reasons must
+    not be able to do that, so this reports OK with the figure or SKIP with the
+    reason and never FAIL. The precedent is the jiffy check below, already
+    downgraded from FAIL to SKIP when the raster says the machine is alive.
+
+    Not an assertion either way: a sample taken at a suite boundary has no
+    settle time, and a transient borrowing reads as a step down. Leak
+    assertions stay in tests/soak/.
+    """
+    started = time.perf_counter()
+    try:
+        figures = api.machine.heap()
+    except (Failure, OSError, TimeoutError, ValueError, RuntimeError) as exc:
+        return Check(HEAP, SKIP, (time.perf_counter() - started) * 1000.0,
+                     str(exc))
+    ms = (time.perf_counter() - started) * 1000.0
+    if figures is None:
+        return Check(HEAP, SKIP, ms, "this firmware has no machine:heap")
+    return Check(HEAP, OK, ms, "", figures)
+
+
 def _moves(api: UltimateApi, address: int, means: str) -> str:
     """Read `address` until the value changes, or say it never did.
 
@@ -258,6 +301,8 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
         checks.append(_timed("ident", identify))
     if not skip("dma"):
         checks.append(_timed("dma", lambda: _dma_identify(host, target.dma_port)))
+    if not skip(HEAP):
+        checks.append(_heap(api))
 
     # The machine checks need the menu shut: under Freeze the open menu has
     # stopped the C64 on purpose, and calling that a degraded device would send
