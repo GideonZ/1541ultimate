@@ -173,6 +173,21 @@ FREEZE_MENU_OPENS = _fix(
     "taking the device off the network until it is power cycled",
     (C64U,))
 
+# Measured with tests/e2e/filemanager/prg_context_menu_test.py. The boot cart
+# shows a 16-character name, and firmware without the fix copies the whole
+# name into that field: software/io/c64/c64_subsys.cc now trims into a fixed
+# buffer, where it used to strcpy. Running a 101-character name on firmware
+# without it leaks the machine subsystem lock, after which every machine: call
+# answers HTTP 423, the UI stops taking injected keys, and only a power cycle
+# recovers. Observed on a C64 Ultimate 1.2.0: machine:reset, machine:resume
+# and machine:reboot all answered 423 while /v1/version and /v1/drives still
+# answered 200.
+BOOTCART_LONG_NAME_SAFE = _fix(
+    "bootcart-long-name-safe",
+    "running a PRG whose name is longer than the boot cart's display field "
+    "leaves the machine subsystem usable, rather than leaking its lock",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
