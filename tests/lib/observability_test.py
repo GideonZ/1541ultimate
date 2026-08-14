@@ -740,6 +740,32 @@ def frames_are_decimated_by_a_phase_accumulator() -> str:
     return "exact at every rate"
 
 
+@case(1, "OBS-5.9")
+def a_dropped_telnet_session_does_not_capture_a_blank_screen() -> str:
+    """The screen before the session died is what the suite was working on."""
+    import json
+    import tempfile
+
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import screens as screen_spool
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "screens.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            for when, rows in ((1.0, ["READY."]), (2.0, ["", "  "])):
+                handle.write(json.dumps({
+                    "kind": screen_spool.TELNET, "suite": "browse",
+                    "attempt": 1, "time": when, "text": rows}) + "\n")
+        last = screen_spool.last_before(path, 9.0, screen_spool.TELNET,
+                                        suite="browse", attempt=1)
+        expect("the last screen is the blank one", last["text"], ["", "  "])
+        earlier = screen_spool.last_before(path, 9.0, screen_spool.TELNET,
+                                           suite="browse", attempt=1,
+                                           non_blank=True)
+        expect("and the one before it is not", earlier["text"], ["READY."])
+    return "the blank screen is not the only answer"
+
+
 @case(3, "OBS-3.4", "OBS-8.22")
 def the_screen_spool_is_not_a_suite() -> str:
     """One file every suite appends to is not one suite's records.
@@ -2869,9 +2895,6 @@ UNTESTED_REQUIREMENTS = {
                "the workflow's shape rather than a behaviour",
     "OBS-5.8": "a decision not to capture per check, which is the absence of "
                "a call rather than a behaviour",
-    "OBS-5.9": "the Telnet branch of the failure capture needs a scripted run "
-               "in Telnet mode; the spool reader it depends on is covered by "
-               "the spool cases",
     "OBS-6.7": "a decision that the heap series is never an assertion, held "
                "by the case that proves the heap check can only SKIP or OK",
     "OBS-6.8": "a decision not to build a heap sampler on a timer",

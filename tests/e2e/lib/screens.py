@@ -197,7 +197,8 @@ def read(path: str) -> List[dict]:
 
 
 def last_before(path: str, when: float, kind: str = "", suite: str = "",
-                attempt: Optional[int] = None) -> Optional[dict]:
+                attempt: Optional[int] = None,
+                non_blank: bool = False) -> Optional[dict]:
     """The most recent screen in `path` at or before `when`.
 
     What the harness was looking at when something happened, which is what a
@@ -207,6 +208,11 @@ def last_before(path: str, when: float, kind: str = "", suite: str = "",
     One spool holds every suite's screens, so `suite` and `attempt` are what
     keep a suite that read no screen at all from being shown the previous
     suite's, presented as its own.
+
+    `non_blank` skips screens with nothing on them. A Telnet session that
+    dropped mid-suite publishes an empty screen last, and an empty block in a
+    report answers nothing; the screen before it is what the suite was working
+    on. A caller that asks for this has to say in its own record that it did.
     """
     best = None
     for record in read(path):
@@ -216,6 +222,10 @@ def last_before(path: str, when: float, kind: str = "", suite: str = "",
             continue
         if attempt is not None and record.get("attempt") != attempt:
             continue
-        if float(record.get("time") or 0.0) <= when:
-            best = record
+        if float(record.get("time") or 0.0) > when:
+            continue
+        if non_blank and not any(str(row).strip()
+                                 for row in record.get("text") or []):
+            continue
+        best = record
     return best

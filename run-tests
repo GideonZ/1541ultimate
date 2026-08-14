@@ -1107,8 +1107,22 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
         # record before it ended is exactly that, and reading a file the run
         # already wrote costs the device nothing.
         spool = os.path.join(options.jsonl_dir, "screens.jsonl")
-        record = screens.last_before(spool, time.time(), screens.TELNET,
+        now = time.time()
+        record = screens.last_before(spool, now, screens.TELNET,
                                      suite=suite_name, attempt=attempt)
+        blank = record is not None and not any(
+            str(row).strip() for row in record.get("text") or [])
+        if blank:
+            # A session that dropped mid-suite publishes an empty screen last.
+            # The screen before it is what the suite was working on, and the
+            # source says which of the two this is.
+            earlier = screens.last_before(spool, now, screens.TELNET,
+                                          suite=suite_name, attempt=attempt,
+                                          non_blank=True)
+            if earlier is not None:
+                record, blank = earlier, False
+                state["note"] = ("the last screen this suite read was blank; "
+                                 "this is the one before it")
         if record:
             state["source"] = "telnet-spool"
             screen_text = [str(row) for row in record.get("text") or []]
