@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
+import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import detail, suite_fail, suite_ok
@@ -400,6 +401,14 @@ class Context:
         self.ftp_observer: Optional[FtpObserver] = None
         self.ftp_driver: Optional[ftplib.FTP] = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, for the rows that need a firmware fix."""
+        return machine_lib.identify(
+            targets.device_of(self.host),
+            lambda: ui_backend.fetch_product(self.host, self.password or None,
+                                             self.timeout))
 
     def observers(self, exclude: Sequence[str] = ()) -> List[object]:
         assert self.menu is not None and self.telnet is not None and self.ftp_observer is not None
@@ -1259,6 +1268,18 @@ def main() -> int:
         assert ctx.telnet is not None
 
         rows = build_rows(ctx)
+
+        # A row whose browser cannot recover from a dropped event leaves that
+        # browser stale for the rest of the run, so every later row compares
+        # against a listing that never caught up. Skipped rather than failed
+        # where the firmware lacks the fix, because one failure there costs
+        # twelve.
+        pressure = "observer-queue pressure"
+        if ctx.machine.missing_fix(machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW):
+            for label, _, _ in [row for row in rows if pressure in row[0]]:
+                ctx.machine.skip_without_fix(
+                    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW, label)
+            rows = [row for row in rows if pressure not in row[0]]
 
         if args.row:
             wanted = [text.lower() for text in args.row]

@@ -3629,11 +3629,15 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        char paging_line[40];
+        // Braced and drawn by draw_help_line, like every other line of the
+        // help, so its keys are accented too. Written through draw_padded it
+        // was the one line on the screen naming keys in the body colour.
+        char paging_line[64];
         const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
         const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
-        sprintf(paging_line, "Page Up/Down:  %s/SH+SPACE / %s/SPACE", page_up, page_down);
-        draw_padded(window, window->get_size_y() - 1, paging_line, (int)strlen(paging_line));
+        sprintf(paging_line, "Page Up/Down:  {%s}/{SH+SPACE} / {%s}/{SPACE}",
+                page_up, page_down);
+        draw_help_line(window->get_size_y() - 1, paging_line);
         return;
     }
 

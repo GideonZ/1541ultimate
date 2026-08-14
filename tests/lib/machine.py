@@ -188,6 +188,19 @@ BOOTCART_LONG_NAME_SAFE = _fix(
     "leaves the machine subsystem usable, rather than leaking its lock",
     (C64U,))
 
+# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py. A
+# browser drains no file-system events while a context menu and its string box
+# are up, its queue holds eight, and putEvent drops the rest, so a rename typed
+# while other traffic is arriving can lose its own notification. Firmware with
+# the fix reconciles afterwards; without it the listing stays stale until the
+# directory is left and re-entered, and every later row of that matrix then
+# compares against a browser that never caught up.
+BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW = _fix(
+    "browser-refresh-after-queue-overflow",
+    "a browser whose event queue overflowed while a context menu was open "
+    "still shows the committed directory afterwards",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

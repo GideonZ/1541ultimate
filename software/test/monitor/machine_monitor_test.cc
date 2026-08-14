@@ -1575,6 +1575,18 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 22, 38, status);
     if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
+    // The keys on this row have to be accented like every other key the help
+    // names. It is drawn on the status row rather than from the help table,
+    // and while that was written straight to the screen it was the one line
+    // naming keys in the body colour. Columns 16-17 are "F1", 33-34 are "F7";
+    // column 15 is the space before them and stays in the body colour.
+    // 1 is MONITOR_UI_ACCENT_COLOR, which is file-local to the monitor; the
+    // EDIT indicator's own colour check spells it the same way.
+    if (expect(screen.colors[22][16] == 1 && screen.colors[22][17] == 1 &&
+               screen.colors[22][33] == 1 && screen.colors[22][34] == 1,
+               "Paging keys on the help footer must use the help accent colour.")) return 1;
+    if (expect(screen.colors[22][15] != 1,
+               "The label before the paging keys must stay in the body colour.")) return 1;
     if (expect_help_visible(screen, ui, "Help view text did not match the help table.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
