@@ -41,7 +41,7 @@ import os
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, List, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -327,16 +327,28 @@ def child_command(args, target, jsonl_dir):
 
 
 runner.child_command = child_command
-sys.exit(runner.main(sys.argv[1:]))
+
+try:
+    status = runner.main(sys.argv[1:])
+finally:
+    runner.stop_console_capture()
+sys.exit(status)
 '''
 
 STUB_PREAMBLE = '''\
 """One scripted suite, standing in for a real one."""
+import argparse
 import os
 import sys
 
 sys.path.insert(0, {library!r})
 import report
+
+_parser = argparse.ArgumentParser()
+_parser.add_argument("-H", "--host", default="")
+_parser.add_argument("-p", "--password", default="")
+_parser.add_argument("--mode", default="")
+ARGS, _rest = _parser.parse_known_args()
 '''
 
 
@@ -390,7 +402,8 @@ class ScriptedRun:
 def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
                  tokens: Sequence[str] = ("127.0.0.1",),
                  arguments: Sequence[str] = (),
-                 workspace: str = "") -> ScriptedRun:
+                 workspace: str = "",
+                 extra_environment: Optional[dict] = None) -> ScriptedRun:
     """Drive the real runner over `stubs` against `double`, and return the tree."""
     import json
     import subprocess
@@ -423,6 +436,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
                        OBS_REGISTRY=registry_path, OBS_WORKSPACE=workspace,
                        NO_COLOR="1")
     environment.update(double.environment())
+    environment.update(extra_environment or {})
     environment.pop("FORCE_COLOR", None)
     completed = subprocess.run(
         [sys.executable, wrapper, "-j", output, *arguments, *tokens],
@@ -501,6 +515,345 @@ def a_retried_suite_repeats_its_check_index() -> str:
     expect("first attempt", first[0]["attempt"], 1)
     expect("second attempt", second[0]["attempt"], 2)
     return "index 1, attempts 1 and 2"
+
+
+# A suite that leaves the device unhealthy and fails, so the runner recovers
+# it and runs the suite again. The flag file is what the double watches and
+# what the recovery command removes: the three processes involved share no
+# memory, and a retry cannot be scripted any other way without a device.
+RETRY_BODY = """\
+import pathlib
+report.check_start('the device is well')
+if os.environ.get("E2E_ATTEMPT") == "1":
+    pathlib.Path(os.environ["OBS_FLAG"]).touch()
+    report.check_fail('the listener is gone')
+    sys.exit(1)
+report.check_ok('recovered')
+"""
+
+
+@case(3, "OBS-2.13")
+def a_suite_console_reaches_the_log_and_the_terminal() -> str:
+    """Every line a suite printed is in its log, in order, with no escapes."""
+    import tempfile
+
+    body = ("report.check_start('coloured'); report.check_ok('20 rows')\n"
+            "print('to stderr', file=sys.stderr)\n"
+            "sys.stdout.write('no trailing newline')\n"
+            "sys.stdout.flush()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            arguments=("--color", "always"), workspace=workspace)
+        with open(made.path("127.0.0.1", "overlay-held.log"), "rb") as handle:
+            saved = handle.read()
+        expect("no escape bytes", b"\x1b" in saved, False)
+        expect("in order", saved,
+               b"[01] coloured ... OK (20 rows, 0.000s)\n"
+               b"to stderr\nno trailing newline\n")
+        for wanted in ("coloured", "to stderr", "no trailing newline"):
+            if wanted not in made.stdout:
+                raise Failure(f"{wanted!r} did not reach the console")
+        if "\x1b" not in made.stdout:
+            raise Failure("the console lost its colour")
+    return "3 lines, escapes on the console only"
+
+
+@case(3, "OBS-2.13", "OBS-15.12")
+def the_runner_console_is_captured_beside_the_suites() -> str:
+    """run.log holds the runner's own output and not a second copy of a suite's."""
+    import tempfile
+
+    body = "report.check_start('a suite line'); report.check_ok()\n"
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        with open(made.path("127.0.0.1", "run.log"), encoding="utf-8") as handle:
+            saved = handle.read()
+        if "Ultimate hardware test run" not in saved:
+            raise Failure("the runner's own banner is missing from run.log")
+        if "health:" not in saved:
+            raise Failure("the runner's health line is missing from run.log")
+        if "a suite line" in saved:
+            raise Failure("a suite's line was written into the runner's log too")
+        expect("no escape bytes", "\x1b" in saved, False)
+    return f"{len(saved.splitlines())} lines"
+
+
+@case(3, "OBS-2.13", "OBS-2.8")
+def a_second_attempt_appends_to_the_log() -> str:
+    """The first attempt truncates and every one after it appends."""
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        flag = os.path.join(workspace, "unhealthy")
+        double.withhold_ftp_banner_while(flag)
+        made = scripted_run(
+            double, [Stub("flaky", body=RETRY_BODY)],
+            arguments=("--recover-command", f"rm -f {flag}"),
+            workspace=workspace, extra_environment={"OBS_FLAG": flag})
+        with open(made.path("127.0.0.1", "overlay-flaky.log"),
+                  encoding="utf-8") as handle:
+            saved = handle.read()
+        expect("both attempts", saved.count("the device is well"), 2)
+        if "FAIL" not in saved or "OK" not in saved:
+            raise Failure(f"one attempt is missing from the log: {saved!r}")
+        checks = [r for r in made.records("127.0.0.1", "overlay-flaky.jsonl")
+                  if r["kind"] == "check"]
+        expect("one record per attempt", [c["attempt"] for c in checks], [1, 2])
+        expect("one index", {c["index"] for c in checks}, {1})
+    return "2 attempts in one log"
+
+
+@case(3, "OBS-2.14")
+def the_run_records_what_it_intended_to_run() -> str:
+    """The plan names every registered suite and why each absent one is absent."""
+    import tempfile
+
+    stubs = [Stub("held"), Stub("not-in-this-run"),
+             Stub("operator-only", manual=True),
+             Stub("a-benchmark", category="perf", args="-H @HOST@ -p @PASS@")]
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, stubs, arguments=("--mode", "overlay,telnet",
+                                                      "-s", "held"),
+                            workspace=workspace)
+        plans = [r for r in made.records("127.0.0.1", "run.jsonl")
+                 if r["kind"] == "plan"]
+        expect("one plan", len(plans), 1)
+        plan = plans[0]
+        expect("every registered suite", len(plan["suites"]), len(stubs))
+        by_name = {entry["name"]: entry for entry in plan["suites"]}
+        expect("held runs", by_name["held"]["run"], True)
+        expect("the others do not", by_name["not-in-this-run"]["reason"],
+               "not-selected")
+        expect("path", by_name["held"]["path"].endswith("held.py"), True)
+        # Two modes over the one selected suite.
+        expect("sequence", [entry["label"] for entry in plan["sequence"]],
+               ["overlay", "telnet"])
+    return f"{len(plan['suites'])} suites, {len(plan['sequence'])} runs planned"
+
+
+@case(3, "OBS-2.14")
+def the_plan_says_why_a_manual_suite_did_not_run() -> str:
+    """A run that named no suite excludes the manual ones, and says so."""
+    import tempfile
+
+    stubs = [Stub("held"), Stub("operator-only", manual=True),
+             Stub("a-benchmark", category="perf", args="-H @HOST@ -p @PASS@")]
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, stubs, workspace=workspace)
+        plan = [r for r in made.records("127.0.0.1", "run.jsonl")
+                if r["kind"] == "plan"][0]
+        by_name = {entry["name"]: entry for entry in plan["suites"]}
+        expect("manual", by_name["operator-only"]["reason"], "manual")
+        expect("category", by_name["a-benchmark"]["reason"], "category")
+        expect("held runs", by_name["held"]["run"], True)
+    return "manual and category"
+
+
+@case(3, "OBS-2.15")
+def the_run_records_what_it_assumed() -> str:
+    """A run says which firmware fixes it treated as present."""
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        plain = scripted_run(double, [Stub("held")], workspace=workspace)
+        run = [r for r in plain.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run"][0]
+        expect("none in force", run["assumptions"], [])
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        assumed = scripted_run(
+            double, [Stub("held")],
+            arguments=("--assume-fix", "ftp-listing-full-length"),
+            workspace=workspace)
+        run = [r for r in assumed.records("127.0.0.1", "run.jsonl")
+               if r["kind"] == "run"][0]
+        expect("in force", run["assumptions"], ["ftp-listing-full-length"])
+    return "one fix assumed"
+
+
+@case(3, "OBS-2.16")
+def the_action_log_says_what_the_harness_did() -> str:
+    """Every mutation is recorded, and a plain successful GET is not."""
+    import tempfile
+
+    body = ("from api import UltimateApi\n"
+            "device = UltimateApi(ARGS.host, ARGS.password)\n"
+            "report.check_start('press a key')\n"
+            "device.machine.press('a')\n"
+            "device.version()\n"
+            "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        actions = [r for r in made.records("127.0.0.1", "overlay-held.jsonl")
+                   if r["kind"] == "action"]
+        pressed = [r for r in actions if r["path"] == "/v1/machine:input"]
+        expect("the keystroke", len(pressed), 1)
+        expect("method", pressed[0]["method"], "POST")
+        expect("inside check 1", pressed[0]["check"], 1)
+        if "ms" not in pressed[0]:
+            raise Failure(f"no duration on {pressed[0]}")
+        quiet = [r for r in actions
+                 if r["path"] == "/v1/version" and r.get("status") == 200]
+        if quiet:
+            raise Failure(f"a GET that answered first time was recorded: {quiet}")
+    return f"{len(actions)} actions"
+
+
+@case(3, "OBS-2.16", "OBS-1.8")
+def the_action_log_keeps_what_the_device_said_when_it_refused() -> str:
+    """A request that did not answer 200 carries the device's own words."""
+    import tempfile
+
+    body = ("from api import UltimateApi\n"
+            "device = UltimateApi(ARGS.host, ARGS.password)\n"
+            "report.check_start('read the menu')\n"
+            "device.machine.menu_screen()\n"
+            "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        refused = [r for r in made.records("127.0.0.1", "overlay-held.jsonl")
+                   if r["kind"] == "action" and r.get("status") == 404
+                   and r["path"] == "/v1/machine:menu_screen"]
+        if not refused:
+            raise Failure("a 404 answer was not recorded")
+        if "Menu screen unavailable" not in refused[0].get("error", ""):
+            raise Failure(f"the device's answer was lost: {refused[0]}")
+    return refused[0]["error"]
+
+
+@case(3, "OBS-2.16")
+def every_transport_records_what_it_did() -> str:
+    """A request that built its own URL is on the timeline too.
+
+    tests/e2e/lib/ui_backend.py reaches the device through retrying_urlopen
+    rather than through RestClient, and it is what sends every keystroke in
+    every UI suite. A hook on one of the three entry points would leave the
+    largest source of harness actions off the record entirely.
+    """
+    import tempfile
+
+    body = ("import urllib.request\n"
+            "import rest as rest_lib\n"
+            "port = os.environ['U64_REST_PORT']\n"
+            "url = 'http://%s:%s/v1/machine:menu_screen' % (ARGS.host, port)\n"
+            "report.check_start('read the menu the long way')\n"
+            "try:\n"
+            "    rest_lib.retrying_urlopen(\n"
+            "        urllib.request.Request(url, method='GET'), 5.0).close()\n"
+            "except Exception:\n"
+            "    pass\n"
+            "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        actions = [r for r in made.records("127.0.0.1", "overlay-held.jsonl")
+                   if r["kind"] == "action"
+                   and r["path"] == "/v1/machine:menu_screen"]
+        if not actions:
+            raise Failure("a request made through retrying_urlopen was not recorded")
+        expect("status", actions[0]["status"], 404)
+        expect("inside check 1", actions[0]["check"], 1)
+    return "retrying_urlopen is on the timeline"
+
+
+@case(3, "OBS-2.16")
+def the_action_log_carries_what_a_request_sent() -> str:
+    """A keystroke is a JSON payload, and the record names the keys."""
+    import tempfile
+
+    body = ("from api import UltimateApi\n"
+            "device = UltimateApi(ARGS.host, ARGS.password)\n"
+            "report.check_start('press a key')\n"
+            "device.machine.press('run_stop')\n"
+            "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        pressed = [r for r in made.records("127.0.0.1", "overlay-held.jsonl")
+                   if r["kind"] == "action" and r["path"] == "/v1/machine:input"]
+        expect("one keystroke", len(pressed), 1)
+        if "run_stop" not in pressed[0].get("params", ""):
+            raise Failure(f"the key that was pressed is not in {pressed[0]}")
+    return "the key names survive"
+
+
+@case(3, "OBS-1.8")
+def no_artefact_carries_the_password() -> str:
+    """A password in a query, in argv or in a log is masked before it is written."""
+    import tempfile
+
+    body = ("from api import UltimateApi\n"
+            "device = UltimateApi(ARGS.host, ARGS.password)\n"
+            "report.check_start('send it somewhere it should not go')\n"
+            "device.rest.request('PUT', '/v1/machine:nowhere',\n"
+            "                    params={'token': ARGS.password})\n"
+            "report.check_ok(ARGS.password)\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=body)],
+                            arguments=("--password", "hunter2"),
+                            workspace=workspace)
+        for name in ("run.jsonl", "overlay-held.jsonl", "run.log",
+                     "overlay-held.log"):
+            with open(made.path("127.0.0.1", name), encoding="utf-8") as handle:
+                text = handle.read()
+            if "hunter2" in text:
+                raise Failure(f"the password reached {name}")
+        actions = [r for r in made.records("127.0.0.1", "overlay-held.jsonl")
+                   if r["kind"] == "action" and "token" in str(r.get("params"))]
+        if not actions or "***" not in str(actions[0]["params"]):
+            raise Failure(f"the query was not masked: {actions}")
+    return "4 artefacts clean"
+
+
+@case(3, "OBS-2.16")
+def the_runner_own_actions_name_no_check() -> str:
+    """A request the runner made outside any check carries no check index.
+
+    run-tests reports its own gates with unnumbered steps, so every one of them
+    would otherwise claim check 0 and several would share it.
+    """
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held")], workspace=workspace)
+        actions = [r for r in made.records("127.0.0.1", "run.jsonl")
+                   if r["kind"] == "action"]
+        if not actions:
+            raise Failure("the runner made no recorded request")
+        claimed = [r for r in actions if "check" in r]
+        if claimed:
+            raise Failure(f"a runner request claimed a check index: {claimed[0]}")
+    return f"{len(actions)} runner actions"
+
+
+@case(3, "OBS-2.14", "OBS-2.15")
+def several_targets_record_the_plan_and_the_assumptions() -> str:
+    """The parent plans for the run, and every process records what it assumed.
+
+    A child is told the assumptions through the environment rather than on its
+    command line, so a record derived from this process's own flags would say
+    nothing for every process but the first.
+    """
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held")],
+                            tokens=("127.0.0.1", "127.0.0.1@localhost"),
+                            arguments=("--assume-fix", "ftp-listing-full-length"),
+                            workspace=workspace)
+        parent = [r for r in made.records("run.jsonl") if r["kind"] == "plan"]
+        expect("the parent planned", len(parent), 1)
+        expect("for both targets", parent[0]["targets"],
+               ["127.0.0.1", "127.0.0.1@localhost"])
+        for name in ("run.jsonl", "127.0.0.1/run.jsonl",
+                     "127.0.0.1-at-localhost/run.jsonl"):
+            records = made.records(*name.split("/"))
+            runs = [r for r in records if r["kind"] == "run"]
+            expect(f"{name} assumptions", runs[0]["assumptions"],
+                   ["ftp-listing-full-length"])
+    return "3 processes, one assumption"
 
 
 @case(3, "OBS-2.1", "OBS-2.10")

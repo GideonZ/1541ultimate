@@ -176,6 +176,9 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail` |
 | `warning` | `message` |
+| `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
+| `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
+
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
 
 A `suite` record written by `run-tests` carries what only the harness knows:
@@ -188,10 +191,45 @@ they are absent rather than zero.
 exports both for every suite it starts. A suite started by hand has neither in
 its environment and records neither, rather than a guessed value.
 
+`plan` is what the run intended before it ran anything: every suite the
+registry names, whether this run meant to run it, and one of `manual`,
+`not-selected` or `category` when it did not. `sequence` is the ordered list of
+suite runs, which is longer than the selection because an e2e category runs its
+whole suite list once per mode. A multi-target run's parent writes one too,
+carrying `targets`, so a target still waiting for a machine another one holds
+is on record before it has a directory of its own.
+
+`action` is what the harness did to the device. `tests/lib/rest.py` writes one
+for every non-GET request, every request that was retried and every request
+that did not answer 200, whichever of its three entry points the caller used;
+a GET that answered 200 first time is a run's bulk and is dropped. `params` is
+the query string or the JSON payload the request carried, truncated, and `ms`
+is how long the attempt that produced the outcome took rather than how long
+the retries and their pauses did. `check` is the index of the check the request
+happened inside and is absent outside one, which includes every request the
+runner itself makes, because the runner reports its own gates as unnumbered
+steps.
+
+Without these records a reader watching a screen go blank cannot tell a reset
+the run performed from a crash it observed.
+
+```sh
+# what the run changed on the device
+jq -r 'select(.kind=="action" and .method!="GET") | "\(.suite) \(.method) \(.path)"' runs/u64/*.jsonl
+
+# every request that did not answer 200, with the device's own words. Some of
+# these are answers a check was asserting on: machine:menu_screen answers 404
+# when no menu is open, which is the ordinary state between suites.
+jq -r 'select(.kind=="action" and .error) | "\(.suite) \(.path) \(.status) \(.error)"' runs/u64/*.jsonl
+```
+
 A `run` record also says what the run is a run of, so a downloaded tree needs
 no second file to identify itself: `commit`, `branch` and `worktree_dirty` from
 git or from `GITHUB_SHA` and `GITHUB_REF_NAME`, `host`, `python`, `argv` with
-the device password masked, and `started` as a wall-clock time.
+the device password masked, `started` as a wall-clock time, and `assumptions`
+naming the firmware fixes in force. Those come from `E2E_ASSUME_FIX`, which is
+what `--assume-fix` sets and what a child run and every suite are told through,
+so a child's record says the same thing as its parent's.
 
 A multi-target run's parent writes `DIR/run.jsonl` naming `targets` and the
 combined `exit_code`. It carries no counts: its children each counted their

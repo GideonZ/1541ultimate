@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
+import report
 import targets
 from report import Failure, format_exception
 
@@ -43,6 +44,13 @@ INPUT_PATH = targets.INPUT_PATH
 DEFAULT_TIMEOUT = 10.0
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
+
+# How much of what a request carried, or of what the device said back, is kept
+# in one action record. Enough for the firmware's own error sentence and for a
+# key batch, short enough that a suite hammering a refusing endpoint does not
+# fill the run's JSONL with copies of one body. The password inside either is
+# masked by report.py, which does it once for every record shape.
+ACTION_TEXT_CHARS = 300
 
 Response = Tuple[int, Dict[str, str], bytes]
 
@@ -60,6 +68,54 @@ def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool
     return method.upper() == "GET" or idempotent
 
 
+def record_action(method: str, path: str, started: float, attempts: int,
+                  status: Optional[int], answer: Optional[bytes],
+                  exc: Optional[BaseException] = None,
+                  params: Optional[Dict[str, object]] = None,
+                  payload: Optional[object] = None) -> None:
+    """Record what a request did to the device, when it is worth keeping.
+
+    Every request in the tree passes through one of the three entry points in
+    this module, so this is where the harness's own acts reach one timeline
+    whichever call made them. A run's reads are its bulk, so the rule is exact:
+    a GET that answered 200 first time is dropped, and everything else is kept.
+    A mutation changed the device, a retry says the device was busy, and a
+    request that did not answer 200 carries the device's own words, which a
+    suite that catches Failure and carries on otherwise destroys the only copy
+    of.
+
+    `started` is the start of the attempt that produced this outcome rather
+    than of the first one, so `ms` is what the device took and not what the
+    retry pauses did.
+    """
+    if not report.JSONL_PATH:
+        return
+    retried = attempts > 1
+    answered = status == 200
+    if method.upper() == "GET" and answered and not retried:
+        return
+    fields: Dict[str, object] = {
+        "ms": round((time.monotonic() - started) * 1000.0, 1)}
+    carried = params if params else payload
+    if carried:
+        fields["params"] = str(carried)[:ACTION_TEXT_CHARS]
+    if status is not None:
+        fields["status"] = status
+    if retried:
+        fields["retries"] = attempts
+    if not answered:
+        if exc is not None:
+            fields["error"] = format_exception(exc)[:ACTION_TEXT_CHARS]
+        elif answer:
+            fields["error"] = answer.decode("utf-8", "replace")[:ACTION_TEXT_CHARS]
+    report.action(method.upper(), path, **fields)
+
+
+def path_of(url: str) -> str:
+    """The path a URL names, for a caller that built its own URL."""
+    return urllib.parse.urlsplit(url).path or url
+
+
 def retrying_urlopen(request: "urllib.request.Request", timeout: float,
                      idempotent: bool = False):
     """urlopen under the shared retry policy, for callers not using RestClient.
@@ -71,19 +127,28 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     Returns the open response, which the caller closes; HTTPError is left to
     propagate, because an HTTP status is an answer rather than a failure.
     """
+    method = request.get_method()
+    path = path_of(request.full_url)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
+        started = time.monotonic()
         try:
-            return urllib.request.urlopen(request, timeout=timeout)
-        except urllib.error.HTTPError:
+            answer = urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            record_action(method, path, started, attempt + 1, exc.code, None, None)
             raise
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             last_exc = exc
             sent = not isinstance(exc, urllib.error.URLError)
-            if may_retry(request.get_method(), sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+            if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                 time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                 continue
+            record_action(method, path, started, attempt + 1, None, None, exc)
             break
+        # The caller closes the response and reads the body itself, so the
+        # record carries the status and not what came back.
+        record_action(method, path, started, attempt + 1, answer.status, None)
+        return answer
     raise last_exc
 
 
@@ -108,21 +173,25 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     for attempt in range(TRANSPORT_RETRIES):
         connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
         sent = False
+        started = time.monotonic()
         try:
             connection.connect()
             sent = True
             connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
             payload = response.read()
-            return response.status, dict(response.getheaders()), payload
+            answer = (response.status, dict(response.getheaders()), payload)
         except (OSError, http.client.HTTPException) as exc:
             last_exc = exc
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                 time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                 continue
+            record_action(method, path, started, attempt + 1, None, None, exc)
             raise
         finally:
             connection.close()
+        record_action(method, path, started, attempt + 1, answer[0], answer[2])
+        return answer
     raise last_exc
 
 
@@ -216,6 +285,9 @@ class RestClient:
         self.host = target.device
         self.input_host = target.input_host
         self.password = password or ""
+        # No artefact may carry it, and the record writer is the one place that
+        # can enforce that for every shape at once. See report.mask_secret.
+        report.mask_secret(self.password)
         self.timeout = timeout
         # Requests that could have changed the device, counted. A GET does
         # not: reading memory, the menu screen or a config value leaves the
@@ -266,20 +338,30 @@ class RestClient:
         # Retryability is decided by may_retry, the one copy of that rule.
         last_exc: Optional[BaseException] = None
         for attempt in range(TRANSPORT_RETRIES):
+            started = time.monotonic()
             try:
                 with urllib.request.urlopen(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
-                    return response.status, dict(response.headers.items()), response.read()
+                    answer = (response.status, dict(response.headers.items()),
+                              response.read())
             except urllib.error.HTTPError as exc:
-                return exc.code, dict(exc.headers.items()), exc.read()
+                answer = (exc.code, dict(exc.headers.items()), exc.read())
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
                 sent = not isinstance(exc, urllib.error.URLError)
                 if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                     continue
+                record_action(method, path, started, attempt + 1, None, None, exc,
+                              params=params, payload=payload)
                 break
+            # Outside the response, so the record's file append is not part of
+            # the time this connection holds one of the device's four slots.
+            record_action(method, path, started, attempt + 1, answer[0], answer[2],
+                          params=params, payload=payload)
+            return answer
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
+
 
     # -- shorthands for the shapes suites actually use --
 

@@ -157,6 +157,50 @@ class Failure(RuntimeError):
     """A check did not hold. The message is what the run reports."""
 
 
+# Strings that must not reach an artefact. The device password is the whole of
+# it: build_command substitutes it into every suite's argument vector and
+# RestClient carries it, so a recorded command line, a query or a response body
+# can hold it, and the artefacts leave the machine that produced them. A CI
+# artifact is downloadable by anyone who can see the build.
+#
+# Masking happens where records are written rather than at each call site,
+# because every writer would otherwise need its own copy of the rule and the
+# one that forgot would be the one that leaked.
+SECRET_MASK = "***"
+_secrets: List[str] = []
+
+
+def mask_secret(value: str) -> None:
+    """Never write `value` into a record. Empty values are ignored."""
+    if value and value not in _secrets:
+        _secrets.append(value)
+
+
+def secrets() -> tuple:
+    """Every string registered with mask_secret.
+
+    For a component that has to mask something other than a record: the
+    captured console log is the case, because a suite may print the password
+    it was given and the runner is the process that saves what it printed.
+    """
+    return tuple(_secrets)
+
+
+def _masked(value):
+    """`value` with every registered secret replaced, however deeply nested."""
+    if not _secrets:
+        return value
+    if isinstance(value, str):
+        for secret in _secrets:
+            value = value.replace(secret, SECRET_MASK)
+        return value
+    if isinstance(value, dict):
+        return {key: _masked(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_masked(item) for item in value]
+    return value
+
+
 def colour(text: str, code: str) -> str:
     return f"{code}{text}{OFF}" if _USE_COLOUR else text
 
@@ -191,16 +235,35 @@ def _record(**fields) -> None:
     if ATTEMPT is not None:
         fields.setdefault("attempt", ATTEMPT)
     try:
+        line = json.dumps(_masked(fields), default=repr)
         with open(JSONL_PATH, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(fields) + "\n")
-    except OSError:
-        # Reporting must never be the reason a run fails.
+            handle.write(line + "\n")
+    except (OSError, TypeError, ValueError):
+        # Reporting must never be the reason a run fails, and a caller that
+        # passed something unusual is not a reason to end one. `default=repr`
+        # already carries an object json cannot encode; this catches whatever
+        # it cannot.
         pass
 
 
 def check_count() -> int:
     """How many checks have been reported, for a suite's closing line."""
     return _count
+
+
+def current_check() -> Optional[int]:
+    """The index of the check that is open, or None between two checks.
+
+    For a record written by something other than the check itself, so that a
+    device request made inside a check joins to it without an identifier of
+    its own.
+
+    None while nothing is open, and None in a process that reports only
+    unnumbered steps, which is what `run-tests` does: `step_start` opens a line
+    without numbering it, so a zero there would name a check that does not
+    exist and several steps would share it.
+    """
+    return _count if _depth and _count else None
 
 
 def last_label() -> str:
@@ -430,6 +493,38 @@ def suite_warn(name: str, reason: str, seconds: Optional[float] = None,
                **fields) -> None:
     """A suite that passed but left something behind. Not a failure."""
     _suite_line(name, WARN, reason, seconds, fields)
+
+
+def action(method: str, path: str, **fields) -> None:
+    """One thing the harness did to the device, for the JSONL only.
+
+    The other records say what the device showed and what the checks
+    concluded. None of them says what the harness did to it, and without that
+    a reader watching a screen go blank cannot tell a reset the run performed
+    from a crash it observed.
+
+    Written by the transport rather than by a caller, so every deliberate act
+    reaches one timeline whichever call made it.
+    """
+    index = current_check()
+    fields = dict(fields)
+    fields.pop("kind", None)
+    fields["method"] = method
+    fields["path"] = path
+    if index is not None:
+        fields["check"] = index
+    _record(kind="action", **fields)
+
+
+def plan_result(suites: Iterable[dict], sequence: Iterable[dict],
+                **fields) -> None:
+    """What a run intends to do, recorded before it does any of it.
+
+    A green run that quietly ran 17 of 25 registered suites reads exactly like
+    a green run that ran all of them, and "are the tests working properly" is
+    not answerable without the difference.
+    """
+    _record(kind="plan", suites=list(suites), sequence=list(sequence), **fields)
 
 
 def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:

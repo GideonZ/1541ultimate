@@ -16,12 +16,14 @@
 import argparse
 import os
 import platform
+import re
 import selectors
 import shlex
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -282,27 +284,6 @@ class Options:
     recover_timeout: float
 
 
-# What replaces the device password anywhere a run records what it was given.
-# The artefacts leave the machine that produced them: a CI artifact is
-# downloadable by anyone who can see the build, and build_command substitutes
-# the password into every suite's argument vector, so a recorded command line
-# is a secret-bearing string.
-PASSWORD_MASK = "***"
-
-
-def redact_password(argv: Sequence[str], password: str) -> List[str]:
-    """`argv` with every occurrence of the device password masked.
-
-    Every occurrence rather than only the value after -p, because the password
-    also reaches a recovery command and anything else an operator wrote it
-    into. A run whose password is empty, which is the common local case, is
-    unaffected.
-    """
-    if not password:
-        return list(argv)
-    return [item.replace(password, PASSWORD_MASK) for item in argv]
-
-
 def git_answer(*arguments: str) -> Optional[str]:
     """One git query about this checkout, or None when git does not answer.
 
@@ -323,8 +304,7 @@ def git_answer(*arguments: str) -> Optional[str]:
     return completed.stdout.strip()
 
 
-def run_identity(argv: Sequence[str], password: str,
-                 started: float) -> Dict[str, object]:
+def run_identity(argv: Sequence[str], started: float) -> Dict[str, object]:
     """What this run is a run of, for the `run` record.
 
     A downloaded artifact has to say what produced it without a second file.
@@ -334,8 +314,23 @@ def run_identity(argv: Sequence[str], password: str,
     fields: Dict[str, object] = {
         "host": socket.gethostname(),
         "python": platform.python_version(),
-        "argv": redact_password(argv, password),
+        # report.mask_secret has been told the password, so the record writer
+        # takes it out of this and out of every other field it writes.
+        "argv": list(argv),
         "started": started,
+        # What this run assumed rather than proved. tests/lib/machine.py
+        # reports a check tagged with a fix its machine lacks as SKIP, and
+        # --assume-fix runs it anyway, so a reader who cannot see the
+        # assumptions cannot tell a suite that passed from one that skipped
+        # the part that would have failed.
+        #
+        # Read from the environment rather than from this process's flags,
+        # because that is what is in force: --assume-fix reaches a child run
+        # and every suite through ASSUME_ENV, so a child, and a run started
+        # with the variable already exported, both have assumptions and
+        # neither has the flag.
+        "assumptions": sorted(machine_lib.parse_assumptions(
+            os.environ.get(machine_lib.ASSUME_ENV, ""))),
     }
     commit = os.environ.get("GITHUB_SHA") or git_answer("rev-parse", "HEAD")
     if commit:
@@ -351,6 +346,155 @@ def run_identity(argv: Sequence[str], password: str,
         # one field twice with two meanings is worse than a longer name.
         fields["worktree_dirty"] = bool(status)
     return fields
+
+
+# Anything a terminal reads as formatting rather than as text: the colour
+# escapes report.py emits, and the cursor and erase sequences a suite could
+# emit. Stripped on the way to a file so a saved log greps cleanly, and left
+# alone on the way to the console so the terminal keeps its colour.
+ANSI_ESCAPES = re.compile(
+    rb"\x1b\[[0-9;?]*[ -/]*[@-~]"        # CSI, which is what colour uses
+    rb"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC, terminated either way
+    rb"|\x1b[@-Z\\-_]")                   # a two-character escape
+
+
+def for_the_log(line: bytes) -> bytes:
+    """One console line as it is saved: no escapes, and no device password.
+
+    The console keeps its escapes so the terminal stays readable, and the file
+    loses them so it greps cleanly. The password goes from both copies of the
+    file because the artefacts leave the machine that produced them, and a
+    suite that printed the password it was given would otherwise put it in one.
+    """
+    line = ANSI_ESCAPES.sub(b"", line)
+    for secret in report.secrets():
+        line = line.replace(secret.encode("utf-8", "replace"),
+                            report.SECRET_MASK.encode())
+    return line
+
+
+class ConsoleCapture:
+    """Copy this process's console output into a file as well as showing it.
+
+    At the file-descriptor level rather than by replacing `sys.stdout`, because
+    the UI-state gate and the operator's recovery command are subprocesses that
+    inherit this process's stdout, and when a recovery fails its output is the
+    only record of why. A Python-level tee would miss both.
+
+    The console keeps its escapes and the file does not, so the terminal stays
+    readable and the saved log greps cleanly.
+    """
+
+    def __init__(self, path: str) -> None:
+        self.console_fd = os.dup(1)
+        self.handle = open(path, "wb")
+        read_fd, write_fd = os.pipe()
+        sys.stdout.flush()
+        os.dup2(write_fd, 1)
+        os.close(write_fd)
+        self._read_fd = read_fd
+        self._thread = threading.Thread(target=self._pump, name="run-log",
+                                        daemon=True)
+        self._thread.start()
+
+    def _pump(self) -> None:
+        pending = b""
+        while True:
+            try:
+                chunk = os.read(self._read_fd, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            os.write(self.console_fd, chunk)
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                self.handle.write(for_the_log(line) + b"\n")
+            self.handle.flush()
+        if pending:
+            self.handle.write(for_the_log(pending) + b"\n")
+        self.handle.flush()
+
+    def close(self) -> None:
+        """Put the console back and let the pump drain what is left."""
+        sys.stdout.flush()
+        # Restoring fd 1 drops the last reference to the pipe's write end, so
+        # the pump reads end-of-file and finishes what it has.
+        os.dup2(self.console_fd, 1)
+        self._thread.join(timeout=5)
+        os.close(self._read_fd)
+        self.handle.close()
+        os.close(self.console_fd)
+
+
+# The one console capture a process has, when it was asked for one.
+_CONSOLE: Optional[ConsoleCapture] = None
+
+
+def start_console_capture(path: str) -> None:
+    """Send this process's console output to `path` as well as to the console."""
+    global _CONSOLE
+    if _CONSOLE is None:
+        _CONSOLE = ConsoleCapture(path)
+
+
+def stop_console_capture() -> None:
+    global _CONSOLE
+    if _CONSOLE is not None:
+        _CONSOLE.close()
+        _CONSOLE = None
+
+
+def console_fd() -> int:
+    """The descriptor this run's console output started on.
+
+    While a capture is running fd 1 is a pipe into the run log, so a suite's
+    own lines go here instead: they belong in the suite's log rather than a
+    second time in the runner's.
+    """
+    return _CONSOLE.console_fd if _CONSOLE else 1
+
+
+def run_and_capture(command: List[str], environment: Dict[str, str],
+                    path: str, truncate: bool, console_fd: int) -> int:
+    """Run a suite, sending every line to the console and to `path`.
+
+    Three properties, each of which has to be held deliberately:
+
+    - The file is appended to across attempts and truncated on the first,
+      matching the per-suite JSONL rule, so a retried suite keeps every attempt.
+    - Stderr is merged into the same file, in order. A traceback interleaved
+      with the check line that produced it is the evidence, and two files would
+      lose the interleaving.
+    - The output is written as it arrives rather than at the end. A suite runs
+      for minutes, and both destinations need its lines while it is happening.
+
+    The console copy goes to the descriptor the run started with rather than
+    through this process's stdout, so a suite's lines land in the suite's own
+    log and not a second time in the runner's.
+    """
+    process = subprocess.Popen(command, env=environment,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+    with open(path, "wb" if truncate else "ab") as handle:
+        pending = b""
+        while True:
+            chunk = process.stdout.read1(65536)
+            if not chunk:
+                break
+            os.write(console_fd, chunk)
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                handle.write(for_the_log(line) + b"\n")
+            handle.flush()
+        if pending:
+            # A suite killed mid-line ends here, and the partial line is
+            # itself the answer, so it is kept rather than dropped.
+            handle.write(for_the_log(pending) + b"\n")
+    process.stdout.close()
+    return process.wait()
 
 
 def die(message: str) -> None:
@@ -710,17 +854,24 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
             report.suite_fail(suite.name, "precondition: the device is unhealthy", 0.0)
             return report.FAIL, 0.0, True
 
+    command = build_command(suite, options, mode)
     started = time.monotonic()
-    completed = subprocess.run(build_command(suite, options, mode), env=environment)
+    if options.jsonl_dir:
+        returncode = run_and_capture(
+            command, environment,
+            os.path.join(options.jsonl_dir, f"{label}-{suite.name}.log"),
+            truncate=attempt == 1, console_fd=console_fd())
+    else:
+        returncode = subprocess.run(command, env=environment).returncode
     elapsed = time.monotonic() - started
 
     fields = {"mode": mode, "attempt": attempt,
               "recoveries": device.suite_recoveries}
-    if completed.returncode == 0:
+    if returncode == 0:
         report.suite_ok(suite.name, "", elapsed, **fields)
         verdict = report.OK
     else:
-        report.suite_fail(suite.name, describe_exit(completed.returncode),
+        report.suite_fail(suite.name, describe_exit(returncode),
                           elapsed, **fields)
         verdict = report.FAIL
 
@@ -759,7 +910,11 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
     full_path = os.path.join(ROOT, suite.path)
     if not os.path.isfile(full_path):
         print()
-        report.suite_skip(suite.name, f"missing {suite.path}", 0.0)
+        # The same fields every other suite record carries, so a skipped
+        # suite is named by the identity key the rest of the run uses rather
+        # than by one with an empty label in the middle of it.
+        report.suite_skip(suite.name, f"missing {suite.path}", 0.0,
+                          mode=mode, attempt=1, recoveries=0)
         return Result(suite.category, mode, suite.name, report.SKIP, 0.0)
 
     recoveries_before = device.recoveries
@@ -798,6 +953,17 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
         attempt += 1
 
 
+def chosen_categories(args: argparse.Namespace) -> List[str]:
+    """Which categories this run covers, in the order they run in."""
+    if args.suite:
+        # Naming suites selects exactly those, whichever category they are in.
+        return [c for c in CATEGORIES
+                if any(s.category == c and s.name in args.suite for s in SUITES)]
+    chosen = [c for c in CATEGORIES
+              if args.all or getattr(args, c.replace("-", "_"))]
+    return chosen or ["e2e"]
+
+
 def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite]:
     chosen = []
     for suite in SUITES:
@@ -809,6 +975,72 @@ def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite
         elif not suite.manual or manual:
             chosen.append(suite)
     return chosen
+
+
+# Why a registered suite is not in this run. Every suite the registry names is
+# either in the run or carries one of these.
+PLAN_MANUAL = "manual"
+PLAN_NOT_SELECTED = "not-selected"
+PLAN_CATEGORY = "category"
+
+
+def plan_reason(suite: Suite, names: List[str], manual: bool,
+                categories: Sequence[str]) -> str:
+    """Why `suite` is not in this run. Only called for one that is not.
+
+    Which suites run is `selected_suites`' answer and is read from the
+    sequence; this says why one of the rest was left out, in the order the
+    three causes are decided.
+    """
+    if names and suite.name not in names:
+        # Naming suites selects exactly those, manual ones included.
+        return PLAN_NOT_SELECTED
+    if suite.category not in categories:
+        return PLAN_CATEGORY
+    if suite.manual and not manual:
+        return PLAN_MANUAL
+    return PLAN_CATEGORY
+
+
+def record_plan(args: argparse.Namespace, categories: Sequence[str],
+                modes: Sequence[str], **extra) -> None:
+    """Record what this run intends to run, before it runs any of it.
+
+    A green run that quietly ran 17 of the 25 registered suites reads exactly
+    like a green run that ran all of them. The registry is the authority for
+    what exists and `selected_suites` has already decided what runs, so this
+    records a decision rather than deriving a new one.
+
+    The sequence is not the selection: an e2e category runs its whole suite
+    list once per mode, so a two-mode run of ten suites is twenty entries.
+
+    A mode pass covers every selected e2e suite, including the ones that drive
+    one transport and ignore --mode, so a suite is never left out because of
+    the mode. The reason a registered suite is absent is always one of the
+    three above.
+    """
+    sequence = []
+    for category in categories:
+        chosen = selected_suites(category, args.suite, args.manual)
+        for mode in (modes if category == "e2e" else [""]):
+            for suite in chosen:
+                # The label is what names this run of the suite everywhere
+                # else: the UI mode for an e2e suite, the category otherwise.
+                sequence.append({"category": category,
+                                 "mode": mode or DEFAULT_MODE,
+                                 "label": mode or category,
+                                 "suite": suite.name})
+
+    running = {entry["suite"] for entry in sequence}
+    entries = []
+    for suite in SUITES:
+        entry = {"name": suite.name, "category": suite.category,
+                 "path": suite.path, "run": suite.name in running}
+        if not entry["run"]:
+            entry["reason"] = plan_reason(suite, args.suite, args.manual,
+                                          categories)
+        entries.append(entry)
+    report.plan_result(entries, sequence, **extra)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1366,6 +1598,15 @@ def run_targets(args: argparse.Namespace,
         # This process has no target of its own, so its records go beside the
         # per-target directories rather than into one of them.
         report.set_jsonl_path(os.path.join(args.jsonl_dir, "run.jsonl"))
+        start_console_capture(os.path.join(args.jsonl_dir, "run.log"))
+        # The plan for the run as a whole, before any target starts. A target
+        # waiting for a machine another one holds has no directory and no file
+        # of its own until it starts, so without this nothing says it was
+        # planned, and a run killed while that target was still waiting leaves
+        # no record that it was ever going to run. Each child records the same
+        # plan for itself.
+        record_plan(args, chosen_categories(args), resolve_modes(args.modes),
+                    targets=[t.token for t in wanted])
     if args.color == "auto" and report.colour_enabled():
         # Each child writes into a pipe, so it would decide "not a terminal"
         # and drop colour even though this process reprints its lines on one.
@@ -1434,7 +1675,7 @@ def run_targets(args: argparse.Namespace,
                 seconds=time.time() - started_wall,
                 exit_code=status,
                 targets=[t.token for t in wanted],
-                **run_identity(sys.argv, args.password, started_wall))
+                **run_identity(sys.argv, started_wall))
         return status
 
     try:
@@ -1492,6 +1733,9 @@ def main(argv: List[str]) -> int:
     started_wall = time.time()
     args = build_parser().parse_args(argv)
     apply_colour_choice(args.color)
+    # No artefact may carry it, and the record writer is the one place that can
+    # take it out of every record shape at once.
+    report.mask_secret(args.password)
     if args.assume_fix:
         # Exported rather than passed on: the suites are child processes, and
         # a misspelt tag has to stop the run here, because a run that quietly
@@ -1514,21 +1758,13 @@ def main(argv: List[str]) -> int:
         return run_targets(args, wanted)
     target = wanted[0]
 
-    categories = [c for c in CATEGORIES
-                  if args.all or getattr(args, c.replace("-", "_"))]
-    if not categories:
-        categories = ["e2e"]
-
     modes = resolve_modes(args.modes)
 
     known = {suite.name for suite in SUITES}
     for wanted in args.suite:
         if wanted not in known:
             die(f"unknown suite: {wanted} (use --list)")
-    if args.suite:
-        # Naming suites selects exactly those, whichever category they are in.
-        categories = [c for c in CATEGORIES
-                      if any(s.category == c and s.name in args.suite for s in SUITES)]
+    categories = chosen_categories(args)
 
     if args.recover_max_per_suite < 0:
         die("--recover-max-per-suite cannot be negative")
@@ -1559,6 +1795,12 @@ def main(argv: List[str]) -> int:
         # import; this process resolved its target after importing it, so it
         # says the same thing about its own health sweeps and suite records.
         report.set_target(target.token)
+        start_console_capture(os.path.join(args.jsonl_dir, "run.log"))
+        if args.color == "auto" and report.colour_enabled():
+            # A captured suite writes into a pipe, so it would decide "not a
+            # terminal" and drop colour even though its lines are reprinted on
+            # one. run_targets already runs its children this way.
+            os.environ["FORCE_COLOR"] = "1"
 
     options = Options(host=target.token, password=args.password,
                       timeout=args.timeout, soak_profile=args.soak_profile,
@@ -1589,6 +1831,10 @@ def main(argv: List[str]) -> int:
                       f"{options.recover_max_total} in the run)")
     if options.jsonl_dir:
         report.detail(f"jsonl:      {options.jsonl_dir}/")
+
+    # Before anything runs, so a run that was killed part way still says what
+    # it set out to do.
+    record_plan(args, categories, modes)
 
     device = Device(options.host, options.password, float(options.timeout),
                     health_check=options.health_check,
@@ -1649,8 +1895,13 @@ def main(argv: List[str]) -> int:
             break
 
     return summarise(results, started, device.recoveries,
-                     run_identity(sys.argv, options.password, started_wall))
+                     run_identity(sys.argv, started_wall))
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    finally:
+        # However the run ended, the console goes back and the run log is
+        # closed with whatever had been written to it.
+        stop_console_capture()
