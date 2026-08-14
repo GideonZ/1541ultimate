@@ -25,27 +25,40 @@ extern "C" {
 // monitor window on the physical 40-column screen, and the table as a whole has
 // to fit the shortest screen the monitor runs on, which is the 24-row telnet
 // terminal rather than the 25-row C64. A host test enforces both.
+// The primary grid's cells start at columns 1, 14 and 27 (1-based, excluding
+// the popup border); BOOKMARKS and CONTROL KEYS share a four-anchor grid at
+// 1, 12, 21 and 29. Braces are not printed (see draw_help_line) and do not
+// count against either grid, so they are free to wrap a key wherever one
+// appears without disturbing the column a following key or description lands
+// on. No leading blank row: "HELP", drawn as the window title by
+// draw_header rather than from this table, is this page's own heading, and a
+// heading is not followed by a blank row any more than BOOKMARKS or CONTROL
+// KEYS are below.
 const char *const monitor_help_lines[] = {
-    "{M} Memory    {I} ASCII     {V} Screen",
-    "{A} Assembly  {B} Binary    {U} Undoc/Case",
-    "{J} Jump      {G} Go        {X} Exit",
+    "{M} Memory     {I} ASCII      {V} Screen",
+    "{A} Assembly   {B} Binary     {U} Undoc/Case",
+    "{J} Jump       {G} Go         {X} Exit",
     "",
-    "{E} Edit      {F} Fill      {T} Transfer",
-    "{C} Compare   {H} Hunt      {N} Number",
-    "{W} Width     {R} Range     {P} Poll",
-    "{Z} Freeze    {O} CPU Bank  {SH+O} VIC",
-    "{L} Load      {S} Save",
+    "{E} Edit       {F} Fill       {T} Transfer",
+    "{C} Compare    {H} Hunt       {N} Number",
+    "{W} Width      {R} Range      {P} Poll",
+    "{Z} Freeze     {O} CPU Bank   {SH+O} VIC",
+    "{L} Load       {S} Save",
     "",
-    "Bookmarks:  {C=+B} List   {C=+0-9} Jump",
+    "BOOKMARKS",
+    "{C=+B}       List     {C=+0-9}  Jump",
     "",
-    // Labelled lines rather than a third grid column, with every value on the
-    // same column, which is how this block has always been laid out.
-    "Help:          {?}/{%s}",
-    "Monitor:       {C=+O}   Edit off {C=+E}",
-    "Back a level:  {RSTOP} or {<-}",
-    "Copy/Paste:    {C=+C} / {C=+V}",
-    "Follow/Return: {RETURN}",
+    "CONTROL KEYS",
+    // Interface row: the two major auxiliary interfaces.
+    "{?/%s}       Help     {C=+O}    Monitor",
+    // Editing row.
+    "{C=+E}       Edit off {C=+C/V}  Copy/Paste",
+    // Structural navigation row: back out, or follow/return within the level
+    // already open.
+    "{RUNSTOP/<-} Back     {RETURN}  Follow/Ret",
     NULL
+    // Page Up/Down remains the window's own last row, drawn by draw_status:
+    // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
 };
 
 // The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
@@ -3635,7 +3648,10 @@ void MachineMonitor :: draw_status()
         char paging_line[64];
         const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
         const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
-        sprintf(paging_line, "Page Up/Down:  {%s}/{SH+SPACE} / {%s}/{SPACE}",
+        // Same grid as BOOKMARKS and CONTROL KEYS above it: left key at
+        // column 1, left action at 12, right key at 21, right action at 29.
+        // The shortcut token, key and modifier together, is one accent run.
+        sprintf(paging_line, "{%s/SH+SP}   Page up  {%s/SP}   Page down",
                 page_up, page_down);
         draw_help_line(window->get_size_y() - 1, paging_line);
         return;
@@ -5474,7 +5490,6 @@ int MachineMonitor :: handle_key(int key)
             set_view(MONITOR_VIEW_ASCII);
             break;
         case 'a': case 'A':
-        case 'd': case 'D':
             help_visible = false;
             set_view(MONITOR_VIEW_ASM);
             break;

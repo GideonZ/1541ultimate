@@ -929,7 +929,7 @@ static int test_kernal_disassembly_mapping(void)
         0x00, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF,
         0x18, 0x00, 0x00
     };
-    const int keys[] = { 'J', 'D', 'o', KEY_BREAK };
+    const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
     FakeKeyboard keyboard(keys, 4);
 
     memset(backend.ram + 0xE000, 0x00, 0x40);
@@ -1005,7 +1005,7 @@ static int test_disassembly_instruction_stepping(void)
         0x88, 0x90, 0x03, 0x20, 0xD4, 0xBA, 0x20, 0xCC,
         0xBC, 0xA5, 0x07
     };
-    const int keys[] = { 'J', 'D', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
+    const int keys[] = { 'J', 'A', KEY_DOWN, KEY_DOWN, KEY_UP, KEY_UP, KEY_BREAK };
     FakeKeyboard keyboard(keys, 7);
 
     memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
@@ -1573,20 +1573,24 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 3, 38, status);
     if (expect(strstr(status, "HELP") == status, "Help header should replace the normal view header.")) return 1;
     screen.get_slice(1, 22, 38, status);
-    if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
+    if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
     // The keys on this row have to be accented like every other key the help
     // names. It is drawn on the status row rather than from the help table,
     // and while that was written straight to the screen it was the one line
-    // naming keys in the body colour. Columns 16-17 are "F1", 33-34 are "F7";
-    // column 15 is the space before them and stays in the body colour.
+    // naming keys in the body colour. get_slice(1, ...) starts the row one
+    // column in from the border, and screen.colors is indexed by the same
+    // absolute column as the full row, not the slice: status[i] is
+    // screen.colors[22][i + 1]. Columns 1-8 are the whole "F1/SH+SP" token,
+    // 21-25 are the whole "F7/SP" token; 9 and 20 are the space on either
+    // side of "Page up" and stay in the body colour.
     // 1 is MONITOR_UI_ACCENT_COLOR, which is file-local to the monitor; the
     // EDIT indicator's own colour check spells it the same way.
-    if (expect(screen.colors[22][16] == 1 && screen.colors[22][17] == 1 &&
-               screen.colors[22][33] == 1 && screen.colors[22][34] == 1,
+    if (expect(screen.colors[22][1] == 1 && screen.colors[22][8] == 1 &&
+               screen.colors[22][21] == 1 && screen.colors[22][25] == 1,
                "Paging keys on the help footer must use the help accent colour.")) return 1;
-    if (expect(screen.colors[22][15] != 1,
-               "The label before the paging keys must stay in the body colour.")) return 1;
+    if (expect(screen.colors[22][9] != 1 && screen.colors[22][20] != 1,
+               "The label between the paging keys must stay in the body colour.")) return 1;
     if (expect_help_visible(screen, ui, "Help view text did not match the help table.")) return 1;
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
@@ -1606,7 +1610,7 @@ static int test_monitor_interaction(void)
         esc_help_monitor.init(&screen, &esc_help_keyboard);
         if (expect(esc_help_monitor.poll(0) == 0, "F3 should open help before ESC handling is tested.")) return 1;
         screen.get_slice(1, 22, 38, status);
-        if (expect(strstr(status, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == status,
+        if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
                     "Help must show the paging shortcuts before ESC closes it.")) return 1;
         if (expect_help_visible(screen, ui, "Help must be visible before ESC closes it.")) return 1;
         if (expect(esc_help_monitor.poll(0) == 0, "ESC should close help without exiting the monitor.")) return 1;
@@ -1617,7 +1621,7 @@ static int test_monitor_interaction(void)
     }
 
     ui.set_prompt("E013", 1);
-    const int goto_disasm_keys[] = { 'J', 'D', KEY_BREAK };
+    const int goto_disasm_keys[] = { 'J', 'A', KEY_BREAK };
     FakeKeyboard goto_disasm_keyboard(goto_disasm_keys, 3);
     ui.keyboard = &goto_disasm_keyboard;
     screen.clear();
@@ -1930,7 +1934,7 @@ static int test_monitor_interaction(void)
         toggle_monitor.deinit();
     }
 
-    const int ignored_keys[] = { 'D', '.', 'R', ':', 'Q', 'P', KEY_BREAK };
+    const int ignored_keys[] = { 'A', '.', 'R', ':', 'Q', 'P', KEY_BREAK };
     FakeKeyboard ignored_keyboard(ignored_keys, 7);
     ui.keyboard = &ignored_keyboard;
     screen.clear();
@@ -2124,7 +2128,7 @@ static int test_monitor_reopen_restores_state(void)
     backend.write(0xC125, 0x00);
 
     {
-        const int first_keys[] = { 'J', 'D', 'U', 'o', KEY_BREAK };
+        const int first_keys[] = { 'J', 'A', 'U', 'o', KEY_BREAK };
         FakeKeyboard first_keyboard(first_keys, 5);
         ui.screen = &screen;
         ui.keyboard = &first_keyboard;
@@ -6877,12 +6881,18 @@ static const int MONITOR_CONTENT_WIDTH = 38;
 static const int MONITOR_HELP_LINES_ON_SHORTEST_SCREEN = 24 - 7;
 
 // The three-column grid the help's command lines are laid out on: three
-// columns of 12 in the 38 usable columns, leaving the last two for the widest
-// entry to spill into.
-static const int MONITOR_HELP_COLUMN_WIDTH = 12;
+// columns of 13 in the 38 usable columns, leaving the last two for the widest
+// entry to spill into. Every primary-grid row starts with a single-letter
+// key, which is what tells one of these rows apart from a BOOKMARKS/CONTROL
+// KEYS row below: those start with a key too, but a longer one.
+static const int MONITOR_HELP_COLUMN_WIDTH = 13;
 
-// Where the labelled lines below the grid put their values.
-static const int MONITOR_HELP_VALUE_COLUMN = 15;
+// BOOKMARKS and CONTROL KEYS share one grid below the primary one: a left key
+// and action, then a right key and action.
+static const int MONITOR_HELP_LOWER_KEY_COLUMN = 0;
+static const int MONITOR_HELP_LOWER_ACTION_COLUMN = 11;
+static const int MONITOR_HELP_LOWER_KEY2_COLUMN = 20;
+static const int MONITOR_HELP_LOWER_ACTION2_COLUMN = 28;
 
 static int expect_help_hidden(CaptureScreen &screen, const char *message)
 {
@@ -7542,16 +7552,23 @@ static int test_monitor_interaction_text_is_a_contract(void)
     }
 
     // The command lines are a three-column grid, and the markup that picks out
-    // the keys must not move them. A line that begins with a key is one of
-    // those lines, and its keys start at columns 0, 12 and 24; the prose lines
-    // lower down mention keys mid-sentence and are not part of the grid. The
+    // the keys must not move them. A line that begins with a single-letter key
+    // is one of those lines, and its keys start at columns 0, 13 and 26. A
+    // BOOKMARKS/CONTROL KEYS row also begins with a key, but a longer one
+    // (C=+B, ?/F3, ...), which is what tells the two grids apart; a heading
+    // ("BOOKMARKS") or blank separator line matches neither and is skipped. The
     // brace markup is invisible on screen, so getting this wrong is easy and
     // shows up only as a column that no longer lines up with the ones above
-    // it: "{B} Binary   {U}" put Undoc at column 23 instead of 24.
+    // it: "{B} Binary   {U}" put Undoc at column 25 instead of 26.
     for (int i = 0; monitor_help_lines[i]; i++) {
         const char *text = monitor_help_lines[i];
+        if (text[0] != '{') {
+            continue;
+        }
+        const char *first_close = strchr(text, '}');
+        bool primary_grid = first_close && (first_close - text) == 2;
         int column = 0;
-        bool grid = (text[0] == '{');
+        int key_index = 0;
 
         for (const char *at = text; *at; at++) {
             if (*at == '}') {
@@ -7561,38 +7578,65 @@ static int test_monitor_interaction_text_is_a_contract(void)
                 column++;
                 continue;
             }
-            if (grid && expect((column % MONITOR_HELP_COLUMN_WIDTH) == 0,
-                               "A help key does not start on the column grid.")) {
-                printf("  column %d: %s\n", column, text);
-                return 1;
+            if (primary_grid) {
+                if (expect((column % MONITOR_HELP_COLUMN_WIDTH) == 0,
+                           "A primary-grid help key does not start on its column.")) {
+                    printf("  column %d: %s\n", column, text);
+                    return 1;
+                }
+            } else {
+                // Left key, left action, right key, right action, in that
+                // order; the action columns are held by the plain text run
+                // that follows a key, checked as part of the same iteration.
+                static const int key_columns[2] = {
+                    MONITOR_HELP_LOWER_KEY_COLUMN, MONITOR_HELP_LOWER_KEY2_COLUMN,
+                };
+                if (expect(key_index < 2 && column == key_columns[key_index],
+                           "A BOOKMARKS/CONTROL KEYS key does not start on its column.")) {
+                    printf("  column %d: %s\n", column, text);
+                    return 1;
+                }
             }
+            key_index++;
         }
     }
 
-    // The labelled lines below the grid put every value on one column, which
-    // is what makes that block read as a list rather than as prose. A line
-    // ending its label with a colon is one of them.
+    // The action that follows a BOOKMARKS/CONTROL KEYS key lands on its own
+    // column too, which is what makes the two shortcut columns and the two
+    // description columns each read as one straight line down the screen.
     for (int i = 0; monitor_help_lines[i]; i++) {
         const char *text = monitor_help_lines[i];
-        const char *colon = strchr(text, ':');
-        char plain[64];
-        int value;
-
-        if (!colon || text[0] == '{') {
+        if (text[0] != '{') {
             continue;
         }
+        const char *first_close = strchr(text, '}');
+        if (!first_close || (first_close - text) == 2) {
+            continue;   // primary grid, or malformed; checked above
+        }
+        char plain[64];
         monitor_help_plain_text(text, plain, sizeof(plain));
-        value = (int)(strchr(plain, ':') - plain) + 1;
-        while (plain[value] == ' ') {
-            value++;
-        }
-        if ((value % MONITOR_HELP_COLUMN_WIDTH) == 0) {
-            continue;   // a grid line whose first column happens to be a label
-        }
-        if (expect(value == MONITOR_HELP_VALUE_COLUMN,
-                   "A labelled help line does not put its value on the value column.")) {
-            printf("  column %d: %s\n", value, plain);
-            return 1;
+        static const int action_columns[2] = {
+            MONITOR_HELP_LOWER_ACTION_COLUMN, MONITOR_HELP_LOWER_ACTION2_COLUMN,
+        };
+        int checked = 0;
+        bool at_key = false;
+        for (const char *at = text; *at && checked < 2; at++) {
+            if (*at == '{') {
+                at_key = true;
+                continue;
+            }
+            if (*at == '}') {
+                if (at_key && expect(plain[action_columns[checked]] != ' ' &&
+                                     plain[action_columns[checked] - 1] == ' ',
+                                     "A BOOKMARKS/CONTROL KEYS action does not "
+                                     "start on its column.")) {
+                    printf("  column %d: %s\n", action_columns[checked], plain);
+                    return 1;
+                }
+                if (at_key) checked++;
+                at_key = false;
+                continue;
+            }
         }
     }
 
@@ -7612,12 +7656,12 @@ static int test_monitor_interaction_text_is_a_contract(void)
             strcat(all, rendered);
             strcat(all, "\n");
         }
-        if (expect(strstr(all, "Help:") != NULL && strstr(all, "?/") != NULL,
+        if (expect(strstr(all, "?/") != NULL,
                    "Help must name '?' as a way to open it.")) return 1;
         if (expect(strstr(all, ui.function_key_for(KEY_HELP)) != NULL,
                    "Help must name the mapped help key.")) return 1;
-        if (expect(strstr(all, "RSTOP or <-") != NULL,
-                   "Help must describe Back as RUN/STOP or the left-arrow key.")) return 1;
+        if (expect(strstr(all, "RUNSTOP/<-") != NULL,
+                   "Help must describe Back as RUNSTOP/<-.")) return 1;
     }
 
     // A prompt title has to fit the box the prompt draws on the same screen.

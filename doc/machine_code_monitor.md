@@ -86,7 +86,7 @@ The monitor provides five primary views:
 | Key | View     | ID  | Purpose                         |
 | --- | -------- | --- | ------------------------------- |
 | `M` | Memory   | HEX | Hexadecimal byte view           |
-| `A`, `D` | Assembly | ASM | Disassembly and inline assembly |
+| `A` | Assembly | ASM | Disassembly and inline assembly |
 | `B` | Binary   | BIN | Bit-level byte view             |
 | `I` | ASCII    | ASC | ASCII byte view                 |
 | `V` | Screen   | SCR | Screen code view                |

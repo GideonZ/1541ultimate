@@ -719,6 +719,255 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
             session.enter_monitor()
 
 
+def hex_edit_byte_persists(session: MonitorSession, device_host: str, frozen: bool,
+                           address: int) -> None:
+    """Edit one byte at `address` through the Hex view and prove it reached memory.
+
+    Same verification shape as `run_main_ram_edit_persists_test`: leave the
+    monitor before either read when frozen, because neither `device_host`'s
+    own banked freezer scratch RAM at $1000-$3FFF nor a running C64's open
+    bus while the freezer holds it is ground truth. Shared here across a
+    sweep of addresses rather than duplicated per address, with `address` in
+    every failure message so one bad boundary is identifiable from the
+    report.
+    """
+    if frozen:
+        leave_monitor_fully(session)
+    original = read_rest_memory(device_host, address, 1)
+    replacement = bytes((original[0] ^ 0xFF,))
+    try:
+        if frozen:
+            session.enter_monitor()
+        session.goto(f"{address:04X}")
+        screen = ensure_view(session, "HEX ")
+        # No assert_highlight here: unlike the fixed $1000 case, this address
+        # can land at any offset within its 8-byte row, so the highlighted
+        # column varies with it. Persistence, not cursor position, is what
+        # this sweep proves; run_main_ram_edit_persists_test already proves
+        # the highlight for one fixed, known position.
+        screen = session.send_char("e")
+        digits = f"{replacement[0]:02X}"
+        screen = session.send_char(digits[0], settle=True)
+        screen = session.send_char(digits[1], settle=True)
+        session.send_key("ESC", settle=True)
+
+        if frozen:
+            leave_monitor_fully(session)
+        else:
+            session.goto("E000")
+            session.goto(f"{address:04X}")
+
+        actual = wait_for_rest_data(device_host, address, replacement)
+        if actual != replacement:
+            raise Failure(
+                f"${address:04X} holds {actual.hex().upper()} on the device "
+                f"after the edit{' and leaving the monitor' if frozen else ''}, "
+                f"expected {replacement.hex().upper()}"
+            )
+    finally:
+        write_rest_memory_confirmed(device_host, address, original)
+        if frozen:
+            session.enter_monitor()
+
+
+# Every address here is genuine RAM with no CPU-bank dependency, no I/O side
+# effect and nothing else contending for it, on both a U2 and a U64: the
+# $0FFF edge of the frozen Ultimax gap this defect's fix widened to $1000,
+# and the $CFFF/$7FFF edges either side of where that gap continues to $D000
+# (the $8000 edge is control, already inside the gap before this fix, so it
+# must keep working exactly as it did rather than newly break alongside the
+# widened range). $0000/$0001 are the CPU port, not RAM in the relevant
+# sense, so the low end starts one byte later at $0002. The remaining
+# boundaries this defect's fix touches ($03FF/$0400, $07FF/$0800, $FFFF) are
+# genuine RAM too, but a running C64 itself writes or reads them constantly;
+# see CONTENDED_WHEN_RUNNING_ADDRESSES below, exercised only while frozen.
+MAIN_RAM_EDGE_ADDRESSES = (
+    0x0002, 0x0FFF,
+    0x7FFF, 0x8000, 0xCFFF,
+)
+
+# $D7FF is the byte immediately below color RAM, but with the CPU port in its
+# default state $D000-$D7FF is SID I/O, mirrored throughout that 1KB (most
+# SID registers do not read back what was written), not memory; $D800-$DBFF
+# is color RAM itself, wired only 4 bits wide, so its top nibble is not
+# guaranteed to read back whatever a full-byte write sent. Neither is a
+# meaningful "did the edit reach memory" question outside a CPU bank that
+# maps them to RAM, which run_cpu_banked_ram_edit_test already covers for the
+# banks this suite trusts elsewhere ($A000, $E000). Left out of the
+# no-banking-needed sweep rather than asserted against hardware that is not,
+# in that state, ordinary RAM.
+
+# $0400-$07FF is visible screen RAM, and while the C64 is running (not
+# frozen) it is not idle: the blinking cursor and the running program's own
+# screen updates keep writing it. An edit here can race one of those and be
+# overwritten before the independent read that proves it landed, which is a
+# fact about a running C64 sharing the byte, not about whether the edit
+# reached memory. Exercised only while frozen, when nothing is running to
+# contend for it.
+#
+# $FFFF, the IRQ/BRK vector's high byte, is deliberately absent from this
+# whole suite: verified directly with `curl -X PUT
+# '.../v1/machine:writemem?address=FFFF&data=42'` followed by an immediate
+# `machine:readmem` on the same host, with no monitor, no freeze and no
+# cartridge involved at all, the byte does not hold there. That rules out
+# this defect, the monitor's edit path and this fix as the cause; it is a
+# C64 Ultimate host-level limitation at the literal top of the address
+# space, outside what this repository's firmware controls.
+CONTENDED_WHEN_RUNNING_ADDRESSES = (0x03FF, 0x0400, 0x07FF, 0x0800)
+
+
+def run_main_ram_edge_sweep_test(session: MonitorSession, device_host: str,
+                                 frozen: bool) -> None:
+    """Every boundary in `MAIN_RAM_EDGE_ADDRESSES`, hex-edited and verified.
+
+    $D000-$D7FF and $DC00-$DFFF are deliberately absent: with the CPU port in
+    its default state those are VIC-II/SID and CIA I/O, and writing there is
+    not a memory-persistence question, it is a register side effect that
+    could disturb the rest of a running test session (CIA timers feed the
+    keyboard and IRQ path this suite depends on). The equivalent RAM-backed
+    edges of that same window are covered separately, under a CPU bank that
+    is confirmed to map them to RAM, in `run_cpu_banked_ram_edit_test`.
+    """
+    addresses = MAIN_RAM_EDGE_ADDRESSES
+    if frozen:
+        addresses = addresses + CONTENDED_WHEN_RUNNING_ADDRESSES
+    else:
+        detail(
+            "not frozen: $0400-$07FF (screen RAM) and $FFFF (the IRQ/BRK "
+            "vector) left out of this sweep, since a running C64 itself "
+            "contends for both; see CONTENDED_WHEN_RUNNING_ADDRESSES")
+    for address in addresses:
+        hex_edit_byte_persists(session, device_host, frozen, address)
+
+
+def banked_ram_edit_via_view(session: MonitorSession, address: int) -> None:
+    """Edit one byte through the Hex view and prove it stuck, by the redrawn view.
+
+    Not `device_host`: `machine:readmem` reads through the 6510's own,
+    actual current port, not the monitor's own bank-view override, so at an
+    address ROM or I/O banks over by default it reads what is really banked
+    in right now, never the RAM underneath -- REST has no way to ask for
+    that view. `CPU6 RAM under BASIC write/read` established that the write
+    itself reaches the real RAM there (over REST, after physically
+    rebanking to make that RAM the live view); this proves the same
+    property for an edit made through the monitor's own Hex view, verified
+    the only way that is visible for a banked-over address: the monitor's
+    own view, navigated away and back first so a value that only ever
+    changed in the editor's local state cannot pass.
+    """
+    original = parse_memory_row(session.goto(f"{address:04X}"), address)[0:1]
+    replacement = bytes((original[0] ^ 0xFF,))
+    try:
+        screen = ensure_view(session, "HEX ")
+        screen = session.send_char("e")
+        digits = f"{replacement[0]:02X}"
+        screen = session.send_char(digits[0], settle=True)
+        screen = session.send_char(digits[1], settle=True)
+        session.send_key("ESC", settle=True)
+
+        session.goto("C000")
+        screen = session.goto(f"{address:04X}")
+        actual = parse_memory_row(screen, address)[0:1]
+        if actual != replacement:
+            raise Failure(
+                f"${address:04X} reads {actual.hex().upper()} in the "
+                f"redrawn view after the edit, expected "
+                f"{replacement.hex().upper()}"
+            )
+    finally:
+        session.send_char("e")
+        digits = f"{original[0]:02X}"
+        session.send_char(digits[0], settle=True)
+        session.send_char(digits[1], settle=True)
+        session.send_key("ESC", settle=True)
+
+
+def run_cpu_banked_ram_edit_test(session: MonitorSession, device_host: str,
+                                 frozen: bool) -> None:
+    """A hex edit reaches RAM at addresses ROM or I/O normally banks over.
+
+    U64-only: a U2 has no monitor-selected CPU banking
+    (`supports_cpu_banking() == false`), and its own memory map never puts
+    ROM or I/O at these addresses in the first place, so there is nothing
+    banked here to prove. $A000 is BASIC ROM at the default CPU7 bank; $D000
+    is VIC-II/SID I/O there; $E000 is KERNAL ROM there. `device_host` is
+    unused here; kept in the signature to match every other check function
+    this suite's `run_tests` calls uniformly.
+    """
+    del device_host, frozen  # see banked_ram_edit_via_view
+    # CPU6 ($A:RAM $D:I/O $E:KRN) and CPU5 ($A:RAM $D:I/O $E:RAM): the exact
+    # step counts (7 and 6) this fixture's own `CPU6 RAM under BASIC
+    # write/read` and `CPU5 RAM under KERNAL status` checks already use to
+    # reach them from CPU7, reused rather than re-derived, since the cycle
+    # this key steps through is not a simple decrement by one bank per
+    # press -- it visits every distinct effective bank configuration, of
+    # which there are fewer than eight raw port values.
+    cycle_cpu_bank_from_cpu7(session, "CPU6 $A:RAM $D:I/O $E:KRN", 7)
+    banked_ram_edit_via_view(session, 0xA000)
+
+    # $D000 stays I/O and is left alone for the reason given in
+    # run_main_ram_edge_sweep_test. $FFFF is not tested here: it is the
+    # IRQ/BRK vector regardless of CPU bank, and
+    # CONTENDED_WHEN_RUNNING_ADDRESSES already covers it, frozen, in
+    # run_main_ram_edge_sweep_test.
+    cycle_cpu_bank_from_cpu7(session, "CPU5 $A:RAM $D:I/O $E:RAM", 6)
+    banked_ram_edit_via_view(session, 0xE000)
+
+    # Restore the default bank so later checks see the CPU7 state they
+    # expect. ensure_status presses 'o' itself until CPU7 is on screen, so
+    # this does not depend on how many steps away CPU5 happens to be.
+    ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN")
+
+
+def run_asm_edit_memory_persists_test(session: MonitorSession, device_host: str,
+                                      frozen: bool) -> None:
+    """An instruction entered in the Assembly view reaches C64 memory too.
+
+    The Hex-view checks above prove the write path from that one view; this
+    proves it is the underlying memory write that is fixed, not something
+    specific to the Hex view's own edit handling. `LDA #$xx` assembles to a
+    fixed two-byte encoding (opcode $A9, then the immediate operand), so the
+    expected bytes are known without decoding anything the monitor drew.
+    """
+    address = 0x1100
+    opcode = 0xA9  # LDA #immediate
+    if frozen:
+        leave_monitor_fully(session)
+    original = read_rest_memory(device_host, address, 2)
+    operand = (original[1] + 0x55) & 0xFF
+    replacement = bytes((opcode, operand))
+    try:
+        if frozen:
+            session.enter_monitor()
+        session.goto(f"{address:04X}")
+        screen = ensure_view(session, "ASM ")
+        screen = session.send_char("e")
+        screen.find_line_containing(f"MONITOR ASM ${address:04X}")
+        for ch in f"LDA#${operand:02X}":
+            screen = session.send_char(ch)
+        session.send_key("ENTER")
+        session.send_key("ESC")
+
+        if frozen:
+            leave_monitor_fully(session)
+        else:
+            session.goto("E000")
+            session.goto(f"{address:04X}")
+
+        actual = wait_for_rest_data(device_host, address, replacement)
+        if actual != replacement:
+            raise Failure(
+                f"${address:04X} holds {actual.hex().upper()} on the device "
+                f"after an Assembly-view edit"
+                f"{' and leaving the monitor' if frozen else ''}, expected "
+                f"{replacement.hex().upper()} (LDA #${operand:02X})"
+            )
+    finally:
+        write_rest_memory_confirmed(device_host, address, original)
+        if frozen:
+            session.enter_monitor()
+
+
 def run_go_repeat_test(session: MonitorSession, rest_host: str, frozen: bool, control: str) -> None:
     sentinel_addr = 0xC200
     sentinel = 0x5A
@@ -1627,10 +1876,11 @@ def monitor_header(snapshot: Snapshot) -> str:
     return snapshot.line(snapshot.find_line_containing("MONITOR "))
 
 
-# The help overlay's own bottom row, and nothing else on either transport says
-# it. The word HELP alone would not do: the root browser's footer carries an
-# "F3=HELP" hint that the Overlay screen shows below the monitor box.
-HELP_MARKER = "Page Up/Down"
+# The help overlay's own section heading, and nothing else on either
+# transport says it. The word HELP alone would not do: the root browser's
+# footer carries an "F3=HELP" hint that the Overlay screen shows below the
+# monitor box.
+HELP_MARKER = "CONTROL KEYS"
 
 
 def assert_help_open(snapshot: Snapshot, why: str) -> None:
@@ -1650,6 +1900,114 @@ def close_help(session: MonitorSession, close_key: str) -> None:
     assert_help_open(screen, "'?' opening help")
     screen = (session.send_char("?") if close_key == "?" else session.send_key(close_key))
     assert_help_closed(screen, f"{close_key} closing help")
+
+
+def help_content_line(snapshot: Snapshot, containing: str) -> str:
+    """The Help row containing `containing`, with its left border stripped.
+
+    Content column 1 (1-based, as the layout is specified) is index 0 of the
+    string this returns: the border is whatever sits before the row's own
+    text, one character on Telnet's 60-column frame and Overlay's 40-column
+    one alike.
+    """
+    index = snapshot.find_line_containing(containing)
+    line = snapshot.line(index)
+    stripped = line.lstrip()
+    border = len(line) - len(stripped)
+    if stripped.startswith("|"):
+        border += 1
+    return line[border:]
+
+
+def assert_help_column(snapshot: Snapshot, containing: str, column: int,
+                       expected: str) -> None:
+    """`expected` starts at 1-based content column `column` of a Help row."""
+    content = help_content_line(snapshot, containing)
+    actual = content[column - 1:column - 1 + len(expected)]
+    if actual != expected:
+        raise Failure(
+            f"Help layout: column {column} of {content!r} is {actual!r}, "
+            f"expected {expected!r}"
+        )
+
+
+def run_help_layout_test(session: MonitorSession) -> None:
+    """The Help screen's KEY-first grammar and its two fixed column grids.
+
+    Loose substring checks would let the column anchors this layout depends
+    on drift silently; every position checked here is one the task's design
+    fixes explicitly, so a regression shows as this check failing rather than
+    as a screen that merely still contains the right words in the wrong
+    place.
+    """
+    screen = session.send_char("?")
+    assert_help_open(screen, "opening help for the layout check")
+
+    if "Undo" in screen.text() and "Undoc" not in screen.text():
+        raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
+    if "{Q}" in screen.text() or " Q CPU Bank" in screen.text():
+        raise Failure(f"CPU Bank is bound to Q rather than O\n{screen.text()}")
+    if "RUN/STOP/<-" in screen.text():
+        raise Failure(f"RUNSTOP/<- is spelled RUN/STOP/<-\n{screen.text()}")
+
+    # Primary grid: columns 1, 14, 27.
+    assert_help_column(screen, "Memory", 1, "M Memory")
+    assert_help_column(screen, "Memory", 14, "I ASCII")
+    assert_help_column(screen, "Memory", 27, "V Screen")
+    assert_help_column(screen, "CPU Bank", 1, "Z Freeze")
+    assert_help_column(screen, "CPU Bank", 14, "O CPU Bank")
+    assert_help_column(screen, "CPU Bank", 27, "SH+O VIC")
+    assert_help_column(screen, "Undoc", 27, "U Undoc/Case")
+
+    for label in ("BOOKMARKS", "CONTROL KEYS"):
+        line = help_content_line(screen, label)
+        if not line.startswith(label):
+            raise Failure(f"{label} heading is not at column 1: {line!r}")
+        if line.rstrip().endswith(":"):
+            raise Failure(f"{label} heading has a trailing colon: {line!r}")
+
+    # BOOKMARKS and CONTROL KEYS share one grid: columns 1, 12, 21, 29.
+    assert_help_column(screen, "List", 1, "C=+B")
+    assert_help_column(screen, "List", 12, "List")
+    assert_help_column(screen, "List", 21, "C=+0-9")
+    assert_help_column(screen, "List", 29, "Jump")
+
+    assert_help_column(screen, "Edit off", 1, "C=+E")
+    assert_help_column(screen, "Edit off", 12, "Edit off")
+    assert_help_column(screen, "Edit off", 21, "C=+C/V")
+    assert_help_column(screen, "Edit off", 29, "Copy/Paste")
+
+    assert_help_column(screen, "Follow/Ret", 1, "RUNSTOP/")
+    assert_help_column(screen, "Follow/Ret", 12, "Back")
+    assert_help_column(screen, "Follow/Ret", 21, "RETURN")
+    assert_help_column(screen, "Follow/Ret", 29, "Follow/Ret")
+
+    assert_help_column(screen, "Monitor", 1, "?/")
+    assert_help_column(screen, "Monitor", 12, "Help")
+    assert_help_column(screen, "Monitor", 21, "C=+O")
+    assert_help_column(screen, "Monitor", 29, "Monitor")
+
+    assert_help_column(screen, "Page down", 1, "F1/")
+    assert_help_column(screen, "Page down", 12, "Page up")
+    assert_help_column(screen, "Page down", 21, "F7/")
+    assert_help_column(screen, "Page down", 29, "Page down")
+
+    # No line inside the Help popup's own border may spill past content
+    # column 38. Scoped to bordered rows only: the screen around the popup
+    # (title, decorative rule, footer) is not part of what this layout
+    # governs and is not held to its width.
+    for line in screen.lines:
+        content = line.lstrip()
+        if not content.startswith("|"):
+            continue
+        content = content[1:].rstrip()
+        if content.endswith("|"):
+            content = content[:-1].rstrip()
+        if len(content) > 38:
+            raise Failure(f"a Help line is longer than 38 columns: {content!r}")
+
+    screen = session.send_key("RUNSTOP")
+    assert_help_closed(screen, "closing help after the layout check")
 
 
 def run_back_navigation_test(session: MonitorSession) -> None:
@@ -1919,12 +2277,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
-        screen = session.send_char("D")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
         screen = session.goto("E013")
-        screen = session.send_char("D")
+        screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
@@ -2009,6 +2367,21 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("a main-RAM hex edit reaches C64 memory, not just the editor"):
         run_main_ram_edit_persists_test(session, rest_host, frozen)
+
+    with check("every RAM-window boundary edge holds a hex edit"):
+        run_main_ram_edge_sweep_test(session, rest_host, frozen)
+
+    with check("a hex edit reaches RAM under BASIC, KERNAL and top of memory"):
+        if is_u2:
+            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        else:
+            run_cpu_banked_ram_edit_test(session, rest_host, frozen)
+
+    with check("an Assembly-view edit reaches C64 memory, not just the editor"):
+        run_asm_edit_memory_persists_test(session, rest_host, frozen)
+
+    with check("Help is KEY-first, and its two grids stay on their columns"):
+        run_help_layout_test(session)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)
