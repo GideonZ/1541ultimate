@@ -83,17 +83,24 @@ MAX_DATAGRAM = 2048
 # How long the receive loop blocks before looking at whether it should stop.
 POLL_SECONDS = 0.25
 
-# How long a device that has been logging may say nothing before that counts as
-# a gap rather than as a quiet moment.
+# How long a device that has been logging may say nothing before the run
+# records the silence.
 #
-# The devices log continuously while a suite drives them: a menu redraw, an HTTP
-# request and a drive step each produce lines, and the gaps between them are
-# tens or hundreds of milliseconds. Ten seconds is far above that and far below
-# a suite's length, so an interval this long is a device that stopped, not one
-# that had nothing to say. OBS-7.15 is why it is worth recording at all: an
-# assertion failure disables interrupts and the syslog task never runs again,
-# so the log stopping is the only signal the assertion produces.
-SILENT_SECONDS = 10.0
+# Measured over a three-target run of the machine-code monitor suite: a device
+# being driven logs a line every 5ms at the median and every 0.12s at the 99th
+# percentile, so an interval of seconds is already far outside what a busy
+# device produces. What sets the value is not that but the other case: a device
+# that has finished its own suites and is idle while another target holds the
+# C64 legitimately says nothing at all, and in that run the longest such
+# silence was 31s. Thirty seconds keeps the ordinary quiet of a driven device
+# off the timeline without claiming to tell an idle device from a stopped one,
+# which nothing in a log can do; the reader decides, from the suite the
+# timeline puts it beside.
+#
+# OBS-7.15 is why it is worth recording at all: an assertion failure disables
+# interrupts and the syslog task never runs again, so the log stopping is the
+# only signal the assertion produces.
+SILENT_SECONDS = float(os.environ.get("U64_SYSLOG_SILENT_SECONDS") or 30.0)
 
 
 @dataclass

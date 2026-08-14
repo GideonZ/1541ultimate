@@ -3461,6 +3461,10 @@ def the_timeline_shows_a_gap_at_both_of_its_ends() -> str:
         for record in ScriptedRun(tree, 0, "").records("127.0.0.1", "run.jsonl"):
             if record.get("kind") == "run":
                 anchor_time = float(record.get("time") or 0.0)
+        # The closed one in the target's own file, the open one in the
+        # parent's: the collector runs in the process that owns the whole run,
+        # so on a run of several targets its records are the parent's and name
+        # the target each belongs to, and both have to reach the timeline.
         with open(os.path.join(tree, "127.0.0.1", "run.jsonl"), "a",
                   encoding="utf-8") as handle:
             handle.write(json.dumps({
@@ -3468,6 +3472,8 @@ def the_timeline_shows_a_gap_at_both_of_its_ends() -> str:
                 "target": "127.0.0.1", "component": "syslog",
                 "started": anchor_time - 30.0, "ended": anchor_time - 18.0,
                 "reason": "the device stopped logging"}) + "\n")
+        with open(os.path.join(tree, "run.jsonl"), "a",
+                  encoding="utf-8") as handle:
             handle.write(json.dumps({
                 "kind": "gap", "time": anchor_time, "suite": "run-tests",
                 "target": "127.0.0.1", "component": "recorder",

@@ -598,7 +598,7 @@ def finish_syslog(collector) -> None:
     for gap in collector.gaps():
         report.gap_result("syslog", gap["started"], gap.get("ended"),
                           target=gap["target"], machine=gap["machine"],
-                          reason="the device stopped logging")
+                          reason=f"no line from {gap['machine']}")
     report.detail(f"device log:  {collector.lines} line(s) collected"
                   + (f", {collector.unmapped} from an unmapped address"
                      if collector.unmapped else "")

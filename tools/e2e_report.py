@@ -551,11 +551,14 @@ def load_tree(directory: str) -> Run:
     parent_records, run.skipped_lines = read_records(
         os.path.join(directory, "run.jsonl"))
     logs = {}
+    gaps: Dict[str, List[dict]] = {}
     for record in parent_records:
         if record.get("kind") == "run":
             run.parent = record
         elif record.get("kind") == "log" and record.get("target"):
             logs[str(record["target"])] = record
+        elif record.get("kind") == "gap" and record.get("target"):
+            gaps.setdefault(str(record["target"]), []).append(record)
 
     for name in sorted(os.listdir(directory) if os.path.isdir(directory) else []):
         path = os.path.join(directory, name)
@@ -571,6 +574,7 @@ def load_tree(directory: str) -> Run:
     for target in run.targets:
         if target.log is None and target.token in logs:
             target.log = logs[target.token]
+        target.gaps.extend(gaps.get(target.token, ()))
     return run
 
 
