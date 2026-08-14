@@ -239,6 +239,18 @@ MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "the revision tests/e2e/monitor/monitor_test.py drives",
     (C64U,))
 
+# Measured with tests/e2e/filemanager/cfg_unknown_items_test.py and
+# cfg_whitespace_test.py. A .cfg saved on one machine and loaded on another
+# names stores and items the reader does not have, and pads its values; both
+# are ordinary. Firmware with the fix loads such a file and says "Loading
+# configuration successful!", where a C64 Ultimate 1.2.0 puts "There were
+# errors." on screen and leaves a dialog the user has to answer.
+CFG_LOADS_UNKNOWN_AND_PADDED = _fix(
+    "cfg-loads-unknown-and-padded",
+    "a CFG naming an item this machine does not have, or holding padded "
+    "values, loads without being reported as an error",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

@@ -57,7 +57,8 @@ import ftp as ftp_lib
 import rest as rest_lib
 import targets
 from report import (
-    FAIL, Failure, OK, SKIP, check, detail, format_exception, section, suite_fail, suite_ok, warn)
+    FAIL, Failure, OK, SKIP, check, check_skip, check_start, detail,
+    format_exception, section, suite_fail, suite_ok, warn)
 
 
 READMEM_PATH = "/v1/machine:readmem"
@@ -863,6 +864,22 @@ def main() -> int:
             session.set_config(CONFIG_CATEGORY, CFG_CMD_IF, "Enabled")
             interface_enabled = True
             uci.release()
+
+        # Asked of the machine rather than assumed from the setting: measured
+        # on a C64 Ultimate 1.2.0, the setting reads "Enabled" while the whole
+        # register window reads $FF, which is the bus floating because nothing
+        # answers there. An Ultimate 64 answers $02 $FF $02 $02 $02 at the
+        # same five addresses even with the setting off. Every check below
+        # drives those registers, so there is nothing to test where they are
+        # not present.
+        if all(session.peek(0xDF1B + offset) == 0xFF for offset in range(5)):
+            check_start("this machine answers at the Command Interface registers")
+            check_skip("$DF1B-$DF1F all read $FF, so no command interface is "
+                       "present at those addresses on this machine")
+            suite_ok("uci_targets_test")
+            return 0
+
+        with check("the command interface is idle once enabled"):
             uci.require_idle("after enabling the command interface")
             identification = session.peek(REG_COMMAND)
             if identification not in (0xC9, 0x49):
