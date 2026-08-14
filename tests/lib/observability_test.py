@@ -740,6 +740,38 @@ def frames_are_decimated_by_a_phase_accumulator() -> str:
     return "exact at every rate"
 
 
+@case(3, "OBS-3.4", "OBS-8.22")
+def the_screen_spool_is_not_a_suite() -> str:
+    """One file every suite appends to is not one suite's records.
+
+    It shares the `.jsonl` suffix with the per-suite files and sits in the
+    same directory, so a walk that goes by suffix alone invents a suite run
+    named after whichever suite wrote to it last, with no closing record and
+    therefore no verdict.
+    """
+    import json
+    import tempfile
+
+    generator = load_report_tool()
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held")], workspace=workspace)
+        # Written here rather than left to the stub suite: what is under test
+        # is how the generator treats this file, and a run whose suites happen
+        # to read no screen would leave nothing to treat.
+        with open(made.path("127.0.0.1", "screens.jsonl"), "a",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "kind": "menu", "suite": "browse", "time": 1.0, "cols": 40,
+                "rows": 1, "text": ["MENU"]}) + "\n")
+        generator.write_report(made.directory)
+        with open(made.path(generator.INDEX_NAME), encoding="utf-8") as handle:
+            document = handle.read()
+    if "/screens/" in document or "browse" in document:
+        raise Failure("the spool is rendered as a suite run of its own")
+    expect("the real suite is there", "/overlay/held/1" in document, True)
+    return "one suite, not two"
+
+
 @case(1, "OBS-2.5")
 def every_record_kind_is_in_the_table() -> str:
     """The record-shape table names every kind and every new field.

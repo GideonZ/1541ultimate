@@ -56,6 +56,8 @@ import report as report_lib  # noqa: E402
 
 DETAIL_MARKER = "<!-- detail -->"
 INDEX_NAME = "index.md"
+# One file per target, appended to by every suite. Not a suite's own records.
+SPOOL_NAME = "screens.jsonl"
 
 # How much of a failing suite's console log is inlined. Enough for a traceback
 # and the checks around it, short enough that ten failures do not turn the
@@ -460,7 +462,11 @@ def load_target(directory: str, slug: str) -> TargetRun:
     # per-suite file's name carries that, so the files decide the label and the
     # records fill it in.
     for name in sorted(os.listdir(directory) if os.path.isdir(directory) else []):
-        if not name.endswith(".jsonl") or name == "run.jsonl":
+        # The screen spool shares the suffix and is not a per-suite record
+        # file: every suite appends to the one file, so reading a suite name
+        # out of it invents a suite run named after whichever suite wrote
+        # last, with no closing record and therefore no verdict.
+        if not name.endswith(".jsonl") or name in ("run.jsonl", SPOOL_NAME):
             continue
         path = os.path.join(directory, name)
         file_records, file_skipped = read_records(path)

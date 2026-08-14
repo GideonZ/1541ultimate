@@ -1,2 +1,2 @@
-{"kind": "action", "ms": 0.5, "status": 200, "method": "POST", "path": "/v1/machine:input", "check": 1, "time": 1786705367.9541755, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
-{"kind": "check", "index": 1, "label": "the cursor moves", "verdict": "OK", "extra": "one row", "seconds": 0.0179, "scenario": null, "time": 1786705367.9704175, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
+{"kind": "action", "ms": 0.5, "status": 200, "method": "POST", "path": "/v1/machine:input", "check": 1, "time": 1786706130.7002318, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the cursor moves", "verdict": "OK", "extra": "one row", "seconds": 0.0158, "scenario": null, "time": 1786706130.714766, "suite": "browse", "target": "127.0.0.1", "attempt": 1}
