@@ -381,6 +381,135 @@ def the_heap_figures_reach_the_health_record() -> str:
     return "inside the health record"
 
 
+@case(1, "OBS-7.5", "OBS-7.6", "OBS-7.7", "OBS-7.8")
+def the_collector_attributes_a_datagram_to_its_device() -> str:
+    """One datagram is one line, stamped on receipt and filed by its sender."""
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    ticks = iter([100.0 + n for n in range(10)])
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(
+            directory=directory, port=0, clock=lambda: next(ticks))
+        wanted = [targets_lib.parse("127.0.0.2"),
+                  targets_lib.parse("127.0.0.3@127.0.0.4")]
+        if not collector.bind(wanted):
+            raise Failure(f"the collector did not start: {collector.problems}")
+        try:
+            collector.deliver("127.0.0.2", b"the device says something")
+            collector.deliver("127.0.0.4", b"the computer says something")
+            collector.deliver("10.9.9.9", b"a machine nobody expected")
+        finally:
+            collector.stop()
+
+        expect("the device's own file",
+               syslog_collector.read(os.path.join(directory, "127.0.0.2",
+                                                  "syslog.txt")),
+               [(101.0, "the device says something")])
+        # A cartridge target's computer logs as well, and both are kept: one is
+        # the firmware under test and the other is the machine it is in.
+        expect("the computer's file",
+               syslog_collector.read(
+                   os.path.join(directory, "127.0.0.3-at-127.0.0.4",
+                                "syslog-127.0.0.4.txt")),
+               [(102.0, "the computer says something")])
+        with open(os.path.join(directory, "syslog-unmapped.txt"),
+                  encoding="utf-8") as handle:
+            unmapped = handle.read()
+        if "10.9.9.9" not in unmapped:
+            raise Failure(f"the sender's address was not kept: {unmapped!r}")
+        expect("counted", (collector.lines, collector.unmapped), (2, 1))
+    return "3 datagrams, 3 files"
+
+
+@case(1, "OBS-1.2", "OBS-15.2")
+def a_collector_that_cannot_start_says_so_once() -> str:
+    """A busy port is one warning at startup and nothing else."""
+    import socket
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    holder.bind(("127.0.0.1", 0))
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            collector = syslog_collector.Collector(
+                directory=directory, port=holder.getsockname()[1])
+            expect("did not start", collector.bind(
+                [targets_lib.parse("127.0.0.2")]), False)
+            if not any("could not be opened" in problem
+                       for problem in collector.problems):
+                raise Failure(f"no reason was given: {collector.problems}")
+            collector.stop()
+    finally:
+        holder.close()
+    return collector.problems[-1]
+
+
+@case(1, "OBS-7.14", "OBS-15.8")
+def a_reader_sees_every_line_the_collector_wrote() -> str:
+    """A suite reads the file rather than the port, and in order."""
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    ticks = iter([100.0 + n for n in range(10)])
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(
+            directory=directory, port=0, clock=lambda: next(ticks))
+        collector.bind([targets_lib.parse("127.0.0.2")])
+        try:
+            for text in (b"the RTC says something",
+                         syslog_collector.BOOT_MARKER.encode(),
+                         b"a task list follows"):
+                collector.deliver("127.0.0.2", text)
+        finally:
+            collector.stop()
+        path = os.path.join(directory, "127.0.0.2", "syslog.txt")
+        found = syslog_collector.read(path)
+        expect("in order", [text for _when, text in found],
+               ["the RTC says something", syslog_collector.BOOT_MARKER,
+                "a task list follows"])
+        expect("the restart is found", syslog_collector.restarts(path), [102.0])
+        expect("an interval", syslog_collector.between(path, 102.0, 103.0),
+               [syslog_collector.BOOT_MARKER, "a task list follows"])
+    return "3 lines, one restart"
+
+
+@case(3, "OBS-7.4", "OBS-7.9", "OBS-15.10")
+def a_run_checks_the_syslog_setting_at_both_ends() -> str:
+    """Read at both ends, corrected at neither, and recorded where it went."""
+    import tempfile
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        double.configs["Network Settings"]["Log to Syslog Server"] = ""
+        made = scripted_run(double, [Stub("held")], workspace=workspace,
+                            arguments=("--syslog", "--syslog-port", "0"))
+        warnings = [r for r in made.records("127.0.0.1", "run.jsonl")
+                    if r["kind"] == "warning"]
+        both = [w for w in warnings if "not configured to send its log" in
+                w["message"]]
+        expect("warned at both ends", len(both), 2)
+        logs = [r for r in made.records("127.0.0.1", "run.jsonl")
+                if r["kind"] == "log"]
+        expect("one log record", len(logs), 1)
+        expect("where it goes", logs[0]["path"], "127.0.0.1/syslog.txt")
+        # Read, never written: Syslog::init runs once at boot, so writing this
+        # during a run does nothing, and a suite that changed it may have been
+        # testing exactly that.
+        writes = [r for r in made.records("127.0.0.1", "run.jsonl")
+                  if r["kind"] == "action" and r["method"] != "GET"
+                  and "Syslog" in str(r.get("path"))]
+        if writes:
+            raise Failure(f"the run wrote the syslog setting: {writes}")
+    return "warned twice, wrote nothing"
+
+
 # ---------------------------------------------------------------------------
 # Tier 3: a whole scripted run, with the real runner and no real device
 # ---------------------------------------------------------------------------
@@ -1239,6 +1368,23 @@ FIXTURE_STUBS = (
     Stub("flaky", body=RETRY_BODY),
     # Leaves a menu open, so the sweep before the next suite skips the two
     # checks that need the C64 running.
+    # Sends what a device's own log looks like, so the collected log and the
+    # report's slices around a failure are in the fixture. A real device sends
+    # these unprompted; here a suite stands in for one.
+    Stub("noisy", body=(
+        "import socket\n"
+        "port = int(os.environ['OBS_SYSLOG_PORT'])\n"
+        "sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        "def say(text):\n"
+        "    sock.sendto(text.encode(), ('127.0.0.1', port))\n"
+        "    time.sleep(0.05)\n"
+        "import time\n"
+        "say('All linked modules have been initialized and are now running.')\n"
+        "report.check_start('the drive answers')\n"
+        "say('1541: seek track 18')\n"
+        "say('1541: no answer from the drive')\n"
+        "report.check_fail('the drive did not answer')\n"
+        "sys.exit(1)\n")),
     # Drives the menu through the shared UI backend, so the spool of every
     # screen the harness read is in the fixture too.
     Stub("browse", body=(
@@ -1316,6 +1462,7 @@ def record_fixture() -> int:
     os.makedirs(FIXTURE_WORKSPACE)
     unhealthy = os.path.join(FIXTURE_WORKSPACE, "unhealthy")
     menu = os.path.join(FIXTURE_WORKSPACE, "menu-open")
+    port = free_udp_port()
     with DeviceDouble() as double:
         double.menu_open_flag = menu
         double.withhold_ftp_banner_while(unhealthy)
@@ -1326,10 +1473,12 @@ def record_fixture() -> int:
             # mode and one named by its category. The two are the only two
             # shapes an identity key has, and a generator that gets the second
             # one wrong renders every perf and soak suite twice.
-            arguments=("--e2e", "--perf",
+            arguments=("--e2e", "--perf", "--syslog",
+                       "--syslog-port", str(port),
                        "--recover-command", f"rm -f {unhealthy}"),
             workspace=FIXTURE_WORKSPACE,
-            extra_environment={"OBS_FLAG": unhealthy, "OBS_MENU": menu})
+            extra_environment={"OBS_FLAG": unhealthy, "OBS_MENU": menu,
+                               "OBS_SYSLOG_PORT": str(port)})
     shutil.rmtree(FIXTURE, ignore_errors=True)
     shutil.copytree(made.directory, FIXTURE)
     with open(EXPECTED, "w", encoding="utf-8") as handle:
@@ -1337,6 +1486,19 @@ def record_fixture() -> int:
     report.detail(f"recorded {FIXTURE} and {EXPECTED} from a run that exited "
                   f"{made.status}")
     return 0
+
+
+def free_udp_port() -> int:
+    """A UDP port nothing is using, for a run that has to be told one.
+
+    The collector binds what it is given, and the scripted suite that stands in
+    for a device has to know the number before the run starts.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 def generated_document() -> str:
@@ -1671,8 +1833,6 @@ def a_report_is_generated_from_a_run_the_runner_just_wrote() -> str:
 # reason here is a decision somebody took; a requirement in neither this table
 # nor a test is one nobody has decided about.
 UNTESTED_REQUIREMENTS = {
-    "OBS-1.2": "a startup message, which every component's own test asserts "
-               "for itself rather than as a rule",
     "OBS-1.9": "a rule about which artefacts exist, held by the tests for each "
                "of them",
     "OBS-2.6": "the interval rule, exercised by every case that joins a record "
@@ -1970,6 +2130,30 @@ def the_generator_adds_no_dependency() -> str:
     if outside:
         raise Failure(f"the generator imports {outside}")
     return f"{len(imported)} modules, all standard or ours"
+
+
+@case(4, "OBS-3.11", "OBS-7.14")
+def the_report_shows_the_device_log_around_a_failure() -> str:
+    """The lines received during a failing check, and the restart on the timeline."""
+    require_fixture()
+    document = generated_document()
+    if "## Device log" not in document:
+        raise Failure("the collected log is not in the report")
+    section = document.split("## Device log", 1)[1]
+    if "best-effort and incomplete by construction" not in section:
+        raise Failure("the report does not say what the log is worth")
+    if "1541: no answer from the drive" not in section:
+        raise Failure("the lines around the failure are not inlined")
+    if "127.0.0.1/overlay/noisy/1/1" not in section:
+        raise Failure("the slice is not attributed to the failing check")
+    timeline = document.split("## Timeline", 1)[1].split("## Checks", 1)[0]
+    if "restarted, seen in its own log" not in timeline:
+        raise Failure("a device restart is not on the timeline")
+    # Every check would multiply the document by the check count to answer a
+    # question only ever asked about failures.
+    if section.count("from the end of the check before it") > 4:
+        raise Failure("the log is inlined for checks that did not fail")
+    return "one slice, one restart"
 
 
 @case(4, "OBS-4.1", "OBS-1.7")

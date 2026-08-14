@@ -15,6 +15,7 @@ repository-root `run-tests` all use it.
 | `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
 | `targets.py` | What a run is aimed at: which of a target's machines serves what, and where each surface is |
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests |
+| `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
 | `fixtures/e2e-run/` | A reduced real run's `-j` tree, written by the runner, and the report generated from it |
 
 Two registered suites live here as well, because both check the test tree
@@ -175,6 +176,7 @@ DIR/
   index.md                     the report, written by tools/e2e_report.py
   run.jsonl                    the parent's own record, multi-target runs only
   run.log                      the parent's console output, multi-target only
+  syslog-unmapped.txt          log lines from an address no target claims
   <slug>/
     run.jsonl                  this target's runner records
     run.log                    this target's runner console output
@@ -182,6 +184,8 @@ DIR/
     <label>-<suite>.log        that suite run's console output
     <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
     screens.jsonl              every distinct screen the harness read
+    syslog.txt                 the device's own log, with --syslog
+    syslog-<host>.txt          a cartridge target's computer's log
     capture/<label>-<suite>-<attempt>-screen.txt
     capture/<label>-<suite>-<attempt>-screen.bin
     capture/<label>-<suite>-<attempt>-state.json
@@ -207,6 +211,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
 | `warning` | `message` |
+| `log` | `target`, `path`, `started`, `port` |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
 
@@ -221,6 +226,13 @@ they are absent rather than zero.
 `attempt` is which go at the suite this is, from `E2E_ATTEMPT`. `run-tests`
 exports both for every suite it starts. A suite started by hand has neither in
 its environment and records neither, rather than a guessed value.
+
+`log` says where a device's own log is being collected and from when, so a
+reader who finds no log file can tell a collector that never started from a
+device that never sent anything. `--syslog` turns it on and needs each device's
+`Network Settings` / `Log to Syslog Server` pointed at the runner host; that is
+boot-time state on the device, so the runner reads it at both ends of a run and
+corrects it at neither.
 
 `plan` is what the run intended before it ran anything: every suite the
 registry names, whether this run meant to run it, and one of `manual`,

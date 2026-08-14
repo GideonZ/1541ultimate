@@ -42,6 +42,7 @@ from report import Failure  # noqa: E402
 
 sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
 import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+import syslog_collector  # noqa: E402
 
 CATEGORIES = ("e2e", "perf", "soak")
 MODES = ("overlay", "freeze", "telnet")
@@ -512,6 +513,72 @@ def run_and_capture(command: List[str], environment: Dict[str, str],
             handle.write(for_the_log(pending) + b"\n")
     process.stdout.close()
     return process.wait()
+
+
+# Set by the process that binds the device log port, so a child it starts
+# knows not to bind it as well.
+SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
+
+
+def start_syslog(args: argparse.Namespace,
+                 wanted: Sequence[targets_lib.Target]) -> Optional[
+                     "syslog_collector.Collector"]:
+    """Open the device log collector for this run, or say why it did not open.
+
+    Started in the process that owns the whole run, because it binds one port
+    and maps source addresses to targets: it has to know every target and there
+    has to be exactly one of it. A collector that cannot start reports the
+    reason here, before any suite runs, rather than late in a run that has
+    already cost 15 to 30 minutes.
+    """
+    if not (args.syslog and args.jsonl_dir):
+        return None
+    if os.environ.get(SYSLOG_OWNED_ENV):
+        # A child of a multi-target run. Exactly one process binds the port:
+        # two sockets on one unicast UDP port each get about half the
+        # datagrams and neither looks wrong. The child still checks its own
+        # device's setting, which is the device it owns.
+        return None
+    collector = syslog_collector.Collector(directory=args.jsonl_dir,
+                                           port=args.syslog_port)
+    opened = collector.bind(wanted)
+    for problem in collector.problems:
+        report.warn(f"device log: {problem}")
+    if not opened:
+        return None
+    report.detail(f"device log:  collecting on UDP {collector.port}")
+    for token, path in collector.files():
+        report.log_result(token, os.path.relpath(path, args.jsonl_dir),
+                          collector.started, collector.port)
+    return collector
+
+
+def check_syslog_setting(device: "Device", when: str) -> str:
+    """What this device says it is sending its log to, and a warning when it is
+    not sending it anywhere.
+
+    Read rather than written, and never corrected. `Syslog::init` runs once
+    from `ultimate_main`, so writing this during a run does nothing until the
+    device reboots, and a suite that changed it may have been testing exactly
+    that: putting it back would delete that suite's finding.
+
+    The start read catches a device that was reflashed and lost the setting,
+    which otherwise produces no log and no reason for it. The end read catches
+    the one that produces no log in the *next* run, which is far harder to
+    trace back, because a partial .cfg load can write stores it never names and
+    Network Settings is one of them.
+    """
+    try:
+        value = str(device.api.configs.get(syslog_collector.CONFIG_STORE,
+                                           syslog_collector.CONFIG_ITEM) or "")
+    except Failure as exc:
+        report.warn(f"device log: the syslog setting could not be read {when}: "
+                    f"{report.format_exception(exc)}")
+        return ""
+    if not value:
+        report.warn(f"device log: this device is not configured to send its log "
+                    f"anywhere ({when})")
+    return value
 
 
 def die(message: str) -> None:
@@ -1416,6 +1483,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Halt after the first failing suite. The default runs "
                              "every selected suite, so one failure does not mask "
                              "the others.")
+    output.add_argument("--syslog", action="store_true",
+                        help="Collect the devices' own log off the network "
+                             "into DIR, and check at both ends of the run that "
+                             "each device is still configured to send it. Needs "
+                             "each device's Network Settings / Log to Syslog "
+                             "Server pointed at this host, which is boot-time "
+                             "state on the device and cannot be set per run.")
+    output.add_argument("--syslog-port", type=int,
+                        default=syslog_collector.DEFAULT_PORT, metavar="PORT",
+                        help="Port to collect the device log on (default: "
+                             f"{syslog_collector.DEFAULT_PORT}). Not 514, which "
+                             "needs root; the devices are configured to this "
+                             "port instead.")
     output.add_argument("--no-screens", dest="screens", action="store_false",
                         default=True,
                         help="Do not spool the screens the suites read into "
@@ -1606,7 +1686,7 @@ def apply_colour_choice(choice: str) -> None:
 # CHILD_EXCLUDED_OPTIONS below, and runner_policy_test.py fails when one is in
 # neither: an option silently dropped here would make a multi-target run quietly
 # different from the single-target run it is supposed to repeat.
-CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual")
+CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog")
 CHILD_FORWARDED_VALUES = (
     ("modes", "--mode"),
     ("password", "--password"),
@@ -1617,6 +1697,7 @@ CHILD_FORWARDED_VALUES = (
     ("recover_max_total", "--recover-max-total"),
     ("recover_timeout", "--recover-timeout"),
     ("color", "--color"),
+    ("syslog_port", "--syslog-port"),
 )
 CHILD_FORWARDED_NEGATIVE = (
     ("health_check", "--no-health-check"),
@@ -1773,6 +1854,9 @@ def run_targets(args: argparse.Namespace,
         # plan for itself.
         record_plan(args, chosen_categories(args), resolve_modes(args.modes),
                     targets=[t.token for t in wanted])
+    collector = start_syslog(args, wanted)
+    if collector is not None:
+        os.environ[SYSLOG_OWNED_ENV] = "1"
     if args.color == "auto" and report.colour_enabled():
         # Each child writes into a pipe, so it would decide "not a terminal"
         # and drop colour even though this process reprints its lines on one.
@@ -1870,6 +1954,11 @@ def run_targets(args: argparse.Namespace,
              signal.SIGTERM)
         selector.close()
 
+    if collector is not None:
+        collector.stop()
+        report.detail(f"device log:  {collector.lines} line(s) collected"
+                      + (f", {collector.unmapped} from an unmapped address"
+                         if collector.unmapped else ""))
     status = combine_exit_codes(list(codes.values()))
     print()
     for target in wanted:
@@ -2003,12 +2092,18 @@ def main(argv: List[str]) -> int:
     # it set out to do.
     record_plan(args, categories, modes)
 
+    # A single-target run has no parent, so this process owns both roles.
+    collector = start_syslog(args, [target])
+
     device = Device(options.host, options.password, float(options.timeout),
                     health_check=options.health_check,
                     recover_command=options.recover_command,
                     recover_max_per_suite=options.recover_max_per_suite,
                     recover_max_total=options.recover_max_total,
                     recover_timeout=options.recover_timeout)
+    before_syslog = check_syslog_setting(device, "at the start of the run") \
+        if args.syslog else ""
+
     results: List[Result] = []
     started = time.monotonic()
     stopped = False
@@ -2061,6 +2156,18 @@ def main(argv: List[str]) -> int:
         if stopped:
             break
 
+    if args.syslog:
+        # Read at both ends, and corrected at neither.
+        after = check_syslog_setting(device, "at the end of the run")
+        if before_syslog and after and before_syslog != after:
+            report.warn(f"device log: the syslog setting changed during the "
+                        f"run, from {before_syslog!r} to {after!r}. The next "
+                        "run's log depends on what it is at the next boot.")
+    if collector is not None:
+        collector.stop()
+        report.detail(f"device log:  {collector.lines} line(s) collected"
+                      + (f", {collector.unmapped} from an unmapped address"
+                         if collector.unmapped else ""))
     return summarise(results, started, device.recoveries,
                      run_identity(sys.argv, started_wall))
 

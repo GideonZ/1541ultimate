@@ -240,6 +240,9 @@ class TargetRun:
     actions: List[dict] = field(default_factory=list)
     plan: Optional[dict] = None
     run: Optional[dict] = None
+    # Where the collector put this device's own log, from the `log` record it
+    # wrote when it started, and empty when no collector ran.
+    log: Optional[dict] = None
     skipped_lines: int = 0
 
     @property
@@ -424,6 +427,8 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.warnings.append(record)
         elif kind == "action":
             target.actions.append(record)
+        elif kind == "log":
+            target.log = record
         elif kind == "plan":
             target.plan = record
         elif kind == "run":
@@ -528,9 +533,12 @@ def load_tree(directory: str) -> Run:
     run = Run(directory=directory)
     parent_records, run.skipped_lines = read_records(
         os.path.join(directory, "run.jsonl"))
+    logs = {}
     for record in parent_records:
         if record.get("kind") == "run":
             run.parent = record
+        elif record.get("kind") == "log" and record.get("target"):
+            logs[str(record["target"])] = record
 
     for name in sorted(os.listdir(directory) if os.path.isdir(directory) else []):
         path = os.path.join(directory, name)
@@ -539,6 +547,13 @@ def load_tree(directory: str) -> Run:
         if not os.path.exists(os.path.join(path, "run.jsonl")):
             continue
         run.targets.append(load_target(path, name))
+
+    # The collector runs in the process that owns the whole run, so on a
+    # multi-target run its records are the parent's and name the target each
+    # log belongs to.
+    for target in run.targets:
+        if target.log is None and target.token in logs:
+            target.log = logs[target.token]
     return run
 
 
@@ -1223,7 +1238,8 @@ def describe_file(relative: str) -> str:
     if name.endswith(".log"):
         return "that suite run's console output, stderr merged in, ANSI stripped"
     if name.startswith("syslog"):
-        return "the device's own log, as the collector received it"
+        return ("the device's own log, as the collector received it, best "
+                "effort and incomplete by construction")
     if name.endswith("-screen.txt"):
         return "the screen a failing suite left, as text"
     if name.endswith("-screen.bin"):
@@ -1276,6 +1292,81 @@ def files_section(run: Run) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+# The first distinctive boot marker that reaches the device log, and the only
+# signal there is that a device restarted: the firmware has no uptime counter
+# and nothing on the REST surface answers the question.
+BOOT_MARKER = "All linked modules have been initialized and are now running."
+
+# How many device log lines are inlined around one failure. The whole log is a
+# sibling file, and this is the slice a reader would otherwise go looking for.
+LOG_SLICE_LINES = 30
+
+LOG_CAVEAT = (
+    "The device log is best-effort and incomplete by construction. It is UDP "
+    "with no retransmission, the firmware's 16 KB forwarding buffer discards "
+    "itself whole on overflow, output is throttled to about 200 lines a "
+    "second, and an assertion failure never arrives at all because the task "
+    "that would send it stops running. A line's time is when this host "
+    "received it, which lags when the firmware printed it by an unbounded "
+    "amount, so these are lines received during a check and not lines the "
+    "device produced during it.")
+
+
+def device_log(run: Run, target: TargetRun) -> List[Tuple[float, str]]:
+    """One target's collected log, with the time each line was received."""
+    if not target.log or not target.log.get("path"):
+        return []
+    path = os.path.join(run.directory, str(target.log["path"]))
+    found: List[Tuple[float, str]] = []
+    for line in read_text(path):
+        stamp, _, text = line.partition(" ")
+        try:
+            found.append((float(stamp), text))
+        except ValueError:
+            continue
+    return found
+
+
+def log_section(run: Run) -> List[str]:
+    """The device log around each failure, and nowhere else.
+
+    Inlining a slice for every check would multiply the document by the check
+    count to answer a question only ever asked about failures.
+    """
+    lines: List[str] = []
+    for target in run.targets:
+        collected = device_log(run, target)
+        if not collected:
+            continue
+        lines += [f"### {target.token}", "",
+                  f"{len(collected)} line(s) received, from "
+                  f"`{target.log['path']}`.", ""]
+        for made in sorted(target_suites(run, target), key=lambda s: s.time):
+            for check in made.checks:
+                if check.verdict != "FAIL":
+                    continue
+                # The gap before a check belongs to the suite rather than to a
+                # check: nothing is recorded when a check starts, so that gap
+                # is setup, teardown, the health sweep and the UI-state gate.
+                previous = [c.time for c in made.checks if c.time <= check.started]
+                start = max(previous) if previous else made.started
+                slice_lines = [text for when, text in collected
+                               if start <= when <= check.time]
+                if not slice_lines:
+                    continue
+                lines += [f"**{check.key}**, from the end of the check before "
+                          "it:", ""]
+                lines += fenced([redact(one) for one in
+                                 slice_lines[-LOG_SLICE_LINES:]]) + [""]
+    if not lines:
+        return []
+    return ["## Device log", "", LOG_CAVEAT, ""] + lines
+
+
+def target_suites(run: Run, target: TargetRun) -> List[SuiteRun]:
+    return [s for s in run.all_suites() if s.target == target.token]
+
+
 def timeline_section(run: Run) -> List[str]:
     """The whole run as one narrative, in wall-clock order.
 
@@ -1303,6 +1394,10 @@ def timeline_section(run: Run) -> List[str]:
         for action in target.actions:
             events.append((as_float(action.get("time")), DURING, True,
                            f"{target.token} " + describe_action(action)))
+        for when, text in device_log(run, target):
+            if BOOT_MARKER in text:
+                events.append((when, DURING, False,
+                               f"{target.token} restarted, seen in its own log"))
     for made in run.all_suites():
         events.append((made.started, START, False, f"{made.key} started"))
         if made.recoveries:
@@ -1481,6 +1576,7 @@ def render(run: Run, previous: Optional[Run] = None) -> str:
     lines += timeline_section(run)
     lines += checks_section(run)
     lines += time_section(run)
+    lines += log_section(run)
 
     text = "\n".join(line.rstrip() for line in lines)
     while "\n\n\n" in text:

@@ -536,6 +536,16 @@ def plan_result(suites: Iterable[dict], sequence: Iterable[dict],
     _record(kind="plan", suites=list(suites), sequence=list(sequence), **fields)
 
 
+def log_result(target: str, path: str, started: float, port: int) -> None:
+    """Where one device's own log is being collected, and from when.
+
+    A reader who finds no log file needs to know whether the collector never
+    started or the device never sent anything, and these two are different
+    answers.
+    """
+    _record(kind="log", target=target, path=path, started=started, port=port)
+
+
 def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:
     """The JSONL record for one device health sweep.
 

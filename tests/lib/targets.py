@@ -98,6 +98,18 @@ class Target:
         return self.computer
 
     @property
+    def log_hosts(self) -> Tuple[str, ...]:
+        """Whose logs belong to this target, the device under test first.
+
+        Both machines of a cartridge target log: the firmware being tested is
+        the cartridge's, and the computer it is plugged into runs its own. Both
+        are kept and the order says which is which.
+        """
+        if self.split:
+            return (self.device, self.computer)
+        return (self.device,)
+
+    @property
     def resources(self) -> Tuple[str, ...]:
         """The physical machines this target occupies while it runs.
 
