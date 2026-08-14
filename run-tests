@@ -546,7 +546,8 @@ SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
 
 
 def start_syslog(args: argparse.Namespace,
-                 wanted: Sequence[targets_lib.Target]) -> Optional[
+                 wanted: Sequence[targets_lib.Target],
+                 directory: str = "") -> Optional[
                      "syslog_collector.Collector"]:
     """Open the device log collector for this run, or say why it did not open.
 
@@ -564,7 +565,13 @@ def start_syslog(args: argparse.Namespace,
         # datagrams and neither looks wrong. The child still checks its own
         # device's setting, which is the device it owns.
         return None
-    collector = syslog_collector.Collector(directory=args.jsonl_dir,
+    # The run's root, not one target's directory: the collector writes one
+    # file per machine under each target's own slug, so it is handed the tree
+    # it composes those paths against. A single-target run has already
+    # appended its slug to args.jsonl_dir by this point, and passing that
+    # would put the log in DIR/<slug>/<slug>/.
+    root = directory or args.jsonl_dir
+    collector = syslog_collector.Collector(directory=root,
                                            port=args.syslog_port)
     opened = collector.bind(wanted)
     for problem in collector.problems:
@@ -573,7 +580,7 @@ def start_syslog(args: argparse.Namespace,
         return None
     report.detail(f"device log:  collecting on UDP {collector.port}")
     for token, path in collector.files():
-        report.log_result(token, os.path.relpath(path, args.jsonl_dir),
+        report.log_result(token, os.path.relpath(path, root),
                           collector.started, collector.port)
     return collector
 
@@ -2303,6 +2310,7 @@ def main(argv: List[str]) -> int:
         except ValueError as exc:
             die(f"--recover-command is not a valid shell command: {exc}")
 
+    tree_root = args.jsonl_dir
     if args.jsonl_dir:
         # One tree shape, whether the run was asked for one target or several:
         # this process knows its one target, so it appends the slug, and a
@@ -2364,7 +2372,7 @@ def main(argv: List[str]) -> int:
     record_plan(args, categories, modes)
 
     # A single-target run has no parent, so this process owns both roles.
-    collector = start_syslog(args, [target])
+    collector = start_syslog(args, [target], directory=tree_root)
 
     device = Device(options.host, options.password, float(options.timeout),
                     health_check=options.health_check,

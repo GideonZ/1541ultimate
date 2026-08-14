@@ -526,10 +526,28 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
     """Read at both ends, corrected at neither, and recorded where it went."""
     import tempfile
 
+    import socket
+
+    # A port of this test's choosing, so the stub suite can send a datagram to
+    # the collector while the run is happening. That is the only way to find
+    # out where the collector actually writes: the `log` record's path is
+    # relative to the run's root and reads the same whether or not the slug
+    # was composed into it twice.
+    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    holder.bind(("127.0.0.1", 0))
+    port = holder.getsockname()[1]
+    holder.close()
+    logger = ("import socket\n"
+              "sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+              f"sock.sendto(b'a line from the device', ('127.0.0.1', {port}))\n"
+              "sock.close()\n"
+              "report.check_start('sent a log line')\n"
+              "report.check_ok()\n")
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
         double.configs["Network Settings"]["Log to Syslog Server"] = ""
-        made = scripted_run(double, [Stub("held")], workspace=workspace,
-                            arguments=("--syslog", "--syslog-port", "0"))
+        made = scripted_run(double, [Stub("held", body=logger)],
+                            workspace=workspace,
+                            arguments=("--syslog", "--syslog-port", str(port)))
         warnings = [r for r in made.records("127.0.0.1", "run.jsonl")
                     if r["kind"] == "warning"]
         both = [w for w in warnings if "not configured to send its log" in
@@ -539,6 +557,17 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
                 if r["kind"] == "log"]
         expect("one log record", len(logs), 1)
         expect("where it goes", logs[0]["path"], "127.0.0.1/syslog.txt")
+        # The path in the record is relative to the run's root, so it has to
+        # be the file the collector actually opens. A collector handed one
+        # target's own directory composes the slug into it a second time and
+        # writes to DIR/<slug>/<slug>/syslog.txt, while the record still reads
+        # the same either way.
+        wanted = made.path("127.0.0.1", "syslog.txt")
+        if not os.path.exists(wanted):
+            found = [os.path.join(root, name)
+                     for root, _dirs, names in os.walk(made.directory)
+                     for name in names if name.startswith("syslog")]
+            raise Failure(f"the collector did not write {wanted}: {found}")
         # Read, never written: Syslog::init runs once at boot, so writing this
         # during a run does nothing, and a suite that changed it may have been
         # testing exactly that.
@@ -801,6 +830,32 @@ def the_screen_spool_is_not_a_suite() -> str:
         raise Failure("the spool is rendered as a suite run of its own")
     expect("the real suite is there", "/overlay/held/1" in document, True)
     return "one suite, not two"
+
+
+@case(1, "OBS-7.5", "OBS-7.6")
+def a_second_interface_can_be_declared() -> str:
+    """A device logs from whichever interface the route picked.
+
+    Measured on the U64 here: REST answers on the Ethernet address and the log
+    arrives from the WiFi one, and no route on the device reports either.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
+    import syslog_collector
+
+    previous = os.environ.get(syslog_collector.ADDRESS_ENV)
+    os.environ[syslog_collector.ADDRESS_ENV] = "u64=192.0.2.71,c64u=192.0.2.9"
+    try:
+        found = syslog_collector.resolve("u64")
+        if "192.0.2.71" not in found:
+            raise Failure(f"the declared address is not in {found}")
+        if "192.0.2.9" in found:
+            raise Failure("another machine's declared address was taken")
+    finally:
+        if previous is None:
+            os.environ.pop(syslog_collector.ADDRESS_ENV, None)
+        else:
+            os.environ[syslog_collector.ADDRESS_ENV] = previous
+    return "the second interface is attributed"
 
 
 @case(1, "OBS-2.5")

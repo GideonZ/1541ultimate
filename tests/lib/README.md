@@ -237,11 +237,24 @@ device that never sent anything. `--syslog` turns it on and needs each device's
 boot-time state on the device, so the runner reads it at both ends of a run and
 corrects it at neither.
 
+A datagram is attributed to a device by its source address, and a device with
+two interfaces logs from whichever one its routing picked, which is not always
+the address its name resolves to. Measured here: the Ultimate 64 answers REST
+on its Ethernet address and sends its log from its WiFi address, and nothing on
+its REST surface reports either. `U64_LOG_ADDRESSES="u64=192.168.1.71"` adds an
+address to a machine for the run. Without it those lines are still kept, in
+`syslog-unmapped.txt` with the address that sent them, which is what makes the
+omission visible rather than silent.
+
 `capture` is the recording's own health. It carries every option in force and
 every count the receive path kept: packets, packets dropped, packets malformed,
-frames completed, frames lost, frames shed, frames padded for a geometry
-change, stream re-arms, and the same set for the audio. A file with thousands
-of padded frames or hundreds of re-arms is telling a reader that the run fought
+frames completed, frames lost, frames shed because the host could not keep up,
+frames decimated to reach the output rate, frames padded for a geometry change,
+stream re-arms, and the same set for the audio. `timing` and `audio_rate` say
+which video timing the device was in and therefore what sample rate the audio
+track declares, since the audio clock is derived from the video clock.
+
+A file with thousands of padded frames or hundreds of re-arms is telling a reader that the run fought
 the recorder for the stream, which is worth knowing before drawing conclusions
 from what it shows. `started` and `lead_in` are what convert a wall-clock time
 into a position in the file.

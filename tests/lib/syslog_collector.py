@@ -62,6 +62,10 @@ import targets as targets_lib
 # a worse trade than a port number.
 DEFAULT_PORT = 5514
 
+# Where an operator declares an address a machine logs from that its name does
+# not resolve to. See `declared`.
+ADDRESS_ENV = "U64_LOG_ADDRESSES"
+
 # The configuration item the devices carry, in the store it lives in.
 CONFIG_STORE = "Network Settings"
 CONFIG_ITEM = "Log to Syslog Server"
@@ -263,13 +267,39 @@ def resolve(machine: str) -> List[str]:
     """Every IPv4 address a machine answers to, or an empty list.
 
     The same call `av_stream.AvStreamCapture` uses to decide which packets are
-    its device's, so one rule decides what belongs to whom.
+    its device's, so one rule decides what belongs to whom, plus whatever
+    `U64_LOG_ADDRESSES` adds for that machine.
     """
     try:
         found = socket.getaddrinfo(machine, 0, socket.AF_INET, socket.SOCK_DGRAM)
     except OSError:
-        return []
-    return sorted({entry[4][0] for entry in found})
+        found = []
+    addresses = {entry[4][0] for entry in found}
+    return sorted(addresses | declared(machine))
+
+
+def declared(machine: str) -> "set":
+    """Addresses an operator has attached to a machine by hand.
+
+    A device with two interfaces logs from whichever one the route picks, and
+    that is not always the address its name resolves to: an Ultimate 64 on
+    both Ethernet and WiFi answers REST on one and sends its log from the
+    other. Nothing on the device's REST surface reports its interfaces, so the
+    second address is something the person who set the machine up knows and
+    the harness cannot discover.
+
+        U64_LOG_ADDRESSES="u64=192.168.1.71,c64u=192.168.1.150"
+
+    A datagram from an address nobody declared is still kept, in
+    syslog-unmapped.txt with its sender, which is what makes the omission
+    visible rather than silent.
+    """
+    found = set()
+    for entry in (os.environ.get(ADDRESS_ENV) or "").split(","):
+        name, _, address = entry.partition("=")
+        if name.strip() == machine and address.strip():
+            found.add(address.strip())
+    return found
 
 
 # ---------------------------------------------------------------------------

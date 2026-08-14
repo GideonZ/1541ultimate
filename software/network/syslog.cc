@@ -5,6 +5,20 @@
 #include "network_config.h"
 
 
+bool Syslog::open_buffer(size_t buffer_size)
+{
+    if (buf) {
+        return true;
+    }
+    bufsize = (int)buffer_size;
+    buf = new char[bufsize];
+    // Clears `overflow` as well: a character written before the buffer
+    // existed sets it, and charout returns for the rest of the run while it
+    // is set.
+    rewind();
+    return true;
+}
+
 bool Syslog::init(size_t buffer_size)
 {
     if (!networkConfig.cfg) {
@@ -44,9 +58,9 @@ bool Syslog::init(size_t buffer_size)
 
     // If a valid ip is configured we enable the syslog
     if (ip.addr != INADDR_ANY) {
-        bufsize = buffer_size;
-        buf = new char[bufsize];
-        bufpos = 0;
+        // Keeps whatever open_buffer already collected, so the lines printed
+        // before this point are forwarded rather than dropped.
+        open_buffer(buffer_size);
         xTaskCreate(syslogTask, "Syslog Task", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &task);
         printf("Sending logs to syslog server '%s'\n", server);
         return true;
@@ -107,11 +121,12 @@ void Syslog::forwardLogging()
     sa.sin_family = AF_INET;
     sa.sin_addr.s_addr = ip.addr;
     sa.sin_port = htons(port);
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0 || connect(sockfd, (struct sockaddr *)&sa, sizeof(sa)) != 0)
     {
         if (sockfd >= 0) {
             closesocket(sockfd);
+            sockfd = -1;
             puts("Failed to open socket for sending syslog packets, terminating syslog task\n");
         }
         else {
@@ -170,4 +185,33 @@ void Syslog::forwardLogging()
         vTaskDelay(100 / portTICK_PERIOD_MS);  // Wait for more data
     }
     // Never reached
+}
+
+void Syslog::flush()
+{
+    // For a caller that is about to stop the machine. vAssertCalled prints
+    // the assertion and the task list and then spins with interrupts
+    // disabled, so the forwarding task never runs again and the one message
+    // worth having is the one that never leaves.
+    //
+    // Called from the failing task before it disables interrupts, so this is
+    // an ordinary send from an ordinary context. It sends what is in the
+    // buffer as one datagram rather than line by line: there is no time left
+    // to throttle, and the receiver writes a datagram as it arrives.
+    if (sockfd < 0 || !buf) {
+        return;
+    }
+    ENTER_SAFE_SECTION;
+    int length = bufpos;
+    LEAVE_SAFE_SECTION;
+    if (length <= 0) {
+        return;
+    }
+    if (send(sockfd, buf, length, 0) < 0) {
+        ++failed_sends;
+        return;
+    }
+    ENTER_SAFE_SECTION;
+    rewind();
+    LEAVE_SAFE_SECTION;
 }
