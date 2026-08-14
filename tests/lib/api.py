@@ -702,8 +702,9 @@ class UltimateApi:
     itself rather than about what the device did.
     """
 
-    def __init__(self, host: str, password: Optional[str] = None,
+    def __init__(self, host, password: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
+        # `host` is a target token or a resolved handle; see tests/lib/targets.py.
         self.rest = RestClient(host, password, timeout)
         self.machine = MachineApi(self.rest)
         self.drives = DrivesApi(self.rest)

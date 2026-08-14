@@ -129,6 +129,19 @@ SUITE_NAME = os.environ.get("E2E_SUITE") or os.path.splitext(
     os.path.basename(sys.argv[0] or "test"))[0]
 JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 
+# Which device this process is testing, and which go at it this is. A harness
+# exports both beside E2E_SUITE, so every record joins to a target and to an
+# attempt without a correlation identifier of its own. A suite started by hand
+# has neither, and records neither rather than a guessed value: a run's target
+# is what the harness aimed it at, and a suite has no way to know.
+#
+# The attempt matters because a retried suite repeats its check indices in one
+# file, which run_one_attempt truncates only on the first attempt. Two records
+# carrying index 26 are told apart by this field and by nothing else.
+TARGET_NAME = os.environ.get("E2E_TARGET") or ""
+_raw_attempt = os.environ.get("E2E_ATTEMPT") or ""
+ATTEMPT: Optional[int] = int(_raw_attempt) if _raw_attempt.isdigit() else None
+
 _count = 0
 _depth = 0
 _last_label = ""
@@ -173,6 +186,10 @@ def _record(**fields) -> None:
         return
     fields.setdefault("time", time.time())
     fields.setdefault("suite", SUITE_NAME)
+    if TARGET_NAME:
+        fields.setdefault("target", TARGET_NAME)
+    if ATTEMPT is not None:
+        fields.setdefault("attempt", ATTEMPT)
     try:
         with open(JSONL_PATH, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(fields) + "\n")
@@ -438,9 +455,22 @@ def set_jsonl_path(path: str) -> None:
     JSONL_PATH = path
 
 
-def run_result(verdict: str, suites: int, passed: int, failed: int,
-               skipped: int, dirty: int, seconds: float,
-               recoveries: int = 0, exit_code: Optional[int] = None) -> None:
+def set_target(token: str) -> None:
+    """Name the device this process's own records are about.
+
+    A harness resolves its target after importing this module, which is read
+    at import for the suites it starts, so it says the same thing about itself
+    here. See TARGET_NAME.
+    """
+    global TARGET_NAME
+    TARGET_NAME = token
+
+
+def run_result(verdict: str, suites: Optional[int] = None,
+               passed: Optional[int] = None, failed: Optional[int] = None,
+               skipped: Optional[int] = None, dirty: Optional[int] = None,
+               seconds: float = 0.0, recoveries: int = 0,
+               exit_code: Optional[int] = None, **fields) -> None:
     """The JSONL record for a whole run, written by a harness rather than a suite.
 
     Record shapes belong to this module, so a harness reports its own result
@@ -449,11 +479,21 @@ def run_result(verdict: str, suites: int, passed: int, failed: int,
     `recoveries` is how many times the device had to be brought back during the
     run, and `exit_code` is the status the harness is about to exit with, so a
     caller reading only the JSONL sees the same verdict as one reading `$?`.
+
+    A harness that ran no suites of its own passes no counts, and the record
+    carries none: a multi-target run's parent has children that each counted
+    their own, and a zero there would be summed as if it were a result.
+
+    `fields` carries what the run is a run of - the commit, the branch, the
+    host, the command line - so a downloaded artifact says what produced it
+    without a second file.
     """
-    _record(kind="run", verdict=verdict, suites=suites, passed=passed,
-            failed=failed, skipped=skipped, dirty=dirty,
+    counts = {"suites": suites, "passed": passed, "failed": failed,
+              "skipped": skipped, "dirty": dirty}
+    _record(kind="run", verdict=verdict,
+            **{name: value for name, value in counts.items() if value is not None},
             seconds=round(seconds, 4), recoveries=recoveries,
-            exit_code=exit_code)
+            exit_code=exit_code, **fields)
 
 
 def die(message: str) -> None:

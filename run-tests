@@ -15,9 +15,11 @@
 
 import argparse
 import os
+import platform
 import selectors
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -110,6 +112,12 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    # Also needs no device: the observability harness watches a run and by
+    # design cannot change a verdict, so nothing else notices when it breaks.
+    # A run whose report generator has stopped rendering fails here, rather
+    # than weeks later when somebody opens the artifact to diagnose something
+    # else and finds an empty document.
+    Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on
@@ -272,6 +280,77 @@ class Options:
     recover_max_per_suite: int
     recover_max_total: int
     recover_timeout: float
+
+
+# What replaces the device password anywhere a run records what it was given.
+# The artefacts leave the machine that produced them: a CI artifact is
+# downloadable by anyone who can see the build, and build_command substitutes
+# the password into every suite's argument vector, so a recorded command line
+# is a secret-bearing string.
+PASSWORD_MASK = "***"
+
+
+def redact_password(argv: Sequence[str], password: str) -> List[str]:
+    """`argv` with every occurrence of the device password masked.
+
+    Every occurrence rather than only the value after -p, because the password
+    also reaches a recovery command and anything else an operator wrote it
+    into. A run whose password is empty, which is the common local case, is
+    unaffected.
+    """
+    if not password:
+        return list(argv)
+    return [item.replace(password, PASSWORD_MASK) for item in argv]
+
+
+def git_answer(*arguments: str) -> Optional[str]:
+    """One git query about this checkout, or None when git does not answer.
+
+    Run with the repository root as its working directory rather than with
+    whatever the operator started the run in: this checkout is frequently a
+    git worktree, so the process's own directory says nothing useful.
+
+    None and "" are different answers: `git status --porcelain` is empty for a
+    clean tree, and absent for a directory git will not talk about.
+    """
+    try:
+        completed = subprocess.run(("git",) + arguments, cwd=ROOT,
+                                   capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def run_identity(argv: Sequence[str], password: str,
+                 started: float) -> Dict[str, object]:
+    """What this run is a run of, for the `run` record.
+
+    A downloaded artifact has to say what produced it without a second file.
+    Three git calls, all cheap, all on the host, none reaching the device; a
+    checkout where git does not answer loses those fields rather than the run.
+    """
+    fields: Dict[str, object] = {
+        "host": socket.gethostname(),
+        "python": platform.python_version(),
+        "argv": redact_password(argv, password),
+        "started": started,
+    }
+    commit = os.environ.get("GITHUB_SHA") or git_answer("rev-parse", "HEAD")
+    if commit:
+        fields["commit"] = commit
+    branch = os.environ.get("GITHUB_REF_NAME") or \
+        git_answer("rev-parse", "--abbrev-ref", "HEAD")
+    if branch:
+        fields["branch"] = branch
+    status = git_answer("status", "--porcelain")
+    if status is not None:
+        # Not `dirty`: report.run_result already spends that name on the count
+        # of suites that left the UI outside its documented state, and naming
+        # one field twice with two meanings is worse than a longer name.
+        fields["worktree_dirty"] = bool(status)
+    return fields
 
 
 def die(message: str) -> None:
@@ -601,6 +680,11 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
 
     environment = dict(os.environ)
     environment["E2E_SUITE"] = suite.name
+    # Which device the suite is aimed at and which go at it this is, so every
+    # record it writes joins to a target and to an attempt with no correlation
+    # identifier of its own. Both are values this function already holds.
+    environment["E2E_TARGET"] = options.host
+    environment["E2E_ATTEMPT"] = str(attempt)
     # Tell the suite whether the device has just been reset and nothing has
     # touched it since, so it does not open with a reset of its own. One suite
     # ending with a reset and the next starting with one is the common case,
@@ -943,10 +1027,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "every selected suite, so one failure does not mask "
                              "the others.")
     output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
-                        help="Emit JSONL into DIR: one file per suite run, plus "
-                             "run.jsonl carrying the run's own counts, recovery "
-                             "total and exit status. Record shapes are documented "
-                             "in tests/lib/README.md.")
+                        help="Emit JSONL into DIR, under one subdirectory per "
+                             "target: one file per suite run, plus run.jsonl "
+                             "carrying that target's counts, recovery total and "
+                             "exit status. A run of several targets also writes "
+                             "DIR/run.jsonl for the run as a whole. Record shapes "
+                             "are documented in tests/lib/README.md.")
     return parser
 
 
@@ -991,7 +1077,8 @@ def exit_code_for(results: List[Result], recoveries: int) -> int:
     return EXIT_OK
 
 
-def summarise(results: List[Result], started: float, recoveries: int) -> int:
+def summarise(results: List[Result], started: float, recoveries: int,
+              identity: Optional[Dict[str, object]] = None) -> int:
     report.banner("Summary")
 
     groups: Dict[str, List[Result]] = {}
@@ -1070,7 +1157,8 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
         dirty=sum(1 for r in results if r.verdict == report.WARN),
         seconds=total,
         recoveries=recoveries,
-        exit_code=status)
+        exit_code=status,
+        **(identity or {}))
 
     if status == EXIT_DEVICE_UNHEALTHY:
         print(f"\n{report.colour('FAIL', report.RED)}  "
@@ -1273,6 +1361,11 @@ class ChildRun:
 def run_targets(args: argparse.Namespace,
                 wanted: Sequence[targets_lib.Target]) -> int:
     """Run every target, never two that need the same machine at once."""
+    started_wall = time.time()
+    if args.jsonl_dir:
+        # This process has no target of its own, so its records go beside the
+        # per-target directories rather than into one of them.
+        report.set_jsonl_path(os.path.join(args.jsonl_dir, "run.jsonl"))
     if args.color == "auto" and report.colour_enabled():
         # Each child writes into a pipe, so it would decide "not a terminal"
         # and drop colour even though this process reprints its lines on one.
@@ -1295,10 +1388,11 @@ def run_targets(args: argparse.Namespace,
     def start_ready() -> None:
         for target in list(pending):
             if schedulable(target, [run.target for run in active.values()]):
-                jsonl_dir = (os.path.join(args.jsonl_dir, target.slug)
-                             if args.jsonl_dir else "")
-                if jsonl_dir:
-                    os.makedirs(jsonl_dir, exist_ok=True)
+                # The child is the process that knows its one target, so it
+                # appends its own slug and this one passes DIR through
+                # unchanged. Appending it here as well would make the tree
+                # DIR/<slug>/<slug>/.
+                jsonl_dir = args.jsonl_dir
                 taken = {run.slot for run in active.values()}
                 slot = next(i for i in range(len(wanted) + 1) if i not in taken)
                 run = ChildRun(target, child_command(args, target, jsonl_dir), slot)
@@ -1325,6 +1419,24 @@ def run_targets(args: argparse.Namespace,
             report.detail(f"finished {run.target.token} with status "
                           f"{run.process.returncode}")
 
+    def write_parent_record(status: int) -> int:
+        """Record the run's own verdict, which only this process can state.
+
+        This function returns before `summarise`, so without it a multi-target
+        run records no overall verdict anywhere and a reader would have to
+        re-implement combine_exit_codes to state one. The counts stay with the
+        children, which each counted their own.
+        """
+        if args.jsonl_dir:
+            report.run_result(
+                verdict=report.OK if status in (EXIT_OK, EXIT_RECOVERED)
+                else report.FAIL,
+                seconds=time.time() - started_wall,
+                exit_code=status,
+                targets=[t.token for t in wanted],
+                **run_identity(sys.argv, args.password, started_wall))
+        return status
+
     try:
         while pending or active:
             start_ready()
@@ -1343,7 +1455,7 @@ def run_targets(args: argparse.Namespace,
         stop(active.values(), signal.SIGINT)
         for run in active.values():
             codes[run.target.token] = run.process.returncode
-        return EXIT_SUITE_FAILED
+        return write_parent_record(EXIT_SUITE_FAILED)
     finally:
         # Whatever brought the loop down, no child outlives this process: a
         # stray run would keep driving hardware the operator thinks is free.
@@ -1355,7 +1467,7 @@ def run_targets(args: argparse.Namespace,
     print()
     for target in wanted:
         report.detail(f"{target.token}: exit {codes.get(target.token, 'not started')}")
-    return status
+    return write_parent_record(status)
 
 
 def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
@@ -1374,6 +1486,10 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
 
 
 def main(argv: List[str]) -> int:
+    # Wall clock as well as the monotonic clock the summary measures with:
+    # every artefact correlates on time.time() taken on this host, and a
+    # monotonic reading names no moment a reader could look up.
+    started_wall = time.time()
     args = build_parser().parse_args(argv)
     apply_colour_choice(args.color)
     if args.assume_fix:
@@ -1430,11 +1546,19 @@ def main(argv: List[str]) -> int:
             die(f"--recover-command is not a valid shell command: {exc}")
 
     if args.jsonl_dir:
+        # One tree shape, whether the run was asked for one target or several:
+        # this process knows its one target, so it appends the slug, and a
+        # parent that started it passed DIR through unchanged.
+        args.jsonl_dir = os.path.join(args.jsonl_dir, target.slug)
         os.makedirs(args.jsonl_dir, exist_ok=True)
         # The run's own record goes in its own file. The per-suite files are
         # written by the suites themselves, which are separate processes and
         # never see this one's result.
         report.set_jsonl_path(os.path.join(args.jsonl_dir, "run.jsonl"))
+        # The suites are told through E2E_TARGET, which report.py reads at
+        # import; this process resolved its target after importing it, so it
+        # says the same thing about its own health sweeps and suite records.
+        report.set_target(target.token)
 
     options = Options(host=target.token, password=args.password,
                       timeout=args.timeout, soak_profile=args.soak_profile,
@@ -1524,7 +1648,8 @@ def main(argv: List[str]) -> int:
         if stopped:
             break
 
-    return summarise(results, started, device.recoveries)
+    return summarise(results, started, device.recoveries,
+                     run_identity(sys.argv, options.password, started_wall))
 
 
 if __name__ == "__main__":

@@ -87,7 +87,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     raise last_exc
 
 
-def retrying_http_request(host: str, method: str, path: str, *,
+def retrying_http_request(host: "str | targets.Target", method: str, path: str, *,
                           body: Optional[bytes] = None,
                           headers: Optional[Dict[str, str]] = None,
                           timeout: float = DEFAULT_TIMEOUT,
@@ -102,10 +102,11 @@ def retrying_http_request(host: str, method: str, path: str, *,
     `host` may be a target token, so callers that hold whatever the runner gave
     them do not each have to resolve it; see tests/lib/targets.py.
     """
-    host = targets.host_for(host, path)
+    target = targets.resolve(host)
+    host = target.host_for(path)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
-        connection = http.client.HTTPConnection(host, timeout=timeout)
+        connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
         sent = False
         try:
             connection.connect()
@@ -198,14 +199,19 @@ class RestClient:
     all.
     """
 
-    def __init__(self, host: str, password: Optional[str] = None,
+    def __init__(self, host: "str | targets.Target", password: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
         # `host` is a target rather than a bare name: "u2@c64u" resolves to a
         # cartridge under test and the computer it is plugged into. See
         # tests/lib/targets.py. Everything addresses the device except
         # keyboard injection, which the cartridge does not implement and which
         # therefore goes to the computer.
-        target = targets.parse(host)
+        #
+        # A resolved handle is accepted as well as a token, which is what lets
+        # a caller point this client at a device serving on another port
+        # without every suite changing: the suites keep passing the token they
+        # parsed from their own -H.
+        target = targets.resolve(host)
         self.target = target
         self.host = target.device
         self.input_host = target.input_host
@@ -221,8 +227,12 @@ class RestClient:
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         host = self.target.host_for(path)
+        # A device on port 80 carries no port in its URL, so the port appears
+        # in a failure message only when it is the surprising part.
+        authority = host if self.target.rest_port == targets.REST_PORT \
+            else f"{host}:{self.target.rest_port}"
         query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{host}{path}{query}"
+        return f"http://{authority}{path}{query}"
 
     def request(self, method: str, path: str,
                 params: Optional[Dict[str, object]] = None,

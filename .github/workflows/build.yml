@@ -20,6 +20,15 @@ jobs:
       - name: Generate Version String
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
+      # The harness that watches an E2E gate run, checked on every push. It
+      # needs no device and no network beyond loopback, and it runs before the
+      # firmware builds because it costs seconds and a broken report generator
+      # is better reported now than after an hour of building.
+      - name: Check Observability Harness
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \

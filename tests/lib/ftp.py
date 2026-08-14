@@ -35,7 +35,8 @@ def connect(host: str, password: Optional[str] = None,
     """
     try:
         client = ftplib.FTP(timeout=timeout)
-        client.connect(targets.device_of(host), 21)
+        target = targets.resolve(host)
+        client.connect(target.device, target.ftp_port)
         client.login(user, password or FTP_DEFAULT_PASSWORD)
         if directory:
             client.cwd(directory)

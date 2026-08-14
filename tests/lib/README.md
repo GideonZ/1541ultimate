@@ -13,6 +13,8 @@ repository-root `run-tests` all use it.
 | `wait.py` | Bounded polling and retry |
 | `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
 | `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
+| `targets.py` | What a run is aimed at: which of a target's machines serves what, and where each surface is |
+| `device_double.py` | One fake Ultimate on loopback, for the observability tests |
 
 Two registered suites live here as well, because both check the test tree
 itself rather than the device and so need no hardware. They run first, where a
@@ -22,6 +24,27 @@ failure lands as a clear message instead of as a confusing one later:
 | --- | --- |
 | `check_transport_usage.py` | No suite has grown its own HTTP client again |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
+| `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
+
+`observability_test.py` also runs as `make observability_test` and as a step in
+`.github/workflows/build.yml`. One implementation, invoked three ways.
+
+## Where a device is
+
+`targets.Target` is the one object that answers where every surface of a device
+is: which of its machines serves a REST path, where keyboard injection goes,
+which machines it occupies, and the REST, FTP, Telnet and DMA ports.
+The defaults are the real device's, so a target parsed from a token needs
+nothing set. `U64_REST_PORT`, `U64_FTP_PORT`, `U64_TELNET_PORT` and
+`U64_DMA_PORT` move one for a caller addressing something else.
+
+A library here takes either a token or a resolved handle, so a suite keeps
+passing whatever its own `-H` gave it:
+
+```python
+targets.resolve("u2@c64u").host_for("/v1/machine:input")   # -> "c64u"
+UltimateApi(target)                                        # a handle works too
+```
 
 Put this directory on `sys.path` before importing:
 
@@ -126,12 +149,25 @@ The guidance for what to do about one is in
 
 Set `E2E_JSONL` to a path to append the run as JSONL, one object per line.
 `E2E_SUITE` names the suite in those records. `run-tests -j DIR` sets both for
-every suite it starts, writing one file per suite run into DIR, and writes its
-own `run` record to `DIR/run.jsonl` through `set_jsonl_path`. A harness that
-parses its arguments after importing this module needs that setter, because
-`E2E_JSONL` is read at import.
+every suite it starts. A harness that parses its arguments after importing this
+module needs `set_jsonl_path`, because `E2E_JSONL` is read at import.
 
-Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
+The tree has one shape whether the run was asked for one target or several:
+
+```
+DIR/
+  run.jsonl                    the parent's own record, multi-target runs only
+  <slug>/
+    run.jsonl                  this target's runner records
+    <label>-<suite>.jsonl      one file per suite run
+```
+
+`<slug>` is `targets.Target.slug`, the target token with `@` written `-at-`,
+and `<label>` is the UI mode for an E2E suite or the category name for a perf
+or soak suite.
+
+Every record carries `kind`, `suite` and `time`, and, when a harness named
+them, `target` and `attempt`. The rest depends on the kind:
 
 | `kind` | Fields |
 |---|---|
@@ -140,12 +176,31 @@ Every record carries `kind`, `suite` and `time`. The rest depends on the kind:
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail` |
 | `warning` | `message` |
-| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code` |
+| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
 
 A `suite` record written by `run-tests` carries what only the harness knows:
 the UI profile, which attempt it was, and how many times the device had to be
 recovered around it. A suite writing its own closing line has none of those, so
 they are absent rather than zero.
+
+`target` is the target token the run was aimed at, from `E2E_TARGET`, and
+`attempt` is which go at the suite this is, from `E2E_ATTEMPT`. `run-tests`
+exports both for every suite it starts. A suite started by hand has neither in
+its environment and records neither, rather than a guessed value.
+
+A `run` record also says what the run is a run of, so a downloaded tree needs
+no second file to identify itself: `commit`, `branch` and `worktree_dirty` from
+git or from `GITHUB_SHA` and `GITHUB_REF_NAME`, `host`, `python`, `argv` with
+the device password masked, and `started` as a wall-clock time.
+
+A multi-target run's parent writes `DIR/run.jsonl` naming `targets` and the
+combined `exit_code`. It carries no counts: its children each counted their
+own, and a zero there would be summed as if it were a result.
+
+`attempt` is what tells two records with the same check index apart. A per-suite
+file is truncated on the first attempt and appended to afterwards, so a retried
+suite's file holds two records carrying `index: 26`, and only this field
+distinguishes them.
 
 `health` is one device sweep, the same one the console shows as a single line,
 with a latency per check. A run consumed programmatically would otherwise have
@@ -156,16 +211,16 @@ slower across a week of runs.
 ./run-tests -H u64 -j runs/
 
 # every check that did not pass
-jq -r 'select(.kind=="check" and .verdict!="OK") | "\(.suite) \(.label) \(.verdict)"' runs/*.jsonl
+jq -r 'select(.kind=="check" and .verdict!="OK") | "\(.suite) \(.label) \(.verdict)"' runs/u64/*.jsonl
 
 # the run's own result, including whether the device had to be recovered
-jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries) exit=\(.exit_code)"' runs/run.jsonl
+jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries) exit=\(.exit_code)"' runs/u64/run.jsonl
 
 # which suites were slowest, and which needed the device recovered
-jq -r 'select(.kind=="suite") | "\(.seconds)s \(.name) attempt=\(.attempt) recoveries=\(.recoveries)"' runs/run.jsonl | sort -rn | head
+jq -r 'select(.kind=="suite") | "\(.seconds)s \(.name) attempt=\(.attempt) recoveries=\(.recoveries)"' runs/u64/run.jsonl | sort -rn | head
 
 # every degraded health sweep, with the failing check named
-jq -r 'select(.kind=="health" and .ok==false) | "\(.label) " + ([.checks[] | select(.state=="fail") | .name] | join(","))' runs/run.jsonl
+jq -r 'select(.kind=="health" and .ok==false) | "\(.label) " + ([.checks[] | select(.state=="fail") | .name] | join(","))' runs/u64/run.jsonl
 ```
 
 ## Rules for extending

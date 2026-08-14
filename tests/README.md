@@ -119,7 +119,10 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_PASS` | REST and FTP password | empty |
 | `U64_TIMEOUT` | Per-request REST timeout, in seconds | per suite |
 | `U64_REST_HOST` | REST address, when it differs from `U64_HOST` | `U64_HOST` |
+| `U64_REST_PORT` | REST port | `80` |
+| `U64_FTP_PORT` | FTP port | `21` |
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
+| `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI profile: `overlay`, `freeze` or `telnet` | `overlay` |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
@@ -234,14 +237,16 @@ console output:
 With several targets the run takes the worst of its children's statuses, in
 that same order.
 
-`-j DIR` writes the same thing as JSONL: one file per suite run, plus
-`run.jsonl` holding the run's own `run` record with `passed`, `failed`,
-`skipped`, `dirty`, `recoveries` and `exit_code`. See
-[tests/lib/README.md](lib/README.md) for the record shapes.
+`-j DIR` writes the same thing as JSONL, under one directory per target:
+`DIR/<slug>/run.jsonl` holds that target's `run` record with `passed`,
+`failed`, `skipped`, `dirty`, `recoveries` and `exit_code`, beside one file per
+suite run. A run of several targets also writes `DIR/run.jsonl` for the run as
+a whole. See [tests/lib/README.md](lib/README.md) for the record shapes and the
+tree.
 
 ```sh
 ./run-tests -H u64 --recover-command 'build u64' -j runs/
-jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/run.jsonl
+jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/u64/run.jsonl
 ```
 
 ## Rules

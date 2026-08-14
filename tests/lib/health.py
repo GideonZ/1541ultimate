@@ -44,6 +44,7 @@ from __future__ import annotations
 import socket
 import struct
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
@@ -58,12 +59,10 @@ OK = "ok"
 FAIL = "fail"
 SKIP = "skip"
 
-FTP_PORT = 21
-TELNET_PORT = 23
-# The DMA control port, and its IDENTIFY command. Same framing as the soak
-# probe in tests/soak/network/dma_probe.py: a little-endian command word and
-# payload length, answered by a length-prefixed title.
-DMA_PORT = 64
+# The IDENTIFY command on the DMA control port. Same framing as the soak probe
+# in tests/soak/network/dma_probe.py: a little-endian command word and payload
+# length, answered by a length-prefixed title. Which port it is on is the
+# handle's answer; see tests/lib/targets.py.
 DMA_CMD_IDENTIFY = 0xFF0E
 
 # Every check is bounded well below a second, because this runs before each of
@@ -140,11 +139,33 @@ def _timed(name: str, action) -> Check:
     return Check(name, OK, (time.perf_counter() - started) * 1000.0, detail)
 
 
+def ping_command(host: str, platform: str = sys.platform) -> List[str]:
+    """The `ping` argument list for one probe of `host` on this platform.
+
+    `-W` carries a different unit on each family, and passing the wrong one is
+    not cosmetic here. On Linux it is a timeout in seconds; on macOS and the
+    BSDs it is a wait in milliseconds, so `-W 2` there waits two milliseconds
+    and every ping fails before a device on a LAN could answer. `ping` is the
+    first check in the sweep, a failed sweep makes Health.ok false, and
+    Device.ensure_healthy answers an unhealthy device by running the
+    operator's recovery command, which reboots or reflashes hardware. A
+    developer driving a device from a laptop would have every device recovered
+    before every suite.
+    """
+    # Linux takes seconds; everything else here is the BSD stack, which macOS
+    # is the one that matters for.
+    if platform.startswith("linux"):
+        wait = str(PING_TIMEOUT_SECONDS)
+    else:
+        wait = str(int(PING_TIMEOUT_SECONDS * 1000))
+    return ["ping", "-c", "1", "-W", wait, host]
+
+
 def _ping(host: str) -> Check:
     started = time.perf_counter()
     try:
         completed = subprocess.run(
-            ["ping", "-c", "1", "-W", str(PING_TIMEOUT_SECONDS), host],
+            ping_command(host),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=PING_TIMEOUT_SECONDS + 2)
     except FileNotFoundError:
@@ -171,8 +192,8 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         return ""
 
 
-def _dma_identify(host: str) -> str:
-    with socket.create_connection((host, DMA_PORT), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
+def _dma_identify(host: str, port: int) -> str:
+    with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         sock.sendall(struct.pack("<HH", DMA_CMD_IDENTIFY, 0))
         length = sock.recv(1)
@@ -200,17 +221,22 @@ def _moves(api: UltimateApi, address: int, means: str) -> str:
                        f"{MOVEMENT_TIMEOUT_SECONDS:g}s: {means}")
 
 
-def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
+def probe(host, password: str = "", api: Optional[UltimateApi] = None,
           include: Sequence[str] = ()) -> Health:
     """Sweep the device once. `include` limits it to the named checks.
+
+    `host` is a target token or a resolved handle; see tests/lib/targets.py.
 
     Never raises: a sweep that cannot reach the device is the answer, not an
     error, and its caller is usually deciding whether to recover the device.
     """
     api = api or UltimateApi(host, password, REST_TIMEOUT_SECONDS)
     # The listener checks open sockets, so they need a name rather than a
-    # target: on "u2@c64u" every listener under test is the cartridge's.
-    host = targets.device_of(host)
+    # target: on "u2@c64u" every listener under test is the cartridge's. The
+    # handle also says which ports they are on, so a device serving them
+    # somewhere else is swept the same way.
+    target = targets.resolve(host)
+    host = target.device
     wanted = set(include)
 
     def skip(name: str) -> bool:
@@ -222,16 +248,16 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
     if not skip("rest"):
         checks.append(_timed("rest", lambda: api.version() and ""))
     if not skip("ftp"):
-        checks.append(_timed("ftp", lambda: _banner(host, FTP_PORT, b"220")))
+        checks.append(_timed("ftp", lambda: _banner(host, target.ftp_port, b"220")))
     if not skip("telnet"):
-        checks.append(_timed("telnet", lambda: _banner(host, TELNET_PORT)))
+        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
     if not skip("ident"):
         def identify() -> str:
             info = api.info()
             return f"{info.product} {info.firmware_version}"
         checks.append(_timed("ident", identify))
     if not skip("dma"):
-        checks.append(_timed("dma", lambda: _dma_identify(host)))
+        checks.append(_timed("dma", lambda: _dma_identify(host, target.dma_port)))
 
     # The machine checks need the menu shut: under Freeze the open menu has
     # stopped the C64 on purpose, and calling that a degraded device would send

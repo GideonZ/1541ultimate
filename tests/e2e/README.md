@@ -5,6 +5,9 @@ device, driven through its public interfaces. A suite may cross REST, FTP,
 Telnet, the on-device UI, C64 memory, mounted media or physical-device services
 in one scenario. These are the hardware release gate.
 
+What a run records about itself, and why each artefact is the shape it is, is
+in [doc/observability-spec.md](doc/observability-spec.md).
+
 ## Structure
 
 Folders name the primary firmware subsystem under test, not the protocol used

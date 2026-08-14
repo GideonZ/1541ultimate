@@ -29,11 +29,36 @@ of devices to consult.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Tuple
 
 SEPARATOR = "@"
+
+# Which port a device serves each of its surfaces on. A target answers this as
+# well as which of its two machines serves what, so one object says where a
+# device is rather than each library carrying a constant of its own.
+#
+# The defaults are the real device's, so a target parsed from a token needs
+# nothing set and a caller pointing a handle somewhere else sets a field.
+REST_PORT = 80
+FTP_PORT = 21
+TELNET_PORT = 23
+DMA_PORT = 64
+
+# Each port's environment override, so a caller can address a device serving
+# somewhere else without every suite growing a flag. U64_TELNET_PORT already
+# exists and every suite that drives Telnet honours it; the other three are
+# spelled the same way. Read per parse rather than at import, so a process
+# that sets one before resolving a target is obeyed.
+#
+# The REST port is the one that has to be movable: a loopback stand-in for a
+# device cannot bind port 80 without root.
+REST_PORT_ENV = "U64_REST_PORT"
+FTP_PORT_ENV = "U64_FTP_PORT"
+TELNET_PORT_ENV = "U64_TELNET_PORT"
+DMA_PORT_ENV = "U64_DMA_PORT"
 
 # The one REST path that belongs to the C64-side computer. Everything else -
 # identity, the menu screen, the menu button, memory, the machine reset,
@@ -57,6 +82,10 @@ class Target:
     token: str
     device: str
     computer: str
+    rest_port: int = REST_PORT
+    ftp_port: int = FTP_PORT
+    telnet_port: int = TELNET_PORT
+    dma_port: int = DMA_PORT
 
     @property
     def split(self) -> bool:
@@ -128,19 +157,45 @@ def parse(token: str) -> Target:
         raise TargetError(
             f"{raw!r} names {device!r} as both the cartridge and the computer; "
             f"write {device} for a device that is its own computer")
-    return Target(token=raw, device=device, computer=computer)
+    return Target(token=raw, device=device, computer=computer,
+                  rest_port=_port(REST_PORT_ENV, REST_PORT),
+                  ftp_port=_port(FTP_PORT_ENV, FTP_PORT),
+                  telnet_port=_port(TELNET_PORT_ENV, TELNET_PORT),
+                  dma_port=_port(DMA_PORT_ENV, DMA_PORT))
 
 
-def host_for(token: str, path: str) -> str:
+def _port(variable: str, default: int) -> int:
+    """One port, honouring its environment override.
+
+    A malformed value is ignored rather than fatal: a target that cannot be
+    resolved stops a run, and a variable somebody exported by mistake is not a
+    reason to stop one.
+    """
+    raw = (os.environ.get(variable) or "").strip()
+    if raw.isdigit() and 0 < int(raw) <= 65535:
+        return int(raw)
+    return default
+
+
+def resolve(host: "str | Target") -> Target:
+    """A target from a handle or from a token, for a library that takes either.
+
+    Every library here takes whatever the runner gave it, which is a token, and
+    a caller pointing one at another address passes the handle instead.
+    """
+    return host if isinstance(host, Target) else parse(host)
+
+
+def host_for(token: "str | Target", path: str) -> str:
     """Which machine of `token` serves `path`. See Target.host_for."""
-    return parse(token).host_for(path)
+    return resolve(token).host_for(path)
 
 
-def device_of(token: str) -> str:
+def device_of(token: "str | Target") -> str:
     """The bare host name in a target token, for a caller that needs one.
 
     Anything opening a socket - ping, FTP, Telnet, the DMA control port - wants
     a host rather than a target, and passing the token straight through would
     try to resolve "u2@c64u" as a name.
     """
-    return parse(token).device
+    return resolve(token).device
