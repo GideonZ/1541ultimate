@@ -284,6 +284,23 @@ class Machine:
         return "F1" if self.kind == C64U else "F5"
 
     @property
+    def browser_navigation_letters(self) -> str:
+        """Letters the file browser treats as movement rather than as a search.
+
+        Empty where every printable character starts a quick-seek, which is an
+        Ultimate 64 and an Ultimate II+. A C64 Ultimate says "WASD=NAV" on its
+        status row and means it, so those four letters have to be kept out of
+        any seek prefix: they are not merely ignored, they act. Measured on one
+        at the root browser, each from a fresh cursor with the seek string
+        cleared: 'a' left the browser for the launcher, 's' moved the cursor
+        down a row, and at /Temp/ a single 'd' opened the selected disk image.
+        A seek for a name beginning with 'd' therefore entered that image
+        instead of selecting it, and a seek for one holding 'w' then 'a'
+        walked out of the browser and closed the menu.
+        """
+        return "wasd" if self.kind == C64U else ""
+
+    @property
     def page_up_key(self) -> str:
         """The key that scrolls a listing back by a screen."""
         return "F3" if self.kind == C64U else "PGUP"

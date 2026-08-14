@@ -2040,6 +2040,13 @@ class Browser:
     def _seekable(self, prefix: str) -> bool:
         if not prefix:
             return False
+        # Some machines bind letters in the browser to movement instead of to
+        # the search, and typing one there acts rather than seeks. Walking is
+        # then the only way to reach the entry, which is what select_entry
+        # falls back to. See Machine.browser_navigation_letters.
+        reserved = self.backend.machine.browser_navigation_letters
+        if reserved and any(ch.lower() in reserved for ch in prefix):
+            return False
         # A seek costs the firmware one keystroke per character, and a jump
         # within the visible listing costs at most one per row, so a prefix
         # longer than the screen can never be the cheaper of the two.
