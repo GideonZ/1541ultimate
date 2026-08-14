@@ -95,7 +95,7 @@ address and sends its log from its WiFi address, and nothing on its REST
 surface reports either. Attach the second address for the run:
 
 ```sh
-U64_LOG_ADDRESSES="u64=192.0.2.71" ./run-tests -j runs/ --syslog u64
+U64_LOG_ADDRESSES="u64=192.0.2.71" ./run-tests -o runs/ --syslog u64
 ```
 
 Without it those lines are still kept, in `syslog-unmapped.txt` with the
@@ -110,7 +110,7 @@ never started.
 
 ## What a run leaves behind
 
-The workflow runs the gate with `-j "$RUNNER_TEMP/e2e"`, generates
+The workflow runs the gate with `-o "$RUNNER_TEMP/e2e"`, generates
 `index.md` from that tree with `tools/e2e_report.py`, and uploads it. The
 report and the JSONL go in one artifact and the recordings in another, because
 the two have different sizes and different useful lifetimes.

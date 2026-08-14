@@ -172,7 +172,7 @@ The guidance for what to do about one is in
 ## Structured results
 
 Set `E2E_JSONL` to a path to append the run as JSONL, one object per line.
-`E2E_SUITE` names the suite in those records. `run-tests -j DIR` sets both for
+`E2E_SUITE` names the suite in those records. `run-tests -o DIR` sets both for
 every suite it starts. A harness that parses its arguments after importing this
 module needs `set_jsonl_path`, because `E2E_JSONL` is read at import.
 
@@ -326,7 +326,7 @@ no way to see why a device was called unhealthy, or to watch a listener getting
 slower across a week of runs.
 
 ```sh
-./run-tests -H u64 -j runs/
+./run-tests -H u64 -o runs/
 
 # every check that did not pass
 jq -r 'select(.kind=="check" and .verdict!="OK") | "\(.suite) \(.label) \(.verdict)"' runs/u64/*.jsonl

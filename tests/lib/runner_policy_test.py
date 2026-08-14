@@ -252,7 +252,7 @@ def run_retry_checks(runner, tmpdir):
 
     def options(**kwargs):
         base = dict(host="device.invalid", password="", timeout="1.0",
-                    soak_profile="stress", jsonl_dir="", stop_on_fail=False,
+                    soak_profile="stress", output_dir="", stop_on_fail=False,
                     health_check=False, retry=True, recover_command="true",
                     recover_max_per_suite=2, recover_max_total=10,
                     recover_timeout=5.0)
@@ -395,6 +395,64 @@ def run_jsonl_contract_checks(runner, tmpdir):
         # that reads only $?, so the two are written from the same numbers.
         expect("exit code matches a recovered run", run["exit_code"],
                runner.EXIT_RECOVERED)
+
+
+def run_output_dir_option_checks(runner):
+    """One spelling for the run's output directory, and no other.
+
+    The directory holds every artifact a run keeps: JSONL, each suite's
+    console log, the screens the suites read, captured failure state, the
+    device log and the recording. It was called -j/--jsonl-dir, which named
+    one of those and implied the rest were something else, and there is no
+    caller to keep compatible.
+    """
+    parser = runner.build_parser()
+
+    with check("-o names the output directory"):
+        expect("value", parser.parse_args(["-o", "runs", "u64"]).output_dir,
+               "runs")
+
+    with check("--output-dir names the same one"):
+        expect("value",
+               parser.parse_args(["--output-dir", "runs", "u64"]).output_dir,
+               "runs")
+
+    for spelling in ("-j", "--jsonl-dir"):
+        with check(f"{spelling} is not accepted"):
+            with contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    parser.parse_args([spelling, "runs", "u64"])
+                except SystemExit as exc:
+                    expect("exit status", exc.code, 2)
+                else:
+                    raise Failure(f"{spelling} was accepted")
+
+    text = parser.format_help()
+    with check("the old spellings are gone from --help"):
+        for gone in ("-j ", "--jsonl-dir"):
+            if gone in text:
+                raise Failure(f"--help still offers {gone.strip()}")
+
+    with check("the examples use the option the parser accepts"):
+        # The epilog is the first thing a reader copies, so an example naming
+        # an option this parser would reject is worse than no example.
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("run-tests "):
+                continue
+            for word in stripped.split():
+                if word.startswith("-") and word not in ("-", "--"):
+                    if word.rstrip(",") not in {action_string
+                                                for action in parser._actions
+                                                for action_string in action.option_strings}:
+                        raise Failure(f"the example {stripped!r} names {word}, "
+                                      "which this parser does not accept")
+
+    with check("a child is told where to write with the same option"):
+        args = parser.parse_args(["-o", "runs", "u64", "u2@c64u"])
+        command = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if "--output-dir" not in command:
+            raise Failure(f"the child was not given --output-dir: {command}")
 
 
 def run_reset_guard_checks():
@@ -597,7 +655,7 @@ def run_multi_target_checks(runner):
         expect("the target is the last word", command[-1], "u2@c64u")
         for expected in ("--soak", "--manual", "--stop-on-fail", "--no-health-check",
                          "--mode", "telnet,freeze", "--password", "secret",
-                         "--jsonl-dir", "runs/u2-at-c64u"):
+                         "--output-dir", "runs/u2-at-c64u"):
             if expected not in command:
                 raise Failure(f"{expected!r} missing from {command}")
         expect("both suites", [command[i + 1] for i, word in enumerate(command)
@@ -623,11 +681,11 @@ def run_multi_target_checks(runner):
                           f"listed as excluded: {missing}")
 
     with check("children write into a directory of their own"):
-        args = parser.parse_args(["-j", "runs", "u64", "u2@c64u"])
+        args = parser.parse_args(["-o", "runs", "u64", "u2@c64u"])
         first = runner.child_command(args, targets.parse("u64"), "runs/u64")
         second = runner.child_command(args, targets.parse("u2@c64u"), "runs/u2-at-c64u")
-        expect("first", first[first.index("--jsonl-dir") + 1], "runs/u64")
-        expect("second", second[second.index("--jsonl-dir") + 1], "runs/u2-at-c64u")
+        expect("first", first[first.index("--output-dir") + 1], "runs/u64")
+        expect("second", second[second.index("--output-dir") + 1], "runs/u2-at-c64u")
 
     with check("concurrent children never tear each other's lines"):
         # Two children writing at once, each line long enough that a pipe read
@@ -641,7 +699,7 @@ def run_multi_target_checks(runner):
                    "for i in range(%d):\n"
                    "    print('%%05d' %% i + 'x' * %d)\n" % (lines_each, width))
         original = runner.child_command
-        runner.child_command = lambda args, target, jsonl_dir: [
+        runner.child_command = lambda args, target, output_dir: [
             sys.executable, "-c", printer]
         captured = io.StringIO()
         try:
@@ -675,7 +733,7 @@ def run_multi_target_checks(runner):
                    "for i in range(%d):\n"
                    "    print('line %%d' %% i)\n" % lines_per_child)
         original = runner.child_command
-        runner.child_command = lambda args, target, jsonl_dir: [
+        runner.child_command = lambda args, target, output_dir: [
             sys.executable, "-c", printer]
         captured = io.StringIO()
         try:
@@ -758,6 +816,7 @@ def main():
         run_recovery_gating_checks(runner)
         run_recovery_limit_checks(runner)
         run_degraded_recovery_checks(runner)
+        run_output_dir_option_checks(runner)
         run_reset_guard_checks()
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             run_retry_checks(runner, tmpdir)

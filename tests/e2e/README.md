@@ -10,7 +10,7 @@ in [doc/observability-spec.md](doc/observability-spec.md).
 
 ## Watching a recorded run
 
-`./run-tests --record -j DIR <target>` writes `DIR/<slug>/video.mp4`: the
+`./run-tests --record -o DIR <target>` writes `DIR/<slug>/video.mp4`: the
 harness's screen on the left, the device's video on the right, the device's
 audio over both. The left pane is what the harness was looking at, which under
 `overlay` and `telnet` is not what the VIC stream carries.
@@ -38,9 +38,10 @@ repository or the build page, is one command and is never run in CI:
 
 ```sh
 pandoc runs/index.md -o runs/index.pdf --pdf-engine=weasyprint
-``` `./run-tests -j DIR`
-writes that record and `python3 tools/e2e_report.py DIR` turns it into one
-Markdown document; see [tests/README.md](../README.md).
+```
+
+`./run-tests -o DIR` keeps the run and `python3 tools/e2e_report.py DIR` turns
+it into one Markdown document; see [tests/README.md](../README.md).
 
 The gate runs in CI from [.github/workflows/e2e.yml](../../.github/workflows/e2e.yml),
 on a self-hosted runner carrying the `e2e` label. Until a runner carries that

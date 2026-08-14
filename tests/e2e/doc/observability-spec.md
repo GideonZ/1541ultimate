@@ -284,7 +284,7 @@ contains no second document generator.
 
 ## 2. Run output layout and correlation
 
-**OBS-2.1** [P1] `./run-tests -j DIR` always writes per-target subdirectories.
+**OBS-2.1** [P1] `./run-tests -o DIR` always writes per-target subdirectories.
 The single-target path in `main` writes `run.jsonl` into `DIR` directly and the
 multi-target path in `run_targets` writes into `DIR/<slug>/`. Both must produce
 `DIR/<target.slug>/`, where the slug is `targets.Target.slug`. Consistency: one
@@ -292,8 +292,8 @@ tree shape means the report generator, the collector and the recorder each have
 one path rule rather than two.
 
 The slug is appended in exactly one place. `run_targets.start_ready` currently
-joins `args.jsonl_dir` with `target.slug` and passes the result to
-`child_command`, which forwards it as the child's `--jsonl-dir`. If the child
+joins `args.output_dir` with `target.slug` and passes the result to
+`child_command`, which forwards it as the child's `--output-dir`. If the child
 also appends its own slug the tree becomes `DIR/<slug>/<slug>/`. The child is
 the process that knows its one target, so the child appends and the parent
 passes `DIR` through unchanged.
@@ -352,7 +352,7 @@ killed before its `suite` record was written, which is exactly the run whose
 records most need reading. This is the OBS-1.4 rule applied: a field on an
 existing shape rather than a reconstruction.
 
-**OBS-2.10** [P1] The `-j` directory has one layout. Every component writes into
+**OBS-2.10** [P1] The `-o` directory has one layout. Every component writes into
 it and refers to files inside it by a path relative to its root:
 
 ```
@@ -426,7 +426,7 @@ The record carries `targets` as a list of tokens and the fields of OBS-2.11.
 `DIR/run.jsonl` and `DIR/<slug>/run.jsonl` are distinct paths, so there is no
 ambiguity about which process wrote which.
 
-**OBS-2.13** [P1] With `-j DIR`, `./run-tests` writes every line a suite prints
+**OBS-2.13** [P1] With `-o DIR`, `./run-tests` writes every line a suite prints
 to `DIR/<slug>/<label>-<suite>.log` as well as to its own stdout, and its own
 console output to `DIR/<slug>/run.log`, or to `DIR/run.log` in a multi-target
 parent, which has no target of its own (OBS-15.12). This is the only artefact
@@ -448,13 +448,13 @@ Three properties, each of which the implementation has to hold deliberately:
   the interleaving.
 
 Two consequences on the console, which are accepted rather than worked around.
-Under `-j` a suite's stdout is a pipe rather than a terminal, so
+Under `-o` a suite's stdout is a pipe rather than a terminal, so
 `report._colour_enabled` chooses plain text unless `FORCE_COLOR` is set, and
 `report.progress` prints nothing at all. `run_targets` already runs its children
 this way and already sets `FORCE_COLOR` when the parent is on a terminal; the
 single-target path adopts the same rule. Live progress lines are a terminal
 affordance that a captured run does not have, and inventing a pty to keep them
-is machinery this document does not need. A run with no `-j` is unchanged
+is machinery this document does not need. A run with no `-o` is unchanged
 (OBS-1.3).
 
 Rejected: recording `report.detail` as a `kind=detail` JSONL record. It is a
@@ -518,7 +518,7 @@ socket rather than through `rest.py`, so it records what it sent as the same
 record kind. Between the two hooks, every deliberate act of the harness on the
 device is on one timeline, whichever transport it took.
 
-This is unconditional under `-j`, like the failure capture, because it costs the
+This is unconditional under `-o`, like the failure capture, because it costs the
 device nothing: it is a passive record of requests that were being made anyway.
 Depends on OBS-2.5.
 
@@ -565,7 +565,7 @@ have failed. Depends on OBS-2.5.
 
 ### Acceptance criteria for section 2
 
-- `./run-tests -j DIR u64` and `./run-tests -j DIR u64 c64u` both produce
+- `./run-tests -o DIR u64` and `./run-tests -o DIR u64 c64u` both produce
   `DIR/<slug>/run.jsonl` and `DIR/<slug>/<label>-<suite>.jsonl`, and neither
   produces `DIR/<slug>/<slug>/`.
 - Every record in every file carries a `target` field equal to the target token,
@@ -582,8 +582,8 @@ have failed. Depends on OBS-2.5.
   the same three reached the runner's stdout.
 - A device-free test asserts a second attempt appends to the log rather than
   truncating it, and that the first attempt truncates.
-- `./run-tests -j DIR u64 c64u` produces `DIR/run.jsonl` carrying both target
-  tokens and the combined exit status, and `./run-tests -j DIR u64` does not
+- `./run-tests -o DIR u64 c64u` produces `DIR/run.jsonl` carrying both target
+  tokens and the combined exit status, and `./run-tests -o DIR u64` does not
   produce it.
 
 ---
@@ -619,7 +619,7 @@ exists to avoid.
 
 ### Requirements
 
-**OBS-3.1** [P1] The program `tools/e2e_report.py` reads a `-j DIR` tree and
+**OBS-3.1** [P1] The program `tools/e2e_report.py` reads a `-o DIR` tree and
 writes one `DIR/index.md` covering the whole run, including every target. It
 takes no device connection and runs after a run has finished. Its command line
 is `python3 tools/e2e_report.py DIR`, with no required options. KISS: one
@@ -705,7 +705,7 @@ for every check would multiply the document by the check count to answer a
 question only asked about failures.
 
 **OBS-3.13** [P1] The generator is device-free and testable against a recorded
-`-j` tree checked into the repository at `tests/lib/fixtures/e2e-run/`. Every
+`-o` tree checked into the repository at `tests/lib/fixtures/e2e-run/`. Every
 rendering decision it makes is covered by a test that runs with no hardware.
 
 Its tests are tiers 1, 3 and 4 of the suite in section 16, which is the one
@@ -887,7 +887,7 @@ whether a failure is about the firmware, the device or the harness. Q3 starts
 with that distinction, and the run already recorded everything needed to make
 it.
 
-**OBS-3.28** [P2] The generator takes an optional second `-j` tree,
+**OBS-3.28** [P2] The generator takes an optional second `-o` tree,
 `--compare DIR`, and emits a `## Changes since` section listing every check whose
 verdict differs between the two runs, grouped as newly failing, newly passing,
 newly skipped and no longer run.
@@ -1013,7 +1013,7 @@ roughly 60 MB. A LaTeX engine would be about 1 GB and is not needed. Wide tables
 wrap rather than clip, and the fenced screen captures get the monospace font the
 default template provides.
 
-**OBS-3.17** [P1] The generator renders any `-j` tree it is given and never
+**OBS-3.17** [P1] The generator renders any `-o` tree it is given and never
 fails on missing or malformed input. A target directory with no `run.jsonl`, a
 suite whose per-suite JSONL has no closing `suite` record, and a truncated final
 line are each rendered as what they are rather than treated as an error. A
@@ -1280,7 +1280,7 @@ the runner's five-second probe client `Device.probe`
   predates it answers 404 and the capture records the absence.
 - `GET /v1/drives`, via `api.DrivesApi.list`.
 
-**OBS-5.4** [P3] The capture writes its artefacts into the target's `-j`
+**OBS-5.4** [P3] The capture writes its artefacts into the target's `-o`
 directory under the names given in OBS-2.10, so the report generator finds them
 by target, suite and attempt with no lookup table. Depends on OBS-2.1 and
 OBS-2.10.
@@ -2031,7 +2031,7 @@ to a spool, and publishes a Telnet session's raw stream beside it.
 
 This is the cheapest artefact in the document and one of the most useful, so it
 is not part of the recorder and is not gated behind `--record`. It is written
-whenever `-j DIR` is given, like the console capture (OBS-2.13) and the action
+whenever `-o DIR` is given, like the console capture (OBS-2.13) and the action
 log (OBS-2.16), because it costs the device nothing: the screens are already
 being fetched. `--no-screens` turns it off for a run that does not want the
 volume, and like every flag here it is listed in `CHILD_FORWARDED_NEGATIVE` in
@@ -2047,7 +2047,7 @@ Telnet-mode suite was looking at, which is why this lands at P3 beside it.
 | Path | `DIR/<slug>/screens.jsonl`, per OBS-2.10 |
 | Format | JSONL, one object per distinct screen, the same convention as every other record file here |
 | Written by | `tests/e2e/lib/ui_backend.py`, in the suite process that read the screen |
-| Enabled by | `-j DIR`, through an environment variable the runner exports the way `E2E_JSONL` is; off with `--no-screens` |
+| Enabled by | `-o DIR`, through an environment variable the runner exports the way `E2E_JSONL` is; off with `--no-screens` |
 | Fields | `time`, `suite`, `attempt`, `check`, `kind`, `cols`, `rows`, `text`, `raw` |
 | `kind` | `menu` for a `machine:menu_screen` payload, `telnet` for a session's screen |
 | `text` | the screen as a list of strings, one per row, exactly as a reader would see it |
@@ -2109,7 +2109,7 @@ Six things this shape is chosen for:
   screen the harness saw answers "what was on screen when check 26 failed"
   directly, and answers it for a run nobody recorded video for. The spool and
   the transcript are named in the report's file index (OBS-3.14) for that
-  reason, and it is why it is written under `-j` rather than being buried inside
+  reason, and it is why it is written under `-o` rather than being buried inside
   the recorder.
 
 The suite process is not the recorder, and nothing here makes it one: it appends
@@ -2126,7 +2126,7 @@ Recording as a whole is off (OBS-8.1). With it on, all three sources are on:
 | `--record` | off | Enables recording at all |
 | `--no-record-video` | video on | Drops the screen pane and the video stream |
 | `--no-record-audio` | audio on | Drops the audio track and the audio stream |
-| `--no-record-menu` | menu on | Drops the harness pane. The spool is written under `-j` regardless (OBS-8.22); `--no-screens` is what turns that off |
+| `--no-record-menu` | menu on | Drops the harness pane. The spool is written under `-o` regardless (OBS-8.22); `--no-screens` is what turns that off |
 | `--record-menu-min-interval-ms MS` | `0` | Floor between two `menu_screen` requests the recorder makes for itself (OBS-8.21) |
 
 Any of the other eleven flags without `--record` is a usage error reported
@@ -3160,7 +3160,7 @@ does not re-propose it.
   the stream the moment one of them runs. Source-address filtering is what the
   existing `av_stream.AvStreamCapture` does and what the recorder does. See
   OBS-8.4.
-- **A pty so suites keep their live progress lines under `-j`.** Machinery for a
+- **A pty so suites keep their live progress lines under `-o`.** Machinery for a
   terminal affordance a captured run does not have, and it would put escape
   bytes in the saved log. See OBS-2.13.
 - **An adaptive rate governor for the recorder.** The sibling `c64commander`
@@ -3186,7 +3186,7 @@ another copy, does not build what it named.
 
 | Number | What it was | Why it is gone |
 |---|---|---|
-| OBS-2.9 | The recording output directory and the `-j` directory are the same | Subsumed by the single layout in OBS-2.10 |
+| OBS-2.9 | The recording output directory and the `-o` directory are the same | Subsumed by the single layout in OBS-2.10 |
 | OBS-3.2 | The report is one self-contained HTML file with no external requests | The report is Markdown; the no-external-references rule is now OBS-3.15 |
 | OBS-3.3 | Video and screen captures stay as sibling files referenced by `<img>` and `<video>` | No HTML report; sibling files are named by relative path in OBS-3.14 |
 | OBS-3.8 | All charts are SVG generated by the report generator | A 30 to 50 row table (OBS-3.7) answers the same question with no chart code, and is readable by a script |
@@ -3257,10 +3257,10 @@ that adds it, so the table stays the contract rather than becoming a stale copy
 of one. Referenced by OBS-2.3. The same reasoning covers the run-identity fields
 of OBS-2.11.
 
-**OQ-8** Should `-j` be on by default? None of this exists without it and it is
+**OQ-8** Should `-o` be on by default? None of this exists without it and it is
 currently opt-in. Turning it on in CI is enough; turning it on for everybody is
 a separate question about writing files nobody asked for. OBS-2.13 raises the
-stakes slightly: with `-j` on by default, every local run would lose its live
+stakes slightly: with `-o` on by default, every local run would lose its live
 progress lines, so the answer stays no until somebody asks for it.
 
 **OQ-10** Does the runner host have a fixed address on the device LAN? OBS-7.1
@@ -3362,7 +3362,7 @@ optional.
 | `tools/e2e_report.py` | The report generator. It consumes a finished run rather than being part of one, so it is neither a registered suite nor shared suite support, which is what `tests/` holds. `tools/app_space.py` is the house pattern for a Python tool here. | 3 |
 | `tests/lib/observability_test.py` | The whole test suite of section 16, as a registered suite in the `SUITES` tuple in `run-tests`, importing the generator and the runner by path. One module, four tiers, invoked by `make observability_test` as well. | OBS-3.13, OBS-16.1, OBS-16.3, OBS-16.4 |
 | `tests/lib/device_double.py` | The one fake device: a loopback REST server and the three UDP senders, with the fault switches of OBS-16.6. | OBS-16.2 |
-| `tests/lib/fixtures/e2e-run/` | The checked-in `-j` tree the tests run against, and the expected `index.md` beside it. | OBS-3.13, OBS-3.21, OBS-16.3 |
+| `tests/lib/fixtures/e2e-run/` | The checked-in `-o` tree the tests run against, and the expected `index.md` beside it. | OBS-3.13, OBS-3.21, OBS-16.3 |
 | `Makefile` | The `observability_test` target, beside `app_space_test`. | OBS-16.4 |
 | `.github/workflows/build.yml` | One step running that target. The only change this document makes to that file. | OBS-16.4 |
 | `run-tests` | The `E2E_TARGET` export, the slug-directory fix, the run-identity fields, the parent `run` record, the console capture, the failure capture, and the flags for the collector and the recorder. | OBS-2.1, OBS-2.2, OBS-2.4, OBS-2.11 to OBS-2.13, section 5, OBS-7.17, OBS-8.1 |
@@ -3924,7 +3924,7 @@ so a suite that drives the menu still needs a device.
 |---|---|---|
 | 1, pure | functions over bytes and records: the assembler, the timeline, nibble unpacking, the spool codec, Markdown rendering, interval and timecode arithmetic, ANSI stripping, datagram attribution, still selection | nothing |
 | 2, component | one component against the device double over real sockets: the collector, the recorder's reception path, the failure capture, the heap check, the arming discipline, the menu tap | the double |
-| 3, pipeline | a whole scripted run with no real device: the double plus a stub suite, producing a `-j` tree, then the report generated from it | the double, a stub suite script |
+| 3, pipeline | a whole scripted run with no real device: the double plus a stub suite, producing a `-o` tree, then the report generated from it | the double, a stub suite script |
 | 4, golden | the report generated from the checked-in fixture, compared byte for byte with the checked-in expected document | the fixture (OBS-3.13) |
 
 Tier 3 is the one that catches what the others cannot: the report generator can
@@ -4059,7 +4059,7 @@ prompt's definition of done.
 - The registry check of OBS-16.7 reports no requirement with logic and no test,
   and reports the deliberately untested ones with their reasons.
 - The suite completes in under a minute, measured on the CI host.
-- A tier 3 pipeline test produces a `-j` tree with the current runner, generates
+- A tier 3 pipeline test produces a `-o` tree with the current runner, generates
   a report from it, and asserts the report's status line matches the run the
   double was scripted to produce.
 - Reverting any one requirement's implementation makes exactly the tests that

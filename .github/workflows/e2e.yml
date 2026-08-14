@@ -73,7 +73,7 @@ jobs:
           MODES: ${{ inputs.modes || 'overlay' }}
           TARGETS: ${{ inputs.targets || 'u64 u2@c64u' }}
         run: |
-          ./run-tests -j "$RUNNER_TEMP/e2e" \
+          ./run-tests -o "$RUNNER_TEMP/e2e" \
             --mode "$MODES" \
             ${RECOVER:+--recover-command "$RECOVER"} \
             $TARGETS

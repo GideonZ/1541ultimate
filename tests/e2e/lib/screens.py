@@ -52,8 +52,8 @@ import report  # noqa: E402
 MENU = "menu"
 TELNET = "telnet"
 
-# Where the spool goes, exported by the runner under -j the way E2E_JSONL is.
-# Absent means no spool, which is every run without -j and every run given
+# Where the spool goes, exported by the runner under -o the way E2E_JSONL is.
+# Absent means no spool, which is every run without -o and every run given
 # --no-screens.
 SPOOL_ENV = "E2E_SCREENS"
 SPOOL_PATH = os.environ.get(SPOOL_ENV) or ""

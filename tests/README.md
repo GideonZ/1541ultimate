@@ -39,7 +39,7 @@ Naming several targets runs several ordinary runs of the runner, one child
 process per target, and prefixes every output line with the target it came
 from. A target occupies the machines it names, and two targets that share one
 never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
-`u2@c64u` take turns. `-j DIR` gives each target a subdirectory of its own.
+`u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
 The same token is accepted wherever a device is named, including by a suite
 started by hand:
@@ -239,7 +239,7 @@ console output:
 With several targets the run takes the worst of its children's statuses, in
 that same order.
 
-`-j DIR` writes the same thing as JSONL, under one directory per target:
+`-o DIR` keeps the whole run under one directory per target:
 `DIR/<slug>/run.jsonl` holds that target's `run` record with `passed`,
 `failed`, `skipped`, `dirty`, `recoveries` and `exit_code`, beside one file per
 suite run. A run of several targets also writes `DIR/run.jsonl` for the run as
@@ -247,7 +247,7 @@ a whole. See [tests/lib/README.md](lib/README.md) for the record shapes and the
 tree.
 
 ```sh
-./run-tests -H u64 --recover-command 'build u64' -j runs/
+./run-tests -H u64 --recover-command 'build u64' -o runs/
 jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/u64/run.jsonl
 ```
 

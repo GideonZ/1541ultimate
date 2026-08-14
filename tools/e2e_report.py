@@ -1795,9 +1795,9 @@ def main(argv: Sequence[str]) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="The exit status is zero whenever a document was written.")
     parser.add_argument("directory", metavar="DIR",
-                        help="A run's -j directory. index.md is written into it.")
+                        help="A run's output directory. index.md is written into it.")
     parser.add_argument("--compare", default="", metavar="DIR",
-                        help="Another run's -j directory. Adds a section naming "
+                        help="Another run's output directory. Adds a section naming "
                              "every check whose verdict differs between the two.")
     parser.add_argument("--job-summary", action="store_true",
                         help="Append the report's summary part to the file named "

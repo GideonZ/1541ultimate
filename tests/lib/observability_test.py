@@ -16,7 +16,7 @@ Four tiers, and every piece of logic belongs to exactly one:
     1 pure       functions over bytes and records: rendering, interval and
                  timecode arithmetic, ANSI stripping, datagram attribution
     2 component  one component against the device double over real sockets
-    3 pipeline   a whole scripted run with no real device, producing a -j tree
+    3 pipeline   a whole scripted run with no real device, producing an output tree
                  with the current runner, then the report generated from it
     4 golden     the report generated from a fixture built for the run,
                  compared with the checked-in expected document
@@ -1500,9 +1500,9 @@ runner.ui_state_gate = lambda action, options, label="", quiet=False: True
 _child_command = runner.child_command
 
 
-def child_command(args, target, jsonl_dir):
+def child_command(args, target, output_dir):
     """The real command, with this wrapper in place of the runner's own path."""
-    command = _child_command(args, target, jsonl_dir)
+    command = _child_command(args, target, output_dir)
     command[1] = os.path.abspath(__file__)
     return command
 
@@ -1574,7 +1574,7 @@ class ScriptedRun:
         return found
 
     def tree(self) -> List[str]:
-        """Every file under the -j directory, by relative path, sorted."""
+        """Every file under the output directory, by relative path, sorted."""
         found = []
         for base, _dirs, files in os.walk(self.directory):
             for name in files:
@@ -1626,7 +1626,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     environment.update(extra_environment or {})
     environment.pop("FORCE_COLOR", None)
     completed = subprocess.run(
-        [sys.executable, wrapper, "-j", output, *arguments, *tokens],
+        [sys.executable, wrapper, "-o", output, *arguments, *tokens],
         env=environment, capture_output=True, text=True)
     return ScriptedRun(output, completed.returncode,
                        completed.stdout + completed.stderr)
@@ -3259,7 +3259,7 @@ def a_recorder_flag_without_record_is_refused() -> str:
                 (["--record", "--record-scale", "0"], "integer factor"),
                 (["--record", "--no-record-video", "--no-record-audio",
                   "--no-record-menu"], "records nothing"),
-                (["--record"], "needs -j DIR")):
+                (["--record"], "needs -o DIR")):
             completed = subprocess.run(
                 [sys.executable, RUNNER_PATH] + arguments + ["127.0.0.1"],
                 capture_output=True, text=True, cwd=directory, timeout=60)
