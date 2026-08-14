@@ -849,16 +849,27 @@ def a_second_interface_can_be_declared() -> str:
 
     Measured on the U64 here: REST answers on the Ethernet address and the log
     arrives from the WiFi one, and no route on the device reports either.
+
+    The machine is named `localhost` rather than `u64` because what is under
+    test is the merge of a declared address into a resolved one, and the typo
+    report beside it, neither of which is about name resolution. A device name
+    resolves instantly on the LAN that has the device and costs a full lookup
+    timeout, measured at about 113 seconds, on a CI runner that does not.
+    `localhost` is in every host's own hosts file, so the resolved half of the
+    merge is a real lookup that never reaches a name server.
     """
     sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
     import syslog_collector
 
     previous = os.environ.get(syslog_collector.ADDRESS_ENV)
-    os.environ[syslog_collector.ADDRESS_ENV] = "u64=192.0.2.71,c64u=192.0.2.9"
+    os.environ[syslog_collector.ADDRESS_ENV] = ("localhost=192.0.2.71,"
+                                                "c64u=192.0.2.9")
     try:
-        found = syslog_collector.resolve("u64")
+        found = syslog_collector.resolve("localhost")
         if "192.0.2.71" not in found:
             raise Failure(f"the declared address is not in {found}")
+        if "127.0.0.1" not in found:
+            raise Failure(f"the resolved address was lost: {found}")
         if "192.0.2.9" in found:
             raise Failure("another machine's declared address was taken")
         # A name no target has is a typo, and its symptom is the one this
@@ -867,7 +878,7 @@ def a_second_interface_can_be_declared() -> str:
 
         with tempfile.TemporaryDirectory() as directory:
             collector = syslog_collector.Collector(directory=directory, port=0)
-            collector.bind([targets.parse("u64")])
+            collector.bind([targets.parse("localhost")])
             collector.stop()
         if not any("is not a machine of any target" in problem
                    for problem in collector.problems):
@@ -1460,6 +1471,9 @@ SCRIPTED_PACING = {
     "U64_UI_KEY_DRAIN": "0.002",
     "U64_UI_MENU_TOGGLE_SETTLE": "0.02",
     "U64_UI_MENU_TOGGLE_TIMEOUT": "0.5",
+    # There is no C64 behind the double, so the runner's post-reset wait for
+    # one to finish its cold start has nothing to wait for.
+    "U64_UI_RESET_SETTLE": "0.005",
 }
 
 WRAPPER = '''\

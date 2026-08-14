@@ -223,6 +223,16 @@ KEY_SETTLE_SECONDS = _seconds("U64_UI_KEY_SETTLE", 0.05)
 MENU_TOGGLE_SETTLE_SECONDS = _seconds("U64_UI_MENU_TOGGLE_SETTLE", 0.25)
 MENU_TOGGLE_TIMEOUT_SECONDS = _seconds("U64_UI_MENU_TOGGLE_TIMEOUT", 6.0)
 
+# What the runner waits after resetting the machine back to a clean slate, so
+# the next suite meets a C64 that has finished coming up rather than one still
+# in its cold start. REST answers throughout the reset, so there is nothing on
+# the wire to poll for: the state being waited for is on the C64 itself.
+#
+# A run driving the loopback device double has no C64 behind it and overrides
+# this to near zero, which is the reason the value is here rather than being a
+# constant in the runner.
+RESET_SETTLE_SECONDS = _seconds("U64_UI_RESET_SETTLE", 0.5)
+
 
 def summary() -> str:
     """One line naming the pacing a run used, for a log that has to be read later."""

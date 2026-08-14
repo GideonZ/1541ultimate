@@ -228,8 +228,14 @@ class DeviceDouble:
 
         self._http = _Server((LOOPBACK, 0), _Handler)
         self._http.double = self  # type: ignore[attr-defined]
-        self._http_thread = threading.Thread(target=self._http.serve_forever,
-                                             name="double-http", daemon=True)
+        # The poll interval is what `close` waits for, because `shutdown` only
+        # returns once the serving loop has come round again. At the 0.5s
+        # default a double costs about half a second to put away, and the
+        # observability suite builds one per case, so almost all of that suite's
+        # time was spent closing doubles rather than doing anything.
+        self._http_thread = threading.Thread(
+            target=self._http.serve_forever, kwargs={"poll_interval": 0.005},
+            name="double-http", daemon=True)
         self._http_thread.start()
         self._ftp = _BannerListener(b"220 Ultimate FTP\r\n")
         self._telnet = _BannerListener(b"")
