@@ -1030,6 +1030,7 @@ ROWS_NEEDING_FIX = {
     machine_lib.BROWSER_REFRESH_FROM_TELNET_WRITER: (
         "write from Telnet",
         "copy over an existing file from Telnet",
+        "paste into the watched directory from Telnet",
     ),
 }
 
