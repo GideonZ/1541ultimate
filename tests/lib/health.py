@@ -22,16 +22,16 @@ What it covers, and why each one is here:
            is what makes a log readable weeks later.
 - `dma`    the control port, 64. It is a separate listener from the HTTP server
            and has wedged on its own.
-- `raster` `$D012` moves, so the VIC is scanning. This is the one that says
-           the machine is alive: a C64 stopped in Ultimax mode still serves
-           REST perfectly well.
-- `jiffy`  `$00A2` moves, so the KERNAL interrupt is running as well.
 - `heap`   free FreeRTOS heap. One GET, roughly 10ms on a sweep costing about
            150ms, and it gives every suite a before and an after by
            construction: suite N's before sample is suite N-1's after sample.
            It can never fail the sweep; see `_heap`.
+- `raster` `$D012` moves, so the VIC is scanning. This is the one that says
+           the machine is alive: a C64 stopped in Ultimax mode still serves
+           REST perfectly well.
+- `jiffy`  `$00A2` moves, so the KERNAL interrupt is running as well.
 
-Both are skipped rather than failed while the menu is open, because under
+The last two are skipped rather than failed while the menu is open, because under
 Freeze the menu has stopped the machine on purpose.
 
 A static jiffy on its own is **not** a degraded device, and treating it as one
@@ -45,6 +45,7 @@ moving raster is reported as an observation rather than a fault.
 
 from __future__ import annotations
 
+import http.client
 import socket
 import struct
 import subprocess
@@ -107,7 +108,7 @@ class Check:
             return f"{self.name}=skip"
         if self.state == FAIL:
             return f"{self.name}=FAIL"
-        if self.name == HEAP and self.figures:
+        if self.name == HEAP and self.figures and "free" in self.figures:
             # A latency for this one says nothing anybody wants; the figure is
             # the point. The special case is on the check's name, not on
             # whether a check carries a detail: `ident` and `dma` both carry
@@ -239,7 +240,13 @@ def _heap(api: UltimateApi) -> Check:
     started = time.perf_counter()
     try:
         figures = api.machine.heap()
-    except (Failure, OSError, TimeoutError, ValueError, RuntimeError) as exc:
+    except (Failure, OSError, TimeoutError, ValueError, TypeError,
+            RuntimeError, http.client.HTTPException) as exc:
+        # Wider than the other eight checks because this one may never fail a
+        # sweep: an http.client.HTTPException that is not an OSError escapes
+        # rest.py's own handler, and a malformed body reaches int() as a
+        # TypeError. Either would otherwise leave the sweep with an exception
+        # rather than with a verdict.
         return Check(HEAP, SKIP, (time.perf_counter() - started) * 1000.0,
                      str(exc))
     ms = (time.perf_counter() - started) * 1000.0

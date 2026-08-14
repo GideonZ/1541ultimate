@@ -1,1 +1,1 @@
-{"kind": "check", "index": 1, "label": "the menu opens", "verdict": "OK", "extra": "on screen", "seconds": 0.0001, "scenario": null, "time": 1786700000.7699246, "suite": "menu-left-open", "target": "127.0.0.1@localhost", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the menu opens", "verdict": "OK", "extra": "on screen", "seconds": 0.0, "scenario": null, "time": 1786700864.7295082, "suite": "menu-left-open", "target": "127.0.0.1@localhost", "attempt": 1}

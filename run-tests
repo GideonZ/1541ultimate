@@ -15,6 +15,7 @@
 
 import argparse
 import dataclasses
+import http.client
 import json
 import os
 import platform
@@ -39,6 +40,15 @@ import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
+
+# What a device call can raise past tests/lib/rest.py's own handler. rest.py
+# catches OSError, TimeoutError and URLError; an http.client.HTTPException that
+# is not an OSError, such as a truncated response from a device being reset
+# mid-read, is not caught there, and a malformed body reaches a decoder as a
+# TypeError or a ValueError. A capture taken from a device that has just been
+# taken down meets all of these, and none of them may end the run.
+DEVICE_ERRORS = (Failure, OSError, TimeoutError, ValueError, TypeError,
+                 http.client.HTTPException)
 
 sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
 import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
@@ -814,9 +824,9 @@ class Device:
 def health_entry(check: "health.Check") -> Dict[str, object]:
     """One health check as a record, with its figures when it has any.
 
-    A sweep with nothing but latencies writes exactly what it always has: the
-    heap entry is added when it is there rather than as a null beside the
-    other eight. The figures go here rather than into `detail`, which is a
+    The figures are present only on a check that measured any, so a sweep of
+    latencies carries the four keys it always carries. They go here rather
+    than into `detail`, which is a
     human sentence printed under a failing check's name, because packing three
     numbers into prose would make every consumer parse it back out.
     """
@@ -920,8 +930,9 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
                     suite_name: str, attempt: int) -> None:
     """Write what the device looked like after a suite failed.
 
-    Unconditional and needing no flag, because on a green run it costs nothing:
-    no suite failed. Three reads, all GET, all on the runner's five-second
+    Taken after every suite that exits non-zero, needing no flag beyond
+    somewhere to write: on a green run it costs nothing, because no suite
+    failed. Three reads, all GET, all on the runner's five-second
     probe client, so a device that has just been taken down cannot make this
     outlast the run's own budget.
 
@@ -954,7 +965,8 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
         # record before it ended is exactly that, and reading a file the run
         # already wrote costs the device nothing.
         spool = os.path.join(options.jsonl_dir, "screens.jsonl")
-        record = screens.last_before(spool, time.time(), screens.TELNET)
+        record = screens.last_before(spool, time.time(), screens.TELNET,
+                                     suite=suite_name, attempt=attempt)
         if record:
             state["source"] = "telnet-spool"
             screen_text = [str(row) for row in record.get("text") or []]
@@ -977,18 +989,18 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
                 state["source"] = "readmem"
                 screen_raw = api.machine.readmem(SCREEN_RAM, SCREEN_CELLS)
                 screen_text = c64_screen_rows(screen_raw)
-        except Failure as exc:
+        except DEVICE_ERRORS as exc:
             state["source"] = state["source"] or "unavailable"
             state["errors"].append(f"screen: {report.format_exception(exc)}")
 
     try:
         state["heap"] = api.machine.heap()
-    except Failure as exc:
+    except DEVICE_ERRORS as exc:
         state["errors"].append(f"heap: {report.format_exception(exc)}")
     try:
         state["drives"] = {slot: dataclasses.asdict(info)
                            for slot, info in api.drives.list().items()}
-    except Failure as exc:
+    except DEVICE_ERRORS as exc:
         state["errors"].append(f"drives: {report.format_exception(exc)}")
 
     write_capture(directory, stem, screen_text, screen_raw, state)
@@ -997,13 +1009,22 @@ def capture_failure(device: Device, options: Options, mode: str, label: str,
 def c64_screen_rows(data: bytes) -> List[str]:
     """The C64 screen matrix as 25 rows of 40 characters.
 
-    Best effort, and the report says so: these are screen codes rather than
-    the literal ASCII the menu plane carries, and the matrix moves with the VIC
-    bank and with $D018, so a program that has moved it is not rendered here.
+    Screen codes, not the literal ASCII the menu plane carries, and the two
+    must not share a decode path. In the unshifted set code 0 is `@`, 1 to 26
+    are the letters, 27 to 31 are `[`, a pound sign, `]`, an up arrow and a
+    left arrow, and 32 to 63 are the ASCII characters of the same value.
+    Everything from 64 up is a graphics character with no text form, so it
+    reads as a space rather than as the letter its byte value would give in
+    ASCII. Bit 7 is reverse video and is masked off, as
+    `api.MachineApi.menu_rows` masks it for the other screen.
+
+    Best effort, and the report says so: the matrix moves with the VIC bank and
+    with $D018, so a program that has moved it is not rendered here.
     """
-    text = "".join(chr(byte + 0x40) if 0x01 <= byte <= 0x1A
-                   else (chr(byte) if 0x20 <= byte <= 0x5F else " ")
-                   for byte in data[:SCREEN_CELLS])
+    high = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\u00a3]\u2191\u2190"
+    text = "".join(high[byte] if byte < 0x20
+                   else (chr(byte) if byte < 0x40 else " ")
+                   for byte in (b & 0x7F for b in data[:SCREEN_CELLS]))
     return [text[row * 40:(row + 1) * 40] for row in range(SCREEN_CELLS // 40)]
 
 
@@ -1013,14 +1034,16 @@ def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
     try:
         with open(os.path.join(directory, f"{stem}-screen.txt"), "w",
                   encoding="utf-8") as handle:
-            handle.write("\n".join(text) + ("\n" if text else ""))
+            handle.write(report.masked("\n".join(text)) + ("\n" if text else ""))
         if raw:
             with open(os.path.join(directory, f"{stem}-screen.bin"), "wb") as handle:
                 handle.write(raw)
+        # Serialised before it is opened, so a value json cannot encode leaves
+        # no half-written file behind for the artifact to carry.
+        body = json.dumps(report.masked(state), indent=2, sort_keys=True) + "\n"
         with open(os.path.join(directory, f"{stem}-state.json"), "w",
                   encoding="utf-8") as handle:
-            json.dump(report.masked(state), handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            handle.write(body)
     except (OSError, TypeError, ValueError) as exc:
         report.detail(f"the capture could not be written: {exc}")
 
@@ -1046,7 +1069,9 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     environment["E2E_ATTEMPT"] = str(attempt)
     if options.jsonl_dir and options.screens:
         # Every distinct screen the suite reads, published from the fetches it
-        # was making anyway. One file per target, appended to by every suite.
+        # was making anyway. One file per target, appended to by every suite,
+        # which is why the runner truncates it once when the run starts rather
+        # than per suite as it does the per-suite files.
         environment["E2E_SCREENS"] = os.path.join(options.jsonl_dir,
                                                   "screens.jsonl")
     else:
@@ -1064,6 +1089,11 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
         # last suite record.
         if attempt == 1:
             open(path, "w").close()
+            # The raw Telnet transcript shares this stem and is reset with it,
+            # so a second run into one directory does not read as one session.
+            transcript = path[:-len(".jsonl")] + ".telnet.log"
+            if os.path.exists(transcript):
+                open(transcript, "w").close()
         environment["E2E_JSONL"] = path
 
     if suite.category == "e2e":
@@ -2051,6 +2081,10 @@ def main(argv: List[str]) -> int:
         # says the same thing about its own health sweeps and suite records.
         report.set_target(target.token)
         start_console_capture(os.path.join(args.jsonl_dir, "run.log"))
+        if args.screens:
+            # One file per target for the whole run, so it is emptied here
+            # rather than by any of the suites that append to it.
+            open(os.path.join(args.jsonl_dir, "screens.jsonl"), "w").close()
         if args.color == "auto" and report.colour_enabled():
             # A captured suite writes into a pipe, so it would decide "not a
             # terminal" and drop colour even though its lines are reprinted on

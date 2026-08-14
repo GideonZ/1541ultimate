@@ -65,11 +65,18 @@ jobs:
           # repository variable and the repository has no default. With it
           # unset the gate runs and never recovers anything.
           RECOVER: ${{ vars.E2E_RECOVER_COMMAND }}
+          # Through the environment rather than substituted into the script:
+          # an expression is textually replaced before bash sees the line, so
+          # an input carrying a semicolon would run on this machine. TARGETS
+          # is deliberately unquoted below, because a run of several devices
+          # is several words.
+          MODES: ${{ inputs.modes || 'overlay' }}
+          TARGETS: ${{ inputs.targets || 'u64 u2@c64u' }}
         run: |
           ./run-tests -j "$RUNNER_TEMP/e2e" \
-            --mode "${{ inputs.modes || 'overlay' }}" \
+            --mode "$MODES" \
             ${RECOVER:+--recover-command "$RECOVER"} \
-            ${{ inputs.targets || 'u64 u2@c64u' }}
+            $TARGETS
 
       # Steps 3 to 5 run whatever the gate did. A run that was cancelled or
       # that timed out is the run whose evidence is worth most, and a step that
@@ -92,6 +99,8 @@ jobs:
             ${{ runner.temp }}/e2e/**/*.txt
             ${{ runner.temp }}/e2e/**/*.bin
             ${{ runner.temp }}/e2e/**/*.json
+            ${{ runner.temp }}/e2e/**/*.pdf
+            ${{ runner.temp }}/e2e/**/capture/*.png
           if-no-files-found: warn
 
       # A separate artifact because the two have different lifetimes and
@@ -107,7 +116,6 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e/**/*.mp4
             ${{ runner.temp }}/e2e/**/*.srt
-            ${{ runner.temp }}/e2e/**/*.png
           retention-days: 7
           if-no-files-found: ignore
 
@@ -120,8 +128,13 @@ jobs:
           E2E_ARTIFACT_URL: ${{ steps.report.outputs.artifact-url }}
         run: python3 tools/e2e_report.py "$RUNNER_TEMP/e2e" --job-summary
 
+      # `outcome` is what the step did before continue-on-error was applied,
+      # so this sees the failure the step swallowed. Anything other than
+      # success fails the job, which covers a gate that was cancelled or that
+      # hit the job's own timeout as well as one that reported a bad status.
       - name: Fail on the gate's own status
-        if: always() && steps.gate.outcome == 'failure'
+        if: always() && steps.gate.outcome != 'success'
         run: |
-          echo "the gate failed; see the job summary and the e2e-report artifact"
+          echo "the gate did not pass (${{ steps.gate.outcome }}); see the job"
+          echo "summary and the e2e-report artifact"
           exit 1

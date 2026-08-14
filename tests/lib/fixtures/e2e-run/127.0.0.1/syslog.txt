@@ -1,6 +1,6 @@
-1786699992.693 All linked modules have been initialized and are now running.
-1786699992.743 1541: seek track 18
-1786699992.793 1541: no answer from the drive
-1786699994.357 All linked modules have been initialized and are now running.
-1786699994.408 1541: seek track 18
-1786699994.458 1541: no answer from the drive
+1786700862.214 All linked modules have been initialized and are now running.
+1786700862.265 1541: seek track 18
+1786700862.315 1541: no answer from the drive
+1786700863.815 All linked modules have been initialized and are now running.
+1786700863.865 1541: seek track 18
+1786700863.915 1541: no answer from the drive

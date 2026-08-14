@@ -46,8 +46,8 @@ sys.path.insert(0, os.path.join(
 
 import machine as machine_lib
 import pacing
-import screens as screen_spool
 import rest as rest_lib
+import screens as screen_spool
 import targets
 from report import Failure
 from menu import wait_screen_changes, wait_screen_settled
@@ -1082,11 +1082,17 @@ class RestBackend(Backend):
             raise Failure(f"menu_screen failed with HTTP {status}: {body[:160]!r}")
         if len(body) != SCREEN_BYTES:
             raise Failure(f"menu_screen returned {len(body)} bytes, expected {SCREEN_BYTES}")
-        # The screens this suite already fetched, spooled for whoever reads the
-        # run afterwards. It costs the device nothing and is the only record of
-        # what was on screen when a check failed.
-        screen_spool.publish(screen_spool.MENU, self._decode(body).lines, body,
-                             cols=SCREEN_WIDTH)
+        # The screens this suite already fetched, spooled for whoever reads
+        # the run afterwards. It costs the device nothing and is the only
+        # record of what was on screen when a check failed. The decode is
+        # behind the guard because it is the only part of this that costs
+        # anything when nothing is spooling.
+        if screen_spool.enabled():
+            # The raw payload is what "a different screen" means: bit 7 of a
+            # character byte is how the selected row is marked, and that does
+            # not survive into the text.
+            screen_spool.publish(screen_spool.MENU, self._decode(body).lines,
+                                 body, cols=SCREEN_WIDTH, key=body)
         return body
 
     def _menu_open(self) -> bool:
@@ -1822,58 +1828,68 @@ class TelnetBackend(Backend):
         short quiet check instead. See tests/lib/pacing.py for the measurements
         behind both numbers.
         """
-        started = time.time()
-        end = started + timeout
-        expecting = self._expect_redraw
-        expecting_settle = self._expect_settle
-        self._expect_redraw = False
-        self._expect_settle = False
-        first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
-                      else pacing.TELNET_QUIET_CHECK_SECONDS)
-        last_data: Optional[float] = None
-        drained = 0
-        while time.time() < end:
-            wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
-            ready, _, _ = select.select([self.sock], [], [], wait)
-            now = time.time()
-            if not ready:
-                if last_data is None:
-                    if now - started >= first_wait:
+        received: List[bytes] = []
+        try:
+            started = time.time()
+            end = started + timeout
+            expecting = self._expect_redraw
+            expecting_settle = self._expect_settle
+            self._expect_redraw = False
+            self._expect_settle = False
+            first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
+                          else pacing.TELNET_QUIET_CHECK_SECONDS)
+            last_data: Optional[float] = None
+            drained = 0
+            while time.time() < end:
+                wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
+                ready, _, _ = select.select([self.sock], [], [], wait)
+                now = time.time()
+                if not ready:
+                    if last_data is None:
+                        if now - started >= first_wait:
+                            self._last_drain_bytes = drained
+                            return
+                        continue
+                    # A byte count cannot distinguish the echo from a redraw: both
+                    # vary with screen content. For settled commands, wait for a
+                    # longer quiet period, bounded by the caller's timeout.
+                    idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
+                                   else pacing.TELNET_IDLE_GAP_SECONDS)
+                    if now - last_data >= idle_needed:
                         self._last_drain_bytes = drained
                         return
                     continue
-                # A byte count cannot distinguish the echo from a redraw: both
-                # vary with screen content. For settled commands, wait for a
-                # longer quiet period, bounded by the caller's timeout.
-                idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
-                               else pacing.TELNET_IDLE_GAP_SECONDS)
-                if now - last_data >= idle_needed:
+                chunk = self.sock.recv(65536)
+                if not chunk:
                     self._last_drain_bytes = drained
                     return
-                continue
-            chunk = self.sock.recv(65536)
-            if not chunk:
+                drained += len(chunk)
+                self.screen.feed(chunk)
+                received.append(chunk)
+                last_data = time.time()
+            # The caller's own timeout ran out. With no byte at all that is the
+            # same answer the first-byte budget gives, and reporting it as a
+            # failure would turn a key that legitimately drew nothing into a failed
+            # suite whenever the budget outlived the timeout it sits inside. With
+            # bytes received it is a redraw that never went quiet, which is a real
+            # failure and says so.
+            if last_data is None:
                 self._last_drain_bytes = drained
                 return
-            drained += len(chunk)
-            self.screen.feed(chunk)
-            screen_spool.publish_stream(chunk)
-            screen_spool.publish(screen_spool.TELNET, self.screen.rows(),
-                                 cols=self.screen.width)
-            last_data = time.time()
-        # The caller's own timeout ran out. With no byte at all that is the
-        # same answer the first-byte budget gives, and reporting it as a
-        # failure would turn a key that legitimately drew nothing into a failed
-        # suite whenever the budget outlived the timeout it sits inside. With
-        # bytes received it is a redraw that never went quiet, which is a real
-        # failure and says so.
-        if last_data is None:
-            self._last_drain_bytes = drained
-            return
-        raise Failure(f"Timed out waiting for telnet screen to go idle after "
-                      f"{self.last_command} ({drained} bytes received)")
-
-
+            raise Failure(f"Timed out waiting for telnet screen to go idle after "
+                          f"{self.last_command} ({drained} bytes received)")
+        finally:
+            # Out of the loop, not in it. Two file writes between a recv
+            # and the next select would sit inside the wall-clock idle
+            # test this loop decides on, and an observability component
+            # may not change how a suite reaches a verdict. The bytes are
+            # kept in memory and written once the redraw is over.
+            screen_spool.publish_stream(b"".join(received))
+            screen_spool.publish(
+                screen_spool.TELNET, self.screen.rows(),
+                cols=self.screen.width,
+                key=(tuple(self.screen.rows()),
+                     tuple(tuple(row) for row in self.screen.reverse)))
 # ---------------------------------------------------------------------------
 # Mode selection: the standard --mode flag and Backend factory every
 # mode-switchable suite uses, so run-tests --mode propagates the same way

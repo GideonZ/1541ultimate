@@ -114,6 +114,20 @@ def expect(what: str, actual, wanted) -> None:
         raise Failure(f"{what}: got {actual!r}, expected {wanted!r}")
 
 
+def load_runner():
+    """Import run-tests as a module. It has no .py suffix, so it needs a loader."""
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader("run_tests_observability",
+                                                  RUNNER_PATH)
+    spec = importlib.util.spec_from_loader("run_tests_observability", loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["run_tests_observability"] = module
+    loader.exec_module(module)
+    return module
+
+
 def load_report_tool():
     """Import the report generator from tools/ by path, as its tests must."""
     import importlib.machinery
@@ -526,6 +540,22 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
 # gate. Everything else - run_one_attempt, the retry loop, the health sweeps,
 # the records, the console capture - is the runner's own code.
 
+# The double answers in microseconds, so the pacing the suites use against real
+# hardware is all wait and no information here. Every one of these is a
+# documented override in tests/lib/pacing.py, and a run that used the hardware
+# values would spend most of this suite's budget waiting for a screen that had
+# already settled.
+SCRIPTED_PACING = {
+    "U64_UI_POLL_INTERVAL": "0.005",
+    "U64_UI_SETTLE_TIMEOUT": "0.5",
+    "U64_UI_KEY_CHANGE_TIMEOUT": "0.1",
+    "U64_UI_OVERLAY_DRAW_TIMEOUT": "0.2",
+    "U64_UI_KEY_SETTLE": "0.005",
+    "U64_UI_KEY_DRAIN": "0.002",
+    "U64_UI_MENU_TOGGLE_SETTLE": "0.02",
+    "U64_UI_MENU_TOGGLE_TIMEOUT": "0.5",
+}
+
 WRAPPER = '''\
 """Run the real `run-tests` over a scripted registry against the double."""
 import importlib.machinery
@@ -670,6 +700,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
                        OBS_REGISTRY=registry_path, OBS_WORKSPACE=workspace,
                        NO_COLOR="1")
     environment.update(double.environment())
+    environment.update(SCRIPTED_PACING)
     environment.update(extra_environment or {})
     environment.pop("FORCE_COLOR", None)
     completed = subprocess.run(
@@ -1179,6 +1210,47 @@ def every_record_in_the_tree_names_its_target() -> str:
     return f"{seen} records"
 
 
+@case(1, "OBS-5.5")
+def the_c64_screen_is_decoded_as_screen_codes() -> str:
+    """Screen codes, not ASCII, and bit 7 is reverse video rather than nothing.
+
+    The menu plane is literal printable ASCII and this one is not, and the two
+    must not share a decode path.
+    """
+    runner = load_runner()
+    rows = runner.c64_screen_rows(
+        bytes([0x12, 0x05, 0x01, 0x04, 0x19, 0x2E])      # READY.
+        + bytes([0x92, 0x85, 0x81])                      # the same, reversed
+        + bytes([0x00, 0x1B, 0x1E])                      # @ [ up arrow
+        + bytes([0x40, 0x5A, 0x7F])                      # graphics, no text form
+        + bytes([0x20]) * 979)
+    expect("rows", len(rows), 25)
+    expect("columns", len(rows[0]), 40)
+    expect("the prompt", rows[0][:6], "READY.")
+    expect("reverse video is text", rows[0][6:9], "REA")
+    expect("the punctuation codes", rows[0][9:12], "@[\u2191")
+    expect("graphics have no text form", rows[0][12:15], "   ")
+    return "6 code ranges"
+
+
+@case(2, "OBS-6.5", "OBS-16.6")
+def a_malformed_heap_answer_is_survived_everywhere() -> str:
+    """A body a decoder cannot read leaves the sweep passing and the run alive.
+
+    tests/lib/rest.py does not catch every exception a decoder can raise, so
+    anything that reads the device has to catch what reaches past it. The
+    alternative is a suite failure turning into a harness traceback.
+    """
+    with DeviceDouble() as double:
+        target = double.target()
+        double.faults.heap_malformed = True
+        sweep = health.probe(target, api=UltimateApi(target, timeout=2.0),
+                             include=("heap",))
+        expect("skipped", [c.state for c in sweep.checks], [health.SKIP])
+        expect("still healthy", sweep.ok, True)
+    return sweep.detail_for(health.HEAP)[:48]
+
+
 @case(3, "OBS-5.1", "OBS-5.3", "OBS-5.4", "OBS-5.5")
 def a_failing_suite_leaves_a_capture() -> str:
     """Three reads, three artefacts, named from the suite run's own key."""
@@ -1316,6 +1388,74 @@ def the_suites_spool_every_screen_they_read() -> str:
         if len(spooled) > 4:
             raise Failure(f"{len(spooled)} records for one unchanging screen")
     return f"{len(spooled)} screens"
+
+
+@case(3, "OBS-8.22")
+def a_selection_moving_is_a_screen_the_spool_keeps() -> str:
+    """Bit 7 marks the selected row and does not survive into the text.
+
+    A cursor moving one row is the navigation step a reader is looking for,
+    and deduplicating on the rendered text would be the one thing that threw
+    it away.
+    """
+    import tempfile
+
+    body = ("import ui_backend\n"
+            "backend = ui_backend.make_backend('overlay', ARGS.host,\n"
+            "                                  ARGS.password, 5.0)\n"
+            "report.check_start('the selection moves')\n"
+            "backend.send_key('DOWN')\n"
+            "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        menu = os.path.join(workspace, "menu-open")
+        open(menu, "w").close()
+        double.menu_open_flag = menu
+        # The same text with a different row marked, which is what moving a
+        # cursor produces and what a text comparison cannot see.
+        double.move_selection_on_input = True
+        made = scripted_run(double, [Stub("held", body=body)],
+                            workspace=workspace)
+        spooled = made.records("127.0.0.1", "screens.jsonl")
+        if len(spooled) < 2:
+            raise Failure(f"the selection move was not spooled: {len(spooled)} "
+                          "record(s)")
+        rendered = [tuple(record["text"]) for record in spooled]
+        if len(set(rendered)) == len(rendered):
+            raise Failure("the double did not produce two screens with one text")
+        payloads = {record["raw"] for record in spooled}
+        expect("each payload once", len(payloads), len(spooled))
+    return f"{len(spooled)} screens, {len(set(rendered))} distinct texts"
+
+
+@case(3, "OBS-1.8", "OBS-8.22")
+def the_capture_and_the_spool_carry_no_password() -> str:
+    """A password on a screen is masked on the way into every artefact."""
+    import tempfile
+
+    body = ("report.check_start('it holds')\n"
+            "report.check_fail('the screen showed " + "hunter2" + "')\n"
+            "sys.exit(1)\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        menu = os.path.join(workspace, "menu-open")
+        open(menu, "w").close()
+        double.menu_open_flag = menu
+        double.menu_rows[2] = "password hunter2".ljust(40)
+        made = scripted_run(double, [Stub("broken", body=body)],
+                            arguments=("--password", "hunter2"),
+                            workspace=workspace)
+        with open(made.path("127.0.0.1", "capture",
+                            "overlay-broken-1-screen.txt"),
+                  encoding="utf-8") as handle:
+            screen = handle.read()
+        if "hunter2" in screen:
+            raise Failure("the password reached the captured screen")
+        if "***" not in screen:
+            raise Failure(f"nothing was masked: {screen[:120]!r}")
+        with open(made.path("127.0.0.1", "screens.jsonl"),
+                  encoding="utf-8") as handle:
+            if "hunter2" in handle.read():
+                raise Failure("the password reached the screen spool")
+    return "screen and spool clean"
 
 
 @case(3, "OBS-8.22")

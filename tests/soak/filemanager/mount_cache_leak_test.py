@@ -35,8 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
 
-import ftp as ftp_lib  # noqa: E402
 import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import ftp as ftp_lib  # noqa: E402
 import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,

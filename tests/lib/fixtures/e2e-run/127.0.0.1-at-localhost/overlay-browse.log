@@ -2,7 +2,7 @@ Traceback (most recent call last):
   File "/tmp/e2e-observability-fixture/suites/browse.py", line 18, in <module>
     backend = ui_backend.make_backend('overlay', ARGS.host,
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/chris/dev/c64/1541u-e2e-obs/tests/e2e/lib/ui_backend.py", line 1931, in make_backend
+  File "/home/chris/dev/c64/1541u-e2e-obs/tests/e2e/lib/ui_backend.py", line 1947, in make_backend
     return RestBackend(host, password, timeout, interface_type=_MODE_INTERFACE_TYPE[mode])
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   File "/home/chris/dev/c64/1541u-e2e-obs/tests/e2e/lib/ui_backend.py", line 1006, in __init__

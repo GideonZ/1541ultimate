@@ -76,8 +76,14 @@ def enabled() -> bool:
 
 
 def publish(kind: str, rows: Sequence[str], raw: Optional[bytes] = None,
-            cols: int = 0) -> None:
+            cols: int = 0, key: object = None) -> None:
     """Record one screen, when it differs from the last one of its kind.
+
+    `key` is what "differs" means, and the rendered text is not it. The
+    selected row is marked by bit 7 of a character byte on a REST screen and
+    by colour on a Telnet one, and neither survives into the text, so a cursor
+    moving one row would otherwise be a screen this never recorded, which is
+    exactly the navigation step a reader is looking for.
 
     Never raises and never blocks: this runs inside a suite's own keystroke
     loop, and a spool that could fail a check would be changing how a suite
@@ -87,9 +93,10 @@ def publish(kind: str, rows: Sequence[str], raw: Optional[bytes] = None,
         return
     try:
         lines = [str(row) for row in rows]
-        if _last.get(kind) == lines:
+        distinct = lines if key is None else key
+        if _last.get(kind) == distinct:
             return
-        _last[kind] = lines
+        _last[kind] = distinct
         record = {
             "time": time.time(),
             "suite": report.SUITE_NAME,
@@ -126,6 +133,12 @@ def publish_stream(data: bytes) -> None:
     """
     if not TRANSCRIPT_PATH or not data:
         return
+    # A Telnet session carries the password to the device, and whether the
+    # device echoes it back is the device's decision, not this one's. The
+    # artefacts leave the machine that produced them.
+    for secret in report.secrets():
+        data = data.replace(secret.encode("utf-8", "replace"),
+                            report.SECRET_MASK.encode())
     try:
         with open(TRANSCRIPT_PATH, "ab") as handle:
             handle.write(data)
@@ -156,16 +169,25 @@ def read(path: str) -> List[dict]:
     return found
 
 
-def last_before(path: str, when: float, kind: str = "") -> Optional[dict]:
+def last_before(path: str, when: float, kind: str = "", suite: str = "",
+                attempt: Optional[int] = None) -> Optional[dict]:
     """The most recent screen in `path` at or before `when`.
 
     What the harness was looking at when something happened, which is what a
     failure capture needs under a mode whose screen the device cannot be asked
     for.
+
+    One spool holds every suite's screens, so `suite` and `attempt` are what
+    keep a suite that read no screen at all from being shown the previous
+    suite's, presented as its own.
     """
     best = None
     for record in read(path):
         if kind and record.get("kind") != kind:
+            continue
+        if suite and record.get("suite") != suite:
+            continue
+        if attempt is not None and record.get("attempt") != attempt:
             continue
         if float(record.get("time") or 0.0) <= when:
             best = record

@@ -86,6 +86,10 @@ class Faults:
     menu_screen_404: bool = False
     # machine:heap answers 404, which is firmware predating the endpoint.
     heap_404: bool = False
+    # machine:heap answers 200 with a field a decoder cannot turn into a
+    # number, which is what a firmware change or a truncated body looks like
+    # to everything that reads it.
+    heap_malformed: bool = False
     # Close the connection without answering, which is what a device that has
     # gone off the network looks like to a client that can still route to it.
     offline: bool = False
@@ -190,6 +194,11 @@ class DeviceDouble:
         self.heap_min_ever_free = 1_200_000
         self.heap_total = 2_000_000
         self.mounted_image = ""
+        # When set, a keystroke moves which row carries the reverse-video bit
+        # rather than changing any text, which is what moving a cursor through
+        # a listing looks like on the wire.
+        self.move_selection_on_input = False
+        self.selected_row = 0
         # The settings the observability code and the UI backend read. Not the
         # whole tree: a fake of several hundred items would be a second
         # implementation of the device's configuration rather than a stand-in
@@ -331,8 +340,8 @@ class DeviceDouble:
         """The two-plane payload for the rows this double is showing.
 
         Characters are literal ASCII, which is what the firmware writes into
-        this plane, and the colour plane is a fixed pair of nibbles. Bit 7 of
-        the first row's characters is set, which is how the selected row is
+        this plane, and the colour plane is a fixed pair of nibbles. Bit 7 is
+        set on the selected row's characters, which is how a selection is
         marked on a machine whose colour plane carries no background.
         """
         chars = bytearray(SCREEN_CELLS)
@@ -341,7 +350,8 @@ class DeviceDouble:
             text = text[:SCREEN_COLS].ljust(SCREEN_COLS)
             for col, character in enumerate(text):
                 value = ord(character) & 0x7F
-                chars[row * SCREEN_COLS + col] = value | (0x80 if row == 0 else 0)
+                reverse = 0x80 if row == self.selected_row else 0
+                chars[row * SCREEN_COLS + col] = value | reverse
         return bytes(chars) + bytes([0x0E] * SCREEN_CELLS)
 
     # "READY." in C64 screen codes, at the top of screen RAM. api.MachineApi
@@ -358,7 +368,10 @@ class DeviceDouble:
             self._tick += 1
             tick = self._tick
         if address == self.SCREEN_RAM:
-            body = (self.READY_SCREEN_CODES + bytes(length))[:length]
+            # Space-filled after the prompt, which is what a C64's screen
+            # matrix holds: screen code 0 is `@`, not a blank.
+            body = (self.READY_SCREEN_CODES
+                    + bytes([0x20]) * length)[:length]
         else:
             # A value that moves on every read, which is what the health
             # sweep's raster and jiffy checks are looking for: they read until
@@ -378,7 +391,10 @@ class DeviceDouble:
         with self._lock:
             self._keys += 1
             keys = self._keys
-        self.menu_rows[1] = f"key {keys}".ljust(SCREEN_COLS)
+        if self.move_selection_on_input:
+            self.selected_row = (self.selected_row + 1) % SCREEN_ROWS
+        else:
+            self.menu_rows[1] = f"key {keys}".ljust(SCREEN_COLS)
         return 200, self._json({}), "application/json"
 
     def _drive_action(self, path, params):
@@ -388,6 +404,11 @@ class DeviceDouble:
                 self.mounted_image = str(params.get("image", ""))
             elif action in ("remove", "unlink"):
                 self.mounted_image = ""
+        # When set, a keystroke moves which row carries the reverse-video bit
+        # rather than changing any text, which is what moving a cursor through
+        # a listing looks like on the wire.
+        self.move_selection_on_input = False
+        self.selected_row = 0
         return 200, self._json({}), "application/json"
 
     def _config(self, path):
@@ -422,6 +443,9 @@ class DeviceDouble:
     def _heap(self, params):
         if self.faults.heap_404:
             return 404, b"Not found", "text/plain"
+        if self.faults.heap_malformed:
+            return 200, self._json({"free": None, "min_ever_free": "lots"}), \
+                "application/json"
         return 200, self._json({"free": self.heap_free,
                                 "min_ever_free": self.heap_min_ever_free,
                                 "total": self.heap_total}), "application/json"
