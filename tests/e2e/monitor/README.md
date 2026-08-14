@@ -19,7 +19,7 @@ Two transports reach the same `UserInterface` object that draws it:
 
 - **REST** (`--mode overlay`, the default, and `--mode freeze`): `RestBackend`
   injects keys with `machine:input` and reads the rendered screen with
-  `machine:menu_screen` -- one HTTP round trip per screen, no protocol to
+  `machine:menu_screen`: one HTTP round trip per screen, with no protocol to
   parse. It switches `Interface Type` for the session and restores it on
   close, on a device that has that setting.
 - **Telnet** (`--mode telnet`): the standard remote-menu session on port 23,
