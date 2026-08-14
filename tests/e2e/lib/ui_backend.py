@@ -108,6 +108,11 @@ MENU_GLYPHS = {
 # here: it belongs to the machine, and TelnetBackend._marked_row measures it.
 FRAME_CHARS = " |+-"
 
+# A browser row's rendered size, as size_str.cc writes it: up to four digits
+# and an optional K or M. Never a menu item, so a label that looks like this
+# came from the listing an overlay was drawn over.
+SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
+
 # find_selected_row's minimum marked-cell count before trusting a candidate
 # row: below this, a row that merely borrows the previous row's background
 # for a couple of cells is indistinguishable from noise.
@@ -255,17 +260,6 @@ class Backend:
 
     @property
     def machine_password(self) -> Optional[str]:
-        return None
-
-    def overlay_area(self) -> Optional["Window"]:
-        """The area an open window occupies, when the transport can say.
-
-        None where it cannot, and the caller then works the overlay out by
-        comparing the screen with what was there before. A transport that
-        carries the character plane can answer exactly, which is worth doing:
-        the comparison mistakes part of the listing underneath for the
-        overlay whenever a row differed there already.
-        """
         return None
 
     def enter_file_browser(self) -> None:
@@ -964,12 +958,6 @@ class RestBackend(Backend):
     @property
     def machine_password(self) -> Optional[str]:
         return self.password
-
-    def overlay_area(self) -> Optional["Window"]:
-        chars = self._body()[:SCREEN_CELLS]
-        rows = range(2, SCREEN_HEIGHT - 1)
-        window = find_open_window(chars, rows)
-        return None if window == whole_screen(rows) else window
 
     def _request(
         self, method: str, path: str,
@@ -2162,16 +2150,6 @@ class Browser:
         # ['50K', 'Create', 'Power & Reset', ...], where "50K" is the size
         # column of the row behind it, and that extra entry shifted every
         # index so selecting "Developer" opened the entry two places past it.
-        area = self.backend.overlay_area()
-        if area is not None:
-            labels = []
-            for index in area.rows:
-                if index >= len(rows):
-                    break
-                label = strip_frame(rows[index][area.first_column:area.last_column])
-                if label:
-                    labels.append(label)
-            return labels
         labels = []
         for old, new in zip(before, rows):
             if old == new:
@@ -2179,7 +2157,14 @@ class Browser:
             common = len(os.path.commonprefix([old, new]))
             text = new[common:].lstrip(FRAME_CHARS)
             label = strip_frame(text.split("|", 1)[0])
-            if label:
+            # A row whose text underneath already differed from its neighbours
+            # shares a shorter prefix with what replaced it, so what is left
+            # can begin with the tail of the listing rather than with the
+            # overlay. Measured on a C64 Ultimate: the task menu came back as
+            # ["50K", "Create", "Power & Reset", ...], and that extra entry
+            # shifted every index, so selecting "Developer" opened the entry
+            # two places past it. A menu item is never a bare file size.
+            if label and not SIZE_COLUMN_RE.fullmatch(label):
                 labels.append(label)
         return labels
 
