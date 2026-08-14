@@ -161,6 +161,18 @@ READMEM_REJECTS_ZERO_LENGTH = _fix(
     "with an empty body",
     (C64U,))
 
+# Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
+# suite must not run without the fix: on firmware without it, opening the menu
+# while Interface Type is Freeze stops the device answering REST, ICMP and FTP
+# altogether. Recovery is physical, a five-second menu-button hold or a power
+# cycle, so a run that reaches this check loses the device and every suite
+# after it. See GideonZ/1541ultimate#733.
+FREEZE_MENU_OPENS = _fix(
+    "freeze-menu-opens",
+    "opening the menu with Interface Type set to Freeze answers, rather than "
+    "taking the device off the network until it is power cycled",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

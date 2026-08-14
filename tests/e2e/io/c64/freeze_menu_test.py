@@ -23,6 +23,7 @@ from typing import Dict, Optional, Tuple
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
@@ -74,6 +75,13 @@ class RestSession:
         # For the calls this suite makes no assertion about, so that the menu
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, for the checks that need a firmware fix."""
+        info = self.api.info()
+        return machine_lib.identify(self.host, lambda: (info.product,
+                                                        info.firmware_version))
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -522,6 +530,15 @@ def main() -> int:
 
     session.close_menu_from_anywhere()
     session.reset()
+    # Checked before anything opens the menu, because on firmware without the
+    # fix that is the keystroke that takes the device off the network, and no
+    # later check could report it: the suites after this one in the run would
+    # fail on an unreachable device instead.
+    if session.machine.skip_without_fix(
+            machine_lib.FREEZE_MENU_OPENS,
+            "this machine opens the menu in Freeze without wedging"):
+        suite_ok("freeze_menu_test")
+        return 0
     if not session.has_config(UI_STORE, UI_ITEM):
         check_start(f"this machine offers a '{UI_ITEM}' to switch")
         check_skip(f"no '{UI_ITEM}' setting on this machine, so there is no "
