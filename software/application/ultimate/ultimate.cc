@@ -98,9 +98,8 @@ extern "C" void ultimate_main(void *a)
     // networkConfig.cfg, which the init functions establish, so the buffer is
     // opened here and the destination is decided below; everything printed in
     // between is held and forwarded once the task starts. Without this the
-    // remote log begins partway through boot and the product version banner,
-    // the FPGA capabilities line and every init function's output are only
-    // ever on the hardware UART.
+    // product version banner, the FPGA capabilities line and every init
+    // function's output are only ever on the hardware UART.
     syslog.open_buffer(syslog_bufsize);
     custom_outbyte = outbyte_log_syslog;
 
@@ -111,10 +110,9 @@ extern "C" void ultimate_main(void *a)
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
     if (!syslog.init(syslog_bufsize)) {
-        // Nothing is configured, so the buffer is never drained. Stop writing
-        // into it and give it back: on the U2, whose heap is the tightest,
-        // 16 KB held for the life of a device that logs nowhere is worth
-        // reclaiming.
+        // Nothing is configured, so the buffer would never be drained. Stop
+        // writing into it and give the 16 KB back, which matters most on the
+        // U2, whose heap is the tightest.
         custom_outbyte = outbyte_log;
         syslog.close_buffer();
     }

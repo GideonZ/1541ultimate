@@ -37,14 +37,12 @@ class Syslog
   public:
     Syslog() : buf(0), bufsize(0), failed_sends(0), overflows(0), sockfd(-1)
         { rewind(); }
-    ~Syslog() { if (buf) delete buf; }
+    ~Syslog() { delete[] buf; }
     void rewind() { bufpos = 0; newlinepos = -1; linestartpos = 0; overflow = false; }
-    // Allocate the buffer before there is anywhere to send it. Everything
-    // printed before the network configuration exists is dropped otherwise,
-    // which is the whole boot up to the init functions: the product version
-    // banner, the FPGA capabilities and every init function's own output.
+    // Allocate the buffer before there is anywhere to send it, so the boot up
+    // to the init functions is held rather than dropped, and give it back on a
+    // device that turns out to have nowhere to send it.
     bool open_buffer(size_t buffer_size);
-    // Give the buffer back, for a device with nowhere to send it.
     void close_buffer();
     bool init(size_t buffer_size);
     void charout(int c);
@@ -55,8 +53,7 @@ class Syslog
     int overflowed() const { return overflows; }
     // Send whatever the forwarding task has not sent yet, from the calling
     // task, for a caller that is about to stop the machine and cannot wait
-    // for that task to run again. Sent in datagram-sized pieces, because the
-    // stack is built without IP fragmentation.
+    // for that task to run again.
     void flush();
 };
 

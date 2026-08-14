@@ -1409,8 +1409,8 @@ LOG_CAVEAT = (
     "The device log is best-effort and incomplete by construction. It is UDP "
     "with no retransmission, the firmware's 16 KB forwarding buffer discards "
     "itself whole on overflow, output is throttled to about 200 lines a "
-    "second, and an assertion failure never arrives at all because the task "
-    "that would send it stops running. A line's time is when this host "
+    "second, and an assertion failure arrives only from firmware that flushes "
+    "it from the failing task. A line's time is when this host "
     "received it, which lags when the firmware printed it by an unbounded "
     "amount, so these are lines received during a check and not lines the "
     "device produced during it.")

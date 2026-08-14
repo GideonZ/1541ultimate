@@ -3,13 +3,13 @@
 #include "syslog.h"
 #include "lwip/opt.h"
 #include <string.h>
+#include "network_interface.h"
+#include "network_config.h"
 
 // How much of the buffer one flush sends per datagram. Below the 1472-byte
 // payload an untagged Ethernet frame carries, because lwIP is built with
 // IP_FRAG off and would not fragment an oversized one.
 static const int FLUSH_PIECE_BYTES = 1024;
-#include "network_interface.h"
-#include "network_config.h"
 
 
 bool Syslog::open_buffer(size_t buffer_size)
@@ -105,16 +105,21 @@ void Syslog::charout(int c)
     if (c == '\r') {
         return;
     }
-    if (bufpos < bufsize) {
+    // The bounds check and the store are inside the section together with the
+    // cursor, because close_buffer frees the buffer from another task: a check
+    // made outside it would be made against a pointer that can be freed before
+    // the store reaches it.
+    ENTER_SAFE_SECTION;
+    bool written = buf && bufpos < bufsize;
+    if (written) {
         buf[bufpos] = (char)c;
-        ENTER_SAFE_SECTION;
         if (c == '\n') {
             newlinepos = bufpos;
         }
         ++bufpos;
-        LEAVE_SAFE_SECTION;
     }
-    else {
+    LEAVE_SAFE_SECTION;
+    if (!written) {
         if (!overflow) {
             ++overflows;
         }
@@ -236,13 +241,14 @@ void Syslog::flush()
     // worth having is the one that never leaves.
     //
     // Called from the failing task before it disables interrupts, so this is
-    // an ordinary send from an ordinary context. It sends what is in the
-    // buffer as one datagram rather than line by line: there is no time left
-    // to throttle, and the receiver writes a datagram as it arrives.
-    // Never from the stack's own thread. This is a socket call, which posts
-    // to the tcpip thread's mailbox and waits for it: called from that thread
-    // it would wait for itself, and the caller would block forever instead of
-    // halting. An assertion inside lwIP is exactly the case this runs into.
+    // an ordinary send from an ordinary context. It sends blocks of the
+    // buffer rather than line by line, because there is no time left to
+    // throttle; the collector splits a block back into lines.
+    //
+    // Never from the stack's own thread. A socket call posts to the tcpip
+    // thread's mailbox and waits for it, so called from that thread it would
+    // wait for itself and the caller would block forever instead of halting.
+    // An assertion inside lwIP is exactly that case.
     const char *self = pcTaskGetName(NULL);
     if (self && strcmp(self, TCPIP_THREAD_NAME) == 0) {
         return;
@@ -264,11 +270,8 @@ void Syslog::flush()
     // from the last rewind. That task advances the cursor after its send, so
     // one line can still arrive twice when the flush lands inside that
     // window, which is a better trade than a bounded flush that misses the
-    // line it exists to deliver.
-    //
-    // The pieces fit one datagram: the stack is built with IP_FRAG off, so an
-    // oversized send is not fragmented, and the collector reads 2048 bytes
-    // per datagram. The task list this carries is several kilobytes.
+    // line it exists to deliver. The task list this carries is several
+    // kilobytes, hence the loop.
     int sent = 0;
     while (sent < length) {
         int piece = length - sent;

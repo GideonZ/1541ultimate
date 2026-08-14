@@ -10,9 +10,10 @@ endpoint that returns a log.
 A plain UDP sink, not an RFC syslog daemon. `Syslog::forwardLogging` sends the
 bare line text with `send(sockfd, line, linelen, 0)`: no priority prefix, no
 version, no timestamp, no hostname, no trailing newline, so a conformant
-daemon may refuse these datagrams outright. One datagram is one line, empty
-lines never arrive because the firmware skips them, and carriage returns never
-arrive because `Syslog::charout` discards them.
+daemon may refuse these datagrams outright. One datagram is one line, except
+from `Syslog::flush`, which sends a block of the buffer; empty lines never
+arrive because the firmware skips them, and carriage returns never arrive
+because `Syslog::charout` discards them.
 
 **The log is incomplete by construction and the loss is not measurable from
 here.** Four independent causes, none of which leaves a trace on this side:
@@ -23,7 +24,9 @@ here.** Four independent causes, none of which leaves a trace on this side:
   sets a flag and drops every subsequent character, and `forwardLogging` then
   rewinds and discards the whole buffer, so a burst loses an unbounded block.
 - Output is throttled to about 200 lines a second by a 5ms delay per line.
-- `Syslog::failed_sends` counts send errors and nothing ever reads it.
+- `Syslog::failed_sends` counts send errors. `GET /v1/info` carries it, and
+  nothing on this side reads it, so a send failure still leaves no trace in a
+  run's artefacts.
 
 A line's receive time also lags the moment the firmware printed it by an
 unbounded amount: the forwarding task polls every 100ms, the throttle means a
@@ -31,10 +34,11 @@ unbounded amount: the forwarding task polls every 100ms, the throttle means a
 the network link comes up arrives in one burst afterwards. So a line is
 attributed as "received during this check", never as "produced during it".
 
-An assertion failure never arrives at all. `vAssertCalled` disables interrupts,
-prints, and spins, so the syslog task never runs again and the text sits in the
-buffer. What a reader sees is the log stopping, which is a signal in its own
-right.
+An assertion failure arrives only from firmware that flushes it. `vAssertCalled`
+disables interrupts and spins, so the forwarding task never runs again; the
+firmware in this repository calls `Syslog::flush` from the failing task first,
+and firmware without that flush leaves the text in the buffer. Either way the
+log stops there, which is a signal in its own right.
 
 Exactly one process binds the port. The datagrams are unicast, and two sockets
 bound to one UDP port do not both receive each one: the kernel picks one per
@@ -70,14 +74,9 @@ ADDRESS_ENV = "U64_LOG_ADDRESSES"
 CONFIG_STORE = "Network Settings"
 CONFIG_ITEM = "Log to Syslog Server"
 
-# The first distinctive boot marker that reaches the syslog, printed by
-# `ultimate_main` and immediately followed by the FreeRTOS task list. There is
-# no uptime counter in the firmware and nothing on the REST surface answers
-# "has this device rebooted", so this is the only signal there is.
-BOOT_MARKER = "All linked modules have been initialized and are now running."
-
-# One datagram is one line, and the firmware sends the line text alone. 2 KB is
-# far above anything `small_printf` produces and bounds a stray sender.
+# One datagram carries one line from the forwarding task, and several from a
+# flush, and in both cases the line text is the whole payload. 2 KB is far
+# above anything `small_printf` produces and bounds a stray sender.
 MAX_DATAGRAM = 2048
 
 # How long the receive loop blocks before looking at whether it should stop.
@@ -97,10 +96,10 @@ POLL_SECONDS = 0.25
 # which nothing in a log can do; the reader decides, from the suite the
 # timeline puts it beside.
 #
-# OBS-7.15 is why it is worth recording at all: an assertion failure disables
-# interrupts and the syslog task never runs again, so the log stopping is the
-# only signal the assertion produces.
-SILENT_SECONDS = float(os.environ.get("U64_SYSLOG_SILENT_SECONDS") or 30.0)
+# OBS-7.15 is why it is worth recording at all: a device that has stopped goes
+# on saying nothing, and the log ending is the signal, whether or not the
+# firmware managed to flush a last message before it stopped.
+SILENT_SECONDS = 30.0
 
 
 @dataclass
@@ -227,12 +226,6 @@ class Collector:
                 handle.close()
             self._handles.clear()
 
-    def __enter__(self) -> "Collector":
-        return self
-
-    def __exit__(self, *_exc) -> None:
-        self.stop()
-
     # -- receiving --
 
     def _receive(self) -> None:
@@ -246,25 +239,33 @@ class Collector:
             self.deliver(address, data)
 
     def deliver(self, address: str, data: bytes) -> None:
-        """Write one datagram's line. The receive path, exposed for a test.
+        """Write one datagram's lines. The receive path, exposed for a test.
 
         The receive time is the only time any log line carries: nothing in the
         payload has one, and the device's own clock is never used.
+
+        The forwarding task sends one line per datagram, but `Syslog::flush`
+        sends a block of the buffer, so a datagram can hold several lines. Each
+        one gets its own timestamped output line, because a written line whose
+        first field is not a timestamp is dropped by `read` below.
         """
         when = self.clock()
-        text = data.decode("utf-8", "replace").rstrip("\r\n")
+        texts = data.decode("utf-8", "replace").rstrip("\r\n").split("\n")
         route = self.routes.get(address)
         if route is None:
             # A device nobody expected to be talking is itself worth knowing
             # about, so its lines are kept rather than dropped, with the
             # address that sent them.
-            self._append(self.unmapped_path, f"{when:.3f} {address} {text}\n")
+            for text in texts:
+                self._append(self.unmapped_path,
+                             f"{when:.3f} {address} {text}\n")
             with self._lock:
-                self.unmapped += 1
+                self.unmapped += len(texts)
             return
-        self._append(route.path, f"{when:.3f} {text}\n")
+        for text in texts:
+            self._append(route.path, f"{when:.3f} {text}\n")
         with self._lock:
-            self.lines += 1
+            self.lines += len(texts)
             previous = self.seen.get(route.machine)
             if previous is not None and when - previous >= SILENT_SECONDS:
                 self.silences.append({"machine": route.machine,
@@ -404,13 +405,3 @@ def read(path: str) -> List[Tuple[float, str]]:
     except OSError:
         return []
     return found
-
-
-def between(path: str, start: float, end: float) -> List[str]:
-    """The lines received in an interval, for a report or for a suite."""
-    return [text for when, text in read(path) if start <= when <= end]
-
-
-def restarts(path: str) -> List[float]:
-    """When the device restarted, as far as its log can say."""
-    return [when for when, text in read(path) if BOOT_MARKER in text]

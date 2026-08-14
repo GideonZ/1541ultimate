@@ -40,7 +40,6 @@ import argparse
 import os
 import sys
 import tempfile
-import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -371,12 +370,12 @@ def a_collector_output_file_that_cannot_be_written_is_reported_at_startup() -> s
 def a_device_that_stops_logging_leaves_a_gap() -> str:
     """A log that stops is an interval with a start and an end, or an open one.
 
-    Why it is worth recording: an assertion failure disables interrupts and
-    the syslog task never runs again, so the log stopping is the only signal
-    it produces (OBS-7.15, whose other half is firmware work and stays in the
-    deliberately-untested table). A collector that recorded nothing about the
-    silence would leave a reader unable to tell an empty file from a quiet
-    device.
+    Why it is worth recording: a device that has stopped goes on saying
+    nothing, and the log ending is the signal, whether or not the firmware
+    managed to flush a last message first (OBS-7.15, whose other half is
+    firmware work and stays in the deliberately-untested table). A collector
+    that recorded nothing about the silence would leave a reader unable to
+    tell an empty file from a quiet device.
     """
     import tempfile
 
@@ -909,9 +908,16 @@ def a_collector_that_cannot_start_says_so_once() -> str:
     return collector.problems[-1]
 
 
-@case(1, "OBS-7.14", "OBS-15.8")
+@case(1, "OBS-15.8")
 def a_reader_sees_every_line_the_collector_wrote() -> str:
-    """A suite reads the file rather than the port, and in order."""
+    """A suite reads the file rather than the port, and in order.
+
+    The last datagram carries several lines, which is what `Syslog::flush`
+    sends when an assertion is about to stop the machine. Written as one
+    output line it would be one timestamp followed by raw newlines, and every
+    line after the first would be dropped by `read`, at the one moment the
+    text matters most.
+    """
     import tempfile
 
     import syslog_collector
@@ -924,20 +930,17 @@ def a_reader_sees_every_line_the_collector_wrote() -> str:
         collector.bind([targets_lib.parse("127.0.0.2")])
         try:
             for text in (b"the RTC says something",
-                         syslog_collector.BOOT_MARKER.encode(),
-                         b"a task list follows"):
+                         b"ASSERTION FAIL: some_file.cc:42\na task list follows"):
                 collector.deliver("127.0.0.2", text)
         finally:
             collector.stop()
         path = os.path.join(directory, "127.0.0.2", "syslog.txt")
         found = syslog_collector.read(path)
         expect("in order", [text for _when, text in found],
-               ["the RTC says something", syslog_collector.BOOT_MARKER,
+               ["the RTC says something", "ASSERTION FAIL: some_file.cc:42",
                 "a task list follows"])
-        expect("the restart is found", syslog_collector.restarts(path), [102.0])
-        expect("an interval", syslog_collector.between(path, 102.0, 103.0),
-               [syslog_collector.BOOT_MARKER, "a task list follows"])
-    return "3 lines, one restart"
+        expect("counted as lines, not as datagrams", collector.lines, 3)
+    return "3 lines from 2 datagrams"
 
 
 @case(3, "OBS-7.4", "OBS-7.9", "OBS-7.3", "OBS-7.10", "OBS-15.10")
@@ -1683,8 +1686,6 @@ def a_second_sender_is_counted_and_never_stopped() -> str:
     from each sender's point of view. Nothing in the receive path looks wrong,
     which is what makes the source filter a correctness requirement.
     """
-    import dataclasses
-
     import streams
     from device_double import UdpSender, video_packets
 
@@ -3521,7 +3522,7 @@ UNTESTED_REQUIREMENTS = {
     "OBS-7.12": "an unbounded lag between printing and receipt, which is why "
                 "attribution by interval is approximate rather than exact",
     "OBS-7.13": "what the firmware prints before the syslog is initialised",
-    "OBS-7.15": "an assertion failure never reaches the collector, which is "
+    "OBS-7.15": "whether an assertion failure reaches the collector, which is "
                 "the firmware item at OBS-9.1",
     "OBS-7.16": "the firmware's behaviour when nothing is listening",
     "OBS-8.15": "the property this suite's whole first tier demonstrates",
