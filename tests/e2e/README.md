@@ -43,7 +43,47 @@ A target is a host, or `cartridge@computer` for a cartridge under test in the
 computer that supplies its C64 keyboard and video; see
 [tests/README.md](../README.md) and [`tests/lib/targets.py`](../lib/targets.py).
 Naming several runs one child process per target, scheduled so that two targets
-sharing a machine never run at the same time.
+sharing a machine never run at the same time. `./run-tests u64 u2@c64u c64u`
+runs all three supported machines: `u64` proceeds throughout, while `u2@c64u`
+and `c64u` take turns because both need the C64 Ultimate.
+
+## How the machines differ
+
+Suites do not test for product names. [`tests/lib/machine.py`](../lib/machine.py)
+identifies the machine once from `/v1/info` and answers questions about it along
+two separate axes.
+
+**Capability** is what a machine is. A C64 Ultimate opens its menu on a launcher
+above the file browser, reaches the task menu with `F1` rather than `F5`, needs
+two Back presses to close its menu, and reserves `W`, `A`, `S` and `D` for
+browser navigation, so a quick-seek on a name starting with one of those letters
+would move the cursor instead of seeking. Ask `machine` for the property rather
+than branching on the product.
+
+**Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
+firmware line that lags the Ultimate 64, so a check can be correct and still be
+unrunnable there. `FIXES` in the same module names each outstanding gap after
+the behaviour a machine gains from it, and lists the machines that do not have
+it yet. A check declares its dependency in one line:
+
+```python
+if ctx.machine.skip_without_fix(machine.BROWSER_REFRESH_ON_DIRECTORY_CHANGE,
+                                label):
+    return
+```
+
+The check then reports SKIP with the machine and version in the reason, for
+example `needs the browser-refresh-on-directory-change fix, which C64 Ultimate
+1.2.0 does not have`.
+
+Those names are the amendment point. When a fix is backported, delete its `FIXES`
+entry and every check tagged with it runs again; nothing else changes. To confirm
+a backport before editing the table, run the tagged checks anyway:
+
+```sh
+./run-tests c64u --assume-fix browser-refresh-on-directory-change
+./run-tests c64u --assume-fix all
+```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
 (`telnet`, `freeze`, `overlay`; default `overlay`) for suites that support

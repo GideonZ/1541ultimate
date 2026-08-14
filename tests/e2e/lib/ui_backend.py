@@ -121,6 +121,59 @@ SELECTED_ROW_MIN_MARKED_CELLS = 12
 CURSOR_SETTLE_ATTEMPTS = 4
 
 
+def host_menu_open(host: str, password: Optional[str], timeout: float) -> bool:
+    """Whether the on-device menu of one machine, named directly, is open.
+
+    Takes a host rather than a target because the caller that needs it is
+    asking about the *computer* half of a cartridge target, which the target's
+    own routing would never send it to. A closed menu answers 404.
+    """
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        f"http://{host}{MENU_SCREEN_PATH}", headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+
+
+def close_host_menu(host: str, password: Optional[str], timeout: float) -> None:
+    """Shut the on-device menu of one machine, named directly.
+
+    A cartridge target injects its keys into the computer, and the firmware
+    decides what such an event means from whether the keyboard matrix is
+    enabled (software/api/route_input.cc, isMatrixEnabled). While the
+    computer's own menu is up the matrix is disabled, so the keys are pushed
+    into that menu's queue instead of onto the matrix the cartridge taps. Every
+    request still answers HTTP 200 and the cartridge never sees a keystroke, so
+    this has to be checked rather than hoped for.
+    """
+    if not host_menu_open(host, password, timeout):
+        return
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        f"http://{host}{MENU_BUTTON_PATH}", headers=headers, method="PUT")
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_BUTTON_PATH} on {host} failed: {exc}")
+    deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if not host_menu_open(host, password, timeout):
+            return
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise Failure(
+        f"the menu on {host} would not close, so keys sent to it would be "
+        "consumed by that menu instead of reaching the cartridge")
+
+
 def fetch_product(host: str, password: Optional[str],
                   timeout: float) -> Tuple[str, str]:
     """The `product` and `firmware_version` of a device, over plain REST.
@@ -944,6 +997,11 @@ class RestBackend(Backend):
                 # config change needs a moment to take effect before the menu
                 # is opened, or the very next interaction can land mid-switch.
                 time.sleep(0.25)
+        if self.target.split:
+            # The computer's menu, not this cartridge's: see close_host_menu.
+            # Done before the cartridge's menu is opened, because from here on
+            # every key this session sends goes to the computer.
+            close_host_menu(self.input_host, password, timeout)
         self._open_menu()
 
     # -- transport --

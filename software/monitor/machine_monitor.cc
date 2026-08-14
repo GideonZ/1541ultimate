@@ -5161,6 +5161,11 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
+        // Edit mode leaves by the shared Back action: RUN/STOP, a USB
+        // keyboard's Escape, and the left-arrow key handled above wherever
+        // left-arrow is not itself edit data. Ctrl+E stays a separate binding
+        // on top of that, so edit mode can be left without also unwinding
+        // whatever other layer the monitor is in.
         if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();
             draw();
