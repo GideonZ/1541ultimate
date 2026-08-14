@@ -1787,10 +1787,6 @@ def main(argv: Sequence[str]) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
-
-
 # ---------------------------------------------------------------------------
 # The stills, which are the artefact most readers will actually look at
 # ---------------------------------------------------------------------------
@@ -1860,3 +1856,7 @@ def failing_stills(run: Run, made: SuiteRun) -> List[str]:
         lines += ["", f"The {kind} frame of this suite run (`{relative}`):", ""]
         lines += fenced([redact(row) for row in text])
     return lines
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
