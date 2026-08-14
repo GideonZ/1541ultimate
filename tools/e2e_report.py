@@ -914,8 +914,14 @@ def unmatched_changes(run: Run) -> List[List[str]]:
             continue
         resource, verb = split_action(path)
         if verb in INVERSE_ACTIONS:
-            open_by_resource.setdefault((target_token, resource), []).append(
-                (verb, made_key))
+            opened = open_by_resource.setdefault((target_token, resource), [])
+            if any(entry[0] == verb for entry in opened):
+                # The resource is already in that state. A stream started
+                # twice is one stream, and one stop puts it back, so a second
+                # start is not a second thing left behind. Files are not here:
+                # each one created is its own resource, above.
+                continue
+            opened.append((verb, made_key))
         else:
             # Only the verb that undoes this one closes it: a stopped stream
             # does not put back a mounted image.

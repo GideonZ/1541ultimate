@@ -3140,6 +3140,34 @@ def a_recorder_flag_without_record_is_refused() -> str:
     return "4 usage errors"
 
 
+@case(1, "OBS-3.30")
+def a_stream_started_twice_is_one_stream() -> str:
+    """What a run left behind is the device's state, not a count of requests.
+
+    The recorder re-arms a stream that has gone quiet, so a run can start one
+    stream several times and stop it once, and the device is left with it
+    stopped. Measured on the U64: one re-arm made the report say the audio
+    stream had been left running when it had not.
+    """
+    generator = load_report_tool()
+
+    def action(path, when):
+        return {"kind": "action", "method": "PUT", "path": path,
+                "status": 200, "time": when}
+
+    target = generator.TargetRun(token="u64", slug="u64", actions=[
+        action("/v1/streams/audio:start", 1.0),
+        action("/v1/streams/audio:start", 2.0),
+        action("/v1/streams/audio:stop", 3.0),
+        action("/v1/drives/a:mount", 4.0),
+    ])
+    rows = generator.unmatched_changes(
+        generator.Run(directory="", targets=[target]))
+    left = [row[3] for row in rows]
+    expect("only the mount is left", left, ["/v1/drives/a"])
+    return "one start, one stop, one stream"
+
+
 @case(3, "OBS-8.1", "OBS-1.3")
 def a_run_without_record_records_nothing() -> str:
     """With the flag absent nothing is recorded and nothing else changes."""

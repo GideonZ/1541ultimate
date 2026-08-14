@@ -1,1 +1,1 @@
-{"kind": "check", "index": 1, "label": "the drive answers", "verdict": "FAIL", "extra": "the drive did not answer", "seconds": 0.1004, "scenario": null, "time": 1786706130.5508578, "suite": "noisy", "target": "127.0.0.1", "attempt": 1}
+{"kind": "check", "index": 1, "label": "the drive answers", "verdict": "FAIL", "extra": "the drive did not answer", "seconds": 0.1003, "scenario": null, "time": 1786709046.9230313, "suite": "noisy", "target": "127.0.0.1", "attempt": 1}

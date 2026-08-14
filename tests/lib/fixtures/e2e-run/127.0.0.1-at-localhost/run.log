@@ -15,77 +15,77 @@ Ultimate hardware test run
 ============================================================
 E2E  held  (overlay)
 ============================================================
-     held: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-held: OK (0.041s)
+     held: health: ping=6ms rest=8ms ftp=0ms telnet=0ms ident=9ms dma=0ms heap=1500000B raster=8ms jiffy=4ms -> OK
+held: OK (0.062s)
 
 ============================================================
 E2E  broken  (overlay)
 ============================================================
-     broken: health: ping=12ms rest=3ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=14ms jiffy=1ms -> OK
-broken: FAIL (0.032s)
-     broken: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+     broken: health: ping=13ms rest=5ms ftp=1ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=20ms jiffy=2ms -> OK
+broken: FAIL (0.064s)
+     broken: after failure, health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=2ms jiffy=2ms -> OK
 
 ============================================================
 E2E  raised  (overlay)
 ============================================================
-     raised: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-raised: FAIL (0.100s)
+     raised: health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=3ms jiffy=2ms -> OK
+raised: FAIL (0.150s)
      raised: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 
 ============================================================
 E2E  flaky  (overlay)
 ============================================================
      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-flaky: FAIL (0.037s)
+flaky: FAIL (0.046s)
      flaky: after failure, health: ping=2ms rest=1ms ftp=FAIL telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> DEGRADED (ftp)
          ftp: expected b'220', got b''
      flaky: after failure, the device is unhealthy: it is degraded: ftp
 recovery: rm -f /tmp/e2e-observability-fixture/unhealthy ... OK (0.004s)
 recovery: device answers again ... OK (0.001s)
-     flaky: after failure, after recovery, health: ping=1ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+     flaky: after failure, after recovery, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=2ms jiffy=2ms -> OK
      flaky: the device was recovered, so this failure proves nothing; running it again
 
 ============================================================
 E2E  flaky  (overlay)  (attempt 2)
 ============================================================
      flaky: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-flaky: OK (0.035s)
+flaky: OK (0.047s)
 
 ============================================================
 E2E  noisy  (overlay)
 ============================================================
      noisy: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-noisy: FAIL (0.196s)
-     noisy: after failure, health: ping=5ms rest=3ms ftp=7ms telnet=0ms ident=2ms dma=1ms heap=1500000B raster=6ms jiffy=2ms -> OK
+noisy: FAIL (0.195s)
+     noisy: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
 
 ============================================================
 E2E  browse  (overlay)
 ============================================================
-     browse: health: ping=5ms rest=1ms ftp=0ms telnet=4ms ident=1ms dma=1ms heap=1500000B raster=3ms jiffy=2ms -> OK
-browse: FAIL (0.641s)
+     browse: health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+browse: FAIL (0.676s)
      browse: after failure, health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
 
 ============================================================
 E2E  menu-left-open  (overlay)
 ============================================================
      menu-left-open: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
-menu-left-open: OK (0.035s)
+menu-left-open: OK (0.038s)
 
 ============================================================
 E2E  menu-closed-again  (overlay)
 ============================================================
-     menu-closed-again: health: ping=4ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
-menu-closed-again: OK (0.035s)
+     menu-closed-again: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=skip jiffy=skip -> OK
+menu-closed-again: OK (0.043s)
 
 ============================================================
 E2E  leaves-things-behind  (overlay)
 ============================================================
-     leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
-leaves-things-behind: OK (0.092s)
+     leaves-things-behind: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+leaves-things-behind: OK (0.155s)
 
 missing-file: SKIP (missing /tmp/e2e-observability-fixture/suites/missing_file.py, 0.000s)
 
 ============================================================
 E2E  cut-short  (overlay)
 ============================================================
-     cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=1ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
+     cut-short: health: ping=2ms rest=1ms ftp=0ms telnet=0ms ident=0ms dma=0ms heap=1500000B raster=1ms jiffy=1ms -> OK
