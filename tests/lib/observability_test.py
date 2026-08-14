@@ -513,6 +513,43 @@ def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
     return "the senders and the remedy"
 
 
+@case(3, "OBS-16.6", "OBS-1.1")
+def a_scripted_run_does_not_inherit_the_gate_state() -> str:
+    """This suite runs inside the gate, and a run of its own is not a child of it.
+
+    Every one of these variables means something to the runner, and the suite
+    inherits whatever started it. E2E_SYSLOG_OWNED tells the runner another
+    process already holds the collector's port, so a scripted run started
+    none, wrote no `log` record, and three cases about the device log failed
+    for a reason that had nothing to do with them. Measured under
+    `run-tests u64 u2@c64u c64u`: every target's copy of this suite failed the
+    same three.
+    """
+    import tempfile
+
+    leaked = {"E2E_SYSLOG_OWNED": "1", "E2E_SUITE": "somebody-else",
+              "E2E_TARGET": "somewhere-else", "E2E_ATTEMPT": "7"}
+    saved = {name: os.environ.get(name) for name in leaked}
+    os.environ.update(leaked)
+    try:
+        with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+            made = scripted_run(double, [Stub("held")], workspace=workspace,
+                                arguments=("--syslog", "--syslog-port", "0"))
+            logs = [r for r in made.records("127.0.0.1", "run.jsonl")
+                    if r["kind"] == "log"]
+            expect("the collector still started", len(logs), 1)
+            suites = [r for r in made.records("127.0.0.1", "run.jsonl")
+                      if r["kind"] == "suite"]
+            expect("and the run is its own", suites[-1]["target"], "127.0.0.1")
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+    return "the gate's state does not reach a scripted run"
+
+
 @case(1, "OBS-2.1", "OBS-3.17")
 def every_registered_suite_reports_a_closing_line() -> str:
     """A suite's own records have to carry its verdict, not only the runner's.
@@ -908,20 +945,16 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
     """Read at both ends, corrected at neither, and recorded where it went."""
     import tempfile
 
-    import socket
-
-    # A port of this test's choosing, so the stub suite can send a datagram to
-    # the collector while the run is happening. That is the only way to find
-    # out where the collector actually writes: the `log` record's path is
-    # relative to the run's root and reads the same whether or not the slug
-    # was composed into it twice.
-    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    holder.bind(("127.0.0.1", 0))
-    port = holder.getsockname()[1]
-    holder.close()
+    # The stub sends a datagram to the collector while the run is happening,
+    # which is the only way to find out where the collector actually writes:
+    # the `log` record's path is relative to the run's root and reads the same
+    # whether or not the slug was composed into it twice. It takes the port
+    # from the run rather than being told one this test chose, because two
+    # runs choosing at the same moment are handed the same port.
     logger = ("import socket\n"
               "sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
-              f"sock.sendto(b'a line from the device', ('127.0.0.1', {port}))\n"
+              "port = int(os.environ['E2E_SYSLOG_PORT'])\n"
+              "sock.sendto(b'a line from the device', ('127.0.0.1', port))\n"
               "sock.close()\n"
               "report.check_start('sent a log line')\n"
               "report.check_ok()\n")
@@ -929,7 +962,7 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
         double.configs["Network Settings"]["Log to Syslog Server"] = ""
         made = scripted_run(double, [Stub("held", body=logger)],
                             workspace=workspace,
-                            arguments=("--syslog", "--syslog-port", str(port)))
+                            arguments=("--syslog", "--syslog-port", "0"))
         warnings = [r for r in made.records("127.0.0.1", "run.jsonl")
                     if r["kind"] == "warning"]
         both = [w for w in warnings if "not configured to send its log" in
@@ -2005,6 +2038,18 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     environment.update(SCRIPTED_PACING)
     environment.update(extra_environment or {})
     environment.pop("FORCE_COLOR", None)
+    # A scripted run is a run of its own, not a continuation of whatever
+    # started this process. When this suite runs inside the gate it inherits
+    # the gate's own state, and every one of these means something to the
+    # runner: E2E_SYSLOG_OWNED tells it another process already holds the
+    # collector's port, so it starts none and writes no `log` record, and
+    # three cases about the device log then fail for a reason that has nothing
+    # to do with them. Measured under `run-tests u64 u2@c64u c64u`, where every
+    # target's copy of this suite failed the same three.
+    for inherited in ("E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_JSONL",
+                      "E2E_SCREENS", "E2E_SUITE", "E2E_TARGET", "E2E_ATTEMPT",
+                      "E2E_ASSUME_FIX", "GITHUB_STEP_SUMMARY"):
+        environment.pop(inherited, None)
     completed = subprocess.run(
         [sys.executable, wrapper, "-o", output, *arguments, *tokens],
         env=environment, capture_output=True, text=True)
@@ -2815,7 +2860,7 @@ FIXTURE_STUBS = (
     # these unprompted; here a suite stands in for one.
     Stub("noisy", body=(
         "import socket\n"
-        "port = int(os.environ['OBS_SYSLOG_PORT'])\n"
+        "port = int(os.environ['E2E_SYSLOG_PORT'])\n"
         "sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
         "def say(text):\n"
         "    sock.sendto(text.encode(), ('127.0.0.1', port))\n"
@@ -2909,7 +2954,9 @@ def build_fixture() -> ScriptedRun:
     workspace = tempfile.mkdtemp(prefix="e2e-observability-fixture-")
     unhealthy = os.path.join(workspace, "unhealthy")
     menu = os.path.join(workspace, "menu-open")
-    port = free_udp_port()
+    # No port of its own: the collector binds 0, gets one nobody else has, and
+    # exports it to the suites. Choosing one here and handing it on is a race
+    # that two runs starting at the same moment lose together.
     with DeviceDouble() as double:
         double.menu_open_flag = menu
         double.withhold_ftp_banner_while(unhealthy)
@@ -2921,11 +2968,11 @@ def build_fixture() -> ScriptedRun:
             # shapes an identity key has, and a generator that gets the second
             # one wrong renders every perf and soak suite twice.
             arguments=("--e2e", "--perf", "--syslog",
-                       "--syslog-port", str(port),
+                       "--syslog-port", "0",
                        "--recover-command", f"rm -f {unhealthy}"),
             workspace=workspace,
             extra_environment={"OBS_FLAG": unhealthy, "OBS_MENU": menu,
-                               "OBS_SYSLOG_PORT": str(port)})
+                               })
     return made
 
 
@@ -2986,19 +3033,6 @@ def record_fixture() -> int:
         handle.write(generated_document())
     report.detail(f"recorded {EXPECTED} from a fixture built at {FIXTURE}")
     return 0
-
-
-def free_udp_port() -> int:
-    """A UDP port nothing is using, for a run that has to be told one.
-
-    The collector binds what it is given, and the scripted suite that stands in
-    for a device has to know the number before the run starts.
-    """
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def generated_document() -> str:
@@ -3153,6 +3187,14 @@ def canonicalize_document(text: str) -> str:
 
     text = re.sub(r"[ \t]+\|", " |", text)
     text = re.sub(r"\|[ \t]+", "| ", text)
+    # A table's separator rule is as wide as its widest cell, so a value that
+    # got shorter moves every dash in the rule above it and a comparison about
+    # wording fails over arithmetic. Every rule collapses to one form; the
+    # padding itself is what `every_table_is_padded` proves.
+    text = re.sub(r"(?m)^\|[-:| ]+\|$",
+                  lambda m: "| " + " | ".join(
+                      "---" for _ in m.group(0).strip("|").split("|")) + " |",
+                  text)
     text = re.sub(r"\b[0-9a-f]{40}\b", "0" * 40, text)
     text = re.sub(r"\d+\.\d+s\b", "0.000s", text)
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)

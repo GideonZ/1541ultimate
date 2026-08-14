@@ -545,6 +545,14 @@ def run_and_capture(command: List[str], environment: Dict[str, str],
 # knows not to bind it as well.
 SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
 
+# The port the collector actually bound, exported to every suite the run
+# starts. A suite that wants to reach the collector cannot be told the number
+# beforehand: choosing a free port and handing it on is a race, and two runs
+# starting at the same moment are handed the same one, which is what a
+# multi-target gate does by design. The collector binds first and says which
+# port it got.
+SYSLOG_PORT_ENV = "E2E_SYSLOG_PORT"
+
 
 def start_syslog(args: argparse.Namespace,
                  wanted: Sequence[targets_lib.Target],
@@ -578,6 +586,9 @@ def start_syslog(args: argparse.Namespace,
     if not opened:
         return None
     report.detail(f"device log:  collecting on UDP {collector.port}")
+    # In this process's own environment, so every suite it starts inherits it
+    # through the copy run_one_attempt makes.
+    os.environ[SYSLOG_PORT_ENV] = str(collector.port)
     for token, path in collector.files():
         report.log_result(token, os.path.relpath(path, root),
                           collector.started, collector.port)
