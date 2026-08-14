@@ -218,7 +218,6 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
-
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
 
 A `suite` record written by `run-tests` carries what only the harness knows:

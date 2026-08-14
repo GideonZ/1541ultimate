@@ -166,16 +166,25 @@ def without_port_overrides():
 # ---------------------------------------------------------------------------
 
 
-@case(1, "OBS-15.13")
+@case(1, "OBS-15.13", "OBS-8.14", "OBS-7.18")
 def target_carries_every_port() -> str:
     """A parsed target answers where each of the device's surfaces is."""
     with without_port_overrides():
         target = targets.parse("u64")
+        cartridge = targets.parse("u2@c64u")
     expect("rest", target.rest_port, 80)
     expect("ftp", target.ftp_port, 21)
     expect("telnet", target.telnet_port, 23)
     expect("dma", target.dma_port, 64)
-    return "4 ports"
+    # A cartridge has no VIC and no streams route, so the picture and the
+    # audio are the computer's.
+    expect("the video is the computer's", cartridge.video_host, "c64u")
+    # Both machines of a cartridge target log, and the order says which is
+    # the device under test.
+    expect("both logs, the cartridge first", cartridge.log_hosts,
+           ("u2", "c64u"))
+    expect("a whole machine logs once", target.log_hosts, ("u64",))
+    return "4 ports, and which machine is which"
 
 
 @case(1, "OBS-15.13", "OBS-15.14")
@@ -327,7 +336,7 @@ def a_refused_listener_degrades_the_sweep() -> str:
     return "ftp"
 
 
-@case(2, "OBS-6.1", "OBS-6.3", "OBS-6.4")
+@case(2, "OBS-6.1", "OBS-6.2", "OBS-6.3", "OBS-6.4")
 def the_sweep_reports_the_free_heap() -> str:
     """A ninth check, rendered as the figure rather than as a latency."""
     with DeviceDouble() as double:
@@ -444,7 +453,7 @@ def the_collector_attributes_a_datagram_to_its_device() -> str:
     return "3 datagrams, 3 files"
 
 
-@case(1, "OBS-1.2", "OBS-15.2")
+@case(1, "OBS-1.2", "OBS-15.2", "OBS-7.17")
 def a_collector_that_cannot_start_says_so_once() -> str:
     """A busy port is one warning at startup and nothing else."""
     import socket
@@ -461,6 +470,12 @@ def a_collector_that_cannot_start_says_so_once() -> str:
                 directory=directory, port=holder.getsockname()[1])
             expect("did not start", collector.bind(
                 [targets_lib.parse("127.0.0.2")]), False)
+            # Bound above 1023, so the collector needs no privilege: 514
+            # would need root or a capability on Linux and root on macOS,
+            # and the devices are configured to the port it does bind.
+            if syslog_collector.DEFAULT_PORT <= 1023:
+                raise Failure(f"port {syslog_collector.DEFAULT_PORT} is "
+                              f"privileged")
             if not any("could not be opened" in problem
                        for problem in collector.problems):
                 raise Failure(f"no reason was given: {collector.problems}")
@@ -501,7 +516,7 @@ def a_reader_sees_every_line_the_collector_wrote() -> str:
     return "3 lines, one restart"
 
 
-@case(3, "OBS-7.4", "OBS-7.9", "OBS-15.10")
+@case(3, "OBS-7.4", "OBS-7.9", "OBS-7.3", "OBS-7.10", "OBS-15.10")
 def a_run_checks_the_syslog_setting_at_both_ends() -> str:
     """Read at both ends, corrected at neither, and recorded where it went."""
     import tempfile
@@ -671,7 +686,7 @@ def a_large_jump_re_anchors_the_audio_timeline() -> str:
     return "one resync"
 
 
-@case(1, "OBS-8.28")
+@case(1, "OBS-8.28", "OBS-8.31", "OBS-8.32", "OBS-8.33")
 def the_stills_are_the_transitions_and_not_the_cursor() -> str:
     """A blinking cursor is not a screen change worth keeping."""
     import recorder as recorder_lib
@@ -723,6 +738,113 @@ def frames_are_decimated_by_a_phase_accumulator() -> str:
     # "take one in N" would give 7 in the first second and drift after it.
     expect("no drift over a minute", taken(7, 50 * 60), 7 * 60)
     return "exact at every rate"
+
+
+@case(1, "OBS-2.5")
+def every_record_kind_is_in_the_table() -> str:
+    """The record-shape table names every kind and every new field.
+
+    The table is what a reader of a JSONL file consults, and a kind that is
+    written and not in it is a field nobody outside this repository can
+    interpret.
+    """
+    path = os.path.join(ROOT, "tests", "lib", "README.md")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    for kind in ("check", "scenario", "suite", "health", "warning", "log",
+                 "capture", "plan", "action", "run"):
+        if f"| `{kind}` |" not in text:
+            raise Failure(f"the table has no row for kind={kind}")
+    for field in ("target", "attempt", "targets", "exit_code", "lead_in",
+                  "stills"):
+        if f"`{field}" not in text:
+            raise Failure(f"the table does not name the {field} field")
+    return "10 kinds, every new field"
+
+
+@case(1, "OBS-4.9", "OBS-4.10")
+def the_gate_workflow_is_the_one_described() -> str:
+    """The workflow file, read as the facts the specification states about it."""
+    path = os.path.join(ROOT, ".github", "workflows", "e2e.yml")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    for wanted, why in (
+            ("runs-on: [self-hosted, e2e]",
+             "an unlabelled job lands on the build machine"),
+            ("cancel-in-progress: false",
+             "cancelling mid-suite leaves a device in an unknown state"),
+            ("e2e-report-${{ github.run_id }}", "the report artifact"),
+            ("e2e-video-${{ github.run_id }}", "the recordings artifact"),
+            ("retention-days: 7", "the recordings have their own lifetime"),
+            ("steps.gate.outcome != 'success'",
+             "a cancelled or timed-out gate has to fail the job")):
+        if wanted not in text:
+            raise Failure(f"{wanted!r} is not in the workflow: {why}")
+    if "${{ inputs" in text.split("run: |", 1)[1].split("- name", 1)[0]:
+        raise Failure("an input is substituted into the script rather than "
+                      "passed through the environment")
+    return "two artifacts, one runner label, no interpolated input"
+
+
+@case(1, "OBS-1.6")
+def the_only_mutation_an_observer_makes_is_the_arming() -> str:
+    """Everything watching a run reads; only the recorder's arming writes.
+
+    Checked in the components' own sources rather than in a run's records,
+    because an action record does not say who made the request: a `PUT` from
+    the suites driving the UI and a `PUT` from an observer look the same in
+    the log, and it is the second that this rule is about.
+    """
+    components = (
+        os.path.join(ROOT, "tests", "lib", "syslog_collector.py"),
+        os.path.join(ROOT, "tests", "lib", "health.py"),
+        os.path.join(ROOT, "tests", "e2e", "lib", "recorder.py"),
+        os.path.join(ROOT, "tests", "e2e", "lib", "screens.py"),
+        os.path.join(ROOT, "tools", "e2e_report.py"),
+    )
+    mutating = ('"PUT"', "'PUT'", '"POST"', "'POST'", '"DELETE"', "'DELETE'",
+                ".reset(", ".streams.start(", ".streams.stop(")
+    for path in components:
+        with open(path, encoding="utf-8") as handle:
+            for number, line in enumerate(handle, 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                for token in mutating:
+                    if token in line:
+                        raise Failure(f"{os.path.relpath(path, ROOT)}:{number} "
+                                      f"makes a {token} request")
+    # The exception, which is granted to exactly one class.
+    arming = os.path.join(ROOT, "tests", "e2e", "lib", "streams.py")
+    with open(arming, encoding="utf-8") as handle:
+        text = handle.read()
+    body = text.split("class Arming:", 1)[1].split("\ndef ", 1)[0]
+    for call in ("self.api.streams.start(", "self.api.streams.stop("):
+        if call not in body:
+            raise Failure(f"{call} is not in Arming, so the exception has "
+                          f"moved somewhere this does not check")
+    return "five components read only, one class arms"
+
+
+@case(1, "OBS-5.2")
+def the_capture_is_taken_before_the_state_gate() -> str:
+    """The screen a suite left is read before anything else drives the UI.
+
+    `ui_state.verify` presses RUN/STOP, opens the file browser and closes the
+    menu, so a capture taken after it shows the harness's own tidying rather
+    than what the suite left. The order is a fact about one function, which is
+    why it is checked as one.
+    """
+    with open(RUNNER_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    body = text.split("def run_one_attempt(", 1)[1].split("\ndef ", 1)[0]
+    capture = body.find("capture_failure(")
+    gate = body.find('ui_state_gate("verify"')
+    if capture < 0 or gate < 0:
+        raise Failure("run_one_attempt no longer calls both")
+    if capture > gate:
+        raise Failure("the capture is taken after the state gate, so it shows "
+                      "the gate's own navigation")
+    return "the capture comes first"
 
 
 @case(1, "OBS-8.16", "OBS-15.1")
@@ -863,7 +985,7 @@ def a_slot_of_audio_is_the_rate_it_declares() -> str:
     return "exact length, jitter is not loss"
 
 
-@case(1, "OBS-8.20", "OBS-8.29", "OBS-8.35")
+@case(1, "OBS-8.20", "OBS-8.29", "OBS-8.30", "OBS-8.35")
 def the_canvas_is_the_shape_the_sources_make() -> str:
     """Dropping a source changes the canvas rather than leaving a blank pane."""
     import recorder as recorder_lib
@@ -958,7 +1080,7 @@ def the_two_stream_modules_are_callers_of_one_library() -> str:
     return "constants and sockets, one place"
 
 
-@case(2, "OBS-15.7")
+@case(2, "OBS-15.7", "OBS-8.3", "OBS-15.4", "OBS-15.5")
 def a_stream_this_did_not_start_is_not_stopped() -> str:
     """Leave the streams as you found them.
 
@@ -984,7 +1106,7 @@ def a_stream_this_did_not_start_is_not_stopped() -> str:
     return "started once, stopped once"
 
 
-@case(2, "OBS-8.4", "OBS-8.26")
+@case(2, "OBS-8.4", "OBS-8.5", "OBS-8.26", "OBS-14.3")
 def a_second_sender_is_counted_and_never_stopped() -> str:
     """Another machine on the same group is filtered out, not silenced.
 
@@ -1095,7 +1217,7 @@ def a_missing_encoder_is_reported_at_startup() -> str:
     return problem
 
 
-@case(2, "OBS-8.2", "OBS-8.11", "OBS-8.19")
+@case(2, "OBS-8.2", "OBS-8.9", "OBS-8.11", "OBS-8.19", "OBS-8.36", "OBS-8.38")
 def the_recorder_writes_what_it_says_it_wrote() -> str:
     """Both panes, the audio, and a record that accounts for every packet."""
     import dataclasses
@@ -1135,6 +1257,11 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
                             audio=made.audio_path())
         expect("no problems", capture.get("problems"), None)
         expect("one file", capture["files"], ["video.mp4"])
+        # The title card, which is what makes the file a thing somebody can
+        # hand to somebody else. Its dwell is the lead-in every timecode in
+        # the report is offset by.
+        if capture["lead_in"] <= 0:
+            raise Failure("the recording opens with no title card")
         expect("every frame assembled", capture["frames_lost"], 0)
         expect("nothing malformed", capture["packets_malformed"], 0)
         expect("nothing foreign", capture["foreign_senders"], 0)
@@ -1985,7 +2112,7 @@ def a_capture_that_cannot_read_the_device_changes_nothing() -> str:
     return f"{len(state['errors'])} recorded failures"
 
 
-@case(3, "OBS-8.22")
+@case(3, "OBS-8.22", "OBS-8.21")
 def the_suites_spool_every_screen_they_read() -> str:
     """A screen the harness read is in the spool, as text and as raw bytes."""
     import tempfile
@@ -2426,6 +2553,27 @@ def require_fixture() -> None:
                       "run this suite with --record-fixture")
 
 
+def records_in_fixture():
+    """Every record in the fixture tree, as (file name, record)."""
+    import json
+
+    for root, _dirs, names in os.walk(FIXTURE):
+        for name in sorted(names):
+            if not name.endswith(".jsonl"):
+                continue
+            with open(os.path.join(root, name), encoding="utf-8",
+                      errors="replace") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(record, dict):
+                        yield name, record
+
+
 @case(4, "OBS-3.13", "OBS-3.21")
 def the_document_is_byte_identical_to_the_expected_one() -> str:
     """The report for the fixture is exactly the document checked in beside it.
@@ -2547,7 +2695,7 @@ def a_failure_carries_the_command_and_the_log() -> str:
     return "command, source and log tail"
 
 
-@case(4, "OBS-3.27")
+@case(4, "OBS-3.27", "OBS-3.10")
 def a_failure_carries_what_the_run_already_knows() -> str:
     """Facts the run recorded about a failure, and never a diagnosis."""
     require_fixture()
@@ -2673,8 +2821,47 @@ def the_documented_command_line_writes_the_document() -> str:
 # reason here is a decision somebody took; a requirement in neither this table
 # nor a test is one nobody has decided about.
 UNTESTED_REQUIREMENTS = {
+    "OBS-1.4": "a rule about what may be invented, held by every case that "
+               "joins two artefacts with no identifier of its own",
+    "OBS-1.5": "a rule about whose clock is used; the harness reads no clock "
+               "of the device's anywhere",
     "OBS-1.9": "a rule about which artefacts exist, held by the tests for each "
                "of them",
+    "OBS-4.4": "a statement that no URL serves one file out of a zipped "
+               "artifact, which is GitHub's behaviour rather than this code's",
+    "OBS-4.5": "the artifact URL comes from the upload action's own output, "
+               "which only a real workflow run produces",
+    "OBS-4.7": "a decision to put nothing binary in the summary, held by the "
+               "case that renders the summary from the fixture",
+    "OBS-4.8": "the three hops from a build result to an artefact, which are "
+               "the workflow's shape rather than a behaviour",
+    "OBS-5.8": "a decision not to capture per check, which is the absence of "
+               "a call rather than a behaviour",
+    "OBS-5.9": "the Telnet branch of the failure capture needs a scripted run "
+               "in Telnet mode; the spool reader it depends on is covered by "
+               "the spool cases",
+    "OBS-6.7": "a decision that the heap series is never an assertion, held "
+               "by the case that proves the heap check can only SKIP or OK",
+    "OBS-6.8": "a decision not to build a heap sampler on a timer",
+    "OBS-7.1": "a deployment step on the devices, not code in this repository",
+    "OBS-7.2": "the firmware's own parse of the configured value",
+    "OBS-7.11": "loss the receiving side cannot measure, which is why the "
+                "collector reports what it received rather than what was sent",
+    "OBS-7.12": "an unbounded lag between printing and receipt, which is why "
+                "attribution by interval is approximate rather than exact",
+    "OBS-7.13": "what the firmware prints before the syslog is initialised",
+    "OBS-7.15": "an assertion failure never reaches the collector, which is "
+                "the firmware item at OBS-9.1",
+    "OBS-7.16": "the firmware's behaviour when nothing is listening",
+    "OBS-8.15": "the property this suite's whole first tier demonstrates",
+    "OBS-8.18": "the cost of multicast on the LAN, which is an operator's "
+                "decision rather than a behaviour",
+    "OBS-15.3": "a rule that no capability was removed, held by the suites "
+                "that still use each resource",
+    "OBS-15.9": "a rule that nothing here touches the device debug log, which "
+                "is the absence of a call",
+    "OBS-16.5": "the three injected seams, used by every case that passes a "
+                "clock, an encoder name or an address",
     "OBS-2.6": "the interval rule, exercised by every case that joins a record "
                "to a time",
     "OBS-2.7": "attribution of the gaps between checks, which only the syslog "
@@ -2993,7 +3180,7 @@ def the_preamble_is_short_and_fixed() -> str:
     return f"{len(body)} lines"
 
 
-@case(4, "OBS-3.26")
+@case(4, "OBS-3.26", "OBS-15.11")
 def the_timeline_is_the_whole_run_in_order() -> str:
     """Suites, sweeps, failures, captures, recoveries and device requests."""
     require_fixture()
