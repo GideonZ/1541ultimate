@@ -1294,6 +1294,9 @@ def describe_file(relative: str) -> str:
         return "one suite run's checks, scenarios and device actions"
     if name.endswith(".log"):
         return "that suite run's console output, stderr merged in, ANSI stripped"
+    if name == "syslog-unmapped.txt":
+        return ("log lines from an address no target in this run claimed, "
+                "kept with the address that sent them")
     if name.startswith("syslog"):
         return ("the device's own log, as the collector received it, best "
                 "effort and incomplete by construction")
@@ -1389,6 +1392,28 @@ def device_log(run: Run, target: TargetRun) -> List[Tuple[float, str]]:
     return found
 
 
+def unmapped_senders(run: Run) -> Optional[dict]:
+    """Who sent the lines no target claimed, and how many there were.
+
+    None when the file is absent or empty, which is the ordinary case and says
+    every line was attributed.
+    """
+    path = os.path.join(run.directory, "syslog-unmapped.txt")
+    if not os.path.exists(path) or not os.path.getsize(path):
+        return None
+    addresses, count = set(), 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                parts = line.split(" ", 2)
+                if len(parts) >= 2:
+                    addresses.add(parts[1])
+                count += 1
+    except OSError:
+        return None
+    return {"addresses": sorted(addresses), "lines": count}
+
+
 def log_section(run: Run) -> List[str]:
     """The device log around each failure, and nowhere else.
 
@@ -1396,6 +1421,20 @@ def log_section(run: Run) -> List[str]:
     count to answer a question only ever asked about failures.
     """
     lines: List[str] = []
+    unmapped = unmapped_senders(run)
+    if unmapped:
+        # The file exists to make the omission visible, and a reader who has to
+        # list the directory to find it is not being told. The addresses are
+        # what identifies the device, and the variable is the fix.
+        lines += [f"{unmapped['lines']} line(s) arrived from "
+                  + ", ".join(f"`{a}`" for a in unmapped["addresses"])
+                  + ", which no target in this run claimed, and are in "
+                  "`syslog-unmapped.txt`. A device with two interfaces logs "
+                  "from whichever one its routing picked; "
+                  "`U64_LOG_ADDRESSES=\"<machine>=<address>\"` attaches the "
+                  "second one. Another device on the same network logging to "
+                  "this collector lands here too, which is not a problem with "
+                  "this run.", ""]
     for target in run.targets:
         collected = device_log(run, target)
         if not collected:

@@ -428,6 +428,42 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(4, "OBS-7.6", "OBS-3.11")
+def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
+    """A non-empty syslog-unmapped.txt is told to the reader, not left in a file.
+
+    The file exists to make the omission visible rather than silent, and a
+    reader who has to list the directory to find it is not being told. Seen on
+    a real run: 132 lines from a second device on the same network, which is
+    exactly the case the reader has to be able to dismiss.
+    """
+    import shutil
+    import tempfile
+
+    require_fixture()
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        tree = os.path.join(directory, "run")
+        shutil.copytree(FIXTURE, tree)
+        with open(os.path.join(tree, "syslog-unmapped.txt"), "w",
+                  encoding="utf-8") as handle:
+            for _ in range(3):
+                handle.write("1786000000.000 192.0.2.99 a line nobody claimed\n")
+        generator.write_report(tree)
+        with open(os.path.join(tree, generator.INDEX_NAME),
+                  encoding="utf-8") as handle:
+            document = handle.read()
+    for wanted in ("192.0.2.99", "3 line(s) arrived", "U64_LOG_ADDRESSES",
+                   "no target in this run claimed"):
+        if wanted not in document:
+            raise Failure(f"the report does not say {wanted!r}")
+    # And the file table tells it apart from a device's own log.
+    if "the device's own log, as the collector received it" in document.split(
+            "syslog-unmapped.txt")[1][:200]:
+        raise Failure("syslog-unmapped.txt is described as a device's own log")
+    return "the senders and the remedy"
+
+
 @case(1, "OBS-2.1", "OBS-3.17")
 def every_registered_suite_reports_a_closing_line() -> str:
     """A suite's own records have to carry its verdict, not only the runner's.
