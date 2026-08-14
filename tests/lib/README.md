@@ -206,6 +206,12 @@ appended to across attempts. A `capture/` set is written only for a suite that
 failed: the screen it left as text and as the device's own bytes, and the free
 heap and drive state beside it. `screens.jsonl` is every distinct screen any
 suite read, from the fetches it was making anyway; `--no-screens` turns it off.
+It carries three kinds of its own: `menu` and `telnet` are the screens, one
+record per distinct screen, and `stream` is a suite starting, stopping or
+redirecting a device stream. They are here rather than in a suite's own file
+because the spool is one file per target that every suite appends to. `raw` is
+the payload `machine:menu_screen` returned, as hex, so a reader can decode the
+colour plane the text lost; a Telnet screen has none.
 
 `<slug>` is `targets.Target.slug`, the target token with `@` written `-at-`,
 and `<label>` is the UI mode for an E2E suite or the category name for a perf
@@ -222,6 +228,9 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
 | `warning` | `message` |
 | `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
+| `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
+| `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |
+| `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
 | `log` | `target`, `path`, `started`, `port` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |

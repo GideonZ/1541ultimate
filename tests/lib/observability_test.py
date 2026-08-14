@@ -428,6 +428,49 @@ def a_gap_reaches_the_records_with_both_of_its_ends() -> str:
     return "one closed, one open"
 
 
+@case(1, "OBS-8.30", "OBS-8.11")
+def the_stamped_timecode_is_where_the_frame_is() -> str:
+    """The timecode burned into a frame is the one a player reports for it.
+
+    A single frame travels: somebody screenshots a failure into an issue, and
+    what makes that screenshot usable is that its timecode seeks back to it.
+    The report maps a check's wall-clock moment to a file position with
+    `position_of`, and the stamp at that position has to be the same number.
+
+    It was not. `slots` counts every frame written, the title card's included,
+    so it already carries the lead-in, and the stamp added the lead-in to it
+    again: measured on a real recording, every frame was stamped exactly 2.0s
+    late, the whole length of the card.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import recorder as recorder_lib
+
+    fps = 10
+    interval = 1.0 / fps
+    cards = max(1, int(recorder_lib.CARD_SECONDS / interval))
+    lead_in = cards * interval
+
+    expect("the first frame of the file",
+           recorder_lib.stamp_position(0, fps), 0.0)
+    # The frame the capture proper starts on is the lead-in, by construction:
+    # this is the identity the old arithmetic broke.
+    expect("the first frame after the cards",
+           recorder_lib.stamp_position(cards, fps), lead_in)
+
+    # And what the report tells a reader to seek to is what they find there.
+    started = 1000.0
+    for elapsed in (0.0, 1.0, 12.3, 600.0):
+        where = recorder_lib.position_of(started + elapsed, started, lead_in)
+        slots = round(where * fps)
+        stamped = recorder_lib.stamp_position(slots, fps)
+        if abs(stamped - where) > 1e-9:
+            raise Failure(f"the report seeks to {where:.3f}s and the stamp "
+                          f"there reads {stamped:.3f}s")
+    expect("and it is formatted as a position",
+           recorder_lib.format_position(lead_in), "00:00:02.000")
+    return "the stamp is the file position"
+
+
 @case(1, "OBS-8.2", "OBS-8.12")
 def two_subtitle_cues_never_cover_the_same_moment() -> str:
     """One identity key on screen at a time, whatever the check durations.

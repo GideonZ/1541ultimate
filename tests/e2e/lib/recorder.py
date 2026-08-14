@@ -715,6 +715,21 @@ def truncate(text: str, columns: int) -> str:
     return text[:max(0, columns - 1)] + ">"
 
 
+def stamp_position(slots: int, fps: int) -> float:
+    """Where the frame about to be written sits in the file, in seconds.
+
+    `slots` counts every frame written, the title card's included, so at a
+    constant output rate this is exactly the position a player reports. That
+    also makes it the lead-in at the first frame after the cards, which is what
+    `position_of` maps a wall-clock moment onto, so the timecode a reader seeks
+    to and the timecode stamped there are the same number.
+
+    Adding the lead-in to this counted it twice, and every frame in every
+    recording was stamped that much late.
+    """
+    return slots / max(1, fps)
+
+
 def format_position(seconds: float) -> str:
     """A position in the file, which is what every timecode here is.
 
@@ -1483,7 +1498,7 @@ class Recorder:
         # count of slots falls behind the records the stamp is there to be
         # joined to.
         wall = self.wall_clock()
-        position = self.lead_in + self.slots / max(1, self.options.fps)
+        position = stamp_position(self.slots, self.options.fps)
         budget = 1.0 / max(1, self.options.fps)
         if self._audio_encoder is not None and self._cursor is not None:
             self._audio_encoder.write(self._cursor.take(), budget=budget)
