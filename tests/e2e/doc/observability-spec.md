@@ -15,22 +15,115 @@ a substitute for the documentation the implementation carries.
 
 ## Purpose
 
-CI/CD runs the E2E gate against off-site Ultimate devices. The pass/fail log
-answers neither of the two questions people actually have:
+CI/CD runs the E2E gate against off-site Ultimate devices. A run produces a
+pass/fail log, and that log answers none of the three questions people bring to
+it.
 
-1. Did a check that reported OK do what it claims? A check that read the wrong
-   row or seeded the wrong fixture produces the same log line as one that
-   worked.
-2. Is a device misbehaving? Glitches, spontaneous resets, corrupted screens, a
-   listener getting slower, a heap that never comes back: none of these appear
-   in a verdict line.
+The four subsections below are the whole of the justification for this document:
+what is being asked, why one of the three is harder than the others, who is
+doing the asking, and what is out of bounds.
 
-Two readers must be able to answer those questions from the same artefacts: a
-person looking at a failed build, and a script or a language model reading the
-run without a browser.
+### 1. The three questions
 
-Everything here exists for occasional human inspection. Nothing here is an
-assertion and nothing here may change a run's verdict.
+**Q1. Did a check that reported OK do what it claims?**
+A check that read the wrong row or seeded the wrong fixture produces the same
+log line as one that worked. A green run is only worth something if a reader can
+tell the difference.
+
+**Q2. Is a device misbehaving?**
+Glitches, spontaneous resets, corrupted screens, a listener getting slower, a
+heap that never comes back. None of these appear in a verdict line, and a device
+that is quietly degrading takes suites down with it for reasons that look like
+firmware defects.
+
+**Q3. Why did a check fail, is the fault in the test or in the device, and what
+is needed to fix it?**
+`FAIL` names what did not hold. It does not say whether the firmware is wrong,
+the device was already degraded, the suite asserted the wrong thing, or the
+harness handed it a device in the wrong state. Nor does it carry what somebody
+would need in order to act: what was on screen, what the device was doing,
+what changed since the run that passed, and how to reproduce it.
+
+Q1 and Q2 are about trusting a result. Q3 is about acting on one.
+
+### 2. Why Q3 is the hard one
+
+Q3 is the question the current log fails hardest, and the reason is where the
+device is rather than anything about the question.
+
+A developer at their desk answers it by looking: they see the screen, press a
+key, read the menu, watch the drive light. On a CI run the device is in another
+room or another building, the run finished twenty minutes ago, and the state
+that produced the failure has been reset several times over by the suites that
+followed. Nothing can be gone back for.
+
+**Whatever was not captured while the run was happening cannot be obtained
+afterwards at any price.**
+
+That is the constraint this document is built around, and it is why so much of
+it is about capturing context that a passing run throws away.
+
+| To answer | The run has to have captured |
+|---|---|
+| Was the device already broken before this suite? | the health sweep before it, and the one after (section 6) |
+| What was on the screen when it failed? | the failure capture (section 5), the menu spool and the stills (section 8) |
+| What was the firmware doing at that moment? | the device log (section 7) |
+| What did the check actually measure? | the check's own `extra` string and the suite's console output (OBS-2.13, OBS-3.5) |
+| Is this the test or the device? | whether it failed on other targets, whether the shared UI facade was already broken, whether the device had to be recovered (OBS-3.27) |
+| Is this new? | this run's artefacts compared with the previous run's (OBS-3.28) |
+| How do I reproduce it? | the exact command, the target, the mode and the commit (OBS-2.11, OBS-3.20) |
+| Did the run even test what I think it did? | the plan, the skipped checks and the assumptions in force (OBS-2.14, OBS-2.15, OBS-3.25) |
+
+### 3. Who is asking
+
+Three kinds of reader, all three first class. An artefact that serves one and
+not the others is not finished.
+
+| Reader | How it arrives | What it can and cannot do |
+|---|---|---|
+| A person | opens a build page, then downloads the artifact | can look at anything, but only at what they think to open, and only for as long as their patience lasts |
+| A program | `jq`, a shell script, a CI step, a dashboard nobody has written yet | parses exactly what it was told to parse and ignores the rest; breaks silently when a shape changes |
+| An agent | is handed the artefacts and asked "why did this fail, and how do I fix it" | reads everything in one pass, with no device, no session and no way to ask a follow-up question |
+
+The agent is the reader that changes the design, and it is a reader this harness
+already has: an agent is routinely asked to triage a red gate, decide whether
+the fault is the firmware or the test, and produce the fix. It cannot open a
+menu, press a key or look at the device. Whatever the run captured is the entire
+evidence base, and whatever the report does not say has to be recoverable from a
+file the report names, or for that reader it does not exist.
+
+Four consequences run through this document, each a requirement somewhere rather
+than a sentiment:
+
+- **One entry point that carries the answer, not a link to it.** `index.md`
+  (OBS-3.1) is a single file that a person opens, a program greps and an agent
+  is handed whole. Its status line is machine-readable (OBS-3.22), its preamble
+  says what every section is for (OBS-3.24), and it names every sibling file by
+  relative path (OBS-3.14).
+- **Text wherever text will do.** A screen is a fenced 40x25 block, not a PNG
+  (OBS-4.7); subtitles are a `.srt` that greps (OBS-8.12); a still is text
+  beside its image (OBS-8.28). A person reads it, a program matches it, and an
+  agent pays a sensible token cost for it.
+- **One identity key across every artefact** (OBS-3.6), so a reader that found a
+  check in one file finds it in the others by string match rather than by
+  inference. This matters most to the readers that cannot infer.
+- **Stable, documented shapes.** The JSONL record table is a contract
+  (OBS-2.5), the document is deterministic so two runs can be diffed
+  (OBS-3.21), and the identity key and the section names do not move between
+  runs.
+
+### 4. What this is not
+
+Everything here exists for inspection after the fact. Nothing here is an
+assertion, nothing here may change a run's verdict (OBS-1.1), and nothing here
+may change how a suite reaches one (OBS-15.1). A component that cannot do its
+job says so and the run continues.
+
+In particular, answering Q3 does not mean the artefacts diagnose anything. The
+report states facts the run recorded and never a cause (OBS-3.27): a wrong guess
+printed in a fixed format is read as a finding, and costs more than an absent
+one. Deciding what a failure means is the reader's job, and this document exists
+to give that reader everything the run knew.
 
 ## How to read this document
 
@@ -54,8 +147,9 @@ requirement names it.
   a program.
 - **Consistency.** One directory layout, one naming convention, one identity key
   for a check, used by every component here.
-- **Usable by a person and by a script.** Text a person can read in a terminal
-  and a script can parse without a parser of its own.
+- **Usable by a person, a program and an agent.** Text a person can read in a
+  terminal, a program can parse without a parser of its own, and an agent can be
+  handed whole. See "Who reads this" in the Purpose.
 - **Easy to use.** A developer looking at a red build reaches the evidence in as
   few hops as GitHub permits, and is told plainly where a hop is impossible.
 
@@ -122,6 +216,37 @@ therefore stricter than strictly necessary. It stays as written because a
 component that acquires a client of its own later, or that is handed
 `Device.api` by a future caller, would otherwise break the bookkeeping silently.
 The recorder's exception is safe for the same reason: it holds its own client.
+
+**OBS-1.9** [P1] Text the device produced is preserved as text. An image is
+never a substitute for it, and never the only form of it.
+
+Everything the device sends that is characters rather than pixels stays
+characters, in a file a reader can grep and a program can parse without a
+decoder: the menu screen, a Telnet session's screen and its raw stream, the
+device log, a REST response body, the drive listing, the C64 screen matrix. A
+rendering of any of them may exist as well, and never instead.
+
+The reason is the third reader in the Purpose. A person can read a screenshot; a
+program and an agent cannot. An agent handed a run and asked why a check failed
+can match a string in a 40x25 text block, and can do nothing at all with the
+same screen as a PNG except describe it approximately. Text is also two orders
+of magnitude cheaper to carry, diffs between runs, and survives being pasted
+into anything.
+
+Where this binds concretely:
+
+| Artefact | The text form | The rendering |
+|---|---|---|
+| A failure capture's screen | `-screen.txt`, and the raw bytes in `-screen.bin` | none; the report inlines the text (OBS-5.5) |
+| A recording's harness pane | the spool (OBS-8.22) | the pane itself |
+| A still | its `.txt` | its `.png` (OBS-8.28) |
+| A Telnet session | the spool and the raw transcript (OBS-8.22) | the pane |
+| The device log | `syslog.txt` (OBS-7.8) | none |
+| The run's own output | the console logs (OBS-2.13) | none |
+
+An artefact that exists only as an image is a defect against this requirement,
+and the acceptance criterion is mechanical: for every image the run writes,
+there is a file with the same stem carrying what it was rendered from.
 
 **OBS-1.8** [P1] No artefact this document specifies may contain the device
 password. `build_command` in `run-tests` substitutes `@PASS@` into every suite's
@@ -199,8 +324,8 @@ back to the build that produced it.
 
 **OBS-2.5** [P1] The record-shape table in `tests/lib/README.md` gains a row for
 every new record kind and every new field introduced here: the `target` and
-`attempt` fields (OBS-2.3), the run-identity fields on the `run` record
-(OBS-2.4, OBS-2.11), the
+`attempt` fields (OBS-2.3), `kind=action` (OBS-2.16), `kind=plan` (OBS-2.14),
+the run-identity fields on the `run` record (OBS-2.4, OBS-2.11), the
 `targets` and `exit_code` fields on a parent `run` record (OBS-2.12),
 `kind=capture` (OBS-8.11), `kind=log` (OBS-7.9) and the `heap` entry in a
 `health` record (OBS-6.4). Any `jq` recipe in that file that the new fields make
@@ -235,6 +360,7 @@ DIR/
   index.md                        the report (OBS-3.1), the entry point
   index.pdf                       optional, derived from index.md (OBS-3.16)
   run.jsonl                       the parent's own record, multi-target runs only (OBS-2.12)
+  run.log                         the parent's console output, multi-target runs only (OBS-2.13)
   syslog-unmapped.txt             optional, datagrams from an unmapped address (OBS-7.8)
   <slug>/
     run.jsonl                     this target's runner records
@@ -248,11 +374,12 @@ DIR/
     capture/<label>-<suite>-<attempt>-<n>-<first|last|change>.txt    optional (OBS-8.28)
     syslog.txt                    optional, this target's device log (OBS-7.8)
     syslog-<host>.txt             optional, a second machine's log (OBS-7.18)
-    menu-screens.bin              optional, every distinct menu screen (OBS-8.22)
+    screens.jsonl                 every distinct screen the harness saw (OBS-8.22)
+    <label>-<suite>.telnet.log    the raw Telnet session stream, telnet mode only (OBS-8.22)
     video.mp4                     optional, both panes and audio (OBS-8.2, OBS-8.29)
+    video-harness.mp4             optional, --record-layout separate (OBS-8.29)
     video-screen.mp4              optional, --record-layout separate (OBS-8.29)
-    video-menu.mp4                optional, --record-layout separate (OBS-8.29)
-    video.srt                     optional (OBS-8.2)
+    video*.srt                    optional, one per video file, same stem (OBS-8.12)
 ```
 
 Names are lower case and hyphen separated, and every variable part of a name
@@ -301,9 +428,11 @@ ambiguity about which process wrote which.
 
 **OBS-2.13** [P1] With `-j DIR`, `./run-tests` writes every line a suite prints
 to `DIR/<slug>/<label>-<suite>.log` as well as to its own stdout, and its own
-console output to `DIR/<slug>/run.log`. This is the only artefact that carries
+console output to `DIR/<slug>/run.log`, or to `DIR/run.log` in a multi-target
+parent, which has no target of its own (OBS-15.12). This is the only artefact
+that carries
 what `report.detail` printed, what a traceback said and what a suite wrote to
-stderr, and question 1 in the Purpose section is mostly answered by those lines:
+stderr, and Q1 in the Purpose section is mostly answered by those lines:
 a check that reported `OK (20 rows)` is trusted or not on the detail lines under
 it. The per-suite JSONL carries a check's verdict, its `extra` string and its
 duration, and nothing else the suite said.
@@ -332,6 +461,66 @@ Rejected: recording `report.detail` as a `kind=detail` JSONL record. It is a
 smaller change, and it loses tracebacks, stderr, the runner's own health lines
 and everything a suite killed by a signal had printed, which is the case where
 the evidence matters most.
+
+**OBS-2.16** [P1] Every action the harness takes on the device is recorded, as
+`kind=action` records in the per-suite JSONL.
+
+The artefacts in sections 3 to 8 say what the device showed, what the firmware
+logged and what the checks concluded. None of them says **what the harness did
+to the device**, and without that a reader watching a screen go blank cannot
+tell a reset the run performed from a crash it observed. That is Q2 and Q3 in
+the Purpose, and it is the largest thing the JSONL does not carry.
+
+The hook is one place. `rest.RestClient.request` is the single function every
+REST request in the tree passes through, it already imports `report`, and it
+already counts non-GET requests for `MachineApi.reset`'s bookkeeping. What is
+recorded:
+
+| Recorded | Not recorded |
+|---|---|
+| every non-GET request: what it did, with what, and what came back | a GET that succeeded first time |
+| every request that was retried, and how many times | |
+| every request that failed, with the response body or the exception | |
+
+That rule is exact and it is the whole of the volume control. A run's reads are
+its bulk and they are uninteresting when they work; its writes are few and each
+one changed the device.
+
+| Field | Content |
+|---|---|
+| `time`, `suite`, `target`, `attempt` | as every record (OBS-2.3) |
+| `check` | the index of the check this happened inside, or absent between checks |
+| `method`, `path` | the request |
+| `params` | the query or payload, password redacted per OBS-1.8 |
+| `status` | the HTTP status, or absent when nothing answered |
+| `ms` | how long it took |
+| `retries` | how many attempts `rest.may_retry` allowed, absent when one |
+| `error` | the response body or the exception, for a request that did not return 200 |
+
+What this makes answerable, none of which is answerable today:
+
+- **Why the screen went blank.** `machine:reset` is on the timeline, so a reset
+  the harness performed is distinguishable from a device that fell over.
+- **What the test actually pressed.** `machine:input` carries the key names, so a
+  UI failure can be replayed from the record rather than reconstructed from the
+  suite's source.
+- **What the run changed and did not put back.** `configs:set`, `files:create`,
+  `drives:mount` and the rest are all mutations. Section 10 declines to capture
+  the whole configuration tree and says the items that matter are the ones a
+  suite changed; this is that record.
+- **Whether the device was flaky.** A run with two hundred retried requests and
+  a run with none look identical today.
+- **What the device said when it refused.** A suite that catches a `Failure` and
+  carries on currently destroys the only copy of the device's answer.
+
+Telnet is the other half. `ui_backend.TelnetBackend` sends keystrokes over a
+socket rather than through `rest.py`, so it records what it sent as the same
+record kind. Between the two hooks, every deliberate act of the harness on the
+device is on one timeline, whichever transport it took.
+
+This is unconditional under `-j`, like the failure capture, because it costs the
+device nothing: it is a passive record of requests that were being made anyway.
+Depends on OBS-2.5.
 
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
@@ -453,7 +642,7 @@ more than once contributes one row per attempt.
 **OBS-3.5** [P1] The report lists every check, grouped by target, suite and
 scenario, with its index, label, verdict, duration, interval and its `extra`
 string. Failing checks appear in the summary part of the document; the full
-list, passing checks included, appears in the detail part. Question 1 in the
+list, passing checks included, appears in the detail part. Q1 in the
 Purpose section is about checks that passed, so a passing check has to be in the
 document, and a build page does not need 1300 rows to say a run was green.
 Resolves OQ-6.
@@ -519,16 +708,10 @@ question only asked about failures.
 `-j` tree checked into the repository at `tests/lib/fixtures/e2e-run/`. Every
 rendering decision it makes is covered by a test that runs with no hardware.
 
-The tests are a registered suite, `tests/lib/report_render_test.py`, listed in
-the `SUITES` tuple in `run-tests` in the `e2e` category with an empty argument
-string, beside `transport-usage` and `runner-policy`. Three reasons, in order:
-the registry comment in `run-tests` states that every executable test under
-`tests/` is listed there with no exception; a device-free suite at the head of
-the gate costs nothing and fails with a clear message; and the report is the
-artefact everyone reads when the gate goes red, so a generator that has stopped
-rendering has to be found by the gate rather than by the person reading the
-empty report. It imports the generator from `tools/` the way
-`tests/lib/runner_policy_test.py` imports `run-tests`, by path.
+Its tests are tiers 1, 3 and 4 of the suite in section 16, which is the one
+registered suite all of this document's tests live in. The generator is imported
+from `tools/` by path, the way `tests/lib/runner_policy_test.py` imports
+`run-tests`.
 
 The fixture is a reduced real tree, not a synthesised one: two targets, one of
 them a `cartridge@computer` token, a retried suite, a failing suite, a skipped
@@ -548,6 +731,7 @@ what belongs on a build page and what belongs in a download is the HTML comment
 | 2 | `## How to read this` | the fixed preamble of OBS-3.24 |
 | 3 | `## Verdict` | the table of OBS-3.4 |
 | 4 | `## Coverage` | what did not run and what was skipped, per OBS-3.25 |
+| 4a | `## What this run changed` | mutations with no matching restore, per OBS-3.30 |
 | 5 | `## Changes since <run>` | the comparison of OBS-3.28, only with `--compare` |
 | 6 | `## Failing checks` | one entry per failure, with its screen text (OBS-3.10), what the run knows about it (OBS-3.27), its reproduce command and its log tail (OBS-3.20) |
 | 7 | `## Device health` | the table of OBS-3.7, one per target |
@@ -574,8 +758,14 @@ The `ident` check in the health sweep already carries them: `health.probe`
 builds its detail string as `f"{info.product} {info.firmware_version}"` and
 `Device.sweep_health` writes that string into the `detail` field of the `ident`
 entry of every `health` record. The report takes the first `ident` detail per
-target and reports a target with none as `firmware unknown`. Question 2 in the
-Purpose section is unanswerable without it: "a device is misbehaving" means
+target and reports a target with none as `firmware unknown`. It also reports a
+**change**: the sweeps run throughout the run, so if a later `ident` differs
+from the first, the device's firmware changed mid-run, which means the recovery
+command reflashed it and every result before that point was produced by
+different firmware from every result after. That is a fact no reader can
+reconstruct and few would think to look for.
+
+Q2 in the Purpose section is unanswerable without it: "a device is misbehaving" means
 nothing until the reader knows which firmware was on it. DRY: no new device call
 and no new record, because the sweep already asks.
 
@@ -586,6 +776,11 @@ would otherwise have to reconstruct:
   name, the target token and the mode on the `suite` record:
   `./run-tests -H <target> -s <suite> --mode <mode>`. The password is not in it,
   per OBS-1.8; the reader supplies their own.
+- The suite's source path, from the plan record of OBS-2.14. A check's label is
+  a literal string in that file, so a reader who has the path and the label can
+  open the code that produced the failure with one grep. For the third reader in
+  the Purpose that is the difference between diagnosing a failure and guessing
+  at it.
 - The last lines of that suite run's captured console log (OBS-2.13), bounded,
   ending at the end of the file, in a fenced block. A suite that failed by
   raising ends its log with the traceback, and a suite that was killed ends it
@@ -633,7 +828,15 @@ Every record in the tree already carries a `time`, so this is a merge and a
 sort, and it is the only place the whole run appears as one narrative. The
 events: a suite run starting and ending with its verdict, a health sweep with
 its one-line result, a device recovery, a failing check, a capture, a device
-restart seen in the syslog (OBS-7.14), and a warning.
+restart seen in the syslog (OBS-7.14), a warning, and every action the harness
+took on the device (OBS-2.16).
+
+The actions are what make it a narrative rather than a list of outcomes. A
+timeline that reads "check 26 failed" says less than one that reads "check 26
+pressed RETURN, the machine was reset, the device did not answer for 4 seconds,
+check 26 failed". Actions are the most numerous entry by far, so the section
+collapses a run of them between two other events into one line naming the count
+and the kinds, and lists them individually around a failure.
 
 "What happened during that test run" is a question about order, and it is
 currently answerable only by opening five files and sorting by hand. One line
@@ -650,18 +853,39 @@ about the failure, as facts rather than as a diagnosis:
 | recovered | the device was recovered around this suite, and how many times |
 | repeated | this check failed on more than one attempt |
 | passed on retry | this check failed on one attempt and passed on another |
+| failed elsewhere | the same check failed on another target in this run, and which |
+| passed elsewhere | the same check passed on another target in this run, and which |
 | skipped elsewhere | the same check reported `SKIP` on another target in this run, and why |
+| foundation failed | one of the suites that validate the harness itself failed earlier in this run, and which |
 | first failure | no other check in this suite failed before it |
+
+Two of these carry more weight than the rest for Q3, and both are free because
+the run already has the records.
+
+**Failed or passed elsewhere.** The gate runs the same suites against several
+targets. A check that fails on every target is a different kind of problem from
+one that fails on a U64 and passes on a U2, and the difference is the first
+thing anybody deciding "test or device" wants. The identity key of OBS-3.6 makes
+the join a string match across the target directories.
+
+**Foundation failed.** `run-tests` runs four suites before any suite that drives
+the device: `transport-usage`, `runner-policy`, `telnet-drain` and
+`ui-backend-smoke`. The last of these exists, in its own registry comment, so
+that a broken shared UI facade "fails here with a clear cause instead of as
+confusing failures scattered across every suite that depends on it". When it has
+already failed, every later UI failure is suspect, and saying so is the single
+most useful sentence the report can print for a reader deciding whether the
+firmware is at fault.
 
 Each line is present only when its condition holds, and each names the record it
 came from. Nothing here guesses at a cause, ranks likelihood or suggests a fix:
-those are the reader's job and a wrong guess printed in a fixed format is worse
+those are the reader's job, and a wrong guess printed in a fixed format is worse
 than no guess, because it is read as a finding.
 
 What it does is collapse the five files a reader would otherwise open to decide
-whether a failure is about the firmware, the device or the harness. "Why did it
-fail" starts with that distinction, and the run already recorded everything
-needed to make it.
+whether a failure is about the firmware, the device or the harness. Q3 starts
+with that distinction, and the run already recorded everything needed to make
+it.
 
 **OBS-3.28** [P2] The generator takes an optional second `-j` tree,
 `--compare DIR`, and emits a `## Changes since` section listing every check whose
@@ -694,13 +918,44 @@ that no verdict reports.
 detail part: the text form of each one inline in a fenced block, in the order
 they were captured, each labelled with its kind and its `mm:ss` offset into the
 recording, and the PNG beside it as a relative link for a reader who has
-downloaded the artifact. A failing suite's stills also appear in the summary
-part, under that suite's failing checks, because that is where somebody looking
-at a build page is already reading.
+downloaded the artifact.
+
+A failing suite additionally gets **its first and last still only** in the
+summary part, under that suite's failing checks, because that is where somebody
+looking at a build page is already reading and those two answer "what did this
+suite start from and what did it end on". The transition stills stay in the
+detail part: they are the most numerous and the least likely to be the one a
+reader needs, and OBS-4.3 has to budget for whatever the summary part carries
+per failure.
 
 This is what makes a recording useful to a reader who never opens it. Depends on
 OBS-8.28, so it is absent from a run with no recorder and the report says
 nothing rather than showing an empty section.
+
+**OBS-3.30** [P1] The report says what the run changed on the device and did not
+change back, in the summary part.
+
+Every mutation is in the action log of OBS-2.16, and mutations come in pairs: a
+setting is set and set back, a file is created and deleted, a drive is mounted
+and unmounted, a stream is started and stopped. Pairing them and listing what is
+left over is a few lines of code over records the run already wrote, and it
+answers a question nothing else here does.
+
+| Left over | Why it matters |
+|---|---|
+| a configuration item set and not restored | it changes what the next run tests, and OBS-15.10 shows one way that goes badly |
+| a file created and not deleted | `temp-auto-cleanup` exists because this is a real defect class |
+| a drive mounted and not unmounted | the next suite starts on a device it did not expect |
+| a stream started and not stopped | it floods the LAN until somebody notices (OBS-8.18) |
+
+The UI-state gate already catches one kind of untidiness, the menu left open,
+and reports it as a `WARN`. This catches the rest, and it is deliberately not a
+verdict: OBS-1.1 forbids that, a suite may leave something behind on purpose,
+and a run cannot always tell. It is a list, in the report, for a reader to
+judge.
+
+The list names the suite that made each unmatched change, because that is the
+only actionable part.
 
 **OBS-3.21** [P1] The document is deterministic. Two runs of the generator over
 the same tree produce identical bytes. That means no generation timestamp, no
@@ -719,9 +974,17 @@ RESULT: FAIL  targets=2  suites=30  ok=27  fail=2  warn=0  skip=1  recoveries=1 
 ```
 
 The keys are fixed, the order is fixed, and the separator is two spaces. This is
-what a script or a model reads first, and it is what a person greps a directory
-of runs for. The counts come from the `run` records, not from a recount of the
-`suite` records, so the line cannot disagree with the runner.
+what a program or an agent reads first, and it is what a person greps a
+directory of runs for.
+
+The counts come from the `run` records, never from a recount of the `suite`
+records, so the line cannot disagree with the runner. A single-target run has
+one `run` record and the line is that record. A multi-target run sums the
+per-target `run` records for the counts and takes `exit=` from the parent's
+record (OBS-2.12), which is the only place `combine_exit_codes` recorded its
+answer. Summing run records is not a recount: the alternative is re-deriving
+what `summarise` and `combine_exit_codes` already decided, in a second
+implementation that can drift from them.
 
 **OBS-3.15** [P1] The document is GitHub Flavored Markdown and nothing else: ATX
 headings, pipe tables, fenced code blocks, bullet lists, and links relative to
@@ -739,7 +1002,7 @@ command and by no report-generator code:
 pandoc index.md -o index.pdf --pdf-engine=weasyprint
 ```
 
-Off by default and never run in CI. The PDF answers neither question in the
+Off by default and never run in CI. The PDF answers no question in the
 Purpose section: it is not greppable, it cannot be pasted into a model at a
 sensible token cost, it cannot carry the video, and inside a zipped artifact it
 is exactly as undownloadable as the file it came from. Its one real use is
@@ -807,16 +1070,36 @@ case, keeps the two apart on the page as well as in the code.
 
 **OBS-4.1** [P2] A step in the CI job appends the part of `DIR/index.md` above
 the `<!-- detail -->` marker to `$GITHUB_STEP_SUMMARY`. It is a copy, not a
-render: no second generator exists and the summary cannot say anything the
-report does not. When the marker is absent the whole file is copied. When what
-it would copy exceeds the limit in OBS-4.3, it truncates at a line boundary and
-appends one line saying so. Depends on OBS-3.14 and OBS-1.7.
+render: no second generator exists and the summary says nothing the report does
+not, with one defined exception below. When the marker is absent the whole file
+is copied. When what it would copy exceeds the limit in OBS-4.3, it truncates at
+a line boundary and appends one line saying so. Depends on OBS-3.14 and OBS-1.7.
+
+The exception is the artifact link, and it is the only one. The report is
+generated before the artifact exists, so its URL cannot be in `index.md`
+(OBS-4.5). The summary step therefore writes the copy and then appends **at most
+two lines**: the artifact link, and the truncation note when it truncated.
+Nothing else may ever be appended, and the test in section 4 asserts exactly
+that shape rather than a pure byte prefix.
+
+Two lines rather than none, because the alternative is worse in both directions:
+putting a placeholder in `index.md` for the CI job to substitute makes the
+report a template and the summary a renderer, which is the DRY violation
+OBS-1.7 exists to prevent; and leaving the link out entirely costs the reader
+the one click that OBS-4.8 calls hop 2.
 
 **OBS-4.3** [P2] The summary stays inside GitHub's limits: 1 MiB per step, and a
 maximum of 20 step summaries displayed per job. Summaries are per step and
-cannot be modified by a later step, so the whole summary is written once. A run
-of three targets and fifteen suites produces a summary part of roughly 10 to
-40 KB, so the truncation path in OBS-4.1 is a guard rather than the normal case.
+cannot be modified by a later step, so the whole summary is written once.
+
+The size to budget for is the summary part of OBS-3.14, and it is dominated by
+what OBS-3.20 and OBS-3.23 put under each failing check: a 25-line screen, a
+40-line log tail and two stills. That is roughly 100 lines, or 4 KB, per
+failure. A green run's summary part is a few kilobytes; a run with ten failures
+is around 50 KB; a pathological run with a hundred is around 500 KB. So the
+truncation path in OBS-4.1 is a guard rather than the normal case, but it is a
+guard that a genuinely bad run can reach, which is why it truncates on a line
+boundary and says so rather than being left to GitHub.
 
 **OBS-4.4** [P2] The summary does not attempt to deep-link into the artifact.
 No URL serves one file out of a zipped GitHub artifact, so the click-through
@@ -893,13 +1176,27 @@ The workflow's shape:
 | password | a repository secret, passed as `U64_PASS` in the step environment | Never on a command line, per OBS-1.8. |
 | targets | a `workflow_dispatch` input, defaulting to the standing set | The set of connected devices is an operator fact, not a repository fact. |
 
-The steps, in order: check out; run
-`./run-tests -j "$RUNNER_TEMP/e2e" <targets>` with `--recover-command` set to
-the operator's recovery tool and `continue-on-error` so the following steps
-still run; run `python3 tools/e2e_report.py "$RUNNER_TEMP/e2e"` under
-`if: always()`; append the summary part under `if: always()` (OBS-4.1); upload
-the artifacts under `if: always()` (OBS-4.10); and finally fail the job on the
-runner's exit status.
+The steps, in this order, and the order matters:
+
+1. Check out.
+2. Run `./run-tests -j "$RUNNER_TEMP/e2e" <targets>`, with `--recover-command`
+   set to the operator's recovery tool and `continue-on-error` so the following
+   steps still run. Its exit status is captured for step 6.
+3. Generate the report: `python3 tools/e2e_report.py "$RUNNER_TEMP/e2e"`.
+4. Upload the artifacts (OBS-4.10) and keep the report artifact's
+   `artifact-url` output.
+5. Append the summary part (OBS-4.1), with the link from step 4.
+6. Fail the job on the status from step 2.
+
+Steps 3 to 5 all carry `if: always()`. A run that was cancelled or that timed
+out is the run whose evidence is worth most, and a step that only runs on
+success produces nothing exactly then. OBS-3.17 is what makes that safe: the
+generator renders a half-written tree.
+
+The upload is step 4 and the summary is step 5, not the other way round,
+because the summary carries the artifact's URL and that URL does not exist until
+the upload has run. This is the whole reason OBS-4.1 permits the summary two
+appended lines.
 
 `if: always()` on the report, the summary and the uploads is the whole point.
 A run that was cancelled or that timed out is the run whose evidence is worth
@@ -927,8 +1224,11 @@ The artifact link in the summary is the report artifact's `artifact-url`
 ### Acceptance criteria for section 4
 
 - A test runs the summary step against the fixture with `GITHUB_STEP_SUMMARY`
-  pointed at a temporary file and asserts the written bytes are exactly the
-  prefix of `index.md` up to the `<!-- detail -->` line, and are under 1 MiB.
+  pointed at a temporary file and asserts the written bytes are the prefix of
+  `index.md` up to the `<!-- detail -->` line, followed by nothing but the two
+  lines OBS-4.1 permits, and are under 1 MiB.
+- A test with no artifact URL in the environment asserts the link line is absent
+  and the copy is otherwise unchanged.
 - A test with a fixture that has no `<!-- detail -->` line asserts the whole
   file is copied.
 - A test with an oversized fixture asserts the truncation lands on a line
@@ -984,6 +1284,31 @@ the runner's five-second probe client `Device.probe`
 directory under the names given in OBS-2.10, so the report generator finds them
 by target, suite and attempt with no lookup table. Depends on OBS-2.1 and
 OBS-2.10.
+
+**OBS-5.9** [P3] Under `--mode telnet` the capture of OBS-5.3 does not show
+what the suite was looking at, and it says so.
+
+`machine:menu_screen` returns the first live user interface whose screen is
+exactly 40x25 (OBS-8.37). A Telnet session is 60x24, so it never matches: the
+endpoint answers with the overlay's screen, which no one was driving, or with
+404. A capture that presented that as "the screen when this suite failed" would
+be actively misleading for a third of the gate.
+
+Three things follow:
+
+- **The capture records the mode**, from the same value `run_one_attempt`
+  already has, and the report labels the block with what it is: the menu screen,
+  the C64 screen from the `readmem` fallback, or the overlay screen captured
+  during a Telnet-mode run.
+- **The Telnet screen comes from the spool**, not from a device call. The suite
+  published every screen it read (OBS-8.22), so the last record before the suite
+  ended is exactly what the harness was looking at when it failed. Reading a
+  file the run already wrote costs the device nothing and needs no Telnet
+  session of its own, which OBS-15.4 forbids.
+- **Where the spool does not exist**, which is any run without the tap, the
+  capture says the screen is unavailable for this mode rather than showing the
+  overlay's. An honest absence beats a confident wrong answer, and this is the
+  case Q3 in the Purpose is most easily misled by.
 
 **OBS-5.5** [P3] The screen capture is rendered as text as well as stored raw.
 `machine:menu_screen` returns exactly 2000 bytes, a 40x25 character plane
@@ -1074,6 +1399,17 @@ against the same path today and becomes the new call's 404 answer.
 **OBS-6.4** [P4] The heap check's figures reach the JSONL inside the existing
 `health` record, as a per-check entry alongside `name`, `state`, `ms` and
 `detail`. No new record kind. Depends on OBS-2.5.
+
+Concretely: `health.Check` is a frozen dataclass with four fields, and it gains
+a fifth, an optional mapping defaulting to `None`, carrying `free`,
+`min_ever_free` and `total` for this check and nothing for the other eight.
+`Device.sweep_health` builds each entry with a fixed set of keys today and adds
+this one when it is set, so a `health` record for a sweep with no heap figure is
+byte-identical to one written before this existed.
+
+Not in `detail`. That field is a human sentence, printed under a failing check's
+name by `Device.sweep_health`, and packing three numbers into it would make
+every consumer parse prose to get them back.
 
 **OBS-6.5** [P4] The heap check can never fail the sweep. `health.Health.ok` is
 `not self.failed` and a degraded sweep is what triggers the recovery command in
@@ -1186,16 +1522,17 @@ that maps to no target in this run goes to `DIR/syslog-unmapped.txt`, with its
 source address on the line. Lines carry no device identity of any kind, so the
 source address is the only discriminator when several devices log to one
 collector, and a device nobody expected to be talking is itself the misbehaviour
-question 2 asks about, so its lines are kept rather than dropped.
+Q2 asks about, so its lines are kept rather than dropped.
 
 **OBS-7.9** [P5] The collector maps each source address to a target token and
 emits a `kind=log` record naming the target, the output file and the collector's
 start time. See OBS-7.18 for what a cartridge target maps.
 
 **OBS-7.10** [P5] The collector runs for the duration of the run, starting
-before the first suite and stopping after the last. Devices log continuously,
-including between runs, and datagrams received outside the run window are still
-written with their receive times.
+before the first suite and stopping after the last, in the one process that owns
+the whole run (OBS-15.12). Devices log continuously, including between runs, and
+datagrams received outside the run window are still written with their receive
+times.
 
 ### What the collector receives, and what it does not
 
@@ -1325,7 +1662,9 @@ datagrams land in the unmapped file, where they are still evidence.
 ## 8. Recording the run
 
 The whole of this section is optional. Nothing in sections 1 to 7 depends on it,
-and a run with no recorder answers both questions in the Purpose section.
+and a run with no recorder answers all three questions in the Purpose section,
+though the third one less completely: a recording is where "what was on screen"
+is answered in full.
 
 It is also the longest section here, and its requirement numbers are not in
 order, because a number never moves once it is written (see "How to read this
@@ -1561,27 +1900,68 @@ why OBS-1.5 puts every timestamp in this document on the host's clock.
 
 **OBS-8.20** [P6] Each output frame is two panes side by side on one canvas:
 
-| Pane | Content | Size |
-|---|---|---|
-| Left | the most recent complete VIC frame | 384x272, native (OBS-8.6) |
-| gutter | flat, one colour | 8x272 |
-| Right | the most recent menu screen, rendered | 320x200 of glyphs, centred in 384x272 |
+| Position | Pane | Content | Size |
+|---|---|---|---|
+| Left | the **harness pane** | the most recent screen the harness read | a 480x200 text area, centred in 480x272 |
+| | gutter | flat, one colour | 8x272 |
+| Right | the **screen pane** | the most recent complete VIC frame | 384x272, native (OBS-8.6) |
 
-The canvas is 776x272, both dimensions even, no scaling of either pane. A frame
+The canvas is 872x272, both dimensions even, no scaling of either pane. A frame
 in one pane is never resampled to match the other, because both are pixel grids
 whose whole value is being exact (OBS-8.8). The gutter is there so the two read
 as two pictures rather than as one wide one; eight pixels because everything
 here is on the 8-pixel grid (OBS-8.35).
 
-The right pane is rendered from the payload of OBS-8.37, using the decode
+The panes are named by what they carry, not by where they sit, and the rest of
+this document uses those names. The harness pane is on the left for three
+reasons:
+
+- **It is the pane that changes.** A run's video output is static for seconds at
+  a time; the harness pane moves on every navigation step. A reader scanning
+  left to right meets the active element first, which is where the eye should
+  land.
+- **Left is cause, right is effect**, to a reader of a left-to-right script. The
+  harness drives, and what the machine shows follows. That is not literally true
+  of the two panes, since both are screens the device drew, but it is the right
+  reading order for what a viewer is trying to follow.
+- **The stamp is at the canvas top-left** and it names the suite and the
+  scenario (OBS-8.30). Putting the test's identity and the test's own screen
+  together, and the machine's output beside them, is the arrangement that reads
+  as one thought rather than two.
+
+**The harness pane is not the menu. It is whatever the harness was looking at**,
+and which that is depends on the UI mode:
+
+| Mode | What the harness drives | The harness pane shows | Size at 8x8 glyphs |
+|---|---|---|---|
+| `overlay` | `machine:input` and `machine:menu_screen` | the menu screen, 40x25 | 320x200 |
+| `freeze` | the same, with the C64 stopped | the menu screen, 40x25 | 320x200 |
+| `telnet` | a Telnet session | the session's screen, 60x24 | 480x192 |
+
+`ui_backend.SCREEN_WIDTH` and `SCREEN_HEIGHT` are 40 and 25; `WIDTH` and
+`HEIGHT` for `VT100Screen` are 60 and 24, and every suite that passes
+`telnet_width` passes 60. So the widest screen the harness can produce is 60
+columns and the tallest is 25 rows.
+
+The text area is therefore **480x200 always**, sized for the widest and tallest
+screen either transport produces, with each screen drawn at its top-left corner
+and the remainder in the chrome colour of OBS-8.35. One fixed geometry rather
+than one per mode, for three reasons: a run can pass through all three modes
+(`run-tests` loops modes outside suites, so `--mode all` is one recording
+covering all of them), OBS-8.17 requires the recording to have one geometry for
+its whole length, and two runs of the same suite are only comparable frame to
+frame if they are the same shape. The cost is 96 pixels of unused width in a run
+that never uses Telnet, which is nothing.
+
+The harness pane is rendered from the payload of OBS-8.37, using the decode
 already in `tools/api/menu_screen_tool.py` - `menu_char_to_glyph` for the
 character mapping, `split_colour_byte` for the nibbles and `c64_rgb` for the
 palette - so the recorder shares them rather than restating them. Glyphs are
 drawn 8x8 from the C64 character ROM already in the repository at
-`roms/characters.901225-01.bin`, which makes the right pane's text the same size
-and shape as the left pane's.
+`roms/characters.901225-01.bin`, which makes the harness pane's text the same size
+and shape as the screen pane's.
 
-Four states the right pane has to render, because each says something different:
+Four states the harness pane has to render, because each says something different:
 
 | State | Rendered as |
 |---|---|
@@ -1593,7 +1973,7 @@ Four states the right pane has to render, because each says something different:
 Under `freeze` the menu is in the VIC output as well, so both panes show it.
 That is correct rather than redundant: it is what the mode does.
 
-**OBS-8.21** [P6] The right pane is event-driven: one menu screen per navigation
+**OBS-8.21** [P6] The harness pane is event-driven: one menu screen per navigation
 step, taken from the screens the harness already reads, and not from a poll on a
 timer.
 
@@ -1608,12 +1988,12 @@ traffic at all: it needs the screens the harness is already looking at.
 
 That is what OBS-8.22 provides. Two consequences worth stating plainly:
 
-- The right pane's temporal resolution is *every distinct menu screen the
+- The harness pane's temporal resolution is *every distinct screen the
   harness saw*, which is finer than any poll interval anyone would dare
   configure, and it is aligned to the harness's own decisions rather than to a
   clock.
-- The two panes still do not share a resolution. The left pane advances at the
-  output frame rate and the right pane advances when the menu changed. A reader
+- The two panes still do not share a resolution. The screen pane advances at
+  the output frame rate and the harness pane advances when the screen changed. A reader
   who assumes the panes are simultaneous will misread a transition, so the
   report and `tests/e2e/README.md` both say what each pane's clock is.
 
@@ -1622,6 +2002,14 @@ hold: no screen has reached it from the tap for longer than a named interval,
 and the run is not between suites with the device idle. That covers the gaps
 where no suite is driving the UI, which is where a recording would otherwise
 freeze on a stale pane for minutes.
+
+Those gaps are also the only place that request is the right thing to make.
+Under `--mode telnet` the harness is looking at a Telnet session and
+`machine:menu_screen` answers with the overlay's screen or with 404 (OBS-8.37),
+so a poll made while a Telnet suite is running would put a screen in the pane
+that nobody was looking at. Between suites there is no session and the overlay
+is all there is, which is why the condition is written as it is. The recorder
+never opens a Telnet session of its own; see OBS-15.4.
 
 **OBS-8.23** governs the rate of any request the recorder makes for itself:
 `--record-menu-min-interval-ms`, a floor on the gap between two consecutive
@@ -1635,52 +2023,98 @@ and no retry, and the floor is one flag away when a run turns out to be slower
 with recording on than with it off.
 
 Every screen is held until the next one arrives, so every output frame has a
-right pane, and the `kind=capture` record carries how many screens came from the
+harness pane, and the `kind=capture` record carries how many screens came from the
 tap, how many the recorder requested for itself, and how many requests failed.
 
-**OBS-8.22** [P6] The shared UI backend publishes every distinct menu screen it
-reads to a spool file, and the recorder consumes it.
+**OBS-8.22** [P3] The shared UI backend publishes every distinct screen it reads
+to a spool, and publishes a Telnet session's raw stream beside it.
+
+This is the cheapest artefact in the document and one of the most useful, so it
+is not part of the recorder and is not gated behind `--record`. It is written
+whenever `-j DIR` is given, like the console capture (OBS-2.13) and the action
+log (OBS-2.16), because it costs the device nothing: the screens are already
+being fetched. `--no-screens` turns it off for a run that does not want the
+volume, and like every flag here it is listed in `CHILD_FORWARDED_NEGATIVE` in
+`run-tests` in the same commit that adds it, or
+`tests/lib/runner_policy_test.py` fails the gate. The recorder at P6 consumes an
+artefact that already exists rather than producing one of its own.
+
+The failure capture depends on it. OBS-5.9 has no other way to show what a
+Telnet-mode suite was looking at, which is why this lands at P3 beside it.
 
 | Property | Value |
 |---|---|
-| Path | `DIR/<slug>/menu-screens.bin`, per OBS-2.10 |
+| Path | `DIR/<slug>/screens.jsonl`, per OBS-2.10 |
+| Format | JSONL, one object per distinct screen, the same convention as every other record file here |
 | Written by | `tests/e2e/lib/ui_backend.py`, in the suite process that read the screen |
-| Enabled by | an environment variable the runner exports, the way `E2E_JSONL` is |
-| Record | a magic marker, a length, a `time.time()` stamp, a kind, then the payload |
-| Payload | the 2000 bytes `machine:menu_screen` returned, or the 25 rendered rows under `telnet` |
+| Enabled by | `-j DIR`, through an environment variable the runner exports the way `E2E_JSONL` is; off with `--no-screens` |
+| Fields | `time`, `suite`, `attempt`, `check`, `kind`, `cols`, `rows`, `text`, `raw` |
+| `kind` | `menu` for a `machine:menu_screen` payload, `telnet` for a session's screen |
+| `text` | the screen as a list of strings, one per row, exactly as a reader would see it |
+| `raw` | the device's bytes, hex encoded: the 2000-byte two-plane payload for `menu`, absent for `telnet` |
 | Written when | the payload differs from the last one written |
+
+JSONL rather than a bespoke binary format, and both `text` and `raw` rather than
+one of them. Both choices follow OBS-1.9:
+
+- **`text` is the point.** The spool is the richest textual record of a run:
+  every distinct screen the harness saw, in order, joined to the check that saw
+  it. A binary file with a magic marker and a length prefix would have made that
+  unreadable without a decoder, which is exactly what OBS-1.9 forbids. As JSONL
+  it is `jq`-able, greppable, and readable by an agent with no tooling at all.
+- **`raw` is the ground truth.** The colour plane and the reverse-video bit in
+  bit 7 carry which row is selected (OBS-8.37), and neither survives into
+  `text`. The recorder needs them to render the pane, and a reader debugging a
+  selection defect needs them too.
+- **Both, in one record, is a derived duplicate and that is fine.** One writer
+  writes both from one payload in one place, so there is nothing to drift.
+  OBS-1.7 is about two authored renderings of one fact, not about a record
+  carrying a value and its decoding.
+
+A screen is about 5 KB of JSONL. A run producing two thousand distinct screens
+writes about 10 MB, which is smaller than one minute of the recording it feeds.
+
+**The raw Telnet transcript.** Under `--mode telnet` the backend also appends
+every byte it received from the session to
+`DIR/<slug>/<label>-<suite>.telnet.log`, unparsed, escape sequences included.
+`VT100Screen` is a parser, and a parser is a lossy view of its input: a defect
+in what the device sent, or in how the parser read it, is invisible in the
+parsed screen and obvious in the stream. This is the Telnet equivalent of what
+the syslog is for the firmware, it is the device's own text output for the one
+mode where the screen is not a device payload at all, and it is what a reader
+diagnosing a Telnet-mode failure actually needs. It shares a stem with the
+suite's other per-run files, per OBS-3.6.
 
 Six things this shape is chosen for:
 
-- **One place.** `RestBackend._menu_screen_body` and the `telnet` backend's
-  screen accessor are the two functions every suite's screen reads pass through.
+- **One place.** `RestBackend._menu_screen_body` and `TelnetBackend`'s screen
+  accessor are the two functions every suite's screen reads pass through.
   Publishing there covers every suite without touching any of them.
 - **Change only.** The settle loops read the same screen many times per
   keystroke. Writing only on a change collapses that to one record per redraw,
   which is both the volume control and exactly the "one per navigation step" the
-  pane wants.
-- **Append-only, one write per record.** Several suite processes never write the
-  same file, because a suite owns its target's directory for its run, but the
-  runner's own capture (section 5) may, so the format carries a length and a
-  magic marker and a reader resynchronises on the marker rather than trusting
-  the offset. This is the reasoning `report._record` already applies to the
-  JSONL.
+  pane wants. The raw transcript is not deduplicated: it is a stream, and a gap
+  in it would be a lie about what arrived.
+- **Append-only, one record per line.** The same reasoning `report._record`
+  already applies to the JSONL, and the same truncation rule a reader has to
+  honour (OBS-8.31).
 - **Wall clock from the host.** `time.time()` on the machine that read the
-  screen, per OBS-1.5, which is the same clock every interval in this document
-  uses, so a screen joins to a check by OBS-2.6 with no conversion.
-- **Two payload kinds, named.** A `telnet` screen is text and has no colour
-  plane; a REST screen is two planes. The kind says which, so a consumer never
-  guesses from the length.
+  screen, per OBS-1.5, so a screen joins to a check by OBS-2.6 with no
+  conversion. The `check` field makes that join direct rather than by interval.
+- **Two kinds, two shapes, both declared.** A REST screen is two 40x25 planes; a
+  Telnet screen is 60x24 rows with no colour plane. `kind`, `cols` and `rows`
+  say which, because a consumer that inferred either from a payload length would
+  be wrong the first time a suite asked for a wider Telnet screen.
 - **Useful without the recorder.** A timestamped sequence of every distinct
-  menu screen the harness saw, joinable to check intervals, answers "what was on
-  screen when check 26 failed" directly, and it answers it for a run nobody
-  recorded video for. The spool is named in the report's file index (OBS-3.14)
-  for that reason, and it is why the tap has a flag of its own in OBS-8.23
-  rather than being buried inside the recorder.
+  screen the harness saw answers "what was on screen when check 26 failed"
+  directly, and answers it for a run nobody recorded video for. The spool and
+  the transcript are named in the report's file index (OBS-3.14) for that
+  reason, and it is why it is written under `-j` rather than being buried inside
+  the recorder.
 
 The suite process is not the recorder, and nothing here makes it one: it appends
-bytes it already had in memory to a file and carries on. It performs no device
-call it was not already making, which is the whole point.
+bytes it already had in memory and carries on. It performs no device call it was
+not already making, which is the whole point.
 
 **OBS-8.23** [P6] Every source and every encoder decision is configurable, and
 every one of them has a default that is right for the material.
@@ -1690,17 +2124,23 @@ Recording as a whole is off (OBS-8.1). With it on, all three sources are on:
 | Flag | Default | Effect |
 |---|---|---|
 | `--record` | off | Enables recording at all |
-| `--no-record-video` | video on | Drops the left pane and the video stream |
+| `--no-record-video` | video on | Drops the screen pane and the video stream |
 | `--no-record-audio` | audio on | Drops the audio track and the audio stream |
-| `--no-record-menu` | menu on | Drops the right pane, the tap and the spool |
+| `--no-record-menu` | menu on | Drops the harness pane. The spool is written under `-j` regardless (OBS-8.22); `--no-screens` is what turns that off |
 | `--record-menu-min-interval-ms MS` | `0` | Floor between two `menu_screen` requests the recorder makes for itself (OBS-8.21) |
+
+Any of the other eleven flags without `--record` is a usage error reported
+before the run starts, not a silently ignored argument. A run invoked with
+`--record-quality lossless` and a missing `--record` would otherwise produce no
+recording and no complaint, which is the shape of mistake that costs a whole
+gate run to discover.
 
 Negative flags for the on-by-default sources, matching `--no-health-check` and
 `--no-retry`, which is how this runner already spells "on unless you say
 otherwise".
 
 Dropping a source changes the canvas rather than leaving a blank pane: video
-only is 384x272, menu only is 384x272, both is 768x272 (OBS-8.20). A run with
+only is 384x272, harness only is 480x272, both is 872x272 (OBS-8.20). A run with
 all three off is a usage error reported at startup, not a recorder that produces
 an empty file.
 
@@ -1882,10 +2322,16 @@ enough to rank them and halves the cost. A threshold below which a change is not
 a transition keeps a blinking cursor out of the list.
 
 The bound is per suite run, so a long suite gets the same number as a short one
-and the set stays readable. They are written under the target's `capture/`
-directory, named from the suite-run key of OBS-3.6, as PNG for the VIC pane and
-as text for the menu pane. The text form is what the report can inline
-(OBS-4.7), which is why both are kept.
+and the set stays readable.
+
+**A still is a pair of files sharing one name**: a `.png` holding the composed
+canvas at that moment, and a `.txt` holding the menu screen at that moment as
+40x25 text. Both are written under the target's `capture/` directory, named from
+the suite-run key of OBS-3.6 plus an index and the kind. The pair exists because
+the two readers need different things: the image is what a person opens, and the
+text is what the report inlines (OBS-4.7) and what a program or an agent can
+match on. A still taken when no menu was open writes a `.txt` saying so rather
+than omitting the file, so the pair is never half present.
 
 This is also what a suite that produced no video at all still gets: with
 `--no-record-video` the menu stills are the whole set, and they cost nothing
@@ -1897,13 +2343,35 @@ timing is in their file name, in the report entry beside them and in the JSONL.
 
 ### Layout and stamping
 
+Four annotations are drawn into the composed canvas, and they share one
+coordinate system, stated once here so that none of the four has to restate it.
+Everything is relative to the **canvas**, which is 872x272 under `combined` and
+480x272 or 384x272 per file under `separate` (OBS-8.29).
+
+| Annotation | Where | Requirement |
+|---|---|---|
+| The stamp | a two-row band across the canvas's top border, from the top-left | OBS-8.30 |
+| Pane labels | each pane's top border, right aligned, on the stamp's second row | OBS-8.35 |
+| The failure edge | the canvas's outermost two rows and columns | OBS-8.32 |
+| The progress bar | the canvas's bottom border, full canvas width | OBS-8.33 |
+
+Two of these span the gutter under `combined`, and that is deliberate: the edge
+and the bar are chrome that belongs to the whole frame, while the stamp and the
+labels belong to a pane. Under `separate` every annotation is drawn into each
+file independently, from the same slot, so the two files carry the same stamp,
+the same edge and the same bar (OBS-8.29).
+
+None of the four ever touches a pane's 320x200 picture area. The C64 border is
+32 pixels at the sides, at least 20 at the top and at least 20 at the bottom,
+and every figure above fits inside it.
+
 **OBS-8.29** [P6] The two panes go into one file or into two, and the choice is
 `--record-layout`:
 
 | Value | Files | Geometry each |
 |---|---|---|
-| `combined` (default) | `video.mp4` | 768x272, the composition of OBS-8.20 |
-| `separate` | `video-screen.mp4` and `video-menu.mp4` | 384x272 |
+| `combined` (default) | `video.mp4` | 872x272, the composition of OBS-8.20 |
+| `separate` | `video-harness.mp4` and `video-screen.mp4` | 480x272 and 384x272, no gutter |
 
 `combined` is the default because one file is one thing to open, and the two
 panes cannot drift apart when they are the same picture. `separate` exists
@@ -1933,31 +2401,54 @@ frame count and the same duration, and dropping a source with
 `--no-record-video` or `--no-record-menu` (OBS-8.23) removes that file from a
 `separate` run and that pane from a `combined` one.
 
-**OBS-8.30** [P6] Each video frame carries a stamp drawn into the top-left of
-its border area: the timecode on the first row and the suite and scenario on the
+**OBS-8.30** [P6] Every frame is self-describing. A stamp of two rows is drawn
+into the canvas's top border: what and when on the first row, which test on the
 second.
 
 ```
-00:12:34.500
-prg-context-menu / mount and run
+00:12:34.500  2026-08-14 07:38:19  u64  192.168.1.15  Ultimate 64 3.15  gh#1234567
+overlay / prg-context-menu / mount and run / check 26
 ```
+
+The first row is the run's identity, and it is there because a single frame
+travels. Somebody screenshots a failure and pastes it into an issue; somebody
+shares the video; an agent is handed one still. Any of those has to answer
+"which device, which firmware, which run, when" without the file it came from.
+A title card at the start (OBS-8.36) does not survive a screenshot of minute
+twelve.
+
+| Field | Source | Cost |
+|---|---|---|
+| file position, `HH:MM:SS.mmm` | the slot index and the frame rate | none |
+| wall clock | `capture.started` plus the position, per OBS-1.5 | none |
+| target token | the recorder already has it | none |
+| the device's IPv4 address | resolved once at recorder start, by the call the stream library already makes for source filtering (OBS-8.4) | none |
+| product and firmware | one `GET /v1/info` at recorder start, or the first `ident` health record from the tail of OBS-8.31 | one request, once |
+| CI run id | `GITHUB_RUN_ID` from the environment, per OBS-2.4, absent when it is | none |
+
+Fields are in that order, and the row is truncated from the right when the
+canvas is too narrow for all of them, so the fields a reader needs most survive
+a narrow file. The canvas is 109 columns under `combined` and 60 or 48 under
+`separate` (OBS-8.29), and the title card carries every field in full whatever
+was truncated.
 
 The particulars:
 
 - **Drawn at composition time, into the frame buffer, before the encoder sees
   it.** Not an `ffmpeg` `drawtext` filter, not a second pass, and no font
-  dependency: the glyphs come from the same character ROM the menu pane uses
+  dependency: the glyphs come from the same character ROM the harness pane uses
   (OBS-8.20). The frames are being built out of packed nibbles anyway, so
   drawing 96 characters into one is free next to the work already being done,
   and there is no re-encode because there was never a first encode to redo.
-- **In the border, not over the picture.** The C64 border is 32 pixels left and
-  right, 35 top on PAL and 20 top on NTSC. Two rows of 8-pixel glyphs need 16,
-  which fits both. The stamp starts at the top-left corner of the frame.
+- **In the border, not over the picture.** Two rows of 8-pixel glyphs need 16
+  pixels. The C64 border is 20 lines at the top on NTSC and 35 on PAL, and the
+  harness pane's own top border is 36, so the band fits across the whole canvas
+  on every geometry. It starts at the canvas's top-left corner.
 - **Fixed colours, not the border's.** A high-contrast pair chosen once, so the
   stamp stays legible whatever colour the program set the border to, and so two
   runs of the same suite produce byte-identical stamps.
-- **48 columns.** 384 pixels of 8-pixel glyphs. The timecode takes 12 of them.
-  The suite and scenario are truncated to fit, from the end, with a marker.
+- **The canvas width in columns.** 109 under `combined`, 60 or 48 under
+  `separate`. Both rows are truncated to fit, from the right, with a marker.
 - **The timecode is the slot index divided by the frame rate**, formatted
   `HH:MM:SS.mmm`, counting from the first frame of the file including the title
   card. It is therefore exactly the position a player reports for that frame,
@@ -1987,12 +2478,22 @@ them is already being appended, with a wall-clock `time`, to
 opens those files and reads to the end of each on a low-rate tick, keeping the
 last record of each kind.
 
-Three properties this relies on, all of which already hold: the files are
-append-only, each record is one complete line written under `O_APPEND`, and a
-partial final line means the writer is mid-write rather than that anything is
-wrong, so a reader keeps the partial line and retries. This is OBS-1.4 applied
-again: no new channel between the processes, and nothing for the runner to know
-about the recorder.
+Four properties this relies on. Three already hold: the files are append-only
+within a suite run, each record is one complete line written under `O_APPEND`,
+and a partial final line means the writer is mid-write rather than that anything
+is wrong, so a reader keeps the partial line and retries. This is OBS-1.4
+applied again: no new channel between the processes, and nothing for the runner
+to know about the recorder.
+
+The fourth is a trap rather than a property. A per-suite JSONL file is
+**truncated on the first attempt**: `run_one_attempt` does
+`open(path, "w").close()` when `attempt == 1`, and it does so for every suite
+that reuses a file name, which is every retried suite and every mode pass. A
+tailer holding an offset across that truncation reads nothing until the file
+grows past its old offset and then reads from the middle of a record. So the
+tailer compares the file's size against its own offset on every tick, and starts
+again from the beginning when the size has gone backwards. The same rule covers
+a file that was replaced rather than truncated.
 
 It also means a check's identity reaches the stamp only when the check closes,
 which is what OBS-8.32 is written around.
@@ -2112,7 +2613,7 @@ Why each of them:
   or a colour outside the sixteen is instantly foreign, and a viewer reads it as
   something added rather than as part of the picture. Using the machine's own
   glyphs and colours is also the cheapest option, because both are already in
-  the repository for the menu pane.
+  the repository for the harness pane.
 - **The 8-pixel grid** is what makes pixel work look deliberate. An element at
   an odd offset, or a glyph scaled to a non-integer size, reads as sloppy at any
   resolution and is the single most common way this kind of composition looks
@@ -2126,9 +2627,14 @@ Why each of them:
   scrubbed timeline it is noise. This also keeps every frame reproducible, which
   the tests of OBS-8.15 depend on.
 
-Two pane labels, `SCREEN` and `MENU`, sit in each pane's top border, right
-aligned, on the same row as the stamp. A viewer who did not build this has no
-other way to know which is which, and on a shared video that is most viewers.
+Pane labels sit in each pane's top border, right aligned, on the stamp's second
+row, where the first is the full-width identity band of OBS-8.30. The screen pane's is always `SCREEN`. The harness pane's names what
+it is showing at that moment, from the spool record's kind (OBS-8.22): `MENU`
+for a `machine:menu_screen` payload and `TELNET` for a Telnet session's screen. A
+viewer who did not build this has no other way to know which is which, and on a
+shared video that is most viewers; a reader who does know still needs to be told
+which transport the harness was driving, and the label is the cheapest place to
+say it.
 
 Nothing here is a matter of taste that an implementer resolves at the keyboard:
 the palette, the font, the grid, the two colours and the absence of motion are
@@ -2138,8 +2644,11 @@ the sixteen.
 **OBS-8.36** [P6] The recording opens with a title card and closes with a
 summary card, each held for a few seconds.
 
-The title card names the run: target, product and firmware version (OBS-3.19),
-commit and branch (OBS-2.11), date, and the number of suite runs planned. The
+The title card names the run in full, including whatever the per-frame stamp of
+OBS-8.30 had to truncate: target token, the device's IPv4 address, product and
+firmware version (OBS-3.19), FPGA version, commit and branch (OBS-2.11), the CI
+run id and attempt (OBS-2.4), the host that ran it, the wall-clock start time,
+and the number of suite runs planned (OBS-2.14). The
 summary card names the outcome: the counts from the status line of OBS-3.22 and
 the names of the suites that failed.
 
@@ -2209,8 +2718,8 @@ an audio stream become a file somebody can watch.
 
 | Stage | Input | Output |
 |---|---|---|
-| 1 receive | UDP datagrams, filtered by source (OBS-8.4) | complete VIC frames (OBS-8.24), audio packets on a concealment timeline (OBS-8.25), menu payloads from the spool (OBS-8.22) |
-| 2 hold | the newest of each | one current VIC frame, one current menu payload, an audio write cursor |
+| 1 receive | UDP datagrams, filtered by source (OBS-8.4) | complete VIC frames (OBS-8.24), audio packets on a concealment timeline (OBS-8.25), screens from the spool (OBS-8.22) |
+| 2 hold | the newest of each | one current VIC frame, one current harness screen, an audio write cursor |
 | 3 slot | the output frame rate (OBS-8.8) | one tick per output frame, the unit of alignment for everything downstream (OBS-8.29) |
 | 4 compose | the held sources plus the JSONL tail (OBS-8.31) | one 24-bit RGB canvas per slot, annotated (OBS-8.30, OBS-8.32, OBS-8.33, OBS-8.35) |
 | 5 encode | canvases on one pipe, PCM on another | one `ffmpeg` process per output file, muxing both |
@@ -2235,8 +2744,8 @@ The decisions inside that, and why each is what it is:
   stall the loop, and a stalled loop stops draining the sockets, which loses
   packets from both streams at once. The loop sheds frames instead (OBS-8.27),
   and audio is never shed because its packets are the timeline.
-- **Colour conversion happens once, at composition.** The VIC pane is 4-bit
-  indices and the menu pane is glyphs plus colour indices; both become RGB in
+- **Colour conversion happens once, at composition.** The screen pane is 4-bit
+  indices and the harness pane is glyphs plus colour indices; both become RGB in
   stage 4 through the one palette (OBS-8.35). Handing `ffmpeg` an indexed format
   and a palette would save nothing and would put the palette in two places.
 - **Chapters are a copy pass, not a re-encode.** Stage 6 rewrites the container
@@ -2310,8 +2819,9 @@ Every one of these is a named constant or a named flag with the reason in the
 comment beside it, per the repository's convention.
 
 **OBS-8.9** [P6] Each pane and the audio track degrade on their own. When video
-packets stop arriving the left pane becomes a placeholder card; when the menu is
-unreadable the right pane shows one of the states in OBS-8.20; when audio
+packets stop arriving the screen pane becomes a placeholder card; when the
+harness screen is unreadable the harness pane shows one of the states in
+OBS-8.20; when audio
 packets stop the track is concealed and then re-anchored (OBS-8.25). The
 recorder carries on in every case.
 
@@ -2320,7 +2830,7 @@ carries every stream stop and redirect a suite made, with the suite's name, so a
 card can read "the av suite stopped this stream" rather than "the stream is
 unavailable". A gap the run cannot explain says that instead, which is itself
 the answer: an unexplained gap is a device that went quiet on its own, and that
-is question 2 in the Purpose section.
+is Q2 in the Purpose section.
 
 Every gap is recorded with a start and an end per OBS-15.11, so the report can
 put it on the timeline beside the suite that caused it.
@@ -2380,6 +2890,14 @@ Each cue carries the check's identity key (OBS-3.6) and its verdict, in that
 order, so `grep` over the `.srt` for a suite name or for `FAIL` returns the
 timecodes to seek to. A sidecar whose cues read "running prg-context-menu" would
 be readable and not searchable; the identity key makes it both.
+
+One sidecar per video file, sharing its stem: `video.srt` beside `video.mp4`,
+and `video-harness.srt` and `video-screen.srt` under `--record-layout separate`.
+Players load a sidecar by matching the video's name, so a single `video.srt`
+would be found by neither of the separate files and every reader would have to
+name it by hand. The files are byte-identical, generated once from the JSONL and
+written N times, which is a copy of a derived artefact rather than a second
+authored one, so OBS-1.7 is not in play.
 
 `tests/e2e/README.md` documents how to play the result on Linux: the subtitle
 track selected explicitly for players that need it, nearest-neighbour scaling so
@@ -2479,8 +2997,10 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 
 ### Acceptance criteria for section 8
 
-- With the recording flag absent, `strace`-level device traffic and the run's
-  console output are identical to a run before the recorder existed.
+- With `--record` absent, the sequence of device requests the run makes and the
+  run's console output are identical to a run before the recorder existed.
+- Any recorder flag given without `--record` is refused before the run starts
+  (OBS-8.23).
 - A suite that asserts on VIC frames passes while a recorder is capturing the
   same multicast group, on both a Linux host and a macOS host (OBS-8.5).
 - A run in which `av` and `input` both run produces a recording with no gap
@@ -2500,10 +3020,10 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 - The stamp on a frame, the position a player reports for it, and the `mm:ss`
   the report prints for the check that was running then, all agree
   (OBS-8.11, OBS-8.30).
-- A menu transition during a suite appears in the right pane within one output
+- A menu transition during a suite appears in the harness pane within one output
   frame of the keystroke that caused it, taken from the tap rather than from a
   request the recorder made (OBS-8.21, OBS-8.22).
-- A run under `--mode telnet` produces a right pane holding the Telnet screen,
+- A run under `--mode telnet` produces a harness pane holding the Telnet screen,
   from the same spool, with no `menu_screen` request made for it.
 - Playing `video.mp4` in `mpv` shows both panes, plays audio, and shows
   subtitles naming suites and checks that match the JSONL for the same
@@ -2531,7 +3051,7 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 - The file opens on a title card naming the target, firmware and commit, and
   ends on a summary card whose counts match the report's status line
   (OBS-8.36, OBS-3.22).
-- The right pane renders the selected row correctly on a machine whose colour
+- The harness pane renders the selected row correctly on a machine whose colour
   plane carries no background nibble, which is the reverse-video path of
   OBS-8.37.
 - A run under `--record-layout separate` produces two files with two `ffmpeg`
@@ -2587,7 +3107,7 @@ does not re-propose it.
   four `cfg-*` suites drive it to read the loader diagnostics, and OBS-15.9
   keeps observability off it.
 - **A Prometheus `/metrics` endpoint.** Firmware work with a size cost, and
-  neither question in the Purpose section needs it. The existing design in
+  no question in the Purpose section needs it. The existing design in
   `doc/research/prometheus-metrics/research.md` should land for its own reasons
   if it lands at all. If it does, the health sweep reads it instead of
   `machine:heap`.
@@ -2606,9 +3126,11 @@ does not re-propose it.
 - **Capturing the whole configuration tree.** Several hundred items that change
   rarely; the ones that matter are the ones a suite changed, and suites already
   restore those.
-- **Per-request HTTP timing in `tests/lib/rest.py`.** Tens of thousands of
-  records per run, answering at high resolution what the health sweep already
-  answers at the granularity anyone acts on.
+- **Per-request HTTP timing in `tests/lib/rest.py`.** Timing every request,
+  including the successful reads that are a run's bulk, is tens of thousands of
+  records answering at high resolution what the health sweep already answers at
+  the granularity anyone acts on. Recording every *mutation*, every retry and
+  every failure is a different and much smaller thing, and it is OBS-2.16.
 - **Per-check screen captures.** See OBS-5.8.
 - **A recording of the VIC stream alone.** It cannot show the menu under
   `overlay` or `telnet`, which is two thirds of the gate, so the recording has
@@ -2770,12 +3292,12 @@ disagrees with it.
 
 | Priority | Deliverable | Requirements |
 |---|---|---|
-| P1 | Markdown report over data that already exists, plus the layout, correlation and capture fixes it needs | OBS-1.1 to OBS-1.5, OBS-1.7, OBS-1.8, OBS-2.1 to OBS-2.3, OBS-2.5 to OBS-2.8, OBS-2.10 to OBS-2.15, OBS-3.1, OBS-3.4 to OBS-3.7, OBS-3.13 to OBS-3.15, OBS-3.17 to OBS-3.22, OBS-3.24 to OBS-3.27, OBS-3.29, OBS-14.1 to OBS-14.5, OBS-15.1 to OBS-15.5, OBS-15.11 |
+| P1 | Markdown report over data that already exists, plus the layout, correlation and capture fixes it needs, and the test suite everything after it is built on | OBS-1.1 to OBS-1.9, OBS-2.1 to OBS-2.3, OBS-2.5 to OBS-2.8, OBS-2.10 to OBS-2.16, OBS-3.1, OBS-3.4 to OBS-3.7, OBS-3.13 to OBS-3.15, OBS-3.17 to OBS-3.22, OBS-3.24 to OBS-3.27, OBS-3.29, OBS-3.30, OBS-14.1 to OBS-14.5, OBS-15.1 to OBS-15.5, OBS-15.11 to OBS-15.14, OBS-16.1 to OBS-16.10 |
 | P2 | GitHub job summary, the workflow, the navigation path, and the run comparison | OBS-2.4, OBS-3.28, OBS-4.1, OBS-4.3 to OBS-4.5, OBS-4.7 to OBS-4.10 |
-| P3 | Failure captures in the runner | OBS-1.6, OBS-3.10, OBS-5.1 to OBS-5.5, OBS-5.7, OBS-5.8 |
+| P3 | Failure captures in the runner, and the screen spool they depend on | OBS-1.6, OBS-3.10, OBS-5.1 to OBS-5.5, OBS-5.7 to OBS-5.9, OBS-8.22 |
 | P4 | Heap in the health sweep | OBS-6.1 to OBS-6.5, OBS-6.7, OBS-6.8 |
 | P5 | Syslog collector | OBS-3.11, OBS-7.1 to OBS-7.18, OBS-15.8 to OBS-15.10 |
-| P6 | Recorder, and optionally the PDF and the firmware items | OBS-3.16, OBS-3.23, OBS-8.1 to OBS-8.12, OBS-8.14 to OBS-8.38, OBS-15.6, OBS-15.7, OBS-9.1 to OBS-9.3 |
+| P6 | Recorder, and optionally the PDF and the firmware items | OBS-3.16, OBS-3.23, OBS-8.1 to OBS-8.12, OBS-8.14 to OBS-8.21, OBS-8.23 to OBS-8.38, OBS-15.6, OBS-15.7, OBS-9.1 to OBS-9.3 |
 
 P6 is itself ordered, because it is the largest step in this document and its
 pieces are independently useful:
@@ -2784,33 +3306,44 @@ pieces are independently useful:
    socket. It absorbs `vic_video` and `av_stream` without changing any suite,
    and every later piece is a caller of it. Building the recorder first would
    leave a third implementation of the same wire format to fold back in.
-1. **The menu-screen tap and its spool** (OBS-8.22). No encoder, no multicast,
-   no `ffmpeg`, no device call that was not already being made. It answers "what
-   was on screen when this check failed" on its own.
-2. **The menu stills and their place in the report** (OBS-8.28 for the menu
-   half, OBS-3.23). Built on the spool alone, and the first thing here that a
-   reader sees without downloading anything.
-3. **Video reception**: the socket, the assembler and its edge conditions
+1. **The harness stills and their place in the report** (OBS-8.28 for the
+   harness half, OBS-3.23). Built on the spool that P3 already produced
+   (OBS-8.22), so this needs no encoder, no multicast and no `ffmpeg`, and it is
+   the first thing here that a reader sees without downloading anything.
+2. **Video reception**: the socket, the assembler and its edge conditions
    (OBS-8.5, OBS-8.6, OBS-8.24, OBS-8.26), proven by the stills before any
    encoder exists.
-4. **The encoder, the composition and the annotations** (OBS-8.7, OBS-8.8,
+3. **The encoder, the composition and the annotations** (OBS-8.7, OBS-8.8,
    OBS-8.17, OBS-8.20, OBS-8.30 to OBS-8.33, OBS-8.35). The visual system of
    OBS-8.35 is decided before the first annotation is drawn, not retrofitted
    across four of them.
-5. **Navigation** (OBS-8.34), which is what makes the file usable, and the cards
+4. **Navigation** (OBS-8.34), which is what makes the file usable, and the cards
    (OBS-8.36), which change the timecode arithmetic and so come before anything
    asserts on it.
-6. **Audio** (OBS-8.19, OBS-8.25).
-7. **The layout option and the configuration surface** (OBS-8.29, OBS-8.23),
+5. **Audio** (OBS-8.19, OBS-8.25).
+6. **The layout option and the configuration surface** (OBS-8.29, OBS-8.23),
    once there is something to configure, and the shedding rule (OBS-8.27) once
    there is a measurement of whether the host keeps up.
 
-Steps 1 and 2 are worth having even if steps 3 to 6 are never built, which is
-the same shape as P1 and P2 being worth having on their own.
+Step 1 is worth having even if steps 2 to 6 are never built, which is the same
+shape as P1 and P2 being worth having on their own. The spool it reads is at P3,
+not here, because the failure capture needs it too.
 
 Section 14 is at P1 because the `ping` defect in OBS-14.2 makes a macOS host
 report every device as unhealthy, and because OBS-14.4 is the difference between
 the tests running at all on the CI host and not.
+
+Section 16 is at P1 for a harder reason: it is what every step after P1 is
+tested with. The device double of OBS-16.2 is built once, and P3 to P6 each add
+a face to it rather than inventing a way to test themselves. A priority step
+that arrives with no test in the suite is not done (see the definition of done
+in the implementation prompt), and the injections of OBS-16.5 are constraints on
+how the code is written rather than something a later step can retrofit.
+
+The four tiers arrive at different times, and only tier 1 and tier 4 are
+buildable at P1: tier 2 needs the device double's faces, which P3 to P6 add, and
+tier 3 needs enough of a pipeline to script. The framework, the double's REST
+face and tiers 1, 3 and 4 for the report are what P1 delivers.
 
 P1 and P2 are worth doing even if nothing else here is ever built. P5 comes
 after P3 and P4 because it needs a standing configuration change on the CI
@@ -2827,20 +3360,24 @@ optional.
 | Path | What lands there | Requirements |
 |---|---|---|
 | `tools/e2e_report.py` | The report generator. It consumes a finished run rather than being part of one, so it is neither a registered suite nor shared suite support, which is what `tests/` holds. `tools/app_space.py` is the house pattern for a Python tool here. | 3 |
-| `tests/lib/report_render_test.py` | The generator's tests, as a registered suite in the `SUITES` tuple in `run-tests`, importing the generator by path. | OBS-3.13 |
-| `tests/lib/fixtures/e2e-run/` | The checked-in `-j` tree the tests run against, and the expected `index.md` beside it. | OBS-3.13, OBS-3.21 |
+| `tests/lib/observability_test.py` | The whole test suite of section 16, as a registered suite in the `SUITES` tuple in `run-tests`, importing the generator and the runner by path. One module, four tiers, invoked by `make observability_test` as well. | OBS-3.13, OBS-16.1, OBS-16.3, OBS-16.4 |
+| `tests/lib/device_double.py` | The one fake device: a loopback REST server and the three UDP senders, with the fault switches of OBS-16.6. | OBS-16.2 |
+| `tests/lib/fixtures/e2e-run/` | The checked-in `-j` tree the tests run against, and the expected `index.md` beside it. | OBS-3.13, OBS-3.21, OBS-16.3 |
+| `Makefile` | The `observability_test` target, beside `app_space_test`. | OBS-16.4 |
+| `.github/workflows/build.yml` | One step running that target. The only change this document makes to that file. | OBS-16.4 |
 | `run-tests` | The `E2E_TARGET` export, the slug-directory fix, the run-identity fields, the parent `run` record, the console capture, the failure capture, and the flags for the collector and the recorder. | OBS-2.1, OBS-2.2, OBS-2.4, OBS-2.11 to OBS-2.13, section 5, OBS-7.17, OBS-8.1 |
 | `tests/lib/report.py` | The `target` field and the new record kinds and fields. | OBS-2.3, OBS-2.11, OBS-2.12 |
 | `tests/lib/README.md` | The record-shape table and the `jq` recipes. | OBS-2.5 |
-| `tests/lib/health.py` | The ninth check and its rendering. | OBS-6.1, OBS-6.5, OBS-14.2 |
+| `tests/lib/health.py` | The ninth check and its rendering, the portable `ping`, and the port fields it holds as constants today. | OBS-6.1, OBS-6.5, OBS-14.2, OBS-15.13 |
 | `tests/lib/api.py` | The `machine:heap` call, under the rule in `tests/lib/README.md`. | OBS-6.3 |
-| `tests/lib/targets.py` | `video_host` and `log_hosts`, beside `input_host`. | OBS-7.18, OBS-8.14 |
+| `tests/lib/targets.py` | The device handle: `video_host`, `log_hosts` and the port fields, beside `input_host`. | OBS-7.18, OBS-8.14, OBS-15.13 |
+| `tests/lib/rest.py` | A REST port in the URL, defaulting to 80, with `U64_REST_PORT` as its override; and the action hook in `request`. | OBS-2.16, OBS-15.13, OBS-15.14 |
 | a new module in `tests/e2e/lib/` | The stream library: constants, sockets, source filtering, the frame assembler, the audio timeline, the arming discipline. | OBS-15.6, OBS-15.7 |
 | `tests/e2e/lib/vic_video.py` | Becomes a caller of the library, keeping its public names. | OBS-8.5, OBS-8.6 |
 | `tests/e2e/lib/av_stream.py` | The same, plus the arming discipline in its `start` and `stop`. | OBS-8.5, OBS-8.19, OBS-15.7 |
-| `tests/e2e/lib/ui_backend.py` | The menu-screen tap, in `RestBackend._menu_screen_body` and the Telnet backend's screen accessor. | OBS-8.22 |
-| `tools/api/menu_screen_tool.py` | Nothing changes; its `menu_char_to_glyph`, `split_colour_byte` and `c64_rgb` are shared by the right pane. | OBS-8.20 |
-| `roms/characters.901225-01.bin` | Nothing changes; the right pane draws its glyphs from it. | OBS-8.20 |
+| `tests/e2e/lib/ui_backend.py` | The screen tap in `RestBackend._menu_screen_body` and the Telnet backend's screen accessor, the raw Telnet transcript, and the action hook for keys sent over Telnet. | OBS-2.16, OBS-8.22 |
+| `tools/api/menu_screen_tool.py` | Nothing changes; its `menu_char_to_glyph`, `split_colour_byte` and `c64_rgb` are shared by the harness pane. | OBS-8.20 |
+| `roms/characters.901225-01.bin` | Nothing changes; the harness pane draws its glyphs from it. | OBS-8.20 |
 | new modules the runner starts | The syslog collector and the recorder. | sections 7 and 8 |
 | a reader beside the collector, in `tests/lib/` | Follows `DIR/<slug>/syslog.txt` for a suite that needs device log lines, so nothing else binds the syslog port. | OBS-15.8 |
 | `src/lib/streams/` in the `c64commander` repository | Nothing here changes. A working implementation of these two wire formats, in a separate project, to read before writing the recorder. Not a dependency, not vendored, and not required to be present. | OBS-8.24 to OBS-8.27 |
@@ -2992,10 +3529,92 @@ the current tree that an implementer can check, and the last column is the rule.
 | HTTP connection slots, about four | every suite | a slot taken at the wrong moment pushes a suite's request into a retry | The recorder's own `menu_screen` request happens only when the tap is silent, one at a time, with a configurable floor (OBS-8.21) |
 | The menu screen | every UI suite, through `ui_backend` | none: it is a read | Observability reads the suites' copy rather than making its own request (OBS-8.22) |
 | The device debug log | the four `cfg-*` suites, through `Developer` / `Save Debug Log` | `Clear Debug Log` resets it | Observability never touches it (OBS-15.9) |
+| The Telnet session | every suite under `--mode telnet`, and the `telnet` health check, which connects and closes at once | the device serves few sessions; a second one taken while a suite holds one can break it | Observability never opens a session. The harness pane reads the spool the suite already published (OBS-8.22) |
 | The syslog forwarding buffer | none today | a suite could point the device elsewhere or disable it | The collector records the silence; nothing is repaired (OBS-15.10) |
 | `Network Settings` | `cfg-*` suites can rewrite it as collateral | the syslog target can be lost | Checked and reported at both ends of the run, never corrected (OBS-15.10) |
 | Device reachability | any suite may reboot, reset or power off | everything observable stops | Every component treats it as a gap with a start and an end (OBS-15.11) |
 | The UI object stack | every UI suite, and the runner's own gate | a capture taken at the wrong moment sees the gate's screen | The failure capture runs before the gate (OBS-5.2) |
+
+### The device handle
+
+Four things want to be true at once, and they turn out to be two questions
+rather than four:
+
+- the observability code needs data from a device;
+- the suites need data from a device, often the same data;
+- that data can come from a real Ultimate;
+- that data can come from a fake one, so the observability code can be tested.
+
+The first two are one question: **how do two consumers share one device
+resource**, answered by OBS-15.5 below. The last two are another: **how does the
+same code talk to a real device or a fake one**, answered by OBS-15.14. They are
+orthogonal, and every combination of them uses the same libraries:
+
+| | a real Ultimate | the double (OBS-16.2) |
+|---|---|---|
+| **a suite** | the gate | available, not required |
+| **observability** | a real run | the tests of section 16 |
+
+The thing that makes all four cells the same code is a handle that says where a
+device is, and this repository already has one.
+
+**OBS-15.13** [P1] `targets.Target` is the device handle: the one object that
+answers where every surface of a device is. It exists, it is already the
+authority on which of a target's two machines serves what, and it is
+strengthened here rather than replaced.
+
+| Surface | Answered by | Today |
+|---|---|---|
+| which machine serves a REST path | `host_for` | exists |
+| where keyboard injection goes | `input_host` | exists |
+| which machines this target occupies | `resources` | exists |
+| where the video comes from | `video_host` | added by OBS-8.14 |
+| whose logs belong to this target | `log_hosts` | added by OBS-7.18 |
+| the REST port | a field, default 80 | added here |
+| the FTP, Telnet and DMA ports | fields, defaults 21, 23 and 64 | added here; `health.py` and `ui_backend` hold these as module constants today |
+| the video and audio group and port | fields, defaults from OBS-8.4 | added here; `vic_video` and `av_stream` hold them as module constants today |
+
+Two rules keep the change small:
+
+- **A library takes a handle or a token, and parses the token if given one.**
+  `rest.RestClient.__init__` already calls `targets.parse(host)` and keeps the
+  result, and `health.probe`, `ftp.session` and `ui_backend.make_backend` all
+  take a host string and resolve it themselves. Accepting a `Target` as well
+  changes no suite, and every suite keeps passing the token it parses from its
+  own `-H`.
+- **A port field has the real device's value as its default.** Nothing behaves
+  differently unless something sets one, so this is additive in the same way
+  OBS-2.3's record fields are.
+
+There is precedent for the ports being addressable: `U64_TELNET_PORT` and
+`--telnet-port` already exist and every suite that drives Telnet honours them.
+This generalises that one case rather than introducing the idea.
+
+**OBS-15.14** [P1] The seam between a real device and the double is the handle's
+addresses, and nothing else. No component of the observability code is tested by
+replacing `api.py`, `rest.py`, `ftp.py` or the stream library with a fake.
+
+Why the seam is the address rather than an injected fake object: the defects
+this code actually has are in the transport and the protocol, not in the call
+sites. A fake `UltimateApi` would not exercise `rest.py`'s retry policy, the
+password header, the 404 that OBS-5.3 and OBS-6.5 both branch on, a connection
+that opens and never answers, or a body of the wrong length. Every one of those
+has been a real defect in this repository, and a mock object would have passed
+through all of them.
+
+One change is needed to make this work, and it is the only one:
+
+> `rest.RestClient.url` builds `http://{host}{path}` with no port, and
+> `targets._HOST_RE` rejects a colon, so today there is no way to point the REST
+> client at anything but port 80 of a named host. A loopback double cannot bind
+> port 80 without root. The REST port therefore becomes a field on the handle
+> per OBS-15.13, defaulting to 80 and settable, with `U64_REST_PORT` as its
+> environment override in the same style as `U64_TELNET_PORT`.
+
+The other three surfaces need nothing: the collector's port is already a flag
+(OBS-7.17), the stream address is already a parameter (OBS-16.5), and FTP,
+Telnet and the DMA port are only reached by suites, which the double does not
+serve.
 
 ### One reader per resource
 
@@ -3005,15 +3624,33 @@ applies to the report, applied to device traffic instead of to documents: two
 readers of one resource means two chances to disagree about it and two costs to
 the device.
 
-It already has three instances in this document, and naming the rule is what
-makes the fourth obvious rather than inventive:
-
 | Resource | The one reader | Everyone else |
 |---|---|---|
 | The REST API | `tests/lib/api.py` | calls it; a new endpoint goes there, per `tests/lib/README.md` |
 | The menu screen | `ui_backend`, which the suites drive | the recorder taps what it read (OBS-8.22) |
 | The device log | the syslog collector | a suite that needs log lines reads the collector's file (OBS-15.8) |
 | The video and audio streams | the stream library of OBS-15.6 | `vic_video`, `av_stream` and the recorder are all callers |
+| The Telnet session | `ui_backend.TelnetBackend`, in the suite | the recorder reads the spool; nothing else opens a session (OBS-8.22) |
+
+Two consumers of one resource share it in one of two ways, and which one is not
+a matter of taste. The rule:
+
+> **If the data is free to fetch twice, both consumers fetch it through the
+> shared library. If fetching it twice costs the device, one consumer fetches
+> and publishes, and the other reads what it published.**
+
+That single rule produces every choice already made in this document:
+
+| Resource | Costs a second fetch? | So |
+|---|---|---|
+| Video and audio | No. Multicast is delivered to every socket that joined | both fetch, through one library, with two sockets (OBS-8.5, OBS-15.6) |
+| The menu screen | Yes. Every request takes one of about four HTTP connection slots | the suites fetch, the recorder reads the spool (OBS-8.22) |
+| The device log | Yes, and worse: two sockets on one unicast UDP port each get about half the datagrams | the collector binds, everyone reads its file (OBS-15.8) |
+| REST generally | Yes, same slots | one shared client per role, and the failure capture reuses the runner's `Device.probe` rather than opening another (OBS-5.3) |
+
+The rule is also what decides the next case, which is the point of writing it
+down: an implementer facing a resource this document did not anticipate asks
+whether a second fetch costs the device, and the answer names the mechanism.
 
 **OBS-15.6** [P6] One stream library owns everything about the two multicast
 streams, and `tests/e2e/lib/vic_video.py`, `tests/e2e/lib/av_stream.py` and the
@@ -3149,6 +3786,33 @@ correcting it is what keeps OBS-15.2 true: the suite that changed the setting
 may have been testing exactly that, and a component that put it back would have
 deleted the finding.
 
+**OBS-15.12** [P1] Each component runs in exactly one process, and which one is
+fixed here rather than left to the implementation.
+
+`./run-tests` is one process for a single target and N+1 processes for N
+targets: `run_targets` in the parent, and a child `run-tests` per target. A
+component started in the wrong one is either duplicated or absent, and for the
+collector the duplicate is the failure mode OBS-15.8 exists to prevent.
+
+| Component | Process | Why |
+|---|---|---|
+| The syslog collector | the process that owns the whole run: `run_targets` in the parent, `main` in a single-target run | It binds one UDP port and maps source addresses to targets, so it must know every target and there must be exactly one of it (OBS-15.8, OBS-7.8) |
+| The recorder | the process that owns one target: `main`, in the child | Its output is per target, multicast is delivered to every socket that joined, and one per target needs no coordination (OBS-8.4) |
+| The failure capture | the process that runs the suite: `main`, in the child | It is a step inside `run_one_attempt` (OBS-5.2) |
+| The console capture | the process that starts the suite: `main`, in the child | It reads the suite's pipe (OBS-2.13) |
+| The menu tap and spool | the suite process | It publishes what that process already fetched (OBS-8.22) |
+| The report generator | none of them | It runs after the run, from the CI job (OBS-3.1, OBS-4.9) |
+
+Two consequences worth stating because they are easy to get wrong:
+
+- The parent, in a multi-target run, has no target of its own and therefore no
+  `<slug>` directory. Its own console output goes to `DIR/run.log`, beside the
+  `DIR/run.jsonl` of OBS-2.12, and not into any target's directory.
+- A single-target run has no parent. `main` owns both roles, so it starts the
+  collector and the recorder, and writes `DIR/<slug>/run.log` and
+  `DIR/<slug>/run.jsonl` and no root-level pair. The report generator must
+  handle both shapes, which OBS-3.17 already requires of it.
+
 **OBS-15.11** [P1] Every component records the gaps it experienced, with a start
 and an end, and the report shows them on the timeline.
 
@@ -3165,6 +3829,13 @@ because the collector never started.
 
 A gap that is still open when the run ends is recorded with no end, and the
 report says so rather than inventing one.
+
+A component that stops entirely records that too, as a gap with a reason and no
+end, through `report.warn`. OBS-1.1 keeps a component's failure from touching
+the run, and OBS-1.2 catches one that never started; this is the third case, a
+component that started and then died. A recording that simply stops, with
+nothing anywhere saying why, is the failure mode that makes a reader distrust
+every other artefact in the bundle.
 
 ### Acceptance criteria for section 15
 
@@ -3186,3 +3857,210 @@ report says so rather than inventing one.
   report shows one gap per affected component with the same start time.
 - A device-free test drives the arming discipline against a stub `StreamsApi`
   and asserts no `streams:stop` is sent for a stream the caller did not start.
+
+---
+
+## 16. Testing the observability code
+
+Everything in sections 2 to 8 is code, and it is a lot of it: a report
+generator, a console capture, a syslog collector, a stream library, a frame
+assembler, an audio concealment timeline, a compositor, an encoder driver and a
+menu spool. None of it is exercised by the gate's own verdicts, because OBS-1.1
+requires it to be unable to affect them. **Code that cannot fail a run is code
+that nothing notices when it breaks**, so it gets tests of its own, and they are
+the only thing standing between this and an observability layer that quietly
+stopped observing.
+
+The bar is set by what these tests replace. A defect here is not found by a
+failing gate; it is found weeks later by somebody who opened an artifact to
+diagnose a firmware defect and found an empty report, a black recording or a log
+with half its lines. By then the run is gone (see Purpose, section 2).
+
+### What the tests are
+
+**OBS-16.1** [P1] The observability code has a test suite of its own, which
+needs no device, runs on every build, and is separate from the E2E gate.
+
+Separate because the two answer different questions and run in different places.
+The gate asks whether the firmware is correct and needs hardware; this asks
+whether the harness that watches the gate is correct and needs nothing. Tying
+the second to the first would mean a change to the report generator could only
+be validated by booking a device.
+
+**OBS-16.2** [P1] One device double, in one place, used by every test here.
+
+The double is a fake Ultimate: a process-local implementation of the parts of
+the device that observability touches. It is reached exactly as a real device
+is, through the handle of OBS-15.13 pointed at loopback with the double's ports,
+and the code under test cannot tell the difference. See OBS-15.14 for why the
+seam is the address and not an injected fake object.
+
+| Face | What it serves | Used by |
+|---|---|---|
+| REST, on a loopback HTTP socket | `machine:menu_screen`, `machine:heap`, `machine:readmem`, `drives`, `version`, `info`, `configs`, `streams:start`, `streams:stop` | the failure capture, the heap check, the menu poll, the arming discipline |
+| A UDP video sender | VIC packets built from a scripted sequence of frames | the stream library, the assembler, the recorder |
+| A UDP audio sender | audio packets with a controllable sequence counter | the concealment timeline |
+| A UDP syslog sender | log lines from a scripted script, from one or more source addresses | the collector |
+
+Two further properties, beyond being addressed rather than injected:
+
+- **It is scripted, not interactive.** A test says what the device does, in
+  order, including what it does wrong. That is what makes the edge conditions of
+  OBS-8.24 to OBS-8.27 reachable at all: no real device can be asked to reorder
+  a packet or wrap a counter on demand.
+- **It is one implementation.** A second fake device, grown in a second test
+  module because the first was inconvenient, is the same failure the HTTP client
+  had before `check_transport_usage.py` existed.
+
+It lives beside the code it fakes, in `tests/lib/`, so both the collector's
+tests and the recorder's tests reach it. Nothing stops a suite using it too, and
+that is a bonus rather than a plan: the double serves what observability touches
+and does not fake the C64, the UI object stack, the file system, FTP or Telnet,
+so a suite that drives the menu still needs a device.
+
+**OBS-16.3** [P1] Four tiers, and every piece of logic belongs to exactly one.
+
+| Tier | Subject | Needs |
+|---|---|---|
+| 1, pure | functions over bytes and records: the assembler, the timeline, nibble unpacking, the spool codec, Markdown rendering, interval and timecode arithmetic, ANSI stripping, datagram attribution, still selection | nothing |
+| 2, component | one component against the device double over real sockets: the collector, the recorder's reception path, the failure capture, the heap check, the arming discipline, the menu tap | the double |
+| 3, pipeline | a whole scripted run with no real device: the double plus a stub suite, producing a `-j` tree, then the report generated from it | the double, a stub suite script |
+| 4, golden | the report generated from the checked-in fixture, compared byte for byte with the checked-in expected document | the fixture (OBS-3.13) |
+
+Tier 3 is the one that catches what the others cannot: the report generator can
+be perfect against a fixture that the runner no longer writes. A pipeline test
+produces the tree with the current runner and reports from it, so a change to a
+record shape fails here rather than silently in production.
+
+Tier 4 is the one that makes a rendering change visible in review. A diff of the
+expected document is exactly the diff a reader of a real report would see, and
+regenerating it is a deliberate act rather than a side effect.
+
+**OBS-16.4** [P1] The suite runs in two places, from one command.
+
+- `make observability_test`, beside the existing `app_space_test` target, which
+  is this repository's established way of running host tests that need no
+  device.
+- A step in `.github/workflows/build.yml`, so every push runs it. This is the
+  only change this document makes to that workflow, and it costs seconds.
+- Registered in the `SUITES` tuple in `run-tests` in the `e2e` category, beside
+  `transport-usage` and `runner-policy`, so a gate run also proves its own
+  observability before it starts using it.
+
+One implementation, invoked three ways. The `make` target and the registered
+suite both run the same module, so there is nothing to keep in step.
+
+It is a registered suite, so it reports through `tests/lib/report.py` like every
+other one: `check()`, the closed verdict vocabulary, one line per check, and a
+`suite_ok`/`suite_fail` at the end. Not `unittest`, even though
+`tools/test_app_space.py` uses it, because that module is not registered and
+this one is: a registered suite that printed `unittest` output would break the
+one thing `tests/lib/README.md` says is not negotiable. The `make` target runs
+the same `main()` and reads its exit status.
+
+Three reasons it is registered rather than only a `make` target: the registry
+comment in `run-tests` states that every executable test under `tests/` is
+listed there with no exception; a device-free suite at the head of the gate
+costs nothing and fails with a clear message; and the report is the artefact
+everyone reads when the gate goes red, so a generator that has stopped rendering
+has to be found by the gate rather than by the person reading the empty report.
+
+### What the design has to give the tests
+
+**OBS-16.5** [P1] Three things are injected rather than reached for, and each is
+a constraint on the production code rather than on the tests.
+
+| Injected | Default | Why the code is untestable without it |
+|---|---|---|
+| The clock | `time.monotonic` | The slot loop, the re-arm backoff, the poll floor and every gap all involve time. A test that waited for real seconds would be slow and flaky, and a test of the backoff ceiling would take minutes. |
+| The stream address | the handle's fields, defaulting to OBS-8.4's constants (OBS-15.13) | A test cannot rely on multicast working in a CI container. The double sends unicast to loopback, so the socket factory takes an address. The vendor's documentation lists unicast as supported and recommends it where IGMP snooping is absent, so this is a real mode rather than a test-only path. |
+| The encoder | `ffmpeg` on `PATH` | Tiers 1 to 3 must run without it. The recorder takes the encoder command, and the tests pass one that records what it was fed. Two tests named in OBS-8.15 use the real one. |
+
+A component that reads a clock, a constant or a binary directly cannot be tested
+without a device and a stopwatch, and this document is otherwise full of
+requirements that only a test can hold to.
+
+**OBS-16.6** [P1] Every fault the run has to survive is a fault the double can
+produce on command, and each has a test.
+
+| Fault | What it proves |
+|---|---|
+| a lost packet, a reordered packet, a duplicated packet | OBS-8.24, OBS-8.25 |
+| a 16-bit counter wrapping | OBS-8.24, OBS-8.25 |
+| a second source address on the same group and port | OBS-8.4, OBS-8.26 |
+| a malformed packet: wrong width, line count or bit depth | OBS-8.24 |
+| `machine:menu_screen` answering 404 | OBS-5.3, OBS-8.20 |
+| `machine:heap` answering 404 | OBS-6.5 |
+| an endpoint that accepts a connection and never answers | OBS-5.7, OBS-8.16, OBS-15.2 |
+| the device disappearing mid-run | OBS-15.11 |
+| a suite stopping or redirecting a stream | OBS-15.7, OBS-8.16 |
+| a syslog datagram from an unmapped address | OBS-7.8 |
+| the syslog going silent mid-run | OBS-7.15, OBS-15.11 |
+| a busy UDP port at collector startup | OBS-1.2 |
+| an unwritable output directory | OBS-1.1 |
+| a JSONL file truncated mid-line | OBS-3.17 |
+| a per-suite JSONL truncated under a live tailer | OBS-8.31 |
+| a suite that is killed by a signal | OBS-3.18, OBS-2.13 |
+| `ffmpeg` absent, or present without the encoder | OBS-8.10 |
+| a device whose geometry changes from PAL to NTSC mid-run | OBS-8.17 |
+
+The table is the checklist. A fault with no row is a fault nobody has decided
+about; a row with no test is a defect waiting for a real run to find.
+
+**OBS-16.7** [P1] Every test names the requirement it holds, and a check fails
+when a requirement with logic has none.
+
+The test module carries the `OBS-` number in the test's name or in a docstring
+on its first line, and a small registry check walks the observability modules
+and the test modules and reports any requirement number that appears in the
+first and not the second. It reports rather than fails when a requirement is
+deliberately untested, with the reason beside it in the same table, because the
+alternative is a check people learn to route around.
+
+This is the property that makes a one-pass implementation reviewable. A reviewer
+cannot read 3000 lines of specification against 3000 lines of code, but they can
+read a list of requirement numbers with a test each.
+
+**OBS-16.8** [P1] The whole suite runs in under a minute on the CI host, and no
+test sleeps for real time.
+
+It runs on every push, so a suite that takes five minutes is a suite somebody
+will move to a nightly job and then stop reading. The clock injection of
+OBS-16.5 is what makes the budget achievable: the only real waiting left is
+loopback socket round trips.
+
+The two tests that need a real encoder are exempt and are marked so they can be
+skipped where `ffmpeg` is absent, reporting `SKIP` with the reason rather than
+passing quietly.
+
+**OBS-16.9** [P1] No test here needs a device, a network beyond loopback, a
+device password, or any state left by a previous run. A test that cannot hold to
+that belongs in the E2E gate instead, and the acceptance criteria in sections 1
+to 15 name the small number that do.
+
+**OBS-16.10** [P1] This section is where the device-free acceptance criteria of
+sections 1 to 15 live. Each of those sections ends with a list, and the entries
+beginning "a device-free test" are requirements on this suite rather than a
+second, parallel set of tests. There is one test suite, and section 16 says how
+it is built; the earlier sections say what it has to prove.
+
+The entries that begin "on hardware" are the exception and stay where they are.
+They are proven once, by hand, on a device, and reported per the implementation
+prompt's definition of done.
+
+### Acceptance criteria for section 16
+
+- `make observability_test` passes on a machine with no device on the network
+  and no `ffmpeg` installed, reporting the two encoder tests as skipped.
+- The same command run twice in a row produces the same result, and running it
+  from a different working directory produces the same result.
+- Every fault in the OBS-16.6 table has a test that fails when the handling for
+  it is reverted, demonstrated one fault at a time.
+- The registry check of OBS-16.7 reports no requirement with logic and no test,
+  and reports the deliberately untested ones with their reasons.
+- The suite completes in under a minute, measured on the CI host.
+- A tier 3 pipeline test produces a `-j` tree with the current runner, generates
+  a report from it, and asserts the report's status line matches the run the
+  double was scripted to produce.
+- Reverting any one requirement's implementation makes exactly the tests that
+  name it fail, and no others.

@@ -37,6 +37,7 @@ import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
@@ -94,6 +95,11 @@ POLL_INTERVAL_SECONDS = 0.5
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # The menu toggle is observable, so it is waited for rather than slept on.
 MENU_CLOSE_TIMEOUT_SECONDS = 5.0
+# Enough Back presses to climb out of the deepest screen a launcher leads to,
+# and one descent into the browser; and deeper than the launcher's own list,
+# so Back reaches its first entry. See enter_file_browser.
+LAUNCHER_DESCENT_STEPS = 10
+LAUNCHER_ENTRY_LIMIT = 24
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -251,6 +257,31 @@ class U64Client:
             description="input",
             extra_headers={"Content-Type": "application/json"},
         )
+
+    @property
+    def launcher_browser_entry(self):
+        """The launcher entry leading to the file browser, or None."""
+        return machine_lib.identify(
+            self.host, self._fetch_product).launcher_browser_entry
+
+    @property
+    def task_menu_key(self):
+        """The key this machine opens the task menu with, in matrix terms.
+
+        A C64 Ultimate puts it on F1 and uses F5 for paging, so pressing F5
+        there scrolls a listing instead of opening anything. See
+        tests/lib/machine.py.
+        """
+        device = machine_lib.identify(self.host, self._fetch_product)
+        return device.task_menu_key.lower()
+
+    def _fetch_product(self):
+        status, _, body = self.request("GET", "/v1/info")
+        if status != 200:
+            raise Failure(f"/v1/info returned HTTP {status}")
+        payload = json.loads(body.decode("utf-8"))
+        return (str(payload.get("product", "")),
+                str(payload.get("firmware_version", "")))
 
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
@@ -422,6 +453,34 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
     return "FAIL_TIMEOUT", last_status
 
 
+def enter_file_browser(client, settle):
+    """Descend from a launcher into the file browser, where there is one.
+
+    A no-op on a machine whose menu button opens the browser itself. A C64
+    Ultimate opens a launcher instead, and the task menu below belongs to the
+    browser: pressed on the launcher it opens the main menu, which has no
+    Printer category at all. The browser is the launcher's first entry, so
+    Back to the top of the list and then Return reaches it.
+    """
+    entry = client.launcher_browser_entry
+    if entry is None:
+        return
+    for _ in range(LAUNCHER_DESCENT_STEPS):
+        screen = client.get_menu_screen()
+        if screen is None:
+            return
+        rows = menu_screen_text(screen)
+        if rows[-1].lstrip().startswith("/"):
+            return
+        if any(entry in row for row in rows):
+            for _ in range(LAUNCHER_ENTRY_LIMIT):
+                client.tap_keys(["left_shift", "cursor_up_down"])
+            client.tap_key("return")
+        else:
+            client.tap_keys(["left_shift", "cursor_left_right"])
+        time.sleep(settle)
+
+
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     if client.get_menu_screen() is not None:
@@ -430,8 +489,9 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
                         "the menu to close before Flush/Eject",
                         timeout=MENU_CLOSE_TIMEOUT_SECONDS)
 
-    client.menu_button()  # open root browser
+    client.menu_button()  # open the menu
     time.sleep(settle)
+    enter_file_browser(client, settle)
 
     if client.get_menu_screen() is None:
         # No menu-screen endpoint on this build: the menu button has just been
@@ -444,7 +504,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         # this branch: the step verified nothing, and its two RETURN presses
         # landed on the Tasks menu's real first entry, Assembly 64, whose query
         # form was then left open for the next suite (confirmed live).
-        client.tap_key("f5")
+        client.tap_key(client.task_menu_key)
         time.sleep(settle)
         client.tap_key("return")
         time.sleep(settle)
