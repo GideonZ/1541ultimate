@@ -86,7 +86,7 @@ SLOWEST_ROWS = 10
 PASSWORD_MASK = "***"
 PASSWORD_PATTERNS = (
     re.compile(r"(--password[=\s]+)(\S+)"),
-    re.compile(r"(-p\s+)(\S+)", re.NOFLAG),
+    re.compile(r"(-p\s+)(\S+)"),
     re.compile(r"([Xx]-[Pp]assword:\s*)(\S+)"),
     re.compile(r"(['\"]?password['\"]?\s*[:=]\s*['\"]?)([^\s'\",}]+)"),
 )
