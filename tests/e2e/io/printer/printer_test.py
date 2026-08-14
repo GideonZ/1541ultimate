@@ -100,6 +100,9 @@ MENU_CLOSE_TIMEOUT_SECONDS = 5.0
 # so Back reaches its first entry. See enter_file_browser.
 LAUNCHER_DESCENT_STEPS = 10
 LAUNCHER_ENTRY_LIMIT = 24
+# Long enough for the whole cursor burst above plus the RETURN to drain through
+# the computer's keyboard matrix and redraw.
+LAUNCHER_DESCENT_TIMEOUT_SECONDS = 15.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -465,6 +468,15 @@ def enter_file_browser(client, settle):
     entry = client.launcher_browser_entry
     if entry is None:
         return
+
+    def in_browser():
+        # The browser is the only screen that puts a directory on the status
+        # row, so a leading "/" identifies it.
+        screen = client.get_menu_screen()
+        if screen is None:
+            return False
+        return menu_screen_text(screen)[-1].lstrip().startswith("/")
+
     for _ in range(LAUNCHER_DESCENT_STEPS):
         screen = client.get_menu_screen()
         if screen is None:
@@ -476,8 +488,19 @@ def enter_file_browser(client, settle):
             for _ in range(LAUNCHER_ENTRY_LIMIT):
                 client.tap_keys(["left_shift", "cursor_up_down"])
             client.tap_key("return")
-        else:
-            client.tap_keys(["left_shift", "cursor_left_right"])
+            # Waited for rather than slept on. A burst of this many keys drains
+            # through the computer's matrix over time, so re-reading the screen
+            # straight after the RETURN can still show the launcher. Treating
+            # that as "did not descend" sends the whole burst a second time,
+            # and the second RETURN then activates the browser's first entry
+            # instead of the launcher's.
+            try:
+                wait.wait_until(in_browser, "the launcher to open the file browser",
+                                timeout=LAUNCHER_DESCENT_TIMEOUT_SECONDS)
+            except Failure:
+                continue
+            return
+        client.tap_keys(["left_shift", "cursor_left_right"])
         time.sleep(settle)
 
 
@@ -512,7 +535,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         time.sleep(1.0)
         return
 
-    client.tap_key("f5")  # open Tasks (context menu) for the current selection
+    # Open Tasks (the context menu) for the current selection. The key is the
+    # machine's, not a constant: a C64 Ultimate puts Tasks on F1 and uses F5 to
+    # page a listing, so F5 there scrolls the browser and opens nothing.
+    client.tap_key(client.task_menu_key)
     time.sleep(settle)
 
     body = client.get_menu_screen()
@@ -528,8 +554,14 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     # on u2@c64u with the browser cursor on row 15, the menu frame opened at row
     # 6 and 'Printer' was on row 15, where arithmetic from a fixed first-entry
     # row put it nowhere near. ContextMenu::seek_char takes the first entry
-    # beginning with the typed letter, which needs no row assumption at all.
+    # beginning with the typed prefix, which needs no row assumption at all.
+    #
+    # Two letters rather than one, because a C64 Ultimate's task menu also
+    # carries 'Power & Reset', which 'p' alone reaches first: seek_char
+    # accumulates what is typed (software/userinterface/context_menu.cc), so
+    # 'pr' separates the two on every machine.
     client.tap_key("p")
+    client.tap_key("r")
     time.sleep(settle)
 
     client.tap_key("return")  # expand the Printer category
