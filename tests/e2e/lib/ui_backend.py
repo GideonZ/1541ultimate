@@ -257,6 +257,17 @@ class Backend:
     def machine_password(self) -> Optional[str]:
         return None
 
+    def overlay_area(self) -> Optional["Window"]:
+        """The area an open window occupies, when the transport can say.
+
+        None where it cannot, and the caller then works the overlay out by
+        comparing the screen with what was there before. A transport that
+        carries the character plane can answer exactly, which is worth doing:
+        the comparison mistakes part of the listing underneath for the
+        overlay whenever a row differed there already.
+        """
+        return None
+
     def enter_file_browser(self) -> None:
         """Land on the file browser if the UI is showing something above it.
 
@@ -953,6 +964,12 @@ class RestBackend(Backend):
     @property
     def machine_password(self) -> Optional[str]:
         return self.password
+
+    def overlay_area(self) -> Optional["Window"]:
+        chars = self._body()[:SCREEN_CELLS]
+        rows = range(2, SCREEN_HEIGHT - 1)
+        window = find_open_window(chars, rows)
+        return None if window == whole_screen(rows) else window
 
     def _request(
         self, method: str, path: str,
@@ -2137,13 +2154,31 @@ class Browser:
         measured on a C64 Ultimate, whose task menu is narrower than the
         browser rows it sits on, every label came back with the listing's size
         column stuck to it, as "Developer                   |32"."""
+        rows = self.rows()
+        # Where the transport can name the window's own columns, read the
+        # labels out of them. Comparing with the screen before takes part of
+        # the listing underneath for the overlay whenever a row differed there
+        # already: measured on a C64 Ultimate, the task menu came back as
+        # ['50K', 'Create', 'Power & Reset', ...], where "50K" is the size
+        # column of the row behind it, and that extra entry shifted every
+        # index so selecting "Developer" opened the entry two places past it.
+        area = self.backend.overlay_area()
+        if area is not None:
+            labels = []
+            for index in area.rows:
+                if index >= len(rows):
+                    break
+                label = strip_frame(rows[index][area.first_column:area.last_column])
+                if label:
+                    labels.append(label)
+            return labels
         labels = []
-        for old, new in zip(before, self.rows()):
+        for old, new in zip(before, rows):
             if old == new:
                 continue
             common = len(os.path.commonprefix([old, new]))
-            changed = new[common:].lstrip(FRAME_CHARS)
-            label = strip_frame(changed.split("|", 1)[0])
+            text = new[common:].lstrip(FRAME_CHARS)
+            label = strip_frame(text.split("|", 1)[0])
             if label:
                 labels.append(label)
         return labels
@@ -2199,7 +2234,15 @@ class Browser:
         self.choose_overlay_item(self.open_context_menu(), label)
 
     def press_task_menu(self) -> None:
-        """Open the task menu with whichever key this machine puts it on."""
+        """Open the task menu with whichever key this machine puts it on.
+
+        The task menu belongs to the file browser, so the browser has to be
+        what is on screen. On a machine with a launcher above it that is not
+        a given: measured on a C64 Ultimate, loading settings through the
+        browser left the launcher showing, and the next task-menu press read
+        the launcher's own entries as the menu it had just opened.
+        """
+        self.backend.enter_file_browser()
         self.press(self.backend.machine.task_menu_key)
 
     def invoke_task_action(self, category: str, item: str) -> None:
