@@ -2032,6 +2032,25 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_closed(screen, "closing help after the layout check")
 
 
+def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
+    """Press Back until nothing is drawn over the file browser.
+
+    Bounded and observed rather than counted: how many presses a context costs
+    is a property of that context, and leaving the settings screens can raise a
+    dialog of its own on a machine that saves its configuration on exit. A
+    fixed number of presses either leaves something open or spends a spare
+    press on whatever the browser does with it, and the next thing this suite
+    does is send a key that means something different in each of those states.
+    """
+    for _ in range(6):
+        snapshot = session.capture()
+        if not any("+--" in line for line in snapshot.lines):
+            return snapshot
+        session.send_key("RUNSTOP", settle=True)
+    raise Failure(f"a window was still open after 6 Back presses\n"
+                  f"{session.capture().text()}")
+
+
 def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
     """Press C=+O and require that the monitor came up, then leave it again.
 
@@ -2062,27 +2081,26 @@ def run_global_monitor_shortcut_test(session: MonitorSession, mode: str) -> None
     """
     leave_monitor_fully(session)
     session.backend.ensure_ready()
+    back_out_to_the_bare_browser(session)
 
     # The context that always worked, so a regression there is not hidden by
     # the new ones passing.
     enter_monitor_with_shortcut(session, "the file browser")
+    back_out_to_the_bare_browser(session)
 
-    session.backend.ensure_ready()
     task_key = session.backend.machine.task_menu_key
     session.send_key(task_key, settle=True)
     enter_monitor_with_shortcut(session, f"the task menu ({task_key})")
     # The task menu is still open under the monitor that covered it.
-    session.send_key("RUNSTOP", settle=True)
+    back_out_to_the_bare_browser(session)
 
     if mode != MODE_TELNET:
         # F2 is Shift+F1 on a C64 keyboard, which only the REST transport can
         # send: keyboard_vt100.cc has no escape sequence for it.
-        session.backend.ensure_ready()
         session.backend.send_combo(["left_shift", "f1"])
         enter_monitor_with_shortcut(session, "the settings screens (F2)")
-        session.send_key("RUNSTOP", settle=True)
+        back_out_to_the_bare_browser(session)
 
-    session.backend.ensure_ready()
     session.enter_monitor()
 
 
