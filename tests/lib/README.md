@@ -16,7 +16,7 @@ repository-root `run-tests` all use it.
 | `targets.py` | What a run is aimed at: which of a target's machines serves what, and where each surface is |
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
-| `fixtures/e2e-run/` | A reduced real run's `-j` tree, written by the runner, and the report generated from it |
+| `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 
 Two registered suites live here as well, because both check the test tree
 itself rather than the device and so need no hardware. They run first, where a
@@ -32,12 +32,19 @@ failure lands as a clear message instead of as a confusing one later:
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
 no device and no network beyond loopback.
 
-`tests/lib/fixtures/e2e-run/` is a `-j` tree written by the runner against the
-device double, with stub suites scripted to fail, to be retried, to be killed
-mid-line and to skip, and `e2e-run.expected.md` is the report generated from
-it. A change to a record shape or to a rendering rule shows up as a diff of
-that document, which is exactly the diff a reader of a real report would see.
-Re-record both with:
+The golden tier of `observability_test.py` builds its own `-j` tree by driving
+the runner against the device double, with stub suites scripted to fail, to be
+retried, to be killed mid-line and to skip. Nothing about that tree is checked
+in: it is scratch space, built once per process and thrown away afterwards, so
+a generated run, including any binary a recording would add, never lives in
+git. `fixtures/e2e-run.expected.md` is the one thing that is checked in: the
+report generated from that tree. Comparing it against a document generated for
+a fresh build first puts both through a fixed substitution for what a live
+build cannot hold still (commit, host, timings, its own scratch directory), so
+the comparison is stable however many times the fixture is rebuilt even though
+the checked-in document itself is not. A change to a record shape or to a
+rendering rule shows up as a diff of that document, which is exactly the diff
+a reader of a real report would see. Re-record it with:
 
 ```sh
 python3 tests/lib/observability_test.py --record-fixture
