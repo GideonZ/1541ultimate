@@ -2715,18 +2715,30 @@ def back_out_to_the_bare_browser(session: MonitorSession) -> Snapshot:
     """Press Back until nothing is drawn over the file browser.
 
     Bounded and observed rather than counted: how many presses a context costs
-    is a property of that context, and leaving the settings screens can raise a
-    dialog of its own on a machine that saves its configuration on exit. A
-    fixed number of presses either leaves something open or spends a spare
-    press on whatever the browser does with it, and the next thing this suite
-    does is send a key that means something different in each of those states.
+    is a property of that context. A fixed number of presses either leaves
+    something open or spends a spare press on whatever the browser does with
+    it, and the next thing this suite does is send a key that means something
+    different in each of those states.
+
+    Leaving the settings screens raises "Save changes to Flash?" whenever the
+    configuration in memory differs from the one in flash, which it does on any
+    device where the REST backend switched `Interface Type` for the session.
+    Back does not answer a Yes/No dialog, so that dialog is answered here, with
+    No: this suite only visited those screens and has no configuration change
+    of its own to keep, and answering Yes would write the session's temporary
+    `Interface Type` into the device's flash.
     """
-    for _ in range(6):
+    for _ in range(8):
         snapshot = session.capture()
+        text = snapshot.text()
+        if "Save changes to Flash?" in text:
+            session.send_key("RIGHT", settle=True)     # Yes -> No
+            session.send_key("ENTER", settle=True)
+            continue
         if not any("+--" in line for line in snapshot.lines):
             return snapshot
         session.send_key("RUNSTOP", settle=True)
-    raise Failure(f"a window was still open after 6 Back presses\n"
+    raise Failure(f"a window was still open after 8 Back presses\n"
                   f"{session.capture().text()}")
 
 
