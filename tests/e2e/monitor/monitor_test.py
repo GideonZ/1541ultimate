@@ -156,8 +156,8 @@ class MonitorSession:
         text is typed once and anything short of the whole of it fails. It is
         non-zero where typing an argument is only how the check reaches the
         memory or the view it is really about. That is idempotent preparation:
-        a retype leaves the prompt, reopens it on its untouched template and
-        types the same text again, and it says so in the run, so a device that
+        a retype leaves the prompt, opens it again, empties the field and types
+        the same text into it, and it says so in the run, so a device that
         needs one is visible rather than absorbed here.
 
         RETURN is left to the caller, because a Go that executes closes the
