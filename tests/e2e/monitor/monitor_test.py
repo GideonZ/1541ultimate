@@ -2089,6 +2089,12 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
             raise Failure(
                 "the monitor did not survive a refused freeze\n"
                 f"{snapshot.text()}")
+        # Which of the two paths ran is the thing a reader wants from this
+        # check, and the two take very different times, so say it rather than
+        # leave OK to mean either.
+        detail("Z: this machine's freezer is not reachable from here, so the "
+               "monitor refused and stayed. The stop-and-release path is "
+               "exercised under --mode freeze, not here")
         return
 
     if jiffy_advances():
@@ -2102,6 +2108,8 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
     if not monitor_is_on_screen(snapshot):
         raise Failure(
             f"the monitor did not survive a freeze and release\n{snapshot.text()}")
+    detail("Z stopped the C64 and released it again, with the jiffy clock at "
+           "$00A2 as the oracle")
 
 
 def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
