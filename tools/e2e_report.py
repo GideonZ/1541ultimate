@@ -62,7 +62,8 @@ INDEX_NAME = "index.md"
 # suite that never ran.
 SPOOL_NAME = "screens.jsonl"
 INTERACTIONS_NAME = "interactions.jsonl"
-SHARED_FILES = ("run.jsonl", SPOOL_NAME, INTERACTIONS_NAME)
+SCREEN_TEXT_NAME = "screen-text.jsonl"
+SHARED_FILES = ("run.jsonl", SPOOL_NAME, INTERACTIONS_NAME, SCREEN_TEXT_NAME)
 
 # How much of a failing suite's console log is inlined. Enough for a traceback
 # and the checks around it, short enough that ten failures do not turn the
@@ -162,8 +163,22 @@ def as_dict(value) -> dict:
 
 
 def as_list(value) -> list:
+    """A list of records, which is what most list fields hold."""
     return [item for item in value if isinstance(item, dict)] \
         if isinstance(value, list) else []
+
+
+def as_strings(value) -> List[str]:
+    """A list of strings, for the two fields that hold names rather than records.
+
+    Separate from `as_list` because that one keeps only the dicts in a list, so
+    passing it a list of strings returns nothing. It did: the device log's
+    `Expected from` column and the recording table's `Files` column both read
+    as empty for every run, which made the one table that exists to show a
+    device logging from an unexpected address unable to show the expected side
+    of the comparison.
+    """
+    return [str(item) for item in value] if isinstance(value, list) else []
 
 
 @dataclass
@@ -492,7 +507,18 @@ def load_target(directory: str, slug: str) -> TargetRun:
             if record.get("suite"):
                 suite_name = str(record["suite"])
                 break
-        label, suite_name = split_stem(name[:-len(".jsonl")], suite_name)
+        stem = name[:-len(".jsonl")]
+        # A file naming a suite its own name does not end in is not that
+        # suite's record file, whatever the list above holds. `screen-text
+        # .jsonl` carried a `suite` field and was not on that list, and the
+        # fallback in `split_stem` read it as a suite run called `text` under a
+        # label called `screen`, which then appeared in the verdict table as
+        # `incomplete` because no runner record ever closes it. The list is a
+        # way of not reading a large file; this is what keeps the table right.
+        if suite_name and stem != suite_name \
+                and not stem.endswith("-" + suite_name):
+            continue
+        label, suite_name = split_stem(stem, suite_name)
         attach_suite_records(target, by_key, label, suite_name, name,
                              file_records)
 
@@ -1303,6 +1329,7 @@ def health_section(run: Run) -> List[str]:
             rows.append(row)
         lines += [f"### {target.token}", ""]
         lines += table(["Sweep", "Verdict"] + names, rows) + [""]
+        lines += syslog_counter_lines(target)
     if not lines:
         return []
     return ["## Device health", ""] + lines
@@ -1317,10 +1344,55 @@ def render_health_check(check: Optional[dict]) -> str:
         return "skip"
     if state == "fail":
         return "FAIL"
-    heap = as_dict(check.get("heap"))
-    if heap:
-        return f"{as_int(heap.get('free'))}B"
+    figures = as_dict(check.get("figures"))
+    if "free" in figures:
+        return f"{as_int(figures.get('free'))}B"
     return f"{as_float(check.get('ms')):.0f}ms"
+
+
+# What the device counts about its own log, read from `/v1/info` by the ident
+# check of every sweep. They are cumulative since the device booted, so what a
+# reader wants is the value at the end of the run and whether it moved during
+# it, not one number per sweep in a table cell.
+SYSLOG_COUNTERS = (
+    ("syslog_failed_sends", "datagrams the stack refused"),
+    ("syslog_overflows", "times the forwarding buffer filled before it drained"),
+)
+
+
+def syslog_counter_lines(target: TargetRun) -> List[str]:
+    """What the device's own log counters did over the run, in one sentence each.
+
+    A device logging to an address where nothing is listening is harmless to a
+    run and completely silent, so without these a lossy link and a quiet device
+    look identical from the host. They cannot be reported through the log
+    itself without risking a loop, which is why they are on `/v1/info` and why
+    the sweep reads them.
+    """
+    said: List[str] = []
+    for name, means in SYSLOG_COUNTERS:
+        seen = [(sweep, as_int(as_dict(check.get("figures")).get(name)))
+                for sweep in target.health
+                for check in as_list(sweep.get("checks"))
+                if name in as_dict(check.get("figures"))]
+        if not seen:
+            continue
+        values = [value for _sweep, value in seen]
+        # Whether it moved at all, rather than whether its ends differ. The
+        # counter is cumulative since the device booted, so a device the runner
+        # recovered mid-run starts again from zero and can end the run on the
+        # value it started it on while having counted plenty in between.
+        if len(set(values)) == 1:
+            said.append(f"`{name}` stayed at {values[0]} over {len(seen)} "
+                        f"sweep(s), which counts {means}.")
+        else:
+            moved = next(sweep for sweep, value in seen if value != values[0])
+            said.append(f"`{name}` went from {values[0]} to {values[-1]} over "
+                        f"{len(seen)} sweep(s), highest {max(values)}, first "
+                        f"moving at the sweep before "
+                        f"`{redact(str(moved.get('label') or '-'))}`. It counts "
+                        f"{means}.")
+    return said + [""] if said else []
 
 
 # What each file in the tree is, keyed by how its name is built. The index is
@@ -1425,7 +1497,33 @@ BOOT_MARKER = "All linked modules have been initialized and are now running."
 
 # How many device log lines are inlined around one failure. The whole log is a
 # sibling file, and this is the slice a reader would otherwise go looking for.
-LOG_SLICE_LINES = 30
+#
+# Measured over a sequential run of the whole gate against an Ultimate II+L,
+# 22930 collected lines over 544 checks: a check's window held 154 lines at the
+# 90th percentile and 592 at its widest, so a flat tail of 30 was already
+# cutting a quarter of the checks off before this run's own log grew. Sixty is
+# above the 90th percentile of what a window holds once the lines below are
+# taken out of it, which leaves 93% of checks showing their whole window
+# instead of 76%.
+LOG_SLICE_LINES = 60
+
+# The lines the device writes because this run asked it something: one per
+# accepted socket, one per request served, one per FTP and DMA connection. In
+# that same run they were 15882 of the 22930 lines, and 14163 of those were the
+# two shapes the harness's own polling produces.
+#
+# They are omitted from a failure's slice, and counted rather than silently
+# dropped. Two reasons, and neither is that they are noise in general. The
+# harness already records every one of those requests itself, exhaustively and
+# with the response, in `interactions.jsonl`, so the device's one-line echo of
+# a request is the one line in the log that is already known from a better
+# source. And they are produced at the harness's rate rather than the device's,
+# so a check that polls a screen fifty times pushes the device's own account of
+# what it was doing out of the slice, which is the only part a reader cannot
+# reconstruct.
+ROUTINE_LOG_LINE = re.compile(
+    r"^(Accept client |HTTP (GET|PUT|POST|DELETE|PATCH|HEAD) /"
+    r"|FTPDaemonThread\(|dmaThread |Closing socket|@?Received Ident)")
 
 LOG_CAVEAT = (
     "The device log is best-effort and incomplete by construction. It is UDP "
@@ -1487,7 +1585,7 @@ def expected_senders(run: Run) -> List[List[str]]:
     for target in run.targets:
         if not target.log:
             continue
-        expected = [str(a) for a in as_list(target.log.get("addresses"))]
+        expected = as_strings(target.log.get("addresses"))
         observed = as_dict(target.log.get("senders"))
         rows.append([target.token,
                      ", ".join(f"`{a}`" for a in expected) or "-",
@@ -1552,10 +1650,22 @@ def log_section(run: Run) -> List[str]:
                                if start <= when <= check.time]
                 if not slice_lines:
                     continue
+                kept = [one for one in slice_lines
+                        if not ROUTINE_LOG_LINE.match(one)]
+                dropped = len(slice_lines) - len(kept)
+                # A window holding nothing but this run's own requests still
+                # says something, so it is shown rather than replaced by a
+                # sentence about what was left out.
+                shown = (kept or slice_lines)[-LOG_SLICE_LINES:]
+                about = [f"{len(slice_lines)} line(s) in the window"]
+                if dropped and kept:
+                    about.append(f"{dropped} of them this run's own requests, "
+                                 "which are in the file and not here")
+                if len(shown) < len(kept or slice_lines):
+                    about.append(f"the last {len(shown)} of the rest")
                 lines += [f"**{check.key}**, from the end of the check before "
-                          "it:", ""]
-                lines += fenced([redact(one) for one in
-                                 slice_lines[-LOG_SLICE_LINES:]]) + [""]
+                          f"it. {', '.join(about)}:", ""]
+                lines += fenced([redact(one) for one in shown]) + [""]
     if not lines:
         return []
     return ["## Device log", "", LOG_CAVEAT, ""] + lines
@@ -2095,7 +2205,7 @@ def recording_block(run: Run) -> List[str]:
                     for name, label in RECORDER_COUNTS
                     if as_int(capture.get(name))]
         rows.append([target.token,
-                     ", ".join(f"`{name}`" for name in as_list(
+                     ", ".join(f"`{name}`" for name in as_strings(
                          capture.get("files"))) or "-",
                      f"{frames}",
                      f"{frames // fps // 60:02d}:{frames // fps % 60:02d}",
@@ -2113,7 +2223,14 @@ def recording_block(run: Run) -> List[str]:
              "The `lost` column is the network's: packets and frames the "
              "device sent that did not arrive, arrived incomplete, or arrived "
              "out of order. It does not include anything missing across a "
-             "re-anchor.", ""]
+             "re-anchor.", "",
+             "Every line in the band under the panes ends with the number of "
+             "its record in `interactions.jsonl`, so a frame reading `#4812` "
+             "is `jq 'select(.seq == 4812)' <slug>/interactions.jsonl`. The "
+             "other direction is the wall clock: a record's position in the "
+             "file is `lead_in + (time - started)` from the `kind=capture` "
+             "record, and a still carries its own `frame` and `position` so "
+             "it needs no arithmetic.", ""]
     lines += table(["Target", "Files", "Frames", "Length", "Lost", "Recorder"],
                    rows)
     if reasons:
@@ -2124,7 +2241,36 @@ def recording_block(run: Run) -> List[str]:
                   "stream, the recorder asking for one again and a device "
                   "restarting all produce one:", ""]
         lines += reasons
+    lines += screen_text_lines(run)
     return lines + [""]
+
+
+def screen_text_lines(run: Run) -> List[str]:
+    """How much of the C64's own screen came back as text, and how much did not.
+
+    A frame the decoder cannot read as a text screen produces no record, which
+    is the right record to write and the wrong thing to leave as the only
+    trace: it looks the same as a screen that did not change. Both figures are
+    on the capture record for that reason, and both are here.
+    """
+    said = []
+    for target in run.targets:
+        capture = target.capture or {}
+        if "screen_texts" not in capture and "screens_unreadable" not in capture:
+            continue
+        read = as_int(capture.get("screen_texts"))
+        refused = as_int(capture.get("screens_unreadable"))
+        said.append(f"- {target.token}: {read} screen(s) read back as text, "
+                    f"{refused} frame(s) it could not read as a text screen")
+    if not said:
+        return []
+    return ["",
+            "`screen-text.jsonl` is the C64's own screen decoded from the "
+            "frames the recording already had. A frame in a graphics mode, in "
+            "the shifted character set, or drawn in a font that is not the "
+            "character ROM is not readable this way and produces no record, so "
+            "the second figure is what tells that apart from a screen that did "
+            "not change:", ""] + said
 
 
 def screens_section(run: Run) -> List[str]:

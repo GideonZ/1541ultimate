@@ -126,6 +126,7 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
         return None
     centred, top = picture_origin(width, height)
     found = _content(pixels, width, height)
+    window = None
     if found is not None:
         # Only the vertical edge is taken from the picture. `$D011` selects 24
         # rows instead of 25 and scrolls vertically, and a row of text starts
@@ -143,10 +144,11 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
         # scroll moves it, so the columns are searched from the centred origin
         # outwards and the nearest candidate that matches everything wins.
         top = found[1]
+        window = _window(pixels, width, top)
     best: Optional[List[str]] = None
     fewest = MAX_UNMATCHED + 1
     for left in _candidates(centred, width):
-        unmatched, text = _at(pixels, width, left, top)
+        unmatched, text = _at(pixels, width, left, top, window)
         if unmatched == 0:
             return text
         if unmatched < fewest:
@@ -174,6 +176,42 @@ def _content(pixels: bytes, width: int, height: int):
     if left is None or left + TEXT_WIDTH > width:
         return None
     return left, top
+
+
+# The narrowest display window the VIC can draw, which is 38-column mode. A
+# horizontal span narrower than this is not a display window, so it is content
+# on a frame whose border and background are the same colour, and masking to it
+# would throw away most of the screen.
+NARROWEST_WINDOW = (COLUMNS - 2) * CELL
+
+
+def _window(pixels: bytes, width: int, top: int):
+    """The horizontal span of the display window on this frame, or None.
+
+    The window is where the frame stops being the border and starts being the
+    picture, and it is not the same thing as the character grid: `$D016` bit 3
+    blanks one cell at each side of a grid that does not move. It is needed
+    because a candidate grid origin can overhang the window, and a pixel
+    outside the window is the border rather than ink.
+
+    Taken as the widest span over every row of the picture rather than from one
+    row, because a row whose ink is the border's colour hides the window edge
+    behind it. That is the ordinary case rather than a contrived one: the C64's
+    boot screen draws light blue text on a light blue border.
+    """
+    border = pixels[0]
+    table = bytes(0 if index == border else 1 for index in range(256))
+    left, right = width, -1
+    for y in range(top, min(top + TEXT_HEIGHT, len(pixels) // width)):
+        row = pixels[y * width:(y + 1) * width].translate(table)
+        stripped = row.lstrip(b"\x00")
+        if not stripped:
+            continue
+        left = min(left, width - len(stripped))
+        right = max(right, len(row.rstrip(b"\x00")) - 1)
+    if right - left + 1 < NARROWEST_WINDOW:
+        return None
+    return left, right
 
 
 def _candidates(centred: int, width: int):
@@ -204,8 +242,19 @@ def _candidates(centred: int, width: int):
             yield left
 
 
-def _at(pixels: bytes, width: int, left: int, top: int):
-    """One decode at one origin: how many cells matched nothing, and the text."""
+def _at(pixels: bytes, width: int, left: int, top: int, window=None):
+    """One decode at one origin: how many cells matched nothing, and the text.
+
+    `window` is the display window's horizontal span when the frame has one.
+    A candidate grid origin can reach past that span, and what lies past it is
+    the border, which is not the background and would therefore be read as ink.
+    Eight pixel columns of it make a cell that matches no ROM shape, and one
+    such cell on every row of a 25-row screen is 25 unreadable cells against a
+    tolerance of 24, so the frame is refused. Both column modes reach past the
+    window at some fine scroll values, so the pixels outside it are read as
+    background instead: a cell the VIC did not draw reads as blank, which is
+    the same answer 38-column mode's blanked edge cells already get.
+    """
 
     background = _background(pixels, width, left, top)
     if background is None:
@@ -216,10 +265,18 @@ def _at(pixels: bytes, width: int, left: int, top: int):
     # because a per-pixel loop over 64000 pixels is not affordable at the
     # output rate.
     table = bytes(0 if index == background else 1 for index in range(256))
+    outside_left = 0 if window is None else max(0, window[0] - left)
+    outside_right = (0 if window is None
+                     else max(0, left + TEXT_WIDTH - 1 - window[1]))
     lines: List[bytes] = []
     for y in range(top, top + TEXT_HEIGHT):
         start = y * width + left
-        lines.append(pixels[start:start + TEXT_WIDTH].translate(table))
+        line = pixels[start:start + TEXT_WIDTH].translate(table)
+        if outside_left or outside_right:
+            line = (bytes(outside_left)
+                    + line[outside_left:TEXT_WIDTH - outside_right]
+                    + bytes(outside_right))
+        lines.append(line)
 
     text: List[str] = []
     unmatched = 0

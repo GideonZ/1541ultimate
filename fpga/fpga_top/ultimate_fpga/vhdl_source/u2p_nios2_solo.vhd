@@ -527,6 +527,8 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
+        g_max_cart_bits => 22, -- 4 MB!
+        g_rom_base_cart => X"3C00000", -- should be on a 4M boundary
         g_command_intf  => true,
         g_drive_sound   => true,
         g_rtc_chip      => false,

@@ -950,14 +950,25 @@ def the_heap_figures_reach_the_health_record() -> str:
             raise Failure("no sweep was recorded")
         entries = [c for c in sweeps[0]["checks"] if c["name"] == "heap"]
         expect("one heap entry", len(entries), 1)
-        expect("free", entries[0]["heap"]["free"], double.heap_free)
+        expect("free", entries[0]["figures"]["free"], double.heap_free)
         for other in sweeps[0]["checks"]:
-            if other["name"] != "heap" and "heap" in other:
-                raise Failure(f"{other['name']} grew a heap entry")
+            if other["name"] not in ("heap", "ident") and "figures" in other:
+                raise Failure(f"{other['name']} grew a figures entry")
         kinds = {r["kind"] for r in made.records("127.0.0.1", "run.jsonl")}
         if "heap" in kinds:
             raise Failure("the figures were given a record kind of their own")
-    return "inside the health record"
+
+        # The two counters only the device has, on the check that already reads
+        # `/v1/info`, so the sweep costs the request it was making anyway. A
+        # device logging where nothing is listening is silent and harmless, so
+        # without them a lossy link and a quiet device look the same.
+        ident = [c for c in sweeps[0]["checks"] if c["name"] == "ident"]
+        expect("one ident entry", len(ident), 1)
+        expect("the syslog counters ride with it",
+               sorted(ident[0].get("figures", {})),
+               ["syslog_failed_sends", "syslog_overflows"])
+        expect("and the sweep is still OK", sweeps[0]["ok"], True)
+    return "inside the health record, heap and syslog both"
 
 
 @case(1, "OBS-7.5", "OBS-7.6", "OBS-7.7", "OBS-7.8")
@@ -1268,7 +1279,7 @@ def the_interface_preference_is_wired_into_every_build() -> str:
 
 
 def vic_frame(rows, width=384, height=272, background=6, foreground=14,
-              scroll=0, columns=40):
+              scroll=0, columns=40, border=None):
     """One VIC frame of colour indices showing `rows`, as the hardware draws it.
 
     Rendered from the character ROM through `glyphs.rom_rows_for_index`, which
@@ -1280,12 +1291,29 @@ def vic_frame(rows, width=384, height=272, background=6, foreground=14,
     38 the VIC blanks one cell at each side of the window, over a grid that
     does not move, which is what a frame taken while the KERNAL scrolls the
     screen looks like.
+
+    `border` is the colour outside the display window. Left unset the whole
+    frame is the background colour, which is the simplest frame that carries
+    the text. Set to a colour of its own the frame has the shape the hardware
+    sends: a border, a window inside it, and ink clipped at the window edge, so
+    a grid origin that reaches past the window meets border pixels rather than
+    running off a frame that is background everywhere.
     """
     import glyphs
     import vic_text
 
-    pixels = bytearray([background]) * (width * height)
+    pixels = bytearray([background if border is None else border]) * (
+        width * height)
     window, top = vic_text.picture_origin(width, height)
+    if columns == 38:
+        window_left = window + glyphs.GLYPH_WIDTH
+        window_right = window + vic_text.TEXT_WIDTH - glyphs.GLYPH_WIDTH
+    else:
+        window_left, window_right = window, window + vic_text.TEXT_WIDTH
+    if border is not None:
+        for y in range(top, top + vic_text.TEXT_HEIGHT):
+            for x in range(window_left, window_right):
+                pixels[y * width + x] = background
     left = window + scroll
     for row, text in enumerate(rows[:vic_text.ROWS]):
         for column, character in enumerate(text[:vic_text.COLUMNS]):
@@ -1300,9 +1328,11 @@ def vic_frame(rows, width=384, height=272, background=6, foreground=14,
                 for bit in range(glyphs.GLYPH_WIDTH):
                     if bits & (0x80 >> bit):
                         at = base + bit
-                        if left + column * glyphs.GLYPH_WIDTH + bit < width:
+                        x = left + column * glyphs.GLYPH_WIDTH + bit
+                        if x < width and (border is None
+                                          or window_left <= x < window_right):
                             pixels[at] = foreground
-    if columns == 38:
+    if columns == 38 and border is None:
         blanked = list(range(window, window + glyphs.GLYPH_WIDTH))
         blanked += list(range(window + vic_text.TEXT_WIDTH - glyphs.GLYPH_WIDTH,
                               window + vic_text.TEXT_WIDTH))
@@ -1429,37 +1459,117 @@ def a_scrolling_screen_is_read_at_the_column_it_is_really_in() -> str:
     wanted = ["READY.".ljust(40),
               'LOAD"$",8'.ljust(40),
               "SEARCHING FOR $".ljust(40)] + [" ".ljust(40)] * 22
-    for scroll in range(8):
-        read = vic_text.decode(vic_frame(wanted, scroll=scroll), 384, 272)
-        if read is None:
-            raise Failure(f"40 columns at fine scroll {scroll} was not read")
-        for index, (was, now) in enumerate(zip(wanted, read)):
-            if was != now:
-                raise Failure(f"40 columns at fine scroll {scroll}: row "
-                              f"{index} read back as {now!r}, not {was!r}")
+    # Twice over: once on a frame that is the background colour everywhere, and
+    # once on a frame with a real border around a real display window, which is
+    # the shape the device sends. The second is not a variation of the first.
+    # A grid origin the fine scroll has moved right reaches past the window at
+    # some scroll values, and what it reaches is the border, whose colour is
+    # not the background and is therefore read as ink. Eight pixel columns of
+    # it make one cell that matches no ROM shape on every row of a 25-row
+    # screen, which is 25 unreadable cells against a tolerance of 24, so a
+    # frame the machine drew correctly was refused. On the boot screen the
+    # border and the text are both light blue, which is why this uses one
+    # colour for both.
+    for border in (None, 14):
+        shape = "with a border" if border else "without a border"
+        for scroll in range(8):
+            read = vic_text.decode(
+                vic_frame(wanted, scroll=scroll, border=border), 384, 272)
+            if read is None:
+                raise Failure(f"40 columns {shape} at fine scroll {scroll} was "
+                              "not read")
+            for index, (was, now) in enumerate(zip(wanted, read)):
+                if was != now:
+                    raise Failure(f"40 columns {shape} at fine scroll {scroll}: "
+                                  f"row {index} read back as {now!r}, not "
+                                  f"{was!r}")
 
-    # 38 columns: the VIC blanks one cell at each side, so the first column is
-    # not in the picture at all and no decode can recover it. What matters is
-    # that everything else keeps its own column number rather than sliding one
-    # to the left to fill the gap.
-    for scroll in range(8):
-        read = vic_text.decode(vic_frame(wanted, scroll=scroll, columns=38),
-                               384, 272)
-        if read is None:
-            raise Failure(f"38 columns at fine scroll {scroll} was not read")
-        for index, (was, now) in enumerate(zip(wanted, read)):
-            if was[1:] != now[1:]:
-                raise Failure(f"38 columns at fine scroll {scroll}: row "
-                              f"{index} read back as {now!r}, not {was!r}")
-            if now[0] not in (was[0], " ", vic_text.GRAPHIC):
-                raise Failure(f"38 columns at fine scroll {scroll}: the "
-                              f"blanked column read as {now[0]!r}")
-    # The one the hardware was actually seen in reads completely: at fine
-    # scroll 7 the blanked cell covers one pixel column of the first character,
-    # and no character of the set carries ink there.
-    read = vic_text.decode(vic_frame(wanted, scroll=7, columns=38), 384, 272)
-    expect("the measured state reads in full", read[0], wanted[0])
-    return "40 and 38 columns, fine scroll 0 to 7, every column in place"
+        # 38 columns: the VIC blanks one cell at each side, so the first column
+        # is not in the picture at all and no decode can recover it. What
+        # matters is that everything else keeps its own column number rather
+        # than sliding one to the left to fill the gap.
+        for scroll in range(8):
+            read = vic_text.decode(
+                vic_frame(wanted, scroll=scroll, columns=38, border=border),
+                384, 272)
+            if read is None:
+                raise Failure(f"38 columns {shape} at fine scroll {scroll} was "
+                              "not read")
+            for index, (was, now) in enumerate(zip(wanted, read)):
+                if was[1:] != now[1:]:
+                    raise Failure(f"38 columns {shape} at fine scroll {scroll}: "
+                                  f"row {index} read back as {now!r}, not "
+                                  f"{was!r}")
+                if now[0] not in (was[0], " ", vic_text.GRAPHIC):
+                    raise Failure(f"38 columns {shape} at fine scroll {scroll}: "
+                                  f"the blanked column read as {now[0]!r}")
+        # The one the hardware was actually seen in reads completely: at fine
+        # scroll 7 the blanked cell covers one pixel column of the first
+        # character, and no character of the set carries ink there.
+        read = vic_text.decode(
+            vic_frame(wanted, scroll=7, columns=38, border=border), 384, 272)
+        expect(f"the measured state reads in full {shape}", read[0], wanted[0])
+    return ("40 and 38 columns, fine scroll 0 to 7, with and without a border, "
+            "every column in place")
+
+
+@case(1, "OBS-2.18")
+def a_frame_the_decoder_cannot_read_is_counted_rather_than_dropped() -> str:
+    """A refused frame leaves a number behind, not an absence.
+
+    The decoder writes nothing for a frame that is not a text screen it can
+    read, which is the right record to write. It is the wrong thing to leave as
+    the only trace: a device drawing a bitmap, a screen in the shifted
+    character set and a device whose screen simply did not change all produce
+    the same silence in `screen-text.jsonl`, and the capture record's
+    `screen_texts` counts only the successes. `screens_unreadable` is the other
+    half, so a reader can see the proportion rather than infer it.
+
+    Driven through the recorder's own screen reader rather than through a
+    stream, because the interval between reads and the arrival of a frame are
+    independent and a test that waits on both proves whichever one it happened
+    to catch.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import dataclasses
+    import tempfile
+
+    import recorder as recorder_lib
+
+    wanted = ["READY.".ljust(40)] + [" ".ljust(40)] * 24
+    noise = bytes((x * 7 + y * 13) % 16
+                  for y in range(272) for x in range(384))
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        made = recorder_lib.Recorder(directory, "127.0.0.1",
+                                     UltimateApi(double.target(), timeout=5.0),
+                                     recorder_lib.Options(fps=5, audio=False))
+        made.target = dataclasses.replace(
+            double.target(), video_group="127.0.0.1", video_port=0)
+        state = recorder_lib.RunState(suite="fixture", label="overlay")
+
+        made._sources.frame = (384, 272, noise)
+        made._maybe_read_screen(100.0, state)
+        expect("the frame it could not read is counted",
+               made.screens_unreadable, 1)
+        expect("and no screen was written for it", made.screen_texts, 0)
+
+        made._sources.frame = (384, 272, vic_frame(wanted, border=14))
+        made._maybe_read_screen(200.0, state)
+        expect("the frame it could read is written", made.screen_texts, 1)
+        expect("and the refusals stay where they were",
+               made.screens_unreadable, 1)
+
+        made._sources.frame = (384, 272, noise)
+        made._maybe_read_screen(300.0, state)
+        expect("a second refusal counts again", made.screens_unreadable, 2)
+
+        path = os.path.join(directory, "screen-text.jsonl")
+        written = [json.loads(line) for line in open(path, encoding="utf-8")]
+        expect("one record, for the one frame that could be read",
+               len(written), 1)
+        expect("and it is the screen that was there", written[0]["text"][0],
+               wanted[0])
+    return "two refusals counted, one screen written"
 
 
 @case(1, "OBS-2.17")
@@ -2660,6 +2770,69 @@ def a_rearm_waits_for_the_suite_and_backs_off() -> str:
     if asked > 12:
         raise Failure(f"{asked} re-arms in ten minutes is not a back-off")
     return f"{asked} re-arms in ten minutes"
+
+
+@case(1, "OBS-8.14", "OBS-8.20")
+def a_file_that_is_not_a_suite_run_s_own_cannot_rename_the_run() -> str:
+    """Only a file whose name carries the label may say what the label is.
+
+    The suite run a frame belongs to is read from the name of the file the
+    record was appended to, because that name is the only thing that carries
+    the label. Several files in a target's directory carry a `suite` field and
+    are not one suite run's records: the screen spool, the interaction log and
+    the decoded screen text. Their names carry no label.
+
+    Treating one of them as a suite run's file blanked the label on the next
+    poll, so the identity flapped between `overlay-input-1` and `-input-1`
+    every time the recorder wrote a line. Each flap is a change of suite run to
+    the recorder: it wrote the stills it had, threw the picker away and started
+    a new one. A 24-suite run produced 994 still records naming 290 files, and
+    the frame each one named was the frame at some earlier flap rather than the
+    frame the file on disk holds. Extracting the video at the recorded position
+    then reproduced a different picture, which is the one property a still's
+    position exists to have.
+    """
+    import json
+    import tempfile
+
+    import recorder as recorder_lib
+
+    with tempfile.TemporaryDirectory() as directory:
+        tail = recorder_lib.JsonlTail(directory)
+        with open(os.path.join(directory, "overlay-input.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "input", "attempt": 1,
+                                     "verdict": "OK", "time": 1.0}) + "\n")
+        expect("the suite run is named after its own file",
+               tail.poll().stem, "overlay-input-1")
+
+        # Every file a target's directory holds that carries a suite name and
+        # is not one suite run's records.
+        for name, record in (
+                ("screen-text.jsonl", {"kind": "vic", "suite": "input",
+                                       "attempt": 1, "text": [], "time": 2.0}),
+                ("interactions.jsonl", {"kind": "interaction", "seq": 1,
+                                        "suite": "input", "attempt": 1,
+                                        "time": 3.0}),
+                ("screens.jsonl", {"kind": "screen", "suite": "input",
+                                   "attempt": 1, "time": 4.0})):
+            with open(os.path.join(directory, name), "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+            if tail.poll().stem != "overlay-input-1":
+                raise Failure(f"{name} renamed the suite run to "
+                              f"{tail.state.stem!r}")
+
+        # And a suite run's own file still names it, including the next one.
+        with open(os.path.join(directory, "telnet-menu-screen.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "menu-screen", "attempt": 1,
+                                     "verdict": "OK", "time": 5.0}) + "\n")
+        expect("the next suite run renames it",
+               tail.poll().stem, "telnet-menu-screen-1")
+    return "three shared files, none of them a suite run"
 
 
 @case(1, "OBS-8.27", "OBS-8.38")
@@ -3868,8 +4041,12 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
         # come back out of the file exactly as it went in, the same as any
         # other, because the shifted origin is an ordinary VIC state rather
         # than a damaged frame.
+        # With a border, which is the frame shape the device sends: a border
+        # around a display window, ink clipped at the window edge, and the
+        # 38-column window one cell in from the grid on each side.
         scrolled = [vic_frame(["SEARCHING FOR $".ljust(40)] + [" " * 40] * 24,
-                              scroll=5, columns=38, foreground=colour)
+                              scroll=5, columns=38, foreground=colour,
+                              border=14)
                     for colour in (1, 7, 13)]
         for number in range(30):
             # A picture that changes completely every few frames, so the
@@ -4965,6 +5142,19 @@ FIXTURE_STUBS = (
         "say('All linked modules have been initialized and are now running.')\n"
         "report.check_start('the drive answers')\n"
         "say('1541: seek track 18')\n"
+        # What the device writes because the harness asked it something. A real
+        # device produces far more of these than of anything else: over one
+        # sequential run of the gate they were 15882 of 22930 lines. Here they
+        # are enough to push the two lines that matter out of the slice if the
+        # slice were the last of everything.
+        "for n in range(40):\n"
+        "    sock.sendto(('Accept client 0 on socket 7.  '\n"
+        "                 '192.168.1.185:4%04d' % n).encode(),\n"
+        "                ('127.0.0.1', port))\n"
+        "    time.sleep(0.01)\n"
+        "    sock.sendto(b'HTTP GET /v1/machine:menu_screen',\n"
+        "                ('127.0.0.1', port))\n"
+        "    time.sleep(0.01)\n"
         "say('1541: no answer from the drive')\n"
         "report.check_fail('the drive did not answer')\n"
         "sys.exit(1)\n")),
@@ -5497,6 +5687,186 @@ def a_failure_carries_what_the_run_already_knows() -> str:
     return "4 kinds of fact, no guess"
 
 
+@case(1, "OBS-3.23", "OBS-8.39")
+def the_recording_table_names_the_files_it_is_about() -> str:
+    """A row about a recording says which file it is a row about.
+
+    The column read `-` for every run, because the file names are a list of
+    strings and the helper that read it keeps only the records in a list. The
+    same helper read the device log's expected addresses.
+    """
+    generator = load_report_tool()
+    run = generator.Run(directory="runs", targets=[generator.TargetRun(
+        token="u64", slug="u64",
+        capture={"files": ["video.mp4", "video-harness.mp4"], "frames": 100,
+                 "fps": 10, "frames_lost": 3})])
+    rendered = "\n".join(generator.recording_block(run))
+    for name in ("video.mp4", "video-harness.mp4"):
+        if f"`{name}`" not in rendered:
+            raise Failure(f"{name} is not named in the recording table")
+    if "3 frames lost" not in rendered:
+        raise Failure("the loss column lost its figure")
+    # And the one place a reader with a video is looking says how to get from
+    # a frame to the record behind it and back, in both directions.
+    if "jq 'select(.seq == 4812)'" not in rendered:
+        raise Failure("the section does not say how to reach a record from a "
+                      "frame")
+    if "lead_in + (time - started)" not in rendered:
+        raise Failure("the section does not say how to reach a frame from a "
+                      "record")
+    return "both files named, and the join in both directions"
+
+
+@case(1, "OBS-2.18")
+def the_report_says_how_much_of_the_screen_came_back_as_text() -> str:
+    """Both halves of the decoder's accounting, or nothing at all.
+
+    A recorder that refused three frames in four and one whose device sat on
+    one screen for the whole run write the same number of records. Only the
+    count of refusals separates them, so the report carries it beside the count
+    of screens read.
+    """
+    generator = load_report_tool()
+
+    def target(capture):
+        return generator.Run(directory="runs", targets=[generator.TargetRun(
+            token="u64", slug="u64", capture=capture)])
+
+    said = generator.screen_text_lines(
+        target({"screen_texts": 201, "screens_unreadable": 279}))
+    joined = "\n".join(said)
+    if "201 screen(s) read back as text" not in joined:
+        raise Failure(f"the screens read are not reported: {joined!r}")
+    if "279 frame(s) it could not read" not in joined:
+        raise Failure(f"the frames refused are not reported: {joined!r}")
+
+    # A run whose recorder read everything still says so, because zero
+    # refusals is a fact and an absent line is not.
+    none_refused = "\n".join(generator.screen_text_lines(
+        target({"screen_texts": 12, "screens_unreadable": 0})))
+    if "0 frame(s) it could not read" not in none_refused:
+        raise Failure(f"a run with no refusals says nothing: {none_refused!r}")
+
+    expect("a run with no recorder has nothing to say",
+           generator.screen_text_lines(target(None)), [])
+    return "read and refused, both always"
+
+
+@case(1, "OBS-9.2")
+def the_report_says_what_the_devices_log_counters_did() -> str:
+    """Both counters, whether they moved, and which sweep first saw a move.
+
+    They are cumulative since the device booted, so a column of one value per
+    sweep answers nothing a reader asks. What is asked is whether the device
+    dropped any of its own log during this run, and if so from where on.
+    """
+    generator = load_report_tool()
+
+    def sweeps(values):
+        return generator.TargetRun(
+            token="u64", slug="u64",
+            health=[{"kind": "health", "label": f"suite-{index}", "ok": True,
+                     "checks": [{"name": "ident", "state": "ok", "ms": 9.0,
+                                 "figures": {"syslog_failed_sends": failed,
+                                             "syslog_overflows": over}}]}
+                    for index, (failed, over) in enumerate(values)])
+
+    steady = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (0, 0)]))
+    expect("one line per counter, plus the blank", len(steady), 3)
+    if "stayed at 0 over 3 sweep(s)" not in steady[0]:
+        raise Failure(f"a counter that never moved reads {steady[0]!r}")
+
+    moved = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (47, 19)]))
+    if "went from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
+        raise Failure(f"a counter that moved reads {moved[0]!r}")
+    if "went from 0 to 19" not in moved[1]:
+        raise Failure(f"the second counter reads {moved[1]!r}")
+
+    # A device the runner recovered mid-run starts its counters again from
+    # zero, so the run can end on the value it started on with plenty counted
+    # in between. Reading only the two ends would call that "stayed at 0".
+    restarted = generator.syslog_counter_lines(
+        sweeps([(0, 0), (47, 19), (0, 0)]))
+    if "highest 47" not in restarted[0]:
+        raise Failure(f"a counter that moved and came back reads "
+                      f"{restarted[0]!r}")
+    if "stayed at" in restarted[0]:
+        raise Failure(f"a counter that moved is called steady: "
+                      f"{restarted[0]!r}")
+
+    # Firmware without them says nothing rather than saying zero, because zero
+    # would be a claim this run cannot make.
+    older = generator.TargetRun(
+        token="u64", slug="u64",
+        health=[{"kind": "health", "label": "one", "ok": True,
+                 "checks": [{"name": "ident", "state": "ok", "ms": 9.0}]}])
+    expect("nothing to say about firmware that has no counters",
+           generator.syslog_counter_lines(older), [])
+    return "steady, moved, and absent"
+
+
+@case(1, "OBS-3.18", "OBS-3.22")
+def a_shared_file_does_not_become_a_suite_run_in_the_table() -> str:
+    """`incomplete` has to mean a suite that did not close, and nothing else.
+
+    A target's directory holds files that carry a `suite` field and are not one
+    suite run's records: the screen spool, the interaction log and the decoded
+    screen text. Their names carry no label, so reading a suite run out of one
+    invents a suite that never ran, with no runner record to close it, and the
+    verdict table then carries a row reading `incomplete`. `screen-text.jsonl`
+    did exactly that: a real run's table carried `u64 | screen | text | 1 |
+    incomplete`, and the completeness note above it named that run as one this
+    run did not finish.
+
+    A reader cannot tell such a row from the one it exists to show, which is a
+    suite the run really was killed in the middle of.
+    """
+    import json
+    import tempfile
+
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        target = os.path.join(directory, "u64")
+        os.makedirs(target)
+        with open(os.path.join(directory, "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "run", "verdict": "OK",
+                                     "time": 9.0}) + "\n")
+        with open(os.path.join(target, "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "suite", "name": "input",
+                                     "mode": "overlay", "attempt": 1,
+                                     "verdict": "OK", "seconds": 1.0,
+                                     "time": 2.0}) + "\n")
+        with open(os.path.join(target, "overlay-input.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "input", "attempt": 1,
+                                     "verdict": "OK", "seconds": 0.1,
+                                     "time": 1.0}) + "\n")
+        for name, record in (
+                ("screen-text.jsonl", {"kind": "vic", "suite": "input",
+                                       "attempt": 1, "text": [], "time": 1.5}),
+                ("interactions.jsonl", {"kind": "interaction", "seq": 1,
+                                        "suite": "input", "attempt": 1,
+                                        "time": 1.6}),
+                ("screens.jsonl", {"kind": "screen", "suite": "input",
+                                   "attempt": 1, "time": 1.7})):
+            with open(os.path.join(target, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+
+        run = generator.load_tree(directory)
+        found = sorted((made.label, made.suite, made.attempt)
+                       for made in run.targets[0].suites)
+        expect("one suite run, the one that ran", found,
+               [("overlay", "input", 1)])
+        expect("and nothing is incomplete",
+               [made.suite for made in run.targets[0].suites
+                if made.verdict not in ("OK", "FAIL", "WARN", "SKIP")], [])
+    return "three shared files, one suite run"
+
+
 @case(4, "OBS-3.18", "OBS-3.17")
 def a_killed_run_is_rendered_as_what_it_is() -> str:
     """A truncated line and a missing closing record are stated, not refused."""
@@ -5652,7 +6022,6 @@ UNTESTED_REQUIREMENTS = {
                "slices consume",
     "OBS-3.16": "one documented pandoc command, run by hand and never in CI",
     "OBS-9.1": "optional firmware work, proven red then green on hardware",
-    "OBS-9.2": "optional firmware work, proven red then green on hardware",
     "OBS-9.3": "optional firmware work, proven red then green on hardware",
     "OBS-14.1": "a statement about which host platforms are supported",
     "OBS-14.4": "a host requirement, documented rather than executable",
@@ -6171,6 +6540,30 @@ def the_report_shows_the_device_log_around_a_failure() -> str:
         raise Failure("the lines around the failure are not inlined")
     if "127.0.0.1/overlay/noisy/1/1" not in section:
         raise Failure("the slice is not attributed to the failing check")
+    # Both sides of the comparison. The table exists to show a device whose log
+    # arrived from an address its name does not resolve to, and it cannot show
+    # that with the expected side blank, which is what it carried for every run
+    # until the addresses were read as the list of strings they are.
+    table = section.split("Expected from", 1)[1].split("\n\n", 1)[0]
+    if table.count("`127.0.0.1`") < 2:
+        raise Failure(f"the expected and observed addresses are not both "
+                      f"named: {table!r}")
+    # The failing check's window holds 83 lines, 80 of them the device's own
+    # echo of requests this run made. A slice that is the last of everything
+    # would be 60 of those and neither of the two lines about the drive.
+    slice_text = section.split("127.0.0.1/overlay/noisy/1/1", 1)[1]
+    slice_text = slice_text.split("```", 2)[1]
+    if "HTTP GET /v1/machine:menu_screen" in slice_text:
+        raise Failure("this run's own requests are inlined in the slice")
+    if "Accept client" in slice_text:
+        raise Failure("this run's own connections are inlined in the slice")
+    if "1541: seek track 18" not in slice_text:
+        raise Failure("the device's own lines were pushed out of the slice by "
+                      "this run's requests")
+    if "line(s) in the window" not in section:
+        raise Failure("the slice does not say how wide the window was")
+    if "this run's own requests, which are in the file and not here" not in section:
+        raise Failure("the omitted lines are not counted")
     timeline = document.split("## Timeline", 1)[1].split("## Checks", 1)[0]
     if "restarted, seen in its own log" not in timeline:
         raise Failure("a device restart is not on the timeline")

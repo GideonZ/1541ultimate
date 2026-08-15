@@ -1115,11 +1115,16 @@ def health_entry(check: "health.Check") -> Dict[str, object]:
     than into `detail`, which is a
     human sentence printed under a failing check's name, because packing three
     numbers into prose would make every consumer parse it back out.
+
+    Under one name for every check that has any, rather than under the check's
+    own name: two checks carry figures now, the heap's three and the ident's
+    two syslog counters, and a key per check would make a consumer know the set
+    of checks before it could read one.
     """
     entry: Dict[str, object] = {"name": check.name, "state": check.state,
                                 "ms": round(check.ms, 1), "detail": check.detail}
     if check.figures:
-        entry["heap"] = dict(check.figures)
+        entry["figures"] = dict(check.figures)
     return entry
 
 

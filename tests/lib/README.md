@@ -93,6 +93,28 @@ device.drives.get("a").mounted                     # -> bool
 device.files.info("/Temp/x.prg")                   # -> FileInfo, or None
 ```
 
+## Settings, and the prompt a changed one raises
+
+A setting written over REST changes the configuration the firmware holds in
+memory and not the copy in flash, and the firmware notices: backing out of the
+settings screens raises a `Save changes to Flash?` popup. `UIPopup::poll`
+answers only RETURN, SPACE and its own button hotkeys, so a suite that unwinds
+by pressing Back sits in front of it until it gives up.
+
+`UltimateApi.close_menu_from_anywhere` handles it, which is what the runner's
+own state gate and teardown use: it looks for that prompt on every screen and
+answers it with the popup's own `n` hotkey. Deliberately No. The popup's first
+button is Yes and RETURN takes whichever button is active, so answering it
+blind writes whatever the run happened to have changed into the device's flash.
+A suite that navigates the settings screens itself needs the same handling, or
+needs to unwind through that call.
+
+This is why `ui_backend` writes `Interface Type` for the session and restores it
+at the end without ever saving either value: a run killed mid-session would
+otherwise leave the session's temporary setting in the device's flash for good.
+The divergence is the correct trade and the popup is the firmware being honest
+about it.
+
 Drop to `device.rest` only when the check is about the HTTP contract itself:
 status codes, headers, malformed bodies, authentication.
 
@@ -229,7 +251,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `check` | `index`, `label`, `verdict`, `extra`, `seconds`, `scenario` |
 | `scenario` | `title`, `verdict`, `checks`, `seconds` |
 | `suite` | `name`, `verdict`, `note`, `checks`, `seconds`; from `run-tests` also `mode`, `attempt`, `recoveries` |
-| `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `heap` on the heap check |
+| `health` | `label`, `ok`, `checks[]` of `name`, `state`, `ms`, `detail`, and `figures` on a check that measured any |
 | `warning` | `message` |
 | `gap` | `component`, `started`, `ended` when the gap closed, plus whatever the component names it by: `target`, `machine`, `reason` |
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
@@ -238,7 +260,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
 | `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `received`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
 | `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
-| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
+| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, `screen_texts`, `screens_unreadable`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
@@ -267,6 +289,29 @@ device that never sent anything. `--syslog` turns it on and needs each device's
 `Network Settings` / `Log to Syslog Server` pointed at the runner host; that is
 boot-time state on the device, so the runner reads it at both ends of a run and
 corrects it at neither.
+
+Three things about that setting have cost real runs, so they are here rather
+than in anyone's notes.
+
+It carries a port, and a bare address means the firmware's own default 514
+while the collector binds 5514. The value to set is `<host>:5514`, and the
+runner compares the two and names the value to set when they differ.
+
+`Syslog::init` runs once, at boot, so setting the value changes nothing until
+the Ultimate firmware restarts. `machine:reboot` does not do that: it reboots
+the C64, not the Ultimate. On an Ultimate 64 a JTAG `nios2-download` restarts
+the firmware and is enough. On an Ultimate II+ in a C64 Ultimate there is no
+equivalent, so the host has to be power cycled through its own Power & Reset
+menu.
+
+A caller that sets any setting over REST and means it to persist must save it
+to flash as well, and one that does not mean it to persist has to expect the
+prompt described next.
+
+One collector can bind the port, and a second run says so and carries on
+without a log rather than taking an arbitrary share of the first one's
+datagrams. Two collectors on one port used to leave each of them reporting a
+device that had gone quiet.
 
 Two `log` records are written per target: one when collection starts, which a
 killed run still leaves behind, and one when it ends. `addresses` is where the
@@ -310,6 +355,13 @@ as loss. `audio_unavailable_bytes` is the audio written to keep the track the
 same length as the video while the run had the stream stopped, which is
 likewise not loss; `audio_concealed_bytes` is the same for a stream that should
 have been running and was not.
+
+`screen_texts` and `screens_unreadable` are the two halves of the C64 screen
+decoder's own accounting: the frames it read back as text and wrote a record
+for, and the frames it looked at and could not read as a text screen. A refused
+frame writes nothing, so without the second number a device drawing a bitmap, a
+device in the shifted character set and a device whose screen did not change all
+leave the same absence.
 
 `stills[]` is one entry per still, each naming its suite run, its kind, both of
 its files, the frame of the recording it was taken from, with `position` in
@@ -366,6 +418,24 @@ Every record carries a `seq`, and `transcript.txt` beside it carries one line
 per record opening with the same number, so a reader who finds a line there and
 wants every field of it looks that number up rather than matching on a
 timestamp. Both files are written from one record, so they cannot disagree.
+
+`seq` is also how the recording joins to the log, in both directions, and no
+record carries a recording position of its own. From a frame to a record: every
+line in the video's interaction band ends with that record's number, and that
+field is never truncated, so a viewer reads `#4812` off the frame and runs
+
+```sh
+jq 'select(.seq == 4812)' u64/interactions.jsonl
+```
+
+From a record to a frame: a record carries the wall clock it happened at, and
+the `kind=capture` record carries `started` and `lead_in`, so the position in
+the file is `lead_in + (time - started)`. A still goes the same way and needs
+no arithmetic: its entry carries `frame`, `position` and `interaction`, the
+number of the last interaction recorded when that frame was composed.
+
+A stored offset on every record would be a third copy of the same fact, free to
+drift from the video it claims to point at, so there is not one.
 
 Three fields answer questions a bare request and response cannot. `fault` names
 a connection-level failure in one word (`refused`, `reset`, `timeout`,
@@ -443,10 +513,22 @@ file is truncated on the first attempt and appended to afterwards, so a retried
 suite's file holds two records carrying `index: 26`, and only this field
 distinguishes them.
 
-The `heap` check carries `free`, `min_ever_free` and `total` rather than a
-latency, and it can never make a sweep degraded: a degraded sweep is what fires
-the recovery command, and free heap moves for a dozen ordinary reasons. It
-reports `OK` with the figure, or `SKIP` on firmware without the endpoint.
+Two checks carry `figures` rather than only a latency, under that one key so a
+consumer does not have to know the set of checks before it can read one.
+
+The `heap` check carries `free`, `min_ever_free` and `total`, and it can never
+make a sweep degraded: a degraded sweep is what fires the recovery command, and
+free heap moves for a dozen ordinary reasons. It reports `OK` with the figure,
+or `SKIP` on firmware without the endpoint.
+
+The `ident` check carries `syslog_failed_sends` and `syslog_overflows`, which
+the device counts about its own log and which `/v1/info` is the only place to
+read: reporting them through the log would risk a loop. They ride on the check
+that already makes that request, so a sweep costs no more than before, and the
+report says per target whether each moved over the run and which sweep first
+saw it move. They never decide a verdict either: firmware without them is older
+rather than unhealthy, and a device that dropped a line of its own log has not
+failed anything a run is testing.
 
 `health` is one device sweep, the same one the console shows as a single line,
 with a latency per check. A run consumed programmatically would otherwise have

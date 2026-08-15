@@ -258,7 +258,7 @@ NO_MENU_OPEN = "no menu is open"
 
 # The files under a target's directory that share the .jsonl suffix and are not
 # one suite run's records. See JsonlTail._files.
-SHARED_JSONL = ("screens.jsonl", "interactions.jsonl")
+SHARED_JSONL = ("screens.jsonl", "interactions.jsonl", "screen-text.jsonl")
 NO_VIDEO = "waiting for the device's video"
 # Drawn above a harness pane showing a screen older than the poll that should
 # have replaced it.
@@ -540,9 +540,19 @@ class JsonlTail:
             # soak suite is its category.
             suite = str(record["suite"])
             stem = source[:-len(".jsonl")]
-            self.state.suite = suite
-            self.state.label = (stem[:-(len(suite) + 1)]
-                                if stem.endswith("-" + suite) else "")
+            # Only a file whose name is this suite's may say what suite run
+            # this is, and the name list above is not the whole guard. A file
+            # that carries a suite name and is not one suite run's records used
+            # to blank the label instead, so the identity flapped between
+            # `overlay-input-1` and `-input-1` on every poll that read one. A
+            # flap is a change of suite run to the recorder, which writes the
+            # stills it has and throws the picker away, so the stills a run
+            # kept were the last fragment's and their recorded frames were
+            # frames of an earlier fragment. Leaving the state alone is the
+            # only answer such a file supports.
+            if stem.endswith("-" + suite):
+                self.state.suite = suite
+                self.state.label = stem[:-(len(suite) + 1)]
         # Matched on label and suite together. Under `--mode all` one suite
         # has a segment per mode, and matching on the name alone would mark
         # the first mode's segment for every pass over it.
@@ -1810,6 +1820,11 @@ class Recorder:
         self._screen_text_at = 0.0
         self._screen_text_frame = b""
         self.screen_texts = 0
+        # Frames the decoder was offered and could not read as a text screen.
+        # Without it a decoder that refuses a quarter of what it sees looks
+        # exactly like a run whose screen changed a quarter as often, and the
+        # only figure on the record is how many screens it did read.
+        self.screens_unreadable = 0
         self._picker = StillPicker()
         self._picking = ""
         self._picking_identity: Dict[str, object] = {}
@@ -2310,7 +2325,10 @@ class Recorder:
             return
         self._screen_text_frame = pixels
         rows = vic_text.decode(pixels, width, height)
-        if rows is None or rows == self._screen_text:
+        if rows is None:
+            self.screens_unreadable += 1
+            return
+        if rows == self._screen_text:
             return
         self._screen_text = rows
         record = {"kind": "vic", "time": self.wall_clock(),
@@ -2469,6 +2487,7 @@ class Recorder:
             "frames_decimated": self.decimated,
             "rearms": dict(self.rearms),
             "screen_texts": self.screen_texts,
+            "screens_unreadable": self.screens_unreadable,
             "menu_from_tap": self._spool.taken,
             "menu_requested": self.menu_requests,
             "menu_failed": self.menu_failures,

@@ -393,6 +393,28 @@ why OBS-2.9 is withdrawn.
 A per-suite `.jsonl` and its `.log` share a stem, so a reader who has one has the
 other by changing the suffix.
 
+Four `.jsonl` files under a target are not one suite run's records:
+`run.jsonl`, `screens.jsonl`, `interactions.jsonl` and `screen-text.jsonl`. The
+last three carry a `suite` field on every record and their names carry no
+label, so anything reading a suite run out of a file name must refuse a file
+whose name does not end in the suite its records name. Two components read
+these directories, the recorder's tail and the report generator, and both apply
+that rule rather than only a list of names to skip: a list is how a large file
+is not read, and the rule is what keeps the answer right when the next such
+file is added.
+
+What goes wrong without it was seen on both. The report generator read
+`screen-text.jsonl` as a suite run called `text` under a label called `screen`,
+which no runner record closes, so the verdict table carried a row reading
+`incomplete` that a reader cannot tell from a suite the run was really killed
+in. The recorder's tail set the suite from the record and the label from the
+file name, so the suite run's identity flapped between `overlay-input-1` and
+`-input-1` on every poll that read one of those lines. A change of identity is
+a change of suite run to the recorder: it writes the stills it has and starts a
+new picker, so on a 24-suite run it wrote 994 still records naming 290 files,
+and the frame each record named was the frame at some earlier flap rather than
+the frame the file on disk holds.
+
 **OBS-2.11** [P1] The `run` record carries the run's identity, so a downloaded
 artifact says what it is a run of without a second file:
 
@@ -582,6 +604,18 @@ record itself is content-addressed the way a body is, so a `machine:writemem`
 of a whole block keeps its address and its bytes and a partial write is visible
 without a read-back.
 
+`seq` is also the join between the recording and the log, in both directions,
+and no record carries a recording position of its own. From a frame to a
+record, every line of the band of OBS-8.40 ends with that record's number and
+that field is never truncated, so a viewer reads `#4812` off the frame and runs
+`jq 'select(.seq == 4812)' interactions.jsonl`. From a record to a frame, a
+record carries the wall clock it happened at, and the `kind=capture` record
+carries `started` and `lead_in`, so the position in the file is
+`lead_in + (time - started)`; a still needs no arithmetic at all, because its
+entry carries `frame`, `position` and `interaction`. A stored offset on every
+record would be a third copy of the same fact and free to drift from the video
+it claims to point at, so there is not one.
+
 Three fields exist because a bare request and response cannot answer the
 questions an investigation brings. `fault` is what a key that never reached the
 device looks like, as against one the device ignored. `connection` distinguishes
@@ -622,6 +656,32 @@ not a failure. Codes 64 to 127 of the unshifted set are the PETSCII graphics,
 which have no ASCII form; a screen with a logo drawn in them is still a text
 screen, so those cells are marked rather than named and the text beside them is
 read normally.
+
+The frames it refused are counted, as `screens_unreadable` on the `kind=capture`
+record beside `screen_texts`. Refusing a frame writes no record, so without the
+count a device drawing something this cannot read, a device in the shifted
+character set and a device whose screen did not change all leave the same
+absence, and the only figure on the record is how many screens were read.
+
+Where the character grid is on the frame is searched rather than assumed, over
+the eight positions `$D016`'s fine scroll can put it in and nowhere else. The
+38-column bit does not move the grid: it blanks one cell at each side of a grid
+that stays put, so anchoring the columns on the first pixel that is not the
+border reads every cell one column to the left of where it is, and the shifted
+reading still matches the ROM because the cell it invents at the edge is blank.
+A wider search has the same failure in the other direction, which is why the
+range is exactly the eight the hardware can produce.
+
+The display window's own horizontal span is measured as well, as the widest
+extent of non-border pixels over the picture area, and a candidate grid origin
+that reaches past it reads background there rather than border. A grid the fine
+scroll has moved right overhangs the window at some scroll values, and border
+pixels are not the background, so they would be read as ink: eight pixel columns
+of border make one cell that matches no ROM shape on every row of a 25-row
+screen, which is 25 unreadable cells against a tolerance of 24, and a frame the
+machine drew correctly would be refused. The span is taken over the whole
+picture rather than from its first row because a row whose ink is the border's
+colour hides the window edge behind it, which is the C64's own boot screen.
 
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
@@ -804,6 +864,27 @@ the log is best-effort and incomplete by construction, for the reasons in
 OBS-7.11 and OBS-7.12. Depends on OBS-7.8 and OBS-2.6. KISS: inlining a slice
 for every check would multiply the document by the check count to answer a
 question only asked about failures.
+
+A slice leaves out the lines the device wrote because this run asked it
+something: one per accepted socket, one per request served, one per FTP and DMA
+connection. It says how many lines the window held and how many of them were
+those, so what is not shown is a number rather than an absence, and it shows
+them anyway when they are all the window held.
+
+The reason is not that they are noise. The harness already records every one of
+those requests itself, with its response, in `interactions.jsonl`, so the
+device's one-line echo of a request is the one line in the log already known
+from a better source. They also arrive at the harness's rate rather than the
+device's: measured over a sequential run of the whole gate against an Ultimate
+II+L, they were 15882 of 22930 collected lines, and 14163 of those were the two
+shapes the harness's own screen polling produces. A check that polls a screen
+fifty times therefore pushes the device's own account of what it was doing out
+of a slice that is simply the last lines of everything. In that run a check's
+window held 154 lines at the 90th percentile and 592 at its widest, so the
+question is not hypothetical.
+
+The slice is capped at 60 lines of what remains, which is above the 90th
+percentile of a window once those lines are out of it.
 
 The same section says where the lines came from, as two tables. The first gives
 each target the addresses the run expected its lines from and the addresses they
@@ -1697,8 +1778,8 @@ measurable from the receiving side. Four independent causes:
   A burst loses an unbounded block.
 - Output is throttled to about 200 lines per second by a 5ms delay after each
   sent line in `Syslog::forwardLogging`.
-- `Syslog::failed_sends` counts send errors and is never read by anything, so a
-  send failure leaves no trace anywhere.
+- `Syslog::failed_sends` counts send errors. Until OBS-9.2 nothing read it, so
+  a send failure left no trace anywhere.
 
 **OBS-7.12** [P5] A line's receive time lags the moment the firmware printed it
 by an unbounded amount, so attributing a line to a check by interval is
@@ -3468,9 +3549,21 @@ the assertion text (OBS-7.15). A fix flushes the syslog buffer synchronously
 from inside `vAssertCalled` rather than relying on the task. Firmware work in
 `software/system/assert.c` and `software/network/syslog.cc`.
 
-**OBS-9.2** [P6, optional] Expose `Syslog::failed_sends`, so a run can tell a
-silently lossy link from a quiet device (OBS-7.11). Needs a route or a periodic
-log line to carry the counter.
+**OBS-9.2** [P6] Expose `Syslog::failed_sends` and `Syslog::overflowed`, so a
+run can tell a silently lossy link from a quiet device (OBS-7.11). Neither can
+be reported through the log itself without risking a loop, so `GET /v1/info`
+carries them as `syslog_failed_sends` and `syslog_overflows`.
+
+The harness has to read them or the firmware change is inert. The `ident` check
+of every health sweep already reads `/v1/info`, so it carries both as figures
+on its health record at no extra request, and the report says per target
+whether each counter moved over the run and which sweep first saw it move. They
+are cumulative since the device booted, so one value per sweep in a table cell
+would answer nothing a reader asks.
+
+They never decide a verdict. A firmware that does not carry them is older
+rather than unhealthy, and a device that dropped a line of its own log has not
+failed anything a run is testing.
 
 **OBS-9.3** [P6, optional] Move the `custom_outbyte` assignment earlier in
 `ultimate_main`, so the product version banner and the init-function output
