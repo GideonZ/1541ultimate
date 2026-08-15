@@ -127,18 +127,6 @@ void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
     cached_cia2_porta = porta;
 }
 
-// The cartridge holds the machine while its menu is up, and C64::reset()
-// drives the reset lines whether or not it is frozen, so the caller does not
-// have to unfreeze first.
-bool U2MemoryBackend :: reset_machine(void)
-{
-    if (!machine || !machine->exists()) {
-        return false;
-    }
-    machine->reset();
-    return true;
-}
-
 const char *U2MemoryBackend :: source_name(uint16_t) const
 {
     // U2 reads the current CPU-visible aperture directly. Without ROM shadow

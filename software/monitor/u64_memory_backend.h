@@ -26,7 +26,6 @@ public:
     virtual void end_session(void);
 
     virtual bool supports_reset(void) const { return true; }
-    virtual bool reset_machine(void);
 
     virtual bool supports_freeze(void) const { return true; }
     virtual bool freeze_available(void) const;

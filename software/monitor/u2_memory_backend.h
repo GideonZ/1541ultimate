@@ -25,7 +25,6 @@ public:
     virtual void set_live_vic_bank(uint8_t vic_bank);
     virtual bool supports_go(void) const { return true; }
     virtual bool supports_reset(void) const { return true; }
-    virtual bool reset_machine(void);
     virtual const char *source_name(uint16_t address) const;
 };
 

@@ -35,11 +35,11 @@ public:
     // stopped state across many reads/writes (so register/IO state is stable)
     // override these. The monitor exposes a Z toggle to drive this. Default
     // behaviour is a no-op so non-U64 backends remain unaffected.
-    // Resetting the machine the monitor is looking at. A backend that cannot
-    // reach a reset answers false to both, and the monitor says so rather
-    // than appearing to have done something.
+    // Whether the machine the monitor is looking at can be reset. The reset
+    // itself is performed by whoever owns the machine, because it has to let
+    // go of it first; see run_machine_monitor.cc. A backend that answers false
+    // makes the monitor say so rather than appear to have done something.
     virtual bool supports_reset(void) const { return false; }
-    virtual bool reset_machine(void) { return false; }
 
     virtual bool supports_freeze(void) const { return false; }
     virtual bool freeze_available(void) const { return supports_freeze(); }

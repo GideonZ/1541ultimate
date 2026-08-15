@@ -196,6 +196,9 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
+    // C= plus X asks for a reset and leaves; the caller that owns the
+    // machine performs it, as it does for Go.
+    bool reset_pending;
     uint8_t memory_bytes_per_row;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
@@ -454,6 +457,8 @@ public:
     void deinit(void);
     int poll(int);
     bool consume_pending_go(uint16_t *address);
+    // Whether C= plus X asked for a machine reset before leaving.
+    bool consume_pending_reset(void);
 };
 
 #endif

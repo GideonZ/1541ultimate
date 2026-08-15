@@ -826,19 +826,17 @@ static int test_transfer_without_a_code_range_is_unchanged(void)
     return 0;
 }
 
-// A backend that can reset, and counts how often it was asked to.
+// A backend on a machine that can be reset. The reset itself is performed by
+// whoever owns the machine, so what the monitor does is ask for one and leave;
+// see run_machine_monitor.cc.
 struct FakeResettableBackend : public FakeMemoryBackend
 {
-    int reset_calls;
-
-    FakeResettableBackend() : reset_calls(0) { }
     virtual bool supports_reset(void) const { return true; }
-    virtual bool reset_machine(void) { reset_calls++; return true; }
 };
 
 static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
                             MemoryBackend &backend, const int *keys, int count,
-                            int *last_result)
+                            int *last_result, bool *asked_for_reset = 0)
 {
     FakeKeyboard kb(keys, count);
     ui.screen = &screen;
@@ -850,6 +848,9 @@ static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
     int result = 0;
     for (int i = 0; i < count && result == 0; i++) {
         result = mon.poll(0);
+    }
+    if (asked_for_reset) {
+        *asked_for_reset = mon.consume_pending_reset();
     }
     mon.deinit();
     if (last_result) {
@@ -867,11 +868,9 @@ static int test_reset_shortcut_resets_and_leaves(void)
         FakeResettableBackend backend;
         const int keys[] = { KEY_CTRL_X };
         int result = 0;
-        run_monitor_keys(ui, screen, backend, keys, 1, &result);
-        if (expect(backend.reset_calls == 1, "C=+X must reset the machine once.")) {
-            printf("  reset_calls %d\n", backend.reset_calls);
-            return 1;
-        }
+        bool asked = false;
+        run_monitor_keys(ui, screen, backend, keys, 1, &result, &asked);
+        if (expect(asked, "C=+X must ask for a machine reset.")) return 1;
         if (expect(result == 1, "C=+X must leave the monitor.")) return 1;
     }
     {
@@ -881,8 +880,9 @@ static int test_reset_shortcut_resets_and_leaves(void)
         FakeResettableBackend backend;
         const int keys[] = { 'e', KEY_CTRL_X };
         int result = 0;
-        run_monitor_keys(ui, screen, backend, keys, 2, &result);
-        if (expect(backend.reset_calls == 1, "C=+X must reset from edit mode too.")) return 1;
+        bool asked = false;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result, &asked);
+        if (expect(asked, "C=+X must ask for a reset from edit mode too.")) return 1;
         if (expect(result == 1, "C=+X must leave the monitor from edit mode.")) return 1;
     }
     {
@@ -946,11 +946,12 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         // C=+B opens the bookmark popup, then C=+X and C=+I are pressed into it.
         const int keys[] = { KEY_CTRL_B, KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
+        bool asked = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
-        run_monitor_keys(ui, screen, backend, keys, 5, &result);
-        if (expect(backend.reset_calls == 0,
-                   "The bookmark popup must keep C=+X from resetting the machine.")) return 1;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
+        if (expect(!asked,
+                   "The bookmark popup must keep C=+X from asking for a reset.")) return 1;
         if (expect(g_swap_interface_type_calls == 0,
                    "The bookmark popup must keep C=+I from swapping the interface.")) return 1;
     }
@@ -961,11 +962,12 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         // N opens the number popup, then the two shortcuts are pressed into it.
         const int keys[] = { 'N', KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
+        bool asked = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
-        run_monitor_keys(ui, screen, backend, keys, 5, &result);
-        if (expect(backend.reset_calls == 0,
-                   "The number popup must keep C=+X from resetting the machine.")) return 1;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
+        if (expect(!asked,
+                   "The number popup must keep C=+X from asking for a reset.")) return 1;
         if (expect(g_swap_interface_type_calls == 0,
                    "The number popup must keep C=+I from swapping the interface.")) return 1;
     }

@@ -1957,6 +1957,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_go_valid = monitor_last_go_valid;
     last_go_addr = monitor_last_go_addr;
     go_pending = false;
+    reset_pending = false;
     go_pending_addr = 0;
     memory_bytes_per_row = monitor_memory_bytes_per_row;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
@@ -5165,15 +5166,26 @@ bool MachineMonitor :: opcode_picker_commit_typed()
 int MachineMonitor :: handle_reset_shortcut(void)
 {
     // Nothing is disturbed when the reset cannot happen: the monitor says so
-    // and stays exactly as it was, edit mode included. Leaving the monitor is
-    // what tidies up after a reset that did happen, so there is no state to
-    // unwind here.
-    if (!backend || !backend->supports_reset() || !backend->reset_machine()) {
+    // and stays exactly as it was, edit mode included.
+    if (!backend || !backend->supports_reset()) {
         get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
         redraw_full();
         return 0;
     }
+    // The reset itself is left to the caller that owns the machine, exactly as
+    // Go is: resetting a machine the menu is still holding does nothing
+    // visible, because the freezer keeps the CPU stopped and the KERNAL never
+    // runs. run_machine_monitor releases the host and unfreezes first, which
+    // is the same order C64_Subsys uses for MENU_C64_RESET.
+    reset_pending = true;
     return 1;   // the monitor's own exit, the same value X returns
+}
+
+bool MachineMonitor :: consume_pending_reset(void)
+{
+    bool wanted = reset_pending;
+    reset_pending = false;
+    return wanted;
 }
 
 // C= plus I swaps the user interface between the freeze menu and the overlay.
