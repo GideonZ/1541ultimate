@@ -99,6 +99,8 @@ Interaction contract:
   menu, the settings screens and a browser context menu, each of which is
   still open afterwards; inside the monitor the same key leaves it, and a
   bare `X` does not
+- the Assembly view's source tag is three characters at one fixed column, so
+  the column does not move when the bank changes
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
 - `Transfer` given a fourth field moves the absolute operands that point inside

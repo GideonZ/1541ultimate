@@ -303,6 +303,39 @@ def assert_contains(snapshot: Snapshot, line_index: int, expected: str) -> None:
         )
 
 
+
+def assert_source_column_is_fixed(snapshot: Snapshot, expected_tag: str) -> None:
+    """Every Assembly row's source tag is three characters at one column.
+
+    The tag is right-aligned, so a tag whose width depended on the bank would
+    move the column's left edge and the rows would appear to shift sideways
+    when the cursor crossed a bank boundary.
+    """
+    columns = set()
+    tags = set()
+    for line in snapshot.lines:
+        if "[" not in line or "]" not in line:
+            continue
+        start = line.index("[")
+        end = line.index("]", start)
+        if end - start != 4:
+            raise Failure(
+                f"an Assembly source tag is not three characters: {line!r}")
+        columns.add(start)
+        tags.add(line[start + 1:end])
+    if not columns:
+        raise Failure(
+            f"no Assembly source tag on screen\n{snapshot.text()}")
+    if len(columns) != 1:
+        raise Failure(
+            f"the Assembly source column moves between rows, columns {sorted(columns)}"
+            f"\n{snapshot.text()}")
+    if expected_tag not in tags:
+        raise Failure(
+            f"expected an {expected_tag!r} source tag, saw {sorted(tags)}"
+            f"\n{snapshot.text()}")
+
+
 def assert_status_contains(snapshot: Snapshot, expected: str) -> None:
     line_index = find_status_line(snapshot)
     assert_contains(snapshot, line_index, expected)
@@ -2979,6 +3012,7 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
+        assert_source_column_is_fixed(screen, "KRN")
 
         screen = session.goto("E013")
         screen = session.send_char("A")
