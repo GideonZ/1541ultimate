@@ -43,6 +43,12 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
 
+# How many times a command argument may be typed again when the field shows it
+# did not all arrive, for the checks where typing it is preparation rather than
+# the subject. Two spare attempts, because the loss this covers is one
+# keystroke in several hundred on the one transport that has it.
+PROMPT_RETYPES = 2
+
 # The normal footer reports either a live CPU bank or a CPU-view override.
 STATUS_LINE_RE = re.compile(
     r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
@@ -117,46 +123,69 @@ class MonitorSession:
     def send_text(self, text: str, label: str) -> Snapshot:
         return self.backend.send_text(text, label)
 
-    def type_into_prompt(self, key: str, title: str, text: str) -> None:
+    def type_into_prompt(self, key: str, title: str, text: str,
+                         retypes: int = 0) -> None:
         """Open a command prompt and type `text` into it, proving it arrived.
 
-        The field is read back before RETURN is sent, so a character that did
-        not reach the monitor is reported where it was lost rather than as
-        whatever the command then did with a short argument. The read-back
-        compares the whole field, so a missing character, a duplicated one and
-        two characters in the wrong order are each a failure. Nothing is
-        re-sent: each character is sent exactly once, so a lost one fails the
-        check instead of being covered by a second copy.
+        The field is read back and compared in full before RETURN is sent, so a
+        character that did not reach the monitor is reported at the prompt
+        rather than as whatever the command then did with a short argument. A
+        missing character, a duplicated one and two characters in the wrong
+        order are each caught, and each character is sent exactly once per
+        attempt.
+
+        `retypes` is 0 where the input path is itself the thing under test: the
+        text is typed once and anything short of the whole of it fails. It is
+        non-zero where typing an argument is only how the check reaches the
+        memory or the view it is really about. That is idempotent preparation:
+        a retype leaves the prompt, reopens it on its untouched template and
+        types the same text again, and it says so in the run, so a device that
+        needs one is visible rather than absorbed here.
 
         RETURN is left to the caller, because a Go that executes closes the
         whole menu as a side effect of that one keystroke.
         """
-        self.send_char(key)
-        wait_for_prompt(self, title)
-        self.send_text(text, f"{key} {text}")
-
         def typed(snapshot: Snapshot) -> bool:
             try:
                 return prompt_field(snapshot, title) == text
             except Failure:
                 return False  # the prompt is mid-redraw
 
-        snapshot = wait_until(self, typed)
-        try:
-            shown = prompt_field(snapshot, title)
-        except Failure:
-            raise Failure(
-                f"the {title} prompt is not on screen after typing {text!r}\n"
-                f"{snapshot.text()}")
-        if shown != text:
-            raise Failure(
-                f"{title}: the field reads {shown!r} after {text!r} was typed. "
-                "A character of the command did not reach the monitor as typed."
-                f"\n{snapshot.text()}")
+        shown = None
+        for attempt in range(retypes + 1):
+            self.send_char(key)
+            wait_for_prompt(self, title)
+            self.send_text(text, f"{key} {text}")
+            snapshot = wait_until(self, typed)
+            try:
+                shown = prompt_field(snapshot, title)
+            except Failure:
+                raise Failure(
+                    f"the {title} prompt is not on screen after typing {text!r}"
+                    f"\n{snapshot.text()}")
+            if shown == text:
+                if attempt:
+                    detail(f"{title}: {text!r} had to be typed {attempt + 1} "
+                           f"times before the whole of it reached the monitor")
+                return
+            if attempt < retypes:
+                self.send_key("ARROW_LEFT")
+                wait_for_monitor(self, f"retyping the {title} argument")
+        raise Failure(
+            f"{title}: the field reads {shown!r} after {text!r} was typed"
+            + (f", {retypes + 1} times over" if retypes else "")
+            + ". A character of the command did not reach the monitor as typed."
+            f"\n{self.capture().text()}")
 
     def run_prompt_command(self, key: str, title: str, text: str) -> Snapshot:
-        """Type a verified argument into a command prompt and submit it."""
-        self.type_into_prompt(key, title, text)
+        """Type a verified argument into a command prompt and submit it.
+
+        Reaching an address is preparation for whatever the caller checks
+        there, so a lost character is retyped rather than failing the caller's
+        own subject. `run_key_input_stress_test` is where the input path itself
+        is the subject, and it allows no retype at all.
+        """
+        self.type_into_prompt(key, title, text, retypes=PROMPT_RETYPES)
         return self.send_key("ENTER")
 
     def goto(self, address: str) -> Snapshot:
@@ -187,10 +216,11 @@ class MonitorSession:
         return self.run_prompt_command("T", "Transfer AAAA-BBBB,CCCC", expr)
 
     def goto_run(self, address: str) -> Snapshot:
-        # The argument is verified while the prompt is still up, so a lost
-        # keystroke fails here rather than running the C64 from a wrong
-        # address.
-        self.type_into_prompt("G", "Go AAAA", address)
+        # The argument is verified while the prompt is still up, so the C64 is
+        # never run from an address nobody typed. Reaching the address is
+        # preparation for what the caller checks after the run, so a lost
+        # character is retyped rather than failing that check.
+        self.type_into_prompt("G", "Go AAAA", address, retypes=PROMPT_RETYPES)
         try:
             return self.send_key("ENTER")
         except Failure:
