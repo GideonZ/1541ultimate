@@ -2389,10 +2389,9 @@ def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
     back to the task menu when C=+O does not work, which is the behaviour this
     check exists to distinguish.
     """
-    snapshot = session.send_key("CTRL_O", settle=True)
-    try:
-        find_any_status_line(snapshot)
-    except Failure:
+    session.send_key("CTRL_O", settle=True)
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
         raise Failure(
             f"C=+O did not open the monitor from {context}\n{snapshot.text()}")
     leave_monitor_fully(session)
@@ -2479,14 +2478,14 @@ def run_monitor_shortcut_scope_test(session: MonitorSession, mode: str) -> None:
     # 5. The browser shortcut still works after visiting all of those, and
     #    inside the monitor C=+O keeps the meaning the monitor gives it, which
     #    is to leave rather than to open a second monitor.
-    snapshot = session.send_key("CTRL_O", settle=True)
-    try:
-        find_any_status_line(snapshot)
-    except Failure:
+    session.send_key("CTRL_O", settle=True)
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
         raise Failure(
             "C=+O no longer opens the monitor from the file browser after the "
             f"other contexts were visited\n{snapshot.text()}")
-    snapshot = session.send_key("CTRL_O", settle=True)
+    session.send_key("CTRL_O", settle=True)
+    snapshot = wait_until(session, lambda screen: not monitor_is_on_screen(screen))
     if monitor_is_on_screen(snapshot):
         raise Failure(
             f"C=+O did not leave the monitor from a memory view\n{snapshot.text()}")
