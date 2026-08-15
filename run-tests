@@ -547,6 +547,10 @@ def run_and_capture(command: List[str], environment: Dict[str, str],
 # knows not to bind it as well.
 SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
 
+# What the firmware sends to when the configured value carries no `:<port>`.
+# `Syslog::init` in software/network/syslog.cc.
+SYSLOG_DEVICE_DEFAULT_PORT = 514
+
 # The port the collector actually bound, exported to every suite the run
 # starts. The device-free gate is what uses it: a stub suite sends a datagram
 # into the running collector to prove the file it writes is the file the `log`
@@ -659,7 +663,43 @@ def check_syslog_setting(device: "Device", when: str) -> str:
     if not value:
         report.warn(f"device log: this device is not configured to send its log "
                     f"anywhere ({when})")
+        return value
+    problem = syslog_setting_problem(value)
+    if problem:
+        report.warn(f"device log: {problem} ({when})")
     return value
+
+
+def syslog_setting_problem(value: str) -> str:
+    """Why this device's log will not reach this run's collector, or "".
+
+    The collector binds a port and the device sends to one, and nothing before
+    this compared the two. A device pointed at `<host>` with no port sends to
+    514, because that is what `Syslog::init` defaults to, and the collector
+    binds 5514 because 514 needs root. That produces a run with an empty
+    `syslog.txt`, no warning, and a report that says the device said nothing,
+    which is the same shape as a device that had stopped. Measured on the C64
+    Ultimate here: 23 suites, 0 lines, nothing anywhere saying why.
+
+    The host is compared as text rather than resolved. The setting is what an
+    operator typed, this runs on the machine the collector is on, and a name
+    that resolves here and not on the device is exactly the mistake worth
+    naming rather than one to be clever about.
+    """
+    wanted_port = os.environ.get(SYSLOG_PORT_ENV) or ""
+    if not wanted_port:
+        return ""
+    host, _, port = value.rpartition(":")
+    if not host:
+        # No colon at all, so the whole value is the host and the device will
+        # use the firmware's default port.
+        host, port = value, str(SYSLOG_DEVICE_DEFAULT_PORT)
+    if port != wanted_port:
+        return (f"this device sends its log to port {port} and this run "
+                f"collects on {wanted_port}, so none of it will arrive; set "
+                f"'{syslog_collector.CONFIG_ITEM}' to "
+                f"'{host}:{wanted_port}' and reboot the device")
+    return ""
 
 
 # Every recorder option except --record itself, and what makes each one a

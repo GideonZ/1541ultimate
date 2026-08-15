@@ -1298,6 +1298,44 @@ def the_interaction_log_never_ends_a_run() -> str:
     return "an unwritable path and an undescribable object, both survived"
 
 
+@case(1, "OBS-7.7")
+def a_device_pointed_at_another_port_is_named() -> str:
+    """A run that will collect nothing says so before it collects nothing.
+
+    The collector binds a port and the device sends to one, and comparing the
+    two is the whole of it. A device configured with a bare address sends to
+    514, because that is the firmware's default, and the collector binds 5514
+    because 514 needs root. Measured on the C64 Ultimate here: 23 suites,
+    `syslog.txt` empty, no warning anywhere, and a report that says the device
+    said nothing, which is what a device that had stopped also looks like.
+    """
+    runner = load_runner()
+    saved = os.environ.get(runner.SYSLOG_PORT_ENV)
+    os.environ[runner.SYSLOG_PORT_ENV] = "5514"
+    try:
+        expect("the right port is no problem",
+               runner.syslog_setting_problem("192.168.1.185:5514"), "")
+        bare = runner.syslog_setting_problem("192.168.1.185")
+        if "port 514" not in bare or "5514" not in bare:
+            raise Failure(f"a bare address is not named: {bare!r}")
+        if "192.168.1.185:5514" not in bare:
+            raise Failure(f"the warning does not say what to set: {bare!r}")
+        wrong = runner.syslog_setting_problem("192.168.1.185:9999")
+        if "port 9999" not in wrong:
+            raise Failure(f"another port is not named: {wrong!r}")
+        # A run with no collector compares nothing: the setting is then the
+        # operator's business and not this run's.
+        os.environ.pop(runner.SYSLOG_PORT_ENV)
+        expect("and with no collector there is nothing to compare",
+               runner.syslog_setting_problem("192.168.1.185"), "")
+    finally:
+        if saved is None:
+            os.environ.pop(runner.SYSLOG_PORT_ENV, None)
+        else:
+            os.environ[runner.SYSLOG_PORT_ENV] = saved
+    return "a bare address, a wrong port and the right one"
+
+
 @case(2, "OBS-7.7", "OBS-7.9")
 def two_collectors_cannot_share_the_port() -> str:
     """A second run collecting at once is refused, not served an arbitrary half.
