@@ -125,8 +125,33 @@ def main() -> int:
     except Failure as exc:
         suite_fail("megabyter_cartridge_test", format_exception(exc))
         return 1
+    finally:
+        take_the_cartridge_off(device)
     suite_ok("megabyter_cartridge_test")
     return 0
+
+
+def take_the_cartridge_off(device: UltimateApi) -> None:
+    """Leave the machine at BASIC rather than holding the cartridge.
+
+    `runners:run_crt` maps a cartridge that survives `machine:reset`, because a
+    reset boots the machine and the machine boots the cartridge. Only
+    `machine:reboot` takes it off. The runner's own state gate between suites
+    resets, so without this the next suite meets a C64 that never reaches the
+    BASIC prompt and fails for a reason that has nothing to do with it.
+
+    Measured: after this suite ran, the next run's `readmem-writemem` and
+    `input` suites failed with "BASIC READY prompt not visible; device may be
+    running a cartridge", and one `machine:reboot` cleared it.
+
+    In a `finally`, and it swallows what it cannot do, because a suite that
+    already has a verdict must not lose it to its own tidying.
+    """
+    try:
+        device.machine.reboot()
+        device.machine.wait_until_ready(timeout=15.0)
+    except Exception as exc:  # noqa: BLE001
+        detail(f"could not take the cartridge off the machine: {exc}")
 
 
 if __name__ == "__main__":
