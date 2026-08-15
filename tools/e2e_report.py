@@ -163,8 +163,22 @@ def as_dict(value) -> dict:
 
 
 def as_list(value) -> list:
+    """A list of records, which is what most list fields hold."""
     return [item for item in value if isinstance(item, dict)] \
         if isinstance(value, list) else []
+
+
+def as_strings(value) -> List[str]:
+    """A list of strings, for the two fields that hold names rather than records.
+
+    Separate from `as_list` because that one keeps only the dicts in a list, so
+    passing it a list of strings returns nothing. It did: the device log's
+    `Expected from` column and the recording table's `Files` column both read
+    as empty for every run, which made the one table that exists to show a
+    device logging from an unexpected address unable to show the expected side
+    of the comparison.
+    """
+    return [str(item) for item in value] if isinstance(value, list) else []
 
 
 @dataclass
@@ -1566,7 +1580,7 @@ def expected_senders(run: Run) -> List[List[str]]:
     for target in run.targets:
         if not target.log:
             continue
-        expected = [str(a) for a in as_list(target.log.get("addresses"))]
+        expected = as_strings(target.log.get("addresses"))
         observed = as_dict(target.log.get("senders"))
         rows.append([target.token,
                      ", ".join(f"`{a}`" for a in expected) or "-",
@@ -2186,7 +2200,7 @@ def recording_block(run: Run) -> List[str]:
                     for name, label in RECORDER_COUNTS
                     if as_int(capture.get(name))]
         rows.append([target.token,
-                     ", ".join(f"`{name}`" for name in as_list(
+                     ", ".join(f"`{name}`" for name in as_strings(
                          capture.get("files"))) or "-",
                      f"{frames}",
                      f"{frames // fps // 60:02d}:{frames // fps % 60:02d}",

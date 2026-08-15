@@ -5687,6 +5687,28 @@ def a_failure_carries_what_the_run_already_knows() -> str:
     return "4 kinds of fact, no guess"
 
 
+@case(1, "OBS-3.23", "OBS-8.39")
+def the_recording_table_names_the_files_it_is_about() -> str:
+    """A row about a recording says which file it is a row about.
+
+    The column read `-` for every run, because the file names are a list of
+    strings and the helper that read it keeps only the records in a list. The
+    same helper read the device log's expected addresses.
+    """
+    generator = load_report_tool()
+    run = generator.Run(directory="runs", targets=[generator.TargetRun(
+        token="u64", slug="u64",
+        capture={"files": ["video.mp4", "video-harness.mp4"], "frames": 100,
+                 "fps": 10, "frames_lost": 3})])
+    rendered = "\n".join(generator.recording_block(run))
+    for name in ("video.mp4", "video-harness.mp4"):
+        if f"`{name}`" not in rendered:
+            raise Failure(f"{name} is not named in the recording table")
+    if "3 frames lost" not in rendered:
+        raise Failure("the loss column lost its figure")
+    return "both files named"
+
+
 @case(1, "OBS-2.18")
 def the_report_says_how_much_of_the_screen_came_back_as_text() -> str:
     """Both halves of the decoder's accounting, or nothing at all.
@@ -6498,6 +6520,14 @@ def the_report_shows_the_device_log_around_a_failure() -> str:
         raise Failure("the lines around the failure are not inlined")
     if "127.0.0.1/overlay/noisy/1/1" not in section:
         raise Failure("the slice is not attributed to the failing check")
+    # Both sides of the comparison. The table exists to show a device whose log
+    # arrived from an address its name does not resolve to, and it cannot show
+    # that with the expected side blank, which is what it carried for every run
+    # until the addresses were read as the list of strings they are.
+    table = section.split("Expected from", 1)[1].split("\n\n", 1)[0]
+    if table.count("`127.0.0.1`") < 2:
+        raise Failure(f"the expected and observed addresses are not both "
+                      f"named: {table!r}")
     # The failing check's window holds 83 lines, 80 of them the device's own
     # echo of requests this run made. A slice that is the last of everything
     # would be 60 of those and neither of the two lines about the drive.
