@@ -29,6 +29,14 @@ jobs:
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
 
+      # Which interface outbound traffic leaves by when Ethernet and WiFi can
+      # both reach the destination. A host g++ and two seconds, and each case
+      # it covers is a cable and an access point on real hardware.
+      - name: Check Interface Routing Policy
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make route_policy_test"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \

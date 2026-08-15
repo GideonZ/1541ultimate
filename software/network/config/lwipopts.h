@@ -1477,6 +1477,29 @@
 #define SNTP_COMP_ROUNDTRIP         0
 #define SNTP_STARTUP_DELAY          1
 
+/**
+ * Which interface ordinary outbound traffic leaves by when more than one of
+ * them can reach the destination.
+ *
+ * ip4_route walks netif_list and takes the first match, and netif_add
+ * prepends, so without this the interface that came up last carries
+ * everything: on a machine with Ethernet and WiFi on one subnet that is WiFi,
+ * because its netif is added when the ESP32 reports it has associated, after
+ * the wired one. netif_default does not change that, since ip4_route reads it
+ * only when the list walk has matched nothing.
+ *
+ * LWIP_HOOK_IP4_ROUTE_SRC is the only hook that can decide this:
+ * LWIP_HOOK_IP4_ROUTE is consulted after the list walk and so can only supply
+ * a route the walk did not find. The hook is called from ip4_route_src for
+ * every packet whose route is not already pinned, and returning NULL from it
+ * leaves lwIP to answer exactly as it did before.
+ *
+ * The implementation is software/network/lwip_route_hook.c and the decision
+ * it makes is software/network/route_policy.c.
+ */
+#define LWIP_HOOK_FILENAME              "lwip_hooks.h"
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest)  ultimate_route_src(src, dest)
+
 void sntp_time_received(u32_t sec);
 
 #endif /* __LWIPOPTS_H__ */

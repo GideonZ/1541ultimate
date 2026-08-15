@@ -71,5 +71,8 @@ $(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OB
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ) $(LIBS)
 
-test: $(RESULT)/$(PRJ)
+# Through `all`, which is what creates the output and result directories. Named
+# directly, this target built nothing in a clean checkout and failed on the
+# first object file.
+test: all
 	@$(RESULT)/$(PRJ)
