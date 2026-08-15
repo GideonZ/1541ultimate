@@ -2460,8 +2460,11 @@ def run_help_layout_test(session: MonitorSession) -> None:
     # not an exit key and the help must not offer it as one.
     assert_help_column(screen, "G Go", 1, "J Jump")
     assert_help_column(screen, "G Go", 14, "G Go")
+    # Columns 27 to 38 are the grid's third column. The popup's right border
+    # sits past column 38 on the Overlay frame, so it is excluded by the
+    # slice rather than by stripping.
     jump_line = help_content_line(screen, "G Go")
-    if jump_line[26:].strip():
+    if jump_line[26:38].strip():
         raise Failure(
             f"Help layout: the Jump/Go line has a third column: {jump_line!r}")
     if "Exit" in screen.text():
