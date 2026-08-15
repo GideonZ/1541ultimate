@@ -110,6 +110,16 @@ Reliability sweeps:
   own `machine:readmem` read back after every commit, so an instruction that
   wrote its opcode and not its operand fails at that commit
 
+Both sweeps separate a monitor defect from one underneath it. When a write does
+not land, the device is immediately asked to make the same write at the same
+address through `machine:writemem`, which reaches memory through the same
+`C64::dma_transfer_frozen` with the machine stopped. If the device manages it,
+the monitor is at fault and the check fails. If the device cannot manage it
+either, the loss belongs to that shared path and is counted and reported in the
+run rather than blamed on the monitor. An instruction that landed as its opcode
+without its operand fails either way, because the monitor writes an instruction
+as one block and a block cannot land in part.
+
 Both sweeps run a small number of rounds in the gate. `MONITOR_STRESS_ROUNDS`
 raises that count for a deliberate stress run and changes nothing about what a
 single transaction asserts.
