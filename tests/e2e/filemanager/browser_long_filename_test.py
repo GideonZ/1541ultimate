@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import ftp as ftp_lib
 import rest as rest_lib
+import targets
 from report import Failure, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
@@ -70,7 +71,7 @@ def rest_headers(password: str) -> Dict[str, str]:
 
 def rest_json(host: str, password: str, method: str, path: str) -> Dict[str, object]:
     request = urllib.request.Request(
-        f"http://{host}{path}",
+        f"http://{targets.host_for(host, path)}{path}",
         data=b"" if method == "PUT" else None,
         headers=rest_headers(password),
         method=method,
@@ -102,7 +103,7 @@ def fixture_info(host: str, password: str, test_dir: str, name: str) -> Dict[str
 
 def get_drive_a_image(host: str) -> Dict[str, object]:
     with rest_lib.retrying_urlopen(
-            urllib.request.Request(f"http://{host}/v1/drives"), 10.0) as response:
+            urllib.request.Request(f"http://{targets.device_of(host)}/v1/drives"), 10.0) as response:
         payload = json.loads(response.read().decode("utf-8"))
     for entry in payload.get("drives", []):
         if "a" in entry:
@@ -279,7 +280,9 @@ def run_mount_test(host: str, password: str, browser: Browser, test_dir: str) ->
 def reset_machine(host: str, password: str) -> None:
     headers = rest_headers(password)
     request = urllib.request.Request(
-        f"http://{host}/v1/machine:input",
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        f"http://{targets.parse(host).input_host}/v1/machine:input",
         data=json.dumps({"events": [{"kind": "release_all"}]}).encode("utf-8"),
         headers={**headers, "Content-Type": "application/json"},
         method="POST",

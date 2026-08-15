@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "e2e" / "filemanager"))
 
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import ftp as ftp_lib  # noqa: E402
 import rest as rest_lib  # noqa: E402
 from report import (  # noqa: E402
@@ -42,7 +43,6 @@ from report import (  # noqa: E402
     section, suite_fail, suite_ok)
 from prg_context_menu_test import build_d64, default_fixture_token, PRG_BYTES  # noqa: E402
 
-HEAP_PATH = "/v1/machine:heap"
 TEMP = "/Temp/"
 # Every run needs image names it has never used before. A mount is keyed by
 # path, so recreating a file the previous run deleted would be matched against
@@ -70,9 +70,15 @@ TOLERANCE_REENTRY_BYTES = 2048
 
 
 def heap_free(rest) -> int:
-    """Free heap, after letting transient allocations come back."""
+    """Free heap, after letting transient allocations come back.
+
+    The settle belongs to this suite rather than to the API call: an FTP
+    session borrows several kilobytes and gives them back shortly after it
+    closes, measured at 7568 bytes still outstanding immediately after twenty
+    listings and zero a few seconds later.
+    """
     time.sleep(SETTLE_SECONDS)
-    return int(rest.json(HEAP_PATH)["free"])
+    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 TOKEN = default_fixture_token()
@@ -127,7 +133,7 @@ def main() -> int:
     password = args.password or ""
 
     check_start("device exposes GET /v1/machine:heap")
-    if rest.status("GET", HEAP_PATH) != 200:
+    if api_lib.MachineApi(rest).heap() is None:
         check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
         section("summary")
         detail("skipped: device firmware has no machine:heap endpoint")

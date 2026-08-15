@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "e2e" / "io" / "c64"))
 
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
@@ -59,7 +60,6 @@ from menu import wait_until  # noqa: E402
 from ui_backend import add_mode_argument, make_backend  # noqa: E402
 import assembly64_test as a64  # noqa: E402
 
-HEAP_PATH = "/v1/machine:heap"
 
 # One-time costs land here. The very first open also fetches the preset list,
 # which is cached for the life of the box and must not be counted.
@@ -83,7 +83,7 @@ SETTLE_SECONDS = 6.0
 
 
 def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(rest.json(HEAP_PATH)["free"])
+    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 def open_and_leave(device) -> None:
@@ -177,7 +177,7 @@ def main() -> int:
     rest = rest_lib.RestClient(args.host, password, args.timeout)
 
     check_start("device exposes GET /v1/machine:heap")
-    if rest.status("GET", HEAP_PATH) != 200:
+    if api_lib.MachineApi(rest).heap() is None:
         check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
         section("summary")
         detail("skipped: device firmware has no machine:heap endpoint")

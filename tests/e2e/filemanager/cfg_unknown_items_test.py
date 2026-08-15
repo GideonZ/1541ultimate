@@ -16,6 +16,10 @@ The store-selection half of this change -- which stores are written to a .cfg
 -- is covered by the host unit tests instead. A SID replacement store only
 exists when that cartridge is plugged in, and no such hardware is on the test
 bench.
+
+The known store both fixtures pair the unknown thing with is asked of the
+machine rather than assumed: an Ultimate 64 serves it as "Audio Mixer", an
+Ultimate II+L as "Audio Output Settings". See ConfigsApi.find_padded_enum.
 """
 
 import argparse
@@ -28,14 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from api import UltimateApi
+import machine as machine_lib
+import targets
 import ftp as ftp_lib
-from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok
+from report import (Failure, check, check_skip, check_start, detail,
+                    format_exception, section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
-
-# A store every machine has, with an enum item that is safe to flip and put
-# back, so the "was the rest of the file applied" half needs no special setup.
-STORE = "Audio Mixer"
-ITEM = "Vol Master"
 
 # Named so a leftover from a failed run is obvious in /Temp.
 CFG_NAME = "cfg-unknown-e2e.cfg"
@@ -51,12 +53,12 @@ TELNET_ENTRY_ROWS = range(2, 23)
 TELNET_STATUS_ROW = 23
 
 
-def alternate_value(api: UltimateApi, current: str) -> str:
-    values = api.configs.item(STORE, ITEM).get("values", [])
+def alternate_value(api: UltimateApi, store: str, item: str, current: str) -> str:
+    values = api.configs.item(store, item).get("values", [])
     for value in values:
         if isinstance(value, str) and value != current:
             return value
-    raise Failure(f"{STORE}/{ITEM} has no alternative value: {values!r}")
+    raise Failure(f"{store}/{item} has no alternative value: {values!r}")
 
 
 def upload(host: str, password: str, body: str) -> None:
@@ -113,7 +115,22 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    original = api.configs.current(STORE, ITEM)
+    info = api.info()
+    device = machine_lib.identify(
+        targets.device_of(args.host),
+        lambda: (info.product, info.firmware_version))
+    if device.skip_without_fix(machine_lib.CFG_LOADS_UNKNOWN_AND_PADDED,
+                               "a CFG with an unknown item loads without being called an error"):
+        suite_ok("cfg_unknown_items_test")
+        return 0
+    chosen = api.configs.find_padded_enum()
+    if chosen is None:
+        check_start("a CFG with an unknown item loads without being called an error")
+        check_skip("no store this machine serves has an enum item to flip and put back")
+        suite_ok("cfg_unknown_items_test")
+        return 0
+    store, item = chosen
+    original = api.configs.current(store, item)
     browser = make_browser(
         args.mode, args.host, args.password or None, args.timeout,
         entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
@@ -122,33 +139,33 @@ def main() -> int:
 
     try:
         section("an item this firmware does not have")
-        wanted = alternate_value(api, original)
+        wanted = alternate_value(api, store, item, original)
         with check("a CFG with an unknown item loads without being called an error"):
             upload(args.host, args.password,
-                   f"[{STORE}]\n{ITEM}={wanted}\n{UNKNOWN_ITEM}={UNKNOWN_ITEM_VALUE}\n")
+                   f"[{store}]\n{item}={wanted}\n{UNKNOWN_ITEM}={UNKNOWN_ITEM_VALUE}\n")
             load_cfg(browser)
 
         with check("the settings it could apply were applied"):
-            now = api.configs.current(STORE, ITEM)
+            now = api.configs.current(store, item)
             if now != wanted:
-                raise Failure(f"{STORE}/{ITEM} is {now!r}, expected {wanted!r}")
-            detail(f"{ITEM}: {original!r} -> {now!r}")
+                raise Failure(f"{store}/{item} is {now!r}, expected {wanted!r}")
+            detail(f"{store}/{item}: {original!r} -> {now!r}")
 
         with check("the log names the unknown item and its value"):
             log = debug_log(args.host, args.password)
             require_in_log(log, [UNKNOWN_ITEM, UNKNOWN_ITEM_VALUE], "unknown item")
 
         section("a store this machine does not have")
-        api.configs.set(STORE, ITEM, original)
+        api.configs.set(store, item, original)
         with check("a CFG naming an absent store loads without being called an error"):
             upload(args.host, args.password,
-                   f"[{UNKNOWN_STORE}]\nWhatever=1\n\n[{STORE}]\n{ITEM}={wanted}\n")
+                   f"[{UNKNOWN_STORE}]\nWhatever=1\n\n[{store}]\n{item}={wanted}\n")
             load_cfg(browser)
 
         with check("the store that does exist was still applied"):
-            now = api.configs.current(STORE, ITEM)
+            now = api.configs.current(store, item)
             if now != wanted:
-                raise Failure(f"{STORE}/{ITEM} is {now!r}, expected {wanted!r}")
+                raise Failure(f"{store}/{item} is {now!r}, expected {wanted!r}")
 
         with check("the log names the absent store"):
             log = debug_log(args.host, args.password)
@@ -164,7 +181,7 @@ def main() -> int:
         return 1
     finally:
         try:
-            api.configs.set(STORE, ITEM, original)
+            api.configs.set(store, item, original)
         except Exception:
             pass
         try:

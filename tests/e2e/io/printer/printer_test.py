@@ -37,12 +37,15 @@ import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "..", "lib"))
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import rest as rest_lib
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_fail, check_ok, check_start, detail, section, warn)
+    Failure, check_fail, check_ok, check_start, detail, section,
+    suite_fail, suite_ok, warn)
 
 try:
     from PIL import Image, ImageOps
@@ -93,6 +96,14 @@ POLL_INTERVAL_SECONDS = 0.5
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # The menu toggle is observable, so it is waited for rather than slept on.
 MENU_CLOSE_TIMEOUT_SECONDS = 5.0
+# Enough Back presses to climb out of the deepest screen a launcher leads to,
+# and one descent into the browser; and deeper than the launcher's own list,
+# so Back reaches its first entry. See enter_file_browser.
+LAUNCHER_DESCENT_STEPS = 10
+LAUNCHER_ENTRY_LIMIT = 24
+# Long enough for the whole cursor burst above plus the RETURN to drain through
+# the computer's keyboard matrix and redraw.
+LAUNCHER_DESCENT_TIMEOUT_SECONDS = 15.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
 SCREEN_CELLS = SCREEN_WIDTH * SCREEN_HEIGHT
@@ -145,7 +156,8 @@ class U64Client:
     """Minimal REST client mirroring temp_auto_cleanup_perf_test.py's style."""
 
     def __init__(self, host, password, timeout=10):
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -169,7 +181,7 @@ class U64Client:
         # once; one with a payload would run a PRG or upload a file again, and
         # so is only resent when it never left the client.
         return rest_lib.retrying_http_request(
-            self.host, method, path,
+            self.target.host_for(path), method, path,
             body=body,
             headers=self._headers(body, extra_headers),
             timeout=timeout or self.timeout,
@@ -249,6 +261,31 @@ class U64Client:
             description="input",
             extra_headers={"Content-Type": "application/json"},
         )
+
+    @property
+    def launcher_browser_entry(self):
+        """The launcher entry leading to the file browser, or None."""
+        return machine_lib.identify(
+            self.host, self._fetch_product).launcher_browser_entry
+
+    @property
+    def task_menu_key(self):
+        """The key this machine opens the task menu with, in matrix terms.
+
+        A C64 Ultimate puts it on F1 and uses F5 for paging, so pressing F5
+        there scrolls a listing instead of opening anything. See
+        tests/lib/machine.py.
+        """
+        device = machine_lib.identify(self.host, self._fetch_product)
+        return device.task_menu_key.lower()
+
+    def _fetch_product(self):
+        status, _, body = self.request("GET", "/v1/info")
+        if status != 200:
+            raise Failure(f"/v1/info returned HTTP {status}")
+        payload = json.loads(body.decode("utf-8"))
+        return (str(payload.get("product", "")),
+                str(payload.get("firmware_version", "")))
 
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
@@ -420,6 +457,54 @@ def classify_and_run(client, prg_bytes, emulation, mode, rows, pages, bus_id, ti
     return "FAIL_TIMEOUT", last_status
 
 
+def enter_file_browser(client, settle):
+    """Descend from a launcher into the file browser, where there is one.
+
+    A no-op on a machine whose menu button opens the browser itself. A C64
+    Ultimate opens a launcher instead, and the task menu below belongs to the
+    browser: pressed on the launcher it opens the main menu, which has no
+    Printer category at all. The browser is the launcher's first entry, so
+    Back to the top of the list and then Return reaches it.
+    """
+    entry = client.launcher_browser_entry
+    if entry is None:
+        return
+
+    def in_browser():
+        # The browser is the only screen that puts a directory on the status
+        # row, so a leading "/" identifies it.
+        screen = client.get_menu_screen()
+        if screen is None:
+            return False
+        return menu_screen_text(screen)[-1].lstrip().startswith("/")
+
+    for _ in range(LAUNCHER_DESCENT_STEPS):
+        screen = client.get_menu_screen()
+        if screen is None:
+            return
+        rows = menu_screen_text(screen)
+        if rows[-1].lstrip().startswith("/"):
+            return
+        if any(entry in row for row in rows):
+            for _ in range(LAUNCHER_ENTRY_LIMIT):
+                client.tap_keys(["left_shift", "cursor_up_down"])
+            client.tap_key("return")
+            # Waited for rather than slept on. A burst of this many keys drains
+            # through the computer's matrix over time, so re-reading the screen
+            # straight after the RETURN can still show the launcher. Treating
+            # that as "did not descend" sends the whole burst a second time,
+            # and the second RETURN then activates the browser's first entry
+            # instead of the launcher's.
+            try:
+                wait.wait_until(in_browser, "the launcher to open the file browser",
+                                timeout=LAUNCHER_DESCENT_TIMEOUT_SECONDS)
+            except Failure:
+                continue
+            return
+        client.tap_keys(["left_shift", "cursor_left_right"])
+        time.sleep(settle)
+
+
 def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
     """Drive the Ultimate on-screen Tasks menu to trigger Printer > Flush/Eject."""
     if client.get_menu_screen() is not None:
@@ -428,8 +513,9 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
                         "the menu to close before Flush/Eject",
                         timeout=MENU_CLOSE_TIMEOUT_SECONDS)
 
-    client.menu_button()  # open root browser
+    client.menu_button()  # open the menu
     time.sleep(settle)
+    enter_file_browser(client, settle)
 
     if client.get_menu_screen() is None:
         # No menu-screen endpoint on this build: the menu button has just been
@@ -442,7 +528,7 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         # this branch: the step verified nothing, and its two RETURN presses
         # landed on the Tasks menu's real first entry, Assembly 64, whose query
         # form was then left open for the next suite (confirmed live).
-        client.tap_key("f5")
+        client.tap_key(client.task_menu_key)
         time.sleep(settle)
         client.tap_key("return")
         time.sleep(settle)
@@ -450,7 +536,10 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         time.sleep(1.0)
         return
 
-    client.tap_key("f5")  # open Tasks (context menu) for the current selection
+    # Open Tasks (the context menu) for the current selection. The key is the
+    # machine's, not a constant: a C64 Ultimate puts Tasks on F1 and uses F5 to
+    # page a listing, so F5 there scrolls the browser and opens nothing.
+    client.tap_key(client.task_menu_key)
     time.sleep(settle)
 
     body = client.get_menu_screen()
@@ -458,33 +547,43 @@ def flush_via_menu(client, assertions_enabled, settle=MENU_SETTLE_SECONDS):
         raise Failure("task menu did not open")
     rows = menu_screen_text(body)
 
-    printer_row = None
-    for index in range(8, SCREEN_HEIGHT):
-        if "Printer" in rows[index]:
-            printer_row = index
-            break
-    if printer_row is None:
+    if not any("Printer" in row for row in rows):
         raise Failure("'Printer' task category not found in task menu")
 
-    downs = printer_row - 8
-    for _ in range(downs):
-        client.tap_key("cursor_up_down")
-        time.sleep(pacing.KEY_SETTLE_SECONDS)
+    # Sought by name rather than walked to by row. The task menu is drawn beside
+    # the browser's cursor, so where it starts moves with the selection: measured
+    # on u2@c64u with the browser cursor on row 15, the menu frame opened at row
+    # 6 and 'Printer' was on row 15, where arithmetic from a fixed first-entry
+    # row put it nowhere near. ContextMenu::seek_char takes the first entry
+    # beginning with the typed prefix, which needs no row assumption at all.
+    #
+    # Two letters rather than one, because a C64 Ultimate's task menu also
+    # carries 'Power & Reset', which 'p' alone reaches first: seek_char
+    # accumulates what is typed (software/userinterface/context_menu.cc), so
+    # 'pr' separates the two on every machine.
+    client.tap_key("p")
+    client.tap_key("r")
+    time.sleep(settle)
 
-    client.tap_key("return")  # expand Printer category (Flush/Eject preselected)
+    client.tap_key("return")  # expand the Printer category
     time.sleep(settle)
 
     body = client.get_menu_screen()
     if body is None:
         raise Failure("printer task submenu did not open")
     rows = menu_screen_text(body)
+    # Only that the item is on screen: the expanded submenu's first item is not
+    # drawn on the category's own row (measured: one above it), so asserting a
+    # row here tested the layout rather than the action.
     assert_or_warn(
         assertions_enabled,
-        "Flush/Eject" in rows[printer_row],
-        f"expected 'Flush/Eject' on row {printer_row}, got: {rows[printer_row]!r}",
+        any("Flush/Eject" in row for row in rows),
+        f"'Flush/Eject' not in the expanded Printer submenu: {rows!r}",
     )
 
-    client.tap_key("return")  # trigger Flush/Eject
+    client.tap_key("f")     # seek Flush/Eject within the submenu
+    time.sleep(settle)
+    client.tap_key("return")  # trigger it
     time.sleep(1.0)
 
     # Close what this function opened, so the caller's teardown does not have to
@@ -989,6 +1088,7 @@ def main():
         prg_bytes = load_prg(prg_path)
     except Failure as exc:
         check_fail(str(exc))
+        suite_fail("printer_test", str(exc))
         return 1
     check_ok(f"{len(prg_bytes)} bytes")
 
@@ -1024,7 +1124,12 @@ def main():
         detail(f"{emulation:10s} {mode:6s} {classification:20s} {output_base}")
 
     failed = [r for r in results if r[2] not in ("PASS", "PASS_NO_VERIFY")]
-    return 1 if failed else 0
+    if failed:
+        suite_fail("printer_test",
+                   ", ".join(f"{e}/{m} {c}" for e, m, c, _ in failed))
+        return 1
+    suite_ok("printer_test", f"{len(results)} combination(s)")
+    return 0
 
 
 if __name__ == "__main__":

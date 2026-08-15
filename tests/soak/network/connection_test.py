@@ -18,6 +18,10 @@ from typing import Callable
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+# tests/lib holds the helpers every suite shares.
+sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "lib"))
+
+import report  # noqa: E402
 
 import ftp_probe  # noqa: E402
 import http_probe  # noqa: E402
@@ -866,6 +870,13 @@ def run_extended(config: ExecutionConfig, settings: RuntimeSettings) -> int:
             result = 1
         if state.failure_count:
             result = 1
+    # The closing line every suite in this tree reports, so this one's own
+    # records carry a verdict rather than only the runner's view of it.
+    if result:
+        report.suite_fail("connection_test",
+                          f"{state.failure_count} failure(s)")
+    else:
+        report.suite_ok("connection_test")
     return result
 
 
