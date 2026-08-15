@@ -3431,6 +3431,13 @@ not a free reordering.
   unset, one collector bound to the syslog port sees the device's lines arrive
   from the address its name resolves to, `syslog_failed_sends` and
   `syslog_overflows` are 0, and no line of that device's is left unattributed.
+- For OBS-9.4: a WiFi link that drops and reconnects, on a new address, does
+  not change which interface ordinary traffic leaves by. The preference is
+  declared once, when the interface is added, and `wifi.cc` takes a reconnect
+  through `link_up` and `link_down` rather than through `start` and `stop`, so
+  a reconnect changes the interface's up state and nothing else. The hook reads
+  that state on every packet and never reads `netif_default`, so the reconnect
+  path cannot assert itself as the route.
 
 ---
 

@@ -91,6 +91,35 @@ int main(void)
     check(route_choose(interfaces, 2, 0, host) == ETHERNET,
           "and restoring Ethernet restores the preference");
 
+    printf("-- a WiFi link that drops and comes back\n");
+    /* The Ultimate side does not re-register anything on a reconnect: the
+     * preference is declared once when the interface is added, and a drop and
+     * a reconnect only take the interface down and up again. So what has to
+     * hold is that the answer follows the up state and nothing else, including
+     * when the reconnect brings a different address back from DHCP. */
+    wired_and_wireless(interfaces, 1, 1);
+    check(route_choose(interfaces, 2, 0, host) == ETHERNET,
+          "before the drop the wired interface carries it");
+    interfaces[WIFI].usable = 0;
+    check(route_choose(interfaces, 2, 0, host) == ETHERNET,
+          "while WiFi is down the wired interface still carries it");
+    interfaces[WIFI].usable = 1;
+    interfaces[WIFI].address = address(192, 168, 1, 88);
+    check(route_choose(interfaces, 2, 0, host) == ETHERNET,
+          "and after it reconnects on a new address it still does");
+
+    printf("-- a WiFi reconnect while the wired link is down\n");
+    wired_and_wireless(interfaces, 0, 0);
+    check(route_choose(interfaces, 2, 0, host) == -1,
+          "with both down there is nothing to choose");
+    interfaces[WIFI].usable = 1;
+    interfaces[WIFI].address = address(192, 168, 1, 88);
+    check(route_choose(interfaces, 2, 0, host) == WIFI,
+          "WiFi alone carries it after reconnecting");
+    interfaces[ETHERNET].usable = 1;
+    check(route_choose(interfaces, 2, 0, host) == ETHERNET,
+          "and the wired link takes it back the moment it returns");
+
     printf("-- an interface that cannot reach the destination is not chosen\n");
     wired_and_wireless(interfaces, 1, 1);
     interfaces[ETHERNET].address = address(172, 16, 4, 15);
