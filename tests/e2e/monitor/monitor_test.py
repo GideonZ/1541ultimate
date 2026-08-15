@@ -2039,7 +2039,7 @@ def run_reentry_test(session: MonitorSession) -> None:
     ensure_view(session, "BIN ")
     session.goto("C100")
     before = session.capture()
-    view_and_address = monitor_header(before)
+    view_and_address = monitor_header(before).strip().strip("|").strip()
 
     for exit_key in ("CTRL_O", "RUNSTOP", "ESC"):
         session.send_key(exit_key, settle=True)
@@ -2052,7 +2052,7 @@ def run_reentry_test(session: MonitorSession) -> None:
         if not monitor_is_on_screen(snapshot):
             raise Failure(
                 f"the monitor did not reopen after {exit_key}\n{snapshot.text()}")
-        again = monitor_header(snapshot)
+        again = monitor_header(snapshot).strip().strip("|").strip()
         if again != view_and_address:
             raise Failure(
                 f"after leaving with {exit_key} and reopening, the monitor "
@@ -2060,12 +2060,6 @@ def run_reentry_test(session: MonitorSession) -> None:
 
     # Leave the suite in the view the checks after this one expect.
     ensure_view(session, "HEX ")
-
-
-def monitor_header(snapshot: Snapshot) -> str:
-    """The monitor's title row, which names the view and the address."""
-    index = snapshot.find_line_containing("MONITOR ")
-    return snapshot.line(index).strip().strip("|").strip()
 
 
 def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
@@ -3215,12 +3209,17 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # counterpart are what keep the reservation. An older copy of this
         # suite pressed D for the Assembly view, so the binding has drifted
         # once already.
-        before = session.capture()
-        after = session.send_char("D")
-        if after.text() != before.text():
+        #
+        # Read the title row, which names the view and the address, rather than
+        # the whole screen: the screen also carries a status row and an edit
+        # cursor, and neither is what this asserts.
+        before = monitor_header(session.capture())
+        session.send_char("D")
+        after = monitor_header(session.capture())
+        if after != before:
             raise Failure(
-                "D is reserved for Debug mode and must change nothing\n"
-                f"{after.text()}")
+                f"D is reserved for Debug mode and must change nothing: the "
+                f"monitor header read {before!r} and now reads {after!r}")
 
         screen = session.goto("E013")
         screen = session.send_char("A")
