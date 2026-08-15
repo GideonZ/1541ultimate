@@ -91,6 +91,18 @@ int monitor_help_plain_text(const char *text, char *out, int out_len)
     return written;
 }
 
+const char *monitor_view_name(MachineMonitorView view)
+{
+    switch (view) {
+        case MONITOR_VIEW_HEX:    return "HEX";
+        case MONITOR_VIEW_ASM:    return "ASM";
+        case MONITOR_VIEW_ASCII:  return "ASCII";
+        case MONITOR_VIEW_SCREEN: return "SCREEN";
+        case MONITOR_VIEW_BINARY: return "BINARY";
+    }
+    return "?";
+}
+
 namespace {
 
 #ifdef RUNS_ON_PC
@@ -133,6 +145,64 @@ static uint16_t monitor_last_go_addr = 0;
 // MONITOR_BINARY_SPRITE_MODE_MARKER (0xFE) and renders 3 bytes.
 static uint8_t monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
 static uint8_t monitor_binary_bytes_per_row = 1;
+
+// Trace lines for the monitor's non-debugger actions. They go to the same
+// console the device log collector reads, so the prefix is fixed at "MCM " and
+// every line is one action: an E2E run can tell from the log alone which view
+// was selected, where the cursor went, and what each range command was asked
+// to do. Volume is one line per action, which on the bank keys means one line
+// per keypress, and that is the point: a bank key that produced no line did
+// not reach the monitor.
+static void monitor_log(const char *action)
+{
+    printf("MCM %s\n", action);
+}
+
+static void monitor_log_address(const char *action, uint16_t address)
+{
+    printf("MCM %s $%04x\n", action, address);
+}
+
+static void monitor_log_value(const char *action, uint16_t address, uint16_t value)
+{
+    printf("MCM %s $%04x $%04x\n", action, address, value);
+}
+
+static void monitor_log_byte(const char *action, uint16_t address, uint8_t value)
+{
+    printf("MCM %s $%04x $%02x\n", action, address, value);
+}
+
+static void monitor_log_range(const char *action, uint16_t start, uint16_t end)
+{
+    printf("MCM %s $%04x-$%04x\n", action, start, end);
+}
+
+// The three-character tag the Assembly view puts at the end of each row. The
+// source column is right-aligned, so a variable-width tag moves the column's
+// left edge whenever the cursor crosses a bank boundary and the rows below
+// appear to shift. Every name a backend can return maps to three characters,
+// so the column stays where it is. A name no backend currently returns is
+// passed through rather than hidden, and it is the caller that caps the width.
+static const char *monitor_source_indicator(const char *source)
+{
+    if (!source) {
+        return "RAM";
+    }
+    if (!strcmp(source, "BASIC") || !strcmp(source, "BAS")) {
+        return "BAS";
+    }
+    if (!strcmp(source, "KERNAL") || !strcmp(source, "KRN")) {
+        return "KRN";
+    }
+    if (!strcmp(source, "CHAR") || !strcmp(source, "CHR")) {
+        return "CHR";
+    }
+    if (!strcmp(source, "I/O") || !strcmp(source, "IO")) {
+        return "I/O";
+    }
+    return source;
+}
 
 static inline uint8_t monitor_memory_byte_stride(uint8_t bytes_per_row)
 {
@@ -2638,6 +2708,7 @@ void MachineMonitor :: number_picker_commit(void)
     uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
     uint16_t target_addr = number_picker_current_addr();
 
+    monitor_log_value("number commit", target_addr, number_preview_value);
     canonical_write(target_addr, low);
     if (number_picker_current_bytes() == 2) {
         canonical_write((uint16_t)(target_addr + 1), high);
@@ -2874,6 +2945,9 @@ void MachineMonitor :: ensure_current_visible()
 
 void MachineMonitor :: set_view(MachineMonitorView view)
 {
+    if (view != state.view) {
+        printf("MCM view %s\n", monitor_view_name(view));
+    }
     state.view = view;
     if (view == MONITOR_VIEW_ASM) {
         ensure_disasm_visible();
@@ -4109,17 +4183,7 @@ void MachineMonitor :: refresh_popup_overlay()
         draw();
         return;
     }
-    if (!help_visible && !hunt_picker_active) {
-        if (bookmark_popup_active) {
-            draw_bookmark_popup();
-        }
-        if (opcode_picker_active) {
-            draw_opcode_picker();
-        }
-        if (number_picker_active) {
-            draw_number_picker();
-        }
-    }
+    draw_popup_overlays();
     screen->sync();
 }
 
@@ -4431,7 +4495,7 @@ void MachineMonitor :: draw_disassembly()
         }
         memcpy(line + MONITOR_DISASM_TEXT_COL, decoded.text, text_len);
 
-        source = backend->source_name(addr);
+        source = monitor_source_indicator(backend->source_name(addr));
         source_len = (int)strlen(source);
         if (source_len > MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2) {
             source_len = MONITOR_DISASM_ROW_CHARS - MONITOR_DISASM_SOURCE_COL - 2;
@@ -4667,11 +4731,15 @@ void MachineMonitor :: hunt_picker_open_labeled(int count, const char *label)
     hunt_selected = 0;
     hunt_top = 0;
     hunt_picker_label = label ? label : "Results";
+    printf("MCM picker open %s %d\n", hunt_picker_label, hunt_count);
     hunt_picker_active = true;
 }
 
 void MachineMonitor :: hunt_picker_close()
 {
+    if (hunt_picker_active) {
+        monitor_log("picker close");
+    }
     hunt_picker_active = false;
 }
 
@@ -4740,19 +4808,33 @@ void MachineMonitor :: draw()
                 draw_hex();
                 break;
         }
-        if (opcode_picker_active) {
-            draw_opcode_picker();
-        }
-        if (number_picker_active) {
-            draw_number_picker();
-        }
-        if (bookmark_popup_active) {
-            draw_bookmark_popup();
-        }
     }
     draw_status();
+    // After the status row, not before it. draw_status pads the window's last
+    // row to the full window width, so a popup that reaches that row would
+    // lose it. The popup is the thing the user is looking at, so it wins.
+    draw_popup_overlays();
     if (screen) {
         screen->sync();
+    }
+}
+
+void MachineMonitor :: draw_popup_overlays()
+{
+    // The one place that decides which popups are drawn and in what order.
+    // draw() and refresh_popup_overlay() both come here, so the two paths
+    // cannot disagree about it.
+    if (help_visible || hunt_picker_active) {
+        return;
+    }
+    if (opcode_picker_active) {
+        draw_opcode_picker();
+    }
+    if (number_picker_active) {
+        draw_number_picker();
+    }
+    if (bookmark_popup_active) {
+        draw_bookmark_popup();
     }
 }
 
@@ -5768,7 +5850,9 @@ int MachineMonitor :: handle_key(int key)
         case 'z': case 'Z':
             help_visible = false;
             if (backend && backend->freeze_available()) {
-                backend->set_frozen(!backend->is_frozen());
+                bool want_frozen = !backend->is_frozen();
+                monitor_log(want_frozen ? "freeze on" : "freeze off");
+                backend->set_frozen(want_frozen);
             } else {
                 get_ui()->popup((backend && backend->supports_freeze()) ?
                                 "FREEZE ONLY IN OVERLAY MODE" : "FREEZE UNAVAILABLE", BUTTON_OK);
@@ -5783,6 +5867,7 @@ int MachineMonitor :: handle_key(int key)
                 break;
             }
             state.cpu_port = next_cpu_mode(state.cpu_port);
+            printf("MCM cpu bank %d\n", (int)(state.cpu_port & 0x07));
             backend->set_monitor_cpu_port(state.cpu_port);
             if (state.view == MONITOR_VIEW_ASM) {
                 restore_disasm_cursor_row(asm_row);
@@ -5799,6 +5884,7 @@ int MachineMonitor :: handle_key(int key)
                 redraw_full();
                 break;
             }
+            printf("MCM vic bank %d\n", (int)(requested_vic_bank & 0x03));
             backend->set_live_vic_bank(requested_vic_bank);
             live_vic_bank = backend->get_live_vic_bank();
             current_vic_bank = requested_vic_bank;
@@ -5834,6 +5920,7 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command(monitor_input_jump, jump_buffer, sizeof(jump_buffer) - 1)) {
                 error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
+                    monitor_log_address("jump", address);
                     apply_go_local(address);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
@@ -5853,6 +5940,8 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command(monitor_input_fill, fill_buffer, sizeof(fill_buffer) - 1)) {
                 error = monitor_parse_fill(fill_buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("fill", start, end);
+                    monitor_log_byte("fill value", start, byte_value);
                     monitor_fill_memory(backend, start, end, byte_value);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
@@ -5872,7 +5961,10 @@ int MachineMonitor :: handle_key(int key)
                 error = monitor_parse_transfer_relocate(transfer_buffer, &start, &end, &dest,
                                                         &relocate, &code_start, &code_end);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("transfer", start, end);
+                    monitor_log_address("transfer dest", dest);
                     if (relocate) {
+                        monitor_log_range("relocate", code_start, code_end);
                         // The only command that changes bytes the user did not
                         // type, so it says how many it changed. A count that
                         // does not match what was expected is a linear scan
@@ -5900,6 +5992,8 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command(monitor_input_compare, compare_buffer, sizeof(compare_buffer) - 1)) {
                 error = monitor_parse_compare(compare_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("compare", start, end);
+                    monitor_log_address("compare dest", dest);
                     int found = monitor_compare_collect(backend, start, end, dest,
                                                        hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
                     if (found <= 0) {
@@ -5920,6 +6014,7 @@ int MachineMonitor :: handle_key(int key)
             if (prompt_command(monitor_input_hunt, hunt_buffer, sizeof(hunt_buffer) - 1)) {
                 error = monitor_parse_hunt(hunt_buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("hunt", start, end);
                     int found = monitor_hunt_collect(backend, start, end, needle, needle_len,
                                                     hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
                     if (found <= 0) {

@@ -162,9 +162,10 @@ Example:
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and
 what each row was read from. The source is shown in brackets at the right-hand
-end of the row: `[RAM]`, `[BASIC]`, `[CHAR]`, `[IO]` or `[KERNAL]` where the
-monitor selects the bank itself, and `[CPU]` on an Ultimate II+, where it reads
-whatever the CPU currently sees.
+end of the row: `[RAM]`, `[BAS]`, `[CHR]`, `[I/O]` or `[KRN]` where the monitor
+selects the bank itself, and `[CPU]` on an Ultimate II+, where it reads whatever
+the CPU currently sees. Every tag is three characters, so the source column
+stays at the same place when the cursor crosses a bank boundary.
 
 An opcode that has no defined meaning is shown as `???` and consumes one byte
 unless undocumented opcodes are enabled with `U`. An instruction whose operand
@@ -179,7 +180,7 @@ instruction, and a different instruction length, on every redraw, so every row
 below would move while you were only scrolling.
 
 Assembly view therefore shows one row per address there, as `.BYTE $xx`, marked
-`[IO]`. The rows stay where they are, and each shows what its register holds
+`[I/O]`. The rows stay where they are, and each shows what its register holds
 now.
 
 This follows what the address reads rather than where it is. With CHAR ROM or
@@ -192,24 +193,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF9 FF           .BYTE $FF       [IO]|
-|DFFA 00           .BYTE $00       [IO]|
-|DFFB 12           .BYTE $12       [IO]|
-|DFFC FF           .BYTE $FF       [IO]|
-|DFFD 00           .BYTE $00       [IO]|
-|DFFE 3C           .BYTE $3C       [IO]|
-|DFFF 00           .BYTE $00       [IO]|
-|E000 85 56        STA $56     [KERNAL]|
-|E002 20 0F BC     JSR $BC0F   [KERNAL]|
-|E005 A5 61        LDA $61     [KERNAL]|
-|E007 C9 88        CMP #$88    [KERNAL]|
-|E009 90 03        BCC $E00E   [KERNAL]|
-|E00B 20 D4 BA     JSR $BAD4   [KERNAL]|
-|E00E 20 CC BC     JSR $BCCC   [KERNAL]|
-|E011 A5 07        LDA $07     [KERNAL]|
-|E013 18           CLC         [KERNAL]|
-|E014 69 81        ADC #$81    [KERNAL]|
-|E016 F0 F3        BEQ $E00B   [KERNAL]|
+|DFF9 FF           .BYTE $FF      [I/O]|
+|DFFA 00           .BYTE $00      [I/O]|
+|DFFB 12           .BYTE $12      [I/O]|
+|DFFC FF           .BYTE $FF      [I/O]|
+|DFFD 00           .BYTE $00      [I/O]|
+|DFFE 3C           .BYTE $3C      [I/O]|
+|DFFF 00           .BYTE $00      [I/O]|
+|E000 85 56        STA $56        [KRN]|
+|E002 20 0F BC     JSR $BC0F      [KRN]|
+|E005 A5 61        LDA $61        [KRN]|
+|E007 C9 88        CMP #$88       [KRN]|
+|E009 90 03        BCC $E00E      [KRN]|
+|E00B 20 D4 BA     JSR $BAD4      [KRN]|
+|E00E 20 CC BC     JSR $BCCC      [KRN]|
+|E011 A5 07        LDA $07        [KRN]|
+|E013 18           CLC            [KRN]|
+|E014 69 81        ADC #$81       [KRN]|
+|E016 F0 F3        BEQ $E00B      [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -1038,3 +1039,40 @@ On a machine whose monitor backend cannot reach a reset, `C=+X` says
 `RESET UNAVAILABLE` and changes nothing, edit mode included. On a machine with
 no `Interface Type` setting to swap, which is every cartridge, `C=+I` says
 `INTERFACE SWAP UNAVAILABLE` and likewise changes nothing and stays.
+
+## Trace lines in the device log
+
+The monitor writes one line to the device console for each action that changes
+what it is looking at or what it changed in memory. Every line starts with
+`MCM`, and one line is one action, so a device log read on its own says which
+view was selected, where the cursor was sent, and what each range command was
+asked to do.
+
+| Line                            | Written when                                  |
+| ------------------------------- | --------------------------------------------- |
+| `MCM view HEX`                  | a view is selected, with the view's name       |
+| `MCM jump $C000`                | `J` navigates to an address                    |
+| `MCM fill $C000-$C0FF`          | `F` is accepted, with the range                |
+| `MCM fill value $C000 $AA`      | the same `F`, with the byte it writes          |
+| `MCM transfer $C000-$C0FF`      | `T` is accepted, with the source range         |
+| `MCM transfer dest $D000`       | the same `T`, with the destination             |
+| `MCM relocate $C000-$C010`      | the same `T` when a code range was given       |
+| `MCM compare $C000-$C0FF`       | `C` is accepted, with the range                |
+| `MCM compare dest $D000`        | the same `C`, with the second range's start    |
+| `MCM hunt $0000-$FFFF`          | `H` is accepted, with the range searched       |
+| `MCM number commit $C000 $1234` | the Number tool writes its value               |
+| `MCM freeze on`, `MCM freeze off` | `Z` changes the freezer's state              |
+| `MCM cpu bank 7`                | `O` selects a CPU bank                         |
+| `MCM vic bank 3`                | `SHIFT+O` selects a VIC bank                   |
+| `MCM picker open Hunt results 12` | a result picker opens, with its label and count |
+| `MCM picker close`              | a result picker closes                         |
+
+The view names are `HEX`, `ASM`, `ASCII`, `SCREEN` and `BINARY`.
+
+The bank keys write one line per keypress, because each press is a separate
+selection. That is deliberate: a bank key that produced no line did not reach
+the monitor, which is the case a test most wants to tell apart from a bank key
+that was applied and then displayed wrongly.
+
+A view line is written only when the view actually changes, so pressing a view
+key that is already selected writes nothing.

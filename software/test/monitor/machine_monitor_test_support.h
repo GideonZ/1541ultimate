@@ -138,6 +138,11 @@ public:
     void repeat(char c, int rep);
     void output_fixed_length(const char *string, int, int width_to_write);
     void get_slice(int x, int y, int len, char *out) const;
+    // A shorter screen than the C64's 25 rows. Telnet sessions come in every
+    // height, and the monitor derives its window and every popup's placement
+    // from the screen, so a test that only ever sees 25 rows never meets the
+    // geometry where a popup and the status row want the same row.
+    void set_height(int rows);
     void reset_write_counts();
     int count_writes_outside_rect(int left, int top, int right, int bottom) const;
 };

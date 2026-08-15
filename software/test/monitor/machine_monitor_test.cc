@@ -1154,6 +1154,81 @@ static int test_x_is_not_an_exit(void)
     return 0;
 }
 
+static int test_view_names_are_stable_log_tokens(void)
+{
+    // The names the monitor's trace lines use for each view. They are read by
+    // a person or by a log grep rather than parsed by the firmware, so they
+    // are pinned here: a renamed view would otherwise silently change what a
+    // device log says without anything failing.
+    struct { MachineMonitorView view; const char *name; } expected[] = {
+        { MONITOR_VIEW_HEX,    "HEX"    },
+        { MONITOR_VIEW_ASM,    "ASM"    },
+        { MONITOR_VIEW_ASCII,  "ASCII"  },
+        { MONITOR_VIEW_SCREEN, "SCREEN" },
+        { MONITOR_VIEW_BINARY, "BINARY" },
+    };
+
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        const char *actual = monitor_view_name(expected[i].view);
+        if (expect(actual != 0 && strcmp(actual, expected[i].name) == 0,
+                   "A view's log name is not the expected token.")) {
+            printf("  view %d is %s, expected %s\n", (int)expected[i].view,
+                   actual ? actual : "(null)", expected[i].name);
+            return 1;
+        }
+    }
+    // A value outside the enum still produces a printable token rather than a
+    // null that a trace line would print as "(null)" or crash on.
+    if (expect(monitor_view_name((MachineMonitorView)99) != 0,
+               "An unknown view must still have a printable name.")) return 1;
+    return 0;
+}
+
+static int test_a_popup_owns_the_rows_it_covers(void)
+{
+    // The status row is the window's last row and is padded to the full window
+    // width. A popup that reaches that row must still be readable there, so
+    // the popups are drawn after the status row rather than before it.
+    //
+    // On a 25-row screen no popup reaches that row, so the screen here is 18
+    // rows: the Bookmarks popup is 16 rows tall and is only clamped at the
+    // top, which puts its tenth bookmark slot exactly on the status row.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_CTRL_B };
+    FakeKeyboard kb(keys, 1);
+    char row[41];
+
+    screen.set_height(18);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    if (expect(mon.poll(0) == 0, "Popup draw order test: opening Bookmarks failed.")) return 1;
+
+    // The window starts at screen row 2 and is 15 rows tall, so the status
+    // row is screen row 15. The popup's tenth bookmark slot is on that row.
+    screen.get_slice(0, 15, 40, row);
+    if (expect(strstr(row, "9 KERNAL $E000") != 0,
+               "The status row must not paint over the row a popup covers.")) {
+        printf("  screen row 15 was |%s|\n", row);
+        return 1;
+    }
+    // The popup is still whole above that row, so this is not a case of the
+    // popup having been drawn somewhere else entirely.
+    screen.get_slice(0, 14, 40, row);
+    if (expect(strstr(row, "8 CIA2   $DD00") != 0,
+               "Popup draw order test: the Bookmarks popup is not where the test expects it.")) {
+        printf("  screen row 14 was |%s|\n", row);
+        return 1;
+    }
+    mon.deinit();
+    return 0;
+}
+
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
@@ -1573,6 +1648,8 @@ static int test_kernal_disassembly_mapping(void)
     };
     const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
     FakeKeyboard keyboard(keys, 4);
+    int kernal_tag_pos = -1;
+    int ram_tag_pos = -1;
 
     memset(backend.ram + 0xE000, 0x00, 0x40);
     memcpy(backend.kernal, kernal_bytes, sizeof(kernal_bytes));
@@ -1591,13 +1668,17 @@ static int test_kernal_disassembly_mapping(void)
     screen.get_slice(1, 4, 38, line);
     if (expect(strstr(line, "E000 85 56") == line, "Visible KERNAL bytes at E000 are incorrect.")) return 1;
     if (expect(strstr(line, "STA $56") != NULL, "Visible KERNAL disassembly at E000 is incorrect.")) return 1;
-    if (expect(strstr(line, "[KERNAL]") != NULL, "Visible KERNAL source annotation missing.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "Visible KERNAL source annotation missing.")) return 1;
     if (expect(screen.reverse_chars[4][1], "Disassembly view did not highlight the selected instruction.")) return 1;
+    // Where the source column starts, so the RAM row below can be compared
+    // with it. Every source tag is three characters, so the column does not
+    // move when the cursor crosses a bank boundary.
+    kernal_tag_pos = (int)(strchr(line, '[') - line);
 
     screen.get_slice(1, 5, 38, line);
     if (expect(strstr(line, "E002 20 0F BC") == line, "Visible KERNAL bytes at E002 are incorrect.")) return 1;
     if (expect(strstr(line, "JSR $BC0F") != NULL, "Visible KERNAL disassembly at E002 is incorrect.")) return 1;
-    if (expect(strstr(line, "[KERNAL]") != NULL, "E002 KERNAL source annotation missing.")) return 1;
+    if (expect(strstr(line, "[KRN]") != NULL, "E002 KERNAL source annotation missing.")) return 1;
 
     screen.get_slice(1, 6, 38, line);
     if (expect(strstr(line, "E005 A5 61") == line, "Visible KERNAL bytes at E005 are incorrect.")) return 1;
@@ -1628,6 +1709,13 @@ static int test_kernal_disassembly_mapping(void)
     if (expect(strstr(line, "E000 00") == line, "RAM-under-ROM bytes at E000 are incorrect.")) return 1;
     if (expect(strstr(line, "BRK") != NULL, "RAM-under-ROM disassembly at E000 is incorrect.")) return 1;
     if (expect(strstr(line, "[RAM]") != NULL, "RAM-under-ROM source annotation missing.")) return 1;
+    ram_tag_pos = (int)(strchr(line, '[') - line);
+    if (expect(ram_tag_pos == kernal_tag_pos,
+               "The source column must not move when the bank changes.")) {
+        printf("  KERNAL tag at column %d, RAM tag at column %d\n",
+               kernal_tag_pos, ram_tag_pos);
+        return 1;
+    }
 
     if (expect(monitor.poll(0) == 1, "RUN/STOP exit failed after KERNAL mapping test.")) return 1;
     monitor.deinit();
@@ -8672,6 +8760,8 @@ int main()
     if (test_reset_and_interface_shortcuts_never_reach_a_popup_layer()) return 1;
     if (test_interface_shortcut_swaps_and_leaves()) return 1;
     if (test_x_is_not_an_exit()) return 1;
+    if (test_a_popup_owns_the_rows_it_covers()) return 1;
+    if (test_view_names_are_stable_log_tokens()) return 1;
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;

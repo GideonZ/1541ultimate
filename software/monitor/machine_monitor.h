@@ -74,6 +74,10 @@ struct Cursor {
 };
 
 const char *monitor_error_text(MonitorError error);
+
+// The name a trace line uses for a view. Exposed so the token set can be
+// pinned by a test rather than only by whoever reads the log next.
+const char *monitor_view_name(MachineMonitorView view);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
 void monitor_apply_go(MachineMonitorState *state, uint16_t address);
@@ -316,6 +320,7 @@ class MachineMonitor : public UIObject
     void draw_help_line(int y, const char *text);
     void draw_bookmark_popup();
     void draw_number_picker();
+    void draw_popup_overlays();
     void refresh_popup_overlay();
     void refresh_opcode_overlay();
     void draw_hex();

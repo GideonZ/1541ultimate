@@ -890,6 +890,14 @@ CaptureScreen :: CaptureScreen() : width(40), height(25), cursor_x(0), cursor_y(
     clear();
 }
 
+void CaptureScreen :: set_height(int rows)
+{
+    if (rows < 1) rows = 1;
+    if (rows > 25) rows = 25;
+    height = rows;
+    clear();
+}
+
 void CaptureScreen :: set_background(int)
 {
 }
