@@ -227,13 +227,19 @@ def note_screen(identity: object) -> None:
     on every interaction would be the same 2000 bytes over and over. Two
     consecutive records carrying different values is the observable effect of
     whatever happened between them, which for an injected key is the point.
+
+    A record carries what the harness had last seen when it was written, so on
+    the record of a screen read it is that read's own answer.
     """
     if identity is None:
         _state["screen"] = ""
         return
-    text = identity if isinstance(identity, str) else repr(identity)
-    _state["screen"] = hashlib.sha256(
-        text.encode("utf-8", "replace")).hexdigest()[:DIGEST_CHARS]
+    if isinstance(identity, (bytes, bytearray)):
+        raw = bytes(identity)
+    else:
+        raw = (identity if isinstance(identity, str)
+               else repr(identity)).encode("utf-8", "replace")
+    _state["screen"] = hashlib.sha256(raw).hexdigest()[:DIGEST_CHARS]
 
 
 def fault_of(exc: Optional[BaseException]) -> str:

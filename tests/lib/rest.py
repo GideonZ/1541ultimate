@@ -101,6 +101,10 @@ def record_action(method: str, path: str, started: float, attempts: int,
         # swallowed while answering 200.
         interactions.note_menu(True if status == 200 else
                                False if status == 404 else None)
+        # And what it answered with, so a record written after this says what
+        # the harness was looking at. Under `--mode overlay` this is the only
+        # place a screen is read at all.
+        interactions.note_screen(answer if status == 200 else None)
     interactions.record(
         "rest", f"{method.upper()} {path}", ms=elapsed, status=status,
         params=str(params) if params else None,
