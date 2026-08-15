@@ -398,6 +398,24 @@ per record opening with the same number, so a reader who finds a line there and
 wants every field of it looks that number up rather than matching on a
 timestamp. Both files are written from one record, so they cannot disagree.
 
+`seq` is also how the recording joins to the log, in both directions, and no
+record carries a recording position of its own. From a frame to a record: every
+line in the video's interaction band ends with that record's number, and that
+field is never truncated, so a viewer reads `#4812` off the frame and runs
+
+```sh
+jq 'select(.seq == 4812)' u64/interactions.jsonl
+```
+
+From a record to a frame: a record carries the wall clock it happened at, and
+the `kind=capture` record carries `started` and `lead_in`, so the position in
+the file is `lead_in + (time - started)`. A still goes the same way and needs
+no arithmetic: its entry carries `frame`, `position` and `interaction`, the
+number of the last interaction recorded when that frame was composed.
+
+A stored offset on every record would be a third copy of the same fact, free to
+drift from the video it claims to point at, so there is not one.
+
 Three fields answer questions a bare request and response cannot. `fault` names
 a connection-level failure in one word (`refused`, `reset`, `timeout`,
 `broken-pipe`, `unreachable`), because a key that never reached the device and a

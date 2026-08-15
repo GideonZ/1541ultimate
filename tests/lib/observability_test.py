@@ -5706,7 +5706,15 @@ def the_recording_table_names_the_files_it_is_about() -> str:
             raise Failure(f"{name} is not named in the recording table")
     if "3 frames lost" not in rendered:
         raise Failure("the loss column lost its figure")
-    return "both files named"
+    # And the one place a reader with a video is looking says how to get from
+    # a frame to the record behind it and back, in both directions.
+    if "jq 'select(.seq == 4812)'" not in rendered:
+        raise Failure("the section does not say how to reach a record from a "
+                      "frame")
+    if "lead_in + (time - started)" not in rendered:
+        raise Failure("the section does not say how to reach a frame from a "
+                      "record")
+    return "both files named, and the join in both directions"
 
 
 @case(1, "OBS-2.18")

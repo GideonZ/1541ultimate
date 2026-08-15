@@ -604,6 +604,18 @@ record itself is content-addressed the way a body is, so a `machine:writemem`
 of a whole block keeps its address and its bytes and a partial write is visible
 without a read-back.
 
+`seq` is also the join between the recording and the log, in both directions,
+and no record carries a recording position of its own. From a frame to a
+record, every line of the band of OBS-8.40 ends with that record's number and
+that field is never truncated, so a viewer reads `#4812` off the frame and runs
+`jq 'select(.seq == 4812)' interactions.jsonl`. From a record to a frame, a
+record carries the wall clock it happened at, and the `kind=capture` record
+carries `started` and `lead_in`, so the position in the file is
+`lead_in + (time - started)`; a still needs no arithmetic at all, because its
+entry carries `frame`, `position` and `interaction`. A stored offset on every
+record would be a third copy of the same fact and free to drift from the video
+it claims to point at, so there is not one.
+
 Three fields exist because a bare request and response cannot answer the
 questions an investigation brings. `fault` is what a key that never reached the
 device looks like, as against one the device ignored. `connection` distinguishes

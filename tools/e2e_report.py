@@ -2218,7 +2218,14 @@ def recording_block(run: Run) -> List[str]:
              "The `lost` column is the network's: packets and frames the "
              "device sent that did not arrive, arrived incomplete, or arrived "
              "out of order. It does not include anything missing across a "
-             "re-anchor.", ""]
+             "re-anchor.", "",
+             "Every line in the band under the panes ends with the number of "
+             "its record in `interactions.jsonl`, so a frame reading `#4812` "
+             "is `jq 'select(.seq == 4812)' <slug>/interactions.jsonl`. The "
+             "other direction is the wall clock: a record's position in the "
+             "file is `lead_in + (time - started)` from the `kind=capture` "
+             "record, and a still carries its own `frame` and `position` so "
+             "it needs no arithmetic.", ""]
     lines += table(["Target", "Files", "Frames", "Length", "Lost", "Recorder"],
                    rows)
     if reasons:
