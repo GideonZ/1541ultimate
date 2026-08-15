@@ -1929,6 +1929,90 @@ def run_asm_edit_validation_test(session: MonitorSession, rest_host: str) -> Non
     session.send_key("ESC")           # leave edit mode
 
 
+
+def run_reentry_test(session: MonitorSession) -> None:
+    """The monitor can be left and re-entered, and comes back where it was.
+
+    Each of the three exits is used once, so a wedge that only one of them
+    produces is not hidden by the other two. The address and the view are the
+    monitor's saved state, so re-entry has to bring both back; a monitor that
+    reopened at its default address would still look alive to a check that only
+    asserted it reopened.
+    """
+    ensure_view(session, "BIN ")
+    session.goto("C100")
+    before = session.capture()
+    view_and_address = monitor_header(before)
+
+    for exit_key in ("CTRL_O", "RUNSTOP", "ESC"):
+        session.send_key(exit_key, settle=True)
+        snapshot = wait_until(session, lambda screen: not monitor_is_on_screen(screen))
+        if monitor_is_on_screen(snapshot):
+            raise Failure(
+                f"{exit_key} did not leave the monitor\n{snapshot.text()}")
+        session.enter_monitor()
+        snapshot = wait_until(session, monitor_is_on_screen)
+        if not monitor_is_on_screen(snapshot):
+            raise Failure(
+                f"the monitor did not reopen after {exit_key}\n{snapshot.text()}")
+        again = monitor_header(snapshot)
+        if again != view_and_address:
+            raise Failure(
+                f"after leaving with {exit_key} and reopening, the monitor "
+                f"header reads {again!r}, expected {view_and_address!r}")
+
+    # Leave the suite in the view the checks after this one expect.
+    ensure_view(session, "HEX ")
+
+
+def monitor_header(snapshot: Snapshot) -> str:
+    """The monitor's title row, which names the view and the address."""
+    index = snapshot.find_line_containing("MONITOR ")
+    return snapshot.line(index).strip().strip("|").strip()
+
+
+def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
+    """`Z` stops and releases the C64, on a machine whose freezer it can reach.
+
+    The monitor draws no freeze indicator, so the machine itself is the oracle:
+    the KERNAL jiffy clock at $00A2 advances 60 times a second while the C64
+    runs and does not advance at all while it is stopped. Where the freezer is
+    not reachable the monitor says so in a popup, which is the other behaviour
+    worth holding, so this check accepts either and requires the monitor to be
+    usable afterwards in both cases.
+    """
+    def jiffy_advances() -> bool:
+        first = read_rest_memory(live_host, 0x00A2, 1)[0]
+        for _ in range(12):
+            time.sleep(0.1)
+            if read_rest_memory(live_host, 0x00A2, 1)[0] != first:
+                return True
+        return False
+
+    screen = session.send_char("Z")
+    text = screen.text()
+    if "FREEZE" in text and "UNAVAILABLE" in text or "ONLY IN OVERLAY" in text:
+        session.send_key("ENTER", settle=True)
+        snapshot = wait_until(session, monitor_is_on_screen)
+        if not monitor_is_on_screen(snapshot):
+            raise Failure(
+                "the monitor did not survive a refused freeze\n"
+                f"{snapshot.text()}")
+        return
+
+    if jiffy_advances():
+        raise Failure(
+            "Z did not stop the C64: the jiffy clock at $00A2 kept advancing")
+    session.send_char("Z")
+    if not jiffy_advances():
+        raise Failure(
+            "Z did not release the C64: the jiffy clock at $00A2 stayed still")
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(
+            f"the monitor did not survive a freeze and release\n{snapshot.text()}")
+
+
 def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                                   video_host: str, control: str,
                                   verify_video: bool) -> None:
@@ -3223,6 +3307,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         if copied[4] != 0x00:
             raise Failure(f"transfer wrote past the end of the range: "
                           f"${0xC304:04X} is ${copied[4]:02X}")
+
+    with check("leaving and re-entering the monitor keeps its place"):
+        run_reentry_test(session)
+
+    with check("Z freezes and releases the machine, or says it cannot"):
+        run_freeze_toggle_test(session, live_host)
 
     with check("ASM entry reaches screen and RAM, then G executes it"):
         run_asm_entry_round_trip_test(session, rest_host, video_host, control,
