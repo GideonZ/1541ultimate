@@ -34,6 +34,41 @@
 
 static const char *TAG = "raw_bridge";
 
+/* Reconnecting after the link drops.
+ *
+ * WIFI_EVENT_STA_DISCONNECTED only records that we are no longer associated;
+ * nothing here used to act on it, and the connector task below idled in
+ * Disconnected until the Ultimate asked it to do something. An access point
+ * rebooting, or deauthenticating a client it considers idle, therefore took
+ * the machine off the network until it was power cycled. The same applies at
+ * startup: if no known AP answers, StoredAPs falls through to Disconnected and
+ * stays there, so a device booted while its AP is down never connects.
+ *
+ * Retries start soon enough to ride out a brief outage and back off to a
+ * minute so a genuinely absent AP is not hammered. */
+#define WIFI_RETRY_MIN_MS  5000
+#define WIFI_RETRY_MAX_MS 60000
+
+/* Set when the *user* asked to disconnect, so that request is not undone a few
+ * seconds later. esp_wifi_disconnect() produces the same event as a dropped
+ * link, so intent is the only thing that tells the two apart.
+ *
+ * Only an incoming request clears it -- see handle_connect_command() -- and
+ * never the retry ladder, which reaches attempt_connect() through
+ * wifi_connect_to_scanned() and wifi_connect_to_stored(). Clearing it down
+ * there would let a retry that is already under way erase a disconnect the
+ * user asked for a moment later.
+ *
+ * Written by the dispatcher task, read by the connector task, so volatile:
+ * the read below sits in a loop that the compiler would otherwise be free to
+ * hoist it out of. */
+static volatile bool user_disconnected = false;
+
+void wifi_note_user_disconnect(void)
+{
+    user_disconnected = true;
+}
+
 // Allocate some buffers to work with
 command_buf_context_t work_buffers;
 
@@ -604,11 +639,16 @@ int handle_connect_command(ConnectCommand_t *cmd, ConnectState_t *state)
                 my_uart_transmit_packet(UART_NUM_1, buf);
             }
             break;
+        // A request to connect -- from the menu or from the Ultimate at boot --
+        // means the user wants to be on the network, so any earlier explicit
+        // disconnect is spent. Scanning is not such a request and leaves it be.
         case CMD_WIFI_AUTOCONNECT:
+            user_disconnected = false;
             *state = LastAP;
             return 1;
         case CMD_WIFI_CONNECT:
             {
+                user_disconnected = false;
                 last_connect = *cmd;
                 last_connect.list_index = -1;
                 rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -642,10 +682,30 @@ void connect_thread(void *a)
     ConnectCommand_t connect_command;
     ConnectState_t state = LastAP;
     ConnectState_t prev = LastAP;
+    int retry_delay_ms = WIFI_RETRY_MIN_MS;
     esp_err_t err;
     static const char *states[] = { "LastAP", "Scanning", "ScannedAPs", "StoredAPs", "Connected", "Disconnected" }; 
 
     while(1) {
+        // A disconnect the user asked for can arrive while the ladder is
+        // already walking, and the ladder cannot notice: every state below
+        // blocks on connect_events until its current attempt resolves. Testing
+        // the flag only where the retry timer is armed is therefore not
+        // enough -- an attempt that was already in flight goes on to succeed
+        // and puts the link back up seconds after the user asked for it down.
+        //
+        // So check here, between states, which is the one point the ladder
+        // passes through with nothing in flight. An attempt that landed in the
+        // meantime has to be undone rather than prevented; it had already been
+        // accepted by the time the request arrived.
+        if (user_disconnected && (state != Disconnected)) {
+            if (connected_g) {
+                ESP_LOGI(TAG, "Disconnect requested while reconnecting; undoing.");
+                esp_wifi_disconnect();
+            }
+            state = Disconnected;
+        }
+
         switch (state) {
             case LastAP:
                 err = wifi_connect_to_last();
@@ -719,7 +779,26 @@ void connect_thread(void *a)
                 // is set and there is nothing in the queue, because the semaphore was set before and
                 // we didn't take it. However, in this case we simply check two queues and are back in
                 // the waiting state afterwards; no harm done.
-                xSemaphoreTake(connect_semaphore, portMAX_DELAY);
+                //
+                // Connected waits indefinitely, because something else has to
+                // happen first. Disconnected does not: nothing is coming unless
+                // we go and ask, so the wait is bounded and a timeout means it
+                // is time to try again.
+                if (state == Connected) {
+                    retry_delay_ms = WIFI_RETRY_MIN_MS;
+                }
+                if (xSemaphoreTake(connect_semaphore,
+                                   (state == Connected) || user_disconnected
+                                       ? portMAX_DELAY
+                                       : pdMS_TO_TICKS(retry_delay_ms)) == pdFALSE) {
+                    ESP_LOGI(TAG, "Still disconnected after %d ms; trying again.", retry_delay_ms);
+                    retry_delay_ms *= 2;
+                    if (retry_delay_ms > WIFI_RETRY_MAX_MS) {
+                        retry_delay_ms = WIFI_RETRY_MAX_MS;
+                    }
+                    state = LastAP;
+                    break;
+                }
                 if (xQueueReceive(connect_commands, &connect_command, 0) == pdTRUE) {
                     if (handle_connect_command(&connect_command, &state)) {
                         break;

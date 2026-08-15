@@ -143,6 +143,11 @@ SUITES: Sequence[Suite] = (
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
     Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", ""),
+    # Needs no device either: CI skips the ESP32 build on a cache hit, so a
+    # project missing from the cache key gets its previous binary handed back
+    # forever. raw_u64 was, for a misspelling, and the firmware change that
+    # exposed it had already been merged before anyone noticed.
+    Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", ""),
     # Also needs no device: it checks the two decisions this runner makes when
     # a run goes wrong - when the recovery command may fire, and what status the
     # run exits with. Both only show themselves on a run that has already gone
