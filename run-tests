@@ -172,6 +172,8 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    Suite("e2e", "megabyter-cartridge", "tests/e2e/io/c64/megabyter_cartridge_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
