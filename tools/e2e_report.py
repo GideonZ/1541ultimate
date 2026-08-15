@@ -1994,6 +1994,11 @@ class StillEntry:
     # what the report says: a position recomputed from the suite's timing was
     # wrong by up to 4.7 seconds, and a wrong position is worse than none.
     position: str = ""
+    # How a reader gets from a picture back to the raw record: the interaction
+    # the run had last recorded when this frame was composed. A still carries
+    # no chrome, because extracting the video at its frame has to reproduce it
+    # pixel for pixel, so the way back is a reference rather than pixels.
+    interaction: str = ""
 
 
 def recorded_stills(target: TargetRun) -> Dict[str, dict]:
@@ -2046,7 +2051,7 @@ def stills_for(run: Run, target: TargetRun,
         found.append(((as_int(entry.get("frame")), name),
                       StillEntry(kind, f"{target.slug}/capture/{name}",
                                  read_text(os.path.join(directory, name)),
-                                 position)))
+                                 position, str(entry.get("interaction") or ""))))
     found.sort(key=lambda item: item[0])
     return [entry for _order, entry in found]
 
@@ -2157,8 +2162,11 @@ def screens_section(run: Run) -> List[str]:
                 # The kind, then where in the recording it is. A tree whose
                 # recorder did not write the frame down gets the kind alone.
                 where = f" at {entry.position}" if entry.position else ""
+                reference = (f", interaction `{entry.interaction}`"
+                             if entry.interaction else "")
                 lines.append(f"**{entry.kind}**{where} (`{entry.relative}`"
-                             + (f", image `{image}`" if exists else "") + "):")
+                             + (f", image `{image}`" if exists else "")
+                             + reference + "):")
                 lines += [""] + fenced([redact(row) for row in entry.text]) + [""]
     if not lines:
         return []

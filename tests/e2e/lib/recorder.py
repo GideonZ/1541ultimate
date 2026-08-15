@@ -63,6 +63,7 @@ sys.path.insert(0, os.path.join(
 
 import targets as targets_lib  # noqa: E402
 
+import band as band_lib  # noqa: E402
 import glyphs  # noqa: E402
 import screens as screen_spool  # noqa: E402
 import streams  # noqa: E402
@@ -110,7 +111,6 @@ EDGE_DWELL_SECONDS = 3.0
 # a gap above it so it never touches the picture area.
 BAR_HEIGHT = 4
 BAR_GAP = 2
-CHROME_BOTTOM_PIXELS = EDGE_PIXELS + BAR_HEIGHT + BAR_GAP
 
 # The stamp is two rows of 8-pixel glyphs in the top border, which is 20 lines
 # at the top on NTSC and 35 on PAL, so it fits on every geometry.
@@ -199,6 +199,11 @@ SCREEN_TEXT_INTERVAL_SECONDS = 1.0
 # line can go to the picture it was decoded from.
 SCREEN_TEXT_NAME = "screen-text.jsonl"
 
+# The exhaustive interaction log, which the recorder follows to decide which
+# surface the left pane is showing. Written by the suites and by the runner;
+# see tests/lib/interactions.py.
+INTERACTIONS_NAME = "interactions.jsonl"
+
 # How long the screen tap may be silent before the recorder reads the menu
 # itself. Its own interval rather than the stream's: the two answer different
 # questions, and a suite that is navigating publishes a screen far more often
@@ -211,6 +216,10 @@ MENU_QUIET_SECONDS = 6.0
 # rank before it loses any of the first.
 PRIMARY_TEXT = 1     # white
 SECONDARY_TEXT = 15  # light grey
+# The one colour the band uses for its own accents: the left rule of a line
+# and its type tag. Cyan because nothing else on the frame is, so it reads as
+# a category and never as a state.
+BAND_ACCENT = 3
 
 # The opening card. Its background is the darkest thing in the palette so the
 # values on it carry the contrast, and its own three ranks are separate from
@@ -225,6 +234,24 @@ CARD_SECONDARY = 15
 CARD_MARGIN_COLUMNS = 1
 CARD_COLUMN_GAP = 4
 
+# The three surfaces the harness drives a device through, which is what the
+# left pane shows one of. Which one is current is decided from the interaction
+# stream and from nothing else: a screen arriving is not evidence that its
+# surface is the one being driven, and a `machine:input` call alone does not
+# say which, because the same call types into the menu, into BASIC and into a
+# monitor running on the C64.
+PANE_MENU = "menu"
+PANE_TELNET = "telnet"
+PANE_KEYS = "keys"
+
+# How many of the most recent interactions the keys pane shows.
+PANE_KEY_LINES = 20
+
+# How much of the bottom of a frame the band, the progress bar and the state
+# edge own. Between this and CHROME_TOP_PIXELS is the band no annotation is
+# ever drawn into, which is what a still has to reproduce.
+CHROME_BOTTOM_PIXELS = band_lib.HEIGHT + EDGE_PIXELS + BAR_HEIGHT + BAR_GAP
+
 # What the placeholder cards say, which is as much as the run knows.
 NO_SCREEN_YET = "no screen has been read yet"
 NO_MENU_OPEN = "no menu is open"
@@ -236,6 +263,12 @@ NO_VIDEO = "waiting for the device's video"
 # Drawn above a harness pane showing a screen older than the poll that should
 # have replaced it.
 STALE_MARK = "STALE"
+
+# What a pane showing a surface that is no longer being driven is drawn in. A
+# stale surface must never look live, and the pane is the only thing on the
+# frame that can be stale, so it says so in its own colour rather than with a
+# word somewhere else.
+DIM_TEXT = 12
 
 # How long the health-warning edge is held after the sweep that raised it. The
 # edge answers "was the device in trouble around here", and a device is
@@ -320,11 +353,14 @@ def geometry_for(video: bool, menu: bool, layout: str) -> Dict[str, Geometry]:
     `separate` gives each pane a file of its own with no gutter.
     """
     made: Dict[str, Geometry] = {}
+    # The panes, the band under them, and room under that for the progress bar
+    # and the state edge, so nothing is drawn over anything else.
+    height = PANE_HEIGHT + band_lib.HEIGHT + EDGE_PIXELS + BAR_HEIGHT + BAR_GAP
     if layout == "separate":
         if menu:
-            made["harness"] = Geometry(HARNESS_PANE_WIDTH, PANE_HEIGHT, 0, -1)
+            made["harness"] = Geometry(HARNESS_PANE_WIDTH, height, 0, -1)
         if video:
-            made["screen"] = Geometry(SCREEN_PANE_WIDTH, PANE_HEIGHT, -1, 0)
+            made["screen"] = Geometry(SCREEN_PANE_WIDTH, height, -1, 0)
         return made
     width = 0
     harness_x = screen_x = -1
@@ -334,7 +370,7 @@ def geometry_for(video: bool, menu: bool, layout: str) -> Dict[str, Geometry]:
     if video:
         screen_x = width + (GUTTER_WIDTH if menu else 0)
         width = screen_x + SCREEN_PANE_WIDTH
-    made["combined"] = Geometry(width, PANE_HEIGHT, harness_x, screen_x)
+    made["combined"] = Geometry(width, height, harness_x, screen_x)
     return made
 
 
@@ -585,7 +621,9 @@ class Composer:
                 harness: Optional[Sequence[str]], harness_kind: str,
                 state: RunState, position: float, wall: float,
                 harness_raw: bytes = b"", stale: bool = False,
-                cause: Optional[Dict[str, str]] = None) -> bytes:
+                cause: Optional[Dict[str, str]] = None,
+                live: bool = True, age: str = "",
+                ticker: Optional["band_lib.Ticker"] = None) -> bytes:
         """One canvas, as RGB bytes, for one slot.
 
         `self.plain` is left holding the same frame without the annotations,
@@ -597,12 +635,14 @@ class Composer:
         if self.geometry.screen_x >= 0:
             self._draw_screen(screen, cause)
         if self.geometry.harness_x >= 0:
-            self._draw_harness(harness, harness_kind, harness_raw, stale)
+            self._draw_harness(harness, harness_kind, harness_raw, stale, live)
         self.plain = self.canvas.to_rgb()
         if self.options.stamp:
             self._draw_edge(state, wall)
             self._draw_stamp(state, position, wall)
-            self._draw_labels(harness_kind)
+            self._draw_labels(harness_kind, age)
+            if ticker is not None:
+                self._draw_band(ticker, state, wall)
             self._draw_bar(state)
             return self.canvas.to_rgb()
         return self.plain
@@ -623,15 +663,23 @@ class Composer:
                                  min(height, PANE_HEIGHT), indices)
 
     def _draw_harness(self, rows: Optional[Sequence[str]], kind: str,
-                      raw: bytes = b"", stale: bool = False) -> None:
-        """The four states of OBS-8.20, each saying something different."""
+                      raw: bytes = b"", stale: bool = False,
+                      live: bool = True) -> None:
+        """One surface, drawn as itself, and never made to look live when it is not.
+
+        `live` says the surface being shown is the one the harness is driving.
+        A surface that is no longer driven is drawn from its text in a dimmer
+        colour rather than from its payload, so it reads as a record of what
+        was there rather than as what is there. The label carries the same
+        fact in words; this carries it at a glance.
+        """
         x = self.geometry.harness_x
         top = (PANE_HEIGHT - HARNESS_TEXT_HEIGHT) // 2
         if not rows:
             self._card(x, HARNESS_PANE_WIDTH,
                        NO_MENU_OPEN if kind == "closed" else NO_SCREEN_YET)
             return
-        if raw and kind == screen_spool.MENU:
+        if raw and kind == screen_spool.MENU and live:
             # The payload carries the colour plane and the reverse-video bit
             # that marks the selected row, so the menu is drawn from it and
             # the rows are the fallback for a screen that has no payload,
@@ -640,8 +688,10 @@ class Composer:
                                       x + menu_indent(HARNESS_PANE_WIDTH), top,
                                       background=CHROME)
         else:
-            glyphs.render_text_screen(rows, self.canvas, x, top,
-                                      CHROME_TEXT, CHROME)
+            indent = (menu_indent(HARNESS_PANE_WIDTH)
+                      if kind == screen_spool.MENU else 0)
+            glyphs.render_text_screen(rows, self.canvas, x + indent, top,
+                                      CHROME_TEXT if live else DIM_TEXT, CHROME)
         if stale:
             # The screen is the last one that was read rather than the current
             # one, and a reader looking at a still has no other way to know.
@@ -707,7 +757,7 @@ class Composer:
                                   STAMP_BACKGROUND)
             used += len(piece)
 
-    def _draw_labels(self, kind: str) -> None:
+    def _draw_labels(self, kind: str, age: str = "") -> None:
         """Which pane is which, for a viewer who did not build this.
 
         On a row of their own under the stamp. Sharing the stamp's second row
@@ -721,7 +771,7 @@ class Composer:
                               "SCREEN")
         if self.geometry.harness_x >= 0:
             self._right_label(self.geometry.harness_x, HARNESS_PANE_WIDTH, row,
-                              "TELNET" if kind == "telnet" else "MENU")
+                              pane_label(kind) + age)
 
     def _right_label(self, x: int, width: int, row: int, text: str) -> None:
         left = x + width - len(text) * glyphs.GLYPH_WIDTH
@@ -750,6 +800,28 @@ class Composer:
         self.canvas.fill(0, height - EDGE_PIXELS, width, EDGE_PIXELS, colour)
         self.canvas.fill(0, 0, EDGE_PIXELS, height, colour)
         self.canvas.fill(width - EDGE_PIXELS, 0, EDGE_PIXELS, height, colour)
+
+    def _draw_band(self, ticker, state: RunState, wall: float) -> None:
+        """The seven rows under the panes: what the run is doing, as it does it.
+
+        Under the panes rather than over them, because a pane is evidence and
+        an overlay on evidence is this module's own text on top of it. Above
+        the state edge, which is a marking rather than a reading.
+        """
+        layout = band_lib.layout_for(self.geometry.width)
+        activity = " > ".join(part for part in (
+            f"SUITE {state.label}-{state.suite}" if state.suite else "",
+            f"CHECK {state.scenario or state.check}"
+            if (state.scenario or state.check) else "") if part) or "no suite"
+        failing = bool(state.failed_at
+                       and wall - state.failed_at <= EDGE_DWELL_SECONDS)
+        band_lib.draw(self.canvas, 0, PANE_HEIGHT, self.geometry.width, ticker,
+                      layout, activity,
+                      ticker.state(wall, failing, state.between_suites),
+                      {"background": STAMP_BACKGROUND, "primary": PRIMARY_TEXT,
+                       "secondary": SECONDARY_TEXT, "failure": FAILURE_COLOUR,
+                       "warning": WARNING_COLOUR, "accent": BAND_ACCENT},
+                      wall)
 
     def _draw_bar(self, state: RunState) -> None:
         """One segment per planned suite run, filling left to right.
@@ -933,14 +1005,40 @@ def annotation_free_area(geometry: Geometry) -> Tuple[int, int, int, int]:
     """The rectangle of a composed frame no annotation is ever drawn into.
 
     The stamp and the pane labels own the top three character rows, and the
-    progress bar and the state edge own the bottom of the frame. Everything
-    between them is the panes as they were composed, which is what a still is
-    written from, so a still and the frame it was taken from have to be
-    identical here and are allowed to differ everywhere else.
+    band, the progress bar and the state edge own the bottom of the frame.
+    Everything between them is the panes as they were composed, which is what
+    a still is written from, so a still and the frame it was taken from have to
+    be identical here and are allowed to differ everywhere else.
     """
     return (EDGE_PIXELS, CHROME_TOP_PIXELS,
             max(0, geometry.width - 2 * EDGE_PIXELS),
             max(0, geometry.height - CHROME_TOP_PIXELS - CHROME_BOTTOM_PIXELS))
+
+
+def still_height(geometry: Geometry) -> int:
+    """How tall a still is: the panes, and nothing the recorder drew itself.
+
+    A still is evidence of what the machine showed. The band under the panes is
+    this module's own account of what the harness was doing, which belongs on
+    the recording and not on the evidence, and a still carrying it would also
+    be a still a reader could not compare with the picture area of its frame.
+    """
+    return min(geometry.height, PANE_HEIGHT)
+
+
+def pane_label(kind: str) -> str:
+    """What the left pane's label says for one surface."""
+    return {PANE_TELNET: "TELNET", screen_spool.TELNET: "TELNET",
+            PANE_KEYS: "KEYS"}.get(kind, "MENU")
+
+
+def format_age(seconds: float) -> str:
+    """How old the pane's content is, for the label. Empty when it is current."""
+    if seconds < 1.0:
+        return ""
+    if seconds < 60:
+        return f" {seconds:.0f}s"
+    return f" {int(seconds) // 60}m"
 
 
 def truncate(text: str, columns: int) -> str:
@@ -977,6 +1075,18 @@ def format_position(seconds: float) -> str:
     whole = int(seconds)
     return (f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
             f".{int((seconds - whole) * 1000):03d}")
+
+
+def format_clock(when: float) -> str:
+    """The time of day one interaction happened, to the millisecond.
+
+    Local, and to the millisecond, because the band is read against the wall
+    clock in the stamp above it and two interactions in one second are the
+    ordinary case.
+    """
+    whole = int(when)
+    return (time.strftime("%H:%M:%S", time.localtime(whole))
+            + f".{int((when - whole) * 1000):03d}")
 
 
 def format_wall(when: float) -> str:
@@ -1290,6 +1400,160 @@ def difference(previous: bytes, current: bytes, stride: int = SAMPLE_STRIDE) -> 
 # ---------------------------------------------------------------------------
 
 
+class InteractionTail:
+    """Follow the interaction log the transports are already writing.
+
+    The recorder runs in the process that owns the target, and the suites run
+    in their own, so the only thing they share is the run directory. That is
+    enough: every interaction is appended there as one complete line under
+    O_APPEND, with the same tail-and-retry rules the JSONL has.
+    """
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.offset = 0
+        self._partial = ""
+        self.taken = 0
+        # The last interaction seen, as the reference a still carries. The
+        # sequence number restarts per writing process, and several suites
+        # write to one file, so the reference is the suite and the attempt
+        # with it.
+        self.last_reference = ""
+
+    def poll(self) -> List[dict]:
+        """Every interaction appended since the last look, oldest first."""
+        try:
+            size = os.path.getsize(self.path)
+        except OSError:
+            return []
+        if size < self.offset:
+            self.offset = 0
+            self._partial = ""
+        if size == self.offset:
+            return []
+        try:
+            with open(self.path, encoding="utf-8", errors="replace") as handle:
+                handle.seek(self.offset)
+                text = handle.read()
+        except OSError:
+            return []
+        self.offset += len(text.encode("utf-8", "replace"))
+        *lines, self._partial = (self._partial + text).split("\n")
+        found = []
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(record, dict):
+                found.append(record)
+                self.taken += 1
+                self.last_reference = reference_of(record)
+        return found
+
+
+def reference_of(record: dict) -> str:
+    """One interaction named the way anything pointing at it names it.
+
+    The sequence number restarts for each process that writes the log, and a
+    target's log is written by every suite and by the runner, so the number
+    alone identifies nothing. Suite, attempt and number together do.
+    """
+    if not record.get("seq"):
+        return ""
+    parts = [str(record.get("suite") or "?")]
+    if record.get("attempt"):
+        parts.append(str(record["attempt"]))
+    parts.append(f"#{record['seq']}")
+    if record.get("repeat"):
+        parts[-1] += f"-{int(record['seq'])}"
+    return "/".join(parts)
+
+
+class PaneMode:
+    """Which surface the harness is driving, from the interactions alone.
+
+    The pane used to follow whichever screen the spool had published last,
+    which made it flip between the menu and a Telnet session several times a
+    second on any suite that read both. A viewer cannot read a pane that
+    changes what it is showing faster than they can look at it, and a pane
+    that flips is also a pane that is lying half the time about which surface
+    the harness is talking to.
+
+    So it is sticky and it is derived, not sampled. Three surfaces:
+
+        menu    the device's overlay menu is open and taking the interaction
+        telnet  a Telnet session is taking it
+        keys    keys are going into the C64's keyboard matrix with the menu
+                closed, so there is no menu screen to show and what matters is
+                which keys went and what answered
+
+    A `machine:input` call does not by itself say which of the first and the
+    third it is, because the same call types into the menu, into BASIC and into
+    a monitor running on the C64. What separates them is whether the menu was
+    open, which the interaction record carries because `machine:menu_screen`
+    answers 200 with a screen and 404 without one.
+
+    Nothing here is a timer and nothing is a debounce: the mode changes when an
+    interaction identifies a different surface, and at no other time.
+    """
+
+    def __init__(self) -> None:
+        self.mode = ""
+        self.since = 0.0
+        self.keys: List[str] = []
+
+    def apply(self, records: Sequence[dict], now: float) -> None:
+        for record in records:
+            surface = self.surface_of(record)
+            if surface and surface != self.mode:
+                self.mode = surface
+                self.since = now
+            if self.surface_of(record) == PANE_KEYS or _is_input(record):
+                self.keys.append(_key_line(record))
+                del self.keys[:-PANE_KEY_LINES]
+
+    @staticmethod
+    def surface_of(record: dict) -> str:
+        """Which surface this interaction was with, or "" if it does not say."""
+        transport = str(record.get("transport") or "")
+        operation = str(record.get("op") or "")
+        if transport == "telnet" and operation.startswith("send"):
+            return PANE_TELNET
+        if transport != "rest":
+            return ""
+        if "machine:input" in operation:
+            # The one call that is ambiguous on its own. An open menu takes the
+            # key itself; a closed one means it went into the C64's matrix.
+            if record.get("menu_open") is True:
+                return PANE_MENU
+            if record.get("menu_open") is False:
+                return PANE_KEYS
+            return ""
+        if "machine:menu_screen" in operation and record.get("menu_open") is True:
+            return PANE_MENU
+        return ""
+
+
+def _is_input(record: dict) -> bool:
+    return (str(record.get("transport") or "") == "rest"
+            and "machine:input" in str(record.get("op") or ""))
+
+
+def _key_line(record: dict) -> str:
+    """One injected key or REST call, as the keys pane shows it."""
+    parts = [str(record.get("op") or "")]
+    for name in ("params", "status", "ms"):
+        value = record.get(name)
+        if value not in (None, ""):
+            parts.append(str(value))
+    if record.get("repeat"):
+        parts.append(f"x{record['repeat']}")
+    return " ".join(parts)
+
+
 class SpoolTail:
     """Follow the screens the suites are already publishing.
 
@@ -1314,6 +1578,11 @@ class SpoolTail:
         self.kind = ""
         self.last_at = 0.0
         self.taken = 0
+        # The last screen of each surface and when it arrived, because the
+        # pane is sticky: a menu screen arriving does not make the menu the
+        # surface being driven, and a pane told to show a Telnet session has
+        # to have that session's last screen to show.
+        self.screens: Dict[str, Tuple[List[str], bytes, float]] = {}
         # The last thing a suite did to a device stream, so a pane with no
         # source can say who took it rather than that it is unavailable.
         self.stream_event: Dict[str, str] = {}
@@ -1353,6 +1622,7 @@ class SpoolTail:
                 self.kind = str(kind)
                 self.last_at = now
                 self.taken += 1
+                self.screens[self.kind] = (self.rows, self.raw, now)
             elif kind == "stream":
                 # Published by tests/e2e/lib/streams.py for every arm and
                 # every stop a suite made, which is where the answer to "why
@@ -1506,6 +1776,10 @@ class Recorder:
         self._arming = streams.Arming(api, self.target)
         self._tail = JsonlTail(directory)
         self._spool = SpoolTail(os.path.join(directory, "screens.jsonl"))
+        self._interactions = InteractionTail(
+            os.path.join(directory, INTERACTIONS_NAME))
+        self._pane = PaneMode()
+        self._ticker = band_lib.Ticker()
         self._sources = Sources()
         self._cursor: Optional[AudioCursor] = None
         self._audio_encoder: Optional[Encoder] = None
@@ -1718,6 +1992,19 @@ class Recorder:
             self._drain(min(interval, max(0.0, next_slot - self.clock())))
             now = self.clock()
             self._spool.poll(now)
+            arrived = self._interactions.poll()
+            for record in arrived:
+                record.setdefault("clock", format_clock(
+                    float(record.get("time") or self.wall_clock())))
+                record.setdefault("reference", reference_of(record))
+            self._pane.apply(arrived, now)
+            self._ticker.apply(arrived, now)
+            # Everything the streams carried, which is excluded from the two
+            # byte counters on purpose: it is orders of magnitude larger than
+            # the control traffic and would drown it.
+            self._ticker.stream = (
+                self._assembler.counts()["packets"] * streams.VIDEO_PACKET_BYTES
+                + self._audio.counts()["packets"] * streams.AUDIO_PACKET_BYTES)
             self._apply_stream_events()
             if now < next_slot:
                 continue
@@ -1831,6 +2118,30 @@ class Recorder:
         if self._cursor is not None:
             self._cursor.available = self._available["audio"]
 
+    def _surface(self, now: float):
+        """What the left pane shows: the driven surface, its screen and its age.
+
+        Sticky: the surface is the one the interactions name, and the screen is
+        that surface's own last one however recently another surface published
+        one. A pane that followed the spool showed whichever screen arrived
+        last, which on a suite reading both flipped several times a second.
+        """
+        mode = self._pane.mode
+        if mode == PANE_KEYS:
+            return PANE_KEYS, self._pane.keys or [NO_MENU_OPEN], b"", 0.0, True
+        wanted = (screen_spool.TELNET if mode == PANE_TELNET
+                  else screen_spool.MENU if mode == PANE_MENU else "")
+        if not wanted:
+            # Nothing has said which surface yet, so the last screen of any is
+            # the only answer there is.
+            return (self._spool.kind or "closed", self._spool.rows,
+                    self._spool.raw, 0.0, True)
+        found = self._spool.screens.get(wanted)
+        if found is None:
+            return wanted, None, b"", 0.0, True
+        rows, raw, at = found
+        return wanted, rows, raw, max(0.0, now - at), True
+
     def _emit(self, state: RunState, recompose: bool) -> None:
         # The real clock rather than a slot count: under sustained shedding a
         # count of slots falls behind the records the stamp is there to be
@@ -1840,17 +2151,18 @@ class Recorder:
         budget = 1.0 / max(1, self.options.fps)
         if self._audio_encoder is not None and self._cursor is not None:
             self._audio_encoder.write(self._cursor.take(), budget=budget)
+        now = self.clock()
         stale = bool(self._spool.last_at
-                     and self.clock() - self._spool.last_at
-                     > STALE_AFTER_SECONDS)
+                     and now - self._spool.last_at > STALE_AFTER_SECONDS)
+        kind, rows, raw, age, live = self._surface(now)
         for name, encoder in self._encoders.items():
             if recompose or name not in self._last_canvas:
                 composer = self._composers[name]
                 canvas = composer.compose(
-                    self._sources.frame, self._spool.rows,
-                    self._spool.kind or "closed", state, position, wall,
-                    harness_raw=self._spool.raw, stale=stale,
-                    cause=self._spool.stream_event)
+                    self._sources.frame, rows, kind, state, position, wall,
+                    harness_raw=raw, stale=stale,
+                    cause=self._spool.stream_event,
+                    live=live, age=format_age(age), ticker=self._ticker)
                 self._last_canvas[name] = canvas
                 self._plain_canvas[name] = composer.plain
             # One per encoder per slot, so a separate layout counts two for a
@@ -1896,7 +2208,8 @@ class Recorder:
         # the machine showed, and this module's own text burned across it is
         # not evidence of anything.
         self._picker.offer(self._plain_canvas[name], self._spool.rows, ranked,
-                           frame=frame, position=position)
+                           frame=frame, position=position,
+                           reference=self._interactions.last_reference)
 
     def _still_pane(self) -> str:
         """Which output file the stills of this run are frames of.
@@ -1917,7 +2230,8 @@ class Recorder:
         geometry = self.geometry[pane]
         for entry in write_stills(os.path.join(self.directory, "capture"),
                                   stem, geometry.width, geometry.height,
-                                  chosen, pane=output_name(pane)):
+                                  chosen, pane=output_name(pane),
+                                  height_kept=still_height(geometry)):
             # The suite run each still belongs to, so a reader joins a still to
             # a check without parsing its file name back apart.
             entry["stem"] = stem
@@ -2391,6 +2705,12 @@ class Still:
     rows: List[str]
     frame: int
     position: float
+    # The last interaction the run had recorded when this frame was composed,
+    # which is how a viewer gets from a picture back to the raw record. The
+    # still itself carries no chrome: its whole value is that extracting the
+    # video at `frame` reproduces it pixel for pixel, and a band burned into
+    # it would end that.
+    reference: str = ""
 
 
 class StillPicker:
@@ -2415,7 +2735,8 @@ class StillPicker:
         self._index = 0
 
     def offer(self, canvas: bytes, rows: Optional[Sequence[str]],
-              ranked_on: bytes, frame: int = 0, position: float = 0.0) -> None:
+              ranked_on: bytes, frame: int = 0, position: float = 0.0,
+              reference: str = "") -> None:
         """One composed frame, with what it was composed from and where it is.
 
         `frame` and `position` describe the slot this canvas was written into,
@@ -2423,7 +2744,7 @@ class StillPicker:
         frame it actually is rather than of the suite it belongs to.
         """
         text = [str(row) for row in (rows or [])]
-        candidate = Still("", canvas, text, frame, position)
+        candidate = Still("", canvas, text, frame, position, reference)
         if self.first is None:
             self.first = candidate
         else:
@@ -2455,12 +2776,13 @@ class StillPicker:
             found.append((self.last.frame, 2, "last", self.last))
         found.sort(key=lambda item: (item[0], item[1]))
         return [Still(kind, still.canvas, still.rows, still.frame,
-                      still.position)
+                      still.position, still.reference)
                 for _frame, _rank, kind, still in found]
 
 
 def write_stills(directory: str, stem: str, width: int, height: int,
-                 chosen: Sequence[Still], pane: str = "") -> List[dict]:
+                 chosen: Sequence[Still], pane: str = "",
+                 height_kept: int = 0) -> List[dict]:
     """Write each still as a pair of files sharing one name.
 
     The pair exists because the two readers need different things: the image
@@ -2498,6 +2820,8 @@ def write_stills(directory: str, stem: str, width: int, height: int,
             continue
         entry = {"index": index, "kind": still.kind, "text": name + ".txt",
                  "frame": still.frame, "position": round(still.position, 4)}
+        if still.reference:
+            entry["interaction"] = still.reference
         if pane:
             # Which output file the frame and the position are positions in.
             # A separate layout writes two files and a still is composed for
@@ -2506,6 +2830,10 @@ def write_stills(directory: str, stem: str, width: int, height: int,
         if Image is not None:
             try:
                 image = Image.frombytes("RGB", (width, height), still.canvas)
+                kept = height_kept or height
+                if kept < height:
+                    image = image.crop((0, 0, width, kept))
+                entry["height"] = kept
                 image.save(os.path.join(directory, name + ".png"))
                 entry["image"] = name + ".png"
             except (OSError, ValueError):
