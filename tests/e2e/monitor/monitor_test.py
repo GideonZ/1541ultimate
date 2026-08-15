@@ -749,7 +749,8 @@ def leave_monitor_fully(session: MonitorSession) -> None:
         except Failure:
             return
         session.send_key("ARROW_LEFT", settle=True)
-    raise Failure("the monitor was still on screen after 4 Back presses")
+    raise Failure("the monitor was still on screen after 4 Back presses\n"
+                  f"{session.capture().text()}")
 
 
 def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
@@ -1081,6 +1082,68 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
             verified += 1
     detail(f"{verified} command arguments typed and read back character for character")
     return verified
+
+
+# Addresses for the hex-edit reliability sweep. $0002 is below $1000, where a
+# write while frozen reaches the bus with nothing rebanked. The rest are above
+# it, where C64::dma_transfer_frozen has to put the frozen C64 mode back around
+# the access. Sweeping both says whether a failure belongs to the rebanked
+# range or to writing in general.
+HEX_EDIT_RELIABILITY_ADDRESSES = (0x0002, 0x1100, 0x7FFF, 0x8000, 0xCFFF, 0xC000)
+
+
+def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
+                                  rounds: int) -> int:
+    """Every hex edit reaches memory, including where the C64 mode is rebanked.
+
+    One byte is inverted at each address in turn and read straight back with
+    `machine:readmem`, which reaches memory through the C64's own DMA path
+    rather than through the monitor's backend, so a monitor view showing what
+    it was told cannot pass. The value changes on every pass, so a stale read
+    cannot pass either.
+
+    The monitor is not left between edits: the read path being checked against
+    is a different one from the write path being checked, which is what makes
+    it an independent answer.
+    """
+    originals = {address: read_rest_memory(device_host, address, 1)
+                 for address in HEX_EDIT_RELIABILITY_ADDRESSES}
+    wrote = 0
+    failures_above = 0
+    try:
+        for round_index in range(rounds):
+            for address in HEX_EDIT_RELIABILITY_ADDRESSES:
+                before = read_rest_memory(device_host, address, 1)
+                replacement = bytes((before[0] ^ 0xFF,))
+                session.goto(f"{address:04X}")
+                ensure_view(session, "HEX ")
+                session.send_char("e")
+                digits = f"{replacement[0]:02X}"
+                session.send_char(digits[0])
+                session.send_char(digits[1])
+                session.send_key("ESC")
+                actual = wait_for_rest_data(device_host, address, replacement,
+                                            timeout=2.0)
+                if actual != replacement:
+                    if address >= 0x1000:
+                        failures_above += 1
+                    raise Failure(
+                        f"round {round_index + 1} of {rounds}, after {wrote} "
+                        f"edits: ${address:04X} was {before.hex().upper()}, "
+                        f"{replacement.hex().upper()} was typed into the Hex "
+                        f"view, and the device reads "
+                        f"{actual.hex().upper()}. "
+                        + ("This address needs the frozen C64 mode put back "
+                           "around the write." if address >= 0x1000
+                           else "This address needs nothing rebanked."))
+                wrote += 1
+    finally:
+        leave_monitor_fully(session)
+        for address, value in originals.items():
+            write_rest_memory_confirmed(device_host, address, value)
+        session.enter_monitor()
+    detail(f"{wrote} hex edits, every byte read back through the C64's own DMA path")
+    return wrote
 
 
 def asm_commit_cases(round_index: int) -> Tuple[Tuple[str, bytes], ...]:
@@ -2062,11 +2125,27 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, files_host: 
 # row, and the edit field two rows below it.
 PROMPT_FIELD_OFFSET = 2
 
+# The vertical run of a window border, on both transports.
+PROMPT_BORDER = "|"
+
 
 def prompt_field(snapshot: Snapshot, title: str) -> str:
-    """What the open command prompt currently holds, as shown on screen."""
+    """What the open command prompt currently holds, as shown on screen.
+
+    The prompt is a narrow box drawn over the memory view, so the field row
+    carries the view's own text on either side of it. The box's two border
+    columns are read off the title row, which has them in the same places, and
+    only what lies between them is the field.
+    """
     row = snapshot.find_line_containing(title)
-    return snapshot.line(row + PROMPT_FIELD_OFFSET).strip().strip("|").strip()
+    title_line = snapshot.line(row)
+    field_line = snapshot.line(row + PROMPT_FIELD_OFFSET)
+    at = title_line.find(title)
+    left = title_line.rfind(PROMPT_BORDER, 0, at) if at > 0 else -1
+    right = title_line.find(PROMPT_BORDER, at + len(title)) if at >= 0 else -1
+    if left >= 0 and right > left:
+        field_line = field_line[left + 1:right]
+    return field_line.strip().strip(PROMPT_BORDER).strip()
 
 
 def wait_until(session: MonitorSession, ready, timeout: float = 5.0) -> Snapshot:
@@ -2764,6 +2843,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("an Assembly-view edit reaches C64 memory, not just the editor"):
         run_asm_edit_memory_persists_test(session, rest_host, frozen)
+
+    with check("a hex edit reaches memory at every address, every time"):
+        run_hex_edit_reliability_test(session, rest_host, stress_rounds(6))
 
     with check("one-, two- and three-byte instructions each commit whole"):
         run_asm_commit_reliability_test(session, rest_host, frozen,

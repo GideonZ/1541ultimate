@@ -1961,6 +1961,27 @@ void MachineMonitor :: canonical_write(uint16_t address, uint8_t value)
     backend->write(address, value);
 }
 
+// An assembled instruction is written as one block rather than as one write
+// per byte. On a backend that has to stop the machine to reach memory, one
+// block is one stop, so the opcode and its operand cannot end up on opposite
+// sides of a failure: either the instruction is written or it is not. A block
+// that would run past $FFFF is written byte by byte instead, because
+// write_block takes a length rather than a wrapping address.
+void MachineMonitor :: canonical_write_instruction(uint16_t address, const uint8_t *bytes,
+                                                   uint8_t length)
+{
+    if (length == 0) {
+        return;
+    }
+    if ((uint32_t)address + length <= 0x10000UL) {
+        backend->write_block(address, bytes, length);
+        return;
+    }
+    for (uint8_t i = 0; i < length; i++) {
+        backend->write((uint16_t)(address + i), bytes[i]);
+    }
+}
+
 void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len) const
 {
     uint16_t first = len;
@@ -4949,9 +4970,7 @@ bool MachineMonitor :: opcode_picker_commit_typed()
         asm_edit_history_push(a, canonical_read(a), 0, 0);
     }
 
-    for (uint8_t i = 0; i < insn.length; i++) {
-        canonical_write((uint16_t)(state.current_addr + i), insn.bytes[i]);
-    }
+    canonical_write_instruction(state.current_addr, insn.bytes, insn.length);
     // Assembling a line says an instruction starts here, which is exactly what
     // a baseline is, so this becomes the new one. Without it, a line assembled
     // above the old baseline and reaching across it would be shown as the data

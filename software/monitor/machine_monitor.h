@@ -283,6 +283,7 @@ class MachineMonitor : public UIObject
 
     uint8_t canonical_read(uint16_t address);
     void canonical_write(uint16_t address, uint8_t value);
+    void canonical_write_instruction(uint16_t address, const uint8_t *bytes, uint8_t length);
     void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
     uint8_t memory_byte_stride(void) const;
     uint8_t binary_byte_stride(void) const;

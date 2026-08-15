@@ -3288,6 +3288,74 @@ static int test_asm_edit_direct_typing(void)
     return 0;
 }
 
+// Records how the monitor reached memory, so an instruction committed as one
+// block can be told from one committed as separate byte writes.
+struct WriteRecordingBackend : public FakeMemoryBackend
+{
+    int single_writes;
+    int block_writes;
+    uint16_t last_block_address;
+    uint16_t last_block_length;
+
+    WriteRecordingBackend()
+        : single_writes(0), block_writes(0), last_block_address(0),
+          last_block_length(0) { }
+
+    virtual void write(uint16_t address, uint8_t value)
+    {
+        single_writes++;
+        FakeMemoryBackend::write(address, value);
+    }
+
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        block_writes++;
+        last_block_address = address;
+        last_block_length = len;
+        for (uint16_t i = 0; i < len; i++) {
+            memory[(uint16_t)(address + i)] = src[i];
+        }
+    }
+};
+
+static int test_asm_commit_writes_the_instruction_as_one_block(void)
+{
+    // A backend that has to stop the machine to reach memory pays that cost
+    // once per call, so an instruction written byte by byte can be interrupted
+    // between its opcode and its operand and leave a prefix behind. Committing
+    // it as one block is what makes that impossible, and this is the check
+    // that says the monitor does.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    WriteRecordingBackend backend;
+    //   J / "C000" / enter           -- jump to $C000
+    //   A                            -- switch to ASM
+    //   E                            -- enter edit mode
+    //   L D A SPACE 1 0 0 0 ENTER    -- "LDA $1000" -> AD 00 10, three bytes
+    const int keys[] = {
+        'J', 'A', 'E', 'L', 'D', 'A', KEY_SPACE, '1', '0', '0', '0', KEY_RETURN, KEY_BREAK
+    };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    ui.set_prompt("C000", 1);
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+        (void)mon.poll(0);
+    }
+    if (expect(backend.block_writes == 1,
+               "an assembled instruction must reach memory as exactly one block")) return 1;
+    if (expect(backend.last_block_address == 0xC000 && backend.last_block_length == 3,
+               "the block must be the whole instruction at the cursor address")) return 1;
+    if (expect(backend.single_writes == 0,
+               "no byte of an assembled instruction may be written on its own")) return 1;
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x00 &&
+               backend.read(0xC002) == 0x10,
+               "the block must carry the assembled encoding AD 00 10")) return 1;
+    return 0;
+}
+
 static int test_space_edit_behavior_preserved(void)
 {
     {
@@ -8013,6 +8081,7 @@ int main()
     if (test_asm_edit_rejects_invalid_mnemonic()) return 1;
     if (test_asm_edit_return_advances()) return 1;
     if (test_asm_edit_direct_typing()) return 1;
+    if (test_asm_commit_writes_the_instruction_as_one_block()) return 1;
     if (test_asm_edit_direct_typing_immediate()) return 1;
     if (test_asm_edit_branch_two_parts()) return 1;
     if (test_asm_edit_bit_operand_not_branch()) return 1;
