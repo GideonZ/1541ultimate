@@ -21,12 +21,14 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import argparse
 import os
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import health  # noqa: E402
+import targets  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -251,7 +253,7 @@ def run_retry_checks(runner, tmpdir):
 
     def options(**kwargs):
         base = dict(host="device.invalid", password="", timeout="1.0",
-                    soak_profile="stress", jsonl_dir="", stop_on_fail=False,
+                    soak_profile="stress", output_dir="", stop_on_fail=False,
                     health_check=False, retry=True, recover_command="true",
                     recover_max_per_suite=2, recover_max_total=10,
                     recover_timeout=5.0)
@@ -313,6 +315,30 @@ def run_retry_checks(runner, tmpdir):
         expect("verdict", result.verdict, runner.report.FAIL)
         expect("device unhealthy", result.device_unhealthy, True)
 
+    with check("a suite killed by a signal says so instead of reading as a failure"):
+        # A suite that is terminated rather than finished prints no verdict of
+        # its own, because report.check prints one for every exception and a
+        # signal raises none. The runner's FAIL line is then the only thing on
+        # screen, and without the signal in it there is nothing to tell a
+        # killed suite from one whose assertion failed. Seen live on
+        # prg-context-menu: the log ended mid-check-line and the run reported
+        # only "prg-context-menu: failed", while the suite passed 23 of 23
+        # when it was run again on the same firmware.
+        killed = os.path.join(tmpdir, "gets_killed.py")
+        with open(killed, "w", encoding="utf-8") as handle:
+            handle.write("import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n")
+        signalled = runner.Suite("perf", "signalled-suite",
+                                 os.path.relpath(killed, runner.ROOT), "")
+        made = device_that([(True, False)], )
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            result = runner.run_suite(signalled, made, options(retry=False), "", "fixture")
+        printed = captured.getvalue()
+        expect("verdict", result.verdict, runner.report.FAIL)
+        if "SIGTERM" not in printed:
+            detail(printed.rstrip())
+            raise Failure("the FAIL line does not name the signal that ended the suite")
+
 
 def run_jsonl_contract_checks(runner, tmpdir):
     """What a programmatic caller reads has to carry what a person's log does.
@@ -370,6 +396,64 @@ def run_jsonl_contract_checks(runner, tmpdir):
         # that reads only $?, so the two are written from the same numbers.
         expect("exit code matches a recovered run", run["exit_code"],
                runner.EXIT_RECOVERED)
+
+
+def run_output_dir_option_checks(runner):
+    """One spelling for the run's output directory, and no other.
+
+    The directory holds every artifact a run keeps: JSONL, each suite's
+    console log, the screens the suites read, captured failure state, the
+    device log and the recording. It was called -j/--jsonl-dir, which named
+    one of those and implied the rest were something else, and there is no
+    caller to keep compatible.
+    """
+    parser = runner.build_parser()
+
+    with check("-o names the output directory"):
+        expect("value", parser.parse_args(["-o", "runs", "u64"]).output_dir,
+               "runs")
+
+    with check("--output-dir names the same one"):
+        expect("value",
+               parser.parse_args(["--output-dir", "runs", "u64"]).output_dir,
+               "runs")
+
+    for spelling in ("-j", "--jsonl-dir"):
+        with check(f"{spelling} is not accepted"):
+            with contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    parser.parse_args([spelling, "runs", "u64"])
+                except SystemExit as exc:
+                    expect("exit status", exc.code, 2)
+                else:
+                    raise Failure(f"{spelling} was accepted")
+
+    text = parser.format_help()
+    with check("the old spellings are gone from --help"):
+        for gone in ("-j ", "--jsonl-dir"):
+            if gone in text:
+                raise Failure(f"--help still offers {gone.strip()}")
+
+    with check("the examples use the option the parser accepts"):
+        # The epilog is the first thing a reader copies, so an example naming
+        # an option this parser would reject is worse than no example.
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("run-tests "):
+                continue
+            for word in stripped.split():
+                if word.startswith("-") and word not in ("-", "--"):
+                    if word.rstrip(",") not in {action_string
+                                                for action in parser._actions
+                                                for action_string in action.option_strings}:
+                        raise Failure(f"the example {stripped!r} names {word}, "
+                                      "which this parser does not accept")
+
+    with check("a child is told where to write with the same option"):
+        args = parser.parse_args(["-o", "runs", "u64", "u2@c64u"])
+        command = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        if "--output-dir" not in command:
+            raise Failure(f"the child was not given --output-dir: {command}")
 
 
 def run_reset_guard_checks():
@@ -470,16 +554,275 @@ def run_health_checks():
             raise Failure("the health summary has to be one line")
 
 
+
+def run_target_grammar_checks():
+    """The target grammar, and what a target occupies while it runs."""
+    with check("a bare target is its own C64-side computer"):
+        target = targets.parse("u64")
+        expect("device", target.device, "u64")
+        expect("computer", target.computer, "u64")
+        expect("split", target.split, False)
+        expect("resources", target.resources, ("u64",))
+
+    with check("a cartridge target names the computer it is plugged into"):
+        target = targets.parse("u2@c64u")
+        expect("device", target.device, "u2")
+        expect("computer", target.computer, "c64u")
+        expect("split", target.split, True)
+        expect("resources", sorted(target.resources), ["c64u", "u2"])
+
+    with check("keyboard input is the computer's, everything else the device's"):
+        target = targets.parse("u2@c64u")
+        expect("input", target.host_for("/v1/machine:input"), "c64u")
+        expect("menu screen", target.host_for("/v1/machine:menu_screen"), "u2")
+        expect("menu button", target.host_for("/v1/machine:menu_button"), "u2")
+        expect("reset", target.host_for("/v1/machine:reset"), "u2")
+        expect("memory", target.host_for("/v1/machine:readmem?address=0400"), "u2")
+        # On a single-device target the same rule cannot route anything away.
+        alone = targets.parse("u64")
+        expect("input", alone.host_for("/v1/machine:input"), "u64")
+
+    with check("a malformed target is rejected before anything starts"):
+        for token in ("", "u2@", "@c64u", "u2@c64u@x", "u2@u2", "u2 c64u", "-u2"):
+            try:
+                targets.parse(token)
+            except targets.TargetError:
+                continue
+            raise Failure(f"{token!r} was accepted")
+
+    with check("a target's output path is safe to use as a file name"):
+        expect("slug", targets.parse("u2@c64u").slug, "u2-at-c64u")
+        expect("slug", targets.parse("u64").slug, "u64")
+
+
+def run_resource_conflict_checks(runner):
+    """Which targets may run at the same time, from the grammar alone."""
+    cases = (
+        ("u64", "c64u", False),
+        ("u64", "u2@c64u", False),
+        ("c64u", "u2@c64u", True),
+        ("u64", "u2@u64", True),
+        ("u2@u64", "u2@c64u", True),
+        ("u2@c64u", "u2@c64u", True),
+    )
+    with check("two targets conflict exactly when they share a machine"):
+        for first, second, conflict in cases:
+            a, b = targets.parse(first), targets.parse(second)
+            expect(f"{first} vs {second}", a.conflicts_with(b), conflict)
+            expect(f"{second} vs {first}", b.conflicts_with(a), conflict)
+
+    with check("a target does not start while a machine it needs is in use"):
+        active = [targets.parse("u2@c64u")]
+        expect("u64 may run", runner.schedulable(targets.parse("u64"), active), True)
+        expect("c64u may not", runner.schedulable(targets.parse("c64u"), active), False)
+        expect("nothing active", runner.schedulable(targets.parse("c64u"), []), True)
+
+    with check("scheduling every target eventually runs each one exactly once"):
+        # The loop the orchestrator runs, without the processes: start whatever
+        # can start, then retire one, until nothing is left. A conflicting pair
+        # must never be active together, and nothing may be left pending.
+        wanted = [targets.parse(t) for t in ("c64u", "u2@c64u", "u64", "u2@u64")]
+        pending, active, ran = list(wanted), [], []
+        while pending or active:
+            started = True
+            while started:
+                started = False
+                for target in list(pending):
+                    if runner.schedulable(target, active):
+                        for other in active:
+                            if target.conflicts_with(other):
+                                raise Failure(f"{target} started beside {other}")
+                        pending.remove(target)
+                        active.append(target)
+                        ran.append(target.token)
+                        started = True
+            if not active:
+                raise Failure(f"nothing could start; {len(pending)} targets stuck")
+            active.pop(0)
+        expect("every target ran once", sorted(ran),
+               sorted(t.token for t in wanted))
+
+
+def run_multi_target_checks(runner):
+    """What a child is asked to do, and what the parent makes of the answers."""
+    parser = runner.build_parser()
+
+    with check("a child repeats the parent's work against one target"):
+        args = parser.parse_args(["--soak", "-m", "telnet,freeze", "-s", "input",
+                                  "-s", "printer", "-x", "--manual",
+                                  "--no-health-check", "-p", "secret",
+                                  "u64", "u2@c64u"])
+        command = runner.child_command(args, targets.parse("u2@c64u"), "runs/u2-at-c64u")
+        expect("the target is the last word", command[-1], "u2@c64u")
+        for expected in ("--soak", "--manual", "--stop-on-fail", "--no-health-check",
+                         "--mode", "telnet,freeze", "--password", "secret",
+                         "--output-dir", "runs/u2-at-c64u"):
+            if expected not in command:
+                raise Failure(f"{expected!r} missing from {command}")
+        expect("both suites", [command[i + 1] for i, word in enumerate(command)
+                               if word == "--suite"], ["input", "printer"])
+        if "u64" in command:
+            raise Failure(f"a child was given another target's name: {command}")
+
+    with check("every runner option is forwarded to a child or excluded on purpose"):
+        # An option added to the parser and forgotten here would make a
+        # multi-target run quietly different from the single-target run it is
+        # meant to repeat, which is exactly the failure this cannot detect
+        # from its output.
+        forwarded = set(runner.CHILD_FORWARDED_FLAGS)
+        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_VALUES}
+        forwarded |= {name for name, _ in runner.CHILD_FORWARDED_NEGATIVE}
+        forwarded |= set(runner.CHILD_EXCLUDED_OPTIONS)
+        forwarded |= {"suite", "stop_on_fail"}
+        known = {action.dest for action in parser._actions
+                 if action.dest not in ("help",)}
+        missing = sorted(known - forwarded)
+        if missing:
+            raise Failure("run-tests options neither forwarded to a child nor "
+                          f"listed as excluded: {missing}")
+
+    with check("children write into a directory of their own"):
+        args = parser.parse_args(["-o", "runs", "u64", "u2@c64u"])
+        first = runner.child_command(args, targets.parse("u64"), "runs/u64")
+        second = runner.child_command(args, targets.parse("u2@c64u"), "runs/u2-at-c64u")
+        expect("first", first[first.index("--output-dir") + 1], "runs/u64")
+        expect("second", second[second.index("--output-dir") + 1], "runs/u2-at-c64u")
+
+    with check("concurrent children never tear each other's lines"):
+        # Two children writing at once, each line long enough that a pipe read
+        # lands in the middle of one. Every line has to come out whole and
+        # attributed: a run whose two devices' output is spliced together
+        # cannot be read, whatever the exit status says.
+        width = 200
+        lines_each = 2000
+        parent_args = parser.parse_args(["u64", "c64u"])
+        printer = ("import sys\n"
+                   "for i in range(%d):\n"
+                   "    print('%%05d' %% i + 'x' * %d)\n" % (lines_each, width))
+        original = runner.child_command
+        runner.child_command = lambda args, target, output_dir: [
+            sys.executable, "-c", printer]
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                runner.run_targets(parent_args, [targets.parse("u64"),
+                                                 targets.parse("c64u")])
+        finally:
+            runner.child_command = original
+        seen = {"u64": set(), "c64u": set()}
+        for line in captured.getvalue().splitlines():
+            if not line.startswith("["):
+                continue          # the runner's own banner and summary
+            token, _, text = line[1:].partition("] ")
+            if token not in seen:
+                continue
+            if len(text) != width + 5 or text[5:] != "x" * width:
+                raise Failure(f"torn line from {token}: {line!r}")
+            seen[token].add(text[:5])
+        for token, numbers in seen.items():
+            expect(f"{token} lines, whole and unduplicated",
+                   len(numbers), lines_each)
+
+    with check("every line a child printed reaches the run's output"):
+        # A child exits with its last lines still in the pipe, and those lines
+        # are the summary and the per-suite verdicts. Retiring it on the exit
+        # status alone drops exactly the part of the output that says what
+        # happened, while the run still reports the right status.
+        lines_per_child = 4000
+        parent_args = parser.parse_args(["u64", "c64u"])
+        printer = ("import sys\n"
+                   "for i in range(%d):\n"
+                   "    print('line %%d' %% i)\n" % lines_per_child)
+        original = runner.child_command
+        runner.child_command = lambda args, target, output_dir: [
+            sys.executable, "-c", printer]
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                runner.run_targets(parent_args, [targets.parse("u64"),
+                                                 targets.parse("c64u")])
+        finally:
+            runner.child_command = original
+        for token in ("u64", "c64u"):
+            printed = sum(1 for line in captured.getvalue().splitlines()
+                          if line.startswith(f"[{token}] line "))
+            expect(f"{token} printed every line", printed, lines_per_child)
+
+    with check("the run's status is the worst of its children's"):
+        expect("all clean", runner.combine_exit_codes([0, 0]), runner.EXIT_OK)
+        expect("a failure", runner.combine_exit_codes([0, 1]), runner.EXIT_SUITE_FAILED)
+        expect("a recovery", runner.combine_exit_codes([0, 3]), runner.EXIT_RECOVERED)
+        expect("a failure outranks a recovery",
+               runner.combine_exit_codes([3, 1]), runner.EXIT_SUITE_FAILED)
+        expect("an unhealthy device outranks a failure",
+               runner.combine_exit_codes([1, 4]), runner.EXIT_DEVICE_UNHEALTHY)
+        expect("an unexpected status is a failure",
+               runner.combine_exit_codes([0, 2]), runner.EXIT_SUITE_FAILED)
+        expect("no children", runner.combine_exit_codes([]), runner.EXIT_OK)
+
+
+def run_ui_state_routing_checks():
+    """The UI-state gate has to drive both halves of a cartridge target.
+
+    It reads the menu from the device under test and injects the keys that back
+    out of a nested object into the C64-side computer. Sending both to one host
+    is what reported "the root browser is not on top; a nested object still
+    holds the UI" for every suite of a U2 run: the cartridge answers
+    machine:input with HTTP 501, so nothing the gate pressed ever arrived.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ui_state_under_test",
+        os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py"))
+    ui_state = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui_state)
+
+    with check("the gate reads the menu from the device and types into the computer"):
+        device = ui_state.Device("u2@c64u", None, 1.0)
+        expect("device", device.host, "u2")
+        expect("input host", device.input_host, "c64u")
+        expect("menu screen", device.target.host_for("/v1/machine:menu_screen"), "u2")
+        expect("menu button", device.target.host_for("/v1/machine:menu_button"), "u2")
+        expect("unwind keys", device.target.host_for("/v1/machine:input"), "c64u")
+        expect("reset", device.target.host_for("/v1/machine:reset"), "u2")
+
+    with check("a single-device target still sends everything to one host"):
+        device = ui_state.Device("u64", None, 1.0)
+        for path in ("/v1/machine:menu_screen", "/v1/machine:input",
+                     "/v1/machine:reset"):
+            expect(path, device.target.host_for(path), "u64")
+
+    with check("only a cartridge target has a computer menu to get out of the way"):
+        # The computer's own menu takes the keyboard while it is open, so a
+        # cartridge target has to clear it before any key can reach the
+        # cartridge. A single-device target has no second menu, and asking
+        # would be a request to the device under test for no reason.
+        expect("cartridge", ui_state.Device("u2@c64u", None, 1.0).target.split, True)
+        expect("single device",
+               ui_state.Device("u64", None, 1.0).computer_menu_open(), False)
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
+                                     if __doc__ else "")
+    report_module = sys.modules["report"]
+    report_module.add_colour_argument(parser)
+    report_module.apply_colour(parser.parse_args().color)
     if not os.path.isfile(RUNNER_PATH):
         suite_fail("runner_policy_test", f"missing {RUNNER_PATH}")
         return 1
     try:
         runner = load_runner()
+        run_target_grammar_checks()
+        run_resource_conflict_checks(runner)
+        run_multi_target_checks(runner)
+        run_ui_state_routing_checks()
         run_exit_status_checks(runner)
         run_recovery_gating_checks(runner)
         run_recovery_limit_checks(runner)
         run_degraded_recovery_checks(runner)
+        run_output_dir_option_checks(runner)
         run_reset_guard_checks()
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             run_retry_checks(runner, tmpdir)

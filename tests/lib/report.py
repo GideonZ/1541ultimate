@@ -87,6 +87,9 @@ def _colour_enabled() -> bool:
       `less -R` or a CI viewer that renders escapes itself. FORCE_COLOR=0 means
       off, the way the npm ecosystem that introduced the variable reads it, so
       a value of "0" is not treated as "force it on".
+    - GITHUB_ACTIONS is a redirected stream that does render escapes, so the
+      verdicts are coloured there rather than left plain. Same rule as
+      tools/app_space.py, which reads the same three variables.
 
     Decided once for the whole run rather than per stream: run-tests and the
     suites it starts share this stdout, so they agree with each other, and a
@@ -97,6 +100,8 @@ def _colour_enabled() -> bool:
     forced = os.environ.get("FORCE_COLOR")
     if forced:
         return forced != "0"
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return True
     try:
         return sys.stdout.isatty()
     except (AttributeError, ValueError):
@@ -104,6 +109,45 @@ def _colour_enabled() -> bool:
 
 
 _USE_COLOUR = _colour_enabled()
+
+
+def colour_enabled() -> bool:
+    """Whether this run is printing colour."""
+    return _USE_COLOUR
+
+
+COLOUR_CHOICES = ("auto", "always", "never")
+
+
+def add_colour_argument(parser) -> None:
+    """Give a suite the one --color flag every harness here takes.
+
+    One spelling and one set of values wherever a verdict is printed, so a
+    caller does not have to remember which program takes which.
+    """
+    parser.add_argument("--color", choices=COLOUR_CHOICES, default="auto",
+                        help="Colour the verdicts. auto means a terminal, or "
+                             "GitHub Actions, which renders the escapes "
+                             "itself; NO_COLOR and FORCE_COLOR are honoured "
+                             "(default: auto).")
+
+
+def apply_colour(choice: str) -> None:
+    """Act on what --color was given, and tell any child process the same.
+
+    The environment is set as well as the module state, because a suite that
+    starts another program has no other way to pass the decision on.
+    """
+    if choice == "always":
+        os.environ.pop("NO_COLOR", None)
+        os.environ["FORCE_COLOR"] = "1"
+        set_colour(True)
+    elif choice == "never":
+        os.environ.pop("FORCE_COLOR", None)
+        os.environ["NO_COLOR"] = "1"
+        set_colour(False)
+    else:
+        set_colour(_colour_enabled())
 
 
 def set_colour(enabled: bool) -> None:
@@ -124,12 +168,30 @@ SUITE_NAME = os.environ.get("E2E_SUITE") or os.path.splitext(
     os.path.basename(sys.argv[0] or "test"))[0]
 JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 
+# Which device this process is testing, and which go at it this is. A harness
+# exports both beside E2E_SUITE, so every record joins to a target and to an
+# attempt without a correlation identifier of its own. A suite started by hand
+# has neither, and records neither rather than a guessed value: a run's target
+# is what the harness aimed it at, and a suite has no way to know.
+#
+# The attempt matters because a retried suite repeats its check indices in one
+# file, which run_one_attempt truncates only on the first attempt. Two records
+# carrying index 26 are told apart by this field and by nothing else.
+TARGET_NAME = os.environ.get("E2E_TARGET") or ""
+_raw_attempt = os.environ.get("E2E_ATTEMPT") or ""
+ATTEMPT: Optional[int] = int(_raw_attempt) if _raw_attempt.isdigit() else None
+
 _count = 0
 _depth = 0
 _last_label = ""
 # Detail lines produced while a check line is still open.
 _pending: List[str] = []
 _check_started = 0.0
+# Whether a check or step line is open and still owes a verdict. A body that
+# reports its own verdict, `check_skip` inside a `with check(...)` being the
+# common one, closes the line itself, and the block's own closing call must
+# then do nothing rather than print a second line and write a second record.
+_line_open = False
 _suite_started = time.monotonic()
 # The open scenario: its title, start time, check count and worst verdict.
 _scenario: Optional[dict] = None
@@ -137,6 +199,59 @@ _scenario: Optional[dict] = None
 
 class Failure(RuntimeError):
     """A check did not hold. The message is what the run reports."""
+
+
+# Strings that must not reach an artefact. The device password is the whole of
+# it: build_command substitutes it into every suite's argument vector and
+# RestClient carries it, so a recorded command line, a query or a response body
+# can hold it, and the artefacts leave the machine that produced them. A CI
+# artifact is downloadable by anyone who can see the build.
+#
+# Masking happens where records are written rather than at each call site,
+# because every writer would otherwise need its own copy of the rule and the
+# one that forgot would be the one that leaked.
+SECRET_MASK = "***"
+_secrets: List[str] = []
+
+
+def mask_secret(value: str) -> None:
+    """Never write `value` into a record. Empty values are ignored."""
+    if value and value not in _secrets:
+        _secrets.append(value)
+
+
+def secrets() -> tuple:
+    """Every string registered with mask_secret.
+
+    For a component that has to mask something other than a record: the
+    captured console log is the case, because a suite may print the password
+    it was given and the runner is the process that saves what it printed.
+    """
+    return tuple(_secrets)
+
+
+def masked(value):
+    """`value` with every registered secret replaced, however deeply nested.
+
+    For a component that writes something other than a record and has to
+    honour the same rule: the screen spool is the case.
+    """
+    return _masked(value)
+
+
+def _masked(value):
+    """`value` with every registered secret replaced, however deeply nested."""
+    if not _secrets:
+        return value
+    if isinstance(value, str):
+        for secret in _secrets:
+            value = value.replace(secret, SECRET_MASK)
+        return value
+    if isinstance(value, dict):
+        return {key: _masked(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_masked(item) for item in value]
+    return value
 
 
 def colour(text: str, code: str) -> str:
@@ -168,17 +283,40 @@ def _record(**fields) -> None:
         return
     fields.setdefault("time", time.time())
     fields.setdefault("suite", SUITE_NAME)
+    if TARGET_NAME:
+        fields.setdefault("target", TARGET_NAME)
+    if ATTEMPT is not None:
+        fields.setdefault("attempt", ATTEMPT)
     try:
+        line = json.dumps(_masked(fields), default=repr)
         with open(JSONL_PATH, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(fields) + "\n")
-    except OSError:
-        # Reporting must never be the reason a run fails.
+            handle.write(line + "\n")
+    except (OSError, TypeError, ValueError):
+        # Reporting must never be the reason a run fails, and a caller that
+        # passed something unusual is not a reason to end one. `default=repr`
+        # already carries an object json cannot encode; this catches whatever
+        # it cannot.
         pass
 
 
 def check_count() -> int:
     """How many checks have been reported, for a suite's closing line."""
     return _count
+
+
+def current_check() -> Optional[int]:
+    """The index of the check that is open, or None between two checks.
+
+    For a record written by something other than the check itself, so that a
+    device request made inside a check joins to it without an identifier of
+    its own.
+
+    None while nothing is open, and None in a process that reports only
+    unnumbered steps, which is what `run-tests` does: `step_start` opens a line
+    without numbering it, so a zero there would name a check that does not
+    exist and several steps would share it.
+    """
+    return _count if _depth and _count else None
 
 
 def last_label() -> str:
@@ -188,13 +326,14 @@ def last_label() -> str:
 
 def check_start(label: str) -> None:
     """Open a check line as `[NN] label ... `, leaving the verdict for later."""
-    global _count, _depth, _last_label, _check_started
+    global _count, _depth, _last_label, _check_started, _line_open
     _depth += 1
     if _depth > 1:
         return
     _count += 1
     _last_label = label
     _check_started = time.monotonic()
+    _line_open = True
     print(f"[{_count:02d}] {label} ... ", end="", flush=True)
 
 
@@ -204,20 +343,27 @@ def step_start(label: str) -> None:
     A harness's precondition and teardown gates run around the suites rather
     than inside one, so numbering them would interleave two counters.
     """
-    global _depth, _check_started, _last_label
+    global _depth, _check_started, _last_label, _line_open
     _depth += 1
     if _depth > 1:
         return
     _last_label = label
     _check_started = time.monotonic()
+    _line_open = True
     print(f"{label} ... ", end="", flush=True)
 
 
 def _close(verdict: str, extra: str = "") -> None:
-    global _depth
+    global _depth, _line_open
     _depth = max(0, _depth - 1)
     if _depth:
         return
+    if not _line_open:
+        # Already answered by the block itself. Closing again would print a
+        # second verdict for one check and record a second, contradictory one:
+        # a skipped check was written as SKIP and then as OK.
+        return
+    _line_open = False
     elapsed = time.monotonic() - _check_started
     parts = [extra] if extra else []
     duration = format_duration(elapsed)
@@ -410,6 +556,78 @@ def suite_warn(name: str, reason: str, seconds: Optional[float] = None,
     _suite_line(name, WARN, reason, seconds, fields)
 
 
+def action(method: str, path: str, **fields) -> None:
+    """One thing the harness did to the device, for the JSONL only.
+
+    The other records say what the device showed and what the checks
+    concluded. None of them says what the harness did to it, and without that
+    a reader watching a screen go blank cannot tell a reset the run performed
+    from a crash it observed.
+
+    Written by the transport rather than by a caller, so every deliberate act
+    reaches one timeline whichever call made it.
+    """
+    index = current_check()
+    fields = dict(fields)
+    fields.pop("kind", None)
+    fields["method"] = method
+    fields["path"] = path
+    if index is not None:
+        fields["check"] = index
+    _record(kind="action", **fields)
+
+
+def plan_result(suites: Iterable[dict], sequence: Iterable[dict],
+                **fields) -> None:
+    """What a run intends to do, recorded before it does any of it.
+
+    A green run that quietly ran 17 of 25 registered suites reads exactly like
+    a green run that ran all of them, and "are the tests working properly" is
+    not answerable without the difference.
+    """
+    _record(kind="plan", suites=list(suites), sequence=list(sequence), **fields)
+
+
+def log_result(target: str, path: str, started: float, port: int) -> None:
+    """Where one device's own log is being collected, and from when.
+
+    A reader who finds no log file needs to know whether the collector never
+    started or the device never sent anything, and these two are different
+    answers.
+    """
+    _record(kind="log", target=target, path=path, started=started, port=port)
+
+
+def gap_result(component: str, started: float, ended: Optional[float] = None,
+               **fields) -> None:
+    """One interval an observability component could not observe anything.
+
+    A device that stopped answering, a stream that went quiet and a log that
+    stopped arriving are one shape of event: a resource was unavailable from
+    time A to time B. Recorded that way the timeline puts it beside the suite
+    that was running, which is almost always the explanation. Recorded as a
+    line per failed attempt it would be noise, and recorded not at all a reader
+    could not tell an empty file from a quiet device.
+
+    A gap still open when the run ends carries no `ended`, and the report says
+    so rather than inventing one.
+    """
+    if ended is not None:
+        fields["ended"] = ended
+    _record(kind="gap", component=component, started=started, **fields)
+
+
+def capture_result(**fields) -> None:
+    """The recording's own health, for a reader of the file it produced.
+
+    The counts are what makes a recording readable as evidence: a file with
+    thousands of padded frames or hundreds of re-arms is telling a reader that
+    the run fought the recorder for the stream, which is worth knowing before
+    drawing conclusions from what it shows.
+    """
+    _record(kind="capture", **fields)
+
+
 def health_result(label: str, ok: bool, checks: Iterable[dict]) -> None:
     """The JSONL record for one device health sweep.
 
@@ -433,9 +651,22 @@ def set_jsonl_path(path: str) -> None:
     JSONL_PATH = path
 
 
-def run_result(verdict: str, suites: int, passed: int, failed: int,
-               skipped: int, dirty: int, seconds: float,
-               recoveries: int = 0, exit_code: Optional[int] = None) -> None:
+def set_target(token: str) -> None:
+    """Name the device this process's own records are about.
+
+    A harness resolves its target after importing this module, which is read
+    at import for the suites it starts, so it says the same thing about itself
+    here. See TARGET_NAME.
+    """
+    global TARGET_NAME
+    TARGET_NAME = token
+
+
+def run_result(verdict: str, suites: Optional[int] = None,
+               passed: Optional[int] = None, failed: Optional[int] = None,
+               skipped: Optional[int] = None, dirty: Optional[int] = None,
+               seconds: float = 0.0, recoveries: int = 0,
+               exit_code: Optional[int] = None, **fields) -> None:
     """The JSONL record for a whole run, written by a harness rather than a suite.
 
     Record shapes belong to this module, so a harness reports its own result
@@ -444,11 +675,21 @@ def run_result(verdict: str, suites: int, passed: int, failed: int,
     `recoveries` is how many times the device had to be brought back during the
     run, and `exit_code` is the status the harness is about to exit with, so a
     caller reading only the JSONL sees the same verdict as one reading `$?`.
+
+    A harness that ran no suites of its own passes no counts, and the record
+    carries none: a multi-target run's parent has children that each counted
+    their own, and a zero there would be summed as if it were a result.
+
+    `fields` carries what the run is a run of - the commit, the branch, the
+    host, the command line - so a downloaded artifact says what produced it
+    without a second file.
     """
-    _record(kind="run", verdict=verdict, suites=suites, passed=passed,
-            failed=failed, skipped=skipped, dirty=dirty,
+    counts = {"suites": suites, "passed": passed, "failed": failed,
+              "skipped": skipped, "dirty": dirty}
+    _record(kind="run", verdict=verdict,
+            **{name: value for name, value in counts.items() if value is not None},
             seconds=round(seconds, 4), recoveries=recoveries,
-            exit_code=exit_code)
+            exit_code=exit_code, **fields)
 
 
 def die(message: str) -> None:
