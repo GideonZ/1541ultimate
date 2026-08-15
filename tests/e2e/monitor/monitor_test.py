@@ -3012,7 +3012,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
-        assert_source_column_is_fixed(screen, "KRN")
+        # The tag identity is a property of the machine: only a backend that
+        # selects the bank itself can say KRN. A cartridge reads whatever the
+        # CPU sees and says CPU. The fixed column is asserted on both.
+        assert_source_column_is_fixed(screen, "CPU" if is_u2 else "KRN")
 
         screen = session.goto("E013")
         screen = session.send_char("A")
