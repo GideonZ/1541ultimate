@@ -164,6 +164,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     SubsysResultCode_e change_drive_type(t_drive_type drv,  UserInterface *ui);
     SubsysResultCode_e load_dos_from_file(const char *path, const char *filename);
 public:
+    using ConfigurableObject::effectuate_registered_settings;
+
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
 

@@ -955,7 +955,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         }
 
         // the following sets the HDMI mode
-        u64_configurator->effectuate_settings(); // requires I2C
+        u64_configurator->effectuate_registered_settings(); // requires I2C
 
         hpd_monitor_sem = xSemaphoreCreateBinary();
         xTaskCreate(U64Config::hpd_monitor_task, "HPD Monitor", configMINIMAL_STACK_SIZE, u64_configurator, PRIO_HW_SERVICE, &u64_configurator->hpd_monitor_task_handle);
@@ -963,12 +963,12 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         xSemaphoreGive(hpd_monitor_sem);
 
 //        u64_configurator->hdmiMonitor = u64_configurator->IsMonitorHDMI(); // requires I2C
-        u64_configurator->sockets.effectuate_settings();
-        u64_configurator->mixercfg.effectuate_settings();
-        u64_configurator->ultisids.effectuate_settings();
-        u64_configurator->sidaddressing.effectuate_settings();
+        u64_configurator->sockets.effectuate_registered_settings();
+        u64_configurator->mixercfg.effectuate_registered_settings();
+        u64_configurator->ultisids.effectuate_registered_settings();
+        u64_configurator->sidaddressing.effectuate_registered_settings();
 #if U64 == 2
-        u64_configurator->speakercfg.effectuate_settings();
+        u64_configurator->speakercfg.effectuate_registered_settings();
 #endif
 
         if (cfg->is_flash_stale()) {
@@ -1019,11 +1019,11 @@ void U64Config :: run_reset_task()
         printf("U64 reset handler. ");
         if (! skipReset) {
             printf("Resetting Settings\n");
-            effectuate_settings();
-            sockets.effectuate_settings();
-            mixercfg.effectuate_settings();
-            ultisids.effectuate_settings();
-            sidaddressing.effectuate_settings();
+            effectuate_registered_settings();
+            sockets.effectuate_registered_settings();
+            mixercfg.effectuate_registered_settings();
+            ultisids.effectuate_registered_settings();
+            sidaddressing.effectuate_registered_settings();
         } else {
             printf("SKIP\n");
         }
@@ -1747,7 +1747,7 @@ SubsysResultCode_e U64Config :: executeCommand(SubsysCommand *cmd)
         machine->resume();
         sprintf(sidString, "Socket1: %s  Socket2: %s", sid_types[sid1], sid_types[sid2]);
         cmd->user_interface->popup(sidString, BUTTON_OK);
-        effectuate_settings();
+        effectuate_registered_settings();
         break;
 
 #ifdef NO_ESP

@@ -47,7 +47,7 @@ void WiFi :: Init(void *obj, void *param)
 #if U64 == 2
     wifi.Enable(); // Unconditionally enable the WiFi module
 #endif
-    wifi.netstack->effectuate_settings(); // may start the WiFi application
+    wifi.netstack->effectuate_registered_settings(); // may start the WiFi application
 }
 
 void WiFi :: RefreshRoot()

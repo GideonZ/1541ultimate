@@ -367,7 +367,7 @@ IecPrinter::IecPrinter() : SubSystem(SUBSYSID_PRINTER)
     is_color = false;
 
     /* Read configuration from nvram if it exists */
-    effectuate_settings();
+    effectuate_registered_settings();
 
     /* Register printer with the interface */
     IecInterface *interface = IecInterface :: get_iec_interface();
