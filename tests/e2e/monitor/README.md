@@ -101,6 +101,8 @@ Interaction contract:
   bare `X` does not
 - the Assembly view's source tag is three characters at one fixed column, so
   the column does not move when the bank changes
+- `A` opens the Assembly view and `D` changes nothing, because `D` is reserved
+  for a future Debug mode
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
 - `Transfer` given a fourth field moves the absolute operands that point inside

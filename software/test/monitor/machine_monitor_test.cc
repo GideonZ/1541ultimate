@@ -1154,6 +1154,65 @@ static int test_x_is_not_an_exit(void)
     return 0;
 }
 
+static int test_d_is_reserved_and_a_opens_assembly(void)
+{
+    // `A` opens the Assembly view. `D` does not open it or anything else: the
+    // key is reserved for a future Debug mode, and a reservation that only
+    // exists as an intention is one refactor away from being spent. An older
+    // copy of the E2E suite did press `D` for this view, so the binding has
+    // already drifted once.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'a', KEY_BREAK };
+        FakeKeyboard kb(keys, 2);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "A must not leave the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "ASM") != 0, "A must open the Assembly view.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        mon.deinit();
+    }
+    {
+        // From the opening view, D changes nothing at all: not the view, not
+        // the screen, and it does not leave the monitor.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char before[6][39], after[6][39];
+        const int keys[] = { 'D', 'd', KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, before[r]);
+        if (expect(mon.poll(0) == 0, "D must not leave the monitor.")) return 1;
+        if (expect(mon.poll(0) == 0, "d must not leave the monitor.")) return 1;
+        for (int r = 0; r < 6; r++) screen.get_slice(1, r + 3, 38, after[r]);
+        for (int r = 0; r < 6; r++) {
+            if (expect(strcmp(before[r], after[r]) == 0,
+                       "D is reserved for Debug mode and must change nothing.")) {
+                printf("  row %d was %s, now %s\n", r, before[r], after[r]);
+                return 1;
+            }
+        }
+        mon.deinit();
+    }
+    return 0;
+}
+
 static int test_view_names_are_stable_log_tokens(void)
 {
     // The names the monitor's trace lines use for each view. They are read by
@@ -8762,6 +8821,7 @@ int main()
     if (test_x_is_not_an_exit()) return 1;
     if (test_a_popup_owns_the_rows_it_covers()) return 1;
     if (test_view_names_are_stable_log_tokens()) return 1;
+    if (test_d_is_reserved_and_a_opens_assembly()) return 1;
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;

@@ -3017,6 +3017,16 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # CPU sees and says CPU. The fixed column is asserted on both.
         assert_source_column_is_fixed(screen, "CPU" if is_u2 else "KRN")
 
+        # D is reserved for a future Debug mode and opens nothing. An older
+        # copy of this suite pressed D for the Assembly view, so the binding
+        # has drifted once already.
+        before = session.capture()
+        after = session.send_char("D")
+        if after.text() != before.text():
+            raise Failure(
+                "D is reserved for Debug mode and must change nothing\n"
+                f"{after.text()}")
+
         screen = session.goto("E013")
         screen = session.send_char("A")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
