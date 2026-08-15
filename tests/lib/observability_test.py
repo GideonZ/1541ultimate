@@ -1035,6 +1035,40 @@ def a_collector_that_cannot_start_says_so_once() -> str:
     return collector.problems[-1]
 
 
+@case(2, "OBS-7.7", "OBS-7.9")
+def two_collectors_cannot_share_the_port() -> str:
+    """A second run collecting at once is refused, not served an arbitrary half.
+
+    Unicast datagrams go to one socket, so two collectors bound to one port
+    each get a share the kernel decides and neither has any way to know. Two
+    concurrent runs on this machine produced 39298 lines in one and none in the
+    other, and the one with none reported a device that had said nothing at
+    all, which is the same shape as a device that had stopped.
+    """
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    with tempfile.TemporaryDirectory() as first_dir, \
+            tempfile.TemporaryDirectory() as second_dir:
+        first = syslog_collector.Collector(directory=first_dir, port=0)
+        expect("the first one starts",
+               first.bind([targets_lib.parse("127.0.0.1")]), True)
+        try:
+            second = syslog_collector.Collector(directory=second_dir,
+                                                port=first.port)
+            expect("the second one does not",
+                   second.bind([targets_lib.parse("127.0.0.1")]), False)
+            if not any(f"port {first.port} could not be opened" in problem
+                       for problem in second.problems):
+                raise Failure(f"the reason is not the port: {second.problems}")
+            second.stop()
+        finally:
+            first.stop()
+    return f"one collector on {first.port}, the second refused"
+
+
 @case(1, "OBS-15.8")
 def a_reader_sees_every_line_the_collector_wrote() -> str:
     """A suite reads the file rather than the port, and in order.

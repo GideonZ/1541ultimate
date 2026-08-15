@@ -40,12 +40,17 @@ firmware in this repository calls `Syslog::flush` from the failing task first,
 and firmware without that flush leaves the text in the buffer. Either way the
 log stops there, which is a signal in its own right.
 
-Exactly one process binds the port. The datagrams are unicast, and two sockets
-bound to one UDP port do not both receive each one: the kernel picks one per
-datagram, so a second reader would silently take about half the lines with
-nothing in either looking wrong. Multicast behaves the opposite way, which is
-why the video streams deliberately share a port and this does not. A suite that
-needs device log lines reads the file this writes, through `read` below.
+Exactly one process binds the port, and the socket is opened so that a second
+one cannot. The datagrams are unicast, and two sockets bound to one UDP port do
+not both receive each one: the kernel picks one per datagram, so a second
+reader takes an arbitrary share of the lines with nothing in either looking
+wrong. Measured with two runs collecting at once: one got 39298 lines and the
+other got none, and reported a device that had said nothing. So `SO_REUSEADDR`
+is not set here, the second bind fails, and that run says the port could not be
+opened rather than collecting nothing quietly. Multicast behaves the opposite
+way, which is why the video streams deliberately share a port and this does
+not. A suite that needs device log lines reads the file this writes, through
+`read` below.
 """
 
 from __future__ import annotations
@@ -206,9 +211,19 @@ class Collector:
         # than one, and a datagram's source address is what identifies a
         # device, so binding the wildcard costs nothing and removes an operator
         # decision.
+        #
+        # Deliberately without SO_REUSEADDR. On a UDP socket that option is
+        # what lets a second process bind the same port, and the kernel then
+        # gives each datagram to one of them: two runs collecting at once each
+        # get an arbitrary share and neither says so. Measured on this
+        # machine, two concurrent runs with `--syslog`: one collected 39298
+        # lines and the other collected none, and the second reported a device
+        # that had said nothing. Without the option the second bind fails, the
+        # run says the port could not be opened, and it carries on without a
+        # collector, which is the truthful answer and the one an operator can
+        # act on.
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("0.0.0.0", self.port))
             sock.settimeout(POLL_SECONDS)
         except OSError as exc:
