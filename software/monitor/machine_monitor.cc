@@ -32,40 +32,38 @@ extern "C" {
 // terminal rather than the 25-row C64. A host test enforces both.
 // The primary grid's cells start at columns 1, 14 and 27 (1-based, excluding
 // the popup border); BOOKMARKS and CONTROL KEYS share a four-anchor grid at
-// 1, 12, 21 and 29. Braces are not printed (see draw_help_line) and do not
-// count against either grid, so they are free to wrap a key wherever one
-// appears without disturbing the column a following key or description lands
-// on. No leading blank row: "HELP", drawn as the window title by
-// draw_header rather than from this table, is this page's own heading, and a
-// heading is not followed by a blank row any more than BOOKMARKS or CONTROL
-// KEYS are below.
+// 1, 12, 21 and 29. Every character is drawn in the body colour, so a line is
+// laid out exactly as it is written here. No leading blank row: "HELP", drawn
+// as the window title by draw_header rather than from this table, is this
+// page's own heading, and a heading is not followed by a blank row any more
+// than BOOKMARKS or CONTROL KEYS are below.
 const char *const monitor_help_lines[] = {
-    "{M} Memory     {I} ASCII      {V} Screen",
-    "{A} Assembly   {B} Binary     {U} Undoc/Case",
-    "{J} Jump       {G} Go",
+    "M Memory     I ASCII      V Screen",
+    "A Assembly   B Binary     U Undoc/Case",
+    "J Jump       G Go",
     // No blank row between the two halves of this grid: the page is one row
     // from the shortest screen's budget, and a blank inside a single
     // three-column grid is worth less than the machine row at the bottom.
-    "{E} Edit       {F} Fill       {T} Transfer",
-    "{C} Compare    {H} Hunt       {N} Number",
-    "{W} Width      {R} Range      {P} Poll",
-    "{Z} Freeze     {O} CPU Bank   {SH+O} VIC",
-    "{L} Load       {S} Save",
+    "E Edit       F Fill       T Transfer",
+    "C Compare    H Hunt       N Number",
+    "W Width      R Range      P Poll",
+    "Z Freeze     O CPU Bank   SH+O VIC",
+    "L Load       S Save",
     "",
     "BOOKMARKS",
-    "{C=+B}       List     {C=+0-9}  Jump",
+    "C=+B       List     C=+0-9  Jump",
     "",
     "CONTROL KEYS",
     // Interface row: the two major auxiliary interfaces.
-    "{?/%s}       Help     {C=+O}    Monitor",
+    "?/%s       Help     C=+O    Monitor",
     // Editing row.
-    "{C=+E}       Edit off {C=+C/V}  Copy/Paste",
+    "C=+E       Edit off C=+C/V  Copy/Paste",
     // Structural navigation row: back out, or follow/return within the level
     // already open.
-    "{RUNSTOP/<-} Back     {RETURN}  Follow/Ret",
+    "RUNSTOP/<- Back     RETURN  Follow/Ret",
     // Machine row: the two keys that act on the machine rather than the view,
     // and both of which leave the monitor.
-    "{C=+X}       Reset    {C=+I}    Interface",
+    "C=+X       Reset    C=+I    Interface",
     NULL
     // Page Up/Down remains the window's own last row, drawn by draw_status:
     // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
@@ -73,23 +71,6 @@ const char *const monitor_help_lines[] = {
 
 // The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
 const int monitor_key_arrow_left = '`';
-
-int monitor_help_plain_text(const char *text, char *out, int out_len)
-{
-    int written = 0;
-
-    while (text && *text && written < out_len - 1) {
-        if (*text == '{' || *text == '}') {
-            text++;
-            continue;
-        }
-        out[written++] = *text++;
-    }
-    if (out_len > 0) {
-        out[written] = 0;
-    }
-    return written;
-}
 
 const char *monitor_view_name(MachineMonitorView view)
 {
@@ -3913,18 +3894,15 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        // Braced and drawn by draw_help_line, like every other line of the
-        // help, so its keys are accented too. Written through draw_padded it
-        // was the one line on the screen naming keys in the body colour.
         char paging_line[64];
         const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
         const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
         // Same grid as BOOKMARKS and CONTROL KEYS above it: left key at
         // column 1, left action at 12, right key at 21, right action at 29.
-        // The shortcut token, key and modifier together, is one accent run.
-        sprintf(paging_line, "{%s/SH+SP}   Page up  {%s/SP}   Page down",
+        sprintf(paging_line, "%s/SH+SP   Page up  %s/SP   Page down",
                 page_up, page_down);
-        draw_help_line(window->get_size_y() - 1, paging_line);
+        draw_padded(window, window->get_size_y() - 1, paging_line,
+                    (int)strlen(paging_line));
         return;
     }
 
@@ -3949,46 +3927,6 @@ void MachineMonitor :: draw_status()
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
-// One help line. Anything between braces is a key the reader can press, and is
-// drawn in the accent colour the monitor already uses to pick text out; the
-// braces themselves are markup and are not drawn. Keeping the marks inline
-// means the text and what is emphasised in it stay one thing to edit.
-void MachineMonitor :: draw_help_line(int y, const char *text)
-{
-    int width = window->get_size_x();
-    int drawn = 0;
-    int normal = get_ui()->color_fg;
-
-    window->move_cursor(0, y);
-    while (*text && drawn < width) {
-        bool accent = (*text == '{');
-        const char *run;
-        int len = 0;
-
-        if (accent) {
-            text++;
-        }
-        run = text;
-        while (*text && *text != '{' && *text != '}') {
-            text++;
-            len++;
-        }
-        if (len > width - drawn) {
-            len = width - drawn;
-        }
-        if (len > 0) {
-            window->set_color(accent ? MONITOR_UI_ACCENT_COLOR : normal);
-            window->output_length(run, len);
-            drawn += len;
-        }
-        if (*text == '}') {
-            text++;
-        }
-    }
-    window->set_color(normal);
-    window->repeat(' ', width - drawn);
-}
-
 void MachineMonitor :: draw_help()
 {
     char formatted[64];
@@ -4008,7 +3946,7 @@ void MachineMonitor :: draw_help()
             sprintf(formatted, text, get_ui()->function_key_for(KEY_HELP));
             text = formatted;
         }
-        draw_help_line(line_idx + 1, text);
+        draw_padded(window, line_idx + 1, text, (int)strlen(text));
     }
 }
 

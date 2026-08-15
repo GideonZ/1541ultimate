@@ -169,14 +169,9 @@ bool monitor_syntax_accepts_prefix(const char *syntax, const char *candidate);
 extern const int monitor_key_arrow_left;
 
 // The built-in help text, NULL-terminated. One line may carry a single "%s"
-// conversion, filled with the key that opens help. Text between braces is a
-// key the reader can press: draw_help_line emphasises it and drops the braces,
-// so the braces do not count toward a line's width.
+// conversion, filled with the key that opens help. A line is drawn as written,
+// so its own characters are what has to fit the window's width.
 extern const char *const monitor_help_lines[];
-
-// `text` with its brace markup removed, as it appears on screen. Returns the
-// number of characters written, not counting the terminator.
-int monitor_help_plain_text(const char *text, char *out, int out_len);
 
 class UserInterface;
 class Screen;
@@ -317,7 +312,6 @@ class MachineMonitor : public UIObject
     void draw_header();
     void draw_status();
     void draw_help();
-    void draw_help_line(int y, const char *text);
     void draw_bookmark_popup();
     void draw_number_picker();
     void draw_popup_overlays();

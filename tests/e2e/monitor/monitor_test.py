@@ -2658,7 +2658,7 @@ def run_help_layout_test(session: MonitorSession) -> None:
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
         raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
-    if "{Q}" in screen.text() or " Q CPU Bank" in screen.text():
+    if "Q CPU Bank" in screen.text():
         raise Failure(f"CPU Bank is bound to Q rather than O\n{screen.text()}")
     if "RUN/STOP/<-" in screen.text():
         raise Failure(f"RUNSTOP/<- is spelled RUN/STOP/<-\n{screen.text()}")

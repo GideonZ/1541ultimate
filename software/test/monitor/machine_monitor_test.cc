@@ -23,7 +23,6 @@ void jump_to(uint16_t address);
 static int expect_help_visible(CaptureScreen &screen, TestUserInterface &ui, const char *message)
 {
     char formatted[64];
-    char plain[64];
     char line[40];
 
     for (int i = 0; monitor_help_lines[i]; i++) {
@@ -32,9 +31,8 @@ static int expect_help_visible(CaptureScreen &screen, TestUserInterface &ui, con
             sprintf(formatted, text, ui.function_key_for(KEY_HELP));
             text = formatted;
         }
-        monitor_help_plain_text(text, plain, sizeof(plain));
         screen.get_slice(1, 4 + i, 38, line);
-        if (expect(strncmp(line, plain, strlen(plain)) == 0, message)) {
+        if (expect(strncmp(line, text, strlen(text)) == 0, message)) {
             return 1;
         }
     }
@@ -2364,23 +2362,37 @@ static int test_monitor_interaction(void)
     screen.get_slice(1, 22, 38, status);
     if (expect(strstr(status, "F1/SH+SP   Page up  F7/SP   Page down") == status,
                "Help view should show the paging shortcuts on the footer row.")) return 1;
-    // The keys on this row have to be accented like every other key the help
-    // names. It is drawn on the status row rather than from the help table,
-    // and while that was written straight to the screen it was the one line
-    // naming keys in the body colour. get_slice(1, ...) starts the row one
-    // column in from the border, and screen.colors is indexed by the same
-    // absolute column as the full row, not the slice: status[i] is
-    // screen.colors[22][i + 1]. Columns 1-8 are the whole "F1/SH+SP" token,
-    // 21-25 are the whole "F7/SP" token; 9 and 20 are the space on either
-    // side of "Page up" and stay in the body colour.
-    // 1 is MONITOR_UI_ACCENT_COLOR, which is file-local to the monitor; the
-    // EDIT indicator's own colour check spells it the same way.
-    if (expect(screen.colors[22][1] == 1 && screen.colors[22][8] == 1 &&
-               screen.colors[22][21] == 1 && screen.colors[22][25] == 1,
-               "Paging keys on the help footer must use the help accent colour.")) return 1;
-    if (expect(screen.colors[22][9] != 1 && screen.colors[22][20] != 1,
-               "The label between the paging keys must stay in the body colour.")) return 1;
+    // Every character of the help reads in one colour, keys included. The
+    // footer row is drawn on the status row rather than from the help table,
+    // so it is the row that would drift first. get_slice(1, ...) starts one
+    // column in from the border, and screen.colors is indexed by the absolute
+    // column, so status[i] is screen.colors[22][i + 1]. Column 1 is the first
+    // character of "F1/SH+SP" and column 21 the first of "F7/SP"; 9 and 20 are
+    // the spaces around "Page up".
+    {
+        int body = screen.colors[22][9];
+        for (int col = 1; col <= 36; col++) {
+            if (expect(screen.colors[22][col] == body,
+                       "The help footer row must be drawn in one colour.")) {
+                printf("  column %d: colour %d, body colour %d\n", col,
+                       screen.colors[22][col], body);
+                return 1;
+            }
+        }
+    }
     if (expect_help_visible(screen, ui, "Help view text did not match the help table.")) return 1;
+    // The help body is one colour too, checked on the row naming the view keys.
+    {
+        int body = screen.colors[4][1];
+        for (int col = 1; col <= 36; col++) {
+            if (expect(screen.colors[4][col] == body,
+                       "A help line must be drawn in one colour.")) {
+                printf("  column %d: colour %d, body colour %d\n", col,
+                       screen.colors[4][col], body);
+                return 1;
+            }
+        }
+    }
 
     if (expect(help_monitor.poll(0) == 0, "F3 help close failed.")) return 1;
     screen.get_slice(1, 3, 38, status);
@@ -7751,6 +7763,14 @@ static const int MONITOR_HELP_LOWER_ACTION_COLUMN = 11;
 static const int MONITOR_HELP_LOWER_KEY2_COLUMN = 20;
 static const int MONITOR_HELP_LOWER_ACTION2_COLUMN = 28;
 
+// A help line that lays keys out on one of the two grids, as opposed to a
+// heading or the blank line between sections. A grid line separates its cells
+// with a run of spaces; "BOOKMARKS" and "CONTROL KEYS" have none.
+static bool monitor_help_is_grid_line(const char *text)
+{
+    return text[0] != 0 && text[0] != ' ' && strstr(text, "  ") != NULL;
+}
+
 static int expect_help_hidden(CaptureScreen &screen, const char *message)
 {
     char line[40];
@@ -8361,9 +8381,7 @@ static int test_monitor_interaction_text_is_a_contract(void)
     char formatted[64];
 
     // Help has to fit the monitor window on the physical 40-column screen.
-    // Clipped help would be worse than none. Measured on what is drawn, so the
-    // brace markup that picks out the keys does not count.
-    char plain[64];
+    // Clipped help would be worse than none.
     int line_count = 0;
     for (int i = 0; monitor_help_lines[i]; i++) {
         line_count++;
@@ -8384,115 +8402,65 @@ static int test_monitor_interaction_text_is_a_contract(void)
             sprintf(formatted, text, ui.function_key_for(KEY_HELP));
             text = formatted;
         }
-        int visible = monitor_help_plain_text(text, plain, sizeof(plain));
+        int visible = (int)strlen(text);
         if (expect(visible <= MONITOR_CONTENT_WIDTH,
                    "A help line does not fit the monitor window.")) {
-            printf("  %d characters: %s\n", visible, plain);
+            printf("  %d characters: %s\n", visible, text);
             return 1;
         }
-        // Every brace has to close, or a run would be emphasised to the end of
-        // the line.
-        int opened = 0;
-        for (const char *at = text; *at; at++) {
-            if (*at == '{') opened++;
-            if (*at == '}') opened--;
-            if (expect(opened == 0 || opened == 1,
-                       "A help line has unbalanced key markup.")) {
-                printf("  %s\n", text);
+    }
+
+    // The command lines are a three-column grid whose cells start at columns 0,
+    // 13 and 26. A line that begins with a single-letter key is one of those
+    // lines; a BOOKMARKS/CONTROL KEYS row begins with a longer key (C=+B, ?/F3,
+    // ...), and a heading ("BOOKMARKS") or blank separator matches neither and
+    // is skipped. A cell that starts one column off reads as a ragged edge down
+    // the page: "B Binary   U" would put Undoc at column 25 instead of 26.
+    for (int i = 0; monitor_help_lines[i]; i++) {
+        const char *text = monitor_help_lines[i];
+        if (!monitor_help_is_grid_line(text) || text[1] != ' ') {
+            continue;
+        }
+        int len = (int)strlen(text);
+        for (int column = MONITOR_HELP_COLUMN_WIDTH; column < len;
+             column += MONITOR_HELP_COLUMN_WIDTH) {
+            if (expect(text[column] != ' ' && text[column - 1] == ' ',
+                       "A primary-grid help key does not start on its column.")) {
+                printf("  column %d: %s\n", column, text);
                 return 1;
             }
         }
-        if (expect(opened == 0, "A help line leaves its key markup open.")) {
-            printf("  %s\n", text);
-            return 1;
-        }
     }
 
-    // The command lines are a three-column grid, and the markup that picks out
-    // the keys must not move them. A line that begins with a single-letter key
-    // is one of those lines, and its keys start at columns 0, 13 and 26. A
-    // BOOKMARKS/CONTROL KEYS row also begins with a key, but a longer one
-    // (C=+B, ?/F3, ...), which is what tells the two grids apart; a heading
-    // ("BOOKMARKS") or blank separator line matches neither and is skipped. The
-    // brace markup is invisible on screen, so getting this wrong is easy and
-    // shows up only as a column that no longer lines up with the ones above
-    // it: "{B} Binary   {U}" put Undoc at column 25 instead of 26.
+    // BOOKMARKS and CONTROL KEYS put their two keys and two actions on four
+    // fixed columns, which is what makes each of the four read as one straight
+    // line down the screen.
     for (int i = 0; monitor_help_lines[i]; i++) {
         const char *text = monitor_help_lines[i];
-        if (text[0] != '{') {
+        if (!monitor_help_is_grid_line(text) || text[1] == ' ') {
             continue;
         }
-        const char *first_close = strchr(text, '}');
-        bool primary_grid = first_close && (first_close - text) == 2;
-        int column = 0;
-        int key_index = 0;
-
-        for (const char *at = text; *at; at++) {
-            if (*at == '}') {
-                continue;
-            }
-            if (*at != '{') {
-                column++;
-                continue;
-            }
-            if (primary_grid) {
-                if (expect((column % MONITOR_HELP_COLUMN_WIDTH) == 0,
-                           "A primary-grid help key does not start on its column.")) {
-                    printf("  column %d: %s\n", column, text);
-                    return 1;
-                }
-            } else {
-                // Left key, left action, right key, right action, in that
-                // order; the action columns are held by the plain text run
-                // that follows a key, checked as part of the same iteration.
-                static const int key_columns[2] = {
-                    MONITOR_HELP_LOWER_KEY_COLUMN, MONITOR_HELP_LOWER_KEY2_COLUMN,
-                };
-                if (expect(key_index < 2 && column == key_columns[key_index],
-                           "A BOOKMARKS/CONTROL KEYS key does not start on its column.")) {
-                    printf("  column %d: %s\n", column, text);
-                    return 1;
-                }
-            }
-            key_index++;
+        char formatted_line[64];
+        if (strchr(text, '%')) {
+            sprintf(formatted_line, text, ui.function_key_for(KEY_HELP));
+            text = formatted_line;
         }
-    }
-
-    // The action that follows a BOOKMARKS/CONTROL KEYS key lands on its own
-    // column too, which is what makes the two shortcut columns and the two
-    // description columns each read as one straight line down the screen.
-    for (int i = 0; monitor_help_lines[i]; i++) {
-        const char *text = monitor_help_lines[i];
-        if (text[0] != '{') {
-            continue;
-        }
-        const char *first_close = strchr(text, '}');
-        if (!first_close || (first_close - text) == 2) {
-            continue;   // primary grid, or malformed; checked above
-        }
-        char plain[64];
-        monitor_help_plain_text(text, plain, sizeof(plain));
-        static const int action_columns[2] = {
-            MONITOR_HELP_LOWER_ACTION_COLUMN, MONITOR_HELP_LOWER_ACTION2_COLUMN,
+        static const int columns[4] = {
+            MONITOR_HELP_LOWER_KEY_COLUMN, MONITOR_HELP_LOWER_ACTION_COLUMN,
+            MONITOR_HELP_LOWER_KEY2_COLUMN, MONITOR_HELP_LOWER_ACTION2_COLUMN,
         };
-        int checked = 0;
-        bool at_key = false;
-        for (const char *at = text; *at && checked < 2; at++) {
-            if (*at == '{') {
-                at_key = true;
+        int len = (int)strlen(text);
+        for (unsigned int c = 0; c < sizeof(columns) / sizeof(columns[0]); c++) {
+            int column = columns[c];
+            if (column >= len) {
                 continue;
             }
-            if (*at == '}') {
-                if (at_key && expect(plain[action_columns[checked]] != ' ' &&
-                                     plain[action_columns[checked] - 1] == ' ',
-                                     "A BOOKMARKS/CONTROL KEYS action does not "
-                                     "start on its column.")) {
-                    printf("  column %d: %s\n", action_columns[checked], plain);
-                    return 1;
-                }
-                if (at_key) checked++;
-                at_key = false;
-                continue;
+            if (expect(text[column] != ' ' &&
+                       (column == 0 || text[column - 1] == ' '),
+                       "A BOOKMARKS/CONTROL KEYS cell does not start on its "
+                       "column.")) {
+                printf("  column %d: %s\n", column, text);
+                return 1;
             }
         }
     }
@@ -8501,7 +8469,6 @@ static int test_monitor_interaction_text_is_a_contract(void)
     // section 1 of the interaction contract promises.
     {
         char all[1024];
-        char rendered[64];
         all[0] = 0;
         for (int i = 0; monitor_help_lines[i]; i++) {
             const char *text = monitor_help_lines[i];
@@ -8509,8 +8476,7 @@ static int test_monitor_interaction_text_is_a_contract(void)
                 sprintf(formatted, text, ui.function_key_for(KEY_HELP));
                 text = formatted;
             }
-            monitor_help_plain_text(text, rendered, sizeof(rendered));
-            strcat(all, rendered);
+            strcat(all, text);
             strcat(all, "\n");
         }
         if (expect(strstr(all, "?/") != NULL,

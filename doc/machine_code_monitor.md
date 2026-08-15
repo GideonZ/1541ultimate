@@ -10,34 +10,33 @@ load/save, bookmarks, and execution from a selected address.
 `C=` denotes the Commodore key. `C=+O` means: hold the Commodore key, then press
 `O`.
 
-To open the monitor, use one of the following:
+Open the monitor in either of these ways:
 
 - Press `C=+O` in the file browser, which is the screen the menu opens on.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`. This works
   from every menu screen.
 
-`C=+O` is a file-browser shortcut. The task menu, the settings screens, the
-system-information screen and the context menus read the key and do nothing
-with it; leave them with `RUN/STOP` first, or use `F5` instead.
+`C=+O` is a file-browser shortcut. From the task menu, a settings screen, the
+system-information screen or a context menu, press `RUN/STOP` to return to the
+file browser first, or take the `F5` route, which works everywhere.
 
-To leave the monitor with nothing else open, press `C=+O`, `RUN/STOP`,
-`ESC` on a USB keyboard, or the C64's top-left `←` key. A bare `X` is not an
-exit: every other letter on that keymap is a command, so `X` would let one
-mistyped command letter discard the view. `C=+X` and `C=+I` also
-leave it, after resetting the machine and after swapping the interface mode
-respectively; see [Resetting the machine](#resetting-the-machine). Pushing the device's
-menu button also closes it. With a popup, a prompt or edit mode open,
-`RUN/STOP`, `ESC` and `←` close that layer first; see [Back](#back).
+To leave the monitor with no popup, prompt or edit mode open, press `C=+O`,
+`RUN/STOP`, `ESC` on a USB keyboard, the C64's top-left `←` key, or the device's
+menu button. `C=+X` and `C=+I` leave it as well, after resetting the machine and
+after swapping the interface mode respectively; see
+[Resetting the machine](#resetting-the-machine).
 
-`C=+O` leaves the monitor outright from a memory view, from edit mode, from the
-help screen, and from the Number, Hunt-result, Compare-result and
-opcode-completion popups. It is not read while a command prompt, the Number
-calculator or the Bookmarks popup is open; leave those with Back first.
+While a popup, a prompt or edit mode is open, `RUN/STOP`, `ESC` and `←` close
+that layer first; see [Back](#back). `C=+O` skips those layers and leaves the
+monitor directly from a memory view, from edit mode, from the help screen, and
+from the Number, Hunt-result, Compare-result and opcode-completion popups. From
+a command prompt, the Number calculator or the Bookmarks popup, press Back once
+and then `C=+O`.
 
 Closing and reopening the monitor keeps the view, the cursor address, the CPU
 bank, the undocumented-opcode and screen-charset settings, both row widths, and
-the last Load, Save and Go parameters. It does not keep the clipboard. Powering
-the machine off loses all of it.
+the last Load, Save and Go parameters. The clipboard is emptied on close, and
+powering the machine off clears all of it.
 
 ### Help
 
@@ -121,14 +120,11 @@ The monitor provides five views:
 | `I` | ASCII    | ASC | ASCII byte view                 |
 | `V` | Screen   | SCR | Screen code view                |
 
-`A` is the only key that opens the Assembly view.
-
 ### Memory / Hex View
 
 Memory view shows raw bytes in hexadecimal. At the default width of 8 bytes per
-row it also shows a printable-character preview to the right of the hex
-columns. At 16 bytes per row there is no preview column; the row is split into
-two groups of eight hex bytes.
+row it also shows a printable-character preview to the right of the hex columns.
+At 16 bytes per row the whole line is hex, split into two groups of eight bytes.
 
 Example:
 
@@ -170,22 +166,18 @@ An opcode that has no defined meaning is shown as `???` and consumes one byte
 unless undocumented opcodes are enabled with `U`. An instruction whose operand
 bytes would run past `$FFFF` is also shown as `???`.
 
-#### I/O is data, not code
+#### I/O registers in Assembly view
 
-With I/O banked in, `$D000-$DFFF` is not memory: each read returns whatever the
-register holds at that instant, and the same address answers differently from
-one read to the next. Disassembling those bytes would give a different
-instruction, and a different instruction length, on every redraw, so every row
-below would move while you were only scrolling.
+With I/O banked in, a read from `$D000-$DFFF` returns whatever the register
+holds at that instant, so the same address can answer differently from one read
+to the next. Assembly view shows one row per address there, as `.BYTE $xx`,
+marked `[I/O]`. The rows keep their addresses as you scroll, and each one shows
+the register's current value.
 
-Assembly view therefore shows one row per address there, as `.BYTE $xx`, marked
-`[I/O]`. The rows stay where they are, and each shows what its register holds
-now.
-
-This follows what the address reads rather than where it is. With CHAR ROM or
-RAM banked into `$D000-$DFFF` instead, those addresses hold stable bytes that
-may well be code, and are disassembled normally. On an Ultimate II+ nothing is
-treated this way and `$D000-$DFFF` is disassembled like any other region.
+Which addresses this applies to depends on what is banked in at the time. With
+CHAR ROM or RAM at `$D000-$DFFF`, those addresses hold stable bytes and are
+disassembled like any other region. On an Ultimate II+, `$D000-$DFFF` is always
+disassembled.
 
 Example:
 
@@ -220,8 +212,9 @@ Binary view shows each byte as eight bits, using `.` for a cleared bit and `*`
 for a set bit. It is useful for inspecting registers, character glyphs, sprite
 data and other bit-oriented memory.
 
-Because C64 sprite data uses three bytes per row, binary view supports several
-`W`idth modes for viewing bytes in different groupings.
+`W` selects how many bytes are grouped into one row, which matters for sprite
+data, where the C64 uses three bytes per row. See
+[`W`: Width Mode](#w-width-mode).
 
 The header shows the current byte address followed by the selected bit number,
 for example `$DC00/7`. Bit 7 is the most significant bit on the left, and bit 0
@@ -257,8 +250,8 @@ Example:
 
 ### ASCII View
 
-Use ASCII view when the bytes are intended to be printable ASCII rather than C64
-screen codes. Rows are 32 bytes wide.
+Use ASCII view for bytes that hold printable ASCII text, such as filenames and
+embedded strings. Rows are 32 bytes wide.
 
 Behavior:
 
@@ -297,10 +290,8 @@ Example:
 
 ### Screen View
 
-Use Screen view when the bytes represent C64 screen codes, for example when
-viewing screen RAM, which by default starts at `$0400`. Rows are 32 bytes wide.
-
-Screen view is for screen-code bytes, not PETSCII text.
+Use Screen view for bytes that hold C64 screen codes, for example screen RAM,
+which by default starts at `$0400`. Rows are 32 bytes wide.
 
 The header shows the active screen charset mode:
 
@@ -370,13 +361,12 @@ Example:
 +--------------------------------------+
 ```
 
-The monitor draws with the menu's own font rather than the C64 character set
-the running program uses, so graphics codes appear as readable stand-in glyphs
-rather than the exact shapes the C64 would display.
+The monitor draws with the menu's own font, so graphics codes appear as readable
+stand-in glyphs for the shapes the C64 displays.
 
 ## View Modifiers
 
-Some keys modify the current view instead of switching to another view.
+Some keys change how the current view is drawn.
 
 ### `U`: Undoc / Case
 
@@ -389,13 +379,13 @@ Some keys modify the current view instead of switching to another view.
 | Other views | Shows `UNDOC IN ASM, CASE IN SCR`                                |
 
 In Assembly view, enabling undocumented opcodes changes both decoding and
-assembly completion. With them disabled, an undocumented opcode reads as `???`
-and one byte; with them enabled, it decodes to its mnemonic and real length and
-the opcode completion list offers it. The header shows `Undoc` while they are
-enabled.
+assembly completion. An undocumented opcode then decodes to its mnemonic and its
+real length, and the opcode completion list offers it. While they are disabled,
+such an opcode reads as `???` and consumes one byte. The header shows `Undoc`
+while they are enabled.
 
-In Screen view, `U` changes only the monitor-local interpretation of screen
-codes. It does not change the live C64 character set.
+In Screen view, `U` changes how the monitor interprets screen codes. The live
+C64 character set stays as it is.
 
 ### `W`: Width Mode
 
@@ -452,24 +442,23 @@ jump. On a target that cannot do this, `G` shows `GO UNAVAILABLE`.
 
 ### Assembly Baseline
 
-Assembly view disassembles forward from the address it was last sent to. `J`,
-`G`, a bookmark jump, a hunt or compare result, a return, a follow to a target
-that is not already on screen, and an instruction assembled inline all set that
-baseline. Moving with the cursor or the page keys does not, and neither does a
-follow to a target that is already visible.
+Assembly view disassembles forward from the address it was last sent to. That
+address is the baseline, and it is set by `J`, `G`, a bookmark jump, a hunt or
+compare result, a return, a follow to a target that is off screen, and an
+instruction assembled inline. The cursor keys, the page keys and a follow to a
+target that is already visible keep the current baseline.
 
-Two rules follow from it. No row may reach across the baseline. Everything above
-it still disassembles normally; the exception is the one or two bytes
-immediately in front of it, and only when they would decode as an instruction
-whose last byte falls on or past the baseline. Those are shown as `.BYTE`,
-because an instruction read from them would swallow the baseline row and shift
-every row below it. Nothing further up is affected.
+Every instruction row starts at or after the baseline. The one or two bytes
+immediately in front of the baseline are shown as `.BYTE` when they would decode
+as an instruction whose last byte falls on or past it, since an instruction read
+from those bytes would swallow the baseline row and shift every row below it.
+Bytes further above the baseline disassemble normally.
 
-Moving up is measured rather than guessed: the view disassembles forward from
-further back than the rows being moved over can span and counts the rows that
-land on the current one, so moving back down retraces the same instruction
-boundaries. Walking up from a baseline and back down therefore returns to it and
-shows the same instructions it showed before.
+When you move up, the view disassembles forward from a point far enough back to
+cover the rows being moved over, then counts which rows land on the current one.
+Moving back down retraces the same instruction boundaries, so walking up from
+the baseline and back down returns to it and shows the same instructions as
+before.
 
 ### Follow/Return
 
@@ -487,20 +476,18 @@ Follow code flow in the Assembly view:
   follow-stack status for about two seconds, for example `F1 JMP $E000` and
   `F0 RET $A000`.
 
-A return restores the whole saved location, not just the address: the view, its
-row width, the CPU bank, the VIC bank and the scroll position.
+A return restores the saved location in full: the address, the view, its row
+width, the CPU bank, the VIC bank and the scroll position.
 
 ### Command prompt input
 
-A command prompt refuses a character that could not appear in any command it
-would accept. Nothing is inserted, the cursor does not move, and a pre-filled
-template is left alone, so an impossible key has no effect at all rather than
-producing an error after `Return`.
+A command prompt takes the characters that can appear in a command it accepts.
+Any other key is ignored while you type: nothing is inserted, the cursor stays
+where it is, and a prefilled template is left alone.
 
-Anything that could still become a valid command stays typeable, so a partly
-typed `0800-`, `PRG,` or `"unfinished text` is accepted while it is being
-written. Range, value and length errors are still reported when the command is
-submitted, because those depend on meaning rather than on spelling.
+Partial input that could still become a valid command stays typeable, so
+`0800-`, `PRG,` or `"unfinished text` is accepted while it is being written.
+Range, value and length errors are reported once the command is submitted.
 
 Every command prompt except `Hunt` opens with its field prefilled and the whole
 field selected, so the first printable key, `DEL` or `CLEAR` replaces all of it.
@@ -516,14 +503,14 @@ What is prefilled differs by prompt:
 | `Load`, `Save` | The parameters last used, so `Return` repeats them. They start at `PRG,0000,AUTO` and `0800-9FFF` |
 | `Hunt` | `0000-FFFF, ` with the cursor at the end and no template clearing, so the default range stays unless it is edited |
 
-The placeholder templates are made of hex digits and would parse as real
-addresses, so they are meant to be typed over rather than submitted.
+The placeholder templates are made of hex digits and parse as real addresses, so
+type over them with the values you want.
 
 Prompt errors are reported as `?ADDR`, `?SYNTAX`, `?VALUE` or `?RANGE`.
 
-The `Save as` and `Label BM<n>` prompts are free text: they take any printable
-character, uppercase typed letters, are prefilled with the previous value, and
-edit it in place rather than clearing it on the first key.
+The `Save as` and `Label BM<n>` prompts are free text. They take any printable
+character, uppercase typed letters, and open prefilled with the previous value,
+which you then edit in place.
 
 ### CPU and VIC Bank Display
 
@@ -562,8 +549,7 @@ resumes when the live bank next matches the override.
 Cartridges can further affect the CPU-visible memory map through the
 expansion-port `GAME` and `EXROM` lines.
 
-On targets that do not support one or both halves, the footer takes a different
-form:
+The footer's form follows what the target supports:
 
 | Target capability | Footer |
 | --- | --- |
@@ -572,9 +558,9 @@ form:
 | CPU banking only | `CPU7  VIC N/A` |
 | Neither | `CPU VIEW  CPU BANK N/A  VIC N/A` |
 
-`CPU VIEW` means the monitor shows the memory the CPU currently sees and cannot
-select a different configuration. This is the case on the Ultimate II+, which
-supports VIC-bank selection but not monitor-selected CPU banking.
+`CPU VIEW` means the monitor shows the memory the CPU currently sees, following
+whatever the running machine has banked in. This is how the Ultimate II+ works,
+where VIC-bank selection is available and the CPU view follows the machine.
 
 ## Editing
 
@@ -585,7 +571,7 @@ All five views support editing.
   edit mode. In ASCII and Screen views `←` types its character instead; use
   `RUN/STOP`, `ESC` or `C=+E` there.
 
-Every edit is written to memory immediately. There is no separate commit step.
+Every edit is written to memory as soon as it is typed.
 
 Edit behavior is view-specific:
 
@@ -597,17 +583,17 @@ Edit behavior is view-specific:
 | Binary   | Type `0`, `.` or `Space` to clear the selected bit, `1` or `*` to set it, then move on by one bit |
 | Assembly | Edit instructions inline; see [Assembly editing](#assembly-editing)         |
 
-In Memory view the first hex nibble typed is held as the high nibble of the byte
-and is not written until the second one arrives. Moving the cursor writes a
-half-typed nibble as the whole byte value.
+In Memory view the first hex digit typed is previewed as the high nibble of the
+byte, and the byte is written once the second digit arrives. Moving the cursor
+with one digit typed writes that digit as the whole byte value, so typing `A`
+and then moving right writes `$0A`.
 
-In Memory and Binary edit mode, a key that is not data for that view is still
-dispatched as a monitor command. `M`, `I`, `A`, `V` and `B` switch views without
-leaving edit mode. A key that is neither data nor a command, `X` among them, is
-ignored and edit mode continues. In ASCII and Screen edit mode every printable
-key is data instead.
+In Memory and Binary edit mode, a key that is not data for that view runs as a
+monitor command, so `M`, `I`, `A`, `V` and `B` switch views while edit mode
+stays on. Any remaining key is ignored and edit mode continues. In ASCII and
+Screen edit mode every printable key is data.
 
-`DEL` is logical delete, not raw backspace:
+`DEL` clears the data at the cursor:
 
 | View         | `DEL` behavior                                  |
 | ------------ | ----------------------------------------------- |
@@ -618,14 +604,16 @@ key is data instead.
 
 `DEL` performs these same edits outside edit mode as well.
 
-Two undo steps come before the logical delete in edit mode:
+In edit mode, `DEL` takes back what you have typed first:
 
-- In Memory view, `DEL` first discards a half-typed nibble on the current byte
-  and leaves the byte itself alone.
-- In Assembly view, `DEL` first undoes the last typed character on the current
-  line, restoring the byte it overwrote. Up to 16 such steps are remembered per
-  instruction; older ones are discarded. Only once nothing has been typed on the
-  current instruction does `DEL` fall through to the `NOP` replacement.
+- In Memory view it discards a half-typed nibble on the current byte and leaves
+  the byte as it was.
+- In Assembly view it undoes the last typed character on the current line and
+  restores the byte that character overwrote. The last 16 such steps are
+  remembered per instruction.
+
+Once nothing is left to take back on the current byte or instruction, `DEL`
+performs the edit in the table above.
 
 ### Assembly editing
 
@@ -641,7 +629,7 @@ Keys in Assembly edit mode:
 
 | Key | Effect |
 | --- | --- |
-| `A`-`Z` on part 0 | Opens the opcode completion list, seeded with that letter. A letter no supported mnemonic starts with is rejected and does nothing |
+| `A`-`Z` on part 0 | Opens the opcode completion list, seeded with that letter, for any letter a supported mnemonic starts with |
 | Hex digit on part 1 and up | Writes one nibble of that operand byte, then advances to the next nibble, part, or line |
 | `Left` / `Right` | Move one part back or forward, crossing into the neighbouring instruction at the ends |
 | `Up` / `Down` | Move one instruction, back to part 0 |
@@ -651,7 +639,7 @@ The opcode completion list takes these keys:
 
 | Key | Effect |
 | --- | --- |
-| Letters | Extend the mnemonic, up to three characters. A character that would not keep the mnemonic valid is rejected |
+| Letters | Extend the mnemonic, up to three characters, as long as it stays a valid mnemonic |
 | `0`-`9`, `A`-`F`, `X`, `Y`, `#`, `$`, `(`, `)`, `,` | Once the mnemonic is complete, build an operand directly, for example `LDA #FF` or `LDA (10),Y` |
 | `Up` / `Down` | Select an addressing-mode candidate |
 | `Return` | Assemble the typed operand, or commit the selected candidate when no operand has been typed. A typed operand that does not assemble leaves the list open |
@@ -701,11 +689,11 @@ the byte or word at the current target, and shows the same value in five rows:
 
 The header names the target address and whether one byte or two are in play.
 
-The target is normally the byte at the cursor. In Assembly view it is instead
-the operand bytes of the current instruction: one byte for a one-byte operand,
-two for a two-byte operand, in which case the popup works on a word. An
-instruction with no operand targets the byte immediately after it. In those
-cases the width is fixed and cannot be widened by typing.
+In most views the target is the byte at the cursor. In Assembly view it is the
+operand of the current instruction: one byte for a one-byte operand, and a word
+for a two-byte operand. An instruction with no operand targets the byte
+immediately after it. In Assembly view the width stays as the instruction sets
+it.
 
 Popup keys:
 
@@ -722,11 +710,10 @@ Popup keys:
 
 Input limits per row are 4 hex digits, 5 decimal digits, 16 binary digits, and
 2 characters on the ASCII and Screen rows. Typing more than one byte's worth
-widens the target to a word, unless the width is fixed by an Assembly operand.
+widens a cursor target to a word.
 
 The ASCII and Screen rows use the same mappings as the ASCII and Screen views,
-including the top-left `←` key, which types its value on those two rows instead
-of closing the popup.
+including the top-left `←` key, which types its value on those two rows.
 
 ### Calculator
 
@@ -803,40 +790,39 @@ up to 80 bytes long.
 
 `Transfer` takes an optional fourth field naming the part of the source that is
 code, written in source addresses: `T C000-C0FF,C100,C000-C07F` copies
-`$C000-$C0FF` to `$C100` and treats `$C000-$C07F` as instructions. Without that
-field `Transfer` only copies, which is what it has always done.
+`$C000-$C0FF` to `$C100` and treats `$C000-$C07F` as instructions.
 
-With it, the monitor disassembles the code range after the copy and moves every
-**absolute** operand that points inside the copied source range, to the same
-place in the destination. That covers absolute, absolute-indexed and indirect
-operands, so `JMP`, `JSR`, `LDA $nnnn,X` and `JMP ($nnnn)` all follow the code
-they belong to.
+With that field given, the monitor disassembles the code range after the copy
+and moves every **absolute** operand that points inside the copied source range
+to the matching place in the destination. That covers absolute, absolute-indexed
+and indirect operands, so `JMP`, `JSR`, `LDA $nnnn,X` and `JMP ($nnnn)` all
+follow the code they belong to.
 
-Three kinds of operand are deliberately left alone:
+Three kinds of operand keep their value:
 
-- **Zero page.** A zero-page address cannot name a different page, so there is
-  nothing a page move could rewrite it to.
-- **Relative.** A branch holds a displacement rather than an address, so a
-  branch inside a block that moves as one is already correct.
+- **Zero page.** A zero-page address names a location in page zero, which the
+  copy leaves where it is.
+- **Relative.** A branch holds a displacement, so a branch inside a block that
+  moves as one already points at the right instruction.
 - **Anything pointing outside the source range.** A KERNAL call or an I/O
-  register did not move, so neither does the operand naming it.
+  register stays where it is, so the operand naming it stays as well.
 
 An instruction that reaches past the end of the source range keeps its operand
-too: the copy does not own the bytes the moved value would go in.
+too, since the copy owns none of the bytes the moved value would go in.
 
-The scan is linear from the start of the code range. A byte that does not
-decode advances it by one and the scan carries on, so undocumented opcodes and
-alignment padding do not stop it, but data in the middle of the code range can
-still put it out of step with the real instruction boundaries. Naming the code
-range as tightly as possible is what avoids that.
+The scan runs linearly from the start of the code range. A byte that does not
+decode advances the scan by one byte and it carries on, so undocumented opcodes
+and alignment padding are stepped over. Data in the middle of the code range can
+put the scan out of step with the real instruction boundaries, so name the code
+range as tightly as you can.
 
-`Transfer` reports how many operands it moved, because it is the only command
-that changes bytes you did not type. A count that is not the number you
-expected is a scan that lost instruction alignment, and it says so immediately.
+`Transfer` reports how many operands it rewrote. Compare that count against the
+number of absolute operands you expected. A different count means the scan lost
+instruction alignment, usually because the code range contains data.
 
-`Fill` and a `Transfer` with no code range report nothing on success. `Compare` shows
-`No differences` when the two regions match, and `Hunt` shows `No matches` when
-the needle is not found. Otherwise both open a result picker:
+On success, `Fill` and a `Transfer` without a code range report nothing.
+`Compare` shows `No differences` when the two regions match, and `Hunt` shows
+`No matches` when the needle is not found. Otherwise both open a result picker:
 
 | Key | Effect |
 | --- | --- |
@@ -906,8 +892,8 @@ Examples:
 | `PRG,1000`       | Skip `$1000` bytes after the PRG header           |
 | `0801,0002,0010` | Load `$0010` bytes from offset `$0002` to `$0801` |
 
-An explicit length larger than what the file can supply from the offset is
-refused rather than truncated. Errors are reported by popup: `OPEN FAILED`,
+An explicit length has to fit within what the file supplies from the offset
+onwards. Errors are reported by popup: `OPEN FAILED`,
 `NOT A PRG`, `READ FAILED`, `SEEK FAILED`, `LOAD TOO LARGE (>64K)`,
 `LOAD WRAPS PAST $FFFF`, or one of the `?ADDR` / `?SYNTAX` / `?VALUE` /
 `?RANGE` parse errors.
@@ -952,9 +938,9 @@ The monitor has 10 bookmark slots, persisted in the device configuration.
 - List bookmarks with `C=+B`.
 - Jump directly to a slot with `C=+0` through `C=+9`.
 
-Both work from view mode and from edit mode. They are ignored while help, a
-result picker, the opcode list, the Number popup or the Bookmarks popup is up;
-from help they close help instead.
+Both work in view mode and in edit mode. While help is open they close help. A
+result picker, the opcode list, the Number popup and the Bookmarks popup keep
+the keyboard for their own controls, so leave those with Back first.
 
 Each bookmark stores:
 
@@ -965,9 +951,9 @@ Each bookmark stores:
 - CPU bank
 - VIC bank
 
-Restoring a bookmark restores all of these. On an Ultimate II+, where the
-monitor cannot select the CPU bank, a bookmark whose CPU bank differs from the
-current one cannot be restored and the footer reports `RESTORE FAILED`.
+Restoring a bookmark restores all of these. On an Ultimate II+ the CPU view
+follows the machine, so restore bookmarks whose CPU bank matches the current
+one. For the others the footer reports `RESTORE FAILED`.
 
 Bookmark popup controls:
 
@@ -1015,37 +1001,36 @@ Default slots are aimed at common C64 locations:
 | Freeze | The monitor has to appear in the C64's own video output, for example to capture it |
 | Overlay on HDMI | You want `P` poll mode to watch memory change, or the `Z` freeze toggle |
 
-`C=+I` changes it, from the file browser, the settings menu, or the monitor
-itself. Pressing it inside the monitor swaps the mode and closes the monitor,
-because the mode it was drawn in is the one being changed and the new one only
-takes effect on the next open. Reopen it with `C=+O` from the file browser.
+`C=+I` changes the mode, from the file browser, the settings menu, or the
+monitor itself. Pressing it inside the monitor swaps the mode and closes the
+monitor: the monitor is drawn in the mode being changed, and the new mode takes
+effect the next time it opens. Reopen it with `C=+O` from the file browser.
 
 ## Resetting the machine
 
-`C=+X` resets the C64 the monitor is looking at, and leaves the monitor. It
-leaves because after a reset the address, the bytes and the CPU state on screen
-describe a machine that no longer exists, and on a cartridge the freezer's hold
-on it is over.
+`C=+X` resets the C64 the monitor is looking at, and leaves the monitor. After a
+reset the address, the bytes and the CPU state that were on screen describe the
+machine as it was before, and on a cartridge the freezer has released it, so the
+view is closed with the reset.
 
-`C=+X` and `C=+I` are the only two keys that act on the machine rather than on
-the view, so both are deliberately unreachable from a layer that owns the
-keyboard: neither does anything while a popup, a command prompt, the Bookmarks
-list, the Number calculator, or a hunt, compare or opcode result picker is
-open. Leave that layer with Back first. Both do work from any memory view and
-from edit mode.
+`C=+X` and `C=+I` act on the machine, so both work from any memory view and from
+edit mode. With a popup, a command prompt, the Bookmarks list, the Number
+calculator, or a hunt, compare or opcode result picker open, leave that layer
+with Back first.
 
-On a machine whose monitor backend cannot reach a reset, `C=+X` says
-`RESET UNAVAILABLE` and changes nothing, edit mode included. On a machine with
-no `Interface Type` setting to swap, which is every cartridge, `C=+I` says
-`INTERFACE SWAP UNAVAILABLE` and likewise changes nothing and stays.
+Where the monitor backend reaches a reset, `C=+X` performs it. Elsewhere it says
+`RESET UNAVAILABLE` and leaves the machine and the view as they are, edit mode
+included. `C=+I` works where the target has an `Interface Type` setting to swap,
+and on a cartridge it says `INTERFACE SWAP UNAVAILABLE` and stays in the
+monitor.
 
 ## Trace lines in the device log
 
 The monitor writes one line to the device console for each action that changes
-what it is looking at or what it changed in memory. Every line starts with
-`MCM`, and one line is one action, so a device log read on its own says which
-view was selected, where the cursor was sent, and what each range command was
-asked to do.
+what it is looking at, and for each action that changes memory. Every line
+starts with `MCM`, and one line is one action, so the device log on its own
+shows which view was selected, where the cursor was sent, and what each range
+command was asked to do.
 
 | Line                            | Written when                                  |
 | ------------------------------- | --------------------------------------------- |
@@ -1068,10 +1053,9 @@ asked to do.
 
 The view names are `HEX`, `ASM`, `ASCII`, `SCREEN` and `BINARY`.
 
-The bank keys write one line per keypress, because each press is a separate
-selection. That is deliberate: a bank key that produced no line did not reach
-the monitor, which is the case a test most wants to tell apart from a bank key
-that was applied and then displayed wrongly.
+The bank keys write one line per keypress, since each press is a separate
+selection. A line therefore confirms that the keypress reached the monitor, and
+the value it logs shows which bank was applied.
 
-A view line is written only when the view actually changes, so pressing a view
-key that is already selected writes nothing.
+A view line is written when the view changes, so a run of view lines follows the
+views you actually moved through.
