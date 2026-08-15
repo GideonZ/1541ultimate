@@ -37,6 +37,7 @@ tests/lib/README.md says is not negotiable.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -478,12 +479,14 @@ def a_failure_whose_menu_had_closed_still_shows_what_it_was_driving() -> str:
 
 @case(4, "OBS-7.6", "OBS-3.11")
 def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
-    """A non-empty syslog-unmapped.txt is told to the reader, not left in a file.
+    """A non-empty unknown-sender file is told to the reader, per sender.
 
     The file exists to make the omission visible rather than silent, and a
     reader who has to list the directory to find it is not being told. Seen on
     a real run: 132 lines from a second device on the same network, which is
-    exactly the case the reader has to be able to dismiss.
+    exactly the case the reader has to be able to dismiss. What lets them
+    dismiss it is the address, the count and the reason attribution failed,
+    per sender, so two senders are not one line saying "some lines arrived".
     """
     import shutil
     import tempfile
@@ -493,23 +496,34 @@ def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
     with tempfile.TemporaryDirectory() as directory:
         tree = os.path.join(directory, "run")
         shutil.copytree(FIXTURE, tree)
-        with open(os.path.join(tree, "syslog-unmapped.txt"), "w",
+        with open(os.path.join(tree, generator.UNKNOWN_SENDER_NAME), "w",
                   encoding="utf-8") as handle:
             for _ in range(3):
                 handle.write("1786000000.000 192.0.2.99 a line nobody claimed\n")
+            for _ in range(2):
+                handle.write("1786000001.000 192.0.2.7 another one\n")
         generator.write_report(tree)
         with open(os.path.join(tree, generator.INDEX_NAME),
                   encoding="utf-8") as handle:
             document = handle.read()
-    for wanted in ("192.0.2.99", "3 line(s) arrived", "U64_LOG_ADDRESSES",
-                   "no target in this run claimed"):
+    for wanted in ("5 line(s) arrived from a sender no target in this run is "
+                   "known by",
+                   "| `192.0.2.99` | 3     |", "| `192.0.2.7`  | 2     |",
+                   "no machine of any target in this run resolves to it",
+                   "No target is guessed for them",
+                   "U64_LOG_ADDRESSES"):
         if wanted not in document:
             raise Failure(f"the report does not say {wanted!r}")
+    # It is never dismissed by a conclusion drawn somewhere else in the
+    # document: the section that carries it is in the report either way.
+    if "## Device log" not in document:
+        raise Failure("the unknown senders are not in a section of their own")
     # And the file table tells it apart from a device's own log.
     if "the device's own log, as the collector received it" in document.split(
-            "syslog-unmapped.txt")[1][:200]:
-        raise Failure("syslog-unmapped.txt is described as a device's own log")
-    return "the senders and the remedy"
+            generator.UNKNOWN_SENDER_NAME)[1][:200]:
+        raise Failure(f"{generator.UNKNOWN_SENDER_NAME} is described as a "
+                      "device's own log")
+    return "two senders, each with its count and its reason"
 
 
 @case(3, "OBS-16.6", "OBS-1.1")
@@ -536,7 +550,8 @@ def a_scripted_run_does_not_inherit_the_gate_state() -> str:
                                 arguments=("--syslog", "--syslog-port", "0"))
             logs = [r for r in made.records("127.0.0.1", "run.jsonl")
                     if r["kind"] == "log"]
-            expect("the collector still started", len(logs), 1)
+            # One when collection starts and one when it ends.
+            expect("the collector still started", len(logs), 2)
             suites = [r for r in made.records("127.0.0.1", "run.jsonl")
                       if r["kind"] == "suite"]
             expect("and the run is its own", suites[-1]["target"], "127.0.0.1")
@@ -547,6 +562,52 @@ def a_scripted_run_does_not_inherit_the_gate_state() -> str:
             else:
                 os.environ[name] = value
     return "the gate's state does not reach a scripted run"
+
+
+@case(3, "OBS-2.1", "OBS-3.17")
+def a_policy_fixture_never_writes_into_the_run_it_runs_inside() -> str:
+    """runner_policy_test drives the runner, and none of that reaches the run.
+
+    The suite exercises `Device.ensure_healthy` and `run_suite` against devices
+    and suites that exist only inside it. Both report through the same module
+    the suite itself reports through, so under the gate their synthetic records
+    were appended to the run's real per-suite file: six `suite` records naming
+    `fixture-suite`, one naming `signalled-suite`, and eight `health` records
+    for a device called `device.invalid`. The report rendered them as suite
+    runs with no closing verdict, so a fully green run showed six `incomplete`
+    rows in the verdict table and six entries under `## Failing checks`.
+
+    Asserted on the records rather than on the report, because the report is
+    not allowed to know that any of these names are fixtures.
+    """
+    import subprocess
+    import tempfile
+
+    policy = os.path.join(ROOT, "tests", "lib", "runner_policy_test.py")
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "overlay-runner-policy.jsonl")
+        environment = dict(os.environ)
+        environment.update({"E2E_JSONL": path, "E2E_SUITE": "runner-policy",
+                            "E2E_TARGET": "127.0.0.1", "E2E_ATTEMPT": "1",
+                            "NO_COLOR": "1"})
+        completed = subprocess.run([sys.executable, policy], env=environment,
+                                   capture_output=True, text=True, timeout=300)
+        if completed.returncode != 0:
+            raise Failure("the policy suite did not pass: "
+                          + completed.stdout.strip().splitlines()[-1])
+        records = [json.loads(line) for line in open(path, encoding="utf-8")
+                   if line.strip()]
+    named = [r.get("name") for r in records if r.get("kind") == "suite"]
+    expect("the only suite record is the suite's own", named,
+           ["runner_policy_test"])
+    sweeps = [r for r in records if r.get("kind") == "health"]
+    if sweeps:
+        raise Failure(f"{len(sweeps)} health records for a device-free suite: "
+                      + ", ".join(sorted({str(r.get('label')) for r in sweeps})))
+    failed = [r for r in records if r.get("verdict") == report.FAIL]
+    if failed:
+        raise Failure(f"{len(failed)} records carry a FAIL verdict")
+    return f"{len(records)} records, all the suite's own"
 
 
 @case(1, "OBS-2.1", "OBS-3.17")
@@ -628,7 +689,7 @@ def the_stamped_timecode_is_where_the_frame_is() -> str:
 
     fps = 10
     interval = 1.0 / fps
-    cards = max(1, int(recorder_lib.CARD_SECONDS / interval))
+    cards = max(1, int(round(recorder_lib.OVERVIEW_SECONDS / interval)))
     lead_in = cards * interval
 
     expect("the first frame of the file",
@@ -648,8 +709,34 @@ def the_stamped_timecode_is_where_the_frame_is() -> str:
             raise Failure(f"the report seeks to {where:.3f}s and the stamp "
                           f"there reads {stamped:.3f}s")
     expect("and it is formatted as a position",
-           recorder_lib.format_position(lead_in), "00:00:02.000")
+           recorder_lib.format_position(lead_in), "00:00:05.000")
     return "the stamp is the file position"
+
+
+def parse_srt(text: str) -> List[Tuple[int, int, str]]:
+    """One `.srt` as (start, end, caption) with both times in milliseconds.
+
+    Parsed from the generated file rather than taken from the numbers that
+    produced it: the property under test is about what a player reads, and a
+    pair of floats that a player would round into one millisecond is exactly
+    the defect these cases exist to catch.
+    """
+    found: List[Tuple[int, int, str]] = []
+
+    def stamp(field: str) -> int:
+        clock, _, millis = field.strip().partition(",")
+        hours, minutes, seconds = (int(part) for part in clock.split(":"))
+        return ((hours * 3600 + minutes * 60 + seconds) * 1000) + int(millis)
+
+    for block in text.strip().split("\n\n"):
+        lines = block.splitlines()
+        if len(lines) < 3:
+            raise Failure(f"a cue is not three lines: {block!r}")
+        start, separator, end = lines[1].partition(" --> ")
+        if not separator:
+            raise Failure(f"a cue has no timing line: {lines[1]!r}")
+        found.append((stamp(start), stamp(end), "\n".join(lines[2:])))
+    return found
 
 
 @case(1, "OBS-8.2", "OBS-8.12")
@@ -667,29 +754,69 @@ def two_subtitle_cues_never_cover_the_same_moment() -> str:
     cues = [(3.705, 3.725, "one"), (3.725, 4.385, "two"),
             (4.385, 4.390, "three"), (4.390, 4.400, "four"),
             (10.0, 10.05, "last")]
-    spans = []
-    for block in recorder_lib.subtitles(cues).strip().split("\n\n"):
-        window = block.splitlines()[1]
-        start, _, end = window.partition(" --> ")
-
-        def seconds(stamp: str) -> float:
-            clock, _, millis = stamp.partition(",")
-            hours, minutes, secs = (int(part) for part in clock.split(":"))
-            return hours * 3600 + minutes * 60 + secs + int(millis) / 1000.0
-
-        spans.append((seconds(start), seconds(end)))
+    spans = parse_srt(recorder_lib.subtitles(cues))
     expect("one cue each", len(spans), len(cues))
+    expect("in the order they were given", [span[2] for span in spans],
+           [cue[2] for cue in cues])
     for index in range(1, len(spans)):
         if spans[index - 1][1] > spans[index][0]:
-            raise Failure(f"cue {index} ends at {spans[index - 1][1]} and cue "
-                          f"{index + 1} starts at {spans[index][0]}")
-    for (start, end) in spans:
-        if end < start:
-            raise Failure(f"a cue ends before it starts: {start} to {end}")
+            raise Failure(f"cue {index} ends at {spans[index - 1][1]}ms and cue "
+                          f"{index + 1} starts at {spans[index][0]}ms")
+    for (start, end, text) in spans:
+        if end <= start:
+            raise Failure(f"the cue {text!r} is serialized from {start}ms to "
+                          f"{end}ms, which a player shows for no time at all")
     # The last cue has nothing after it, so it keeps the whole dwell.
-    expect("the last cue is held", round(spans[-1][1] - spans[-1][0], 3),
-           recorder_lib.MINIMUM_CUE_SECONDS)
+    expect("the last cue is held", spans[-1][1] - spans[-1][0],
+           recorder_lib.MINIMUM_CUE_MS)
     return f"{len(spans)} cues, none overlapping"
+
+
+@case(1, "OBS-8.2", "OBS-8.12")
+def a_cue_for_a_sub_millisecond_check_is_still_shown() -> str:
+    """Checks too short to separate in milliseconds still get distinct cues.
+
+    A `.srt` field is whole milliseconds. A check that measured 200 us has a
+    start and an end that round to the same one, and a burst of such checks
+    has starts that do too. Both were serialized as `--> ` with identical
+    fields, which is a cue a player displays for no time: about a fifth of the
+    cues of a real 23-suite sweep were written that way.
+
+    The identity keys and their order have to survive that, because the
+    sidecar is what a reader greps.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import recorder as recorder_lib
+
+    # Six checks inside one millisecond, then two more inside the next, then
+    # one with room after it.
+    cues = [(12.0000, 12.0002, "a/1 OK"), (12.0002, 12.0004, "a/2 OK"),
+            (12.0004, 12.0006, "a/3 FAIL"), (12.0006, 12.0008, "a/4 OK"),
+            (12.0008, 12.00095, "a/5 OK"), (12.00095, 12.0010, "a/6 OK"),
+            (12.0010, 12.0012, "a/7 OK"), (12.0012, 12.0014, "a/8 OK"),
+            (12.5000, 12.5100, "a/9 OK")]
+    spans = parse_srt(recorder_lib.subtitles(cues))
+    expect("one cue each", len(spans), len(cues))
+    expect("every identity key survives", [span[2] for span in spans],
+           [cue[2] for cue in cues])
+    for start, end, text in spans:
+        if end <= start:
+            raise Failure(f"the cue {text!r} is serialized from {start}ms to "
+                          f"{end}ms, which a player shows for no time at all")
+    for index in range(1, len(spans)):
+        if spans[index][0] < spans[index - 1][0]:
+            raise Failure("the cues are not in start order")
+        if spans[index - 1][1] > spans[index][0]:
+            raise Failure(f"cue {index} ends at {spans[index - 1][1]}ms and "
+                          f"cue {index + 1} starts at {spans[index][0]}ms")
+    # The eight crowded cues occupy the two milliseconds their checks did,
+    # extended by the one millisecond each needs to be a cue at all.
+    expect("the burst starts where the first check did", spans[0][0], 12000)
+    expect("and is a millisecond apart", [span[0] for span in spans[:8]],
+           list(range(12000, 12008)))
+    expect("the check with room keeps the full dwell",
+           spans[-1][1] - spans[-1][0], recorder_lib.MINIMUM_CUE_MS)
+    return f"{len(spans)} cues, none of them zero length"
 
 
 @case(1, "OBS-8.22", "OBS-8.20")
@@ -867,7 +994,7 @@ def the_collector_attributes_a_datagram_to_its_device() -> str:
                    os.path.join(directory, "127.0.0.3-at-127.0.0.4",
                                 "syslog-127.0.0.4.txt")),
                [(102.0, "the computer says something")])
-        with open(os.path.join(directory, "syslog-unmapped.txt"),
+        with open(os.path.join(directory, "syslog-unknown-sender.txt"),
                   encoding="utf-8") as handle:
             unmapped = handle.read()
         if "10.9.9.9" not in unmapped:
@@ -973,8 +1100,12 @@ def a_run_checks_the_syslog_setting_at_both_ends() -> str:
         expect("warned at both ends", len(both), 2)
         logs = [r for r in made.records("127.0.0.1", "run.jsonl")
                 if r["kind"] == "log"]
-        expect("one log record", len(logs), 1)
+        # One when collection starts, saying where the log is going, and one
+        # when it ends, saying which addresses it actually came from.
+        expect("a log record at each end", len(logs), 2)
         expect("where it goes", logs[0]["path"], "127.0.0.1/syslog.txt")
+        expect("where it was expected from", logs[0]["addresses"], ["127.0.0.1"])
+        expect("and where it came from", logs[-1]["senders"], {"127.0.0.1": 1})
         # The path in the record is relative to the run's root, so it has to
         # be the file the collector actually opens. A collector handed one
         # target's own directory composes the slug into it a second time and
@@ -1053,6 +1184,324 @@ def loss_and_reordering_are_counted_wrap_safely() -> str:
     expect("an incomplete frame never completes",
            lost.counts()["frames_completed"], 0)
     return "wrap 0, gap 2"
+
+
+def packets_of(frame, sequence=0):
+    """One frame's datagrams, so a case can count them rather than state 68."""
+    from device_double import video_packets
+
+    return video_packets(frame, sequence)
+
+
+def video_stream(assembler, first_frame, count, sequence=0, gap_frames=0):
+    """Push `count` consecutive frames and return where the counters got to."""
+    from device_double import video_packets
+
+    packets_per_frame = 0
+    for offset in range(count):
+        packets = video_packets(first_frame + offset * (1 + gap_frames),
+                                sequence)
+        packets_per_frame = len(packets)
+        sequence += len(packets)
+        for packet in packets:
+            assembler.push(packet)
+    return sequence, packets_per_frame
+
+
+@case(1, "OBS-8.24", "OBS-8.25", "OBS-8.26")
+def video_loss_is_told_apart_from_the_stream_not_running() -> str:
+    """Nine cases over one counter, because they were one number.
+
+    `frames_lost` counted every gap in the frame counter as a frame the
+    network lost. The counter runs whether anything is receiving or not, so a
+    suite that took the stream for a minute added a minute of frames to it: a
+    green 23-suite sweep reported 14187 lost frames against 55409 completed
+    ones on a link that dropped 253 packets.
+    """
+    from device_double import video_packets
+
+    import streams
+
+    # 1. An uninterrupted stream loses nothing.
+    clean = streams.FrameAssembler()
+    video_stream(clean, 1, 20)
+    counts = clean.counts()
+    expect("clean frames", counts["frames_completed"], 20)
+    for name in ("frames_lost", "packets_dropped", "frames_incomplete",
+                 "frames_reordered", "stream_discontinuities"):
+        expect(f"clean {name}", counts[name], 0)
+
+    # 2. Packets that were sent and did not arrive are loss.
+    lossy = streams.FrameAssembler()
+    for offset in range(4):
+        packets = video_packets(offset + 1, offset * len(packets_of(1)))
+        for index, packet in enumerate(packets):
+            if offset == 2 and index in (10, 11, 12):
+                continue
+            lossy.push(packet)
+    counts = lossy.counts()
+    expect("the packets are counted as dropped", counts["packets_dropped"], 3)
+    expect("the frame they broke never completes",
+           counts["frames_completed"], 3)
+    expect("not as a discontinuity", counts["stream_discontinuities"], 0)
+
+    # 3. Frames whose last packet never came are incomplete, not lost. The
+    #    assembler holds two at a time, so the third one pushes the first out.
+    partial = streams.FrameAssembler()
+    width = len(packets_of(1))
+    for offset in range(4):
+        for packet in video_packets(offset + 1, offset * width)[:-1]:
+            partial.push(packet)
+    counts = partial.counts()
+    expect("none of them completed", counts["frames_completed"], 0)
+    expect("two were given up as incomplete", counts["frames_incomplete"], 2)
+    expect("and the missing packets are loss", counts["packets_dropped"], 3)
+    expect("no frame is called lost", counts["frames_lost"], 0)
+
+    # 4. A frame that finishes assembling after a later one is reordering.
+    reordered = streams.FrameAssembler()
+    first, second = video_packets(1, 0), video_packets(2, width)
+    for packet in first[:-1] + second + first[-1:]:
+        reordered.push(packet)
+    counts = reordered.counts()
+    expect("both frames arrived", counts["frames_completed"], 2)
+    expect("the late one is reordering", counts["frames_reordered"], 1)
+    expect("and not loss", counts["frames_lost"], 0)
+    expect("nor a discontinuity", counts["stream_discontinuities"], 0)
+
+    # 5. A 16-bit counter wrapping is one step forward.
+    wrapping = streams.FrameAssembler()
+    video_stream(wrapping, 65534, 4, sequence=65500)
+    counts = wrapping.counts()
+    expect("four frames across both wraps", counts["frames_completed"], 4)
+    expect("no loss at the wrap", counts["frames_lost"], 0)
+    expect("and none in the sequence", counts["packets_dropped"], 0)
+
+    # 6. A suite stopping and starting the stream, which the caller declares.
+    #    The device counts on while nothing is listening, so the jump is the
+    #    length of the pause.
+    declared = streams.FrameAssembler()
+    video_stream(declared, 1, 5)
+    declared.reanchor("suite-stopped")
+    video_stream(declared, 9000, 5, sequence=40000)
+    counts = declared.counts()
+    expect("every frame either side", counts["frames_completed"], 10)
+    expect("nothing counted as lost across it", counts["frames_lost"], 0)
+    expect("nothing counted as dropped either", counts["packets_dropped"], 0)
+    expect("one discontinuity", counts["stream_discontinuities"], 1)
+    expect("with its reason", declared.discontinuities,
+           {"suite-stopped": 1})
+
+    # 7. The recorder asking for the stream again, which is the same shape
+    #    with a different reason.
+    rearmed = streams.FrameAssembler()
+    video_stream(rearmed, 1, 3)
+    rearmed.reanchor("recorder-rearm")
+    video_stream(rearmed, 4000, 3, sequence=12000)
+    expect("no loss for a rearm", rearmed.counts()["frames_lost"], 0)
+    expect("named as a rearm", rearmed.discontinuities, {"recorder-rearm": 1})
+
+    # 8. A device that restarted, which nobody declared and which the
+    #    assembler has to find for itself.
+    restarted = streams.FrameAssembler()
+    video_stream(restarted, 30000, 4, sequence=40000)
+    video_stream(restarted, 1, 4, sequence=0)
+    counts = restarted.counts()
+    expect("every frame", counts["frames_completed"], 8)
+    expect("no loss across the restart", counts["frames_lost"], 0)
+    expect("found and named", restarted.discontinuities.get("device-restart", 0)
+           >= 1, True)
+
+    # 9. And a gap small enough to be loss is still loss.
+    small = streams.FrameAssembler()
+    video_stream(small, 1, 2)
+    video_stream(small, 12, 2, sequence=1000)
+    expect("nine frames missing", small.counts()["frames_lost"], 9)
+    expect("not called a discontinuity",
+           small.counts()["stream_discontinuities"], 0)
+    return "9 cases, loss and lifecycle apart"
+
+
+@case(1, "OBS-8.24", "OBS-8.25")
+def audio_loss_is_told_apart_from_the_stream_not_running() -> str:
+    """The same nine distinctions on the audio timeline.
+
+    Its concealment is what made the difference invisible: every slot the
+    stream was stopped for was filled, and every filled slot was counted as
+    packets the device had failed to send. A green sweep reported 29759 lost
+    audio packets over a stream that lost none.
+    """
+    from device_double import audio_packets
+
+    import streams
+
+    def timeline(packets):
+        made = streams.AudioTimeline()
+        for packet in packets:
+            made.push(packet)
+        return made
+
+    # 1. Uninterrupted.
+    clean = timeline(audio_packets(0, 20))
+    counts = clean.counts()
+    expect("written", counts["packets_written"], 20)
+    for name in ("packets_lost", "packets_concealed", "packets_absent",
+                 "resyncs", "stream_discontinuities", "late_dropped"):
+        expect(f"clean {name}", counts[name], 0)
+
+    # 2. Real loss is concealed and counted.
+    lossy = timeline(audio_packets(0, 5) + audio_packets(8, 5))
+    counts = lossy.counts()
+    expect("three packets lost", counts["packets_lost"], 3)
+    expect("and concealed", counts["packets_concealed"], 3)
+    expect("none of it absent", counts["packets_absent"], 0)
+
+    # 3. Reordering and duplication move nothing.
+    packets = audio_packets(0, 6)
+    shuffled = timeline(packets[:3] + [packets[2], packets[4], packets[3],
+                                       packets[5]])
+    counts = shuffled.counts()
+    expect("one duplicate", counts["duplicates"], 1)
+    expect("one late", counts["late_dropped"], 1)
+    expect("and the one that really was missing", counts["packets_lost"], 1)
+
+    # 4. A wrap is one step.
+    wrapping = timeline(audio_packets(65534, 4))
+    expect("no loss at the wrap", wrapping.counts()["packets_lost"], 0)
+
+    # 5. A declared stop and start.
+    declared = streams.AudioTimeline()
+    for packet in audio_packets(0, 5):
+        declared.push(packet)
+    declared.reanchor("suite-stopped")
+    for packet in audio_packets(40000, 5):
+        declared.push(packet)
+    counts = declared.counts()
+    expect("nothing lost across it", counts["packets_lost"], 0)
+    expect("nothing concealed for it", counts["packets_concealed"], 0)
+    expect("one discontinuity", counts["stream_discontinuities"], 1)
+    expect("named", declared.discontinuities, {"suite-stopped": 1})
+
+    # 6. A rearm.
+    rearmed = streams.AudioTimeline()
+    for packet in audio_packets(0, 3):
+        rearmed.push(packet)
+    rearmed.reanchor("recorder-rearm")
+    for packet in audio_packets(9000, 3):
+        rearmed.push(packet)
+    expect("no loss for a rearm", rearmed.counts()["packets_lost"], 0)
+    expect("named", rearmed.discontinuities, {"recorder-rearm": 1})
+
+    # 7. A device restart, which the timeline finds for itself.
+    restarted = timeline(audio_packets(60000, 4) + audio_packets(0, 4))
+    counts = restarted.counts()
+    expect("re-anchored", counts["resyncs"], 1)
+    expect("nothing called lost", counts["packets_lost"], 0)
+
+    # 8. A stream the run knows is not running owes the file audio and owes
+    #    it no loss.
+    absent = streams.AudioTimeline()
+    for packet in audio_packets(0, 2):
+        absent.push(packet)
+    pcm = absent.absent(120)
+    counts = absent.counts()
+    expect("counted as absent", counts["packets_absent"], 120)
+    expect("and not as loss", counts["packets_lost"], 0)
+    expect("the file still gets its audio", len(pcm),
+           120 * streams.PAYLOAD_BYTES)
+
+    # 9. A stream that should have been running and was not is loss.
+    quiet = streams.AudioTimeline()
+    for packet in audio_packets(0, 2):
+        quiet.push(packet)
+    quiet.silence(7)
+    counts = quiet.counts()
+    expect("counted as loss", counts["packets_lost"], 7)
+    expect("and not as absent", counts["packets_absent"], 0)
+    return "9 cases, loss and lifecycle apart"
+
+
+@case(2, "OBS-8.24", "OBS-8.25", "OBS-15.1")
+def a_suite_taking_the_stream_is_never_recorded_as_loss() -> str:
+    """The recorder's own wiring, from a suite's stop record to the counters.
+
+    Three suites stop the device's video stream during a run and two of them
+    leave it stopped. The recorder yields, which is what OBS-15.1 requires,
+    and then has to account for the interval as the run's own doing rather
+    than as a lossy link. It is driven here through the same two methods the
+    slot loop calls, so this fails if either stops being called.
+    """
+    import recorder as recorder_lib
+    from device_double import audio_packets, video_packets
+
+    with tempfile.TemporaryDirectory() as directory:
+        made = recorder_lib.Recorder(directory, "127.0.0.1", None,
+                                     recorder_lib.Options(fps=10))
+        made._cursor = recorder_lib.AudioCursor(made._audio, 48000.0, 10)
+
+        def spool(**record):
+            with open(os.path.join(directory, "screens.jsonl"), "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(dict(record, kind="stream")) + "\n")
+
+        def arriving(frames, first_frame, sequence, now):
+            for offset in range(frames):
+                for packet in video_packets(first_frame + offset,
+                                            sequence + offset * 68):
+                    made._settle_continuity("video", now)
+                    made._sources.video_at = now
+                    made._assembler.push(packet)
+            for packet in audio_packets(sequence, 4):
+                made._settle_continuity("audio", now)
+                made._sources.audio_at = now
+                made._cursor.push(made._audio.push(packet).pcm)
+
+        arriving(5, 1, 0, now=1.0)
+        expect("nothing lost while it was running",
+               made._assembler.counts()["frames_lost"], 0)
+
+        # The av suite takes the stream and stops it when it finishes.
+        spool(action="stop", stream="video", suite="av-stream")
+        spool(action="stop", stream="audio", suite="av-stream")
+        made._spool.poll(2.0)
+        made._apply_stream_events()
+        expect("the run knows the stream is not running",
+               made._cursor.available, False)
+
+        # Twelve seconds of slots with nothing arriving, which the file still
+        # needs audio for.
+        for _ in range(120):
+            made._cursor.take()
+        expect("none of that is loss",
+               made._audio.counts()["packets_lost"], 0)
+        if made._cursor.unavailable_bytes <= 0:
+            raise Failure("the absent audio was not counted at all")
+        expect("nor concealment of a running stream",
+               made._cursor.concealed_bytes, 0)
+
+        # The suite starts it again. The device has counted on throughout.
+        spool(action="start", stream="video", suite="av-stream")
+        spool(action="start", stream="audio", suite="av-stream")
+        made._spool.poll(14.0)
+        made._apply_stream_events()
+        expect("the run knows it is running again", made._cursor.available, True)
+        arriving(5, 9000, 40000, now=14.1)
+
+        counts = made._assembler.counts()
+        expect("ten frames either side", counts["frames_completed"], 10)
+        expect("no frame counted as lost", counts["frames_lost"], 0)
+        expect("no packet counted as dropped", counts["packets_dropped"], 0)
+        record = made.record()
+        lifecycle = record["stream_lifecycle"]
+        for stream in ("video", "audio"):
+            if "suite-stopped" not in lifecycle.get(stream, {}):
+                raise Failure(f"the {stream} stop is not in the record: "
+                              f"{lifecycle}")
+        expect("and the record shows no loss", record["frames_lost"], 0)
+        expect("nor any lost audio", record["audio_packets_lost"], 0)
+        if record["audio_unavailable_bytes"] <= 0:
+            raise Failure("the record does not say the stream was stopped")
+    return "a stop and a start, 0 lost"
 
 
 @case(1, "OBS-8.24", "OBS-8.26")
@@ -1150,9 +1599,9 @@ def the_stills_are_the_transitions_and_not_the_cursor() -> str:
         this fails when the code that ships changes.
         """
         picker = recorder_lib.StillPicker()
-        for frame in frames:
-            picker.offer(frame, None, frame)
-        return [kind for kind, _canvas, _rows in picker.stills()]
+        for index, frame in enumerate(frames):
+            picker.offer(frame, None, frame, frame=index, position=index / 10.0)
+        return [still.kind for still in picker.stills()]
 
     blinking = [bytes([n % 2]) + bytes(52223) for n in range(20)]
     expect("no transitions", picked(blinking), ["first", "last"])
@@ -1168,6 +1617,121 @@ def the_stills_are_the_transitions_and_not_the_cursor() -> str:
     expect("both transitions", kinds.count("change"), 2)
     expect("first and last as well", (kinds[0], kinds[-1]), ("first", "last"))
     return "2 of 20"
+
+
+@case(1, "OBS-8.28", "OBS-3.23")
+def a_still_carries_the_frame_it_was_taken_from() -> str:
+    """The position a still reports is the frame it is, not the suite's timing.
+
+    The report used to place a still by the suite record around it, which is
+    the interval the suite ran in rather than the moment the frame was kept.
+    Measured against the recordings of a 23-suite sweep that put stills up to
+    4.7 seconds away from the frame they show, in both directions.
+    """
+    import recorder as recorder_lib
+
+    picker = recorder_lib.StillPicker()
+    frames = [bytes([0]) * 4096 for _ in range(30)]
+    for index in range(10, 20):
+        frames[index] = bytes([7]) * 4096
+    for index in range(20, 30):
+        frames[index] = bytes([4]) * 4096
+    # Slot 40 onwards at 10 frames a second, so the first frame of this suite
+    # run is four seconds into a file that opened with a card.
+    for index, frame in enumerate(frames):
+        picker.offer(frame, ["row"], frame, frame=40 + index,
+                     position=(40 + index) / 10.0)
+    chosen = picker.stills()
+    expect("first, two transitions and last", [s.kind for s in chosen],
+           ["first", "change", "change", "last"])
+    for still in chosen:
+        expect(f"the {still.kind} still's position is its own frame",
+               round(still.position, 4), round(still.frame / 10.0, 4))
+    expect("the first still is the first frame offered", chosen[0].frame, 40)
+    expect("the last still is the last frame offered", chosen[-1].frame, 69)
+    expect("the transitions are where the picture changed",
+           [s.frame for s in chosen[1:3]], [50, 60])
+    return "4 stills, each at its own frame"
+
+
+@case(2, "OBS-8.28", "OBS-3.23")
+def the_report_reads_a_still_position_and_never_infers_one() -> str:
+    """The report prints the recorded position, and nothing when there is none.
+
+    Two properties in one case because they are the same rule: the number
+    comes from the recorder or it is not printed. An older tree has stills and
+    no positions for them, and inventing one there would be the defect this
+    replaces rather than a fallback.
+    """
+    import shutil
+
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        tree = os.path.join(directory, "run")
+        captures = os.path.join(tree, "u64", "capture")
+        os.makedirs(captures)
+        for name in ("overlay-suite-1-1-first", "overlay-suite-1-2-last"):
+            with open(os.path.join(captures, name + ".txt"), "w",
+                      encoding="utf-8") as handle:
+                handle.write("READY.\n")
+        records = [
+            {"kind": "suite", "name": "suite", "mode": "overlay", "attempt": 1,
+             "verdict": "OK", "seconds": 12.0, "time": 1786000012.0,
+             "target": "u64"},
+            {"kind": "capture", "target": "u64", "started": 1786000000.0,
+             "lead_in": 5.0, "fps": 10, "frames": 400, "frames_shed": 0,
+             "files": ["video.mp4"],
+             "stills": [
+                 {"index": 1, "kind": "first", "text": "overlay-suite-1-1-first.txt",
+                  "frame": 631, "position": 63.1, "stem": "overlay-suite-1",
+                  "label": "overlay", "suite": "suite", "attempt": 1,
+                  "target": "u64", "pane": "video.mp4"},
+                 {"index": 2, "kind": "last", "text": "overlay-suite-1-2-last.txt",
+                  "frame": 1247, "position": 124.7, "stem": "overlay-suite-1",
+                  "label": "overlay", "suite": "suite", "attempt": 1,
+                  "target": "u64", "pane": "video.mp4"}]},
+            {"kind": "run", "verdict": "OK", "suites": 1, "passed": 1,
+             "failed": 0, "skipped": 0, "dirty": 0, "seconds": 12.0,
+             "recoveries": 0, "exit_code": 0, "target": "u64",
+             "started": 1786000000.0},
+        ]
+        with open(os.path.join(tree, "u64", "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
+        generator.write_report(tree)
+        with open(os.path.join(tree, generator.INDEX_NAME),
+                  encoding="utf-8") as handle:
+            document = handle.read()
+        # 63.1s is 01:03 and 124.7s is 02:04. The suite ran from 12s before
+        # its record to that record, which is 00:05 to 00:17 in the file, so a
+        # position inferred from the suite could not produce either.
+        for wanted in ("**first** at 01:03", "**last** at 02:04"):
+            if wanted not in document:
+                raise Failure(f"the report does not show {wanted!r}")
+
+        # The same tree with the positions taken out of the capture record,
+        # which is what a tree written before the recorder recorded them is.
+        older = os.path.join(directory, "older")
+        shutil.copytree(tree, older)
+        os.remove(os.path.join(older, generator.INDEX_NAME))
+        with open(os.path.join(older, "u64", "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            for record in records:
+                if record["kind"] == "capture":
+                    record = dict(record, stills=["overlay-suite-1-1-first.txt",
+                                                  "overlay-suite-1-2-last.txt"])
+                handle.write(json.dumps(record) + "\n")
+        generator.write_report(older)
+        with open(os.path.join(older, generator.INDEX_NAME),
+                  encoding="utf-8") as handle:
+            legacy = handle.read()
+        if "**first** (" not in legacy:
+            raise Failure("an older tree's stills are not shown at all")
+        if " at " in legacy.split("## Screens", 1)[1].split("**first**", 1)[1][:40]:
+            raise Failure("an older tree's still was given a position it "
+                          "does not have")
+    return "recorded positions shown, absent ones left absent"
 
 
 @case(1, "OBS-8.27")
@@ -1351,7 +1915,31 @@ def the_gate_workflow_is_the_one_described() -> str:
     if "${{ inputs" in text.split("run: |", 1)[1].split("- name", 1)[0]:
         raise Failure("an input is substituted into the script rather than "
                       "passed through the environment")
-    return "two artifacts, one runner label, no interpolated input"
+
+    # The gate asks for what it uploads. It uploaded a recordings artifact
+    # while running `run-tests` with neither --syslog nor --record, so the
+    # artifact was always empty and a scheduled failure left a console log and
+    # nothing else.
+    command = text.split("run: |", 1)[1].split("- name", 1)[0]
+    for flag in ("$SYSLOG", "$RECORD"):
+        if flag not in command:
+            raise Failure(f"the gate never passes {flag[1:].lower()} to "
+                          "run-tests, but uploads what it produces")
+    for wanted, why in (
+            ("&& '--syslog' || ''",
+             "a variable holding the string false is not an empty variable"),
+            ("&& '--record' || ''", "the same for the recorder"),
+            ("github.event_name == 'schedule'",
+             "the unattended run is the one that needs the evidence")):
+        if wanted not in text:
+            raise Failure(f"{wanted!r} is not in the workflow: {why}")
+    # Every physical target the harness supports, because a gate that leaves
+    # one out reports nothing about it.
+    scheduled = text.split("TARGETS:", 1)[1].split("\n", 1)[0]
+    for target in ("c64u", "u64", "u2@c64u"):
+        if target not in scheduled:
+            raise Failure(f"the scheduled gate does not run {target}")
+    return "two artifacts, one runner label, three targets, both collectors"
 
 
 @case(1, "OBS-1.6")
@@ -1608,6 +2196,325 @@ def a_composed_frame_uses_the_machines_own_colours() -> str:
     return f"{len(used)} colours, all VIC"
 
 
+def composed_pair(rows, kind="menu", state=None, raw=b"", identity=None,
+                  layout="combined", screen_colour=6):
+    """One composed frame and the same frame without its annotations.
+
+    Both come out of one `compose` call, which is where the recorder writes
+    the still from, so a case comparing the two is comparing what the file
+    holds against what the still holds. The device pane is one flat colour so
+    that a case looking for a colour the annotations use finds only them; blue
+    by default, which is neither of the two ranks and not the chrome.
+    """
+    import recorder as recorder_lib
+
+    geometry = recorder_lib.geometry_for(True, True, layout)[layout]
+    composer = recorder_lib.Composer(geometry, recorder_lib.Options(),
+                                     identity or {"target": "u64"})
+    frame = (384, 272, bytes([screen_colour]) * (384 * 272))
+    stamped = composer.compose(frame, rows, kind,
+                               state or recorder_lib.RunState(), 61.0,
+                               1786700000.0, harness_raw=raw)
+    return geometry, composer, stamped, composer.plain
+
+
+def glyph_columns(rgb: bytes, width: int, row: int, background=(0, 0, 0)):
+    """Which 8-pixel columns of one glyph row hold anything but `background`."""
+    import recorder as recorder_lib
+
+    found = []
+    top = row * recorder_lib.glyphs.GLYPH_HEIGHT
+    for column in range(width // recorder_lib.glyphs.GLYPH_WIDTH):
+        left = column * recorder_lib.glyphs.GLYPH_WIDTH
+        for y in range(top, top + recorder_lib.glyphs.GLYPH_HEIGHT):
+            for x in range(left, left + recorder_lib.glyphs.GLYPH_WIDTH):
+                at = (y * width + x) * 3
+                if tuple(rgb[at:at + 3]) != background:
+                    found.append(column)
+                    break
+            else:
+                continue
+            break
+    return found
+
+
+def occupied_span(rgb: bytes, width: int, y: int, background):
+    """The first and last pixel on scanline `y` that is not `background`."""
+    found = [x for x in range(width)
+             if tuple(rgb[((y * width) + x) * 3:((y * width) + x) * 3 + 3])
+             != background]
+    return (found[0], found[-1]) if found else (None, None)
+
+
+def glyph_rows(rgb: bytes, width: int, height: int, background):
+    """Which glyph rows of a canvas hold anything but `background`, and where."""
+    import recorder as recorder_lib
+
+    found = {}
+    for row in range(height // recorder_lib.glyphs.GLYPH_HEIGHT):
+        columns = glyph_columns(rgb, width, row, background=background)
+        if columns:
+            found[row] = (min(columns), max(columns))
+    return found
+
+
+@case(1, "OBS-8.30", "OBS-8.20")
+def the_pane_labels_are_on_a_row_of_their_own() -> str:
+    """MENU and SCREEN can never land on top of the caption the stamp writes.
+
+    They shared the stamp's second row. A caption is `label / suite / scenario
+    / check`, which reaches the right of the harness pane on most suites, and
+    the label was drawn over it: seen on every frame of a `freeze` suite whose
+    scenario name was long enough.
+    """
+    import recorder as recorder_lib
+
+    def composed(scenario):
+        state = recorder_lib.RunState(
+            suite="browser-filesystem-refresh", label="overlay",
+            scenario=scenario, check="check 17")
+        return composed_pair(["x" * 40] * 25, state=state)
+
+    expect("the labels are on the row under the stamp", recorder_lib.LABEL_ROW,
+           recorder_lib.STAMP_ROWS)
+    geometry, _c, short, _p = composed("a rename")
+    _g, _c2, long_caption, _p2 = composed(
+        "a rename of a file whose name is long enough to reach the far side "
+        "of both panes and then some")
+    row_bytes = geometry.width * recorder_lib.glyphs.GLYPH_HEIGHT * 3
+
+    def band(rgb, row):
+        return rgb[row * row_bytes:(row + 1) * row_bytes]
+
+    if band(short, 1) == band(long_caption, 1):
+        raise Failure("the caption did not change, so this proves nothing")
+    labels = recorder_lib.LABEL_ROW
+    if band(short, labels) != band(long_caption, labels):
+        raise Failure("a longer caption changed the row the pane labels are "
+                      "on, so the two can collide")
+    drawn = glyph_columns(long_caption, geometry.width, labels,
+                          background=recorder_lib.glyphs.c64_rgb(6))
+    if not drawn:
+        raise Failure("the pane labels are not drawn")
+    # Right aligned in each pane, which is where the two labels are.
+    panes = geometry.width // recorder_lib.glyphs.GLYPH_WIDTH
+    if max(drawn) < panes - len("SCREEN"):
+        raise Failure("the SCREEN label is not against the right of its pane")
+    return f"stamp on rows 0..{recorder_lib.STAMP_ROWS - 1}, labels on {labels}"
+
+
+@case(1, "OBS-8.20")
+def a_menu_is_centred_in_the_pane_and_a_session_is_not() -> str:
+    """A 40-column menu gets the same margin on both sides of a 60-column pane.
+
+    The pane is sized for the widest screen either transport produces. A menu
+    is 320 of its 480 pixels and was drawn against the left edge, so it sat
+    off centre beside a device pane that is centred. A Telnet session is the
+    full 60 columns and has nowhere to move to.
+    """
+    import recorder as recorder_lib
+
+    expect("the indent is the two widths",
+           recorder_lib.menu_indent(recorder_lib.HARNESS_PANE_WIDTH),
+           (recorder_lib.HARNESS_PANE_WIDTH
+            - recorder_lib.glyphs.MENU_COLUMNS
+            * recorder_lib.glyphs.GLYPH_WIDTH) // 2)
+    expect("which is 80 pixels each side", recorder_lib.menu_indent(480), 80)
+
+    # A payload whose every cell has one colour in both nibbles, so each cell
+    # is a solid block whichever nibble the decoder reads as the background
+    # and the occupied pixels are exactly the menu's rectangle.
+    cells = recorder_lib.glyphs.MENU_COLUMNS * recorder_lib.glyphs.MENU_ROWS
+    payload = bytes([0x20]) * cells + bytes([0x77]) * cells
+    geometry, _composer, _stamped, plain = composed_pair(
+        ["x" * 40] * 25, kind="menu", raw=payload)
+    chrome = recorder_lib.glyphs.c64_rgb(recorder_lib.CHROME)
+    # A scanline through the middle of the menu, which starts 36 lines down in
+    # a 272-line pane. Read in pixels rather than in glyph rows: the menu is
+    # centred vertically and is not on the canvas's own 8-pixel row grid.
+    harness = plain[:]
+    first, last = occupied_span(harness, geometry.width, 136, chrome)
+    if first is None:
+        raise Failure("the menu drew nothing")
+    # Only the harness pane, since the device pane is on the same scanline.
+    expect("the menu starts one indent in", first,
+           recorder_lib.menu_indent(recorder_lib.HARNESS_PANE_WIDTH))
+    menu_end = (recorder_lib.menu_indent(recorder_lib.HARNESS_PANE_WIDTH)
+                + recorder_lib.glyphs.MENU_COLUMNS
+                * recorder_lib.glyphs.GLYPH_WIDTH)
+    for x in (menu_end - 1, menu_end):
+        at = ((136 * geometry.width) + x) * 3
+        inside = tuple(harness[at:at + 3]) != chrome
+        expect(f"pixel {x} is inside the menu", inside, x < menu_end)
+    expect("so the margins match",
+           recorder_lib.HARNESS_PANE_WIDTH - menu_end, first)
+    return f"40 columns centred in 60, {first}px each side"
+
+
+@case(1, "OBS-8.30")
+def the_state_edge_is_drawn_under_the_text_and_the_bar() -> str:
+    """A failure marking never overwrites a reading.
+
+    The edge is the outermost two rows and columns, and the stamp starts at
+    the first column of the first row, so drawing the edge last painted red
+    over the first two pixels of every timecode and over both ends of the
+    progress bar. It is a marking for a reader scrubbing a timeline, not a
+    reading, so it goes under everything that is read.
+    """
+    import recorder as recorder_lib
+
+    state = recorder_lib.RunState(suite="broken", label="overlay",
+                                  failed_at=1786700000.0,
+                                  segments=["overlay/broken"],
+                                  verdicts={"overlay/broken": "FAIL"},
+                                  current_segment=0)
+    geometry, _composer, stamped, _plain = composed_pair(
+        ["READY."] * 25, state=state)
+    red = recorder_lib.glyphs.c64_rgb(recorder_lib.FAILURE_COLOUR)
+
+    def at(x, y):
+        return tuple(stamped[((y * geometry.width) + x) * 3:
+                             ((y * geometry.width) + x) * 3 + 3])
+
+    # The edge is there.
+    expect("the edge is drawn", at(0, 100), red)
+    expect("on both sides", at(geometry.width - 1, 100), red)
+    # And the text on top of it is not red: the timecode starts at column 0.
+    timecode = [at(x, y) for x in range(recorder_lib.EDGE_PIXELS)
+                for y in range(recorder_lib.glyphs.GLYPH_HEIGHT)]
+    if all(pixel == red for pixel in timecode):
+        raise Failure("the edge painted over the start of the timecode")
+    # And the progress bar, which reaches both ends of the frame.
+    bar_y = geometry.height - recorder_lib.EDGE_PIXELS - 1
+    if at(0, bar_y) == red and at(geometry.width - 2, bar_y) == red:
+        raise Failure("the edge painted over both ends of the progress bar")
+    return "edge under the stamp and the bar"
+
+
+@case(1, "OBS-8.30")
+def the_frame_metadata_is_ranked_and_ordered() -> str:
+    """Primary fields first and in white, secondary after them and in grey.
+
+    A frame that travels on its own has to answer which recording, which
+    machine and which firmware before it answers which build produced it, and
+    a narrow file has to lose the second question rather than the first.
+    """
+    import recorder as recorder_lib
+
+    identity = {"target": "u64", "firmware": "Ultimate 64 3.11",
+                "address": "192.168.1.15", "ci": "17253361191"}
+    geometry, _composer, stamped, _plain = composed_pair(
+        ["READY."] * 25, identity=identity)
+    white = recorder_lib.glyphs.c64_rgb(recorder_lib.PRIMARY_TEXT)
+    grey = recorder_lib.glyphs.c64_rgb(recorder_lib.SECONDARY_TEXT)
+    if white == grey:
+        raise Failure("the two ranks are the same colour")
+
+    def rank_of(column):
+        top = 0
+        for y in range(top, top + recorder_lib.glyphs.GLYPH_HEIGHT):
+            for x in range(column * recorder_lib.glyphs.GLYPH_WIDTH,
+                           (column + 1) * recorder_lib.glyphs.GLYPH_WIDTH):
+                at = ((y * geometry.width) + x) * 3
+                pixel = tuple(stamped[at:at + 3])
+                if pixel == white:
+                    return "primary"
+                if pixel == grey:
+                    return "secondary"
+        return ""
+
+    ranks = [rank_of(column) for column in range(geometry.columns)]
+    seen = [rank for rank in ranks if rank]
+    if not seen:
+        raise Failure("no metadata was drawn")
+    if "primary" in seen[seen.index("secondary"):]:
+        raise Failure("a primary field is drawn after a secondary one")
+    # The order itself: position, target, firmware, then the rest.
+    expect("the timecode first",
+           recorder_lib.format_position(61.0)[:8], "00:01:01")
+    return f"{seen.count('primary')} primary then " \
+           f"{seen.count('secondary')} secondary columns"
+
+
+@case(1, "OBS-8.30", "OBS-8.9")
+def the_opening_overview_is_five_seconds_at_any_rate() -> str:
+    """The card a viewer lands on is held for exactly five seconds.
+
+    Held in whole slots, so the figure has to come out right at every output
+    rate the recorder offers rather than only at ten frames a second. Two
+    seconds of a flat list was not long enough to read a grouped card, and the
+    arithmetic that produced it truncated `2.0 / 0.1` to 19 slots, so the card
+    it did produce was 1.9 seconds.
+    """
+    import recorder as recorder_lib
+
+    for fps in (5, 10, 20, 25):
+        interval = 1.0 / fps
+        slots = max(1, int(round(recorder_lib.OVERVIEW_SECONDS / interval)))
+        expect(f"the overview at {fps} fps", slots * interval,
+               recorder_lib.OVERVIEW_SECONDS)
+        summary = max(1, int(round(recorder_lib.SUMMARY_SECONDS / interval)))
+        expect(f"the summary at {fps} fps", summary * interval,
+               recorder_lib.SUMMARY_SECONDS)
+    if recorder_lib.SUMMARY_SECONDS >= recorder_lib.OVERVIEW_SECONDS:
+        raise Failure("the closing card is as long as the opening one")
+    return "5.0s opening, 2.0s closing"
+
+
+@case(1, "OBS-8.30")
+def the_opening_overview_is_grouped_and_degrades_to_one_column() -> str:
+    """Three groups, aligned fields, two columns when there is room for two."""
+    import recorder as recorder_lib
+
+    groups = [("DEVICE", [("target", "u64", True),
+                          ("product", "Ultimate 64 3.11", True),
+                          ("address", "192.168.1.15", False),
+                          ("fpga", "1.4E", False)]),
+              ("SOURCE", [("branch", "feat/e2e-observability", True),
+                          ("commit", "5d4bea60", True),
+                          ("tree", "clean", False)]),
+              ("RUN", [("started", "2026-08-15 10:00:00", False),
+                       ("build", "17253361191", False),
+                       ("host", "bench", False),
+                       ("suite runs", "23", True)])]
+
+    def rows_used(layout, pane):
+        geometry = recorder_lib.geometry_for(True, True, layout)[pane]
+        composer = recorder_lib.Composer(geometry, recorder_lib.Options(), {})
+        rgb = composer.overview(groups)
+        background = recorder_lib.glyphs.c64_rgb(recorder_lib.CARD_BACKGROUND)
+        used = {}
+        for row in range(geometry.height // recorder_lib.glyphs.GLYPH_HEIGHT):
+            columns = glyph_columns(rgb, geometry.width, row,
+                                    background=background)
+            if columns:
+                used[row] = (min(columns), max(columns))
+        return geometry, used
+
+    wide, wide_rows = rows_used("combined", "combined")
+    narrow, narrow_rows = rows_used("separate", "screen")
+    if not wide_rows or not narrow_rows:
+        raise Failure("the card drew nothing")
+    # Two columns on the wide canvas: the second one starts far enough right
+    # that no field of the first could have reached it.
+    if max(end for _start, end in wide_rows.values()) < wide.columns // 2:
+        raise Failure("the wide card did not use two columns")
+    # One column on the narrow one, which cannot hold two: every row starts
+    # within the margin plus the indent a field label carries.
+    starts = {start for start, _end in narrow_rows.values()}
+    if max(starts) > recorder_lib.CARD_MARGIN_COLUMNS + 2:
+        raise Failure(f"the narrow card is not one column: rows start at "
+                      f"{sorted(starts)}")
+    # Nothing runs off either canvas.
+    for geometry, rows in ((wide, wide_rows), (narrow, narrow_rows)):
+        limit = geometry.columns - 1
+        for row, (_start, end) in rows.items():
+            if end > limit:
+                raise Failure(f"row {row} reaches column {end} of {limit}")
+    return f"{len(wide_rows)} rows over 2 columns, " \
+           f"{len(narrow_rows)} over 1"
+
+
 @case(1, "OBS-15.6")
 def the_two_stream_modules_are_callers_of_one_library() -> str:
     """One wire format, one set of socket options, one source filter.
@@ -1853,6 +2760,99 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
         if os.path.exists(os.path.join(directory, recorder_lib.AUDIO_NAME)):
             raise Failure("the audio track was left as an artefact of its own")
     return f"{capture['frames']} frames, {capture['packets']} packets"
+
+
+@case(2, "OBS-8.28", "OBS-8.30", "OBS-3.23")
+def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
+    """Seeking to a still's recorded position reproduces the still exactly.
+
+    The whole value of a still's position is that a reader can go to it. That
+    is checked here by decoding the frame the recorder says it took the still
+    from and comparing it with the still, pixel for pixel, over the area no
+    annotation is drawn into. The two differ outside that area by
+    construction: the file carries the stamp, the pane labels and the progress
+    bar, and a still deliberately carries none of them.
+
+    No seek window and no tolerance. A position that has to be searched around
+    is a position the report cannot print.
+    """
+    import dataclasses
+    import subprocess
+    import tempfile
+    import time as time_lib
+
+    import recorder as recorder_lib
+    from device_double import UdpSender, video_packets
+
+    if recorder_lib.encoder_available():
+        raise Skipped(recorder_lib.encoder_available())
+    try:
+        from PIL import Image
+    except ImportError:
+        raise Skipped("PIL is not installed, so no still image is written")
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        # A suite record, so the recorder has an identity to file stills under.
+        with open(os.path.join(directory, "overlay-fixture.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "fixture", "attempt": 1,
+                                     "verdict": "OK", "seconds": 0.1,
+                                     "time": time.time()}) + "\n")
+        made = recorder_lib.Recorder(directory, "127.0.0.1",
+                                     UltimateApi(double.target(), timeout=5.0),
+                                     recorder_lib.Options(fps=5, audio=False))
+        made.target = dataclasses.replace(
+            double.target(), video_group="127.0.0.1", video_port=0)
+        problem = made.start()
+        if problem:
+            raise Failure(problem)
+        video = UdpSender("127.0.0.1", made._sockets[0][1].getsockname()[1])
+        for number in range(30):
+            # A picture that changes completely every few frames, so the
+            # picker keeps transitions as well as the first and the last.
+            video.send(video_packets(number, number * 68,
+                                     pattern=(number // 5) % 16))
+            time_lib.sleep(0.05)
+        video.close()
+        time_lib.sleep(0.5)
+        capture = made.stop()
+        recorder_lib.finish(directory, "u64", capture["started"],
+                            capture["lead_in"], capture["files"])
+
+        stills = [entry for entry in capture.get("stills", [])
+                  if entry.get("image")]
+        if not stills:
+            raise Failure(f"no still was written: {capture.get('stills')}")
+        geometry = made.geometry[sorted(made.geometry)[0]]
+        left, top, width, height = recorder_lib.annotation_free_area(geometry)
+        path = os.path.join(directory, "video.mp4")
+        for entry in stills:
+            expect("the position is the frame at this rate",
+                   round(entry["position"], 4),
+                   round(entry["frame"] / capture["fps"], 4))
+            expect("and it names the file it is a frame of", entry["pane"],
+                   "video.mp4")
+            extracted = os.path.join(directory, f"frame-{entry['frame']}.png")
+            completed = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                 "-i", path, "-vf", f"select=eq(n\\,{entry['frame']})",
+                 "-vsync", "0", "-frames:v", "1", extracted],
+                capture_output=True, text=True, timeout=120)
+            if completed.returncode != 0 or not os.path.exists(extracted):
+                raise Failure(f"frame {entry['frame']} could not be extracted: "
+                              f"{completed.stderr.strip()[:200]}")
+            with Image.open(os.path.join(directory, "capture",
+                                         entry["image"])) as still, \
+                    Image.open(extracted) as frame:
+                expect("the same geometry", still.size, frame.size)
+                box = (left, top, left + width, top + height)
+                if still.crop(box).tobytes() != frame.crop(box).tobytes():
+                    raise Failure(
+                        f"the {entry['kind']} still and frame "
+                        f"{entry['frame']} of the recording differ inside the "
+                        f"picture area {box}")
+    return f"{len(stills)} stills, each identical to its own frame"
 
 
 # ---------------------------------------------------------------------------

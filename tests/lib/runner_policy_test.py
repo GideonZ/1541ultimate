@@ -62,6 +62,61 @@ class ScriptedProbe:
         return self.answers.pop(0) if self.answers else False
 
 
+# Where a fixture's own records go. The runner code under test reports through
+# the same module this suite reports through, so a fixture device that is
+# declared unhealthy writes a `health` record and a fixture suite that fails
+# writes a `suite` record. Under the gate this process's records go to the
+# run's real per-suite file, so those synthetic records land in the run's
+# JSONL and the report renders them as suite runs that never happened: a green
+# run showed six `incomplete` rows in the verdict table and six entries under
+# `## Failing checks`. The fix belongs here rather than in the report, which
+# has no way to tell a fixture record from a real one and must not be taught
+# fixture names.
+_FIXTURE_RECORDS = None
+
+
+def set_fixture_records(path):
+    """Name the file a fixture's records are diverted to. Called once by main."""
+    global _FIXTURE_RECORDS
+    _FIXTURE_RECORDS = path
+
+
+@contextlib.contextmanager
+def isolated_records():
+    """Run a block with everything it reports sent to the fixture's own file.
+
+    Both ends are redirected: this process's own record destination, and the
+    `E2E_JSONL` variable a child process reads at import, because `run_suite`
+    starts real child processes.
+    """
+    report_module = sys.modules["report"]
+    previous_path = report_module.JSONL_PATH
+    previous_environment = os.environ.get("E2E_JSONL")
+    report_module.set_jsonl_path(_FIXTURE_RECORDS or "")
+    if _FIXTURE_RECORDS:
+        os.environ["E2E_JSONL"] = _FIXTURE_RECORDS
+    else:
+        os.environ.pop("E2E_JSONL", None)
+    try:
+        yield
+    finally:
+        report_module.set_jsonl_path(previous_path)
+        if previous_environment is None:
+            os.environ.pop("E2E_JSONL", None)
+        else:
+            os.environ["E2E_JSONL"] = previous_environment
+
+
+def isolating(function):
+    """`function` with its records diverted, for a fixture's own device calls."""
+
+    def call(*args, **kwargs):
+        with isolated_records():
+            return function(*args, **kwargs)
+
+    return call
+
+
 def device(runner, answers, **kwargs):
     # Health is reachability alone unless a check stubs the sweep: these
     # fixtures have no device, so a real sweep would fail every time and tell
@@ -71,6 +126,9 @@ def device(runner, answers, **kwargs):
     kwargs.setdefault("recover_max_total", 1)
     made = runner.Device("device.invalid", "", 1.0, **kwargs)
     made.probe = ScriptedProbe(answers)
+    # Every sweep this fixture device reports is a sweep of a device that does
+    # not exist, so it is written to the fixture's file rather than the run's.
+    made.ensure_healthy = isolating(made.ensure_healthy)
     made.start_suite()
     return made
 
@@ -265,11 +323,14 @@ def run_retry_checks(runner, tmpdir):
 
         run_suite prints a banner and a suite line of its own, which would land
         in the middle of the check line reporting on it. The output is kept and
-        replayed only when the check fails, where it is the diagnostic.
+        replayed only when the check fails, where it is the diagnostic. That
+        suite line is also a `suite` record, naming a suite that exists only
+        here, so the records go to the fixture's file for the same reason the
+        console output does not go to the terminal.
         """
         captured = io.StringIO()
         try:
-            with contextlib.redirect_stdout(captured):
+            with contextlib.redirect_stdout(captured), isolated_records():
                 return action()
         except BaseException:
             detail(captured.getvalue().rstrip())
@@ -331,7 +392,7 @@ def run_retry_checks(runner, tmpdir):
                                  os.path.relpath(killed, runner.ROOT), "")
         made = device_that([(True, False)], )
         captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
+        with contextlib.redirect_stdout(captured), isolated_records():
             result = runner.run_suite(signalled, made, options(retry=False), "", "fixture")
         printed = captured.getvalue()
         expect("verdict", result.verdict, runner.report.FAIL)
@@ -814,20 +875,24 @@ def main():
         return 1
     try:
         runner = load_runner()
-        run_target_grammar_checks()
-        run_resource_conflict_checks(runner)
-        run_multi_target_checks(runner)
-        run_ui_state_routing_checks()
-        run_exit_status_checks(runner)
-        run_recovery_gating_checks(runner)
-        run_recovery_limit_checks(runner)
-        run_degraded_recovery_checks(runner)
-        run_output_dir_option_checks(runner)
-        run_reset_guard_checks()
+        # Under the repository root because run_suite names a suite's script by
+        # its path relative to that root, and one directory for the whole suite
+        # so that the fixtures have somewhere to write from the first check on.
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
+            set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
+            run_target_grammar_checks()
+            run_resource_conflict_checks(runner)
+            run_multi_target_checks(runner)
+            run_ui_state_routing_checks()
+            run_exit_status_checks(runner)
+            run_recovery_gating_checks(runner)
+            run_recovery_limit_checks(runner)
+            run_degraded_recovery_checks(runner)
+            run_output_dir_option_checks(runner)
+            run_reset_guard_checks()
             run_retry_checks(runner, tmpdir)
             run_jsonl_contract_checks(runner, tmpdir)
-        run_health_checks()
+            run_health_checks()
     except Failure as exc:
         suite_fail("runner_policy_test", str(exc))
         return 1

@@ -21,11 +21,26 @@ on:
           under test in the computer that supplies its C64 keyboard and video.
           Space separated.
         required: false
-        default: u64 u2@c64u
+        default: c64u u64 u2@c64u
       modes:
         description: UI transport, or a comma-separated list, or all.
         required: false
         default: overlay
+      syslog:
+        description: >-
+          Collect each device's own log. Costs nothing but a UDP port and is
+          the only evidence a firmware assertion leaves.
+        type: boolean
+        required: false
+        default: true
+      record:
+        description: >-
+          Record the harness screen beside the device's video, with its audio.
+          Costs the devices two streams and the LAN their bandwidth for the
+          length of the run.
+        type: boolean
+        required: false
+        default: true
   schedule:
     # The devices are physical and shared, so the gate runs on a timer rather
     # than per push: a push trigger would queue a run per commit against
@@ -71,10 +86,24 @@ jobs:
           # is deliberately unquoted below, because a run of several devices
           # is several words.
           MODES: ${{ inputs.modes || 'overlay' }}
-          TARGETS: ${{ inputs.targets || 'u64 u2@c64u' }}
+          TARGETS: ${{ inputs.targets || 'c64u u64 u2@c64u' }}
+          # A scheduled run has no inputs, and it is the run nobody is
+          # watching, so it gets both. A gate that fails at 03:00 with only a
+          # console log is a gate that has to be reproduced by hand before
+          # anyone can start reading it, and the failure that most needs the
+          # device log and the recording is the one that does not reproduce.
+          # The flag itself rather than a boolean, because an unset variable
+          # expands to nothing and a variable holding "false" does not.
+          SYSLOG: >-
+            ${{ (github.event_name == 'schedule' || inputs.syslog)
+                && '--syslog' || '' }}
+          RECORD: >-
+            ${{ (github.event_name == 'schedule' || inputs.record)
+                && '--record' || '' }}
         run: |
           ./run-tests -o "$RUNNER_TEMP/e2e" \
             --mode "$MODES" \
+            $SYSLOG $RECORD \
             ${RECOVER:+--recover-command "$RECOVER"} \
             $TARGETS
 
@@ -106,8 +135,8 @@ jobs:
       # A separate artifact because the two have different lifetimes and
       # different sizes: the report and the JSONL are what anyone looks at
       # weeks later, and the recordings are looked at within days if at all.
-      # It does not exist when the recorder was not asked for, which is the
-      # default.
+      # It is empty rather than absent when a dispatched run turned the
+      # recorder off, which is why if-no-files-found is ignore.
       - name: Upload the recordings
         if: always()
         uses: actions/upload-artifact@v7

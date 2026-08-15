@@ -70,6 +70,15 @@ DEFAULT_PORT = 5514
 # not resolve to. See `declared`.
 ADDRESS_ENV = "U64_LOG_ADDRESSES"
 
+# Where lines whose sender is no machine of any target in the run are kept.
+#
+# Named for what a reader has to decide about them rather than for the lookup
+# that failed: the question is who sent them, and the answer this file gives
+# is the address and nothing else. Nothing here ever guesses a target for such
+# a line, because the source address of a datagram is the only identification
+# a datagram carries and an unrecognised one identifies nothing.
+UNKNOWN_SENDER_NAME = "syslog-unknown-sender.txt"
+
 # The configuration item the devices carry, in the store it lives in.
 CONFIG_STORE = "Network Settings"
 CONFIG_ITEM = "Log to Syslog Server"
@@ -133,6 +142,13 @@ class Collector:
     # See `gaps` for what counts as one.
     seen: Dict[str, float] = field(default_factory=dict)
     silences: List[dict] = field(default_factory=list)
+    # Which addresses actually sent lines, per target token, and how many
+    # each sent. The mapped addresses are what the run expected; these are
+    # what it got, and a device that logs from a second interface is the
+    # difference between the two.
+    senders: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    # The same for the addresses no target claimed.
+    unknown: Dict[str, int] = field(default_factory=dict)
     _socket: Optional[socket.socket] = None
     _thread: Optional[threading.Thread] = None
     _running: bool = False
@@ -148,7 +164,7 @@ class Collector:
         already cost 15 to 30 minutes. A collector that cannot start leaves the
         run exactly as it was.
         """
-        self.unmapped_path = os.path.join(self.directory, "syslog-unmapped.txt")
+        self.unmapped_path = os.path.join(self.directory, UNKNOWN_SENDER_NAME)
         for target in wanted:
             for index, machine in enumerate(target.log_hosts):
                 # The device under test's log is the log about the firmware
@@ -160,7 +176,7 @@ class Collector:
                 if not addresses:
                     self.problems.append(
                         f"{machine} does not resolve, so its lines cannot be "
-                        "attributed and land in syslog-unmapped.txt")
+                        f"attributed and land in {UNKNOWN_SENDER_NAME}")
                 for address in addresses:
                     taken = self.routes.get(address)
                     if taken is not None:
@@ -176,7 +192,7 @@ class Collector:
 
         # A name in U64_LOG_ADDRESSES that no target has is almost always a
         # typo, and its symptom is exactly the one the variable exists to
-        # remove: every line from that device in syslog-unmapped.txt with
+        # remove: every line from that device in syslog-unknown-sender.txt with
         # nothing saying why.
         machines = {machine for target in wanted for machine in target.log_hosts}
         for entry in (os.environ.get(ADDRESS_ENV) or "").split(","):
@@ -261,11 +277,14 @@ class Collector:
                              f"{when:.3f} {address} {text}\n")
             with self._lock:
                 self.unmapped += len(texts)
+                self.unknown[address] = self.unknown.get(address, 0) + len(texts)
             return
         for text in texts:
             self._append(route.path, f"{when:.3f} {text}\n")
         with self._lock:
             self.lines += len(texts)
+            seen = self.senders.setdefault(route.target, {})
+            seen[address] = seen.get(address, 0) + len(texts)
             previous = self.seen.get(route.machine)
             if previous is not None and when - previous >= SILENT_SECONDS:
                 self.silences.append({"machine": route.machine,
@@ -306,6 +325,21 @@ class Collector:
         """Each target token and the file its lines went to."""
         found = {(route.target, route.path) for route in self.routes.values()}
         return sorted(found)
+
+    def addresses_of(self, token: str) -> List[str]:
+        """Every address this run expects `token`'s lines to arrive from."""
+        return sorted(address for address, route in self.routes.items()
+                      if route.target == token)
+
+    def observed(self, token: str) -> Dict[str, int]:
+        """Every address `token`'s lines actually arrived from, with a count."""
+        with self._lock:
+            return dict(self.senders.get(token, {}))
+
+    def unknown_senders(self) -> Dict[str, int]:
+        """Every address no target claimed, with how many lines it sent."""
+        with self._lock:
+            return dict(self.unknown)
 
     def gaps(self, until: Optional[float] = None) -> List[dict]:
         """Every interval a device that had been logging said nothing.
@@ -370,8 +404,13 @@ def declared(machine: str) -> "Set[str]":
         U64_LOG_ADDRESSES="u64=192.168.1.71,c64u=192.168.1.150"
 
     A datagram from an address nobody declared is still kept, in
-    syslog-unmapped.txt with its sender, which is what makes the omission
-    visible rather than silent.
+    `syslog-unknown-sender.txt` with its sender, which is what makes the
+    omission visible rather than silent.
+
+    This is an escape hatch for a machine outside this repository, not the
+    answer for an Ultimate: the firmware here now sends its log from the
+    wired interface when there is one, so an Ultimate's log arrives from the
+    address its name resolves to.
     """
     found = set()
     for entry in (os.environ.get(ADDRESS_ENV) or "").split(","):

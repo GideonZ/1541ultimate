@@ -441,7 +441,12 @@ def load_target(directory: str, slug: str) -> TargetRun:
         elif kind == "capture":
             target.capture = record
         elif kind == "log":
-            target.log = record
+            # One record when collection starts and one when it ends, merged
+            # into the one view the report needs. The first says where the log
+            # is going, which a killed run still leaves behind; the second
+            # adds which addresses the lines actually came from, which is only
+            # known at the end.
+            target.log = {**(target.log or {}), **record}
         elif kind == "plan":
             target.plan = record
         elif kind == "run":
@@ -1333,7 +1338,7 @@ def describe_file(relative: str) -> str:
         return "one suite run's checks, scenarios and device actions"
     if name.endswith(".log"):
         return "that suite run's console output, stderr merged in, ANSI stripped"
-    if name == "syslog-unmapped.txt":
+    if name == "syslog-unknown-sender.txt":
         return ("log lines from an address no target in this run claimed, "
                 "kept with the address that sent them")
     if name.startswith("syslog"):
@@ -1431,26 +1436,47 @@ def device_log(run: Run, target: TargetRun) -> List[Tuple[float, str]]:
     return found
 
 
-def unmapped_senders(run: Run) -> Optional[dict]:
-    """Who sent the lines no target claimed, and how many there were.
+UNKNOWN_SENDER_NAME = "syslog-unknown-sender.txt"
 
-    None when the file is absent or empty, which is the ordinary case and says
-    every line was attributed.
+
+def unmapped_senders(run: Run) -> Optional[dict]:
+    """Who sent the lines no target claimed, and how many each sent.
+
+    Read from the file rather than from the records, so a tree renders the
+    same whether or not the run that wrote it finished. None when the file is
+    absent or empty, which is the ordinary case and says every line was
+    attributed.
     """
-    path = os.path.join(run.directory, "syslog-unmapped.txt")
+    path = os.path.join(run.directory, UNKNOWN_SENDER_NAME)
     if not os.path.exists(path) or not os.path.getsize(path):
         return None
-    addresses, count = set(), 0
+    senders: Dict[str, int] = {}
+    count = 0
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 parts = line.split(" ", 2)
                 if len(parts) >= 2:
-                    addresses.add(parts[1])
+                    senders[parts[1]] = senders.get(parts[1], 0) + 1
                 count += 1
     except OSError:
         return None
-    return {"addresses": sorted(addresses), "lines": count}
+    return {"addresses": sorted(senders), "senders": senders, "lines": count}
+
+
+def expected_senders(run: Run) -> List[List[str]]:
+    """Each target, the addresses its log was expected from, and which sent."""
+    rows = []
+    for target in run.targets:
+        if not target.log:
+            continue
+        expected = [str(a) for a in as_list(target.log.get("addresses"))]
+        observed = as_dict(target.log.get("senders"))
+        rows.append([target.token,
+                     ", ".join(f"`{a}`" for a in expected) or "-",
+                     ", ".join(f"`{a}` ({count})" for a, count
+                               in sorted(observed.items())) or "none"])
+    return rows
 
 
 def log_section(run: Run) -> List[str]:
@@ -1460,20 +1486,35 @@ def log_section(run: Run) -> List[str]:
     count to answer a question only ever asked about failures.
     """
     lines: List[str] = []
+    senders = expected_senders(run)
+    if senders:
+        lines += ["Each target's log was expected from the addresses its "
+                  "machines resolve to, and arrived from these:", ""]
+        lines += table(["Target", "Expected from", "Arrived from"], senders)
+        lines += [""]
     unmapped = unmapped_senders(run)
     if unmapped:
         # The file exists to make the omission visible, and a reader who has to
-        # list the directory to find it is not being told. The addresses are
-        # what identifies the device, and the variable is the fix.
-        lines += [f"{unmapped['lines']} line(s) arrived from "
-                  + ", ".join(f"`{a}`" for a in unmapped["addresses"])
-                  + ", which no target in this run claimed, and are in "
-                  "`syslog-unmapped.txt`. A device with two interfaces logs "
-                  "from whichever one its routing picked; "
-                  "`U64_LOG_ADDRESSES=\"<machine>=<address>\"` attaches the "
-                  "second one. Another device on the same network logging to "
-                  "this collector lands here too, which is not a problem with "
-                  "this run.", ""]
+        # list the directory to find it is not being told. The source address
+        # is the only identification a datagram carries, so an address that is
+        # no target's is reported as exactly that and nothing is guessed.
+        lines += [f"{unmapped['lines']} line(s) arrived from a sender no "
+                  f"target in this run is known by, and are kept in "
+                  f"`{UNKNOWN_SENDER_NAME}` with the address that sent them. "
+                  f"No target is guessed for them: a datagram carries no "
+                  f"identification but its source address.", ""]
+        lines += table(["Sender", "Lines", "Why it could not be attributed"],
+                       [[f"`{address}`", str(count),
+                         "no machine of any target in this run resolves to it"]
+                        for address, count in sorted(
+                            unmapped["senders"].items())])
+        lines += ["",
+                  "Another device on the same network logging to this "
+                  "collector lands here, which is not a problem with this run. "
+                  "A device of this run's whose log arrives from an address "
+                  "its name does not resolve to is: "
+                  "`U64_LOG_ADDRESSES=\"<machine>=<address>\"` attaches that "
+                  "address to that machine.", ""]
     for target in run.targets:
         collected = device_log(run, target)
         if not collected:
@@ -1924,15 +1965,57 @@ def main(argv: Sequence[str]) -> int:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class StillEntry:
+    """One still as the report shows it: what it is, where it is, what it said."""
+
+    kind: str
+    relative: str
+    text: List[str]
+    # Where in the recording this frame is, as the recorder wrote it down.
+    # Empty when the tree predates the recorder writing it, and empty is then
+    # what the report says: a position recomputed from the suite's timing was
+    # wrong by up to 4.7 seconds, and a wrong position is worse than none.
+    position: str = ""
+
+
+def recorded_stills(target: TargetRun) -> Dict[str, dict]:
+    """Every still the capture record describes, keyed by its text file name.
+
+    The recorder writes one entry per still with the frame it was taken at,
+    which is the only place that number exists: a suite record says when a
+    suite ran, not which of its frames was kept.
+    """
+    found: Dict[str, dict] = {}
+    if not target.capture:
+        return found
+    for entry in as_list(target.capture.get("stills")):
+        if isinstance(entry, dict) and entry.get("text"):
+            found[str(entry["text"])] = entry
+    return found
+
+
+def mmss(seconds: float) -> str:
+    """A position in a recording, as the report writes every one of them."""
+    whole = max(0, int(seconds))
+    return f"{whole // 60:02d}:{whole % 60:02d}"
+
+
 def stills_for(run: Run, target: TargetRun,
-               made: SuiteRun) -> List[Tuple[str, str, List[str]]]:
-    """One suite run's stills as (kind, relative path, text), in capture order."""
+               made: SuiteRun) -> List[StillEntry]:
+    """One suite run's stills, in capture order.
+
+    Ordered by the frame the recorder took each one at when it recorded them,
+    and by file name otherwise, so a tree written by an older recorder still
+    renders in a fixed order.
+    """
     directory = os.path.join(run.directory, target.slug, "capture")
-    found = []
+    described = recorded_stills(target)
+    found: List[Tuple[Tuple[int, str], StillEntry]] = []
     try:
         names = sorted(os.listdir(directory))
     except OSError:
-        return found
+        return []
     prefix = f"{made.stem}-{made.attempt}-"
     for name in names:
         if not name.startswith(prefix) or not name.endswith(".txt"):
@@ -1940,9 +2023,86 @@ def stills_for(run: Run, target: TargetRun,
         kind = name[len(prefix):-len(".txt")].split("-")[-1]
         if kind not in ("first", "change", "last"):
             continue
-        found.append((kind, f"{target.slug}/capture/{name}",
-                      read_text(os.path.join(directory, name))))
-    return found
+        entry = described.get(name, {})
+        position = (mmss(as_float(entry.get("position")))
+                    if "position" in entry else "")
+        found.append(((as_int(entry.get("frame")), name),
+                      StillEntry(kind, f"{target.slug}/capture/{name}",
+                                 read_text(os.path.join(directory, name)),
+                                 position)))
+    found.sort(key=lambda item: item[0])
+    return [entry for _order, entry in found]
+
+
+# What a recorder counts, and which of the two questions each figure answers.
+# The first four are the network: packets and frames that were sent and did
+# not arrive, or arrived in the wrong order, or arrived incomplete. The last
+# two are this host: frames the recorder gave up composing, and frames it
+# padded to a changed geometry.
+TRANSPORT_COUNTS = (("packets_dropped", "packets dropped"),
+                    ("frames_lost", "frames lost"),
+                    ("frames_incomplete", "frames incomplete"),
+                    ("frames_reordered", "frames reordered"),
+                    ("audio_packets_lost", "audio packets lost"))
+RECORDER_COUNTS = (("frames_shed", "frames shed"),
+                   ("frames_padded", "frames padded"),
+                   ("packets_malformed", "packets malformed"),
+                   ("foreign_senders", "packets from another sender"))
+
+
+def recording_block(run: Run) -> List[str]:
+    """What each recording is, and what it lost, kept apart from what it did not.
+
+    A recording competes with the suites for the device's streams, and the
+    suites win. The interval a suite holds a stream for is not a lossy link
+    and the two must not be one number: the figures below are the network's,
+    and the re-anchors under them are the run's own doing.
+    """
+    rows = []
+    reasons: List[str] = []
+    for target in run.targets:
+        capture = target.capture
+        if not capture:
+            continue
+        frames = as_int(capture.get("frames"))
+        fps = as_int(capture.get("fps")) or 1
+        transport = [f"{as_int(capture.get(name))} {label}"
+                     for name, label in TRANSPORT_COUNTS
+                     if as_int(capture.get(name))]
+        recorder = [f"{as_int(capture.get(name))} {label}"
+                    for name, label in RECORDER_COUNTS
+                    if as_int(capture.get(name))]
+        rows.append([target.token,
+                     ", ".join(f"`{name}`" for name in as_list(
+                         capture.get("files"))) or "-",
+                     f"{frames}",
+                     f"{frames // fps // 60:02d}:{frames // fps % 60:02d}",
+                     ", ".join(transport) or "nothing lost",
+                     ", ".join(recorder) or "nothing"])
+        lifecycle = as_dict(capture.get("stream_lifecycle"))
+        for stream in sorted(lifecycle):
+            named = ", ".join(f"{reason} {count}" for reason, count
+                              in sorted(as_dict(lifecycle[stream]).items()))
+            if named:
+                reasons.append(f"- {target.token} {stream}: {named}")
+    if not rows:
+        return []
+    lines = ["### Recordings", "",
+             "The `lost` column is the network's: packets and frames the "
+             "device sent that did not arrive, arrived incomplete, or arrived "
+             "out of order. It does not include anything missing across a "
+             "re-anchor.", ""]
+    lines += table(["Target", "Files", "Frames", "Length", "Lost", "Recorder"],
+                   rows)
+    if reasons:
+        lines += ["",
+                  "A re-anchor is an interval across which the device's own "
+                  "counters cannot be compared with each other, so nothing "
+                  "missing across it is counted as loss. A suite stopping a "
+                  "stream, the recorder asking for one again and a device "
+                  "restarting all produce one:", ""]
+        lines += reasons
+    return lines + [""]
 
 
 def screens_section(run: Run) -> List[str]:
@@ -1952,15 +2112,19 @@ def screens_section(run: Run) -> List[str]:
     handful of stills answers "what did this suite see" at a glance, with no
     download and no player. The text is what the report inlines and what a
     program or an agent can match on; the image is what a person opens.
+
+    The recording's own accounting opens the section, because a reader has to
+    know whether the recording is complete before drawing conclusions from
+    what it shows.
     """
-    lines: List[str] = []
+    lines: List[str] = list(recording_block(run))
     for target in run.targets:
         shown = set()
         groups = []
         for made in sorted(target_suites(run, target), key=lambda s: s.time):
             chosen = stills_for(run, target, made)
             if chosen:
-                shown.update(relative for _kind, relative, _text in chosen)
+                shown.update(entry.relative for entry in chosen)
                 groups.append((made.key, chosen))
         # Anything in the capture directory that no suite run claimed. The
         # recorder writes a still under the identity it had when it took it,
@@ -1970,26 +2134,30 @@ def screens_section(run: Run) -> List[str]:
             groups.append((f"{target.token}/{stem} (no suite record)", chosen))
         for heading, chosen in groups:
             lines += [f"### {heading}", ""]
-            for kind, relative, text in chosen:
-                image = relative[:-len(".txt")] + ".png"
+            for entry in chosen:
+                image = entry.relative[:-len(".txt")] + ".png"
                 exists = os.path.exists(os.path.join(run.directory, image))
-                lines.append(f"**{kind}** (`{relative}`"
+                # The kind, then where in the recording it is. A tree whose
+                # recorder did not write the frame down gets the kind alone.
+                where = f" at {entry.position}" if entry.position else ""
+                lines.append(f"**{entry.kind}**{where} (`{entry.relative}`"
                              + (f", image `{image}`" if exists else "") + "):")
-                lines += [""] + fenced([redact(row) for row in text]) + [""]
+                lines += [""] + fenced([redact(row) for row in entry.text]) + [""]
     if not lines:
         return []
     return ["## Screens", ""] + lines
 
 
 def orphan_stills(run: Run, target: TargetRun,
-                  shown: "set") -> List[Tuple[str, List[Tuple[str, str, List[str]]]]]:
+                  shown: "set") -> List[Tuple[str, List[StillEntry]]]:
     """Stills in the capture directory that no suite run in the report claimed."""
     directory = os.path.join(run.directory, target.slug, "capture")
+    described = recorded_stills(target)
     try:
         names = sorted(os.listdir(directory))
     except OSError:
         return []
-    found: Dict[str, List[Tuple[str, str, List[str]]]] = {}
+    found: Dict[str, List[StillEntry]] = {}
     for name in names:
         if not name.endswith(".txt"):
             continue
@@ -1999,8 +2167,12 @@ def orphan_stills(run: Run, target: TargetRun,
         relative = f"{target.slug}/capture/{name}"
         if relative in shown:
             continue
+        entry = described.get(name, {})
+        position = (mmss(as_float(entry.get("position")))
+                    if "position" in entry else "")
         found.setdefault(parts[0], []).append(
-            (parts[2], relative, read_text(os.path.join(directory, name))))
+            StillEntry(parts[2], relative,
+                       read_text(os.path.join(directory, name)), position))
     return sorted(found.items())
 
 
@@ -2015,11 +2187,13 @@ def failing_stills(run: Run, made: SuiteRun) -> List[str]:
     if target is None:
         return []
     chosen = [entry for entry in stills_for(run, target, made)
-              if entry[0] in ("first", "last")]
+              if entry.kind in ("first", "last")]
     lines: List[str] = []
-    for kind, relative, text in chosen:
-        lines += ["", f"The {kind} frame of this suite run (`{relative}`):", ""]
-        lines += fenced([redact(row) for row in text])
+    for entry in chosen:
+        where = f" at {entry.position}" if entry.position else ""
+        lines += ["", f"The {entry.kind} frame of this suite run{where} "
+                      f"(`{entry.relative}`):", ""]
+        lines += fenced([redact(row) for row in entry.text])
     return lines
 
 

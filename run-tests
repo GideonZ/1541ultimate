@@ -593,7 +593,8 @@ def start_syslog(args: argparse.Namespace,
     os.environ[SYSLOG_PORT_ENV] = str(collector.port)
     for token, path in collector.files():
         report.log_result(token, os.path.relpath(path, root),
-                          collector.started, collector.port)
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token))
     return collector
 
 
@@ -613,8 +614,19 @@ def finish_syslog(collector) -> None:
         report.gap_result("syslog", gap["started"], gap.get("ended"),
                           target=gap["target"], machine=gap["machine"],
                           reason=f"no line from {gap['machine']}")
+    root = collector.directory
+    unknown = collector.unknown_senders()
+    for token, path in collector.files():
+        # A second record for the same target, carrying what the first could
+        # not know: which addresses the lines actually came from. The report
+        # reads the two as one.
+        report.log_result(token, os.path.relpath(path, root),
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token),
+                          senders=collector.observed(token),
+                          unknown_senders=unknown)
     report.detail(f"device log:  {collector.lines} line(s) collected"
-                  + (f", {collector.unmapped} from an unmapped address"
+                  + (f", {collector.unmapped} from an unrecognised sender"
                      if collector.unmapped else "")
                   + (f", {len(gaps)} silence(s)" if gaps else ""))
     for problem in collector.problems[already:]:
@@ -771,6 +783,12 @@ def recording_identity(target: targets_lib.Target,
                                                         "HEAD")
     if commit:
         found["commit"] = commit
+    # Whether the firmware under test was built from that commit or from a
+    # working tree with changes in it. A recording of a modified tree is not
+    # evidence about the commit it names, and nothing else on the card says so.
+    changes = git_answer("status", "--porcelain")
+    if changes is not None:
+        found["dirty"] = "modified" if changes.strip() else "clean"
     return {name: value for name, value in found.items() if value}
 
 
@@ -787,8 +805,6 @@ def stop_recorder(made: Optional["recorder_lib.Recorder"],
         report.warn(f"recording: {problem}")
     if problems:
         capture.setdefault("problems", []).extend(problems)
-    if made.stills:
-        capture["stills"] = sorted(made.stills)
     report.capture_result(**capture)
     report.detail(f"recording:  {capture['frames']} frames, "
                   f"{capture['frames_shed']} shed")

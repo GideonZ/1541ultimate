@@ -72,6 +72,11 @@ _MENU_COLUMNS = _menu_screen_tool.SCREEN_WIDTH
 _MENU_ROWS = _menu_screen_tool.SCREEN_HEIGHT
 _MENU_CELLS = _menu_screen_tool.SCREEN_CELLS
 
+# The same two numbers for a caller placing a menu screen on a larger canvas,
+# which needs the grid the payload is in to work out where it goes.
+MENU_COLUMNS = _MENU_COLUMNS
+MENU_ROWS = _MENU_ROWS
+
 
 def _load_unshifted_rom_rows(path: Path) -> List[bytes]:
     """Load the unshifted (upper case + graphics) 256-glyph set.

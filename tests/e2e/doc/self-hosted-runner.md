@@ -20,7 +20,7 @@ them. It needs:
 | Python 3.10 or later, and `pip install -r tests/requirements.txt` | The suites and the report generator |
 | Network reach to every device the gate names | REST (80), FTP (21), Telnet (23), the DMA control port (64), and ICMP |
 | UDP 5514 open inbound | Where `--syslog` collects the devices' own log |
-| `ffmpeg` and `ffprobe` with the `libx264rgb` encoder | `--record` only; a build without it is refused at startup |
+| `ffmpeg` and `ffprobe` with the `libx264rgb` encoder | `--record`, which the workflow passes by default; a build without the encoder is refused at startup |
 | Exclusive use of the devices | The gate drives the menu, resets the machine and mounts images |
 
 The devices must be otherwise idle for the length of a run. The workflow's
@@ -127,20 +127,34 @@ Server` has to point at the runner's address, and that setting takes effect at
 the device's next boot. The runner reads the setting at both ends of a run and
 warns if it changed, but corrects it at neither end.
 
-A datagram is attributed to a device by its source address. A device with two
-interfaces logs from whichever one its routing picked, which is not always the
-address its name resolves to: the Ultimate 64 here answers REST on its Ethernet
-address and sends its log from its WiFi address, and nothing on its REST
-surface reports either. Attach the second address for the run:
+A datagram is attributed to a device by its source address, which is the only
+identification it carries. A device with two interfaces therefore has to send
+from the one its name resolves to, and the firmware makes that choice
+explicitly: each interface declares a preference, and the preference is applied
+at route time through lwIP's `LWIP_HOOK_IP4_ROUTE_SRC` hook
+(`software/network/route_policy.c` and `software/network/lwip_route_hook.c`).
+Wired Ethernet is preferred over WiFi when both are up and both can reach the
+destination. It is a preference and not an exclusion: both interfaces stay
+usable, WiFi carries everything Ethernet cannot, restoring Ethernet restores the
+preference, and a socket bound to a specific local address sends from the
+interface holding that address. So an Ultimate's log arrives from the address
+its name resolves to, and the runner needs nothing configured for it.
+
+`U64_LOG_ADDRESSES` remains as an escape hatch for a machine outside this
+repository: one running firmware without the route policy, or one reachable only
+over an interface its name does not resolve to. It attaches further addresses to
+a named machine for the length of the run:
 
 ```sh
 U64_LOG_ADDRESSES="u64=192.0.2.71" ./run-tests -o runs/ --syslog u64
 ```
 
-Without it those lines are still kept, in `syslog-unmapped.txt` with the
-address that sent them, which is what makes the omission visible rather than
-silent. A non-empty `syslog-unmapped.txt` is the symptom; this variable is the
-fix.
+Lines from an address no target claims are kept either way, in
+`syslog-unknown-sender.txt` with the address that sent them, which is what makes
+the omission visible rather than silent. The report lists every such sender with
+its line count, and lists each target's expected and observed sender addresses
+beside it, so the two tables together say whether a device sent from somewhere
+unexpected or another machine on the LAN is logging to the same collector.
 
 Not every device sends a log. A device whose firmware line has no syslog
 support produces no `syslog.txt`, and the run records that it started a
@@ -153,6 +167,13 @@ The workflow runs the gate with `-o "$RUNNER_TEMP/e2e"`, generates
 `index.md` from that tree with `tools/e2e_report.py`, and uploads it. The
 report and the JSONL go in one artifact and the recordings in another, because
 the two have different sizes and different useful lifetimes.
+
+It also passes `--syslog` and `--record`. Both are `workflow_dispatch` boolean
+inputs defaulting to true, and the scheduled run passes both whatever the inputs
+say: it is the run nobody is watching, so its failure has to be diagnosable from
+the artefacts alone. That costs the runner a UDP port and the devices two
+streams for the length of the run, which is the trade the requirements above are
+sized for.
 
 Every step after the gate runs `if: always()`. A run that was cancelled or that
 hit the job timeout is the run whose evidence is worth most, and the generator
