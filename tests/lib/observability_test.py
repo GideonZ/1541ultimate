@@ -2673,9 +2673,22 @@ def the_canvas_is_the_shape_the_sources_make() -> str:
     """Dropping a source changes the canvas rather than leaving a blank pane."""
     import recorder as recorder_lib
 
+    import band as band_lib
+
+    # The panes, the band under them, and room under that for the progress bar
+    # and the state edge. Derived from the parts rather than written down, so a
+    # change to any of them moves this together with the thing it measures.
+    height = (recorder_lib.PANE_HEIGHT + band_lib.HEIGHT
+              + recorder_lib.EDGE_PIXELS + recorder_lib.BAR_HEIGHT
+              + recorder_lib.BAR_GAP)
     combined = recorder_lib.geometry_for(True, True, "combined")["combined"]
     expect("both panes and a gutter", (combined.width, combined.height),
-           (872, 272))
+           (872, height))
+    expect("everything below the panes is the recorder's own chrome",
+           combined.height - recorder_lib.PANE_HEIGHT,
+           recorder_lib.CHROME_BOTTOM_PIXELS)
+    expect("and a still keeps only the panes",
+           recorder_lib.still_height(combined), recorder_lib.PANE_HEIGHT)
     video_only = recorder_lib.geometry_for(True, False, "combined")["combined"]
     expect("video only", video_only.width, 384)
     harness_only = recorder_lib.geometry_for(False, True, "combined")["combined"]
@@ -2687,7 +2700,7 @@ def the_canvas_is_the_shape_the_sources_make() -> str:
     for geometry in (combined, video_only, harness_only):
         if geometry.width % 2 or geometry.height % 2:
             raise Failure(f"{geometry} has an odd dimension")
-    return "872x272, 384x272, 480x272"
+    return f"872x{height}, 384x{height}, 480x{height}"
 
 
 @case(1, "OBS-8.35", "OBS-8.37")
@@ -2828,6 +2841,135 @@ def the_pane_labels_are_on_a_row_of_their_own() -> str:
     if max(drawn) < panes - len("SCREEN"):
         raise Failure("the SCREEN label is not against the right of its pane")
     return f"stamp on rows 0..{recorder_lib.STAMP_ROWS - 1}, labels on {labels}"
+
+
+@case(1, "OBS-8.20")
+def the_left_pane_is_sticky_and_says_which_surface_it_is() -> str:
+    """One surface at a time, chosen by the interactions and by nothing else.
+
+    The pane followed whichever screen the spool had published last. A suite
+    that reads a Telnet session and the overlay menu in the same second made it
+    flip between the two several times a second, which is unreadable and is
+    also wrong half the time about which surface the harness was talking to.
+
+    The oscillation case is the first one below: the same alternating stream
+    that used to flip the pane must now leave it on one surface.
+    """
+    import recorder as recorder_lib
+
+    def apply(records, at=1.0):
+        pane = recorder_lib.PaneMode()
+        pane.apply(records, at)
+        return pane
+
+    def menu_read(open_now=True):
+        return {"transport": "rest", "op": "GET /v1/machine:menu_screen",
+                "status": 200 if open_now else 404, "menu_open": open_now}
+
+    def telnet_send(key="DOWN"):
+        return {"transport": "telnet", "op": f"send {key}"}
+
+    def key_press(menu_open):
+        return {"transport": "rest", "op": "POST /v1/machine:input",
+                "status": 200, "menu_open": menu_open}
+
+    # 1. The oscillation. A suite reading the menu between every Telnet key
+    #    used to move the pane on every record; the surface being driven is
+    #    the Telnet session throughout, because that is what is being sent to.
+    alternating = []
+    for _ in range(20):
+        alternating += [telnet_send(), menu_read(False), menu_read(False)]
+    pane = apply(alternating)
+    expect("one surface for the whole burst", pane.mode,
+           recorder_lib.PANE_TELNET)
+
+    # 2. Telnet only.
+    expect("telnet alone", apply([telnet_send(), telnet_send()]).mode,
+           recorder_lib.PANE_TELNET)
+
+    # 3. Menu only.
+    expect("menu alone", apply([menu_read(), key_press(True)]).mode,
+           recorder_lib.PANE_MENU)
+
+    # 4. Both orderings, and the last surface actually driven wins.
+    expect("telnet then menu", apply([telnet_send(), key_press(True)]).mode,
+           recorder_lib.PANE_MENU)
+    expect("menu then telnet", apply([key_press(True), telnet_send()]).mode,
+           recorder_lib.PANE_TELNET)
+
+    # 5. Keys into the C64's matrix with the menu closed, which is neither of
+    #    the screens: the same call, told apart by whether the menu was open.
+    expect("keys with the menu closed", apply([key_press(False)]).mode,
+           recorder_lib.PANE_KEYS)
+    expect("and the same call with it open is the menu",
+           apply([key_press(True)]).mode, recorder_lib.PANE_MENU)
+    keys = apply([key_press(False), key_press(False)])
+    if len(keys.keys) != 2:
+        raise Failure(f"the keys pane kept {keys.keys}")
+
+    # 6. A genuinely alternating suite moves the pane, once per change, and
+    #    the pane records when it changed rather than counting anything.
+    pane = recorder_lib.PaneMode()
+    pane.apply([telnet_send()], 10.0)
+    expect("first surface at its own time", (pane.mode, pane.since),
+           (recorder_lib.PANE_TELNET, 10.0))
+    pane.apply([telnet_send(), telnet_send()], 11.0)
+    expect("more of the same does not move it", pane.since, 10.0)
+    pane.apply([key_press(True)], 12.0)
+    expect("a real change does", (pane.mode, pane.since),
+           (recorder_lib.PANE_MENU, 12.0))
+
+    # 7. An interaction that identifies no surface never moves it.
+    pane.apply([{"transport": "rest", "op": "GET /v1/info", "status": 200},
+                {"transport": "ftp", "op": "RETR", "reply": "226 ok"}], 13.0)
+    expect("an unrelated call leaves it alone", (pane.mode, pane.since),
+           (recorder_lib.PANE_MENU, 12.0))
+    expect("and a menu_screen that answered 404 does too",
+           apply([key_press(True), menu_read(False)]).mode,
+           recorder_lib.PANE_MENU)
+    return "oscillation, both orderings, three surfaces"
+
+
+@case(1, "OBS-8.20")
+def a_stale_surface_never_looks_live() -> str:
+    """The label says how old the pane is and the pane is drawn as its age.
+
+    A viewer looking at a frame has to be able to tell a screen the harness is
+    driving now from the last screen of a surface it left two minutes ago, and
+    the pane is the only thing on the frame that can be either.
+    """
+    import recorder as recorder_lib
+
+    expect("current content says nothing", recorder_lib.format_age(0.4), "")
+    expect("seconds", recorder_lib.format_age(12.0), " 12s")
+    expect("and minutes", recorder_lib.format_age(180.0), " 3m")
+    expect("the label names the surface",
+           (recorder_lib.pane_label(recorder_lib.PANE_TELNET),
+            recorder_lib.pane_label(recorder_lib.PANE_MENU),
+            recorder_lib.pane_label(recorder_lib.PANE_KEYS)),
+           ("TELNET", "MENU", "KEYS"))
+
+    payload = (bytes([0x20]) * (recorder_lib.glyphs.MENU_COLUMNS
+                                * recorder_lib.glyphs.MENU_ROWS)
+               + bytes([0x77]) * (recorder_lib.glyphs.MENU_COLUMNS
+                                  * recorder_lib.glyphs.MENU_ROWS))
+    geometry = recorder_lib.geometry_for(True, True, "combined")["combined"]
+    composer = recorder_lib.Composer(geometry, recorder_lib.Options(),
+                                     {"target": "u64"})
+    frame = (384, 272, bytes([6]) * (384 * 272))
+    state = recorder_lib.RunState()
+    live = composer.compose(frame, ["x" * 40] * 25, "menu", state, 1.0,
+                            1786700000.0, harness_raw=payload, live=True)
+    stale = composer.compose(frame, ["x" * 40] * 25, "menu", state, 1.0,
+                             1786700000.0, harness_raw=payload, live=False,
+                             age=" 12s")
+    if live == stale:
+        raise Failure("a surface no longer being driven looks exactly like one "
+                      "that is")
+    dim = recorder_lib.glyphs.c64_rgb(recorder_lib.DIM_TEXT)
+    if dim not in {tuple(stale[i:i + 3]) for i in range(0, len(stale), 3)}:
+        raise Failure("the stale pane is not drawn in the dimmer colour")
+    return "age in the label, dimmer in the pane"
 
 
 @case(1, "OBS-8.20")
@@ -3285,8 +3427,9 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
              "format=duration:stream=codec_type,width,height", "-of",
              "default=nw=1", os.path.join(directory, "video.mp4")],
             capture_output=True, text=True).stdout
-        for wanted in ("width=872", "height=272", "codec_type=video",
-                       "codec_type=audio"):
+        geometry = recorder_lib.geometry_for(True, True, "combined")["combined"]
+        for wanted in (f"width={geometry.width}", f"height={geometry.height}",
+                       "codec_type=video", "codec_type=audio"):
             if wanted not in probe:
                 raise Failure(f"{wanted} is not in {probe!r}")
         if not os.path.exists(os.path.join(directory, "video.srt")):
@@ -3360,6 +3503,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             raise Failure(f"no still was written: {capture.get('stills')}")
         geometry = made.geometry[sorted(made.geometry)[0]]
         left, top, width, height = recorder_lib.annotation_free_area(geometry)
+        height = min(height, recorder_lib.still_height(geometry) - top)
         path = os.path.join(directory, "video.mp4")
         for entry in stills:
             expect("the position is the frame at this rate",
@@ -3379,7 +3523,11 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             with Image.open(os.path.join(directory, "capture",
                                          entry["image"])) as still, \
                     Image.open(extracted) as frame:
-                expect("the same geometry", still.size, frame.size)
+                # The still is the panes; the frame is the panes and the band
+                # under them, so they share the panes and nothing else.
+                expect("the same width", still.size[0], frame.size[0])
+                expect("and the pane height", still.size[1],
+                       recorder_lib.still_height(geometry))
                 box = (left, top, left + width, top + height)
                 if still.crop(box).tobytes() != frame.crop(box).tobytes():
                     raise Failure(

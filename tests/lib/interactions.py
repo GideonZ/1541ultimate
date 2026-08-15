@@ -45,8 +45,9 @@ import atexit
 import hashlib
 import json
 import os
+import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import report
 
@@ -74,6 +75,19 @@ INLINE_BODY_BYTES = 64
 # for a memory address and a block of hex, short enough that one pathological
 # call cannot dominate the file.
 TEXT_CHARS = 400
+
+# How long an interaction may be in flight before it is written down as
+# started rather than waited for. A completion-only log shows nothing for
+# exactly as long as something is stuck, which is when a reader most needs it,
+# and a harness that dies mid-call otherwise leaves no trace of the call at
+# all. One second is above every ordinary device call on every target here and
+# far below any timeout.
+START_RECORD_SECONDS = 1.0
+
+# How often the watcher looks for interactions that have passed that. Four
+# times the threshold's resolution, which is enough for a reader watching a
+# ticker and cheap enough to leave running in every suite process.
+WATCH_INTERVAL_SECONDS = 0.25
 
 # The digest is truncated because it is an index into one run's own directory
 # rather than a security claim: 16 hex characters is 64 bits, and a run makes
@@ -256,6 +270,108 @@ def fault_of(exc: Optional[BaseException]) -> str:
     if isinstance(exc, OSError) or isinstance(reason, OSError):
         return "unreachable"
     return "other"
+
+
+class Call:
+    """One interaction that has been issued and has not answered yet."""
+
+    __slots__ = ("transport", "operation", "fields", "started", "announced")
+
+    def __init__(self, transport: str, operation: str, fields: dict) -> None:
+        self.transport = transport
+        self.operation = operation
+        self.fields = fields
+        self.started = time.monotonic()
+        self.announced = False
+
+
+_in_flight: List[Call] = []
+_in_flight_lock = threading.Lock()
+_watcher: Optional[threading.Thread] = None
+
+
+def begin(transport: str, operation: str, **fields) -> Optional[Call]:
+    """Say that an interaction has been issued. Never raises.
+
+    Returns a handle to pass to `finish`. A call that has not answered within
+    `START_RECORD_SECONDS` is written down as started, so a hang and a harness
+    that died mid-call both leave evidence, and a reader watching the run sees
+    the line the moment it matters rather than when it is over.
+    """
+    if not LOG_PATH:
+        return None
+    try:
+        call = Call(transport, operation, fields)
+        with _in_flight_lock:
+            _in_flight.append(call)
+        _start_watcher()
+        return call
+    except Exception:  # noqa: BLE001 - a log may never end a run
+        return None
+
+
+def finish(call: Optional[Call], **fields) -> None:
+    """Say that an issued interaction has answered. Never raises."""
+    if call is None:
+        return record_ended(None, **fields)
+    try:
+        with _in_flight_lock:
+            if call in _in_flight:
+                _in_flight.remove(call)
+        merged = dict(call.fields)
+        merged.update(fields)
+        if call.announced:
+            # Its start is already on record, so the completion says which
+            # start it closes rather than reading as a second interaction.
+            merged["phase"] = "end"
+        record(call.transport, call.operation, **merged)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def record_ended(_call, **fields) -> None:
+    return None
+
+
+def in_flight() -> List[dict]:
+    """Every interaction issued and not yet answered, oldest first.
+
+    For a caller showing what the run is doing now rather than what it has
+    done: a ticker that only shows completions shows nothing for exactly as
+    long as something is stuck.
+    """
+    now = time.monotonic()
+    with _in_flight_lock:
+        calls = list(_in_flight)
+    return [{"transport": call.transport, "op": call.operation,
+             "seconds": now - call.started, **call.fields} for call in calls]
+
+
+def _start_watcher() -> None:
+    global _watcher
+    if _watcher is not None:
+        return
+    _watcher = threading.Thread(target=_watch, name="interactions",
+                                daemon=True)
+    _watcher.start()
+
+
+def _watch() -> None:
+    while True:
+        time.sleep(WATCH_INTERVAL_SECONDS)
+        try:
+            now = time.monotonic()
+            with _in_flight_lock:
+                late = [call for call in _in_flight
+                        if not call.announced
+                        and now - call.started >= START_RECORD_SECONDS]
+                for call in late:
+                    call.announced = True
+            for call in late:
+                record(call.transport, call.operation, phase="start",
+                       **call.fields)
+        except Exception:  # noqa: BLE001 - a log may never end a run
+            pass
 
 
 def record(transport: str, operation: str, **fields) -> None:

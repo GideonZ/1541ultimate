@@ -69,11 +69,35 @@ def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool
     return method.upper() == "GET" or idempotent
 
 
+def message_bytes(*parts) -> int:
+    """How many bytes of protocol message these amount to.
+
+    The whole message rather than its payload: a request is its line, its
+    headers and its body, and a reader comparing what a run put on the wire
+    with what the device sent back needs both counted the same way. Header
+    lines are counted with the two bytes that end them and the two that end
+    the block, which is what actually goes out.
+    """
+    total = 0
+    for part in parts:
+        if part is None:
+            continue
+        if isinstance(part, (bytes, bytearray)):
+            total += len(part)
+        elif isinstance(part, dict):
+            total += sum(len(str(name)) + len(str(value)) + 4
+                         for name, value in part.items()) + 2
+        else:
+            total += len(str(part).encode("utf-8", "replace")) + 2
+    return total
+
+
 def record_action(method: str, path: str, started: float, attempts: int,
                   status: Optional[int], answer: Optional[bytes],
                   exc: Optional[BaseException] = None,
                   params: Optional[Dict[str, object]] = None,
-                  payload: Optional[object] = None) -> None:
+                  payload: Optional[object] = None,
+                  call=None, sent: int = 0, received: int = 0) -> None:
     """Record what a request did to the device, when it is worth keeping.
 
     Every request in the tree passes through one of the three entry points in
@@ -105,8 +129,8 @@ def record_action(method: str, path: str, started: float, attempts: int,
         # the harness was looking at. Under `--mode overlay` this is the only
         # place a screen is read at all.
         interactions.note_screen(answer if status == 200 else None)
-    interactions.record(
-        "rest", f"{method.upper()} {path}", ms=elapsed, status=status,
+    fields = dict(
+        ms=elapsed, status=status,
         params=str(params) if params else None,
         payload=str(payload) if payload is not None else None,
         retries=attempts if attempts > 1 else None,
@@ -115,8 +139,13 @@ def record_action(method: str, path: str, started: float, attempts: int,
         # call, so nothing here is ever reused and a reader does not have to
         # wonder whether a fault was on a fresh connection or an old one.
         connection="new",
+        sent=sent or None, received=received or None,
         error=format_exception(exc) if exc is not None else None,
         body=answer)
+    if call is not None:
+        interactions.finish(call, **fields)
+    else:
+        interactions.record("rest", f"{method.upper()} {path}", **fields)
     if not report.JSONL_PATH:
         return
     retried = attempts > 1
@@ -387,8 +416,16 @@ class RestClient:
         # Retryability is decided by may_retry, the one copy of that rule.
         last_exc: Optional[BaseException] = None
         allowed = TRANSPORT_RETRIES if retries is None else max(1, retries)
+        # What this attempt puts on the wire, which is the request line, the
+        # headers and the body. Counted before it goes, so a call that is
+        # still in flight already says how much it sent.
+        outbound = message_bytes(f"{method.upper()} {target} HTTP/1.1",
+                                 sent_headers, body)
         for attempt in range(allowed):
             started = time.monotonic()
+            call = interactions.begin("rest", f"{method.upper()} {path}",
+                                      params=str(params) if params else None,
+                                      sent=outbound, connection="new")
             try:
                 with urllib.request.urlopen(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
@@ -398,17 +435,25 @@ class RestClient:
                 answer = (exc.code, dict(exc.headers.items()), exc.read())
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
-                sent = not isinstance(exc, urllib.error.URLError)
-                if may_retry(method, sent, idempotent) and attempt + 1 < allowed:
+                went = not isinstance(exc, urllib.error.URLError)
+                if may_retry(method, went, idempotent) and attempt + 1 < allowed:
+                    interactions.finish(call, ms=0.0,
+                                        fault=interactions.fault_of(exc),
+                                        error=format_exception(exc),
+                                        sent=outbound, connection="new")
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                     continue
                 record_action(method, path, started, attempt + 1, None, None, exc,
-                              params=params, payload=payload)
+                              params=params, payload=payload, call=call,
+                              sent=outbound)
                 break
             # Outside the response, so the record's file append is not part of
             # the time this connection holds one of the device's four slots.
             record_action(method, path, started, attempt + 1, answer[0], answer[2],
-                          params=params, payload=payload)
+                          params=params, payload=payload, call=call,
+                          sent=outbound,
+                          received=message_bytes(f"HTTP/1.1 {answer[0]}",
+                                                 answer[1], answer[2]))
             return answer
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
 

@@ -312,8 +312,12 @@ likewise not loss; `audio_concealed_bytes` is the same for a stream that should
 have been running and was not.
 
 `stills[]` is one entry per still, each naming its suite run, its kind, both of
-its files and the frame of the recording it was taken from, with `position` in
-seconds and `frame` as the slot index. The report reads that position rather
+its files, the frame of the recording it was taken from, with `position` in
+seconds and `frame` as the slot index, and `interaction`, the reference of the
+last interaction the run had recorded when that frame was composed. A still
+carries no chrome of its own, because its whole value is that extracting the
+video at `frame` reproduces it pixel for pixel, so the way back to the raw
+record is that reference rather than something drawn over the picture. The report reads that position rather
 than deriving one from the suite's timing, which was wrong by up to 4.7
 seconds.
 
