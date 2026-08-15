@@ -85,7 +85,10 @@ def wait_for_result(device: UltimateApi, timeout: float) -> Tuple[int, int]:
         border = device.machine.readmem(BORDER, 1)[0]
         debug = device.machine.readmem(DEBUG, 1)[0]
         observed = (border, debug)
-        if observed == (GREEN, 0):
+        # The VIC-II colour registers only implement four bits.  The upper
+        # nibble of a DMA read is open bus (for example, writing $02 returns
+        # $F2 on this U64), so only the low nibble is an observable colour.
+        if border & 0x0F == GREEN and debug == 0:
             return observed
         time.sleep(0.10)
     return observed  # type: ignore[return-value]
@@ -101,7 +104,7 @@ def run_cartridge(device: UltimateApi, banks: int, timeout: float) -> None:
     device.machine.writemem(BORDER, bytes((BEFORE_BORDER,)), idempotent=True)
     device.machine.writemem(DEBUG, bytes((BEFORE_DEBUG,)), idempotent=True)
     before = (device.machine.readmem(BORDER, 1)[0], device.machine.readmem(DEBUG, 1)[0])
-    if before != (BEFORE_BORDER, BEFORE_DEBUG):
+    if before[0] & 0x0F != BEFORE_BORDER or before[1] != BEFORE_DEBUG:
         raise Failure(f"could not seed DMA observables: got ${before[0]:02X}, ${before[1]:02X}")
 
     code, _, body = device.runners.upload("run_crt", image)
@@ -110,8 +113,8 @@ def run_cartridge(device: UltimateApi, banks: int, timeout: float) -> None:
     border, debug = wait_for_result(device, timeout)
     if debug != 0:
         raise Failure(f"{size_mib} MiB cartridge left debug register ${debug:02X}, expected $00")
-    if border != GREEN:
-        raise Failure(f"{size_mib} MiB cartridge left border ${border:02X}, expected green $05")
+    if border & 0x0F != GREEN:
+        raise Failure(f"{size_mib} MiB cartridge left border ${border:02X}, expected green low nibble $05")
 
 
 def main() -> int:
