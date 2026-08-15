@@ -23,6 +23,14 @@ public:
         }
     }
 
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        while (len) {
+            write(address++, *src++);
+            len--;
+        }
+    }
+
     // Freeze / pause control. Backends that can hold the host machine in a
     // stopped state across many reads/writes (so register/IO state is stable)
     // override these. The monitor exposes a Z toggle to drive this. Default
@@ -67,6 +75,20 @@ public:
         dd00 = read(0xDD00);
         write(0xDD00, (uint8_t)((dd00 & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03))));
         set_monitor_cpu_port(saved_cpu_port);
+    }
+
+    // Whether reads at this address are live I/O registers rather than memory.
+    // The disassembler needs to know: an I/O register answers differently from
+    // one read to the next, so decoding it as an opcode produces a different
+    // instruction, and a different instruction *length*, on every redraw, and
+    // every row below it moves. Derived from source_name so there is one rule
+    // for what lives where, and a backend that names its regions differently
+    // only has to override that one.
+    virtual bool reads_live_io(uint16_t address) const
+    {
+        const char *source = source_name(address);
+
+        return source && source[0] == 'I' && source[1] == 'O' && source[2] == 0;
     }
 
     virtual const char *source_name(uint16_t address) const

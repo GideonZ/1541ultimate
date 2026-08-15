@@ -119,6 +119,49 @@ MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16
 MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
                                         uint32_t length, uint32_t *effective_len);
 
+// One structured command prompt: everything about how it is presented and what
+// it takes, in one place, so what a prompt shows and what it accepts cannot
+// drift apart. The vocabulary of `syntax` is documented beside the matcher in
+// machine_monitor.cc.
+struct MonitorCommandInput {
+    const char *title;      // shown above the field, and states the syntax
+    const char *syntax;     // the shape `accepts` is built from
+    bool (*accepts)(const char *candidate);
+    // Rewrites a typed key before it is validated, where case depends on
+    // position rather than on the field as a whole. NULL for most prompts.
+    int (*transform)(const char *buffer, int cursor, int key);
+    bool template_mode;     // pre-filled, and the first typed key replaces it
+    bool uppercase;         // typed letters are normalised to upper case
+};
+
+extern const MonitorCommandInput monitor_input_jump;
+extern const MonitorCommandInput monitor_input_go;
+extern const MonitorCommandInput monitor_input_fill;
+extern const MonitorCommandInput monitor_input_transfer;
+extern const MonitorCommandInput monitor_input_compare;
+extern const MonitorCommandInput monitor_input_hunt;
+extern const MonitorCommandInput monitor_input_load;
+extern const MonitorCommandInput monitor_input_save;
+
+// Whether `candidate` is still on its way to something `syntax` accepts: true
+// when it is already acceptable, and when further typing could still make it
+// so. Lexical only; the parsers above stay authoritative for meaning.
+bool monitor_syntax_accepts_prefix(const char *syntax, const char *candidate);
+
+// The C64's top-left left-arrow key, as Keyboard_C64 delivers it. Back
+// everywhere in the monitor except where it is edit data.
+extern const int monitor_key_arrow_left;
+
+// The built-in help text, NULL-terminated. One line may carry a single "%s"
+// conversion, filled with the key that opens help. Text between braces is a
+// key the reader can press: draw_help_line emphasises it and drops the braces,
+// so the braces do not count toward a line's width.
+extern const char *const monitor_help_lines[];
+
+// `text` with its brace markup removed, as it appears on screen. Returns the
+// number of characters written, not counting the terminator.
+int monitor_help_plain_text(const char *text, char *out, int out_len);
+
 class UserInterface;
 class Screen;
 class Keyboard;
@@ -158,6 +201,12 @@ class MachineMonitor : public UIObject
     bool help_visible;
     bool range_mode;
     uint16_t range_anchor;
+    // The instruction boundary the Assembly view disassembles from: the last
+    // address the view was sent to, by a jump, a Go, a bookmark, a hunt result
+    // or a follow/return. Scrolling does not move it, so the same bytes keep
+    // reading as the same instructions while the view is scrolled away from it
+    // and back. See MachineMonitor::decode_row.
+    uint16_t asm_baseline;
     bool number_picker_active;
     int number_selected;
     uint16_t number_preview_value;
@@ -248,6 +297,7 @@ class MachineMonitor : public UIObject
     void draw_header();
     void draw_status();
     void draw_help();
+    void draw_help_line(int y, const char *text);
     void draw_bookmark_popup();
     void draw_number_picker();
     void refresh_popup_overlay();
@@ -308,9 +358,14 @@ class MachineMonitor : public UIObject
     void number_picker_expression_set_status(const char *status);
     MonitorError number_picker_evaluate_expression(uint16_t *value) const;
     int number_picker_handle_key(int key);
+    // A free-form monitor prompt: no syntax restriction, but the top-left
+    // left-arrow key leaves it, the same as RUN/STOP.
     bool prompt_command(const char *title, char *buffer, int max_len,
                         bool template_mode = false, bool uppercase = true);
-    bool prompt_hunt_command(const char *title, char *buffer, int max_len);
+    // A structured monitor prompt: the descriptor supplies the title, the
+    // presentation, and the refusal of a character the command could never
+    // accept.
+    bool prompt_command(const MonitorCommandInput &input, char *buffer, int max_len);
     void toggle_help();
     void dismiss_bookmark_status(void);
     bool update_bookmark_status(void);
@@ -360,6 +415,8 @@ class MachineMonitor : public UIObject
     bool update_edit_blink();
     uint16_t next_poll_interval_ms(void);
     void reset_poll_deadline(void);
+    void decode_row(uint16_t address, uint8_t *row_bytes,
+                    struct Disassembled6502 *decoded) const;
     uint8_t disasm_length(uint16_t address) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
