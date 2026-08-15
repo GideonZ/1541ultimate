@@ -191,6 +191,8 @@ DIR/
     <label>-<suite>.log        that suite run's console output
     <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
     screens.jsonl              every distinct screen the harness read
+    interactions.jsonl         every interaction the harness had with the device
+    bodies/<digest>.bin        one response body, kept once, referred to by digest
     video.mp4                  the recording, with --record
     video.srt                  subtitles naming the suite and check
     capture/<key>-<n>-<kind>.png   a still, with its .txt beside it
@@ -231,6 +233,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |
 | `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
+| `interaction` | `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `sent_bytes`, `received_bytes`, `reply`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
 | `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
@@ -315,6 +318,31 @@ A file with thousands of padded frames or hundreds of re-arms is telling a reade
 the recorder for the stream, which is worth knowing before drawing conclusions
 from what it shows. `started` and `lead_in` are what convert a wall-clock time
 into a position in the file.
+
+`interaction` is the exhaustive log of what the harness did to the device, and
+`action` is the curated subset of it that the report's timeline reads. The rule
+for `action` drops a GET that answered 200 first time, because a run's reads are
+its bulk and a narrative that carried them would be unreadable. `interaction`
+has no such rule: it holds every REST request and its answer, every Telnet
+exchange, every FTP command and reply and every listener probe, written from
+inside the transports so a suite gains the coverage without a line of its own.
+
+Two things keep it affordable. Consecutive identical interactions collapse into
+one record with a `repeat` count and an `until` time, which is what a settle
+loop reading the same screen thirty times becomes; the collapse is only ever of
+consecutive interactions, so nothing is reordered. And a short answer is in the record
+itself, as text when it is text and as hex when it is not, because a one-byte
+read of memory is the byte; anything larger is written once to
+`bodies/<digest>.bin` beside the log, with the record carrying `body_sha256` and
+`body_bytes`, so the second and every later occurrence of one 2000-byte menu
+screen costs a digest.
+
+Records carry the suite, the attempt, the scenario and the check that were open,
+so they join to the rest of the run with no correlation identifier of their own,
+and the report converts their wall-clock time into a position in the recording
+the same way it does for every other record. `run-tests -o DIR` exports
+`E2E_INTERACTIONS` for every suite it starts, and writes its own health sweeps
+and UI-state gate into the same file.
 
 `plan` is what the run intended before it ran anything: every suite the
 registry names, whether this run meant to run it, and one of `manual`,

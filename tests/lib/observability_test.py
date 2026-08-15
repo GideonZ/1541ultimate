@@ -1035,6 +1035,269 @@ def a_collector_that_cannot_start_says_so_once() -> str:
     return collector.problems[-1]
 
 
+@contextmanager
+def interaction_log(directory):
+    """Point the interaction log at a file of its own for one block."""
+    import interactions
+
+    previous_path = interactions.LOG_PATH
+    previous_environment = os.environ.get(interactions.LOG_ENV)
+    path = os.path.join(directory, "interactions.jsonl")
+    interactions.set_path(path)
+    os.environ[interactions.LOG_ENV] = path
+    try:
+        yield path
+    finally:
+        interactions.flush()
+        interactions.set_path(previous_path)
+        if previous_environment is None:
+            os.environ.pop(interactions.LOG_ENV, None)
+        else:
+            os.environ[interactions.LOG_ENV] = previous_environment
+
+
+def logged_interactions(path):
+    import interactions
+
+    interactions.flush()
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+@case(1, "OBS-2.17")
+def identical_interactions_collapse_and_bodies_are_kept_once() -> str:
+    """An exhaustive log is only affordable if repetition costs nothing.
+
+    A settle loop reads the same screen until it stops changing, which is the
+    same request with the same 2000-byte answer thirty times. Written out that
+    is thirty records and sixty thousand bytes of body for eight bytes of
+    information; collapsed and content-addressed it is one record and one body.
+    """
+    import interactions
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            screen = bytes(range(256)) * 8
+            for _ in range(30):
+                interactions.record("rest", "GET /v1/machine:menu_screen",
+                                    status=200, ms=11.0, body=screen)
+            interactions.record("rest", "PUT /v1/machine:reset", status=200,
+                                ms=9.0)
+            for _ in range(3):
+                interactions.record("rest", "GET /v1/machine:menu_screen",
+                                    status=200, ms=12.0, body=screen)
+            found = logged_interactions(path)
+        bodies = sorted(os.listdir(os.path.join(directory, "bodies")))
+        expect("three records for 34 interactions", len(found), 3)
+        expect("the first is the whole settle loop", found[0]["repeat"], 30)
+        if "until" not in found[0]:
+            raise Failure("a collapsed record does not say when it stopped")
+        expect("the mutation between them is its own record",
+               found[1]["op"], "PUT /v1/machine:reset")
+        expect("and the loop after it is not merged with the one before",
+               found[2]["repeat"], 3)
+        expect("one body on disk for both", len(bodies), 1)
+        expect("named by the digest the records carry",
+               bodies[0], found[0]["body_sha256"] + ".bin")
+        expect("and its size is recorded", found[0]["body_bytes"], len(screen))
+        with open(os.path.join(directory, "bodies", bodies[0]), "rb") as handle:
+            expect("the body on disk is the body that arrived", handle.read(),
+                   screen)
+    return "34 interactions, 3 records, 1 body"
+
+
+@case(1, "OBS-2.17")
+def a_short_answer_is_in_the_record_itself() -> str:
+    """A reader should not have to open a file to see a 30-character error."""
+    import interactions
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            interactions.record("rest", "GET /v1/machine:menu_screen",
+                                status=404, ms=3.0, body=b"no menu is open")
+            found = logged_interactions(path)
+        stored = os.path.exists(os.path.join(directory, "bodies"))
+    expect("inline", found[0]["body"], "no menu is open")
+    expect("and nothing on disk", stored, False)
+
+    # And a short answer that is not text, which is what a one-byte read is.
+    with tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            interactions.record("rest", "GET /v1/machine:readmem", status=200,
+                                ms=13.0, body=b"\x1f")
+            found = logged_interactions(path)
+        stored = os.path.exists(os.path.join(directory, "bodies"))
+    expect("the byte itself", found[0]["body_hex"], "1f")
+    expect("and nothing on disk for it", stored, False)
+    return "inline under the threshold, as text and as hex"
+
+
+@case(2, "OBS-2.17", "OBS-15.13")
+def every_transport_writes_to_the_interaction_log() -> str:
+    """REST, Telnet and FTP all reach the log without a suite asking them to.
+
+    Driven through the production transports against the double, because the
+    property is that a suite gains this without a line of its own: a transport
+    that stops recording has to fail here rather than be noticed missing from
+    an investigation months later.
+    """
+    import tempfile
+
+    import ftp as ftp_lib
+
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            api = UltimateApi(double.target(), timeout=5.0)
+            api.machine.readmem(0xD012, 1)
+            api.machine.reset(wait=False)
+            try:
+                ftp_lib.connect(double.target())
+            except Exception:  # noqa: BLE001 - the double may serve no FTP
+                pass
+            found = logged_interactions(path)
+    transports = {record["transport"] for record in found}
+    if "rest" not in transports:
+        raise Failure(f"REST is not in the log: {transports}")
+    operations = [record["op"] for record in found]
+    if not any(op.startswith("GET /v1/machine:readmem") for op in operations):
+        raise Failure(f"the read is not in the log: {operations}")
+    if not any(op.startswith("PUT /v1/machine:reset") for op in operations):
+        raise Failure(f"the reset is not in the log: {operations}")
+    for record in found:
+        for field in ("time", "suite", "kind"):
+            if field not in record:
+                raise Failure(f"a record carries no {field}: {record}")
+    return f"{len(found)} interactions over {sorted(transports)}"
+
+
+@case(3, "OBS-2.17", "OBS-3.6")
+def a_run_writes_one_interaction_log_per_target() -> str:
+    """The runner's own device calls and the suites' land in one file.
+
+    The runner sweeps the device's health and drives its UI-state gate outside
+    any suite, and a suite that fails takes a capture. All of those are device
+    interactions and all of them belong beside each other, which is why the
+    file is one per target rather than one per suite run.
+    """
+    import tempfile
+
+    reads_memory = (
+        "from api import UltimateApi\n"
+        "report.check_start('read the raster')\n"
+        "UltimateApi(ARGS.host, ARGS.password, 5.0).machine.readmem(0xD012, 1)\n"
+        "report.check_ok()\n")
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
+        made = scripted_run(double, [Stub("held", body=reads_memory)],
+                            workspace=workspace)
+        path = made.path("127.0.0.1", "interactions.jsonl")
+        if not os.path.exists(path):
+            raise Failure(f"no interaction log at {path}")
+        with open(path, encoding="utf-8") as handle:
+            found = [json.loads(line) for line in handle if line.strip()]
+    if not found:
+        raise Failure("the interaction log is empty")
+    for record in found:
+        expect("every record is an interaction", record["kind"], "interaction")
+        for field in ("time", "transport", "op", "suite"):
+            if field not in record:
+                raise Failure(f"a record carries no {field}: {record}")
+    # The runner's own device calls: it sweeps the listeners outside any suite.
+    transports = {record["transport"] for record in found}
+    if "socket" not in transports:
+        raise Failure(f"the runner's own listener probes are missing: "
+                      f"{transports}")
+    # And the suite's, which reached the log without a line of its own.
+    writers = {record["suite"] for record in found}
+    if "held" not in writers:
+        raise Failure(f"the suite's own device call is missing: {writers}")
+    return f"{len(found)} interactions from {sorted(writers)}"
+
+
+@case(1, "OBS-9.4")
+def the_interface_preference_is_wired_into_every_build() -> str:
+    """The hook is declared, implemented, built, and the policy is stated.
+
+    The decision itself is tested by `make route_policy_test` on the build
+    host. What that cannot catch is the wiring coming undone: an lwIP built
+    without the hook, or a preference nothing declares, answers exactly as it
+    did before and nothing observable changes until a device logs from the
+    wrong address again.
+    """
+    def read(*parts):
+        with open(os.path.join(ROOT, *parts), encoding="utf-8",
+                  errors="replace") as handle:
+            return handle.read()
+
+    options = read("software", "network", "config", "lwipopts.h")
+    for wanted, why in (
+            ("#define LWIP_HOOK_FILENAME", "the hook has no prototype in scope"),
+            ("LWIP_HOOK_IP4_ROUTE_SRC(src, dest)  ultimate_route_src(src, dest)",
+             "the hook is not called"),):
+        if wanted not in options:
+            raise Failure(f"lwipopts.h: {why}")
+    if "LWIP_HOOK_IP4_ROUTE(" in options.replace("LWIP_HOOK_IP4_ROUTE_SRC(", ""):
+        raise Failure("LWIP_HOOK_IP4_ROUTE is consulted after the list walk, "
+                      "so it cannot override a match")
+    hook = read("software", "network", "lwip_route_hook.c")
+    if "route_choose(" not in hook:
+        raise Failure("the hook does not call the decision")
+    for makefile in ("target/libs/nios2/lwip/makefile",
+                     "target/libs/riscv/lwip/makefile"):
+        text = read(*makefile.split("/"))
+        for source in ("route_policy.c", "lwip_route_hook.c"):
+            if source not in text:
+                raise Failure(f"{makefile} does not build {source}, so every "
+                              "application linking the library is short a "
+                              "symbol ip4.c refers to")
+    interface = read("software", "io", "network", "network_interface.h")
+    if "route_preference()" not in interface:
+        raise Failure("no interface declares a preference")
+    if "ROUTE_PREFERENCE_WIRED" not in interface:
+        raise Failure("the wired interface declares no preference")
+    wifi = read("software", "io", "network", "network_esp32.h")
+    if "ROUTE_PREFERENCE_WIRELESS" not in wifi:
+        raise Failure("the WiFi interface does not override the preference")
+    body = read("software", "io", "network", "network_interface.cc")
+    if "route_hook_set_preference(&my_net_if, route_preference())" not in body:
+        raise Failure("nothing registers the preference after netif_add")
+    return "declared, implemented, built and registered"
+
+
+@case(1, "OBS-2.17", "OBS-1.1")
+def the_interaction_log_never_ends_a_run() -> str:
+    """Nothing about recording an interaction may reach the caller.
+
+    An observability component that fails a run it was watching is worse than
+    one that is missing, and this one sits in the path of every device call in
+    the tree.
+    """
+    import interactions
+
+    class Awkward:
+        def __repr__(self):
+            raise RuntimeError("this object refuses to be described")
+
+    previous = interactions.LOG_PATH
+    interactions.set_path("/proc/this/cannot/be/written/interactions.jsonl")
+    try:
+        interactions.record("rest", "GET /v1/info", params=Awkward(),
+                            body=Awkward())
+        interactions.record("rest", "GET /v1/info", status=200)
+        interactions.flush()
+    finally:
+        interactions.set_path(previous)
+    # And with no destination at all, which is every run without -o.
+    interactions.set_path("")
+    interactions.record("rest", "GET /v1/info", status=200)
+    interactions.flush()
+    interactions.set_path(previous)
+    return "an unwritable path and an undescribable object, both survived"
+
+
 @case(2, "OBS-7.7", "OBS-7.9")
 def two_collectors_cannot_share_the_port() -> str:
     """A second run collecting at once is refused, not served an arbitrary half.
@@ -1959,7 +2222,7 @@ def every_record_kind_is_in_the_table() -> str:
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     for kind in ("check", "scenario", "suite", "health", "warning", "log",
-                 "capture", "plan", "action", "run"):
+                 "capture", "plan", "action", "interaction", "run"):
         if f"| `{kind}` |" not in text:
             raise Failure(f"the table has no row for kind={kind}")
     for field in ("target", "attempt", "targets", "exit_code", "lead_in",

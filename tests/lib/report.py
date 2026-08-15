@@ -319,6 +319,15 @@ def current_check() -> Optional[int]:
     return _count if _depth and _count else None
 
 
+def current_scenario() -> str:
+    """The title of the open scenario, or "" when none is.
+
+    For a record written by something other than the scenario itself, so that
+    a device interaction joins to the group of checks it happened inside.
+    """
+    return str(_scenario["title"]) if _scenario else ""
+
+
 def last_label() -> str:
     """The label of the most recently started check, for crash reporting."""
     return _last_label

@@ -36,6 +36,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
 import health  # noqa: E402  (needs tests/lib on sys.path first)
+import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import pacing  # noqa: E402
 import report  # noqa: E402
@@ -1309,6 +1310,15 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                                                   "screens.jsonl")
     else:
         environment.pop("E2E_SCREENS", None)
+    if options.output_dir:
+        # Every interaction the suite has with the device, from inside the
+        # transports. One file per target, appended to by every suite and by
+        # the runner, and truncated once when the run starts rather than per
+        # suite, for the same reason the screen spool is.
+        environment["E2E_INTERACTIONS"] = os.path.join(options.output_dir,
+                                                       "interactions.jsonl")
+    else:
+        environment.pop("E2E_INTERACTIONS", None)
     # Tell the suite whether the device has just been reset and nothing has
     # touched it since, so it does not open with a reset of its own. One suite
     # ending with a reset and the next starting with one is the common case,
@@ -2406,6 +2416,13 @@ def main(argv: List[str]) -> int:
             # One file per target for the whole run, so it is emptied here
             # rather than by any of the suites that append to it.
             open(os.path.join(args.output_dir, "screens.jsonl"), "w").close()
+        # The same rule for the interaction log, and this process writes to it
+        # as well: the runner's own health sweeps and its UI-state gate are
+        # device interactions and belong in it beside the suites'.
+        path = os.path.join(args.output_dir, "interactions.jsonl")
+        open(path, "w").close()
+        interactions.set_path(path)
+        os.environ[interactions.LOG_ENV] = path
         if args.color == "auto" and report.colour_enabled():
             # A captured suite writes into a pipe, so it would decide "not a
             # terminal" and drop colour even though its lines are reprinted on

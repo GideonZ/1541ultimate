@@ -522,6 +522,56 @@ This is unconditional under `-o`, like the failure capture, because it costs the
 device nothing: it is a passive record of requests that were being made anyway.
 Depends on OBS-2.5.
 
+**OBS-2.17** [P1] Every interaction the harness has with a device is recorded
+exhaustively, as `kind=interaction` records in `DIR/<slug>/interactions.jsonl`.
+
+OBS-2.16 is a curated subset and says so: a GET that answered 200 first time is
+dropped, because the timeline in the report is a narrative and a run's reads are
+its bulk. That rule is right for a reader and wrong for a program. An
+investigation asks questions the run did not anticipate, and the commonest of
+them is what exactly was sent and what came back in the seconds before something
+went wrong. The two are the same events recorded twice, once under a rule and
+once under none.
+
+Written from inside the transports, so a suite gains the coverage without a line
+of its own and cannot opt out of it: `rest.record_action` for every REST request
+and its answer, `TelnetBackend._send` and the drain that follows it for every
+Telnet exchange, `ftp.RecordedFTP` for every FTP command and reply, and
+`health._banner` and `health._dma_identify` for the listener probes the runner
+makes outside any suite. A suite is never asked to announce anything.
+
+| Field | Content |
+|---|---|
+| `time`, `suite`, `target`, `attempt` | as every record (OBS-2.3) |
+| `check`, `scenario` | what was open, absent when nothing was |
+| `transport` | `rest`, `telnet`, `ftp` or `socket` |
+| `op` | what was done on it: a method and a path, a key, a command |
+| `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them |
+| `sent`, `sent_bytes`, `received_bytes` | a Telnet exchange |
+| `reply` | an FTP reply's first line |
+| `body`, `body_hex` or `body_sha256`, with `body_bytes` | the device's answer, per the rule below |
+| `repeat`, `until`, `ms_last` | on a collapsed run of identical interactions |
+
+Two rules make an exhaustive log affordable, and neither loses anything a reader
+or a program needs:
+
+- **Consecutive identical interactions collapse into one record** with a
+  `repeat` count and an `until` time. A settle loop reads the same screen until
+  it stops changing, which is the same request with the same answer thirty
+  times. Only *consecutive* interactions collapse, so nothing is reordered and
+  nothing is merged across a gap, and the duration is deliberately not part of
+  what makes two interactions the same one.
+- **A response body is written once.** A short answer is in the record, as text
+  when it is text and as hex when it is not, because a one-byte read of memory
+  is the byte and that is what an investigation reads. Anything larger goes to
+  `DIR/<slug>/bodies/<digest>.bin` and the record carries the digest and the
+  byte count. A 2000-byte menu screen read four hundred times is one file and
+  four hundred digests.
+
+Nothing about recording an interaction may reach the caller: this sits in the
+path of every device call in the tree, and a component that fails a run it was
+watching is worse than one that is missing. Depends on OBS-2.5 and OBS-2.10.
+
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
 its path, whether this run intended to run it, and when it did not, which of the

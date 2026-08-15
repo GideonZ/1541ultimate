@@ -54,6 +54,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import interactions
 import targets
 from api import UltimateApi
 from report import Failure
@@ -199,18 +200,23 @@ def _ping(host: str) -> Check:
 
 def _banner(host: str, port: int, expect: bytes = b"") -> str:
     """Connect, read whatever the listener volunteers, and close at once."""
+    started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         try:
             greeting = sock.recv(128)
         except (socket.timeout, TimeoutError):
             greeting = b""
+        interactions.record("socket", f"banner {port}", host=host,
+                            ms=round((time.monotonic() - started) * 1000.0, 1),
+                            body=greeting)
         if expect and not greeting.startswith(expect):
             raise RuntimeError(f"expected {expect!r}, got {greeting[:32]!r}")
         return ""
 
 
 def _dma_identify(host: str, port: int) -> str:
+    started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         sock.sendall(struct.pack("<HH", DMA_CMD_IDENTIFY, 0))
@@ -220,6 +226,9 @@ def _dma_identify(host: str, port: int) -> str:
         title = sock.recv(length[0])
         if not title:
             raise RuntimeError("empty identify title")
+    interactions.record("socket", f"dma identify {port}", host=host,
+                        ms=round((time.monotonic() - started) * 1000.0, 1),
+                        body=title)
     return title.decode("utf-8", "replace").strip()
 
 

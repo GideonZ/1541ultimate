@@ -44,6 +44,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import interactions
 import machine as machine_lib
 import pacing
 import rest as rest_lib
@@ -1661,6 +1662,10 @@ class TelnetBackend(Backend):
             raise last_error
         raise TimeoutError(f"Timed out connecting to {host}:{port}")
 
+    # What the last send put on the wire, held until the drain that follows
+    # it completes the interaction record. See _send.
+    _sent = None
+
     # Set by every send, cleared by the drain that follows it: it tells
     # _drain_until_idle whether a redraw is actually expected, so a bare
     # capture does not sit through the first-byte wait for one that was
@@ -1767,7 +1772,7 @@ class TelnetBackend(Backend):
         self._expect_redraw = expect_redraw
         if settle:
             self._expect_settle = True
-        self.sock.sendall(payload)
+        self._send(payload, key)
         return self.capture()
 
     def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
@@ -1782,7 +1787,7 @@ class TelnetBackend(Backend):
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = key
         self._expect_redraw = True
-        self.sock.sendall(payload)
+        self._send(payload, key)
         self._last_drain_bytes = 0
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command), self._last_drain_bytes
@@ -1795,14 +1800,14 @@ class TelnetBackend(Backend):
         self._expect_redraw = expect_redraw
         if settle:
             self._expect_settle = True
-        self.sock.sendall(ch.encode("ascii"))
+        self._send(ch.encode("ascii"), ch)
         return self.capture()
 
     def send_text(self, text: str, label: str) -> Snapshot:
         self.last_command = label
         self._expect_redraw = True
         self._expect_settle = True
-        self.sock.sendall(text.encode("ascii"))
+        self._send(text.encode("ascii"), label)
         return self.capture()
 
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
@@ -1811,7 +1816,7 @@ class TelnetBackend(Backend):
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = label
         self._expect_redraw = True
-        self.sock.sendall(payload + text.encode("ascii"))
+        self._send(payload + text.encode("ascii"), label)
         return self.capture()
 
     def send_key_repeat(self, key: str, count: int) -> Snapshot:
@@ -1820,8 +1825,33 @@ class TelnetBackend(Backend):
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = f"{key} x{count}"
         self._expect_redraw = True
-        self.sock.sendall(payload * count)
+        self._send(payload * count, f"{key} x{count}")
         return self.capture()
+
+    def _send(self, payload: bytes, what: str) -> None:
+        """Write to the session, and remember what for the interaction log.
+
+        One place, so a keystroke cannot leave this backend unrecorded. The
+        record is completed by the drain that follows, because a Telnet
+        exchange is what was sent and what came back and the two are one
+        event.
+        """
+        self._sent = (what, payload, time.monotonic())
+        self.sock.sendall(payload)
+
+    def _record_exchange(self, drained: int) -> None:
+        """One Telnet exchange: what was sent, and what the redraw returned."""
+        sent = getattr(self, "_sent", None)
+        self._sent = None
+        if sent is None:
+            interactions.record("telnet", "drain", received_bytes=drained)
+            return
+        what, payload, started = sent
+        interactions.record(
+            "telnet", f"send {what}",
+            sent=repr(payload)[1:] if payload else "",
+            sent_bytes=len(payload), received_bytes=drained,
+            ms=round((time.monotonic() - started) * 1000.0, 1))
 
     def _drain_until_idle(self, timeout: float) -> None:
         """Read until the redraw is over, or until it is clear none is coming.
@@ -1888,6 +1918,7 @@ class TelnetBackend(Backend):
             if last_data is None:
                 self._last_drain_bytes = drained
                 return
+            self._last_drain_bytes = drained
             raise Failure(f"Timed out waiting for telnet screen to go idle after "
                           f"{self.last_command} ({drained} bytes received)")
         finally:
@@ -1896,6 +1927,7 @@ class TelnetBackend(Backend):
             # test this loop decides on, and an observability component
             # may not change how a suite reaches a verdict. The bytes are
             # kept in memory and written once the redraw is over.
+            self._record_exchange(self._last_drain_bytes)
             screen_spool.publish_stream(b"".join(received))
             screen_spool.publish(
                 screen_spool.TELNET, self.screen.rows(),

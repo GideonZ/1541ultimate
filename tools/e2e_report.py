@@ -56,8 +56,13 @@ import report as report_lib  # noqa: E402
 
 DETAIL_MARKER = "<!-- detail -->"
 INDEX_NAME = "index.md"
-# One file per target, appended to by every suite. Not a suite's own records.
+# One file per target, appended to by every suite. Neither is a suite's own
+# records, so neither is read as a suite run: a file named for a suite is how
+# this generator finds one, and a shared file named that way would render as a
+# suite that never ran.
 SPOOL_NAME = "screens.jsonl"
+INTERACTIONS_NAME = "interactions.jsonl"
+SHARED_FILES = ("run.jsonl", SPOOL_NAME, INTERACTIONS_NAME)
 
 # How much of a failing suite's console log is inlined. Enough for a traceback
 # and the checks around it, short enough that ten failures do not turn the
@@ -477,7 +482,7 @@ def load_target(directory: str, slug: str) -> TargetRun:
         # file: every suite appends to the one file, so reading a suite name
         # out of it invents a suite run named after whichever suite wrote
         # last, with no closing record and therefore no verdict.
-        if not name.endswith(".jsonl") or name in ("run.jsonl", SPOOL_NAME):
+        if not name.endswith(".jsonl") or name in SHARED_FILES:
             continue
         path = os.path.join(directory, name)
         file_records, file_skipped = read_records(path)
@@ -1332,6 +1337,12 @@ def describe_file(relative: str) -> str:
         return "run-tests' own console output"
     if name == "screens.jsonl":
         return "every distinct screen the harness read, as text and as raw bytes"
+    if name == "interactions.jsonl":
+        return ("every interaction the harness had with this device: each REST "
+                "request and its answer, each Telnet exchange, each FTP "
+                "command and reply")
+    if relative.replace(os.sep, "/").split("/")[-2:-1] == ["bodies"]:
+        return "one response body, kept once and referred to by its digest"
     if name.endswith(".telnet.log"):
         return "the raw Telnet session stream, unparsed"
     if name.endswith(".jsonl"):

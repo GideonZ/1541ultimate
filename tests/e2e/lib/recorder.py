@@ -216,6 +216,10 @@ CARD_COLUMN_GAP = 4
 # What the placeholder cards say, which is as much as the run knows.
 NO_SCREEN_YET = "no screen has been read yet"
 NO_MENU_OPEN = "no menu is open"
+
+# The files under a target's directory that share the .jsonl suffix and are not
+# one suite run's records. See JsonlTail._files.
+SHARED_JSONL = ("screens.jsonl", "interactions.jsonl")
 NO_VIDEO = "waiting for the device's video"
 # Drawn above a harness pane showing a screen older than the poll that should
 # have replaced it.
@@ -412,10 +416,11 @@ class JsonlTail:
                            if name.endswith(".jsonl"))
         except OSError:
             return []
-        # The screen spool shares the suffix and is not a record file: its
-        # name carries no label, so reading a suite name out of it would leave
-        # every artefact named after that suite with an empty one.
-        return [name for name in names if name != "screens.jsonl"]
+        # The screen spool and the interaction log share the suffix and are
+        # not record files: their names carry no label, so reading a suite name
+        # out of one would leave every artefact named after that suite with an
+        # empty one.
+        return [name for name in names if name not in SHARED_JSONL]
 
     def _read(self, path: str) -> List[dict]:
         try:
