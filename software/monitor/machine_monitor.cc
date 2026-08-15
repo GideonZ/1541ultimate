@@ -1130,9 +1130,12 @@ MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end
     return MONITOR_OK;
 }
 
-MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
+// The three fields every Transfer has, leaving the cursor on whatever follows
+// so the optional fourth field can be read by the relocating form. Shared so
+// the two forms cannot disagree about the first three.
+static MonitorError parse_transfer_head(const char *&cursor, uint16_t *start,
+                                        uint16_t *end, uint16_t *dest)
 {
-    const char *cursor = text;
     MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, start);
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
@@ -1157,8 +1160,73 @@ MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t 
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
     }
+    return MONITOR_OK;
+}
+
+MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
+{
+    const char *cursor = text;
+    MonitorError error = parse_transfer_head(cursor, start, end, dest);
+    if (error != MONITOR_OK) {
+        return error;
+    }
     skip_spaces(cursor);
     return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
+}
+
+// `AAAA-BBBB,CCCC` copies, and the optional `,DDDD-EEEE` additionally names the
+// part of the source that is code, in source addresses, so absolute operands
+// pointing into the copied range can be moved with it. Without the fourth
+// field this is exactly monitor_parse_transfer and `relocate` comes back false,
+// which is what keeps the three-argument command unchanged.
+MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
+                                             uint16_t *dest, bool *relocate,
+                                             uint16_t *code_start, uint16_t *code_end)
+{
+    const char *cursor = text;
+    MonitorError error;
+
+    *relocate = false;
+    *code_start = 0;
+    *code_end = 0;
+    error = parse_transfer_head(cursor, start, end, dest);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    skip_spaces(cursor);
+    if (!*cursor) {
+        return MONITOR_OK;
+    }
+    error = expect_separator(cursor, ',', MONITOR_SYNTAX);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    error = parse_hex_digits(cursor, 1, 4, 0xFFFF, code_start);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    error = expect_separator(cursor, '-', MONITOR_SYNTAX);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    error = parse_hex_digits(cursor, 1, 4, 0xFFFF, code_end);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    if (*code_end < *code_start) {
+        return MONITOR_RANGE;
+    }
+    // The code range names part of the source, so a range outside it is a typo
+    // rather than a request that would quietly relocate nothing.
+    if (*code_start < *start || *code_end > *end) {
+        return MONITOR_RANGE;
+    }
+    skip_spaces(cursor);
+    if (*cursor) {
+        return MONITOR_SYNTAX;
+    }
+    *relocate = true;
+    return MONITOR_OK;
 }
 
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
@@ -1252,6 +1320,96 @@ void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t en
             backend->write((uint16_t)(dest + index), backend->read((uint16_t)(start + index)));
         }
     }
+}
+
+// Where a source address lives after the copy. Outside the copied range an
+// address is unchanged, because nothing moved it.
+static uint16_t transfer_mapped_address(uint16_t address, uint16_t start, uint16_t end,
+                                        uint16_t dest)
+{
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint32_t offset = (uint32_t)(uint16_t)(address - start);
+
+    return (offset < length) ? (uint16_t)(dest + offset) : address;
+}
+
+// Read the copy rather than the original. When the ranges overlap the source
+// has already been partly overwritten by the copy, and it is the copy that is
+// being relocated.
+static uint8_t transfer_read_code(MemoryBackend *backend, uint16_t address,
+                                  uint16_t start, uint16_t end, uint16_t dest)
+{
+    return backend->read(transfer_mapped_address(address, start, end, dest));
+}
+
+// Copy, then walk the code range and move absolute operands that point into
+// the copied source range. Returns how many operands were rewritten.
+//
+// Only a three-byte instruction with a two-byte operand qualifies, which is
+// absolute, absolute-indexed and indirect. Zero page cannot express a page
+// move, and a relative branch inside a block that moves as a unit is already
+// correct, so both are left alone by that condition rather than by a special
+// case. An operand pointing outside the source range is left alone too: it
+// names something this copy did not move.
+//
+// The scan is linear and steps by one byte over anything that does not decode,
+// which is what the fourth field exists to keep short: the user names the part
+// that is code.
+int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
+                                     uint16_t dest, uint16_t code_start, uint16_t code_end,
+                                     bool illegal_enabled)
+{
+    uint32_t source_length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint32_t code_length = (uint32_t)(uint16_t)(code_end - code_start) + 1;
+    uint32_t index = 0;
+    int rewritten = 0;
+
+    monitor_transfer_memory(backend, start, end, dest);
+
+    while (index < code_length) {
+        uint16_t address = (uint16_t)(code_start + index);
+        uint8_t bytes[3];
+        Disassembled6502 decoded;
+        uint8_t step;
+        int i;
+
+        for (i = 0; i < 3; i++) {
+            bytes[i] = transfer_read_code(backend, (uint16_t)(address + i), start, end, dest);
+        }
+        disassemble_6502(address, bytes, illegal_enabled, &decoded);
+        step = (decoded.valid && decoded.length) ? decoded.length : 1;
+
+        if (decoded.valid && decoded.length == 3 && decoded.operand_bytes == 2) {
+            uint32_t instruction_offset = (uint32_t)(uint16_t)(address - start);
+            uint16_t operand = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
+            uint32_t operand_offset = (uint32_t)(uint16_t)(operand - start);
+
+            // Both operand bytes have to be inside the copy, or there is
+            // nowhere in the destination to write the moved value that this
+            // copy owns.
+            if (instruction_offset + 3 <= source_length && operand_offset < source_length) {
+                uint16_t moved = (uint16_t)(dest + operand_offset);
+                uint16_t at = transfer_mapped_address((uint16_t)(address + 1), start, end, dest);
+                uint8_t operand_bytes[2];
+
+                operand_bytes[0] = (uint8_t)(moved & 0xFF);
+                operand_bytes[1] = (uint8_t)((moved >> 8) & 0xFF);
+                // One block, so the low and high halves of an address cannot
+                // land apart. A pair that would run past $FFFF is written byte
+                // by byte, because write_block takes a length rather than a
+                // wrapping address.
+                if ((uint32_t)at + 2 <= 0x10000UL) {
+                    backend->write_block(at, operand_bytes, 2);
+                } else {
+                    backend->write(at, operand_bytes[0]);
+                    backend->write((uint16_t)(at + 1), operand_bytes[1]);
+                }
+                rewritten++;
+            }
+        }
+        index += step;
+    }
+    return rewritten;
 }
 
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len)
@@ -1700,6 +1858,10 @@ namespace {
 static bool accepts_address(const char *candidate) { return monitor_syntax_accepts_prefix("A", candidate); }
 static bool accepts_range(const char *candidate) { return monitor_syntax_accepts_prefix("A-A", candidate); }
 static bool accepts_range_value(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,A", candidate); }
+// Transfer takes an optional fourth field. The matcher accepts a candidate
+// that stops before the end of the syntax, so one shape covers both the
+// three-argument and the relocating form.
+static bool accepts_transfer(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,A,A-A", candidate); }
 static bool accepts_hunt(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,N", candidate); }
 static bool accepts_load(const char *candidate) { return monitor_syntax_accepts_prefix("P,a,L", candidate); }
 
@@ -1712,7 +1874,7 @@ const MonitorCommandInput monitor_input_go =
 const MonitorCommandInput monitor_input_fill =
     { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true };
 const MonitorCommandInput monitor_input_transfer =
-    { "Transfer AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
+    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true };
 const MonitorCommandInput monitor_input_compare =
     { "Compare AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
 // Hunt keeps its default range and takes the needle after it, so there is no
@@ -5632,12 +5794,31 @@ int MachineMonitor :: handle_key(int key)
         }
         case 't': case 'T':
         {
-            char transfer_buffer[16];
+            // "AAAA-BBBB,CCCC,DDDD-EEEE" is 24 characters plus the terminator.
+            char transfer_buffer[25];
+            bool relocate = false;
+            uint16_t code_start = 0;
+            uint16_t code_end = 0;
             strcpy(transfer_buffer, "AAAA-BBBB,CCCC");
             if (prompt_command(monitor_input_transfer, transfer_buffer, sizeof(transfer_buffer) - 1)) {
-                error = monitor_parse_transfer(transfer_buffer, &start, &end, &dest);
+                error = monitor_parse_transfer_relocate(transfer_buffer, &start, &end, &dest,
+                                                        &relocate, &code_start, &code_end);
                 if (error == MONITOR_OK) {
-                    monitor_transfer_memory(backend, start, end, dest);
+                    if (relocate) {
+                        // The only command that changes bytes the user did not
+                        // type, so it says how many it changed. A count that
+                        // does not match what was expected is a linear scan
+                        // that lost instruction alignment, visible at once.
+                        char message[40];
+                        int moved = monitor_transfer_memory_relocate(backend, start, end, dest,
+                                                                     code_start, code_end,
+                                                                     state.illegal_enabled);
+                        sprintf(message, "%d OPERAND%s RELOCATED", moved, (moved == 1) ? "" : "S");
+                        get_ui()->popup(message, BUTTON_OK);
+                        redraw_full();
+                    } else {
+                        monitor_transfer_memory(backend, start, end, dest);
+                    }
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }

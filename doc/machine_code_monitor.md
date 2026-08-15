@@ -779,7 +779,7 @@ The monitor includes four bulk memory commands:
 | Key | Command  | Prompt title | Syntax | Result |
 | --- | -------- | ------------ | ------ | ------ |
 | `F` | Fill     | `Fill AAAA-BBBB,DD` | `start-end,value` | Fill the range with one byte |
-| `T` | Transfer | `Transfer AAAA-BBBB,CCCC` | `start-end,dest` | Copy the range to a destination, overlap-safe in either direction |
+| `T` | Transfer | `Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]` | `start-end,dest` or `start-end,dest,code-start-code-end` | Copy the range to a destination, overlap-safe in either direction, optionally moving absolute operands with it |
 | `C` | Compare  | `Compare AAAA-BBBB,CCCC` | `start-end,dest` | Compare the range against another location and list differing addresses |
 | `H` | Hunt     | `Hunt AAAA-BBBB,BB/"text"` | `start-end,bytes` or `start-end,"text"` | Search the range for a byte sequence or quoted ASCII string |
 
@@ -794,7 +794,42 @@ by spaces or run together; quoted text keeps the case it was typed in, while
 everything outside the quotes is normalised to upper case. A hunt needle may be
 up to 80 bytes long.
 
-`Fill` and `Transfer` report nothing on success. `Compare` shows
+### Relocating a routine
+
+`Transfer` takes an optional fourth field naming the part of the source that is
+code, written in source addresses: `T C000-C0FF,C100,C000-C07F` copies
+`$C000-$C0FF` to `$C100` and treats `$C000-$C07F` as instructions. Without that
+field `Transfer` only copies, which is what it has always done.
+
+With it, the monitor disassembles the code range after the copy and moves every
+**absolute** operand that points inside the copied source range, to the same
+place in the destination. That covers absolute, absolute-indexed and indirect
+operands, so `JMP`, `JSR`, `LDA $nnnn,X` and `JMP ($nnnn)` all follow the code
+they belong to.
+
+Three kinds of operand are deliberately left alone:
+
+- **Zero page.** A zero-page address cannot name a different page, so there is
+  nothing a page move could rewrite it to.
+- **Relative.** A branch holds a displacement rather than an address, so a
+  branch inside a block that moves as one is already correct.
+- **Anything pointing outside the source range.** A KERNAL call or an I/O
+  register did not move, so neither does the operand naming it.
+
+An instruction that reaches past the end of the source range keeps its operand
+too: the copy does not own the bytes the moved value would go in.
+
+The scan is linear from the start of the code range. A byte that does not
+decode advances it by one and the scan carries on, so undocumented opcodes and
+alignment padding do not stop it, but data in the middle of the code range can
+still put it out of step with the real instruction boundaries. Naming the code
+range as tightly as possible is what avoids that.
+
+`Transfer` reports how many operands it moved, because it is the only command
+that changes bytes you did not type. A count that is not the number you
+expected is a scan that lost instruction alignment, and it says so immediately.
+
+`Fill` and a `Transfer` with no code range report nothing on success. `Compare` shows
 `No differences` when the two regions match, and `Hunt` shows `No matches` when
 the needle is not found. Otherwise both open a result picker:
 

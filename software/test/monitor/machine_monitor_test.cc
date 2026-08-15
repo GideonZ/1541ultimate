@@ -533,6 +533,299 @@ static int test_opcode_metadata_consistency(void)
     return 0;
 }
 
+// A backend that records how the relocation reached memory, so an operand
+// written as two separate bytes can be told from one written as a block.
+struct RelocRecordingBackend : public FakeMemoryBackend
+{
+    int block_writes;
+    uint16_t last_block_length;
+
+    RelocRecordingBackend() : block_writes(0), last_block_length(0) { }
+
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
+    {
+        block_writes++;
+        last_block_length = len;
+        for (uint16_t i = 0; i < len; i++) {
+            memory[(uint16_t)(address + i)] = src[i];
+        }
+    }
+};
+
+static void reloc_poke(FakeMemoryBackend &backend, uint16_t address,
+                       const uint8_t *bytes, int count)
+{
+    for (int i = 0; i < count; i++) {
+        backend.write((uint16_t)(address + i), bytes[i]);
+    }
+}
+
+static int test_transfer_relocate_parses_its_optional_range(void)
+{
+    uint16_t start = 0, end = 0, dest = 0, code_start = 0, code_end = 0;
+    bool relocate = true;
+
+    // Three arguments: exactly monitor_parse_transfer, and no relocation.
+    if (expect(monitor_parse_transfer_relocate("C000-C010,C100", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK,
+               "Transfer relocate parser must accept the three-argument form.")) return 1;
+    if (expect(!relocate && start == 0xC000 && end == 0xC010 && dest == 0xC100,
+               "The three-argument form must parse as a plain transfer.")) return 1;
+
+    // The three-argument parser must not have learned the fourth field, so the
+    // plain command is unchanged by this feature existing.
+    if (expect(monitor_parse_transfer("C000-C0FF,C100,C000-C00F", &start, &end, &dest) == MONITOR_SYNTAX,
+               "The plain Transfer parser must still refuse a fourth field.")) return 1;
+
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C000-C00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK,
+               "Transfer relocate parser must accept the four-argument form.")) return 1;
+    if (expect(relocate && start == 0xC000 && end == 0xC0FF && dest == 0xC100 &&
+               code_start == 0xC000 && code_end == 0xC00F,
+               "Transfer relocate parser values failed.")) return 1;
+
+    // A one-byte code range is a range, as everywhere else in the monitor.
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C005-C005", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xC005 && code_end == 0xC005,
+               "Transfer relocate parser must accept a one-byte code range.")) return 1;
+
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C00F-C000", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
+               "A code range ending below its start must be refused.")) return 1;
+    // The code range names part of the source, so one outside it is a typo.
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,BFF0-C00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
+               "A code range starting below the source must be refused.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C0F0-C100", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
+               "A code range ending above the source must be refused.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C000-C00F,", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_SYNTAX,
+               "Trailing text after the code range must be refused.")) return 1;
+
+    // The prompt must let every prefix of the relocating form be typed, and
+    // must still refuse what no Transfer could contain.
+    {
+        const char *full = "0800-0FFF,2000,0800-0FFF";
+        char prefix[32];
+        for (unsigned int i = 0; i <= strlen(full); i++) {
+            memcpy(prefix, full, i);
+            prefix[i] = 0;
+            if (expect(monitor_input_transfer.accepts(prefix),
+                       "Every prefix of a relocating Transfer must be typeable.")) {
+                printf("  refused %s\n", prefix);
+                return 1;
+            }
+        }
+        if (expect(!monitor_input_transfer.accepts("0800-0FFF,2000,0800-0FFF,"),
+                   "Transfer must refuse a fifth field.")) return 1;
+        // Fill and Compare keep three arguments, so they must not have
+        // acquired the tail along with Transfer.
+        if (expect(!monitor_input_fill.accepts("0800-0FFF,20,"),
+                   "Fill must still refuse a fourth field.")) return 1;
+        if (expect(!monitor_input_compare.accepts("0800-0FFF,2000,"),
+                   "Compare must still refuse a fourth field.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_relocate_moves_absolute_operands(void)
+{
+    RelocRecordingBackend backend;
+    // $C000-$C0FF copied to $C100, with $C000-$C010 named as code.
+    //   C000  AD 08 C0    LDA $C008        absolute, inside the source
+    //   C003  BD 40 C0    LDA $C040,X      absolute indexed, inside
+    //   C006  6C 80 C0    JMP ($C080)      indirect, inside
+    //   C009  AD 00 D0    LDA $D000        absolute, outside the source
+    //   C00C  A5 10       LDA $10          zero page
+    //   C00E  C0 C0       CPY #$C0         immediate
+    //   C010  D0 20       BNE $C032        relative
+    //   C012  C0 EA       CPY #$EA         immediate
+    //   C014  EA          NOP
+    //
+    // The zero-page and relative instructions are deliberately followed by a
+    // $C0 byte, so that reading two operand bytes where there is only one
+    // would produce $C010 and $C020, both inside the source range. Only the
+    // three-byte-with-a-two-byte-operand condition keeps them out.
+    static const uint8_t code[] = {
+        0xAD, 0x08, 0xC0,
+        0xBD, 0x40, 0xC0,
+        0x6C, 0x80, 0xC0,
+        0xAD, 0x00, 0xD0,
+        0xA5, 0x10,
+        0xC0, 0xC0,
+        0xD0, 0x20,
+        0xC0, 0xEA,
+        0xEA,
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                 0xC000, 0xC014, false);
+    if (expect(moved == 3, "Three absolute operands point into the source range.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    if (expect(backend.read(0xC100) == 0xAD && backend.read(0xC101) == 0x08 &&
+               backend.read(0xC102) == 0xC1,
+               "An absolute operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC103) == 0xBD && backend.read(0xC104) == 0x40 &&
+               backend.read(0xC105) == 0xC1,
+               "An absolute indexed operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC106) == 0x6C && backend.read(0xC107) == 0x80 &&
+               backend.read(0xC108) == 0xC1,
+               "An indirect operand must move with the block.")) return 1;
+    if (expect(backend.read(0xC109) == 0xAD && backend.read(0xC10A) == 0x00 &&
+               backend.read(0xC10B) == 0xD0,
+               "An operand outside the source range must be left alone.")) return 1;
+    if (expect(backend.read(0xC10C) == 0xA5 && backend.read(0xC10D) == 0x10,
+               "A zero-page operand must be left alone.")) return 1;
+    if (expect(backend.read(0xC10E) == 0xC0 && backend.read(0xC10F) == 0xC0,
+               "An immediate operand must be left alone.")) return 1;
+    if (expect(backend.read(0xC110) == 0xD0 && backend.read(0xC111) == 0x20,
+               "A relative operand must be left alone.")) return 1;
+    // The source itself is untouched by a non-overlapping copy.
+    if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x08 &&
+               backend.read(0xC002) == 0xC0,
+               "A non-overlapping relocate must not rewrite the original.")) return 1;
+    // Each operand reached memory as one block, so its two halves cannot land
+    // apart.
+    if (expect(backend.block_writes == 3 && backend.last_block_length == 2,
+               "Each moved operand must be written as one two-byte block.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_keeps_the_inclusive_range(void)
+{
+    // A range includes both of its ends everywhere in this monitor, so an
+    // operand pointing at the very last byte of the source is inside it. The
+    // exclusive-range form of this rule would leave that operand behind.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = { 0xAD, 0x0F, 0xC0 };  // LDA $C00F
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+    backend.write(0xC00F, 0x5A);
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC00F, 0xC100,
+                                                 0xC000, 0xC002, false);
+    if (expect(moved == 1,
+               "An operand pointing at the last byte of the source is inside the range.")) return 1;
+    if (expect(backend.read(0xC101) == 0x0F && backend.read(0xC102) == 0xC1,
+               "That operand must be moved to the last byte of the destination.")) return 1;
+    // And the byte it points at was itself copied, which is the same rule.
+    if (expect(backend.read(0xC10F) == 0x5A,
+               "The last byte of the source must be copied too.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_reads_the_copy_when_ranges_overlap(void)
+{
+    {
+        // Destination above the source, so the copy runs backwards and the
+        // original is partly overwritten. The walk must read the copy.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x04, 0xC0 };  // LDA $C004
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC00F, 0xC008,
+                                                     0xC000, 0xC002, false);
+        if (expect(moved == 1, "An overlapping relocate upwards moves its operand.")) return 1;
+        if (expect(backend.read(0xC008) == 0xAD && backend.read(0xC009) == 0x0C &&
+                   backend.read(0xC00A) == 0xC0,
+                   "An overlapping relocate upwards must patch the copy.")) return 1;
+    }
+    {
+        // Destination below the source, so the copy runs forwards.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x14, 0xC0 };  // LDA $C014
+        reloc_poke(backend, 0xC010, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC010, 0xC01F, 0xC008,
+                                                     0xC010, 0xC012, false);
+        if (expect(moved == 1, "An overlapping relocate downwards moves its operand.")) return 1;
+        if (expect(backend.read(0xC008) == 0xAD && backend.read(0xC009) == 0x0C &&
+                   backend.read(0xC00A) == 0xC0,
+                   "An overlapping relocate downwards must patch the copy.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_relocate_handles_range_edges_and_data(void)
+{
+    {
+        // An instruction that starts inside the code range is relocated whole,
+        // even though it reaches past the end of that range.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x08, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                     0xC000, 0xC001, false);
+        if (expect(moved == 1, "An instruction straddling the end of the code range is relocated.")) return 1;
+        if (expect(backend.read(0xC102) == 0xC1,
+                   "That instruction's operand must still be moved.")) return 1;
+    }
+    {
+        // An instruction reaching past the end of the SOURCE range is not
+        // relocated: the copy does not own the bytes its operand would go in.
+        FakeMemoryBackend backend;
+        static const uint8_t code[] = { 0xAD, 0x00, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC001, 0xC100,
+                                                     0xC000, 0xC001, false);
+        if (expect(moved == 0, "An instruction reaching past the source range is not relocated.")) return 1;
+        if (expect(backend.read(0xC100) == 0xAD && backend.read(0xC101) == 0x00,
+                   "The two bytes that were copied must be exactly the source bytes.")) return 1;
+    }
+    {
+        // A byte that does not decode advances the walk by one, and what
+        // follows it is still relocated.
+        FakeMemoryBackend backend;
+        //   C000  02          an illegal opcode, undecodable here
+        //   C001  AD 08 C0    LDA $C008
+        static const uint8_t code[] = { 0x02, 0xAD, 0x08, 0xC0 };
+        reloc_poke(backend, 0xC000, code, sizeof(code));
+
+        int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
+                                                     0xC000, 0xC004, false);
+        if (expect(moved == 1, "An undecodable byte must not stop the walk.")) return 1;
+        if (expect(backend.read(0xC100) == 0x02, "The undecodable byte is copied unchanged.")) return 1;
+        if (expect(backend.read(0xC101) == 0xAD && backend.read(0xC102) == 0x08 &&
+                   backend.read(0xC103) == 0xC1,
+                   "The instruction after an undecodable byte must be relocated.")) return 1;
+    }
+    return 0;
+}
+
+static int test_transfer_without_a_code_range_is_unchanged(void)
+{
+    // The three-argument command copies and changes nothing else, whichever
+    // entry point runs it.
+    FakeMemoryBackend plain;
+    FakeMemoryBackend relocating;
+    static const uint8_t code[] = { 0xAD, 0x08, 0xC0, 0xBD, 0x40, 0xC0 };
+    uint32_t index;
+
+    reloc_poke(plain, 0xC000, code, sizeof(code));
+    reloc_poke(relocating, 0xC000, code, sizeof(code));
+
+    monitor_transfer_memory(&plain, 0xC000, 0xC0FF, 0xC100);
+    // The relocating mover with a code range of nothing to scan must agree
+    // byte for byte with the plain one over the whole copy.
+    monitor_transfer_memory_relocate(&relocating, 0xC000, 0xC0FF, 0xC100,
+                                     0xC000, 0xC000, false);
+    if (expect(relocating.read(0xC100) == 0xAD && relocating.read(0xC101) == 0x08 &&
+               relocating.read(0xC102) == 0xC1,
+               "A one-byte code range still relocates the instruction that starts in it.")) return 1;
+    for (index = 0x0003; index <= 0x00FF; index++) {
+        if (expect(plain.read((uint16_t)(0xC100 + index)) ==
+                   relocating.read((uint16_t)(0xC100 + index)),
+                   "Outside the code range the two movers must agree byte for byte.")) return 1;
+    }
+    return 0;
+}
+
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
@@ -7781,7 +8074,8 @@ static int test_structured_prompts_carry_their_descriptor(void)
     } cases[] = {
         { 'J', &monitor_input_jump, 5 },
         { 'F', &monitor_input_fill, 13 },
-        { 'T', &monitor_input_transfer, 15 },
+        // 24 characters: AAAA-BBBB,CCCC,DDDD-EEEE, the relocating form.
+        { 'T', &monitor_input_transfer, 24 },
         { 'C', &monitor_input_compare, 15 },
         { 'H', &monitor_input_hunt, 35 },
         { 'S', &monitor_input_save, 15 },
@@ -8046,6 +8340,12 @@ int main()
     if (test_illegal_opcode_normalization()) return 1;
     if (test_opcode_metadata_consistency()) return 1;
     if (test_memory_helpers()) return 1;
+    if (test_transfer_relocate_parses_its_optional_range()) return 1;
+    if (test_transfer_relocate_moves_absolute_operands()) return 1;
+    if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;
+    if (test_transfer_relocate_reads_the_copy_when_ranges_overlap()) return 1;
+    if (test_transfer_relocate_handles_range_edges_and_data()) return 1;
+    if (test_transfer_without_a_code_range_is_unchanged()) return 1;
     if (test_parsers_and_formatters()) return 1;
     if (test_hunt_prompt_typed_input()) return 1;
     if (test_load_save_param_parsers()) return 1;

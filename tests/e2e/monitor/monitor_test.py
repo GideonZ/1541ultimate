@@ -49,6 +49,10 @@ REST_TIMEOUT_SECONDS = 5.0
 # keystroke in several hundred on the one transport that has it.
 PROMPT_RETYPES = 2
 
+# The Transfer prompt states its optional fourth field, so its title is long
+# enough to be worth naming once.
+TRANSFER_PROMPT_TITLE = "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]"
+
 # The normal footer reports either a live CPU bank or a CPU-view override.
 STATUS_LINE_RE = re.compile(
     r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
@@ -244,7 +248,7 @@ class MonitorSession:
         return self.run_prompt_command("C", "Compare AAAA-BBBB,CCCC", expr)
 
     def transfer(self, expr: str) -> Snapshot:
-        return self.run_prompt_command("T", "Transfer AAAA-BBBB,CCCC", expr)
+        return self.run_prompt_command("T", TRANSFER_PROMPT_TITLE, expr)
 
     def goto_run(self, address: str) -> Snapshot:
         # The argument is verified while the prompt is still up, so the C64 is
@@ -1183,7 +1187,7 @@ KEY_STRESS_ADDRESSES = (
 KEY_STRESS_PROMPTS = (
     ("F", "Fill AAAA-BBBB,DD", "1180-1183,55", True),
     ("H", 'Hunt AAAA-BBBB,BB/"text"', "1180-11FF", False),
-    ("T", "Transfer AAAA-BBBB,CCCC", "1180-1183,1200", True),
+    ("T", TRANSFER_PROMPT_TITLE, "1180-1183,1200", True),
     ("C", "Compare AAAA-BBBB,CCCC", "1180-1183,1200", True),
 )
 
@@ -2685,6 +2689,59 @@ def run_back_navigation_test(session: MonitorSession) -> None:
     session.enter_monitor()
 
 
+def run_transfer_relocate_test(session: MonitorSession, rest_host: str) -> None:
+    """Transfer's optional code range moves absolute operands with the copy.
+
+    A short routine holding one absolute load, one absolute jump inside itself,
+    a KERNAL call and a zero-page load. Only the first two point inside the
+    copied range, so only those two follow the copy, and the command says it
+    moved two.
+    """
+    source = 0x1180
+    dest = 0x11C0
+    program = bytes((
+        0xAD, 0x88, 0x11,   # LDA $1188   inside the source, follows the copy
+        0x4C, 0x80, 0x11,   # JMP $1180   inside the source, follows the copy
+        0x20, 0xD2, 0xFF,   # JSR $FFD2   the KERNAL did not move
+        0xA5, 0x11,         # LDA $11     zero page cannot name another page
+        0xEA,               # NOP
+    ))
+    relocated = bytes((
+        0xAD, 0xC8, 0x11,
+        0x4C, 0xC0, 0x11,
+        0x20, 0xD2, 0xFF,
+        0xA5, 0x11,
+        0xEA,
+    ))
+    last = source + 0x3F
+    code_end = source + len(program) - 1
+
+    write_rest_memory_confirmed(rest_host, source, program)
+    write_rest_memory_confirmed(rest_host, dest, b"\x00" * len(program))
+
+    session.type_into_prompt(
+        "T", TRANSFER_PROMPT_TITLE,
+        f"{source:04X}-{last:04X},{dest:04X},{source:04X}-{code_end:04X}",
+        retypes=PROMPT_RETYPES)
+    screen = session.send_key("ENTER", settle=True)
+
+    # The count is the point of the report: a scan that lost instruction
+    # alignment would move a different number of operands.
+    def reports_two(snapshot: Snapshot) -> bool:
+        return "2 OPERANDS RELOCATED" in snapshot.text()
+
+    screen = wait_until(session, reports_two)
+    if not reports_two(screen):
+        raise Failure(
+            "a relocating Transfer did not report moving two operands\n"
+            f"{screen.text()}")
+    session.send_key("ENTER", settle=True)
+    wait_for_monitor(session, "dismissing the relocation report")
+
+    assert_monitor_write_landed(rest_host, dest, relocated,
+                                "a relocating Transfer")
+
+
 def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str) -> None:
     """Where the left-arrow key is edit data it stays data; RUN/STOP still backs out."""
     for view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
@@ -2725,7 +2782,7 @@ def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str)
 PROMPT_INPUT_CASES = (
     ("J", "Jump AAAA", "Z", "8"),
     ("F", "Fill AAAA-BBBB,DD", "G", "0"),
-    ("T", "Transfer AAAA-BBBB,CCCC", "/", "1"),
+    ("T", TRANSFER_PROMPT_TITLE, "/", "1"),
     ("C", "Compare AAAA-BBBB,CCCC", "*", "2"),
     ("H", "Hunt AAAA-BBBB", "Z", "4"),
     ("S", "Save AAAA-BBBB", "X", "3"),
@@ -3015,6 +3072,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("C=+O opens the monitor from the file browser and nowhere else"):
         run_monitor_shortcut_scope_test(session, mode)
+
+    with check("Transfer moves absolute operands when given a code range"):
+        run_transfer_relocate_test(session, rest_host)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)

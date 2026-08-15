@@ -86,6 +86,13 @@ MonitorError monitor_parse_expression(const char *text, uint16_t *value);
 MonitorError monitor_parse_byte_value(const char *text, uint8_t *value);
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value);
 MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
+// The same, plus the optional fourth field `,DDDD-EEEE` naming the part of the
+// source that is code, in source addresses. Without it `relocate` comes back
+// false and the first three fields are exactly what monitor_parse_transfer
+// gives, which is what keeps the three-argument command unchanged.
+MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
+                                             uint16_t *dest, bool *relocate,
+                                             uint16_t *code_start, uint16_t *code_end);
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest);
 MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end, uint8_t *needle, int *needle_len);
 
@@ -96,6 +103,11 @@ uint8_t monitor_screen_code_for_char(char c,
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value);
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest);
+// Copy, then move absolute operands in the code range that point into the
+// copied source range. Returns how many operands were rewritten.
+int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
+                                     uint16_t dest, uint16_t code_start, uint16_t code_end,
+                                     bool illegal_enabled);
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len);
 int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, char *out, int out_len);
 int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, const uint8_t *needle, int needle_len, uint16_t *out_addrs, int max_addrs);

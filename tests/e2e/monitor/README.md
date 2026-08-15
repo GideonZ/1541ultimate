@@ -100,6 +100,9 @@ Interaction contract:
   still open afterwards; inside the monitor the same key leaves it
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
+- `Transfer` given a fourth field moves the absolute operands that point inside
+  the copied range, leaves a KERNAL call and a zero-page load alone, and
+  reports the number it moved
 
 Reliability sweeps:
 
