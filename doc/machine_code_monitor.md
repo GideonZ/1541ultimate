@@ -20,8 +20,10 @@ To open the monitor, use one of the following:
 system-information screen and the context menus read the key and do nothing
 with it; leave them with `RUN/STOP` first, or use `F5` instead.
 
-To leave the monitor with nothing else open, press `X`, `C=+O`, `RUN/STOP`,
-`ESC` on a USB keyboard, or the C64's top-left `←` key. `C=+X` and `C=+I` also
+To leave the monitor with nothing else open, press `C=+O`, `RUN/STOP`,
+`ESC` on a USB keyboard, or the C64's top-left `←` key. A bare `X` is not an
+exit: every other letter on that keymap is a command, so `X` would let one
+mistyped command letter discard the view. `C=+X` and `C=+I` also
 leave it, after resetting the machine and after swapping the interface mode
 respectively; see [Resetting the machine](#resetting-the-machine). Pushing the device's
 menu button also closes it. With a popup, a prompt or edit mode open,
@@ -601,8 +603,9 @@ half-typed nibble as the whole byte value.
 
 In Memory and Binary edit mode, a key that is not data for that view is still
 dispatched as a monitor command. `M`, `I`, `A`, `V` and `B` switch views without
-leaving edit mode, and `X` leaves the monitor. In ASCII and Screen edit mode
-every printable key is data instead.
+leaving edit mode. A key that is neither data nor a command, `X` among them, is
+ignored and edit mode continues. In ASCII and Screen edit mode every printable
+key is data instead.
 
 `DEL` is logical delete, not raw backspace:
 

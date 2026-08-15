@@ -97,7 +97,8 @@ Interaction contract:
   contain, with no change to the field, and accepts the next valid one
 - `C=+O` opens the monitor from the file browser, and is ignored by the task
   menu, the settings screens and a browser context menu, each of which is
-  still open afterwards; inside the monitor the same key leaves it
+  still open afterwards; inside the monitor the same key leaves it, and a
+  bare `X` does not
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
 - `Transfer` given a fourth field moves the absolute operands that point inside

@@ -1042,6 +1042,118 @@ static int test_interface_shortcut_swaps_and_leaves(void)
     return 0;
 }
 
+static int test_x_is_not_an_exit(void)
+{
+    // The monitor is left with C=+O, RUN/STOP and Escape. A bare X is not an
+    // exit: it is a letter in a keymap where J, E, F, T, C, H, U, O, L and S
+    // are all commands, so a mistyped command letter must not discard the
+    // view.
+    {
+        // Move off the opening address first, so a view that was thrown away
+        // and rebuilt would read differently from the view that was there.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_DOWN, KEY_DOWN, 'X', 'x', KEY_BREAK };
+        FakeKeyboard kb(keys, 5);
+        char before[6][39], after[6][39];
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "X test: moving down failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "X test: moving down failed.")) return 1;
+        for (int row = 0; row < 6; row++) {
+            screen.get_slice(1, row + 3, 38, before[row]);
+        }
+        if (expect(mon.poll(0) == 0, "X must not leave the monitor.")) return 1;
+        if (expect(mon.poll(0) == 0, "x must not leave the monitor.")) return 1;
+        for (int row = 0; row < 6; row++) {
+            screen.get_slice(1, row + 3, 38, after[row]);
+        }
+        for (int row = 0; row < 6; row++) {
+            if (expect(strcmp(before[row], after[row]) == 0,
+                       "X must leave the view exactly as it was.")) {
+                printf("  row %d was %s, now %s\n", row, before[row], after[row]);
+                return 1;
+            }
+        }
+        if (expect(mon.poll(0) == 1, "RUN/STOP must still leave the monitor.")) return 1;
+        mon.deinit();
+    }
+    {
+        // The three remaining exits, each from the same starting state.
+        const int exits[] = { KEY_CTRL_O, KEY_BREAK, KEY_ESCAPE };
+        for (int i = 0; i < 3; i++) {
+            TestUserInterface ui;
+            CaptureScreen screen;
+            FakeMemoryBackend backend;
+            const int keys[] = { exits[i] };
+            int result = 0;
+            run_monitor_keys(ui, screen, backend, keys, 1, &result);
+            if (expect(result == 1, "C=+O, RUN/STOP and Escape must all still exit.")) {
+                printf("  exit key index %d returned %d\n", i, result);
+                return 1;
+            }
+        }
+    }
+    {
+        // ASCII edit mode: X is edit data there and is written to memory.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'i', 'e', 'X' };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 3, &result);
+        if (expect(result == 0, "X must stay ASCII edit data.")) return 1;
+        if (expect(backend.memory[0x0000] == 'X',
+                   "X in ASCII edit mode must write X to memory.")) {
+            printf("  memory was %02X\n", backend.memory[0x0000]);
+            return 1;
+        }
+    }
+    {
+        // Hex edit mode: X is not a hex digit, so it is ignored and edit mode
+        // survives it.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'e', 'X', KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "X test: entering hex edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "X must not leave the monitor from hex edit mode.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "X must leave hex edit mode running.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        if (expect(backend.memory[0x0000] == 0x00,
+                   "X must not write anything in hex edit mode.")) return 1;
+        mon.deinit();
+    }
+    {
+        // ASM edit mode: a letter opens the opcode picker, and X still does.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'a', 'e', 'X' };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 3, &result);
+        if (expect(result == 0, "X must not leave the monitor from ASM edit mode.")) return 1;
+    }
+    return 0;
+}
+
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
@@ -8559,6 +8671,7 @@ int main()
     if (test_reset_shortcut_resets_and_leaves()) return 1;
     if (test_reset_and_interface_shortcuts_never_reach_a_popup_layer()) return 1;
     if (test_interface_shortcut_swaps_and_leaves()) return 1;
+    if (test_x_is_not_an_exit()) return 1;
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;

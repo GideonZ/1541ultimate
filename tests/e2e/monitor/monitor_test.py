@@ -2628,6 +2628,14 @@ def run_monitor_shortcut_scope_test(session: MonitorSession, mode: str) -> None:
         raise Failure(
             "C=+O no longer opens the monitor from the file browser after the "
             f"other contexts were visited\n{snapshot.text()}")
+    # 6. A bare X is not an exit. Every other letter on the monitor's keymap
+    #    is a command, so an X that closed the monitor would let one mistyped
+    #    command letter discard the view.
+    session.send_key("X", settle=True)
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(f"X left the monitor; it is not an exit\n{snapshot.text()}")
+
     session.send_key("CTRL_O", settle=True)
     snapshot = wait_until(session, lambda screen: not monitor_is_on_screen(screen))
     if monitor_is_on_screen(snapshot):

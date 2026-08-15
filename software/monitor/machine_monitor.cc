@@ -42,7 +42,7 @@ extern "C" {
 const char *const monitor_help_lines[] = {
     "{M} Memory     {I} ASCII      {V} Screen",
     "{A} Assembly   {B} Binary     {U} Undoc/Case",
-    "{J} Jump       {G} Go         {X} Exit",
+    "{J} Jump       {G} Go",
     // No blank row between the two halves of this grid: the page is one row
     // from the shortest screen's budget, and a blank inside a single
     // three-column grid is worth less than the machine row at the bottom.
@@ -5821,7 +5821,6 @@ int MachineMonitor :: handle_key(int key)
         case '?':
             toggle_help();
             break;
-        case 'x': case 'X':
         case KEY_CTRL_O:
         case KEY_BREAK:
         case KEY_ESCAPE:

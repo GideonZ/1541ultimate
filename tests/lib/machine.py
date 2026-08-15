@@ -228,15 +228,15 @@ BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
 # The machine code monitor on the lagging line is an earlier revision of the
 # same program, and tests/e2e/monitor/monitor_test.py asserts this one's
 # behaviour throughout rather than in one place. Read from the two help
-# screens side by side: this branch offers "{X} Exit" on its Jump/Go line and
-# names "Back a level", "Copy/Paste" and "Follow/Return" at the foot, where
-# the C64 Ultimate 1.2.0 monitor has no Exit key and names "Open monitor",
-# "Close monitor" and "Leave edit" instead. Tagged once for the suite rather
-# than per check, because nearly every check depends on some part of it.
+# screens side by side: this branch names "Back a level", "Copy/Paste" and
+# "Follow/Return" at the foot of its help page, where the C64 Ultimate 1.2.0
+# monitor names "Open monitor", "Close monitor" and "Leave edit" instead.
+# Tagged once for the suite rather than per check, because nearly every check
+# depends on some part of it.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
-    "the machine code monitor offers an Exit key and a Back action, which is "
-    "the revision tests/e2e/monitor/monitor_test.py drives",
+    "the machine code monitor offers the Back action and the layer model that "
+    "tests/e2e/monitor/monitor_test.py drives",
     (C64U,))
 
 # Measured with tests/e2e/filemanager/cfg_unknown_items_test.py and
