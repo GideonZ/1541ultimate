@@ -940,6 +940,17 @@ class AudioTimeline:
         self._counts["packets_written"] += 1
         return Written(pcm=payload, concealed_packets=0)
 
+    @property
+    def anchored(self) -> bool:
+        """Whether any packet has arrived, so there is a timeline at all.
+
+        A caller that has to produce audio for a fixed interval whether or not
+        the device is sending needs this: before the first packet the stream
+        has not started, and what that caller writes is not concealment of
+        anything that went missing.
+        """
+        return self._has_anchor
+
     def reanchor(self, reason: str) -> None:
         """Abandon the timeline because the stream's continuity ended.
 

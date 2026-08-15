@@ -348,12 +348,6 @@ class RunState:
     # right thing to make.
     between_suites: bool = True
 
-    def caption(self) -> str:
-        """What the stamp's second row says: which test, at this moment."""
-        parts = [part for part in (self.label, self.suite, self.scenario,
-                                   self.check) if part]
-        return " / ".join(parts)
-
     @property
     def key(self) -> str:
         """This suite run's identity key, which names its files."""
@@ -1418,10 +1412,14 @@ class AudioCursor:
             # that stopped.
             filler = self.timeline.fill(packets)[:short]
             self.filled_bytes += len(filler)
-        elif not self.available:
-            # The run stopped this stream, or could not get it back. The track
-            # still needs a slot's audio to stay the same length as the video,
-            # and none of it is a packet the device failed to deliver.
+        elif not self.available or not self.timeline.anchored:
+            # The run stopped this stream, or could not get it back, or it has
+            # not started yet: the file opens on a card held for several
+            # seconds while the device is still being asked for the stream.
+            # The track still needs a slot's audio to stay the same length as
+            # the video, and none of it is a packet the device failed to
+            # deliver. Counting the opening card as loss reported 1275 lost
+            # audio packets on a run that lost about 25.
             filler = self.timeline.absent(packets)[:short]
             self.unavailable_bytes += len(filler)
         else:

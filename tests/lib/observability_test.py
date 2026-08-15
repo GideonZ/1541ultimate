@@ -1418,7 +1418,48 @@ def audio_loss_is_told_apart_from_the_stream_not_running() -> str:
     counts = quiet.counts()
     expect("counted as loss", counts["packets_lost"], 7)
     expect("and not as absent", counts["packets_absent"], 0)
-    return "9 cases, loss and lifecycle apart"
+
+    # 10. A stream that has not started yet has lost nothing.
+    fresh = streams.AudioTimeline()
+    expect("nothing has arrived", fresh.anchored, False)
+    for packet in audio_packets(0, 1):
+        fresh.push(packet)
+    expect("and now something has", fresh.anchored, True)
+    return "10 cases, loss and lifecycle apart"
+
+
+@case(1, "OBS-8.25")
+def the_card_at_the_start_is_not_lost_audio() -> str:
+    """The seconds before the first packet are not packets that went missing.
+
+    The file opens on a card held for five seconds while the device is still
+    being asked for the stream. The audio track has to be the same length as
+    the video track, so those slots are filled, and filling them was counted
+    as loss: 1275 lost audio packets on a run that lost about 25.
+    """
+    import recorder as recorder_lib
+    import streams
+    from device_double import audio_packets
+
+    timeline = streams.AudioTimeline()
+    cursor = recorder_lib.AudioCursor(timeline, 48000.0, 10)
+    for _ in range(50):
+        cursor.take()
+    counts = timeline.counts()
+    expect("nothing lost before the stream started", counts["packets_lost"], 0)
+    expect("and it is counted as absent", counts["packets_absent"] > 0, True)
+    if cursor.unavailable_bytes <= 0:
+        raise Failure("the opening card's audio was not counted at all")
+    expect("nothing concealed", cursor.concealed_bytes, 0)
+
+    # Once the stream is running, a gap in it is loss again.
+    for packet in audio_packets(0, 200):
+        cursor.push(timeline.push(packet).pcm)
+    for _ in range(20):
+        cursor.take()
+    if timeline.counts()["packets_lost"] <= 0:
+        raise Failure("a gap in a running stream is no longer counted as loss")
+    return "50 slots before the first packet, 0 lost"
 
 
 @case(2, "OBS-8.24", "OBS-8.25", "OBS-15.1")
@@ -3928,12 +3969,29 @@ FIXTURE_STUBS = (
     # and the one the evidence matters most for.
     Stub("cut-short", body=(
         "import signal\n"
+        "import time as _time\n"
         "report.check_start('the first half')\n"
         "report.check_ok()\n"
         "if os.environ.get('E2E_TARGET') == '127.0.0.1@localhost':\n"
         "    with open(os.environ['E2E_JSONL'], 'a') as handle:\n"
         "        handle.write('{\"kind\": \"check\", \"index\": 2, \"lab')\n"
         "        handle.flush()\n"
+        # The runner copies this suite's console into its log line by line, so
+        # killing it the moment the line is printed is a race with that copy:
+        # the fixture then has an empty log and the document loses the log
+        # tail block. Waiting for the line to reach the log is what the kill
+        # is synchronised against, rather than a pause that would be the same
+        # race with a longer odds.
+        "    _log = os.environ['E2E_JSONL'][:-len('.jsonl')] + '.log'\n"
+        "    _deadline = _time.monotonic() + 10.0\n"
+        "    while _time.monotonic() < _deadline:\n"
+        "        try:\n"
+        "            if 'the first half' in open(_log, encoding='utf-8',\n"
+        "                                        errors='replace').read():\n"
+        "                break\n"
+        "        except OSError:\n"
+        "            pass\n"
+        "        _time.sleep(0.005)\n"
         "    os.kill(os.getppid(), signal.SIGKILL)\n"
         "    os.kill(os.getpid(), signal.SIGKILL)\n"
         "report.check_start('the second half')\n"
