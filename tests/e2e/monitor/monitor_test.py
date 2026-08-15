@@ -577,22 +577,42 @@ def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
     return screen
 
 
-def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
-    if expected_width not in (8, 16):
-        raise Failure(f"Unsupported hex width request {expected_width}")
-
-    screen = ensure_view(session, "HEX ")
+def hex_width_is_16(screen: Snapshot) -> bool:
     rows = find_memory_rows(screen)
     row_text = screen.line(rows[0]).strip()
     if row_text.startswith("|"):
         row_text = row_text[1:]
     if row_text.endswith("|"):
         row_text = row_text[:-1]
-    row_text = row_text.strip()
-    is_width_16 = MEMORY_ROW_16_RE.match(row_text) is not None
+    return MEMORY_ROW_16_RE.match(row_text.strip()) is not None
 
-    if (expected_width == 16) != is_width_16:
-        screen = session.send_char("W", settle=True)
+
+def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
+    """Set the Hex row width, pressing W at most once.
+
+    The Hex width has two states, so one press reaches the other one. The
+    result is then waited for rather than assumed, so a W that did not arrive
+    fails here instead of leaving the next check reading rows of the wrong
+    width.
+    """
+    if expected_width not in (8, 16):
+        raise Failure(f"Unsupported hex width request {expected_width}")
+
+    def has_width(snapshot: Snapshot) -> bool:
+        try:
+            return hex_width_is_16(snapshot) == (expected_width == 16)
+        except Failure:
+            return False  # the view is mid-redraw
+
+    screen = ensure_view(session, "HEX ")
+    if has_width(screen):
+        return screen
+    session.send_char("W", settle=True)
+    screen = wait_until(session, has_width)
+    if not has_width(screen):
+        raise Failure(
+            f"W did not set the Hex view to {expected_width} bytes per row\n"
+            f"{screen.text()}")
     return screen
 
 
