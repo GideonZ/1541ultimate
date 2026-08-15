@@ -1,0 +1,140 @@
+# The hardware E2E gate.
+#
+# A workflow of its own rather than a job in build.yml, for four reasons: it
+# runs on different hardware, it takes 15 to 30 minutes against a build that
+# takes longer still, it must not run twice concurrently against one set of
+# devices, and a red gate has to be distinguishable from a red build at a
+# glance.
+#
+# It runs nowhere until a self-hosted runner carries the `e2e` label. That is
+# an operator decision about a machine on the device LAN, not a repository
+# fact, and until somebody makes it this file is valid and never runs, which is
+# the correct failure.
+name: E2E gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: >-
+          Which devices to test: a host, or cartridge@computer for a cartridge
+          under test in the computer that supplies its C64 keyboard and video.
+          Space separated.
+        required: false
+        default: u64 u2@c64u
+      modes:
+        description: UI transport, or a comma-separated list, or all.
+        required: false
+        default: overlay
+  schedule:
+    # The devices are physical and shared, so the gate runs on a timer rather
+    # than per push: a push trigger would queue a run per commit against
+    # hardware that can serve one at a time.
+    - cron: "0 3 * * *"
+
+# Two runs of the gate would drive the same devices at once. The running one is
+# not cancelled, because cancelling mid-suite leaves a device in an unknown
+# state, so the second waits.
+concurrency:
+  group: e2e-gate
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    # build.yml uses the bare `self-hosted` label, so an unlabelled job would
+    # land on the build machine, which is not on the device LAN.
+    runs-on: [self-hosted, e2e]
+    # Above the longest expected run. A hung suite otherwise holds the devices
+    # until somebody notices.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run the gate
+        id: gate
+        continue-on-error: true
+        env:
+          # Never on a command line: a recorded command line is a
+          # secret-bearing string, and the artefacts leave this machine.
+          U64_PASS: ${{ secrets.U64_PASS }}
+          # What brings a device back differs per setup: a JTAG download, a
+          # power switch, a flash tool. It is the operator's, so it is a
+          # repository variable and the repository has no default. With it
+          # unset the gate runs and never recovers anything.
+          RECOVER: ${{ vars.E2E_RECOVER_COMMAND }}
+          # Through the environment rather than substituted into the script:
+          # an expression is textually replaced before bash sees the line, so
+          # an input carrying a semicolon would run on this machine. TARGETS
+          # is deliberately unquoted below, because a run of several devices
+          # is several words.
+          MODES: ${{ inputs.modes || 'overlay' }}
+          TARGETS: ${{ inputs.targets || 'u64 u2@c64u' }}
+        run: |
+          ./run-tests -o "$RUNNER_TEMP/e2e" \
+            --mode "$MODES" \
+            ${RECOVER:+--recover-command "$RECOVER"} \
+            $TARGETS
+
+      # Steps 3 to 5 run whatever the gate did. A run that was cancelled or
+      # that timed out is the run whose evidence is worth most, and a step that
+      # only runs on success produces nothing exactly then. The generator
+      # renders a half-written tree, which is what makes that safe.
+      - name: Generate the report
+        if: always()
+        run: python3 tools/e2e_report.py "$RUNNER_TEMP/e2e"
+
+      - name: Upload the report
+        id: report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/e2e/**/*.md
+            ${{ runner.temp }}/e2e/**/*.jsonl
+            ${{ runner.temp }}/e2e/**/*.log
+            ${{ runner.temp }}/e2e/**/*.txt
+            ${{ runner.temp }}/e2e/**/*.bin
+            ${{ runner.temp }}/e2e/**/*.json
+            ${{ runner.temp }}/e2e/**/*.pdf
+            ${{ runner.temp }}/e2e/**/capture/*.png
+          if-no-files-found: warn
+
+      # A separate artifact because the two have different lifetimes and
+      # different sizes: the report and the JSONL are what anyone looks at
+      # weeks later, and the recordings are looked at within days if at all.
+      # It does not exist when the recorder was not asked for, which is the
+      # default.
+      - name: Upload the recordings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-video-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/e2e/**/*.mp4
+            ${{ runner.temp }}/e2e/**/*.srt
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # The upload comes first and the summary second, because the summary
+      # carries the artifact's URL and that URL does not exist until the upload
+      # has run.
+      - name: Write the job summary
+        if: always()
+        env:
+          E2E_ARTIFACT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: python3 tools/e2e_report.py "$RUNNER_TEMP/e2e" --job-summary
+
+      # `outcome` is what the step did before continue-on-error was applied,
+      # so this sees the failure the step swallowed. Anything other than
+      # success fails the job, which covers a gate that was cancelled or that
+      # hit the job's own timeout as well as one that reported a bad status.
+      - name: Fail on the gate's own status
+        if: always() && steps.gate.outcome != 'success'
+        run: |
+          echo "the gate did not pass (${{ steps.gate.outcome }}); see the job"
+          echo "summary and the e2e-report artifact"
+          exit 1
