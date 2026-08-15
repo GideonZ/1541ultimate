@@ -735,6 +735,14 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 C64_MODE = frozen_mode;
             }
             C64_DMA_MEMONLY = 0;
+            // Both registers above change what the C64 bus decodes at the
+            // address about to be accessed, and the access must not be issued
+            // before that has taken effect. Reading them back orders the two:
+            // the read cannot complete until the write has reached the
+            // register. resume() takes a dummy cycle after its own C64_MODE
+            // write for the same reason.
+            (void)C64_MODE;
+            (void)C64_DMA_MEMONLY;
             if (rw) {
                 memcpy(buffer + pos, (const void *)(ram + addr), chunk);
             } else {
@@ -744,6 +752,7 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
             if (restore_mode) {
                 C64_MODE = saved_mode;
             }
+            (void)C64_MODE;
         } else if ((addr >= 0x0800) && (addr < 0x1000)) {
             // The freezer menu uses this 2KB as its own scratch RAM, so serve
             // reads/writes from the backup taken at freeze time instead: it is
