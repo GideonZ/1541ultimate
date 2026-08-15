@@ -903,6 +903,27 @@ def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
     return wait_for_rest_data(device_host, address, data, timeout=2.0) == data
 
 
+# Every write that did not land on its first attempt and was not attributed to
+# the monitor. Counted for the whole run and reported at the end of it, so a
+# suite that passes while the shared DMA path lost writes says how many rather
+# than only saying that each individual one was not the monitor's fault.
+FIRST_ATTEMPT_LOSSES: List[str] = []
+
+
+def note_first_attempt_loss(address: int, what: str) -> None:
+    FIRST_ATTEMPT_LOSSES.append(f"${address:04X} ({what})")
+
+
+def report_first_attempt_losses() -> None:
+    if not FIRST_ATTEMPT_LOSSES:
+        return
+    detail(f"{len(FIRST_ATTEMPT_LOSSES)} write(s) in this run did not land on "
+           f"the first attempt and were not the monitor's write path: "
+           f"{', '.join(FIRST_ATTEMPT_LOSSES)}. Those are the intermittent in "
+           f"C64::dma_transfer_frozen, which the device's own machine:writemem "
+           f"shows at a comparable rate")
+
+
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
                                 what: str, timeout: float = 5.0,
                                 retry_monitor_write: Optional[Callable[[], None]] = None
@@ -938,12 +959,14 @@ def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
                f"from the monitor, and would not take it from the device's own "
                f"machine:writemem either, so that loss is in the frozen DMA path "
                f"under both")
+        note_first_attempt_loss(address, "the device could not write it either")
         return False
     if retry_monitor_write is None:
         detail(f"{what}: ${address:04X} did not take {expected.hex().upper()} "
                f"from the monitor and did take it from the device's own "
                f"machine:writemem. One sample, and this check cannot redo its "
                f"write, so the loss is reported rather than attributed")
+        note_first_attempt_loss(address, "one sample, no retry available")
         return False
 
     # Put something else there, so the retry has to write the bytes itself
@@ -962,6 +985,7 @@ def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
                f"the device's own machine:writemem succeeding in between, so "
                f"that loss is the intermittent in the frozen DMA path under "
                f"both rather than the monitor's write path")
+        note_first_attempt_loss(address, "the monitor placed it on the retry")
         return False
     raise Failure(
         f"{what}: ${address:04X} holds {second.hex().upper()}, expected "
@@ -3570,6 +3594,7 @@ def main() -> int:
         if session is not None:
             session.close()
 
+    report_first_attempt_losses()
     suite_ok("monitor_test")
     return 0
 

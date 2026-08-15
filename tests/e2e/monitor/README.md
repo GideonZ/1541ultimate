@@ -141,6 +141,19 @@ An instruction that landed as its opcode without its operand fails on the first
 attempt whatever any retry does, because the monitor writes an instruction as
 one block and a block cannot land in part.
 
+Every write that did not land on its first attempt is counted for the whole run
+and listed at the end of it, with its address and why it was not attributed to
+the monitor. A run that passes while the shared path lost writes says how many
+and where, rather than only saying that each one individually was not the
+monitor's fault.
+
+One address is worth knowing about before reading a loss there.  Under the
+freezer's banking, BASIC ROM sits over `$A000-$BFFF`, so a write anywhere in
+that range reaches nothing and the read returns ROM. Neither the monitor nor
+`machine:writemem` can write there, and that is not a lost write. The boundary
+sweep does not include such an address; a measurement that does will see it
+fail every time on both paths.
+
 The checks that go through it are the two sweeps above, the two hex-edit
 persistence checks, the Assembly-view edit, the left-arrow-as-data edit and
 both save and load round trips.
