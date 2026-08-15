@@ -21,7 +21,9 @@ system-information screen and the context menus read the key and do nothing
 with it; leave them with `RUN/STOP` first, or use `F5` instead.
 
 To leave the monitor with nothing else open, press `X`, `C=+O`, `RUN/STOP`,
-`ESC` on a USB keyboard, or the C64's top-left `←` key. Pushing the device's
+`ESC` on a USB keyboard, or the C64's top-left `←` key. `C=+X` and `C=+I` also
+leave it, after resetting the machine and after swapping the interface mode
+respectively; see [Resetting the machine](#resetting-the-machine). Pushing the device's
 menu button also closes it. With a popup, a prompt or edit mode open,
 `RUN/STOP`, `ESC` and `←` close that layer first; see [Back](#back).
 
@@ -1010,6 +1012,24 @@ Default slots are aimed at common C64 locations:
 | Freeze | The monitor has to appear in the C64's own video output, for example to capture it |
 | Overlay on HDMI | You want `P` poll mode to watch memory change, or the `Z` freeze toggle |
 
-To change it, leave the monitor, press `C=+I` in the file browser or the
-settings menu, then reopen the monitor. `C=+I` does nothing inside the
-monitor.
+`C=+I` changes it, from the file browser, the settings menu, or the monitor
+itself. Pressing it inside the monitor swaps the mode and closes the monitor,
+because the mode it was drawn in is the one being changed and the new one only
+takes effect on the next open. Reopen it with `C=+O` from the file browser.
+
+## Resetting the machine
+
+`C=+X` resets the C64 the monitor is looking at, and leaves the monitor. It
+leaves because after a reset the address, the bytes and the CPU state on screen
+describe a machine that no longer exists, and on a cartridge the freezer's hold
+on it is over.
+
+`C=+X` and `C=+I` are the only two keys that act on the machine rather than on
+the view, so both are deliberately unreachable from a layer that owns the
+keyboard: neither does anything while a popup, a command prompt, the Bookmarks
+list, the Number calculator, or a hunt, compare or opcode result picker is
+open. Leave that layer with Back first. Both do work from any memory view and
+from edit mode.
+
+On a machine whose monitor backend cannot reach a reset, `C=+X` says
+`RESET UNAVAILABLE` and changes nothing, edit mode included.

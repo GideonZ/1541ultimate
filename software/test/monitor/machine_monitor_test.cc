@@ -826,6 +826,184 @@ static int test_transfer_without_a_code_range_is_unchanged(void)
     return 0;
 }
 
+// A backend that can reset, and counts how often it was asked to.
+struct FakeResettableBackend : public FakeMemoryBackend
+{
+    int reset_calls;
+
+    FakeResettableBackend() : reset_calls(0) { }
+    virtual bool supports_reset(void) const { return true; }
+    virtual bool reset_machine(void) { reset_calls++; return true; }
+};
+
+static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
+                            MemoryBackend &backend, const int *keys, int count,
+                            int *last_result)
+{
+    FakeKeyboard kb(keys, count);
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    int result = 0;
+    for (int i = 0; i < count && result == 0; i++) {
+        result = mon.poll(0);
+    }
+    mon.deinit();
+    if (last_result) {
+        *last_result = result;
+    }
+    return 0;
+}
+
+static int test_reset_shortcut_resets_and_leaves(void)
+{
+    {
+        // From a memory view: the machine is reset once and the monitor exits.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        const int keys[] = { KEY_CTRL_X };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 1, &result);
+        if (expect(backend.reset_calls == 1, "C=+X must reset the machine once.")) {
+            printf("  reset_calls %d\n", backend.reset_calls);
+            return 1;
+        }
+        if (expect(result == 1, "C=+X must leave the monitor.")) return 1;
+    }
+    {
+        // From edit mode: edit mode is left and the reset still happens.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        const int keys[] = { 'e', KEY_CTRL_X };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result);
+        if (expect(backend.reset_calls == 1, "C=+X must reset from edit mode too.")) return 1;
+        if (expect(result == 1, "C=+X must leave the monitor from edit mode.")) return 1;
+    }
+    {
+        // A backend that cannot reset says so and stays in the monitor.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;   // supports_reset() is false
+        const int keys[] = { KEY_CTRL_X, KEY_BREAK };
+        int result = 0;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result);
+        if (expect(strstr(ui.last_popup, "RESET UNAVAILABLE") != 0,
+                   "A backend that cannot reset must say so.")) {
+            printf("  popup was %s\n", ui.last_popup);
+            return 1;
+        }
+    }
+    {
+        // A reset that cannot happen disturbs nothing, so edit mode is still
+        // open behind the message. Read straight after the shortcut, because
+        // any further key would leave edit mode for its own reasons.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;   // supports_reset() is false
+        char header[39];
+        const int keys[] = { 'e', KEY_CTRL_X, KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Reset shortcut test: entering edit mode failed.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "Reset shortcut test: edit mode did not start.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 0, "A reset that cannot happen must stay in the monitor.")) return 1;
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "A reset that cannot happen must leave edit mode alone.")) {
+            printf("  header was %s\n", header);
+            return 1;
+        }
+        mon.deinit();
+    }
+    return 0;
+}
+
+static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
+{
+    // The bookmark popup, the opcode picker and the number popup each own the
+    // keyboard while they are up. A destructive shortcut must not act from
+    // under one of them.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        // C=+B opens the bookmark popup, then C=+X and C=+I are pressed into it.
+        const int keys[] = { KEY_CTRL_B, KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        int result = 0;
+        g_swap_interface_type_calls = 0;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result);
+        if (expect(backend.reset_calls == 0,
+                   "The bookmark popup must keep C=+X from resetting the machine.")) return 1;
+        if (expect(g_swap_interface_type_calls == 0,
+                   "The bookmark popup must keep C=+I from swapping the interface.")) return 1;
+    }
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeResettableBackend backend;
+        // N opens the number popup, then the two shortcuts are pressed into it.
+        const int keys[] = { 'N', KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        int result = 0;
+        g_swap_interface_type_calls = 0;
+        run_monitor_keys(ui, screen, backend, keys, 5, &result);
+        if (expect(backend.reset_calls == 0,
+                   "The number popup must keep C=+X from resetting the machine.")) return 1;
+        if (expect(g_swap_interface_type_calls == 0,
+                   "The number popup must keep C=+I from swapping the interface.")) return 1;
+    }
+    return 0;
+}
+
+static int test_interface_shortcut_swaps_and_leaves(void)
+{
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { KEY_CTRL_I };
+        int result = 0;
+        g_swap_interface_type_calls = 0;
+        run_monitor_keys(ui, screen, backend, keys, 1, &result);
+        if (expect(g_swap_interface_type_calls == 1,
+                   "C=+I must ask for the interface swap once.")) {
+            printf("  swap calls %d\n", g_swap_interface_type_calls);
+            return 1;
+        }
+        if (expect(result == 1,
+                   "C=+I must leave the monitor so the new mode takes effect.")) return 1;
+    }
+    {
+        // From edit mode as well.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'e', KEY_CTRL_I };
+        int result = 0;
+        g_swap_interface_type_calls = 0;
+        run_monitor_keys(ui, screen, backend, keys, 2, &result);
+        if (expect(g_swap_interface_type_calls == 1,
+                   "C=+I must swap from edit mode too.")) return 1;
+        if (expect(result == 1, "C=+I must leave the monitor from edit mode.")) return 1;
+    }
+    return 0;
+}
+
 static int test_memory_helpers(void)
 {
     FakeMemoryBackend backend;
@@ -8340,6 +8518,9 @@ int main()
     if (test_illegal_opcode_normalization()) return 1;
     if (test_opcode_metadata_consistency()) return 1;
     if (test_memory_helpers()) return 1;
+    if (test_reset_shortcut_resets_and_leaves()) return 1;
+    if (test_reset_and_interface_shortcuts_never_reach_a_popup_layer()) return 1;
+    if (test_interface_shortcut_swaps_and_leaves()) return 1;
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;

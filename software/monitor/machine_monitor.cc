@@ -1,5 +1,10 @@
 #include "machine_monitor.h"
 
+// Provided by the application's user interface. Weak, because the monitor's
+// host test binary links without it and must not require it: a build with no
+// interface to swap simply has nothing to do for C= plus I.
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
 #include "assembler_6502.h"
 #include "disassembler_6502.h"
 #include "editor.h"
@@ -38,7 +43,9 @@ const char *const monitor_help_lines[] = {
     "{M} Memory     {I} ASCII      {V} Screen",
     "{A} Assembly   {B} Binary     {U} Undoc/Case",
     "{J} Jump       {G} Go         {X} Exit",
-    "",
+    // No blank row between the two halves of this grid: the page is one row
+    // from the shortest screen's budget, and a blank inside a single
+    // three-column grid is worth less than the machine row at the bottom.
     "{E} Edit       {F} Fill       {T} Transfer",
     "{C} Compare    {H} Hunt       {N} Number",
     "{W} Width      {R} Range      {P} Poll",
@@ -56,6 +63,9 @@ const char *const monitor_help_lines[] = {
     // Structural navigation row: back out, or follow/return within the level
     // already open.
     "{RUNSTOP/<-} Back     {RETURN}  Follow/Ret",
+    // Machine row: the two keys that act on the machine rather than the view,
+    // and both of which leave the monitor.
+    "{C=+X}       Reset    {C=+I}    Interface",
     NULL
     // Page Up/Down remains the window's own last row, drawn by draw_status:
     // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
@@ -5148,6 +5158,40 @@ bool MachineMonitor :: opcode_picker_commit_typed()
     return true;
 }
 
+// C= plus X resets the machine the monitor is looking at, then leaves: after a
+// reset the address, the bytes and the CPU state on screen describe a machine
+// that no longer exists, and on a cartridge the freezer's hold on it is over.
+// Leaving is the only state that is true on every target.
+int MachineMonitor :: handle_reset_shortcut(void)
+{
+    // Nothing is disturbed when the reset cannot happen: the monitor says so
+    // and stays exactly as it was, edit mode included. Leaving the monitor is
+    // what tidies up after a reset that did happen, so there is no state to
+    // unwind here.
+    if (!backend || !backend->supports_reset() || !backend->reset_machine()) {
+        get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return 0;
+    }
+    return 1;   // the monitor's own exit, the same value X returns
+}
+
+// C= plus I swaps the user interface between the freeze menu and the overlay.
+// The monitor closes with it, because the mode it was drawn in is the one that
+// is being changed and the new one only takes effect on the next open.
+int MachineMonitor :: handle_interface_shortcut(void)
+{
+    // As with the reset above: a swap that cannot happen leaves the monitor
+    // exactly as it was.
+    if (!swap_interface_type) {
+        get_ui()->popup("INTERFACE SWAP UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return 0;
+    }
+    (void)swap_interface_type(get_ui());
+    return 1;   // the monitor's own exit, the same value X returns
+}
+
 void MachineMonitor :: exit_edit_mode()
 {
     edit_mode = false;
@@ -5279,6 +5323,18 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
+    }
+
+    // Two shortcuts that act on the machine rather than on the view. They are
+    // deliberately here rather than at the top of this function: a popup, a
+    // command prompt and every picker are polled before it or dispatched above
+    // it, so none of them can reach a destructive action while a text field
+    // has the keyboard. From a memory view and from edit mode they both work.
+    if (key == KEY_CTRL_X) {
+        return handle_reset_shortcut();
+    }
+    if (key == KEY_CTRL_I) {
+        return handle_interface_shortcut();
     }
 
     if (bookmark_shortcut_allowed()) {

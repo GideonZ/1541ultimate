@@ -43,6 +43,7 @@ public:
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F
 #define KEY_CTRL_V 0x16
+#define KEY_CTRL_X 0x18
 
 #define KEY_CTRL_0  0xB0
 #define KEY_CTRL_1  0xB1

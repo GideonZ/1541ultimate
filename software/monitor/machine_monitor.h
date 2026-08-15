@@ -423,6 +423,8 @@ class MachineMonitor : public UIObject
     void asm_edit_history_reset(uint16_t anchor_addr);
     void asm_edit_history_push(uint16_t addr, uint8_t prev_byte, uint8_t prev_part, uint8_t prev_pending);
     bool asm_edit_history_pop();
+    int handle_reset_shortcut(void);
+    int handle_interface_shortcut(void);
     void exit_edit_mode();
     void reset_edit_blink();
     bool update_edit_blink();

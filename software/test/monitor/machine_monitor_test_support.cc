@@ -472,6 +472,18 @@ int UserInterface :: pollInactive()
     return 0;
 }
 
+// The application provides this on the device; the monitor declares it weak so
+// this binary is free not to have it. Providing it here, with a counter, is
+// what lets a test see that C= plus I asked for the swap.
+int g_swap_interface_type_calls = 0;
+
+int swap_interface_type(UserInterface *ui)
+{
+    (void)ui;
+    g_swap_interface_type_calls++;
+    return 0;
+}
+
 int UserInterface :: keymapper(int c, keymap_options_t map)
 {
     if ((navmode == 1) && (map != e_keymap_monitor)) {

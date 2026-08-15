@@ -236,6 +236,15 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
     return (uint8_t)(3 - (dd00 & 0x03));
 }
 
+bool U64MemoryBackend :: reset_machine(void)
+{
+    if (!machine) {
+        return false;
+    }
+    machine->reset();
+    return true;
+}
+
 uint8_t U64MemoryBackend :: monitor_poll_hz(void) const
 {
     return (C64_VIDEOFORMAT & VIDEO_FMT_60_HZ) ? 60 : 50;
