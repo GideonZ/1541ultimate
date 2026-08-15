@@ -2456,6 +2456,17 @@ def run_help_layout_test(session: MonitorSession) -> None:
     assert_help_column(screen, "CPU Bank", 27, "SH+O VIC")
     assert_help_column(screen, "Undoc", 27, "U Undoc/Case")
 
+    # The Jump/Go line has only two of the grid's three columns, because X is
+    # not an exit key and the help must not offer it as one.
+    assert_help_column(screen, "G Go", 1, "J Jump")
+    assert_help_column(screen, "G Go", 14, "G Go")
+    jump_line = help_content_line(screen, "G Go")
+    if jump_line[26:].strip():
+        raise Failure(
+            f"Help layout: the Jump/Go line has a third column: {jump_line!r}")
+    if "Exit" in screen.text():
+        raise Failure(f"Help still offers an Exit key\n{screen.text()}")
+
     for label in ("BOOKMARKS", "CONTROL KEYS"):
         line = help_content_line(screen, label)
         if not line.startswith(label):
