@@ -763,6 +763,17 @@ def goto_and_read_byte(
     return value
 
 
+def ensure_monitor_open(session: MonitorSession) -> None:
+    """Fixture preparation: leave the monitor on screen, wherever we are.
+
+    Idempotent, unlike `MonitorSession.enter_monitor`, whose C=+O would close a
+    monitor that is already up.
+    """
+    if monitor_is_on_screen(session.capture()):
+        return
+    session.enter_monitor()
+
+
 def leave_monitor_fully(session: MonitorSession) -> None:
     """Press Back until the monitor's own status line is gone from the screen.
 
@@ -1166,7 +1177,7 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
         leave_monitor_fully(session)
         for address, value in originals.items():
             write_rest_memory_confirmed(device_host, address, value)
-        session.enter_monitor()
+        ensure_monitor_open(session)
     detail(f"{wrote} hex edits, every byte read back through the C64's own DMA path")
     return wrote
 
@@ -1246,7 +1257,7 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
         if frozen:
             leave_monitor_fully(session)
         write_rest_memory_confirmed(device_host, address, original)
-        session.enter_monitor()
+        ensure_monitor_open(session)
     detail(f"{committed} instruction commits, every byte read back from the device")
     return committed
 
