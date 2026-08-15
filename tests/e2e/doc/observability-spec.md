@@ -617,6 +617,12 @@ screen of question marks: bitmap mode, a sprite over the text, and the shifted
 character set all make cells that match nothing, and enough of them is the
 honest answer that the frame is not readable this way.
 
+A cell that is a ROM shape with no character of its own is a third answer and
+not a failure. Codes 64 to 127 of the unshifted set are the PETSCII graphics,
+which have no ASCII form; a screen with a logo drawn in them is still a text
+screen, so those cells are marked rather than named and the text beside them is
+read normally.
+
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
 its path, whether this run intended to run it, and when it did not, which of the
