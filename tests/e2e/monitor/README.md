@@ -103,6 +103,12 @@ Interaction contract:
   the column does not move when the bank changes
 - `A` opens the Assembly view and `D` changes nothing, because `D` is reserved
   for a future Debug mode
+- the monitor can be left by each of its three exits and reopened at the same
+  view and address
+- `Z` stops the C64 and releases it, with the KERNAL jiffy clock at `$00A2` as
+  the oracle, or says the freezer is not reachable and stays. The run says
+  which of the two happened, because they are different behaviour and both are
+  worth holding; the stop-and-release path needs `--mode freeze`
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
 - `Transfer` given a fourth field moves the absolute operands that point inside
