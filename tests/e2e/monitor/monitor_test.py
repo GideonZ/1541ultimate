@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 # tests/lib holds the reporting rules every suite shares; tests/e2e/lib
 # holds the shared UI backend.
@@ -904,31 +904,71 @@ def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
 
 
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
-                                what: str, timeout: float = 5.0) -> bool:
-    """Require a monitor write to have landed, or the device to be unable to.
+                                what: str, timeout: float = 5.0,
+                                retry_monitor_write: Optional[Callable[[], None]] = None
+                                ) -> bool:
+    """Require a monitor write to have landed, or the loss to be underneath it.
 
     Every check in this suite that proves a monitor edit reached memory goes
     through here, so they all draw the same line. Returns True when the bytes
-    are there. Raises when they are not and the device's own `machine:writemem`
-    can put them there at once, because that is the monitor's write path.
-    Returns False when the device cannot put them there either: that loss is in
-    `C64::dma_transfer_frozen` beneath both, and it is reported in the run
-    rather than blamed on the monitor.
+    are there.
+
+    When they are not, the question is which path lost them, and one retry
+    through the device's own `machine:writemem` does not answer it on its own.
+    `C64::dma_transfer_frozen` loses a write occasionally, so a retry through
+    any path will usually succeed, and taking that as proof blames the monitor
+    for a fault beneath it. Measured on `u2@c64u` over 60 writes at six
+    addresses, one monitor hex edit and one `machine:writemem` per address per
+    round: the monitor lost none of 50 and the device lost one of 50, once the
+    ten attempts at $BFFF are set aside, where BASIC ROM is banked over the
+    address and neither path can write at all.
+
+    So the monitor is blamed only when its own write fails a second time at the
+    same address, after the device has just succeeded there and the address has
+    been set to something else again. That is the shape of a broken write path
+    rather than of a lost write. A caller that can redo its write passes
+    `retry_monitor_write`; one that cannot has its single loss reported rather
+    than attributed, which is the accurate answer for one sample.
     """
     actual = wait_for_rest_data(device_host, address, expected, timeout=timeout)
     if actual == expected:
         return True
-    if device_write_lands(device_host, address, expected):
-        raise Failure(
-            f"{what}: ${address:04X} holds {actual.hex().upper()}, expected "
-            f"{expected.hex().upper()}. The device's own machine:writemem then "
-            f"put those bytes there at once, so this is the monitor's write "
-            f"path and not the DMA path underneath it.")
-    detail(f"{what}: ${address:04X} would not take {expected.hex().upper()} "
-           f"from the monitor, and would not take it from the device's own "
-           f"machine:writemem either, so that loss is in the frozen DMA path "
-           f"under both")
-    return False
+    if not device_write_lands(device_host, address, expected):
+        detail(f"{what}: ${address:04X} would not take {expected.hex().upper()} "
+               f"from the monitor, and would not take it from the device's own "
+               f"machine:writemem either, so that loss is in the frozen DMA path "
+               f"under both")
+        return False
+    if retry_monitor_write is None:
+        detail(f"{what}: ${address:04X} did not take {expected.hex().upper()} "
+               f"from the monitor and did take it from the device's own "
+               f"machine:writemem. One sample, and this check cannot redo its "
+               f"write, so the loss is reported rather than attributed")
+        return False
+
+    # Put something else there, so the retry has to write the bytes itself
+    # rather than find them already in place from the device's attempt.
+    sentinel = bytes(byte ^ 0xFF for byte in expected)
+    write_rest_memory(device_host, address, sentinel)
+    if wait_for_rest_data(device_host, address, sentinel, timeout=2.0) != sentinel:
+        detail(f"{what}: ${address:04X} could not be set to a sentinel before "
+               f"the monitor's write was retried, so the retry was skipped")
+        return False
+    retry_monitor_write()
+    second = wait_for_rest_data(device_host, address, expected, timeout=timeout)
+    if second == expected:
+        detail(f"{what}: ${address:04X} did not take {expected.hex().upper()} "
+               f"from the monitor the first time and took it the second, with "
+               f"the device's own machine:writemem succeeding in between, so "
+               f"that loss is the intermittent in the frozen DMA path under "
+               f"both rather than the monitor's write path")
+        return False
+    raise Failure(
+        f"{what}: ${address:04X} holds {second.hex().upper()}, expected "
+        f"{expected.hex().upper()}. The monitor failed to write it twice, and "
+        f"the device's own machine:writemem put those bytes there in between, "
+        f"so this is the monitor's write path and not the DMA path underneath "
+        f"it.")
 
 
 def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
@@ -976,10 +1016,23 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
             session.goto("E000")
             session.goto(f"{address:04X}")
 
+        def retry_the_edit() -> None:
+            if frozen:
+                session.enter_monitor()
+            session.goto(f"{address:04X}")
+            ensure_view(session, "HEX ")
+            session.send_char("e")
+            session.send_char(digits[0], settle=True)
+            session.send_char(digits[1], settle=True)
+            session.send_key("ESC", settle=True)
+            if frozen:
+                leave_monitor_fully(session)
+
         assert_monitor_write_landed(
             device_host, address, replacement,
             "a Hex-view edit" + (" read back after leaving the monitor"
-                                 if frozen else ""))
+                                 if frozen else ""),
+            retry_monitor_write=retry_the_edit)
     finally:
         write_rest_memory_confirmed(device_host, address, original)
         if frozen:
@@ -1275,12 +1328,11 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
     it was told cannot pass. The value changes on every pass, so a stale read
     cannot pass either.
 
-    When an edit does not land, the device is immediately asked to make the
-    same write at the same address. If the device manages it, the monitor is at
-    fault and the check fails. If the device cannot manage it either, the loss
-    is in `C64::dma_transfer_frozen` beneath both of them; that is counted and
-    reported rather than blamed on the monitor. The count is in the run, so a
-    device losing writes is visible.
+    When an edit does not land, `assert_monitor_write_landed` decides which
+    path lost it, and only a repeated failure of the monitor's own write is
+    treated as the monitor's fault. Anything else is counted here and reported
+    in the run, so a device losing writes is visible without being blamed on
+    the monitor.
     """
     originals = {address: read_rest_memory(device_host, address, 1)
                  for address in HEX_EDIT_RELIABILITY_ADDRESSES}
@@ -1298,11 +1350,21 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                 session.send_char(digits[0])
                 session.send_char(digits[1])
                 session.send_key("ESC")
+
+                def retry_the_edit(address: int = address,
+                                   digits: str = digits) -> None:
+                    session.goto(f"{address:04X}")
+                    ensure_view(session, "HEX ")
+                    session.send_char("e")
+                    session.send_char(digits[0])
+                    session.send_char(digits[1])
+                    session.send_key("ESC")
+
                 if assert_monitor_write_landed(
                         device_host, address, replacement,
                         f"round {round_index + 1} of {rounds}, after {wrote} "
                         f"edits, a Hex-view edit over {before.hex().upper()}",
-                        timeout=2.0):
+                        timeout=2.0, retry_monitor_write=retry_the_edit):
                     wrote += 1
                 else:
                     shared_losses += 1
@@ -1314,9 +1376,11 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
     detail(f"{wrote} hex edits landed, every byte read back through the C64's "
            f"own DMA path")
     if shared_losses:
-        detail(f"{shared_losses} further writes were lost by the device's own "
-               f"frozen DMA path as well, at addresses that need the C64 mode "
-               f"rebanked; those are not the monitor's write path")
+        detail(f"{shared_losses} further writes did not land first time and "
+               f"were not the monitor's write path: either the device's own "
+               f"machine:writemem could not place them either, or the monitor "
+               f"placed them on the retry. Both are the intermittent in "
+               f"C64::dma_transfer_frozen under both paths")
     return wrote
 
 
@@ -1382,11 +1446,20 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
                         f"{committed} commits: {text} at ${address:04X} left "
                         f"{landed.hex().upper()}, which is its opcode without "
                         f"its operand")
+                def retry_the_commit(text: str = text) -> None:
+                    session.goto(f"{address:04X}")
+                    ensure_view(session, "ASM ")
+                    session.send_char("e")
+                    for ch in text:
+                        session.send_char(ch)
+                    session.send_key("ENTER")
+                    session.send_key("ESC")
+
                 if assert_monitor_write_landed(
                         device_host, address, expected,
                         f"round {round_index + 1} of {rounds}, after "
                         f"{committed} commits, the commit of {text}",
-                        timeout=2.0):
+                        timeout=2.0, retry_monitor_write=retry_the_commit):
                     committed += 1
                     last_expected = expected
                 else:

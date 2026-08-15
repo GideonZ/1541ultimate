@@ -120,15 +120,26 @@ Reliability sweeps:
 
 Every check that proves a monitor write reached memory separates a monitor
 defect from one underneath it, through the one helper
-`assert_monitor_write_landed`. When a write does not land, the device is
-immediately asked to make the same write at the same address through
-`machine:writemem`, which reaches memory through the same
-`C64::dma_transfer_frozen` with the machine stopped. If the device manages it,
-the monitor is at fault and the check fails. If the device cannot manage it
-either, the loss belongs to that shared path and is reported in the run rather
-than blamed on the monitor. An instruction that landed as its opcode without
-its operand fails either way, because the monitor writes an instruction as one
-block and a block cannot land in part.
+`assert_monitor_write_landed`. When a write does not land, the device is asked
+to make the same write at the same address through `machine:writemem`, which
+reaches memory through the same `C64::dma_transfer_frozen` with the machine
+stopped. If the device cannot manage it either, the loss belongs to that shared
+path and is reported in the run.
+
+If the device does manage it, that alone is not evidence about which path lost
+the write. `C64::dma_transfer_frozen` loses a write occasionally, so a retry
+through any path will usually succeed. Measured on `u2@c64u` over 60 writes at
+six addresses, one monitor hex edit and one `machine:writemem` per address per
+round, the monitor lost none of 50 and the device lost one of 50, once the ten
+attempts at `$BFFF` are set aside, where BASIC ROM is banked over the address
+and neither path can write at all. So the address is set to something else
+again and the monitor is asked to redo its own write. Only a second failure is
+the monitor's write path, and that is when the check fails. A first failure
+that the retry places is reported as the shared path's intermittent.
+
+An instruction that landed as its opcode without its operand fails on the first
+attempt whatever any retry does, because the monitor writes an instruction as
+one block and a block cannot land in part.
 
 The checks that go through it are the two sweeps above, the two hex-edit
 persistence checks, the Assembly-view edit, the left-arrow-as-data edit and
