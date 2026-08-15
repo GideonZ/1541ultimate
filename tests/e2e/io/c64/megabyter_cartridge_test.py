@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run synthetic 1 MiB and 2 MiB Megabyter cartridges on an Ultimate 64.
+"""Run synthetic 1 MiB and 2 MiB Megabyter cartridges through Ultimate REST.
 
 The CRTs are deliberately made here instead of taken from a fixture.  Their
 sizes exercise the complete REST upload and cartridge-loading path, while the
@@ -17,9 +17,8 @@ from typing import Tuple
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
-import machine as machine_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
-from report import Failure, check, check_skip, detail, format_exception, suite_fail, suite_ok  # noqa: E402
+from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
 
 
 CRT_HEADER_BYTES = 0x40
@@ -125,13 +124,6 @@ def main() -> int:
     args = parser.parse_args()
     device = UltimateApi(args.host, args.password, args.timeout)
     try:
-        info = device.info()
-        machine = machine_lib.identify(device.host, lambda: (info.product, info.firmware_version))
-        if machine.kind != machine_lib.U64:
-            with check("Megabyter cartridges require an Ultimate 64"):
-                check_skip(f"{info.product or device.host} is not an Ultimate 64")
-            suite_ok("megabyter_cartridge_test")
-            return 0
         for banks in (128, 256):
             with check(f"a synthetic {banks * BANK_BYTES // (1024 * 1024)} MiB Megabyter cartridge runs via REST"):
                 run_cartridge(device, banks, args.timeout)
