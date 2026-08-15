@@ -117,9 +117,21 @@ single transaction asserts.
 Nothing in this suite re-sends a key to make a check pass. A key press is sent
 once and the screen is then re-read until it shows the result or a deadline
 expires, so a lost keystroke is reported rather than covered by a second copy.
-The one exception is a key that cycles through states, such as `o` for the CPU
-bank, where each press is a further intended step rather than a repeat of the
-same one, and the press count is bounded by the length of the cycle.
+There are two deliberate exceptions, and neither is about the behaviour a check
+is testing:
+
+- A key that cycles through states, such as `o` for the CPU bank, is pressed
+  repeatedly because each press is a further intended step rather than a repeat
+  of the same one. The press count is bounded by the length of the cycle, so a
+  press that is lost still fails the check.
+- Typing an argument into a command prompt in order to reach an address is
+  preparation for whatever is being checked there. `MonitorSession` reads the
+  field back in full and, for those uses, may leave the prompt and type the
+  same text again on its untouched template, at most twice. It reports in the
+  run when it had to, so a device losing keystrokes is visible rather than
+  absorbed. The check whose subject is the input path itself,
+  `every character of a command argument reaches the monitor`, allows no
+  retype at all.
 
 The lexical space of what each prompt accepts is covered exhaustively by the
 host tests in `software/test/monitor/`, so the hardware gate spends its time on

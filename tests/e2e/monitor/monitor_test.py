@@ -123,6 +123,24 @@ class MonitorSession:
     def send_text(self, text: str, label: str) -> Snapshot:
         return self.backend.send_text(text, label)
 
+    def empty_open_prompt(self, title: str) -> None:
+        """Delete whatever an open prompt is showing, so the field is empty.
+
+        Preparation rather than a subject, so the backspaces may be repeated:
+        the field is measured, that many are sent, and the result is read back,
+        up to three passes.
+        """
+        for _ in range(3):
+            current = prompt_field(self.capture(), title)
+            if not current:
+                return
+            self.send_key_repeat("BACKSPACE", len(current) + 1)
+            wait_until(self, lambda screen: prompt_field_or_none(screen, title) == "")
+        if prompt_field(self.capture(), title):
+            raise Failure(
+                f"the {title} field would not empty; it reads "
+                f"{prompt_field(self.capture(), title)!r}")
+
     def type_into_prompt(self, key: str, title: str, text: str,
                          retypes: int = 0) -> None:
         """Open a command prompt and type `text` into it, proving it arrived.
@@ -155,6 +173,12 @@ class MonitorSession:
         for attempt in range(retypes + 1):
             self.send_char(key)
             wait_for_prompt(self, title)
+            # Not every prompt opens on a template that the first printable key
+            # replaces: Hunt and Save open on what they were last given, and
+            # typing into those appends. Emptying the field first is what makes
+            # "the field reads what was typed" mean the same thing at every
+            # prompt.
+            self.empty_open_prompt(title)
             self.send_text(text, f"{key} {text}")
             snapshot = wait_until(self, typed)
             try:
@@ -1116,7 +1140,7 @@ KEY_STRESS_ADDRESSES = (
 # sweep covers separators and two-part operands as well as hex digits.
 KEY_STRESS_PROMPTS = (
     ("F", "Fill AAAA-BBBB,DD", "1180-1183,55"),
-    ("H", "Hunt AAAA-BBBB", "1180-11FF"),
+    ("H", 'Hunt AAAA-BBBB,BB/"text"', "1180-11FF"),
     ("T", "Transfer AAAA-BBBB,CCCC", "1180-1183,1200"),
     ("C", "Compare AAAA-BBBB,CCCC", "1180-1183,1200"),
 )
@@ -2212,6 +2236,14 @@ def prompt_field(snapshot: Snapshot, title: str) -> str:
     if left >= 0 and right > left:
         field_line = field_line[left + 1:right]
     return field_line.strip().strip(PROMPT_BORDER).strip()
+
+
+def prompt_field_or_none(snapshot: Snapshot, title: str) -> Optional[str]:
+    """What an open prompt holds, or None while it is not drawn."""
+    try:
+        return prompt_field(snapshot, title)
+    except Failure:
+        return None
 
 
 def wait_until(session: MonitorSession, ready, timeout: float = 5.0) -> Snapshot:
