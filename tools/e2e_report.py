@@ -2215,7 +2215,36 @@ def recording_block(run: Run) -> List[str]:
                   "stream, the recorder asking for one again and a device "
                   "restarting all produce one:", ""]
         lines += reasons
+    lines += screen_text_lines(run)
     return lines + [""]
+
+
+def screen_text_lines(run: Run) -> List[str]:
+    """How much of the C64's own screen came back as text, and how much did not.
+
+    A frame the decoder cannot read as a text screen produces no record, which
+    is the right record to write and the wrong thing to leave as the only
+    trace: it looks the same as a screen that did not change. Both figures are
+    on the capture record for that reason, and both are here.
+    """
+    said = []
+    for target in run.targets:
+        capture = target.capture or {}
+        if "screen_texts" not in capture and "screens_unreadable" not in capture:
+            continue
+        read = as_int(capture.get("screen_texts"))
+        refused = as_int(capture.get("screens_unreadable"))
+        said.append(f"- {target.token}: {read} screen(s) read back as text, "
+                    f"{refused} frame(s) it could not read as a text screen")
+    if not said:
+        return []
+    return ["",
+            "`screen-text.jsonl` is the C64's own screen decoded from the "
+            "frames the recording already had. A frame in a graphics mode, in "
+            "the shifted character set, or drawn in a font that is not the "
+            "character ROM is not readable this way and produces no record, so "
+            "the second figure is what tells that apart from a screen that did "
+            "not change:", ""] + said
 
 
 def screens_section(run: Run) -> List[str]:

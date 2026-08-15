@@ -5687,6 +5687,41 @@ def a_failure_carries_what_the_run_already_knows() -> str:
     return "4 kinds of fact, no guess"
 
 
+@case(1, "OBS-2.18")
+def the_report_says_how_much_of_the_screen_came_back_as_text() -> str:
+    """Both halves of the decoder's accounting, or nothing at all.
+
+    A recorder that refused three frames in four and one whose device sat on
+    one screen for the whole run write the same number of records. Only the
+    count of refusals separates them, so the report carries it beside the count
+    of screens read.
+    """
+    generator = load_report_tool()
+
+    def target(capture):
+        return generator.Run(directory="runs", targets=[generator.TargetRun(
+            token="u64", slug="u64", capture=capture)])
+
+    said = generator.screen_text_lines(
+        target({"screen_texts": 201, "screens_unreadable": 279}))
+    joined = "\n".join(said)
+    if "201 screen(s) read back as text" not in joined:
+        raise Failure(f"the screens read are not reported: {joined!r}")
+    if "279 frame(s) it could not read" not in joined:
+        raise Failure(f"the frames refused are not reported: {joined!r}")
+
+    # A run whose recorder read everything still says so, because zero
+    # refusals is a fact and an absent line is not.
+    none_refused = "\n".join(generator.screen_text_lines(
+        target({"screen_texts": 12, "screens_unreadable": 0})))
+    if "0 frame(s) it could not read" not in none_refused:
+        raise Failure(f"a run with no refusals says nothing: {none_refused!r}")
+
+    expect("a run with no recorder has nothing to say",
+           generator.screen_text_lines(target(None)), [])
+    return "read and refused, both always"
+
+
 @case(1, "OBS-9.2")
 def the_report_says_what_the_devices_log_counters_did() -> str:
     """Both counters, whether they moved, and which sweep first saw a move.
