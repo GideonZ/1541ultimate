@@ -825,11 +825,16 @@ class Composer:
         tallest = max(_column_height(column) for column in laid)
         top = max(0, (height - tallest * glyphs.GLYPH_HEIGHT) // 2)
         top -= top % glyphs.GLYPH_HEIGHT
-        per_column = widest if columns > 1 else room
-        left = CARD_MARGIN_COLUMNS
+        per_column = widest if columns > 1 else max(
+            _block_width(block) for block in blocks)
+        # Centred as a group rather than pushed against the left margin: the
+        # canvas is wider than the fields need, and a block of text against one
+        # edge of a wide dark card reads as a mistake.
+        used = per_column * len(laid) + CARD_COLUMN_GAP * (len(laid) - 1)
+        left = max(CARD_MARGIN_COLUMNS, (self.geometry.columns - used) // 2)
         for column in laid:
             self._draw_column(column, left, top, per_column)
-            left += widest + CARD_COLUMN_GAP
+            left += per_column + CARD_COLUMN_GAP
         return self.canvas.to_rgb()
 
     @staticmethod

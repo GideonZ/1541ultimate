@@ -2876,17 +2876,24 @@ def the_opening_overview_is_grouped_and_degrades_to_one_column() -> str:
     if max(end for _start, end in wide_rows.values()) < wide.columns // 2:
         raise Failure("the wide card did not use two columns")
     # One column on the narrow one, which cannot hold two: every row starts
-    # within the margin plus the indent a field label carries.
-    starts = {start for start, _end in narrow_rows.values()}
-    if max(starts) > recorder_lib.CARD_MARGIN_COLUMNS + 2:
+    # within two columns of the first, which is the indent a field label
+    # carries under its group heading.
+    starts = sorted({start for start, _end in narrow_rows.values()})
+    if max(starts) - min(starts) > 2:
         raise Failure(f"the narrow card is not one column: rows start at "
-                      f"{sorted(starts)}")
-    # Nothing runs off either canvas.
+                      f"{starts}")
+    # Nothing runs off either canvas, and the block is centred rather than
+    # pushed against the left margin: the canvas is wider than the fields need.
     for geometry, rows in ((wide, wide_rows), (narrow, narrow_rows)):
         limit = geometry.columns - 1
         for row, (_start, end) in rows.items():
             if end > limit:
                 raise Failure(f"row {row} reaches column {end} of {limit}")
+        margins = (min(start for start, _end in rows.values()),
+                   limit - max(end for _start, end in rows.values()))
+        if abs(margins[0] - margins[1]) > 1:
+            raise Failure(f"the card is not centred on a {geometry.columns} "
+                          f"column canvas: margins {margins}")
     return f"{len(wide_rows)} rows over 2 columns, " \
            f"{len(narrow_rows)} over 1"
 
