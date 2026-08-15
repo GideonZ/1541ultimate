@@ -22,12 +22,16 @@ What it covers, and why each one is here:
            is what makes a log readable weeks later.
 - `dma`    the control port, 64. It is a separate listener from the HTTP server
            and has wedged on its own.
+- `heap`   free FreeRTOS heap. One GET, roughly 10ms on a sweep costing about
+           150ms, and it gives every suite a before and an after by
+           construction: suite N's before sample is suite N-1's after sample.
+           It can never fail the sweep; see `_heap`.
 - `raster` `$D012` moves, so the VIC is scanning. This is the one that says
            the machine is alive: a C64 stopped in Ultimax mode still serves
            REST perfectly well.
 - `jiffy`  `$00A2` moves, so the KERNAL interrupt is running as well.
 
-Both are skipped rather than failed while the menu is open, because under
+The last two are skipped rather than failed while the menu is open, because under
 Freeze the menu has stopped the machine on purpose.
 
 A static jiffy on its own is **not** a degraded device, and treating it as one
@@ -41,13 +45,16 @@ moving raster is reported as an observation rather than a fault.
 
 from __future__ import annotations
 
+import http.client
 import socket
 import struct
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
+import targets
 from api import UltimateApi
 from report import Failure
 
@@ -57,13 +64,14 @@ OK = "ok"
 FAIL = "fail"
 SKIP = "skip"
 
-FTP_PORT = 21
-TELNET_PORT = 23
-# The DMA control port, and its IDENTIFY command. Same framing as the soak
-# probe in tests/soak/network/dma_probe.py: a little-endian command word and
-# payload length, answered by a length-prefixed title.
-DMA_PORT = 64
+# The IDENTIFY command on the DMA control port. Same framing as the soak probe
+# in tests/soak/network/dma_probe.py: a little-endian command word and payload
+# length, answered by a length-prefixed title. Which port it is on is the
+# handle's answer; see tests/lib/targets.py.
 DMA_CMD_IDENTIFY = 0xFF0E
+
+# The ninth check, named here because Check.render treats it differently.
+HEAP = "heap"
 
 # Every check is bounded well below a second, because this runs before each of
 # seventeen suites and a slow sweep would be paid seventeen times.
@@ -91,12 +99,22 @@ class Check:
     state: str
     ms: float
     detail: str = ""
+    # The figures a check measured rather than timed. Only the heap check has
+    # any; the other eight are latencies.
+    figures: Optional[Dict[str, int]] = None
 
     def render(self) -> str:
         if self.state == SKIP:
             return f"{self.name}=skip"
         if self.state == FAIL:
             return f"{self.name}=FAIL"
+        if self.name == HEAP and self.figures and "free" in self.figures:
+            # A latency for this one says nothing anybody wants; the figure is
+            # the point. The special case is on the check's name, not on
+            # whether a check carries a detail: `ident` and `dma` both carry
+            # one, and rendering those would rewrite two existing checks'
+            # output and lengthen the sweep line as a side effect.
+            return f"{self.name}={self.figures['free']}B"
         return f"{self.name}={self.ms:.0f}ms"
 
 
@@ -139,11 +157,33 @@ def _timed(name: str, action) -> Check:
     return Check(name, OK, (time.perf_counter() - started) * 1000.0, detail)
 
 
+def ping_command(host: str, platform: str = sys.platform) -> List[str]:
+    """The `ping` argument list for one probe of `host` on this platform.
+
+    `-W` carries a different unit on each family, and passing the wrong one is
+    not cosmetic here. On Linux it is a timeout in seconds; on macOS and the
+    BSDs it is a wait in milliseconds, so `-W 2` there waits two milliseconds
+    and every ping fails before a device on a LAN could answer. `ping` is the
+    first check in the sweep, a failed sweep makes Health.ok false, and
+    Device.ensure_healthy answers an unhealthy device by running the
+    operator's recovery command, which reboots or reflashes hardware. A
+    developer driving a device from a laptop would have every device recovered
+    before every suite.
+    """
+    # Linux takes seconds; everything else here is the BSD stack, which macOS
+    # is the one that matters for.
+    if platform.startswith("linux"):
+        wait = str(PING_TIMEOUT_SECONDS)
+    else:
+        wait = str(int(PING_TIMEOUT_SECONDS * 1000))
+    return ["ping", "-c", "1", "-W", wait, host]
+
+
 def _ping(host: str) -> Check:
     started = time.perf_counter()
     try:
         completed = subprocess.run(
-            ["ping", "-c", "1", "-W", str(PING_TIMEOUT_SECONDS), host],
+            ping_command(host),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             timeout=PING_TIMEOUT_SECONDS + 2)
     except FileNotFoundError:
@@ -170,8 +210,8 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         return ""
 
 
-def _dma_identify(host: str) -> str:
-    with socket.create_connection((host, DMA_PORT), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
+def _dma_identify(host: str, port: int) -> str:
+    with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
         sock.settimeout(SOCKET_TIMEOUT_SECONDS)
         sock.sendall(struct.pack("<HH", DMA_CMD_IDENTIFY, 0))
         length = sock.recv(1)
@@ -181,6 +221,38 @@ def _dma_identify(host: str) -> str:
         if not title:
             raise RuntimeError("empty identify title")
     return title.decode("utf-8", "replace").strip()
+
+
+def _heap(api: UltimateApi) -> Check:
+    """Free heap, which can never make a device unhealthy.
+
+    `Health.ok` is `not self.failed`, and a degraded sweep is what fires the
+    operator's recovery command in `Device.ensure_healthy`, which reboots or
+    reflashes hardware. A number that moves for a dozen ordinary reasons must
+    not be able to do that, so this reports OK with the figure or SKIP with the
+    reason and never FAIL. The precedent is the jiffy check below, already
+    downgraded from FAIL to SKIP when the raster says the machine is alive.
+
+    Not an assertion either way: a sample taken at a suite boundary has no
+    settle time, and a transient borrowing reads as a step down. Leak
+    assertions stay in tests/soak/.
+    """
+    started = time.perf_counter()
+    try:
+        figures = api.machine.heap()
+    except (Failure, OSError, TimeoutError, ValueError, TypeError,
+            RuntimeError, http.client.HTTPException) as exc:
+        # Wider than the other eight checks because this one may never fail a
+        # sweep: an http.client.HTTPException that is not an OSError escapes
+        # rest.py's own handler, and a malformed body reaches int() as a
+        # TypeError. Either would otherwise leave the sweep with an exception
+        # rather than with a verdict.
+        return Check(HEAP, SKIP, (time.perf_counter() - started) * 1000.0,
+                     str(exc))
+    ms = (time.perf_counter() - started) * 1000.0
+    if figures is None:
+        return Check(HEAP, SKIP, ms, "this firmware has no machine:heap")
+    return Check(HEAP, OK, ms, "", figures)
 
 
 def _moves(api: UltimateApi, address: int, means: str) -> str:
@@ -199,14 +271,22 @@ def _moves(api: UltimateApi, address: int, means: str) -> str:
                        f"{MOVEMENT_TIMEOUT_SECONDS:g}s: {means}")
 
 
-def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
+def probe(host, password: str = "", api: Optional[UltimateApi] = None,
           include: Sequence[str] = ()) -> Health:
     """Sweep the device once. `include` limits it to the named checks.
+
+    `host` is a target token or a resolved handle; see tests/lib/targets.py.
 
     Never raises: a sweep that cannot reach the device is the answer, not an
     error, and its caller is usually deciding whether to recover the device.
     """
     api = api or UltimateApi(host, password, REST_TIMEOUT_SECONDS)
+    # The listener checks open sockets, so they need a name rather than a
+    # target: on "u2@c64u" every listener under test is the cartridge's. The
+    # handle also says which ports they are on, so a device serving them
+    # somewhere else is swept the same way.
+    target = targets.resolve(host)
+    host = target.device
     wanted = set(include)
 
     def skip(name: str) -> bool:
@@ -218,16 +298,18 @@ def probe(host: str, password: str = "", api: Optional[UltimateApi] = None,
     if not skip("rest"):
         checks.append(_timed("rest", lambda: api.version() and ""))
     if not skip("ftp"):
-        checks.append(_timed("ftp", lambda: _banner(host, FTP_PORT, b"220")))
+        checks.append(_timed("ftp", lambda: _banner(host, target.ftp_port, b"220")))
     if not skip("telnet"):
-        checks.append(_timed("telnet", lambda: _banner(host, TELNET_PORT)))
+        checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
     if not skip("ident"):
         def identify() -> str:
             info = api.info()
             return f"{info.product} {info.firmware_version}"
         checks.append(_timed("ident", identify))
     if not skip("dma"):
-        checks.append(_timed("dma", lambda: _dma_identify(host)))
+        checks.append(_timed("dma", lambda: _dma_identify(host, target.dma_port)))
+    if not skip(HEAP):
+        checks.append(_heap(api))
 
     # The machine checks need the menu shut: under Freeze the open menu has
     # stopped the C64 on purpose, and calling that a degraded device would send

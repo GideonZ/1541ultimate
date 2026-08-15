@@ -44,8 +44,11 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import machine as machine_lib
 import pacing
 import rest as rest_lib
+import screens as screen_spool
+import targets
 from report import Failure
 from menu import wait_screen_changes, wait_screen_settled
 
@@ -56,6 +59,19 @@ SCREEN_BYTES = SCREEN_CELLS * 2
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
+# Names the product, which is how a run discovers which machine it is aimed
+# at; see tests/lib/machine.py.
+INFO_PATH = "/v1/info"
+
+# The browser is the launcher's first entry, so pressing Back to the top of
+# the list and then Return reaches it without reading the cursor. Which entry
+# that is, and whether there is a launcher at all, is a property of the
+# machine; see tests/lib/machine.py.
+LAUNCHER_ENTRY_LIMIT = 24
+# Enough to climb out of the deepest settings screen the launcher leads to and
+# then descend one level; a screen that is neither the browser nor the
+# launcher after this many steps is reported rather than looped on.
+LAUNCHER_DESCENT_STEPS = 10
 INPUT_PATH = "/v1/machine:input"
 CONFIGS_PATH = "/v1/configs"
 UI_STORE = "User Interface Settings"
@@ -88,12 +104,15 @@ MENU_GLYPHS = {
     0x0E: "+", 0x0F: "+", 0x10: "a", 0x11: "b", 0x12: "^", 0x13: "*",
 }
 
-# The box/window frame characters MENU_GLYPHS decodes low control codes to, and
-# the SGR colour string Screen_VT100::set_color emits for the browser's
-# cursor row (observed stable across browser contexts; see
-# TelnetBackend.selected_row).
+# The box/window frame characters MENU_GLYPHS decodes low control codes to.
+# Which colour Screen_VT100::set_color emits for the cursor row is not fixed
+# here: it belongs to the machine, and TelnetBackend._marked_row measures it.
 FRAME_CHARS = " |+-"
-TELNET_SELECTED_SGR = "0;32;1"
+
+# A browser row's rendered size, as size_str.cc writes it: up to four digits
+# and an optional K or M. Never a menu item, so a label that looks like this
+# came from the listing an overlay was drawn over.
+SIZE_COLUMN_RE = re.compile(r"\d{1,4}[KM]?")
 
 # find_selected_row's minimum marked-cell count before trusting a candidate
 # row: below this, a row that merely borrows the previous row's background
@@ -101,6 +120,81 @@ TELNET_SELECTED_SGR = "0;32;1"
 SELECTED_ROW_MIN_MARKED_CELLS = 12
 # How many times to re-read the screen while no cursor marker is drawn at all.
 CURSOR_SETTLE_ATTEMPTS = 4
+
+
+def host_menu_open(host: str, password: Optional[str], timeout: float) -> bool:
+    """Whether the on-device menu of one machine, named directly, is open.
+
+    Takes a host rather than a target because the caller that needs it is
+    asking about the *computer* half of a cartridge target, which the target's
+    own routing would never send it to. A closed menu answers 404.
+    """
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        rest_lib.url_for(host, MENU_SCREEN_PATH), headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_SCREEN_PATH} on {host} failed: {exc}")
+
+
+def close_host_menu(host: str, password: Optional[str], timeout: float) -> None:
+    """Shut the on-device menu of one machine, named directly.
+
+    A cartridge target injects its keys into the computer, and the firmware
+    decides what such an event means from whether the keyboard matrix is
+    enabled (software/api/route_input.cc, isMatrixEnabled). While the
+    computer's own menu is up the matrix is disabled, so the keys are pushed
+    into that menu's queue instead of onto the matrix the cartridge taps. Every
+    request still answers HTTP 200 and the cartridge never sees a keystroke, so
+    this has to be checked rather than hoped for.
+    """
+    if not host_menu_open(host, password, timeout):
+        return
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        rest_lib.url_for(host, MENU_BUTTON_PATH), headers=headers,
+        method="PUT")
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            response.read()
+    except (OSError, urllib.error.URLError) as exc:
+        raise Failure(f"{MENU_BUTTON_PATH} on {host} failed: {exc}")
+    deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if not host_menu_open(host, password, timeout):
+            return
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise Failure(
+        f"the menu on {host} would not close, so keys sent to it would be "
+        "consumed by that menu instead of reaching the cartridge")
+
+
+def fetch_product(host: str, password: Optional[str],
+                  timeout: float) -> Tuple[str, str]:
+    """The `product` and `firmware_version` of a device, over plain REST.
+
+    Free of any backend, because both transports need it and a Telnet session
+    has no way to ask: identity is the device's, whatever is being driven.
+    """
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(
+        rest_lib.url_for(host, INFO_PATH), headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise Failure(f"{INFO_PATH} on {host} failed: {exc}")
+    # The firmware version comes back with it, and a skip reason names the
+    # machine by both: "C64 Ultimate 1.2.0" says which release lacks a fix,
+    # where the product alone would not.
+    return str(payload.get("product", "")), str(payload.get("firmware_version", ""))
 
 
 class NoCursorDrawn(Failure):
@@ -125,9 +219,10 @@ class Snapshot:
     def text(self) -> str:
         return "\n".join(self.lines)
 
-    def find_line_containing(self, expected: str) -> int:
+    def find_line_containing(self, expected: str, ignore_case: bool = False) -> int:
+        needle = expected.lower() if ignore_case else expected
         for index, line in enumerate(self.lines):
-            if expected in line:
+            if needle in (line.lower() if ignore_case else line):
                 return index
         raise Failure(
             f"Snapshot mismatch after {self.last_command}: expected any line to contain\n"
@@ -162,10 +257,17 @@ class Backend:
     def capture(self) -> Snapshot:
         raise NotImplementedError
 
-    def send_key(self, key: str) -> Snapshot:
+    # `expect_redraw=False` says this key is known to change nothing on
+    # screen. Only Telnet can tell the difference: it decides a redraw has
+    # finished by watching the stream go quiet, so a key that draws nothing
+    # would otherwise cost the whole first-byte budget waiting for one. REST
+    # reads a whole screen either way and ignores it.
+    def send_key(self, key: str, *, settle: bool = False,
+                 expect_redraw: bool = True) -> Snapshot:
         raise NotImplementedError
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False,
+                  expect_redraw: bool = True) -> Snapshot:
         raise NotImplementedError
 
     def send_text(self, text: str, label: str) -> Snapshot:
@@ -191,6 +293,38 @@ class Backend:
         """
         self.send_key(key)
         return self.send_text(text, label)
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this backend drives, asked once of the device.
+
+        Three machines answer this API and their menus and keymaps differ, so
+        a suite that has to allow for that asks here rather than being told on
+        the command line. See tests/lib/machine.py.
+        """
+        return machine_lib.identify(self.machine_host, self._fetch_product)
+
+    @property
+    def machine_host(self) -> str:
+        """The host that answers for the device under test."""
+        raise NotImplementedError
+
+    def _fetch_product(self) -> str:
+        """The product string of `machine_host`, over REST on either transport."""
+        return fetch_product(self.machine_host, self.machine_password, self.timeout)
+
+    @property
+    def machine_password(self) -> Optional[str]:
+        return None
+
+    def enter_file_browser(self) -> None:
+        """Land on the file browser if the UI is showing something above it.
+
+        A no-op where the browser is the top of the UI stack, which is every
+        machine but the C64 Ultimate. There the launcher sits above it, so
+        backing out of the root directory leaves the browser entirely rather
+        than doing nothing. See RestBackend.enter_file_browser.
+        """
 
     def ensure_ready(self) -> None:
         """Make the UI reachable again if the last action tore it down.
@@ -261,6 +395,10 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "DOWN": ["cursor_up_down"],
     "LEFT": ["left_shift", "cursor_left_right"],
     "RIGHT": ["cursor_left_right"],
+    # The physical key, named for itself because what it does depends on the
+    # machine: PGUP on an Ultimate 64 and an Ultimate II+, the task menu on a
+    # C64 Ultimate. Callers ask Machine which key plays which role.
+    "F1": ["f1"],
     "PGUP": ["f1"],
     "PGDN": ["f7"],
     "F5": ["f5"],
@@ -281,6 +419,13 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "DEL": ["inst_del"],
     "BACKSPACE": ["inst_del"],
     "RUNSTOP": ["run_stop"],
+    # The C64's top-left left-arrow key, which the monitor treats as Back
+    # except where it is edit data. Deliberately its own action rather than an
+    # alias for RUN/STOP: the two are the same Back only where the monitor
+    # says so, and a test that cannot tell them apart cannot prove that.
+    "ARROW_LEFT": ["arrow_left"],
+    # The key the application key mapper turns into KEY_HELP.
+    "F3": ["f3"],
     "COPY": ["ctrl", "c"],
     "PASTE": ["ctrl", "v"],
     "SELECT_ALL": ["ctrl", "a"],
@@ -290,6 +435,7 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "CTRL_O": ["ctrl", "o"],
     "CBM_B": ["commodore", "b"],
     "CBM_1": ["commodore", "1"],
+    "CBM_9": ["commodore", "9"],
 }
 
 # A letter key alone types uppercase in the firmware's default character set;
@@ -306,6 +452,9 @@ _SHIFTED_DIGIT_CHARS: Dict[str, str] = {
     "!": "1", '"': "2", "#": "3", "$": "4", "%": "5", "&": "6",
     "'": "7", "(": "8", ")": "9",
 }
+# Punctuation the C64 keyboard reaches by shifting a symbol key rather than a
+# digit (software/io/c64/keyboard_c64.cc keymap_shifted).
+_SHIFTED_SYMBOL_CHARS: Dict[str, str] = {"?": "slash", "_": "pound", "^": "arrow_up"}
 
 
 # Characters that are safe to type into an overlay to move its cursor.
@@ -372,6 +521,8 @@ def char_to_combo(ch: str) -> List[str]:
         return _DIRECT_CHARS[ch]
     if ch in _SHIFTED_DIGIT_CHARS:
         return ["left_shift", _SHIFTED_DIGIT_CHARS[ch]]
+    if ch in _SHIFTED_SYMBOL_CHARS:
+        return ["left_shift", _SHIFTED_SYMBOL_CHARS[ch]]
     if ch.isalpha() and ch.isascii():
         return ["left_shift", ch.lower()] if ch.isupper() else [ch.lower()]
     if ch.isdigit() and ch.isascii():
@@ -379,40 +530,203 @@ def char_to_combo(ch: str) -> List[str]:
     raise Failure(f"No REST keyboard mapping for character {ch!r}")
 
 
-def _find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
-                            strict: bool = False) -> int:
-    """Locate the cursor row from the raw menu_screen char/colour planes.
+# The screen codes Window::draw_border writes for a frame (io/c64/screen.cc).
+# They are screen codes, not the ASCII line-drawing characters a text-mode
+# frame might suggest, so a frame is recognised by these rather than by
+# punctuation.
+#
+# screen.h defines two sets of corners, sharp and rounded, and which one a
+# machine uses is a matter of style: BORD_*_CORNER aliases the sharp set on an
+# Ultimate 64 and an Ultimate II+, and the rounded set on a C64 Ultimate.
+# Both are accepted, because the alternative is a frame parser that silently
+# finds nothing on one of the three. The horizontal and vertical rules are the
+# same everywhere.
+BOX_HORIZONTAL = 0x02                    # CHR_HORIZONTAL_LINE
+BOX_VERTICAL = 0x04                      # CHR_VERTICAL_LINE
+BOX_TOP_LEFT = (0x01, 0x07)              # CHR_[ROUNDED_]LOWER_RIGHT_CORNER
+BOX_TOP_RIGHT = (0x03, 0x09)             # CHR_[ROUNDED_]LOWER_LEFT_CORNER
+BOX_BOTTOM_LEFT = (0x05, 0x0E)           # CHR_[ROUNDED_]UPPER_RIGHT_CORNER
+BOX_BOTTOM_RIGHT = (0x06, 0x0F)          # CHR_[ROUNDED_]UPPER_LEFT_CORNER
 
-    The browser marks its cursor row with a distinct background colour
-    (tree_browser_state.cc); some contexts instead use reverse video or a
-    plain foreground colour. Try all three and trust whichever produced the
-    strongest, most consistent signal across the row -- resilience over
-    prescription, so this survives menu changes without pinning to exact
-    colour codes."""
-    best_background_row = -1
-    best_background_count = 0
-    best_reverse_row = -1
-    best_reverse_count = 0
-    best_foreground_row = -1
-    best_foreground_count = 0
 
-    for row in rows:
+@dataclass
+class Window:
+    """The area of the screen a caller's question is really about.
+
+    A plain browser listing is the whole width; an open window is the area
+    inside its frame. Columns matter as much as rows, because a window is not
+    always drawn over the thing it covers: a context menu opened on a browser
+    row is drawn beside that row's text, sharing screen rows with it.
+    """
+
+    rows: range
+    first_column: int
+    last_column: int          # exclusive
+
+    @property
+    def width(self) -> int:
+        return self.last_column - self.first_column
+
+    @property
+    def min_marked_cells(self) -> int:
+        """Cells a marking must cover before it counts as a highlight.
+
+        Scaled to the window, because the fixed minimum is a statement about
+        the full width of the screen. A context menu can be ten columns wide,
+        so a highlight covering the whole of one of its items still falls
+        short of that minimum and would be dismissed as noise.
+        """
+        return min(SELECTED_ROW_MIN_MARKED_CELLS, max(1, self.width // 2))
+
+
+def whole_screen(rows: Sequence[int]) -> Window:
+    """The window a screen with nothing open presents: every column of `rows`."""
+    ordered = list(rows)
+    return Window(range(ordered[0], ordered[-1] + 1) if ordered else range(0),
+                  1, SCREEN_WIDTH - 1)
+
+
+def find_open_window(chars: bytes, rows: Sequence[int]) -> Window:
+    """The frontmost framed window on screen, or the whole screen if none.
+
+    A context menu, the F5 task menu, a target picker and the New Host form
+    are all drawn as a framed window over whatever was on screen already. Both
+    the window and the browser underneath draw a cursor, so a scan of the
+    whole screen has two answers and returns whichever it meets first.
+    Restricting the scan to the window removes the ambiguity rather than
+    trying to rank the two cursors against each other, and it is the right
+    answer besides: while a window is open, what is behind it is not what a
+    caller is asking about.
+
+    Both dimensions are needed. Measured on an Ultimate II+L with a context
+    menu opened on the Ftp row of the root browser: the menu occupied rows
+    5 to 7 and columns 29 to 38, so the browser's own highlighted row was
+    inside the menu's rows, and its 30 marked cells outweighed the 10 of the
+    menu item on every read. Narrowing the columns as well leaves only the
+    menu's own cells in view.
+
+    A window that carries a title spends its first interior row on it, and a
+    title is no more selectable than the frame around it. It is left out,
+    because it cannot be told from a cursor row by colour: measured on an
+    Ultimate II+L Select Path picker, the title "Select Path" was 38 cells of
+    colour 6 and the cursor row "<< Select Current Dir >>" was 38 cells of
+    colour 1, both spanning the whole inside width and each carrying a colour
+    no other row had. What separates them is where the text starts. The
+    firmware centres a title and left-aligns every listing row against the
+    frame, so a first interior row not starting at the frame's first inside
+    column is a title.
+
+    The header rule the menu draws across row 1 is a run of BOX_HORIZONTAL
+    with no corners, so it is not mistaken for a frame.
+    """
+    frames = _find_frames(chars)
+    if not frames:
+        return whole_screen(rows)
+    # The smallest frame is the one drawn last and the one with the keyboard:
+    # a dialog opened from a picker sits inside the picker's own frame, and
+    # the picker is no longer what a key would move.
+    top_row, bottom_row, left, right = min(
+        frames, key=lambda frame: (frame[1] - frame[0]) * (frame[3] - frame[2]))
+    interior = [r for r in rows if top_row < r < bottom_row]
+    if interior and interior[0] == top_row + 1:
+        first_inside = chars[interior[0] * SCREEN_WIDTH + left + 1]
+        if (first_inside & 0x7F) in (0x00, 0x20):
+            interior = interior[1:]
+    if not interior:
+        # A frame with nothing selectable between its rules carries no cursor,
+        # so leave the caller reading the screen it was reading before.
+        return whole_screen(rows)
+    return Window(range(interior[0], interior[-1] + 1), left + 1, right)
+
+
+def _find_frames(chars: bytes) -> List[Tuple[int, int, int, int]]:
+    """Every complete window frame on screen, as (top, bottom, left, right).
+
+    Found from the bottom rule upward. The bottom corners are the two codes a
+    frame always carries: measured on an Ultimate II+L, the context menu for a
+    configured FTP host was drawn with BOX_HORIZONTAL where its top-left
+    corner should be, so a search that began at the top-left corner found no
+    frame there at all and the menu was invisible to every caller. The top
+    rule is therefore only required to be a run of horizontals, with whatever
+    the firmware chose to end it with.
+    """
+    frames = []
+    for bottom_row in range(2, SCREEN_HEIGHT):
+        line = chars[bottom_row * SCREEN_WIDTH:(bottom_row + 1) * SCREEN_WIDTH]
+        for left in range(SCREEN_WIDTH - 2):
+            if line[left] not in BOX_BOTTOM_LEFT:
+                continue
+            for right in range(left + 2, SCREEN_WIDTH):
+                if line[right] not in BOX_BOTTOM_RIGHT:
+                    continue
+                if not all(code == BOX_HORIZONTAL for code in line[left + 1:right]):
+                    break
+                top_row = _frame_top(chars, bottom_row, left, right)
+                if top_row is not None:
+                    frames.append((top_row, bottom_row, left, right))
+                break
+    return frames
+
+
+def _frame_top(chars: bytes, bottom_row: int, left: int,
+               right: int) -> Optional[int]:
+    """The row carrying the top rule of the frame closed at `bottom_row`.
+
+    The nearest row above whose whole span is frame characters. Walking up
+    while the border cells are verticals is not enough: measured on an
+    Ultimate II+L, a context menu drew BOX_TOP_RIGHT where the left border of
+    its first item should have been, and a walk that insisted on a vertical
+    there stopped one row early and found no rule. A row of window content
+    always holds text, so a span that is entirely frame characters is the
+    rule and nothing else is.
+    """
+    for row in range(bottom_row - 2, -1, -1):
+        line = chars[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
+        if all(code in BOX_TOP_LEFT or code in BOX_TOP_RIGHT
+               or code == BOX_HORIZONTAL
+               for code in line[left:right + 1]):
+            return row
+    return None
+
+
+@dataclass
+class RowMark:
+    """How strongly one drawn row is marked, and by what."""
+
+    background: int          # cells carrying the row's commonest background
+    reverse: int             # cells with the reverse-video bit set
+    colour: int              # the foreground colour most of the row's cells carry
+    colour_cells: int        # how many cells carry it
+
+
+def row_marks(chars: bytes, colours: bytes, window: Window) -> Dict[int, RowMark]:
+    """The marking of every drawn row of `window`, keyed by row index.
+
+    Only the cells inside the window are counted. A context menu shares its
+    screen rows with the browser row it was opened on, so counting the whole
+    row would measure the browser's highlight rather than the menu's.
+
+    Blank rows are left out. One can never be the selected entry, and every
+    one of its cells carries whatever colour was last set, so it would
+    otherwise win a cell count outright against real rows, whose name and
+    status columns split their own counts between two colours. Observed live
+    on the root browser: when a repaint leaves no row highlighted at all,
+    blank row 8 beat the six real drive rows and was returned as the cursor
+    row, so callers scanning for an entry compared against an empty string and
+    missed an entry that was plainly present. TelnetBackend._marked_row
+    applies the same rule.
+    """
+    marks: Dict[int, RowMark] = {}
+    for row in window.rows:
+        first = row * SCREEN_WIDTH + window.first_column
+        last = row * SCREEN_WIDTH + window.last_column
+        row_chars = chars[first:last]
+        row_colours = colours[first:last]
+        if all((ch & 0x7F) in (0x00, 0x20) for ch in row_chars):
+            continue
         background_counts: Dict[int, int] = {}
         foreground_counts: Dict[int, int] = {}
         reverse_count = 0
-        row_chars = chars[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-        row_colours = colours[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-        # A blank row can never be the selected entry, and every one of its
-        # cells carries whatever colour was last set, so it would otherwise
-        # win the foreground fallback outright against real rows, whose name
-        # and status columns split their own counts between two colours.
-        # Observed live on the root browser: when a repaint leaves no row
-        # highlighted at all, blank row 8 beat the six real drive rows and
-        # was returned as the cursor row, so callers scanning for an entry
-        # compared against an empty string and missed an entry that was
-        # plainly present. TelnetBackend._marked_row applies the same rule.
-        if all((ch & 0x7F) in (0x00, 0x20) for ch in row_chars):
-            continue
         for ch, colour_code in zip(row_chars, row_colours):
             if ch & 0x80:
                 reverse_count += 1
@@ -423,29 +737,210 @@ def _find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
                     foreground_counts[foreground] = foreground_counts.get(foreground, 0) + 1
                 continue
             background_counts[background] = background_counts.get(background, 0) + 1
+        colour, colour_cells = -1, 0
+        if foreground_counts:
+            colour = max(foreground_counts, key=lambda code: foreground_counts[code])
+            colour_cells = foreground_counts[colour]
+        marks[row] = RowMark(
+            background=max(background_counts.values()) if background_counts else 0,
+            reverse=reverse_count,
+            colour=colour,
+            colour_cells=colour_cells,
+        )
+    return marks
 
-        background_count = max(background_counts.values()) if background_counts else 0
-        foreground_count = max(foreground_counts.values()) if foreground_counts else 0
-        if background_count > best_background_count:
-            best_background_count = background_count
-            best_background_row = row
-        if reverse_count > best_reverse_count:
-            best_reverse_count = reverse_count
-            best_reverse_row = row
-        if foreground_count > best_foreground_count:
-            best_foreground_count = foreground_count
-            best_foreground_row = row
 
-    if best_background_count >= SELECTED_ROW_MIN_MARKED_CELLS:
+def count_colour(colours: bytes, row: int, colour: int, window: Window) -> int:
+    """Cells of `row` inside `window` whose foreground is `colour`."""
+    start = row * SCREEN_WIDTH + window.first_column
+    end = row * SCREEN_WIDTH + window.last_column
+    return sum(1 for code in colours[start:end] if (code & 0x0F) == colour)
+
+
+def find_cursor_colour(chars: bytes, colours: bytes,
+                       window: Window) -> Optional[int]:
+    """The foreground colour this screen marks its cursor row with, if it says.
+
+    A listing draws every unselected entry in one colour and the selected one
+    in `UserInterface::color_sel` (tree_browser_state.cc draw_item), so on a
+    screen showing three or more entries the cursor colour is the one exactly
+    one row carries. Which colour that is depends on the configured colour
+    scheme (userinterface.cc effectuate_settings), so it is measured here
+    rather than assumed; a caller that keeps the answer can then read the
+    cursor off a two-entry listing, where the colours tie and the screen alone
+    cannot say which of them is the cursor.
+
+    A window's title also carries a colour of its own, which would make every
+    titled window ambiguous here. Titles never reach this function: they are
+    left out of the rows a framed window contributes. See find_open_window.
+
+    The odd row also has to be drawn like the rows it stands out from, because
+    a screen that is not a listing at all can satisfy the rule above and teach
+    a colour that is not a cursor's. A form is the case that matters, since
+    the answer is kept for the session: measured on an Ultimate II+L Assembly
+    64 query form, thirteen field rows carried 28 cells of one colour and the
+    one button row below them 38 cells of another, which reads exactly like a
+    listing whose cursor is on its last row. The colour of the button was
+    learnt as the machine's cursor colour and every later read returned the
+    button row. A listing draws its selected row to the same width as the
+    rest, so requiring that rejects the button and leaves the colour to be
+    learnt from a screen that really is a listing.
+
+    Returns None when the screen cannot answer: when the machine marks the
+    cursor with a background nibble instead (every Ultimate 64: color_sel_bg
+    is only set under #if U64), and when no single row's colour is unique.
+    """
+    marks = row_marks(chars, colours, window)
+    minimum = window.min_marked_cells
+    if any(mark.background >= minimum for mark in marks.values()):
+        return None
+    tally: Dict[int, int] = {}
+    for mark in marks.values():
+        tally[mark.colour] = tally.get(mark.colour, 0) + 1
+    odd = [mark for mark in marks.values()
+           if tally[mark.colour] == 1 and mark.colour_cells >= minimum]
+    listing = [mark.colour_cells for mark in marks.values() if tally[mark.colour] > 1]
+    if not listing:
+        return None
+    width = max(set(listing), key=listing.count)
+    odd = [mark for mark in odd if mark.colour_cells == width]
+    return odd[0].colour if len(odd) == 1 else None
+
+
+def measure_cursor_colour(chars: bytes, colours: bytes,
+                          rows: Sequence[int]) -> Optional[int]:
+    """The machine's cursor colour, measured on the rows it will be read from.
+
+    find_cursor_colour asks which colour exactly one row carries, so it has to
+    be asked about one listing at a time. A task menu drawn over the browser
+    puts two listings on screen, each with a cursor and both cursors in the
+    machine's colour, so asking across the whole screen finds that colour
+    twice and gives up. Measured on an Ultimate II+L: a caller that opened the
+    Assembly 64 form straight from the task menu never learnt a colour, and
+    the form marks a ten-cell field rather than a row, which is too narrow for
+    the rules that work without one, so the form's first field was never
+    reachable.
+    """
+    return find_cursor_colour(chars, colours, find_open_window(chars, rows))
+
+
+def find_selected_row_rest(chars: bytes, colours: bytes, rows: Sequence[int],
+                           strict: bool = False,
+                           cursor_colour: Optional[int] = None) -> int:
+    """Locate the cursor row from the raw menu_screen char/colour planes.
+
+    The browser marks its cursor row with a distinct background colour
+    (tree_browser_state.cc); some contexts instead use reverse video or a
+    plain foreground colour. Try all three and trust whichever produced the
+    strongest, most consistent signal across the row -- resilience over
+    prescription, so this survives menu changes without pinning to exact
+    colour codes.
+
+    `cursor_colour` is the foreground colour the machine was measured to mark
+    the cursor row with; see find_cursor_colour. It is what makes a two-entry
+    listing readable on a machine whose menu_screen colour plane carries no
+    background nibble: the selected row and the one unselected row then have
+    the same number of coloured cells and each carries a colour no other row
+    does, so counting cannot separate them and the odd-colour rule below has
+    two answers. Measured on an Ultimate II+L: with the cursor on the second
+    of two entries, this returned the first until the colour was supplied.
+
+    When a framed window is open the scan is restricted to it; see
+    find_open_window for why the two cursors on screen cannot be ranked
+    against each other.
+    """
+    window = find_open_window(chars, rows)
+    minimum = window.min_marked_cells
+    marks = row_marks(chars, colours, window)
+    best_background_row, best_background_count = -1, 0
+    best_reverse_row, best_reverse_count = -1, 0
+    best_foreground_row, best_foreground_count = -1, 0
+    for row, mark in marks.items():
+        if mark.background > best_background_count:
+            best_background_count, best_background_row = mark.background, row
+        if mark.reverse > best_reverse_count:
+            best_reverse_count, best_reverse_row = mark.reverse, row
+        if mark.colour_cells > best_foreground_count:
+            best_foreground_count, best_foreground_row = mark.colour_cells, row
+
+    if best_background_count >= minimum:
         return best_background_row
-    if best_reverse_count >= SELECTED_ROW_MIN_MARKED_CELLS:
+    if cursor_colour is not None:
+        # Ahead of the reverse-video rule below, because this says what the
+        # machine actually marks a cursor with and that rule only guesses.
+        # The browser marks its cursor row by colour, not by the character
+        # matrix's reverse-video bit (see Backend.selected_row), so a row in
+        # reverse video is something else drawn that way. Measured on an
+        # Ultimate II+L showing a D64: the volume header carried 28 reverse
+        # cells and no cursor colour, the program row under the cursor
+        # carried 28 cells of the cursor colour and no reverse cells, and the
+        # reverse rule returned the volume header every time.
+        #
+        # How many cells carry the cursor colour, not whether it is the row's
+        # commonest one. The marking does not always cover the whole row: in a
+        # disk image listing the cursor colours the name field only, so the row
+        # under the cursor is mostly some other colour. Measured on an Ultimate
+        # II+L showing a D64 with one program, cursor on the program: the
+        # volume row was 38 cells of colour 6, and the selected row was 16
+        # cells of the cursor colour 1 and 22 cells of colour 7. Asking for the
+        # commonest colour therefore skipped the selected row entirely and the
+        # count-only fallback below picked the volume row.
+        #
+        # Only rows that row_marks kept, for the reason given there: a blank
+        # row can never be the selected entry. It matters more here than
+        # anywhere else, because a window paints its unused rows in the
+        # colour the cursor uses. Measured on an Ultimate II+L Select Path
+        # picker over an empty directory: the one entry and all eighteen
+        # blank rows below it each carried 38 cells of the cursor colour, the
+        # count tied, and the tie broke on the row number, so the cursor read
+        # as the last blank row and the entry on screen was never selected.
+        wearing = [(count_colour(colours, row, cursor_colour, window), row)
+                   for row in window.rows if row in marks]
+        wearing = [(count, row) for count, row in wearing if count]
+        # One row and no other carrying the machine's cursor colour is a
+        # stronger statement than any number of cells, so it is taken without
+        # the minimum below. A form marks a field rather than a row: measured
+        # on an Ultimate II+L Assembly 64 query form, the cursor coloured the
+        # ten-cell value field of "Name:" and nothing else on the screen
+        # carried that colour, which the minimum rejected as noise, so the
+        # form's first field was never reachable.
+        if len(wearing) == 1:
+            return wearing[0][1]
+        wearing = [(count, row) for count, row in wearing if count >= minimum]
+        if wearing:
+            return max(wearing)[1]
+    if best_reverse_count >= minimum:
         return best_reverse_row
     if strict:
         # Only the foreground fallback is left, which cannot tell a real
         # selection from a screen whose cursor is not drawn yet. Say so, so the
         # caller can re-read rather than accept an arbitrary row.
         raise NoCursorDrawn("no row carries the browser's cursor colour")
-    if best_foreground_count >= SELECTED_ROW_MIN_MARKED_CELLS:
+    # A listing draws every unselected entry in one colour and the selected one
+    # in another, so the cursor row is the odd colour out. Counting coloured
+    # cells instead cannot tell them apart on a screen whose colour plane
+    # carries no background nibble at all, which is what the Ultimate II+L's
+    # menu_screen returns: every full-width entry row then has the same number
+    # of coloured cells, the comparison above keeps the first one it saw, and
+    # the answer is the top of the listing rather than the cursor.
+    #
+    # That is the display, not a gap in the API. Both machines draw the menu
+    # into the same 40x25 char matrix, and menu_screen serves the firmware's
+    # own copy of it, which has room for a background nibble either way
+    # (software/io/c64/screen.cc, cell_colour_codes). On an Ultimate 64 the
+    # FPGA renders that matrix as an overlay layer, which has a background per
+    # cell, so userinterface.cc sets color_sel_bg. On an Ultimate II+ the same
+    # bytes go to a real C64's colour RAM, which is four bits wide and carries
+    # the foreground only; the background is one VIC register for the whole
+    # screen. Reporting a background there would describe a colour nothing on
+    # screen can show, so the II+ marks its cursor row with a distinct
+    # foreground colour and this is what reads it.
+    colour = find_cursor_colour(chars, colours, window)
+    if colour is not None:
+        for row, mark in marks.items():
+            if mark.colour == colour:
+                return row
+    if best_foreground_count >= minimum:
         return best_foreground_row
     raise Failure("could not locate selected menu row from colour codes")
 
@@ -457,6 +952,11 @@ class RestBackend(Backend):
     Type to Overlay for the duration (restored on close), matching how
     tests/e2e/io/c64/freeze_menu_test.py captures and restores the same
     setting for Freeze.
+
+    `host` is a target, so a cartridge target such as "u2@c64u" reads the menu
+    from the cartridge and injects keys into the computer it is plugged into.
+    See tests/lib/targets.py; the cartridge answers machine:input with HTTP
+    501, and the keys reach it over the expansion port instead.
     """
 
     def __init__(
@@ -466,14 +966,27 @@ class RestBackend(Backend):
         timeout: float = 5.0,
         interface_type: Optional[str] = OVERLAY_MODE,
     ) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
+        self.input_host = self.target.input_host
         self.password = password
         self.timeout = timeout
         self.last_command = "<connect>"
+        # What one key of a batch costs on this target. A cartridge target
+        # pays the computer's matrix tap rate rather than the device's own key
+        # queue; see tests/lib/pacing.py.
+        self.key_drain_seconds = pacing.key_drain_seconds(self.target.split)
+        # The foreground colour this machine marks the cursor row with, once a
+        # screen has shown it unambiguously. See find_cursor_colour.
+        self._cursor_colour: Optional[int] = None
         self._original_interface_type: Optional[str] = None
         if interface_type is not None:
-            current = self.get_config(UI_STORE, UI_ITEM)
-            if current != interface_type:
+            # Asked of the device rather than assumed from its name: a
+            # cartridge has one way of drawing its UI and does not offer the
+            # setting at all, so there is nothing to switch and nothing to
+            # restore. Overlay and Freeze then mean the same transport there.
+            current = self.get_config_optional(UI_STORE, UI_ITEM)
+            if current is not None and current != interface_type:
                 # Change it only with the menu closed. Which UserInterface owns
                 # the machine is decided when the menu opens, so switching the
                 # setting under an open one leaves the firmware holding a
@@ -498,12 +1011,26 @@ class RestBackend(Backend):
                 # config change needs a moment to take effect before the menu
                 # is opened, or the very next interaction can land mid-switch.
                 time.sleep(0.25)
+        if self.target.split:
+            # The computer's menu, not this cartridge's: see close_host_menu.
+            # Done before the cartridge's menu is opened, because from here on
+            # every key this session sends goes to the computer.
+            close_host_menu(self.input_host, password, timeout)
         self._open_menu()
 
     # -- transport --
     def _url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{self.host}{path}{query}"
+        # The handle says where the device is, ports included, so one builder
+        # answers for every caller here.
+        return rest_lib.url_for(self.target, path, params)
+
+    @property
+    def machine_host(self) -> str:
+        return self.host
+
+    @property
+    def machine_password(self) -> Optional[str]:
+        return self.password
 
     def _request(
         self, method: str, path: str,
@@ -532,17 +1059,22 @@ class RestBackend(Backend):
             raise Failure(f"{method} {self._url(path, params)} failed: {exc}")
 
     # -- config --
-    def get_config(self, store: str, item: str) -> str:
-        status, body = self._request("GET", f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}")
+    def get_config_optional(self, store: str, item: str) -> Optional[str]:
+        """The setting's value, or None when this device does not have it."""
+        status, body = self._request(
+            "GET", f"{CONFIGS_PATH}/{urllib.parse.quote(store)}/{urllib.parse.quote(item)}")
         if status != 200:
             raise Failure(f"reading '{item}' failed with HTTP {status}: {body[:160]!r}")
-        data = json.loads(body)
-        entry = data.get(store, {})
+        entry = json.loads(body).get(store, {})
         if isinstance(entry, dict):
             entry = entry.get(item, {})
         current = entry.get("current") if isinstance(entry, dict) else None
-        if not isinstance(current, str):
-            raise Failure(f"config '{item}' has no string 'current': {data!r}")
+        return current if isinstance(current, str) else None
+
+    def get_config(self, store: str, item: str) -> str:
+        current = self.get_config_optional(store, item)
+        if current is None:
+            raise Failure(f"config '{item}' has no string 'current' on {self.host}")
         return current
 
     def set_config(self, store: str, item: str, value: str) -> None:
@@ -562,6 +1094,17 @@ class RestBackend(Backend):
             raise Failure(f"menu_screen failed with HTTP {status}: {body[:160]!r}")
         if len(body) != SCREEN_BYTES:
             raise Failure(f"menu_screen returned {len(body)} bytes, expected {SCREEN_BYTES}")
+        # The screens this suite already fetched, spooled for whoever reads
+        # the run afterwards. It costs the device nothing and is the only
+        # record of what was on screen when a check failed. The decode is
+        # behind the guard because it is the only part of this that costs
+        # anything when nothing is spooling.
+        if screen_spool.enabled():
+            # The raw payload is what "a different screen" means: bit 7 of a
+            # character byte is how the selected row is marked, and that does
+            # not survive into the text.
+            screen_spool.publish(screen_spool.MENU, self._decode(body).lines,
+                                 body, cols=SCREEN_WIDTH, key=body)
         return body
 
     def _menu_open(self) -> bool:
@@ -572,6 +1115,7 @@ class RestBackend(Backend):
 
     def _open_menu(self) -> None:
         if self._menu_open():
+            self.enter_file_browser()
             return
         status, body = self._request("PUT", MENU_BUTTON_PATH)
         if status != 200:
@@ -579,9 +1123,52 @@ class RestBackend(Backend):
         deadline = time.monotonic() + SETTLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._menu_open():
+                self.enter_file_browser()
                 return
             time.sleep(POLL_INTERVAL_SECONDS)
         raise Failure("the on-device menu did not open")
+
+    def _in_file_browser(self) -> bool:
+        """Whether the screen showing is the file browser.
+
+        The browser puts the directory it is showing on the status row and
+        nothing else does, so a leading "/" is what identifies it. True on
+        every machine; the rest of this method only ever runs where it can be
+        false.
+        """
+        rows = self._decode(self._body()).lines
+        return rows[SCREEN_HEIGHT - 1].lstrip().startswith("/")
+
+    def enter_file_browser(self) -> None:
+        """Leave the menu showing the file browser, whatever it opened on.
+
+        A C64 Ultimate does not put the file browser behind the menu button.
+        The button opens a launcher whose entries are the browser, the online
+        search and the settings screens, and it reopens wherever it was last
+        left, which can be several levels into those settings. Every suite
+        expects the browser, so the descent belongs here rather than in each
+        of them.
+
+        The other two machines open the browser directly and this returns at
+        once. Measured on a C64 Ultimate: RUN/STOP on the launcher closes the
+        whole menu, so the way back up is the Back key, and the browser entry
+        is the launcher's first, so no cursor read is needed to reach it.
+        """
+        entry = self.machine.launcher_browser_entry
+        if entry is None:
+            return
+        for _ in range(LAUNCHER_DESCENT_STEPS):
+            if self._in_file_browser():
+                return
+            rows = self._decode(self._body()).lines
+            if any(entry in row for row in rows):
+                self.send_key_repeat("UP", LAUNCHER_ENTRY_LIMIT)
+                self.send_key("ENTER")
+            else:
+                self.send_key("LEFT")
+        raise Failure(
+            f"could not reach the file browser: no {entry!r} entry and no "
+            f"directory on the status row after {LAUNCHER_DESCENT_STEPS} steps")
 
     def _close_menu(self) -> None:
         if not self._menu_open():
@@ -615,14 +1202,45 @@ class RestBackend(Backend):
         body = self._menu_screen_body()
         if body is None:
             raise Failure(f"menu screen unavailable after {self.last_command}")
+        self._learn_cursor_colour(body, None)
         return body
+
+    def _learn_cursor_colour(self, body: bytes,
+                             entry_rows: Optional[Sequence[int]]) -> None:
+        """Take the machine's cursor colour from this screen, if it teaches one.
+
+        Every screen the backend fetches is offered, not just the ones a
+        caller asks a row of, because a caller can reach a screen that needs
+        the colour without ever having asked for a row on one that teaches it.
+        Measured on an Ultimate II+L: a suite that opened the Assembly 64 form
+        from the task menu asked for its first row on the form itself, and a
+        form marks a ten-cell field, which no rule can find without the colour.
+        The task menu it passed through would have taught it.
+
+        Learnt once and then kept. The colour scheme belongs to the machine
+        (userinterface.cc effectuate_settings), not to the screen, and a later
+        screen can answer confidently and wrongly: a disk image listing draws
+        its volume row in one colour across the full width, which is unique
+        among the rows on that screen, so re-learning there adopts the volume
+        colour and every read afterwards returns the volume row. Measured on
+        an Ultimate II+L showing a D64 with one program.
+        """
+        if self._cursor_colour is not None:
+            return
+        rows = entry_rows if entry_rows is not None else range(2, SCREEN_HEIGHT - 1)
+        measured = measure_cursor_colour(body[:SCREEN_CELLS], body[SCREEN_CELLS:], rows)
+        if measured is not None:
+            self._cursor_colour = measured
 
     def _selected_row_from_body(self, body: bytes, entry_rows: Optional[Sequence[int]],
                                 strict: bool = False) -> int:
         chars = body[:SCREEN_CELLS]
         colours = body[SCREEN_CELLS:]
         rows = entry_rows if entry_rows is not None else range(2, SCREEN_HEIGHT - 1)
-        return _find_selected_row_rest(chars, colours, rows, strict)
+        # Offered again with the caller's own row range, which is narrower and
+        # more likely to hold exactly one listing than the default above.
+        self._learn_cursor_colour(body, entry_rows)
+        return find_selected_row_rest(chars, colours, rows, strict, self._cursor_colour)
 
     def _settled_selection(self, entry_rows: Optional[Sequence[int]]) -> Tuple[bytes, int]:
         """One screen and its cursor row, once a cursor is actually drawn.
@@ -709,14 +1327,22 @@ class RestBackend(Backend):
         self._post_events([{"kind": "keyboard", "inputs": list(matrix_keys), "transition": "tap"}])
         return self._settle(before)
 
-    def send_key(self, key: str) -> Snapshot:
+    def send_key(self, key: str, *, settle: bool = False,
+                 expect_redraw: bool = True) -> Snapshot:
+        # `settle` and `expect_redraw` are accepted for interface parity with
+        # TelnetBackend only; see send_char below.
         combo = KEY_ALIASES.get(key)
         if combo is None:
             raise Failure(f"Unknown key alias {key!r} for RestBackend")
         self.last_command = key
         return self.send_combo(combo)
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False,
+                  expect_redraw: bool = True) -> Snapshot:
+        # REST reads are a fixed-size settle regardless of what changed, so
+        # neither the two-burst race `settle` guards against nor the
+        # first-byte wait `expect_redraw` avoids applies here; both are
+        # accepted for interface parity with TelnetBackend only.
         self.last_command = ch
         return self.send_combo(char_to_combo(ch))
 
@@ -725,7 +1351,7 @@ class RestBackend(Backend):
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": char_to_combo(ch), "transition": "tap"} for ch in text]
         self._post_events(events)
-        return self._settle(before, min_drain=len(events) * pacing.KEY_DRAIN_SECONDS)
+        return self._settle(before, min_drain=len(events) * self.key_drain_seconds)
 
     def send_key_repeat(self, key: str, count: int) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -735,7 +1361,7 @@ class RestBackend(Backend):
         before = self._menu_screen_body()
         events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"} for _ in range(count)]
         self._post_events(events)
-        return self._settle(before, min_drain=count * pacing.KEY_DRAIN_SECONDS)
+        return self._settle(before, min_drain=count * self.key_drain_seconds)
 
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -752,7 +1378,7 @@ class RestBackend(Backend):
         # and a seek onto the entry already under the cursor changes nothing at
         # all. See pacing.SEEK_CHANGE_TIMEOUT_SECONDS.
         return self._settle(before, change_timeout=pacing.SEEK_CHANGE_TIMEOUT_SECONDS,
-                            min_drain=len(events) * pacing.KEY_DRAIN_SECONDS)
+                            min_drain=len(events) * self.key_drain_seconds)
 
     def close(self) -> None:
         # Same rule on the way out as on the way in: the menu is closed before
@@ -780,8 +1406,10 @@ class RestBackend(Backend):
 # Telnet backend: raw VT100 remote-menu session.
 # ---------------------------------------------------------------------------
 
-WIDTH = 40
-HEIGHT = 24  # the Telnet remote session only ever fills 24 of the 25 physical rows
+# Screen_VT100 serves a 60x24 Telnet session, not the physical 40x25 display.
+# The monitor's right-side header flags are otherwise truncated by this emulator.
+WIDTH = 60
+HEIGHT = 24  # Screen_VT100::get_size_y(); the 25th physical row is never used
 
 ALT_CHARSET_MAP = {
     "l": "+", "k": "+", "m": "+", "j": "+", "q": "-", "x": "|",
@@ -795,15 +1423,25 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "LEFT": b"\x1b[D",
     "PGUP": b"\x1b[5~",
     "PGDN": b"\x1b[6~",
+    # keyboard_vt100.cc getch() indexes its `numeric` table by the escape
+    # value, so 11 is KEY_F1, 13 KEY_F3, 15 KEY_F5 and 19 KEY_F8. F1 is here
+    # because a C64 Ultimate puts the task menu on it; see tests/lib/machine.py.
+    "F1": b"\x1b[11~",
     "F5": b"\x1b[15~",
     "F3": b"\x1b[13~",
     "F8": b"\x1b[19~",
     "RUNSTOP": b"\x11",
+    # Keyboard_C64 delivers the top-left left-arrow key as '`', and the VT100
+    # driver passes a printable byte straight through, so the same monitor key
+    # arrives over either transport (keyboard_c64.cc keymap_normal row 7 col 1;
+    # keyboard_vt100.cc getch(), e_esc_idle case).
+    "ARROW_LEFT": b"`",
     "CTRL_B": b"\x02",
     "CTRL_E": b"\x05",
     "CTRL_O": b"\x0f",
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
+    "CBM_9": b"\x1b9",
     "ESC": b"\x1bx",
     "ENTER": b"\r",
     # DEL and BACKSPACE are the same physical key (KEY_ALIASES maps both to
@@ -982,6 +1620,13 @@ class TelnetBackend(Backend):
         self, host: str, port: int, password: Optional[str] = None, timeout: float = 5.0,
         width: int = WIDTH, height: int = HEIGHT,
     ) -> None:
+        # Kept so this backend can ask the device what it is; see
+        # Backend.machine. The identity is the device's, not the transport's.
+        self.host = host
+        self.password = password
+        # The colour this machine's browser marks its cursor row with, once a
+        # listing has shown it unambiguously; see _marked_row.
+        self._selected_sgr: Optional[str] = None
         self.sock = self._connect_with_retry(host, port, timeout)
         self.sock.setblocking(False)
         self.timeout = timeout
@@ -993,6 +1638,14 @@ class TelnetBackend(Backend):
             if password is None:
                 raise Failure("Telnet password prompt received but no password was provided")
             self.send_text(password + "\r", "password")
+
+    @property
+    def machine_host(self) -> str:
+        return self.host
+
+    @property
+    def machine_password(self) -> Optional[str]:
+        return self.password
 
     @staticmethod
     def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
@@ -1014,6 +1667,10 @@ class TelnetBackend(Backend):
     # never triggered.
     _expect_redraw = False
 
+    # Committed prompts and selected keys have a U2+L echo burst before their
+    # redraw. Require a longer quiet period for those commands only.
+    _expect_settle = False
+
     def close(self) -> None:
         try:
             self.sock.close()
@@ -1024,18 +1681,60 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command)
 
+    @property
+    def selected_sgr(self) -> Optional[str]:
+        """The colour this machine marks a cursor row with, once measured.
+
+        None until a listing has shown it. A caller that has to find the
+        selection on a screen this reader does not handle - a form, where the
+        marking covers one field rather than a row - asks for the colour here
+        rather than pinning one machine's.
+        """
+        return self._selected_sgr
+
+    def _content_sgr(self, row: int, text: str) -> Optional[str]:
+        """The colour the browser drew this row's first content cell in.
+
+        The first cell is not always column zero: a C64 Ultimate draws its
+        browser inside a frame, so column zero is the frame's own colour on
+        every row and says nothing about the selection.
+        """
+        for column, character in enumerate(text):
+            if character not in FRAME_CHARS:
+                return self.screen.colours[row][column]
+        return None
+
     def _marked_row(self, entry_rows: Sequence[int], rows: List[str]) -> int:
-        marked = [
-            row for row in entry_rows
-            if strip_frame(rows[row])
-            and TELNET_SELECTED_SGR in (self.screen.colours[row][0], self.screen.colours[row][1])
-        ]
-        if len(marked) != 1:
-            raise Failure(
-                f"Telnet: expected exactly one selected row among {list(entry_rows)}, "
-                f"found {marked}; screen was:\n{chr(10).join(rows)}"
-            )
-        return marked[0]
+        """The cursor row, as the one row drawn in a colour of its own.
+
+        The same rule the REST reader uses, for the same reason: a listing
+        draws every unselected entry in one colour and the selected one in
+        another, and which colours those are belongs to the machine. Pinning
+        the cursor's own colour string worked on an Ultimate 64, whose browser
+        marks the row `0;32;1` against `0;37;2`, and found nothing at all on a
+        C64 Ultimate, which marks `0;37;1` against `0;31;2`.
+
+        Learnt once and then kept, so a two-entry listing stays readable: the
+        colours tie there and the screen alone cannot say which is the cursor.
+        """
+        drawn = {row: self._content_sgr(row, rows[row]) for row in entry_rows
+                 if strip_frame(rows[row])}
+        drawn = {row: sgr for row, sgr in drawn.items() if sgr is not None}
+        tally: Dict[str, int] = {}
+        for sgr in drawn.values():
+            tally[sgr] = tally.get(sgr, 0) + 1
+        odd = [row for row, sgr in drawn.items() if tally[sgr] == 1]
+        if len(odd) == 1:
+            self._selected_sgr = drawn[odd[0]]
+            return odd[0]
+        if self._selected_sgr is not None:
+            wearing = [row for row, sgr in drawn.items() if sgr == self._selected_sgr]
+            if len(wearing) == 1:
+                return wearing[0]
+        raise Failure(
+            f"Telnet: expected exactly one selected row among {list(entry_rows)}, "
+            f"found {odd}; screen was:\n{chr(10).join(rows)}"
+        )
 
     def selected_row(self, entry_rows: Optional[Sequence[int]] = None) -> int:
         if entry_rows is None:
@@ -1059,12 +1758,15 @@ class TelnetBackend(Backend):
         rows = self.screen.rows()
         return self._marked_row(entry_rows, rows), [row.rstrip() for row in rows]
 
-    def send_key(self, key: str) -> Snapshot:
+    def send_key(self, key: str, *, settle: bool = False,
+                 expect_redraw: bool = True) -> Snapshot:
         payload = TELNET_KEY_BYTES.get(key)
         if payload is None:
             raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
         self.last_command = key
-        self._expect_redraw = True
+        self._expect_redraw = expect_redraw
+        if settle:
+            self._expect_settle = True
         self.sock.sendall(payload)
         return self.capture()
 
@@ -1085,15 +1787,21 @@ class TelnetBackend(Backend):
         self._drain_until_idle(timeout=self.timeout)
         return self.screen.snapshot(self.last_command), self._last_drain_bytes
 
-    def send_char(self, ch: str) -> Snapshot:
+    def send_char(self, ch: str, *, settle: bool = False,
+                  expect_redraw: bool = True) -> Snapshot:
+        # Some U2+L commands emit an echo burst, pause, then redraw. Keep the
+        # longer quiet wait opt-in so ordinary keystrokes remain fast.
         self.last_command = ch
-        self._expect_redraw = True
+        self._expect_redraw = expect_redraw
+        if settle:
+            self._expect_settle = True
         self.sock.sendall(ch.encode("ascii"))
         return self.capture()
 
     def send_text(self, text: str, label: str) -> Snapshot:
         self.last_command = label
         self._expect_redraw = True
+        self._expect_settle = True
         self.sock.sendall(text.encode("ascii"))
         return self.capture()
 
@@ -1125,39 +1833,75 @@ class TelnetBackend(Backend):
         directions: it returned a stale screen when a redraw took longer than
         the threshold to start, and it charged that same threshold to every
         capture once the redraw had plainly finished.
+
+        The first-byte wait applies only where a redraw is genuinely expected.
+        A send that draws nothing - a command prompt refusing an impossible
+        character emits not one byte - passes expect_redraw=False and pays the
+        short quiet check instead. See tests/lib/pacing.py for the measurements
+        behind both numbers.
         """
-        started = time.time()
-        end = started + timeout
-        expecting = self._expect_redraw
-        self._expect_redraw = False
-        first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
-                      else pacing.TELNET_QUIET_CHECK_SECONDS)
-        last_data: Optional[float] = None
-        drained = 0
-        while time.time() < end:
-            wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
-            ready, _, _ = select.select([self.sock], [], [], wait)
-            now = time.time()
-            if not ready:
-                if last_data is None:
-                    if now - started >= first_wait:
+        received: List[bytes] = []
+        try:
+            started = time.time()
+            end = started + timeout
+            expecting = self._expect_redraw
+            expecting_settle = self._expect_settle
+            self._expect_redraw = False
+            self._expect_settle = False
+            first_wait = (pacing.TELNET_FIRST_BYTE_TIMEOUT_SECONDS if expecting
+                          else pacing.TELNET_QUIET_CHECK_SECONDS)
+            last_data: Optional[float] = None
+            drained = 0
+            while time.time() < end:
+                wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
+                ready, _, _ = select.select([self.sock], [], [], wait)
+                now = time.time()
+                if not ready:
+                    if last_data is None:
+                        if now - started >= first_wait:
+                            self._last_drain_bytes = drained
+                            return
+                        continue
+                    # A byte count cannot distinguish the echo from a redraw: both
+                    # vary with screen content. For settled commands, wait for a
+                    # longer quiet period, bounded by the caller's timeout.
+                    idle_needed = (pacing.TELNET_SETTLE_GAP_SECONDS if expecting_settle
+                                   else pacing.TELNET_IDLE_GAP_SECONDS)
+                    if now - last_data >= idle_needed:
                         self._last_drain_bytes = drained
                         return
                     continue
-                if now - last_data >= pacing.TELNET_IDLE_GAP_SECONDS:
+                chunk = self.sock.recv(65536)
+                if not chunk:
                     self._last_drain_bytes = drained
                     return
-                continue
-            chunk = self.sock.recv(65536)
-            if not chunk:
+                drained += len(chunk)
+                self.screen.feed(chunk)
+                received.append(chunk)
+                last_data = time.time()
+            # The caller's own timeout ran out. With no byte at all that is the
+            # same answer the first-byte budget gives, and reporting it as a
+            # failure would turn a key that legitimately drew nothing into a failed
+            # suite whenever the budget outlived the timeout it sits inside. With
+            # bytes received it is a redraw that never went quiet, which is a real
+            # failure and says so.
+            if last_data is None:
                 self._last_drain_bytes = drained
                 return
-            drained += len(chunk)
-            self.screen.feed(chunk)
-            last_data = time.time()
-        raise Failure(f"Timed out waiting for telnet screen to go idle after {self.last_command}")
-
-
+            raise Failure(f"Timed out waiting for telnet screen to go idle after "
+                          f"{self.last_command} ({drained} bytes received)")
+        finally:
+            # Out of the loop, not in it. Two file writes between a recv
+            # and the next select would sit inside the wall-clock idle
+            # test this loop decides on, and an observability component
+            # may not change how a suite reaches a verdict. The bytes are
+            # kept in memory and written once the redraw is over.
+            screen_spool.publish_stream(b"".join(received))
+            screen_spool.publish(
+                screen_spool.TELNET, self.screen.rows(),
+                cols=self.screen.width,
+                key=(tuple(self.screen.rows()),
+                     tuple(tuple(row) for row in self.screen.reverse)))
 # ---------------------------------------------------------------------------
 # Mode selection: the standard --mode flag and Backend factory every
 # mode-switchable suite uses, so run-tests --mode propagates the same way
@@ -1202,9 +1946,15 @@ def make_backend(
     remote session is not constrained to the physical 40-column display, so
     a suite whose screen needs more room (e.g. one testing long filenames)
     passes telnet_width/telnet_height to render wider than REST/Overlay.
+
+    Either host may be a target such as "u2@c64u"; see tests/lib/targets.py.
     """
     if mode == MODE_TELNET:
-        return TelnetBackend(telnet_host or host, telnet_port, password, timeout, width=telnet_width, height=telnet_height)
+        # Telnet is a session on the device itself, so a cartridge target
+        # connects to the cartridge; only keyboard injection over REST needs
+        # the companion computer.
+        return TelnetBackend(targets.device_of(telnet_host or host), telnet_port,
+                             password, timeout, width=telnet_width, height=telnet_height)
     if mode in _MODE_INTERFACE_TYPE:
         return RestBackend(host, password, timeout, interface_type=_MODE_INTERFACE_TYPE[mode])
     raise Failure(f"Unknown mode {mode!r}; expected one of {MODES}")
@@ -1304,6 +2054,12 @@ class Browser:
     # -- navigation --
     def go_to_root(self) -> None:
         for _ in range(12):
+            # Backing out of the root directory does not always stay in the
+            # browser: a C64 Ultimate keeps a launcher above it, so one LEFT
+            # too many leaves the browser and every later read is of a screen
+            # that has no path at all. Asking to be put back is a no-op on the
+            # machines where the browser is the top of the stack.
+            self.backend.enter_file_browser()
             if self.current_path() == "/":
                 return
             try:
@@ -1385,6 +2141,13 @@ class Browser:
     # entry under the cursor instead of searching.
     def _seekable(self, prefix: str) -> bool:
         if not prefix:
+            return False
+        # Some machines bind letters in the browser to movement instead of to
+        # the search, and typing one there acts rather than seeks. Walking is
+        # then the only way to reach the entry, which is what select_entry
+        # falls back to. See Machine.browser_navigation_letters.
+        reserved = self.backend.machine.browser_navigation_letters
+        if reserved and any(ch.lower() in reserved for ch in prefix):
             return False
         # A seek costs the firmware one keystroke per character, and a jump
         # within the visible listing costs at most one per row, so a prefix
@@ -1469,14 +2232,36 @@ class Browser:
 
         Both context and task menus draw straight over the browser, so on
         every row the characters that changed are the overlay's own cell.
-        Rows that only gained a border strip to nothing and drop out."""
+        Rows that only gained a border strip to nothing and drop out.
+
+        The changed run stops at the overlay's right border. Everything past
+        it belongs to the row underneath, which the overlay did not cover:
+        measured on a C64 Ultimate, whose task menu is narrower than the
+        browser rows it sits on, every label came back with the listing's size
+        column stuck to it, as "Developer                   |32"."""
+        rows = self.rows()
+        # Where the transport can name the window's own columns, read the
+        # labels out of them. Comparing with the screen before takes part of
+        # the listing underneath for the overlay whenever a row differed there
+        # already: measured on a C64 Ultimate, the task menu came back as
+        # ['50K', 'Create', 'Power & Reset', ...], where "50K" is the size
+        # column of the row behind it, and that extra entry shifted every
+        # index so selecting "Developer" opened the entry two places past it.
         labels = []
-        for old, new in zip(before, self.rows()):
+        for old, new in zip(before, rows):
             if old == new:
                 continue
             common = len(os.path.commonprefix([old, new]))
-            label = strip_frame(new[common:])
-            if label:
+            text = new[common:].lstrip(FRAME_CHARS)
+            label = strip_frame(text.split("|", 1)[0])
+            # A row whose text underneath already differed from its neighbours
+            # shares a shorter prefix with what replaced it, so what is left
+            # can begin with the tail of the listing rather than with the
+            # overlay. Measured on a C64 Ultimate: the task menu came back as
+            # ["50K", "Create", "Power & Reset", ...], and that extra entry
+            # shifted every index, so selecting "Developer" opened the entry
+            # two places past it. A menu item is never a bare file size.
+            if label and not SIZE_COLUMN_RE.fullmatch(label):
                 labels.append(label)
         return labels
 
@@ -1530,9 +2315,21 @@ class Browser:
     def invoke_context_action(self, label: str) -> None:
         self.choose_overlay_item(self.open_context_menu(), label)
 
+    def press_task_menu(self) -> None:
+        """Open the task menu with whichever key this machine puts it on.
+
+        The task menu belongs to the file browser, so the browser has to be
+        what is on screen. On a machine with a launcher above it that is not
+        a given: measured on a C64 Ultimate, loading settings through the
+        browser left the launcher showing, and the next task-menu press read
+        the launcher's own entries as the menu it had just opened.
+        """
+        self.backend.enter_file_browser()
+        self.press(self.backend.machine.task_menu_key)
+
     def invoke_task_action(self, category: str, item: str) -> None:
         before = self.rows()
-        self.press("F5")
+        self.press_task_menu()
         categories = self.wait_for_overlay(before)
         if not categories:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")

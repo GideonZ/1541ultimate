@@ -16,6 +16,7 @@ import io
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator, List, Optional
 
+import targets
 from report import Failure
 
 FTP_USER = "user"
@@ -27,10 +28,15 @@ def connect(host: str, password: Optional[str] = None,
             timeout: float = DEFAULT_TIMEOUT,
             directory: Optional[str] = None,
             user: str = FTP_USER) -> ftplib.FTP:
-    """Open and log in an FTP session, optionally changing directory."""
+    """Open and log in an FTP session, optionally changing directory.
+
+    `host` may be a target: the FTP server under test is the device's, so a
+    cartridge target connects to the cartridge. See tests/lib/targets.py.
+    """
     try:
         client = ftplib.FTP(timeout=timeout)
-        client.connect(host, 21)
+        target = targets.resolve(host)
+        client.connect(target.device, target.ftp_port)
         client.login(user, password or FTP_DEFAULT_PASSWORD)
         if directory:
             client.cwd(directory)
