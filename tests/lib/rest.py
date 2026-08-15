@@ -94,11 +94,23 @@ def record_action(method: str, path: str, started: float, attempts: int,
     under the rule above and once for a program under no rule at all.
     """
     elapsed = round((time.monotonic() - started) * 1000.0, 1)
+    if path.endswith("machine:menu_screen") and method.upper() == "GET":
+        # The one call that answers whether the overlay menu is open: 200 with
+        # a screen, 404 without one. Every record after this carries it, which
+        # is what tells a key the device ignored from a key an open menu
+        # swallowed while answering 200.
+        interactions.note_menu(True if status == 200 else
+                               False if status == 404 else None)
     interactions.record(
         "rest", f"{method.upper()} {path}", ms=elapsed, status=status,
         params=str(params) if params else None,
         payload=str(payload) if payload is not None else None,
         retries=attempts if attempts > 1 else None,
+        fault=interactions.fault_of(exc),
+        # One connection per request: `urllib` opens and closes one for every
+        # call, so nothing here is ever reused and a reader does not have to
+        # wonder whether a fault was on a fresh connection or an old one.
+        connection="new",
         error=format_exception(exc) if exc is not None else None,
         body=answer)
     if not report.JSONL_PATH:

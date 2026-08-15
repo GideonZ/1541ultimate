@@ -1267,6 +1267,135 @@ def the_interface_preference_is_wired_into_every_build() -> str:
     return "declared, implemented, built and registered"
 
 
+def vic_frame(rows, width=384, height=272, background=6, foreground=14):
+    """One VIC frame of colour indices showing `rows`, as the hardware draws it.
+
+    Rendered from the character ROM through `glyphs.rom_rows_for_index`, which
+    is the same data the decoder matches against and is production code, so the
+    only thing this restates is the pixel layout of a frame.
+    """
+    import glyphs
+    import vic_text
+
+    pixels = bytearray([background]) * (width * height)
+    left, top = vic_text.picture_origin(width, height)
+    for row, text in enumerate(rows[:vic_text.ROWS]):
+        for column, character in enumerate(text[:vic_text.COLUMNS]):
+            index = glyphs.screen_code_for(character)
+            shape = glyphs.rom_rows_for_index(
+                index if index != glyphs.NO_GLYPH else
+                glyphs.screen_code_for(" "))
+            for line in range(glyphs.GLYPH_HEIGHT):
+                bits = shape[line]
+                base = ((top + row * glyphs.GLYPH_HEIGHT + line) * width
+                        + left + column * glyphs.GLYPH_WIDTH)
+                for bit in range(glyphs.GLYPH_WIDTH):
+                    if bits & (0x80 >> bit):
+                        pixels[base + bit] = foreground
+    return bytes(pixels)
+
+
+@case(1, "OBS-2.18")
+def the_c64_screen_is_read_back_out_of_the_recorded_frame() -> str:
+    """The device's own screen, as text, from the picture already in hand.
+
+    The alternative is a `machine:readmem` of screen memory per screen against
+    a device the suites are driving, which is device load this layer is not
+    allowed to add. The frame arrived because the recording asked for the
+    stream, and the C64 draws text as fixed shapes from a ROM this module
+    already holds, so reading it back is exact rather than approximate.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import vic_text
+
+    wanted = ["**** COMMODORE 64 BASIC V2 ****".ljust(40),
+              " ".ljust(40),
+              " 64K RAM SYSTEM  38911 BASIC BYTES FREE ",
+              " ".ljust(40),
+              "READY.".ljust(40)] + [" ".ljust(40)] * 20
+    read = vic_text.decode(vic_frame(wanted), 384, 272)
+    if read is None:
+        raise Failure("a plain text screen was not read as one")
+    expect("every row", len(read), vic_text.ROWS)
+    for index, (was, now) in enumerate(zip(wanted, read)):
+        if was != now:
+            raise Failure(f"row {index} read back as {now!r}, not {was!r}")
+
+    # Reverse video, which is how the machine marks a selection.
+    inverted = bytearray(vic_frame(["ABC".ljust(40)] + [" " * 40] * 24))
+    left, top = vic_text.picture_origin(384, 272)
+    for y in range(top, top + 8):
+        for x in range(left, left + 24):
+            at = y * 384 + x
+            inverted[at] = 6 if inverted[at] == 14 else 14
+    read = vic_text.decode(bytes(inverted), 384, 272)
+    if read is None or not read[0].startswith("ABC"):
+        raise Failure(f"a reverse video row read back as {read[0]!r}"
+                      if read else "a reverse video row was not read at all")
+
+    # An NTSC frame, which is 32 lines shorter and centres the picture area
+    # somewhere else.
+    read = vic_text.decode(vic_frame(wanted, height=240), 384, 240)
+    if read is None or read[0] != wanted[0]:
+        raise Failure("an NTSC frame was not read")
+
+    # And something that is not a text screen at all says so rather than
+    # returning a screen of question marks.
+    noise = bytes((x * 7 + y * 13) % 16 for y in range(272) for x in range(384))
+    expect("a frame that is not text", vic_text.decode(noise, 384, 272), None)
+    return f"{vic_text.ROWS} rows, PAL and NTSC, reverse video, and a refusal"
+
+
+@case(1, "OBS-2.17")
+def the_transcript_and_the_records_share_one_sequence() -> str:
+    """One line a person reads, one record a program reads, one number joining.
+
+    Two files that a reader has to align by timestamp are two files that
+    disagree the moment two interactions land in one millisecond.
+    """
+    import interactions
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            interactions.note_menu(True)
+            interactions.note_screen("READY.")
+            interactions.record("rest", "POST /v1/machine:input", status=200,
+                                ms=41.2, params="{'keys': 'J C003'}",
+                                body=b'{"errors":[]}')
+            interactions.note_menu(False)
+            for _ in range(4):
+                interactions.record("rest", "GET /v1/machine:menu_screen",
+                                    status=404, ms=3.0)
+            interactions.record("telnet", "connect u2:23", ms=12.0,
+                                fault="refused", error="connection refused")
+            found = logged_interactions(path)
+            with open(os.path.join(directory,
+                                   interactions.TRANSCRIPT_NAME),
+                      encoding="utf-8") as handle:
+                lines = [line for line in handle.read().splitlines() if line]
+
+    expect("one line per record", len(lines), len(found))
+    expect("numbered from one", [record["seq"] for record in found], [1, 2, 3])
+    for record, line in zip(found, lines):
+        if not line.split()[0] == str(record["seq"]):
+            raise Failure(f"line {line!r} does not open with its own seq")
+        if record["op"].split()[0] not in line:
+            raise Failure(f"line {line!r} does not name {record['op']!r}")
+    # The injection says what was on screen and whether the menu was open,
+    # which is what tells a key the machine ignored from one an open menu
+    # swallowed while answering 200.
+    expect("the menu was open for the injection", found[0]["menu_open"], True)
+    if not found[0].get("screen"):
+        raise Failure("the injection does not say what was on screen")
+    expect("and closed for the reads after it", found[1]["menu_open"], False)
+    expect("the settle loop collapsed", found[1]["repeat"], 4)
+    expect("the connection fault is one word", found[2]["fault"], "refused")
+    if "menu=open" not in lines[0] or "menu=closed" not in lines[1]:
+        raise Failure("the transcript does not carry the menu state")
+    return f"{len(lines)} lines, {len(found)} records, one sequence"
+
+
 @case(1, "OBS-2.17", "OBS-1.1")
 def the_interaction_log_never_ends_a_run() -> str:
     """Nothing about recording an interaction may reach the caller.
@@ -2260,14 +2389,14 @@ def every_record_kind_is_in_the_table() -> str:
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     for kind in ("check", "scenario", "suite", "health", "warning", "log",
-                 "capture", "plan", "action", "interaction", "run"):
+                 "capture", "plan", "action", "interaction", "vic", "run"):
         if f"| `{kind}` |" not in text:
             raise Failure(f"the table has no row for kind={kind}")
     for field in ("target", "attempt", "targets", "exit_code", "lead_in",
-                  "stills"):
+                  "stills", "seq", "fault", "menu_open"):
         if f"`{field}" not in text:
             raise Failure(f"the table does not name the {field} field")
-    return "10 kinds, every new field"
+    return "11 kinds, every new field"
 
 
 @case(1, "OBS-4.9", "OBS-4.10")

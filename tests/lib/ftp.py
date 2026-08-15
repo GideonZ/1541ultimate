@@ -70,10 +70,23 @@ def connect(host: str, password: Optional[str] = None,
     `host` may be a target: the FTP server under test is the device's, so a
     cartridge target connects to the cartridge. See tests/lib/targets.py.
     """
+    started = time.monotonic()
     try:
         client = RecordedFTP(timeout=timeout)
         target = targets.resolve(host)
-        client.connect(target.device, target.ftp_port)
+        try:
+            client.connect(target.device, target.ftp_port)
+        except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
+            interactions.record(
+                "ftp", f"connect {target.device}:{target.ftp_port}",
+                ms=round((time.monotonic() - started) * 1000.0, 1),
+                fault=interactions.fault_of(exc), error=str(exc),
+                connection="new")
+            raise
+        interactions.record(
+            "ftp", f"connect {target.device}:{target.ftp_port}",
+            ms=round((time.monotonic() - started) * 1000.0, 1),
+            connection="new")
         client.login(user, password or FTP_DEFAULT_PASSWORD)
         if directory:
             client.cwd(directory)

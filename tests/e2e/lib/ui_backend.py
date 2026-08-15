@@ -1652,12 +1652,29 @@ class TelnetBackend(Backend):
     def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
         deadline = time.time() + max(timeout, 15.0)
         last_error: Optional[BaseException] = None
+        attempts = 0
+        started = time.monotonic()
         while time.time() < deadline:
+            attempts += 1
             try:
-                return socket.create_connection((host, port), timeout=timeout)
+                sock = socket.create_connection((host, port), timeout=timeout)
             except (OSError, TimeoutError) as exc:
                 last_error = exc
+                interactions.record(
+                    "telnet", f"connect {host}:{port}",
+                    ms=round((time.monotonic() - started) * 1000.0, 1),
+                    attempts=attempts, fault=interactions.fault_of(exc),
+                    error=str(exc), connection="new")
                 time.sleep(0.5)
+                continue
+            # One session per suite run, so every send after this is on this
+            # connection and a reader can tell a fault on a fresh connection
+            # from one on a session that had been up for minutes.
+            interactions.record(
+                "telnet", f"connect {host}:{port}",
+                ms=round((time.monotonic() - started) * 1000.0, 1),
+                attempts=attempts, connection="new")
+            return sock
         if last_error is not None:
             raise last_error
         raise TimeoutError(f"Timed out connecting to {host}:{port}")
@@ -1851,6 +1868,7 @@ class TelnetBackend(Backend):
             "telnet", f"send {what}",
             sent=repr(payload)[1:] if payload else "",
             sent_bytes=len(payload), received_bytes=drained,
+            connection="reused",
             ms=round((time.monotonic() - started) * 1000.0, 1))
 
     def _drain_until_idle(self, timeout: float) -> None:
@@ -1927,6 +1945,10 @@ class TelnetBackend(Backend):
             # test this loop decides on, and an observability component
             # may not change how a suite reaches a verdict. The bytes are
             # kept in memory and written once the redraw is over.
+            # What the session shows now, so the next interaction says what
+            # was on screen when it happened and two consecutive records show
+            # the effect of whatever was between them.
+            interactions.note_screen(str(tuple(self.screen.rows())))
             self._record_exchange(self._last_drain_bytes)
             screen_spool.publish_stream(b"".join(received))
             screen_spool.publish(

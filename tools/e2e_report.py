@@ -1341,6 +1341,12 @@ def describe_file(relative: str) -> str:
         return ("every interaction the harness had with this device: each REST "
                 "request and its answer, each Telnet exchange, each FTP "
                 "command and reply")
+    if name == "transcript.txt":
+        return ("the same interactions as one line each, sharing their "
+                "sequence numbers with `interactions.jsonl`")
+    if name == "screen-text.jsonl":
+        return ("the C64's own screen as text, decoded from the recorded video "
+                "frames against the character ROM")
     if relative.replace(os.sep, "/").split("/")[-2:-1] == ["bodies"]:
         return "one response body, kept once and referred to by its digest"
     if name.endswith(".telnet.log"):

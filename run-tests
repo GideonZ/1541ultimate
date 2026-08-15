@@ -621,6 +621,18 @@ def finish_syslog(collector) -> None:
                           reason=f"no line from {gap['machine']}")
     root = collector.directory
     unknown = collector.unknown_senders()
+    for token, _path in collector.files():
+        if collector.observed(token):
+            continue
+        # Nothing at all from a device the run asked for a log from. The
+        # setting was read and matched at the start, so what is left is a
+        # device whose firmware has not re-read it: the setting takes effect at
+        # the device's next boot, and `machine:reboot` does not always reach
+        # that far. Said once, here, because an empty file is otherwise
+        # indistinguishable from a device that had nothing to say.
+        report.warn(f"device log: {token} sent no line at all during this run, "
+                    f"so its syslog.txt is empty; the setting takes effect at "
+                    f"the device's next boot")
     for token, path in collector.files():
         # A second record for the same target, carrying what the first could
         # not know: which addresses the lines actually came from. The report

@@ -542,9 +542,14 @@ makes outside any suite. A suite is never asked to announce anything.
 
 | Field | Content |
 |---|---|
+| `seq` | this process's own counter, shared with `transcript.txt` |
 | `time`, `suite`, `target`, `attempt` | as every record (OBS-2.3) |
 | `check`, `scenario` | what was open, absent when nothing was |
 | `transport` | `rest`, `telnet`, `ftp` or `socket` |
+| `fault` | a connection-level failure in one word: `refused`, `reset`, `timeout`, `broken-pipe`, `unreachable` |
+| `connection` | `new` or `reused` |
+| `menu_open` | whether the device's overlay menu was open, from what `machine:menu_screen` last answered |
+| `screen` | a digest of what the harness was looking at |
 | `op` | what was done on it: a method and a path, a key, a command |
 | `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them |
 | `sent`, `sent_bytes`, `received_bytes` | a Telnet exchange |
@@ -568,9 +573,49 @@ or a program needs:
   byte count. A 2000-byte menu screen read four hundred times is one file and
   four hundred digests.
 
+`DIR/<slug>/transcript.txt` carries one line per record, opening with the same
+`seq`. A reader who wants to see what happened reads that; a program that wants
+a field reads the record with that number. Both are written from one record, so
+they cannot disagree, and neither is derived from the other afterwards. Fields
+on a line are cut to a width a person can scan, and a field too long for the
+record itself is content-addressed the way a body is, so a `machine:writemem`
+of a whole block keeps its address and its bytes and a partial write is visible
+without a read-back.
+
+Three fields exist because a bare request and response cannot answer the
+questions an investigation brings. `fault` is what a key that never reached the
+device looks like, as against one the device ignored. `connection` distinguishes
+a fault on a connection just opened from one on a session that had been up for
+minutes. `menu_open` is the discriminator for an injected key that was accepted
+with HTTP 200 and did nothing, which is what a C64 Ultimate with its menu open
+does to every key sent to it; `screen` is what makes the effect of an
+interaction readable, because two consecutive records carrying different digests
+is that effect.
+
 Nothing about recording an interaction may reach the caller: this sits in the
 path of every device call in the tree, and a component that fails a run it was
 watching is worse than one that is missing. Depends on OBS-2.5 and OBS-2.10.
+
+**OBS-2.18** [P6] The C64's own screen is recorded as text, decoded from the
+frames the recorder already has, as `kind=vic` records in
+`DIR/<slug>/screen-text.jsonl`.
+
+The video stream carries a bitmap, which is what a person looks at and what a
+program cannot search. The device's screen memory is searchable and reading it
+means a `machine:readmem` per screen against a device the suites are driving,
+which is load this layer may not add (OBS-15.1). So the text is recovered from
+the picture: the C64 draws each cell as one of 256 fixed shapes from a character
+ROM this harness already holds to draw the harness pane with, in two colours, so
+matching a cell against the ROM is exact rather than approximate.
+
+Written only when the screen changed, and at most once a second, because the
+material is static for seconds at a time and the decode is the most expensive
+thing in the slot loop. Each record names the frame it was decoded from and that
+frame's position in the file, so a line joins to the picture it came from. A
+frame that is not a text screen this can read produces no record rather than a
+screen of question marks: bitmap mode, a sprite over the text, and the shifted
+character set all make cells that match nothing, and enough of them is the
+honest answer that the frame is not readable this way.
 
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,

@@ -192,6 +192,8 @@ DIR/
     <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
     screens.jsonl              every distinct screen the harness read
     interactions.jsonl         every interaction the harness had with the device
+    transcript.txt             the same, one line each, sharing their seq numbers
+    screen-text.jsonl          the C64 screen as text, decoded from the recording
     bodies/<digest>.bin        one response body, kept once, referred to by digest
     video.mp4                  the recording, with --record
     video.srt                  subtitles naming the suite and check
@@ -233,7 +235,8 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |
 | `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
-| `interaction` | `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `sent_bytes`, `received_bytes`, `reply`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
+| `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
+| `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `sent_bytes`, `received_bytes`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
 | `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
@@ -336,6 +339,29 @@ read of memory is the byte; anything larger is written once to
 `bodies/<digest>.bin` beside the log, with the record carrying `body_sha256` and
 `body_bytes`, so the second and every later occurrence of one 2000-byte menu
 screen costs a digest.
+
+Every record carries a `seq`, and `transcript.txt` beside it carries one line
+per record opening with the same number, so a reader who finds a line there and
+wants every field of it looks that number up rather than matching on a
+timestamp. Both files are written from one record, so they cannot disagree.
+
+Three fields answer questions a bare request and response cannot. `fault` names
+a connection-level failure in one word (`refused`, `reset`, `timeout`,
+`broken-pipe`, `unreachable`), because a key that never reached the device and a
+key the device ignored are different findings. `connection` says whether the
+call opened a connection or used one that was already up. `menu_open` says
+whether the device's overlay menu was open, taken from what `machine:menu_screen`
+last answered, which is what tells a key the machine ignored from a key an open
+menu swallowed while answering 200. `screen` is a digest of what the harness was
+looking at, so two consecutive records showing different digests are the
+observable effect of whatever happened between them.
+
+`vic` records are the C64's own screen as 25 rows of 40 characters, decoded from
+the frames the recorder already has by matching each 8x8 cell against the
+character ROM. It costs the device nothing, which reading its screen memory
+would not, and it is written only when the screen changed, at most once a
+second. A frame that is not a text screen this can read produces no record
+rather than a screen of question marks.
 
 Records carry the suite, the attempt, the scenario and the check that were open,
 so they join to the rest of the run with no correlation identifier of their own,

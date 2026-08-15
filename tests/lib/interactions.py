@@ -80,10 +80,44 @@ TEXT_CHARS = 400
 # tens of thousands of interactions.
 DIGEST_CHARS = 16
 
+# The one-line-per-interaction form, beside the JSONL and sharing its sequence
+# numbers. A reader who wants to see what happened reads this; a program that
+# wants a field reads the JSONL line with the same `seq`. Neither is derived
+# from the other after the fact: both are written from the same record, so they
+# cannot disagree.
+TRANSCRIPT_NAME = "transcript.txt"
+
+# How wide one field may be on a transcript line. A line a person scans is one
+# that fits a terminal; the JSONL record with the same `seq` is where the whole
+# of a long field is, and a long one is content-addressed on top of that.
+TRANSCRIPT_FIELD_CHARS = 96
+
+# What a connection-level failure was, from the exception the transport raised.
+# A key that never reached the device because the connection was refused and a
+# key the device ignored are different findings, and `error` alone is a string
+# that has to be parsed to tell them apart.
+FAULTS = (
+    (ConnectionRefusedError, "refused"),
+    (ConnectionResetError, "reset"),
+    (BrokenPipeError, "broken-pipe"),
+    (TimeoutError, "timeout"),
+)
+
 
 # Digests this process has already written to the bodies directory, so one
 # body costs one write however many interactions carry it.
 _written_bodies: set = set()
+
+# The sequence number the next record gets. One counter per destination, so a
+# target's file numbers from one and a reader joining the transcript to the
+# JSONL matches on (suite, attempt, seq).
+_next_seq = [1]
+
+# What the harness last saw of the device, carried onto every record so that a
+# key injection says what was on screen when it was sent. Both are set by the
+# transports rather than by a caller: `menu_open` from what
+# `machine:menu_screen` answered, and `screen` from the screen spool.
+_state = {"menu_open": None, "screen": ""}
 
 
 def enabled() -> bool:
@@ -100,9 +134,10 @@ def set_path(path: str) -> None:
     global LOG_PATH
     flush()
     LOG_PATH = path
-    # A new destination is a new bodies directory, so what this process has
-    # already written there is nothing to do with the new one.
+    # A new destination is a new bodies directory and a new sequence, so what
+    # this process has already written is nothing to do with the new one.
     _written_bodies.clear()
+    _next_seq[0] = 1
 
 
 class _Pending:
@@ -171,6 +206,52 @@ def _describe_body(body) -> Dict[str, object]:
     return found
 
 
+def note_menu(open_now: Optional[bool]) -> None:
+    """Say whether the device's overlay menu is open, as the harness last saw it.
+
+    Written onto every record after it, because the answer to "was this key
+    swallowed" is usually "the menu was open". A C64 Ultimate with its menu
+    open accepts an injected key with HTTP 200 and does nothing with it, so an
+    injection record that carries only its own status cannot tell that case
+    from a key the machine ignored.
+
+    `None` means nobody has looked, which is different from either answer.
+    """
+    _state["menu_open"] = open_now
+
+
+def note_screen(identity: object) -> None:
+    """Say what the harness is looking at, as an identity rather than a screen.
+
+    A digest, not the text: the screen itself is in the spool, and repeating it
+    on every interaction would be the same 2000 bytes over and over. Two
+    consecutive records carrying different values is the observable effect of
+    whatever happened between them, which for an injected key is the point.
+    """
+    if identity is None:
+        _state["screen"] = ""
+        return
+    text = identity if isinstance(identity, str) else repr(identity)
+    _state["screen"] = hashlib.sha256(
+        text.encode("utf-8", "replace")).hexdigest()[:DIGEST_CHARS]
+
+
+def fault_of(exc: Optional[BaseException]) -> str:
+    """Which connection-level failure this is, as one word, or ""."""
+    if exc is None:
+        return ""
+    reason = getattr(exc, "reason", None)
+    for candidate in (exc, reason):
+        if candidate is None:
+            continue
+        for kind, name in FAULTS:
+            if isinstance(candidate, kind):
+                return name
+    if isinstance(exc, OSError) or isinstance(reason, OSError):
+        return "unreachable"
+    return "other"
+
+
 def record(transport: str, operation: str, **fields) -> None:
     """One interaction with a device. Never raises.
 
@@ -197,10 +278,26 @@ def _record(transport: str, operation: str, fields: Dict[str, object]) -> None:
         if isinstance(value, (str, bytes, bytearray)):
             text = (value if isinstance(value, str)
                     else bytes(value).decode("utf-8", "replace"))
-            entry[name] = report.masked(text[:TEXT_CHARS])
+            text = report.masked(text)
+            if len(text) > TEXT_CHARS:
+                # Kept whole rather than cut. A `machine:writemem` carries its
+                # address and its bytes here, and a partial write is exactly
+                # what a truncated record cannot show, so a long field is
+                # content-addressed the way a body is.
+                entry[name] = text[:TEXT_CHARS]
+                entry.update({f"{name}_bytes": len(text)})
+                stored = _describe_body(text)
+                if "body_sha256" in stored:
+                    entry[f"{name}_sha256"] = stored["body_sha256"]
+            else:
+                entry[name] = text
         else:
             entry[name] = value
     entry.update(_describe_body(body))
+    if _state["menu_open"] is not None:
+        entry["menu_open"] = bool(_state["menu_open"])
+    if _state["screen"]:
+        entry["screen"] = _state["screen"]
 
     now = time.time()
     check = report.current_check()
@@ -221,6 +318,8 @@ def _record(transport: str, operation: str, fields: Dict[str, object]) -> None:
         return
 
     flush()
+    entry["seq"] = _next_seq[0]
+    _next_seq[0] += 1
     entry["time"] = now
     entry["suite"] = report.SUITE_NAME
     if report.TARGET_NAME:
@@ -256,6 +355,54 @@ def flush() -> None:
         # A log that cannot be written is not a reason to end a run, and the
         # report says the file is short rather than that the run went quiet.
         pass
+    try:
+        with open(transcript_path(), "a", encoding="utf-8") as handle:
+            handle.write(transcript_line(entry) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def transcript_path() -> str:
+    return os.path.join(os.path.dirname(LOG_PATH) or ".", TRANSCRIPT_NAME)
+
+
+def transcript_line(entry: Dict[str, object]) -> str:
+    """One interaction as one line, for somebody reading rather than parsing.
+
+    The same `seq` as the JSONL record it was written from, so a reader who
+    finds a line here and wants every field of it looks that number up. Fields
+    are cut to a width a person can scan, and the JSONL record beside it is
+    where the whole of one is.
+    """
+
+    def short(value: object) -> str:
+        text = str(value)
+        return text if len(text) <= TRANSCRIPT_FIELD_CHARS else (
+            text[:TRANSCRIPT_FIELD_CHARS] + ">")
+
+    when = time.strftime("%H:%M:%S", time.localtime(
+        float(entry.get("time") or 0.0)))
+    parts = [f"{entry.get('seq', 0):>6}", when,
+             f"{str(entry.get('transport', '')):<7}",
+             str(entry.get("op", ""))]
+    for name, prefix in (("status", "-> "), ("fault", "fault="),
+                         ("params", "")):
+        value = entry.get(name)
+        if value not in (None, ""):
+            parts.append(f"{prefix}{short(value)}")
+    if entry.get("repeat"):
+        parts.append(f"x{entry['repeat']}")
+    if "ms" in entry:
+        parts.append(f"{entry['ms']}ms")
+    if "menu_open" in entry:
+        parts.append("menu=open" if entry["menu_open"] else "menu=closed")
+    if entry.get("screen"):
+        parts.append(f"screen={entry['screen']}")
+    for name in ("body", "body_hex", "body_sha256", "reply", "error"):
+        if entry.get(name):
+            parts.append(f"{name}={short(entry[name])}")
+            break
+    return " ".join(str(part) for part in parts)
 
 
 atexit.register(flush)

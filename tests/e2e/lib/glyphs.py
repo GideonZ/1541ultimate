@@ -159,6 +159,17 @@ def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> "list":
     return _expanded_rows(_rom_rows_for(character), fg_rgb, bg_rgb)
 
 
+def rom_rows_for_index(index: int) -> bytes:
+    """The eight row bitmasks of one character-ROM shape, bit 7 leftmost.
+
+    For a caller going the other way: matching a bitmap back to the character
+    that drew it needs the shapes, and this is where they are.
+    """
+    if 0 <= index < len(_ROM_ROWS):
+        return _ROM_ROWS[index]
+    return _BLANK_GLYPH_ROWS
+
+
 def _rom_rows_for(character: str) -> bytes:
     """Look up the pre-loaded 8-byte row bitmask for `character`."""
     index = screen_code_for(character)

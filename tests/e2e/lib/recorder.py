@@ -66,6 +66,7 @@ import targets as targets_lib  # noqa: E402
 import glyphs  # noqa: E402
 import screens as screen_spool  # noqa: E402
 import streams  # noqa: E402
+import vic_text  # noqa: E402
 
 # The two panes and the gutter between them. Both dimensions are even, which
 # every encoder wants, and neither pane is ever resampled: both are pixel grids
@@ -186,6 +187,17 @@ REARM_BACKOFF_CEILING_SECONDS = 120.0
 # a failure is an answer here, and the next slot will ask again.
 REARM_TIMEOUT_SECONDS = 2.0
 MENU_TIMEOUT_SECONDS = 2.0
+
+# How often the device's own screen is decoded back into text from the frame
+# the recorder already has. One a second: the C64 screen is static for seconds
+# at a time and then changes completely, so a second is finer than anything a
+# reader asks of it, and the decode is the most expensive thing in the loop.
+SCREEN_TEXT_INTERVAL_SECONDS = 1.0
+
+# Where that text goes. One file per target, beside the recording it was read
+# from, with each entry naming the frame it came from so a reader who finds a
+# line can go to the picture it was decoded from.
+SCREEN_TEXT_NAME = "screen-text.jsonl"
 
 # How long the screen tap may be silent before the recorder reads the menu
 # itself. Its own interval rather than the stream's: the two answer different
@@ -1518,6 +1530,12 @@ class Recorder:
         self._discontinuity = {"video": "", "audio": ""}
         # One picker per suite run, so a long suite gets the same number of
         # stills as a short one and the set stays readable.
+        # The last screen decoded out of the device's video, and when, so an
+        # unchanged screen costs one comparison rather than one decode.
+        self._screen_text: Optional[List[str]] = None
+        self._screen_text_at = 0.0
+        self._screen_text_frame = b""
+        self.screen_texts = 0
         self._picker = StillPicker()
         self._picking = ""
         self._picking_identity: Dict[str, object] = {}
@@ -1715,6 +1733,7 @@ class Recorder:
             next_slot += interval * (1 + min(behind, self.options.fps))
             self._maybe_rearm(now)
             self._maybe_read_menu(now)
+            self._maybe_read_screen(now, state)
 
     def _drain(self, budget: float) -> None:
         if not self._sockets or budget <= 0:
@@ -1956,6 +1975,49 @@ class Recorder:
             else:
                 self._sources.audio_at = now
 
+    def _maybe_read_screen(self, now: float, state: RunState) -> None:
+        """Decode the device's own screen out of the frame already in hand.
+
+        Costs the device nothing: the frame arrived because the recording asked
+        for the stream, and reading the machine's screen memory instead would
+        be a request per screen against a device the suites are driving.
+
+        Rate limited and change gated, in that order, because the gate is a
+        comparison of two byte strings and the decode is not.
+        """
+        if now - self._screen_text_at < SCREEN_TEXT_INTERVAL_SECONDS:
+            return
+        self._screen_text_at = now
+        frame = self._sources.frame
+        if frame is None:
+            return
+        width, height, pixels = frame
+        if pixels == self._screen_text_frame:
+            return
+        self._screen_text_frame = pixels
+        rows = vic_text.decode(pixels, width, height)
+        if rows is None or rows == self._screen_text:
+            return
+        self._screen_text = rows
+        record = {"kind": "vic", "time": self.wall_clock(),
+                  "target": self.target.token, "cols": vic_text.COLUMNS,
+                  "rows": vic_text.ROWS, "text": rows,
+                  "frame": self.slots,
+                  "position": round(stamp_position(self.slots,
+                                                   self.options.fps), 4)}
+        for name, value in (("suite", state.suite), ("label", state.label),
+                            ("attempt", state.attempt), ("check", state.check)):
+            if value:
+                record[name] = value
+        try:
+            with open(os.path.join(self.directory, SCREEN_TEXT_NAME), "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+            self.screen_texts += 1
+        except (OSError, TypeError, ValueError):
+            # A file that cannot be written is not a reason to end a run.
+            pass
+
     def _maybe_read_menu(self, now: float) -> None:
         """Read the menu only where no suite is reading one.
 
@@ -2092,6 +2154,7 @@ class Recorder:
             "frames_padded": self.padded,
             "frames_decimated": self.decimated,
             "rearms": dict(self.rearms),
+            "screen_texts": self.screen_texts,
             "menu_from_tap": self._spool.taken,
             "menu_requested": self.menu_requests,
             "menu_failed": self.menu_failures,
