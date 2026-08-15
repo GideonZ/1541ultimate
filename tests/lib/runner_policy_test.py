@@ -28,6 +28,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import health  # noqa: E402
+import interactions  # noqa: E402
 import targets  # noqa: E402
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
@@ -85,14 +86,19 @@ def set_fixture_records(path):
 def isolated_records():
     """Run a block with everything it reports sent to the fixture's own file.
 
-    Both ends are redirected: this process's own record destination, and the
+    Every destination is redirected: this process's own record path, the
     `E2E_JSONL` variable a child process reads at import, because `run_suite`
-    starts real child processes.
+    starts real child processes, and the interaction log, because a fixture
+    that reached a device would put that device in the run's log.
     """
     report_module = sys.modules["report"]
     previous_path = report_module.JSONL_PATH
     previous_environment = os.environ.get("E2E_JSONL")
+    previous_interactions = interactions.LOG_PATH
+    previous_interactions_environment = os.environ.get(interactions.LOG_ENV)
     report_module.set_jsonl_path(_FIXTURE_RECORDS or "")
+    interactions.set_path("")
+    os.environ.pop(interactions.LOG_ENV, None)
     if _FIXTURE_RECORDS:
         os.environ["E2E_JSONL"] = _FIXTURE_RECORDS
     else:
@@ -101,10 +107,14 @@ def isolated_records():
         yield
     finally:
         report_module.set_jsonl_path(previous_path)
-        if previous_environment is None:
-            os.environ.pop("E2E_JSONL", None)
-        else:
-            os.environ["E2E_JSONL"] = previous_environment
+        interactions.set_path(previous_interactions)
+        for name, value in (("E2E_JSONL", previous_environment),
+                            (interactions.LOG_ENV,
+                             previous_interactions_environment)):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def isolating(function):
