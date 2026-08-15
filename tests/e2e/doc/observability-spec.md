@@ -623,6 +623,32 @@ which have no ASCII form; a screen with a logo drawn in them is still a text
 screen, so those cells are marked rather than named and the text beside them is
 read normally.
 
+The frames it refused are counted, as `screens_unreadable` on the `kind=capture`
+record beside `screen_texts`. Refusing a frame writes no record, so without the
+count a device drawing something this cannot read, a device in the shifted
+character set and a device whose screen did not change all leave the same
+absence, and the only figure on the record is how many screens were read.
+
+Where the character grid is on the frame is searched rather than assumed, over
+the eight positions `$D016`'s fine scroll can put it in and nowhere else. The
+38-column bit does not move the grid: it blanks one cell at each side of a grid
+that stays put, so anchoring the columns on the first pixel that is not the
+border reads every cell one column to the left of where it is, and the shifted
+reading still matches the ROM because the cell it invents at the edge is blank.
+A wider search has the same failure in the other direction, which is why the
+range is exactly the eight the hardware can produce.
+
+The display window's own horizontal span is measured as well, as the widest
+extent of non-border pixels over the picture area, and a candidate grid origin
+that reaches past it reads background there rather than border. A grid the fine
+scroll has moved right overhangs the window at some scroll values, and border
+pixels are not the background, so they would be read as ink: eight pixel columns
+of border make one cell that matches no ROM shape on every row of a 25-row
+screen, which is 25 unreadable cells against a tolerance of 24, and a frame the
+machine drew correctly would be refused. The span is taken over the whole
+picture rather than from its first row because a row whose ink is the border's
+colour hides the window edge behind it, which is the C64's own boot screen.
+
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
 its path, whether this run intended to run it, and when it did not, which of the

@@ -1268,7 +1268,7 @@ def the_interface_preference_is_wired_into_every_build() -> str:
 
 
 def vic_frame(rows, width=384, height=272, background=6, foreground=14,
-              scroll=0, columns=40):
+              scroll=0, columns=40, border=None):
     """One VIC frame of colour indices showing `rows`, as the hardware draws it.
 
     Rendered from the character ROM through `glyphs.rom_rows_for_index`, which
@@ -1280,12 +1280,29 @@ def vic_frame(rows, width=384, height=272, background=6, foreground=14,
     38 the VIC blanks one cell at each side of the window, over a grid that
     does not move, which is what a frame taken while the KERNAL scrolls the
     screen looks like.
+
+    `border` is the colour outside the display window. Left unset the whole
+    frame is the background colour, which is the simplest frame that carries
+    the text. Set to a colour of its own the frame has the shape the hardware
+    sends: a border, a window inside it, and ink clipped at the window edge, so
+    a grid origin that reaches past the window meets border pixels rather than
+    running off a frame that is background everywhere.
     """
     import glyphs
     import vic_text
 
-    pixels = bytearray([background]) * (width * height)
+    pixels = bytearray([background if border is None else border]) * (
+        width * height)
     window, top = vic_text.picture_origin(width, height)
+    if columns == 38:
+        window_left = window + glyphs.GLYPH_WIDTH
+        window_right = window + vic_text.TEXT_WIDTH - glyphs.GLYPH_WIDTH
+    else:
+        window_left, window_right = window, window + vic_text.TEXT_WIDTH
+    if border is not None:
+        for y in range(top, top + vic_text.TEXT_HEIGHT):
+            for x in range(window_left, window_right):
+                pixels[y * width + x] = background
     left = window + scroll
     for row, text in enumerate(rows[:vic_text.ROWS]):
         for column, character in enumerate(text[:vic_text.COLUMNS]):
@@ -1300,9 +1317,11 @@ def vic_frame(rows, width=384, height=272, background=6, foreground=14,
                 for bit in range(glyphs.GLYPH_WIDTH):
                     if bits & (0x80 >> bit):
                         at = base + bit
-                        if left + column * glyphs.GLYPH_WIDTH + bit < width:
+                        x = left + column * glyphs.GLYPH_WIDTH + bit
+                        if x < width and (border is None
+                                          or window_left <= x < window_right):
                             pixels[at] = foreground
-    if columns == 38:
+    if columns == 38 and border is None:
         blanked = list(range(window, window + glyphs.GLYPH_WIDTH))
         blanked += list(range(window + vic_text.TEXT_WIDTH - glyphs.GLYPH_WIDTH,
                               window + vic_text.TEXT_WIDTH))
@@ -1429,37 +1448,117 @@ def a_scrolling_screen_is_read_at_the_column_it_is_really_in() -> str:
     wanted = ["READY.".ljust(40),
               'LOAD"$",8'.ljust(40),
               "SEARCHING FOR $".ljust(40)] + [" ".ljust(40)] * 22
-    for scroll in range(8):
-        read = vic_text.decode(vic_frame(wanted, scroll=scroll), 384, 272)
-        if read is None:
-            raise Failure(f"40 columns at fine scroll {scroll} was not read")
-        for index, (was, now) in enumerate(zip(wanted, read)):
-            if was != now:
-                raise Failure(f"40 columns at fine scroll {scroll}: row "
-                              f"{index} read back as {now!r}, not {was!r}")
+    # Twice over: once on a frame that is the background colour everywhere, and
+    # once on a frame with a real border around a real display window, which is
+    # the shape the device sends. The second is not a variation of the first.
+    # A grid origin the fine scroll has moved right reaches past the window at
+    # some scroll values, and what it reaches is the border, whose colour is
+    # not the background and is therefore read as ink. Eight pixel columns of
+    # it make one cell that matches no ROM shape on every row of a 25-row
+    # screen, which is 25 unreadable cells against a tolerance of 24, so a
+    # frame the machine drew correctly was refused. On the boot screen the
+    # border and the text are both light blue, which is why this uses one
+    # colour for both.
+    for border in (None, 14):
+        shape = "with a border" if border else "without a border"
+        for scroll in range(8):
+            read = vic_text.decode(
+                vic_frame(wanted, scroll=scroll, border=border), 384, 272)
+            if read is None:
+                raise Failure(f"40 columns {shape} at fine scroll {scroll} was "
+                              "not read")
+            for index, (was, now) in enumerate(zip(wanted, read)):
+                if was != now:
+                    raise Failure(f"40 columns {shape} at fine scroll {scroll}: "
+                                  f"row {index} read back as {now!r}, not "
+                                  f"{was!r}")
 
-    # 38 columns: the VIC blanks one cell at each side, so the first column is
-    # not in the picture at all and no decode can recover it. What matters is
-    # that everything else keeps its own column number rather than sliding one
-    # to the left to fill the gap.
-    for scroll in range(8):
-        read = vic_text.decode(vic_frame(wanted, scroll=scroll, columns=38),
-                               384, 272)
-        if read is None:
-            raise Failure(f"38 columns at fine scroll {scroll} was not read")
-        for index, (was, now) in enumerate(zip(wanted, read)):
-            if was[1:] != now[1:]:
-                raise Failure(f"38 columns at fine scroll {scroll}: row "
-                              f"{index} read back as {now!r}, not {was!r}")
-            if now[0] not in (was[0], " ", vic_text.GRAPHIC):
-                raise Failure(f"38 columns at fine scroll {scroll}: the "
-                              f"blanked column read as {now[0]!r}")
-    # The one the hardware was actually seen in reads completely: at fine
-    # scroll 7 the blanked cell covers one pixel column of the first character,
-    # and no character of the set carries ink there.
-    read = vic_text.decode(vic_frame(wanted, scroll=7, columns=38), 384, 272)
-    expect("the measured state reads in full", read[0], wanted[0])
-    return "40 and 38 columns, fine scroll 0 to 7, every column in place"
+        # 38 columns: the VIC blanks one cell at each side, so the first column
+        # is not in the picture at all and no decode can recover it. What
+        # matters is that everything else keeps its own column number rather
+        # than sliding one to the left to fill the gap.
+        for scroll in range(8):
+            read = vic_text.decode(
+                vic_frame(wanted, scroll=scroll, columns=38, border=border),
+                384, 272)
+            if read is None:
+                raise Failure(f"38 columns {shape} at fine scroll {scroll} was "
+                              "not read")
+            for index, (was, now) in enumerate(zip(wanted, read)):
+                if was[1:] != now[1:]:
+                    raise Failure(f"38 columns {shape} at fine scroll {scroll}: "
+                                  f"row {index} read back as {now!r}, not "
+                                  f"{was!r}")
+                if now[0] not in (was[0], " ", vic_text.GRAPHIC):
+                    raise Failure(f"38 columns {shape} at fine scroll {scroll}: "
+                                  f"the blanked column read as {now[0]!r}")
+        # The one the hardware was actually seen in reads completely: at fine
+        # scroll 7 the blanked cell covers one pixel column of the first
+        # character, and no character of the set carries ink there.
+        read = vic_text.decode(
+            vic_frame(wanted, scroll=7, columns=38, border=border), 384, 272)
+        expect(f"the measured state reads in full {shape}", read[0], wanted[0])
+    return ("40 and 38 columns, fine scroll 0 to 7, with and without a border, "
+            "every column in place")
+
+
+@case(1, "OBS-2.18")
+def a_frame_the_decoder_cannot_read_is_counted_rather_than_dropped() -> str:
+    """A refused frame leaves a number behind, not an absence.
+
+    The decoder writes nothing for a frame that is not a text screen it can
+    read, which is the right record to write. It is the wrong thing to leave as
+    the only trace: a device drawing a bitmap, a screen in the shifted
+    character set and a device whose screen simply did not change all produce
+    the same silence in `screen-text.jsonl`, and the capture record's
+    `screen_texts` counts only the successes. `screens_unreadable` is the other
+    half, so a reader can see the proportion rather than infer it.
+
+    Driven through the recorder's own screen reader rather than through a
+    stream, because the interval between reads and the arrival of a frame are
+    independent and a test that waits on both proves whichever one it happened
+    to catch.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import dataclasses
+    import tempfile
+
+    import recorder as recorder_lib
+
+    wanted = ["READY.".ljust(40)] + [" ".ljust(40)] * 24
+    noise = bytes((x * 7 + y * 13) % 16
+                  for y in range(272) for x in range(384))
+    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+        made = recorder_lib.Recorder(directory, "127.0.0.1",
+                                     UltimateApi(double.target(), timeout=5.0),
+                                     recorder_lib.Options(fps=5, audio=False))
+        made.target = dataclasses.replace(
+            double.target(), video_group="127.0.0.1", video_port=0)
+        state = recorder_lib.RunState(suite="fixture", label="overlay")
+
+        made._sources.frame = (384, 272, noise)
+        made._maybe_read_screen(100.0, state)
+        expect("the frame it could not read is counted",
+               made.screens_unreadable, 1)
+        expect("and no screen was written for it", made.screen_texts, 0)
+
+        made._sources.frame = (384, 272, vic_frame(wanted, border=14))
+        made._maybe_read_screen(200.0, state)
+        expect("the frame it could read is written", made.screen_texts, 1)
+        expect("and the refusals stay where they were",
+               made.screens_unreadable, 1)
+
+        made._sources.frame = (384, 272, noise)
+        made._maybe_read_screen(300.0, state)
+        expect("a second refusal counts again", made.screens_unreadable, 2)
+
+        path = os.path.join(directory, "screen-text.jsonl")
+        written = [json.loads(line) for line in open(path, encoding="utf-8")]
+        expect("one record, for the one frame that could be read",
+               len(written), 1)
+        expect("and it is the screen that was there", written[0]["text"][0],
+               wanted[0])
+    return "two refusals counted, one screen written"
 
 
 @case(1, "OBS-2.17")
@@ -3868,8 +3967,12 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
         # come back out of the file exactly as it went in, the same as any
         # other, because the shifted origin is an ordinary VIC state rather
         # than a damaged frame.
+        # With a border, which is the frame shape the device sends: a border
+        # around a display window, ink clipped at the window edge, and the
+        # 38-column window one cell in from the grid on each side.
         scrolled = [vic_frame(["SEARCHING FOR $".ljust(40)] + [" " * 40] * 24,
-                              scroll=5, columns=38, foreground=colour)
+                              scroll=5, columns=38, foreground=colour,
+                              border=14)
                     for colour in (1, 7, 13)]
         for number in range(30):
             # A picture that changes completely every few frames, so the

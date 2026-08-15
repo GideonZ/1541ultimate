@@ -238,7 +238,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
 | `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `received`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
 | `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
-| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
+| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, `screen_texts`, `screens_unreadable`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
@@ -310,6 +310,13 @@ as loss. `audio_unavailable_bytes` is the audio written to keep the track the
 same length as the video while the run had the stream stopped, which is
 likewise not loss; `audio_concealed_bytes` is the same for a stream that should
 have been running and was not.
+
+`screen_texts` and `screens_unreadable` are the two halves of the C64 screen
+decoder's own accounting: the frames it read back as text and wrote a record
+for, and the frames it looked at and could not read as a text screen. A refused
+frame writes nothing, so without the second number a device drawing a bitmap, a
+device in the shifted character set and a device whose screen did not change all
+leave the same absence.
 
 `stills[]` is one entry per still, each naming its suite run, its kind, both of
 its files, the frame of the recording it was taken from, with `position` in

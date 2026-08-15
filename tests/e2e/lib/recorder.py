@@ -1810,6 +1810,11 @@ class Recorder:
         self._screen_text_at = 0.0
         self._screen_text_frame = b""
         self.screen_texts = 0
+        # Frames the decoder was offered and could not read as a text screen.
+        # Without it a decoder that refuses a quarter of what it sees looks
+        # exactly like a run whose screen changed a quarter as often, and the
+        # only figure on the record is how many screens it did read.
+        self.screens_unreadable = 0
         self._picker = StillPicker()
         self._picking = ""
         self._picking_identity: Dict[str, object] = {}
@@ -2310,7 +2315,10 @@ class Recorder:
             return
         self._screen_text_frame = pixels
         rows = vic_text.decode(pixels, width, height)
-        if rows is None or rows == self._screen_text:
+        if rows is None:
+            self.screens_unreadable += 1
+            return
+        if rows == self._screen_text:
             return
         self._screen_text = rows
         record = {"kind": "vic", "time": self.wall_clock(),
@@ -2469,6 +2477,7 @@ class Recorder:
             "frames_decimated": self.decimated,
             "rearms": dict(self.rearms),
             "screen_texts": self.screen_texts,
+            "screens_unreadable": self.screens_unreadable,
             "menu_from_tap": self._spool.taken,
             "menu_requested": self.menu_requests,
             "menu_failed": self.menu_failures,
