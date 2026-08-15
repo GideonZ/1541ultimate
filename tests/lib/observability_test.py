@@ -2902,6 +2902,86 @@ def the_band_shows_what_the_run_is_doing_and_counts_the_rest() -> str:
     return counters.strip()
 
 
+@case(1, "OBS-2.17", "OBS-8.40")
+def sent_and_received_are_byte_counts_on_every_transport() -> str:
+    """One meaning per field name, across REST and Telnet.
+
+    The Telnet exchange wrote the payload text into `sent` while REST wrote a
+    byte count into it, so a reader and the band both had to know which
+    transport a record came from before they could read a field. The band added
+    them up, and one Telnet keystroke, `send F5` with `\x1b[15~` in `sent`,
+    stopped a recording 1168 frames into an 8850-frame run.
+    """
+    import types
+
+    import band as band_lib
+    import interactions
+    import ui_backend
+
+    with tempfile.TemporaryDirectory() as directory:
+        with interaction_log(directory) as path:
+            session = types.SimpleNamespace(
+                _sent=("F5", b"\x1b[15~", time.monotonic()))
+            ui_backend.TelnetBackend._record_exchange(session, 753)
+            session._sent = None
+            ui_backend.TelnetBackend._record_exchange(session, 40)
+            interactions.record("rest", "PUT /v1/machine:writemem",
+                                status=200, ms=12.0, sent=184, received=175)
+            found = logged_interactions(path)
+
+    for record in found:
+        for name in ("sent", "received"):
+            value = record.get(name)
+            if value is not None and not isinstance(value, (int, float)):
+                raise Failure(f"{record['op']} wrote {name}={value!r}, which "
+                              f"is not a byte count")
+    exchange = next(r for r in found if r["op"] == "send F5")
+    expect("the count of what went out", exchange.get("sent"), 5)
+    expect("and of what came back", exchange.get("received"), 753)
+    expect("with the keystroke itself in payload",
+           "1b[15~" in str(exchange.get("payload")), True)
+
+    # And the band, which is what broke, adds them up rather than stopping.
+    ticker = band_lib.Ticker()
+    ticker.apply(found, now=1.0)
+    expect("every byte counted once", (ticker.sent, ticker.received),
+           (5 + 184, 753 + 40 + 175))
+    return "sent and received are counts, payload is what was sent"
+
+
+@case(1, "OBS-8.40")
+def the_band_never_stops_the_recording_over_one_record() -> str:
+    """A field of the wrong shape costs a counter, not the rest of the run.
+
+    The band is drawn from records the transports write while the run is
+    happening. It watches the run; it may not be able to end the evidence of
+    one.
+    """
+    import band as band_lib
+    import recorder as recorder_lib
+
+    ticker = band_lib.Ticker()
+    ticker.apply([{"transport": "telnet", "op": "send F5",
+                   "sent": "'\\x1b[15~'", "received": None,
+                   "clock": "00:00:01", "reference": "#1"},
+                  {"transport": "rest", "op": "PUT /v1/machine:writemem",
+                   "status": 200, "sent": 184, "received": 12,
+                   "clock": "00:00:02", "reference": "#2"}], now=1.0)
+    expect("the good record still counted", (ticker.sent, ticker.received),
+           (184, 12))
+    expect("and both lines are on the band", len(ticker.lines), 2)
+    # Drawn as well as counted: a line whose byte field was not a number has
+    # nothing in that column rather than an exception in the composer.
+    glyphs = recorder_lib.glyphs
+    layout = band_lib.layout_for(872)
+    canvas = glyphs.Canvas(872, band_lib.HEIGHT, 6)
+    band_lib.draw(canvas, 0, 0, 872, ticker, layout, "SUITE X > CHECK Y",
+                  band_lib.RUNNING,
+                  {"background": 6, "primary": 1, "secondary": 15,
+                   "failure": 2, "warning": 7, "accent": 3}, 1.0)
+    return "one malformed field costs one counter"
+
+
 @case(1, "OBS-8.40")
 def a_line_is_stamped_when_it_is_issued_and_never_moves() -> str:
     """An interaction appears while it is in flight and is finalised in place."""

@@ -236,7 +236,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |
 | `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
 | `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
-| `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `sent_bytes`, `received_bytes`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
+| `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `received`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
 | `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |

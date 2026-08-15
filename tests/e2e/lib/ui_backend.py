@@ -1861,13 +1861,19 @@ class TelnetBackend(Backend):
         sent = getattr(self, "_sent", None)
         self._sent = None
         if sent is None:
-            interactions.record("telnet", "drain", received_bytes=drained)
+            interactions.record("telnet", "drain", received=drained)
             return
         what, payload, started = sent
+        # `sent` and `received` are byte counts on every transport, and what
+        # was sent goes in `payload`, which is where a REST request body goes
+        # too. They held the payload text here, which is a second meaning for
+        # a field name a reader and the recorder both take as a number: the
+        # band's counters added it up, and one Telnet keystroke stopped a
+        # recording 1168 frames into an 8850-frame run.
         interactions.record(
             "telnet", f"send {what}",
-            sent=repr(payload)[1:] if payload else "",
-            sent_bytes=len(payload), received_bytes=drained,
+            payload=repr(payload)[1:] if payload else "",
+            sent=len(payload), received=drained,
             connection="reused",
             ms=round((time.monotonic() - started) * 1000.0, 1))
 

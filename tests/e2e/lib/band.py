@@ -35,7 +35,7 @@ a red band and the band is not a verdict.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import glyphs
@@ -122,6 +122,19 @@ def header(layout: Layout) -> str:
             if start + offset < layout.columns:
                 line[start + offset] = character
     return "".join(line)
+
+
+def count_of(value: object) -> int:
+    """A byte count from a record field, and 0 from anything that is not one.
+
+    The band is drawn from records the transports write while the run is
+    happening, and it may not be able to stop the recording over the shape of
+    one of them. A field that is not a number is not a byte count, so it counts
+    as nothing and the recording carries on.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
 
 
 def size_of(count: Optional[int]) -> str:
@@ -285,10 +298,10 @@ class Ticker:
             # Counted when it finishes, so one interaction is one count.
             return
         tag = tag_of(record).lower()
-        repeat = int(record.get("repeat") or 1)
+        repeat = int(count_of(record.get("repeat")) or 1)
         self.counts[tag] = self.counts.get(tag, 0) + repeat
-        self.sent += int(record.get("sent") or 0) * repeat
-        self.received += int(record.get("received") or 0) * repeat
+        self.sent += count_of(record.get("sent")) * repeat
+        self.received += count_of(record.get("received")) * repeat
 
     def _line(self, record: dict, running: bool) -> Line:
         seconds = record.get("seconds")
@@ -302,7 +315,8 @@ class Ticker:
         return Line(time=str(record.get("clock") or ""),
                     tag=tag_of(record), subject=subject_of(record),
                     status=status, seconds=seconds,
-                    sent=record.get("sent"), received=record.get("received"),
+                    sent=count_of(record.get("sent")) or None,
+                    received=count_of(record.get("received")) or None,
                     body=str(record.get("body_sha256") or ""),
                     reference=str(record.get("reference") or ""),
                     failed=failed, running=running)

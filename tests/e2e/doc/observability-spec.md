@@ -552,7 +552,7 @@ makes outside any suite. A suite is never asked to announce anything.
 | `screen` | a digest of what the harness was looking at |
 | `op` | what was done on it: a method and a path, a key, a command |
 | `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them |
-| `sent`, `sent_bytes`, `received_bytes` | a Telnet exchange |
+| `sent`, `received` | how many bytes went each way, on every transport that knows; the Telnet payload itself is in `payload` |
 | `reply` | an FTP reply's first line |
 | `body`, `body_hex` or `body_sha256`, with `body_bytes` | the device's answer, per the rule below |
 | `repeat`, `until`, `ms_last` | on a collapsed run of identical interactions |
