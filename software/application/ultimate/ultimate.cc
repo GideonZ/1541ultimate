@@ -76,6 +76,14 @@ void outbyte_log_syslog(int c)
 	syslog.charout(c);  // Remote syslog server
 }
 
+// For assert.c, which is C and cannot reach the object directly. See
+// vAssertCalled: the assertion text has to leave the machine before
+// interrupts go off, because the forwarding task never runs again after that.
+extern "C" void syslog_flush(void)
+{
+	syslog.flush();
+}
+
 extern "C" void ultimate_main(void *a)
 {
     // Normal boot log size is about 5k right now, so 16k should be enough to
@@ -86,13 +94,28 @@ extern "C" void ultimate_main(void *a)
 
     uint32_t capabilities = getFpgaCapabilities();
 
+    // Logging starts before there is anywhere to send it. Syslog::init needs
+    // networkConfig.cfg, which the init functions establish, so the buffer is
+    // opened here and the destination is decided below; everything printed in
+    // between is held and forwarded once the task starts. Without this the
+    // product version banner, the FPGA capabilities line and every init
+    // function's output are only ever on the hardware UART.
+    syslog.open_buffer(syslog_bufsize);
+    custom_outbyte = outbyte_log_syslog;
+
     char product_version[64];
     printf("*** %s ***\n", getProductVersionString(product_version, sizeof(product_version), true));
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
-    custom_outbyte = syslog.init(syslog_bufsize) ? outbyte_log_syslog : outbyte_log;
+    if (!syslog.init(syslog_bufsize)) {
+        // Nothing is configured, so the buffer would never be drained. Stop
+        // writing into it and give the 16 KB back, which matters most on the
+        // U2, whose heap is the tightest.
+        custom_outbyte = outbyte_log;
+        syslog.close_buffer();
+    }
    
     printf("%s ", rtc.get_long_date(time_buffer, 32));
     printf("%s\n", rtc.get_time_string(time_buffer, 32));

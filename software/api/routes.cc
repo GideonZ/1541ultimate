@@ -4,6 +4,7 @@
 #include "stream_uart.h"
 #include "dump_hex.h"
 #include "network_config.h"
+#include "syslog.h"
 #include "product.h"
 #include "versions.h"
 #include "u64.h"
@@ -157,6 +158,12 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
         ->add("core_version", core_version)
 #endif
         ->add("hostname", hostname);
+
+    // Datagrams the stack refused. A device logging to an address where
+    // nothing is listening is harmless to a run and silent, so this is the
+    // only way to tell a lossy link from a quiet device.
+    resp->json->add("syslog_failed_sends", syslog.failures())
+        ->add("syslog_overflows", syslog.overflowed());
 
     const char *unique_id = networkConfig.cfg->get_string(CFG_NETWORK_UNIQUE_ID);
     if (unique_id && *unique_id) {
