@@ -393,6 +393,28 @@ why OBS-2.9 is withdrawn.
 A per-suite `.jsonl` and its `.log` share a stem, so a reader who has one has the
 other by changing the suffix.
 
+Four `.jsonl` files under a target are not one suite run's records:
+`run.jsonl`, `screens.jsonl`, `interactions.jsonl` and `screen-text.jsonl`. The
+last three carry a `suite` field on every record and their names carry no
+label, so anything reading a suite run out of a file name must refuse a file
+whose name does not end in the suite its records name. Two components read
+these directories, the recorder's tail and the report generator, and both apply
+that rule rather than only a list of names to skip: a list is how a large file
+is not read, and the rule is what keeps the answer right when the next such
+file is added.
+
+What goes wrong without it was seen on both. The report generator read
+`screen-text.jsonl` as a suite run called `text` under a label called `screen`,
+which no runner record closes, so the verdict table carried a row reading
+`incomplete` that a reader cannot tell from a suite the run was really killed
+in. The recorder's tail set the suite from the record and the label from the
+file name, so the suite run's identity flapped between `overlay-input-1` and
+`-input-1` on every poll that read one of those lines. A change of identity is
+a change of suite run to the recorder: it writes the stills it has and starts a
+new picker, so on a 24-suite run it wrote 994 still records naming 290 files,
+and the frame each record named was the frame at some earlier flap rather than
+the frame the file on disk holds.
+
 **OBS-2.11** [P1] The `run` record carries the run's identity, so a downloaded
 artifact says what it is a run of without a second file:
 
@@ -1744,8 +1766,8 @@ measurable from the receiving side. Four independent causes:
   A burst loses an unbounded block.
 - Output is throttled to about 200 lines per second by a 5ms delay after each
   sent line in `Syslog::forwardLogging`.
-- `Syslog::failed_sends` counts send errors and is never read by anything, so a
-  send failure leaves no trace anywhere.
+- `Syslog::failed_sends` counts send errors. Until OBS-9.2 nothing read it, so
+  a send failure left no trace anywhere.
 
 **OBS-7.12** [P5] A line's receive time lags the moment the firmware printed it
 by an unbounded amount, so attributing a line to a check by interval is
@@ -3515,9 +3537,21 @@ the assertion text (OBS-7.15). A fix flushes the syslog buffer synchronously
 from inside `vAssertCalled` rather than relying on the task. Firmware work in
 `software/system/assert.c` and `software/network/syslog.cc`.
 
-**OBS-9.2** [P6, optional] Expose `Syslog::failed_sends`, so a run can tell a
-silently lossy link from a quiet device (OBS-7.11). Needs a route or a periodic
-log line to carry the counter.
+**OBS-9.2** [P6] Expose `Syslog::failed_sends` and `Syslog::overflowed`, so a
+run can tell a silently lossy link from a quiet device (OBS-7.11). Neither can
+be reported through the log itself without risking a loop, so `GET /v1/info`
+carries them as `syslog_failed_sends` and `syslog_overflows`.
+
+The harness has to read them or the firmware change is inert. The `ident` check
+of every health sweep already reads `/v1/info`, so it carries both as figures
+on its health record at no extra request, and the report says per target
+whether each counter moved over the run and which sweep first saw it move. They
+are cumulative since the device booted, so one value per sweep in a table cell
+would answer nothing a reader asks.
+
+They never decide a verdict. A firmware that does not carry them is older
+rather than unhealthy, and a device that dropped a line of its own log has not
+failed anything a run is testing.
 
 **OBS-9.3** [P6, optional] Move the `custom_outbyte` assignment earlier in
 `ultimate_main`, so the product version banner and the init-function output

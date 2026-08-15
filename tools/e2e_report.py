@@ -1315,6 +1315,7 @@ def health_section(run: Run) -> List[str]:
             rows.append(row)
         lines += [f"### {target.token}", ""]
         lines += table(["Sweep", "Verdict"] + names, rows) + [""]
+        lines += syslog_counter_lines(target)
     if not lines:
         return []
     return ["## Device health", ""] + lines
@@ -1329,10 +1330,50 @@ def render_health_check(check: Optional[dict]) -> str:
         return "skip"
     if state == "fail":
         return "FAIL"
-    heap = as_dict(check.get("heap"))
-    if heap:
-        return f"{as_int(heap.get('free'))}B"
+    figures = as_dict(check.get("figures"))
+    if "free" in figures:
+        return f"{as_int(figures.get('free'))}B"
     return f"{as_float(check.get('ms')):.0f}ms"
+
+
+# What the device counts about its own log, read from `/v1/info` by the ident
+# check of every sweep. They are cumulative since the device booted, so what a
+# reader wants is the value at the end of the run and whether it moved during
+# it, not one number per sweep in a table cell.
+SYSLOG_COUNTERS = (
+    ("syslog_failed_sends", "datagrams the stack refused"),
+    ("syslog_overflows", "times the forwarding buffer filled before it drained"),
+)
+
+
+def syslog_counter_lines(target: TargetRun) -> List[str]:
+    """What the device's own log counters did over the run, in one sentence each.
+
+    A device logging to an address where nothing is listening is harmless to a
+    run and completely silent, so without these a lossy link and a quiet device
+    look identical from the host. They cannot be reported through the log
+    itself without risking a loop, which is why they are on `/v1/info` and why
+    the sweep reads them.
+    """
+    said: List[str] = []
+    for name, means in SYSLOG_COUNTERS:
+        seen = [(sweep, as_int(as_dict(check.get("figures")).get(name)))
+                for sweep in target.health
+                for check in as_list(sweep.get("checks"))
+                if name in as_dict(check.get("figures"))]
+        if not seen:
+            continue
+        first, last = seen[0][1], seen[-1][1]
+        if last == first:
+            said.append(f"`{name}` stayed at {last} over {len(seen)} sweep(s), "
+                        f"which counts {means}.")
+        else:
+            rose = next(sweep for sweep, value in seen if value != first)
+            said.append(f"`{name}` rose from {first} to {last} over "
+                        f"{len(seen)} sweep(s), first at the sweep before "
+                        f"`{redact(str(rose.get('label') or '-'))}`. It counts "
+                        f"{means}.")
+    return said + [""] if said else []
 
 
 # What each file in the tree is, keyed by how its name is built. The index is

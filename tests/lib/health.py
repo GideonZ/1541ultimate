@@ -264,6 +264,38 @@ def _heap(api: UltimateApi) -> Check:
     return Check(HEAP, OK, ms, "", figures)
 
 
+def _ident(api: UltimateApi) -> Check:
+    """The product and firmware, and the two counters only the device has.
+
+    `syslog_failed_sends` counts datagrams the stack refused and
+    `syslog_overflows` counts the times the firmware's forwarding buffer filled
+    before it drained. Neither can be reported through the log itself without
+    risking a loop, so `/v1/info` is where they are, and reading them here is
+    what makes them evidence: a device logging where nothing is listening is
+    harmless to a run and completely silent, so without the two numbers a lossy
+    link and a quiet device look the same from the host.
+
+    They are figures on a check that already reads `/v1/info`, so the sweep
+    costs the same request it already made. They never decide the verdict: a
+    firmware that does not carry them is older rather than unhealthy, and a
+    device that dropped a log line has not failed anything a run is testing.
+    """
+    started = time.perf_counter()
+    try:
+        info = api.info()
+    except (Failure, OSError, TimeoutError, ValueError, RuntimeError) as exc:
+        return Check("ident", FAIL, (time.perf_counter() - started) * 1000.0,
+                     str(exc))
+    ms = (time.perf_counter() - started) * 1000.0
+    figures = {}
+    for name in ("syslog_failed_sends", "syslog_overflows"):
+        value = info.extra.get(name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            figures[name] = value
+    return Check("ident", OK, ms,
+                 f"{info.product} {info.firmware_version}", figures or None)
+
+
 def _moves(api: UltimateApi, address: int, means: str) -> str:
     """Read `address` until the value changes, or say it never did.
 
@@ -311,10 +343,7 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     if not skip("telnet"):
         checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
     if not skip("ident"):
-        def identify() -> str:
-            info = api.info()
-            return f"{info.product} {info.firmware_version}"
-        checks.append(_timed("ident", identify))
+        checks.append(_ident(api))
     if not skip("dma"):
         checks.append(_timed("dma", lambda: _dma_identify(host, target.dma_port)))
     if not skip(HEAP):

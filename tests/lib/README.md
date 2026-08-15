@@ -268,6 +268,30 @@ device that never sent anything. `--syslog` turns it on and needs each device's
 boot-time state on the device, so the runner reads it at both ends of a run and
 corrects it at neither.
 
+Three things about that setting have cost real runs, so they are here rather
+than in anyone's notes.
+
+It carries a port, and a bare address means the firmware's own default 514
+while the collector binds 5514. The value to set is `<host>:5514`, and the
+runner compares the two and names the value to set when they differ.
+
+`Syslog::init` runs once, at boot, so setting the value changes nothing until
+the Ultimate firmware restarts. `machine:reboot` does not do that: it reboots
+the C64, not the Ultimate. On an Ultimate 64 a JTAG `nios2-download` restarts
+the firmware and is enough. On an Ultimate II+ in a C64 Ultimate there is no
+equivalent, so the host has to be power cycled through its own Power & Reset
+menu.
+
+A caller that sets any setting over REST must save it to flash as well. The
+firmware otherwise holds an unsaved change, and backing out of the settings
+screens then raises a `Save changes to Flash?` prompt that a suite navigating
+back to the browser cannot answer, so it presses Back until it gives up.
+
+One collector can bind the port, and a second run says so and carries on
+without a log rather than taking an arbitrary share of the first one's
+datagrams. Two collectors on one port used to leave each of them reporting a
+device that had gone quiet.
+
 Two `log` records are written per target: one when collection starts, which a
 killed run still leaves behind, and one when it ends. `addresses` is where the
 run expected that target's lines from, which is what its machines resolve to.

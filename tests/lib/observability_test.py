@@ -950,14 +950,25 @@ def the_heap_figures_reach_the_health_record() -> str:
             raise Failure("no sweep was recorded")
         entries = [c for c in sweeps[0]["checks"] if c["name"] == "heap"]
         expect("one heap entry", len(entries), 1)
-        expect("free", entries[0]["heap"]["free"], double.heap_free)
+        expect("free", entries[0]["figures"]["free"], double.heap_free)
         for other in sweeps[0]["checks"]:
-            if other["name"] != "heap" and "heap" in other:
-                raise Failure(f"{other['name']} grew a heap entry")
+            if other["name"] not in ("heap", "ident") and "figures" in other:
+                raise Failure(f"{other['name']} grew a figures entry")
         kinds = {r["kind"] for r in made.records("127.0.0.1", "run.jsonl")}
         if "heap" in kinds:
             raise Failure("the figures were given a record kind of their own")
-    return "inside the health record"
+
+        # The two counters only the device has, on the check that already reads
+        # `/v1/info`, so the sweep costs the request it was making anyway. A
+        # device logging where nothing is listening is silent and harmless, so
+        # without them a lossy link and a quiet device look the same.
+        ident = [c for c in sweeps[0]["checks"] if c["name"] == "ident"]
+        expect("one ident entry", len(ident), 1)
+        expect("the syslog counters ride with it",
+               sorted(ident[0].get("figures", {})),
+               ["syslog_failed_sends", "syslog_overflows"])
+        expect("and the sweep is still OK", sweeps[0]["ok"], True)
+    return "inside the health record, heap and syslog both"
 
 
 @case(1, "OBS-7.5", "OBS-7.6", "OBS-7.7", "OBS-7.8")
@@ -5676,6 +5687,47 @@ def a_failure_carries_what_the_run_already_knows() -> str:
     return "4 kinds of fact, no guess"
 
 
+@case(1, "OBS-9.2")
+def the_report_says_what_the_devices_log_counters_did() -> str:
+    """Both counters, whether they moved, and which sweep first saw a move.
+
+    They are cumulative since the device booted, so a column of one value per
+    sweep answers nothing a reader asks. What is asked is whether the device
+    dropped any of its own log during this run, and if so from where on.
+    """
+    generator = load_report_tool()
+
+    def sweeps(values):
+        return generator.TargetRun(
+            token="u64", slug="u64",
+            health=[{"kind": "health", "label": f"suite-{index}", "ok": True,
+                     "checks": [{"name": "ident", "state": "ok", "ms": 9.0,
+                                 "figures": {"syslog_failed_sends": failed,
+                                             "syslog_overflows": over}}]}
+                    for index, (failed, over) in enumerate(values)])
+
+    steady = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (0, 0)]))
+    expect("one line per counter, plus the blank", len(steady), 3)
+    if "stayed at 0 over 3 sweep(s)" not in steady[0]:
+        raise Failure(f"a counter that never moved reads {steady[0]!r}")
+
+    moved = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (47, 19)]))
+    if "rose from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
+        raise Failure(f"a counter that moved reads {moved[0]!r}")
+    if "rose from 0 to 19" not in moved[1]:
+        raise Failure(f"the second counter reads {moved[1]!r}")
+
+    # Firmware without them says nothing rather than saying zero, because zero
+    # would be a claim this run cannot make.
+    older = generator.TargetRun(
+        token="u64", slug="u64",
+        health=[{"kind": "health", "label": "one", "ok": True,
+                 "checks": [{"name": "ident", "state": "ok", "ms": 9.0}]}])
+    expect("nothing to say about firmware that has no counters",
+           generator.syslog_counter_lines(older), [])
+    return "steady, moved, and absent"
+
+
 @case(1, "OBS-3.18", "OBS-3.22")
 def a_shared_file_does_not_become_a_suite_run_in_the_table() -> str:
     """`incomplete` has to mean a suite that did not close, and nothing else.
@@ -5893,7 +5945,6 @@ UNTESTED_REQUIREMENTS = {
                "slices consume",
     "OBS-3.16": "one documented pandoc command, run by hand and never in CI",
     "OBS-9.1": "optional firmware work, proven red then green on hardware",
-    "OBS-9.2": "optional firmware work, proven red then green on hardware",
     "OBS-9.3": "optional firmware work, proven red then green on hardware",
     "OBS-14.1": "a statement about which host platforms are supported",
     "OBS-14.4": "a host requirement, documented rather than executable",
