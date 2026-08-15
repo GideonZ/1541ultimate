@@ -853,6 +853,47 @@ def leave_monitor_fully(session: MonitorSession) -> None:
                   f"{session.capture().text()}")
 
 
+def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
+    """Whether the device's own DMA path can put `data` at `address` right now.
+
+    `machine:writemem` reaches memory through `C64_Subsys::executeCommand`,
+    which stops the machine and calls the same `C64::dma_transfer_frozen` the
+    monitor's backend calls. Asking it immediately after a monitor edit did not
+    land, at the same address and in the same machine state, separates a
+    monitor defect from a loss in the shared path underneath both.
+    """
+    write_rest_memory(device_host, address, data)
+    return wait_for_rest_data(device_host, address, data, timeout=2.0) == data
+
+
+def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,
+                                what: str, timeout: float = 5.0) -> bool:
+    """Require a monitor write to have landed, or the device to be unable to.
+
+    Every check in this suite that proves a monitor edit reached memory goes
+    through here, so they all draw the same line. Returns True when the bytes
+    are there. Raises when they are not and the device's own `machine:writemem`
+    can put them there at once, because that is the monitor's write path.
+    Returns False when the device cannot put them there either: that loss is in
+    `C64::dma_transfer_frozen` beneath both, and it is reported in the run
+    rather than blamed on the monitor.
+    """
+    actual = wait_for_rest_data(device_host, address, expected, timeout=timeout)
+    if actual == expected:
+        return True
+    if device_write_lands(device_host, address, expected):
+        raise Failure(
+            f"{what}: ${address:04X} holds {actual.hex().upper()}, expected "
+            f"{expected.hex().upper()}. The device's own machine:writemem then "
+            f"put those bytes there at once, so this is the monitor's write "
+            f"path and not the DMA path underneath it.")
+    detail(f"{what}: ${address:04X} would not take {expected.hex().upper()} "
+           f"from the monitor, and would not take it from the device's own "
+           f"machine:writemem either, so that loss is in the frozen DMA path "
+           f"under both")
+    return False
+
+
 def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
                                     frozen: bool) -> None:
     """A hex edit at an ordinary main-RAM address reaches C64 memory itself.
@@ -898,13 +939,10 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
             session.goto("E000")
             session.goto(f"{address:04X}")
 
-        actual = wait_for_rest_data(device_host, address, replacement)
-        if actual != replacement:
-            raise Failure(
-                f"${address:04X} holds {actual.hex().upper()} on the device "
-                f"after the edit{' and leaving the monitor' if frozen else ''}, "
-                f"expected {replacement.hex().upper()}"
-            )
+        assert_monitor_write_landed(
+            device_host, address, replacement,
+            "a Hex-view edit" + (" read back after leaving the monitor"
+                                 if frozen else ""))
     finally:
         write_rest_memory_confirmed(device_host, address, original)
         if frozen:
@@ -949,13 +987,10 @@ def hex_edit_byte_persists(session: MonitorSession, device_host: str, frozen: bo
             session.goto("E000")
             session.goto(f"{address:04X}")
 
-        actual = wait_for_rest_data(device_host, address, replacement)
-        if actual != replacement:
-            raise Failure(
-                f"${address:04X} holds {actual.hex().upper()} on the device "
-                f"after the edit{' and leaving the monitor' if frozen else ''}, "
-                f"expected {replacement.hex().upper()}"
-            )
+        assert_monitor_write_landed(
+            device_host, address, replacement,
+            "a Hex-view edit" + (" read back after leaving the monitor"
+                                 if frozen else ""))
     finally:
         write_rest_memory_confirmed(device_host, address, original)
         if frozen:
@@ -1193,19 +1228,6 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
 HEX_EDIT_RELIABILITY_ADDRESSES = (0x0002, 0x1100, 0x7FFF, 0x8000, 0xCFFF, 0xC000)
 
 
-def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
-    """Whether the device's own DMA path can put `data` at `address` right now.
-
-    `machine:writemem` reaches memory through `C64_Subsys::executeCommand`,
-    which stops the machine and calls the same `C64::dma_transfer_frozen` the
-    monitor's backend calls. Asking it immediately after a monitor edit did not
-    land, at the same address and in the same machine state, separates a
-    monitor defect from a loss in the shared path underneath both.
-    """
-    write_rest_memory(device_host, address, data)
-    return wait_for_rest_data(device_host, address, data, timeout=2.0) == data
-
-
 def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                                   rounds: int) -> int:
     """Every hex edit reaches memory, or the device cannot write there either.
@@ -1239,22 +1261,14 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                 session.send_char(digits[0])
                 session.send_char(digits[1])
                 session.send_key("ESC")
-                actual = wait_for_rest_data(device_host, address, replacement,
-                                            timeout=2.0)
-                if actual == replacement:
-                    wrote += 1
-                    continue
-                if device_write_lands(device_host, address, replacement):
-                    raise Failure(
+                if assert_monitor_write_landed(
+                        device_host, address, replacement,
                         f"round {round_index + 1} of {rounds}, after {wrote} "
-                        f"edits: ${address:04X} was {before.hex().upper()}, "
-                        f"{replacement.hex().upper()} was typed into the Hex "
-                        f"view, and the device read {actual.hex().upper()}. "
-                        f"The device's own machine:writemem then put "
-                        f"{replacement.hex().upper()} there at once, so this "
-                        f"is the monitor's write path and not the DMA path "
-                        f"underneath it.")
-                shared_losses += 1
+                        f"edits, a Hex-view edit over {before.hex().upper()}",
+                        timeout=2.0):
+                    wrote += 1
+                else:
+                    shared_losses += 1
     finally:
         leave_monitor_fully(session)
         for address, value in originals.items():
@@ -1319,31 +1333,28 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
                 session.send_key("ENTER")
                 session.send_key("ESC")
 
-                actual = wait_for_rest_data(device_host, address, expected,
+                # A prefix is the defect this check exists for: the opcode
+                # written and the operand not. That is the monitor's write
+                # path whatever the device can do, because the instruction is
+                # one block and a block cannot land in part.
+                landed = wait_for_rest_data(device_host, address, expected,
                                             timeout=2.0)
-                if actual != expected:
-                    # A prefix is the defect this check exists for: the opcode
-                    # written and the operand not. That is the monitor's write
-                    # path whatever the device can do, because the instruction
-                    # is one block and a block cannot land in part.
-                    prefix = (len(expected) > 1 and actual[:1] == expected[:1]
-                              and actual != expected)
-                    if prefix or device_write_lands(device_host, address, expected):
-                        raise Failure(
-                            f"round {round_index + 1} of {rounds}, after "
-                            f"{committed} commits: {text} at ${address:04X} "
-                            f"left {actual.hex().upper()} where "
-                            f"{expected.hex().upper()} was assembled."
-                            + (" That is its opcode without its operand."
-                               if prefix else
-                               " The device's own machine:writemem then put"
-                               " those bytes there at once, so this is the"
-                               " monitor's write path."))
+                if len(expected) > 1 and landed[:1] == expected[:1] and landed != expected:
+                    raise Failure(
+                        f"round {round_index + 1} of {rounds}, after "
+                        f"{committed} commits: {text} at ${address:04X} left "
+                        f"{landed.hex().upper()}, which is its opcode without "
+                        f"its operand")
+                if assert_monitor_write_landed(
+                        device_host, address, expected,
+                        f"round {round_index + 1} of {rounds}, after "
+                        f"{committed} commits, the commit of {text}",
+                        timeout=2.0):
+                    committed += 1
+                    last_expected = expected
+                else:
                     shared_losses += 1
                     last_expected = b""
-                    continue
-                committed += 1
-                last_expected = expected
 
         # The one read the freezer cannot colour: the machine is running
         # again. Skipped when the last commit was one the device could not
@@ -1406,14 +1417,18 @@ def run_asm_edit_memory_persists_test(session: MonitorSession, device_host: str,
             session.goto("E000")
             session.goto(f"{address:04X}")
 
-        actual = wait_for_rest_data(device_host, address, replacement)
-        if actual != replacement:
+        # A prefix is the monitor's own defect whatever the device can do: the
+        # instruction is written as one block, so it cannot land in part.
+        landed = wait_for_rest_data(device_host, address, replacement)
+        if landed[:1] == replacement[:1] and landed != replacement:
             raise Failure(
-                f"${address:04X} holds {actual.hex().upper()} on the device "
-                f"after an Assembly-view edit"
-                f"{' and leaving the monitor' if frozen else ''}, expected "
-                f"{replacement.hex().upper()} (LDA #${operand:02X})"
-            )
+                f"an Assembly-view edit left ${address:04X} holding "
+                f"{landed.hex().upper()}, which is the opcode of "
+                f"LDA #${operand:02X} without its operand")
+        assert_monitor_write_landed(
+            device_host, address, replacement,
+            f"an Assembly-view edit of LDA #${operand:02X}"
+            + (" read back after leaving the monitor" if frozen else ""))
     finally:
         write_rest_memory_confirmed(device_host, address, original)
         if frozen:
@@ -2223,13 +2238,9 @@ def run_save_load_topfile_test(session: MonitorSession, rest_host: str, files_ho
 
     write_rest_memory_confirmed(rest_host, addr, b"\x00" * len(pattern))
     monitor_load(session, [], f"MS{token}")
-    loaded = wait_for_rest_data(rest_host, addr, pattern)
-    if loaded != pattern:
-        raise Failure(
-            f"Top-level save/load mismatch at ${addr:04X}:\n"
-            f"  saved:  {pattern.hex().upper()}\n"
-            f"  loaded: {loaded.hex().upper()}"
-        )
+    assert_monitor_write_landed(
+        rest_host, addr, pattern,
+        f"a top-level save of {name} loaded back")
 
 
 def run_save_load_d64_test(session: MonitorSession, rest_host: str, files_host: str,
@@ -2249,13 +2260,9 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, files_host: 
     write_rest_memory_confirmed(rest_host, addr, b"\x00" * len(pattern))
     # ",," is the same load with all three fields left empty.
     monitor_load(session, [f"MD{token}"], inner, params=",,")
-    loaded = wait_for_rest_data(rest_host, addr, pattern)
-    if loaded != pattern:
-        raise Failure(
-            f"D64 save/load mismatch at ${addr:04X}:\n"
-            f"  saved:  {pattern.hex().upper()}\n"
-            f"  loaded: {loaded.hex().upper()}"
-        )
+    assert_monitor_write_landed(
+        rest_host, addr, pattern,
+        f"a save into {disk} loaded back")
 
 
 # ---------------------------------------------------------------------------
@@ -2694,12 +2701,9 @@ def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str)
             raise Failure(
                 f"{view.strip()} edit: the left-arrow key left edit mode instead of "
                 f"typing its character\n{screen.text()}")
-        actual = wait_for_rest_data(rest_host, address, bytes((expected,)))
-        if actual != bytes((expected,)):
-            raise Failure(
-                f"{view.strip()} edit: the left-arrow key wrote {actual.hex().upper()} "
-                f"at ${address:04X}, expected {expected:02X}"
-            )
+        assert_monitor_write_landed(
+            rest_host, address, bytes((expected,)),
+            f"{view.strip()} edit: the left-arrow key as data")
         session.send_key("RUNSTOP")
 
     # The ASCII and Screen rows of the number popup take it as data too.
