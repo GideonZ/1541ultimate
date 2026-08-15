@@ -361,7 +361,7 @@ DIR/
   index.pdf                       optional, derived from index.md (OBS-3.16)
   run.jsonl                       the parent's own record, multi-target runs only (OBS-2.12)
   run.log                         the parent's console output, multi-target runs only (OBS-2.13)
-  syslog-unmapped.txt             optional, datagrams from an unmapped address (OBS-7.8)
+  syslog-unknown-sender.txt       optional, datagrams no target claimed (OBS-7.8)
   <slug>/
     run.jsonl                     this target's runner records
     run.log                       this target's runner console output (OBS-2.13)
@@ -521,6 +521,101 @@ device is on one timeline, whichever transport it took.
 This is unconditional under `-o`, like the failure capture, because it costs the
 device nothing: it is a passive record of requests that were being made anyway.
 Depends on OBS-2.5.
+
+**OBS-2.17** [P1] Every interaction the harness has with a device is recorded
+exhaustively, as `kind=interaction` records in `DIR/<slug>/interactions.jsonl`.
+
+OBS-2.16 is a curated subset and says so: a GET that answered 200 first time is
+dropped, because the timeline in the report is a narrative and a run's reads are
+its bulk. That rule is right for a reader and wrong for a program. An
+investigation asks questions the run did not anticipate, and the commonest of
+them is what exactly was sent and what came back in the seconds before something
+went wrong. The two are the same events recorded twice, once under a rule and
+once under none.
+
+Written from inside the transports, so a suite gains the coverage without a line
+of its own and cannot opt out of it: `rest.record_action` for every REST request
+and its answer, `TelnetBackend._send` and the drain that follows it for every
+Telnet exchange, `ftp.RecordedFTP` for every FTP command and reply, and
+`health._banner` and `health._dma_identify` for the listener probes the runner
+makes outside any suite. A suite is never asked to announce anything.
+
+| Field | Content |
+|---|---|
+| `seq` | this process's own counter, shared with `transcript.txt` |
+| `time`, `suite`, `target`, `attempt` | as every record (OBS-2.3) |
+| `check`, `scenario` | what was open, absent when nothing was |
+| `transport` | `rest`, `telnet`, `ftp` or `socket` |
+| `fault` | a connection-level failure in one word: `refused`, `reset`, `timeout`, `broken-pipe`, `unreachable` |
+| `connection` | `new` or `reused` |
+| `menu_open` | whether the device's overlay menu was open, from what `machine:menu_screen` last answered |
+| `screen` | a digest of what the harness was looking at |
+| `op` | what was done on it: a method and a path, a key, a command |
+| `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them |
+| `sent`, `sent_bytes`, `received_bytes` | a Telnet exchange |
+| `reply` | an FTP reply's first line |
+| `body`, `body_hex` or `body_sha256`, with `body_bytes` | the device's answer, per the rule below |
+| `repeat`, `until`, `ms_last` | on a collapsed run of identical interactions |
+
+Two rules make an exhaustive log affordable, and neither loses anything a reader
+or a program needs:
+
+- **Consecutive identical interactions collapse into one record** with a
+  `repeat` count and an `until` time. A settle loop reads the same screen until
+  it stops changing, which is the same request with the same answer thirty
+  times. Only *consecutive* interactions collapse, so nothing is reordered and
+  nothing is merged across a gap, and the duration is deliberately not part of
+  what makes two interactions the same one.
+- **A response body is written once.** A short answer is in the record, as text
+  when it is text and as hex when it is not, because a one-byte read of memory
+  is the byte and that is what an investigation reads. Anything larger goes to
+  `DIR/<slug>/bodies/<digest>.bin` and the record carries the digest and the
+  byte count. A 2000-byte menu screen read four hundred times is one file and
+  four hundred digests.
+
+`DIR/<slug>/transcript.txt` carries one line per record, opening with the same
+`seq`. A reader who wants to see what happened reads that; a program that wants
+a field reads the record with that number. Both are written from one record, so
+they cannot disagree, and neither is derived from the other afterwards. Fields
+on a line are cut to a width a person can scan, and a field too long for the
+record itself is content-addressed the way a body is, so a `machine:writemem`
+of a whole block keeps its address and its bytes and a partial write is visible
+without a read-back.
+
+Three fields exist because a bare request and response cannot answer the
+questions an investigation brings. `fault` is what a key that never reached the
+device looks like, as against one the device ignored. `connection` distinguishes
+a fault on a connection just opened from one on a session that had been up for
+minutes. `menu_open` is the discriminator for an injected key that was accepted
+with HTTP 200 and did nothing, which is what a C64 Ultimate with its menu open
+does to every key sent to it; `screen` is what makes the effect of an
+interaction readable, because two consecutive records carrying different digests
+is that effect.
+
+Nothing about recording an interaction may reach the caller: this sits in the
+path of every device call in the tree, and a component that fails a run it was
+watching is worse than one that is missing. Depends on OBS-2.5 and OBS-2.10.
+
+**OBS-2.18** [P6] The C64's own screen is recorded as text, decoded from the
+frames the recorder already has, as `kind=vic` records in
+`DIR/<slug>/screen-text.jsonl`.
+
+The video stream carries a bitmap, which is what a person looks at and what a
+program cannot search. The device's screen memory is searchable and reading it
+means a `machine:readmem` per screen against a device the suites are driving,
+which is load this layer may not add (OBS-15.1). So the text is recovered from
+the picture: the C64 draws each cell as one of 256 fixed shapes from a character
+ROM this harness already holds to draw the harness pane with, in two colours, so
+matching a cell against the ROM is exact rather than approximate.
+
+Written only when the screen changed, and at most once a second, because the
+material is static for seconds at a time and the decode is the most expensive
+thing in the slot loop. Each record names the frame it was decoded from and that
+frame's position in the file, so a line joins to the picture it came from. A
+frame that is not a text screen this can read produces no record rather than a
+screen of question marks: bitmap mode, a sprite over the text, and the shifted
+character set all make cells that match nothing, and enough of them is the
+honest answer that the frame is not readable this way.
 
 **OBS-2.14** [P1] The runner records its plan before it runs anything: a
 `kind=plan` record naming every suite in the `SUITES` registry, its category,
@@ -703,6 +798,15 @@ the log is best-effort and incomplete by construction, for the reasons in
 OBS-7.11 and OBS-7.12. Depends on OBS-7.8 and OBS-2.6. KISS: inlining a slice
 for every check would multiply the document by the check count to answer a
 question only asked about failures.
+
+The same section says where the lines came from, as two tables. The first gives
+each target the addresses the run expected its lines from and the addresses they
+actually arrived from, with a count each, from the `kind=log` records of
+OBS-7.9. The second gives every sender no target claimed, its line count, and
+the reason attribution failed. Both are there because the question a reader
+brings to a non-empty `syslog-unknown-sender.txt` is "who sent these", and the
+answer is a list of addresses rather than a guess: the report never proposes a
+target for such a line (OBS-7.8).
 
 **OBS-3.13** [P1] The generator is device-free and testable against a recorded
 `-o` tree checked into the repository at `tests/lib/fixtures/e2e-run/`. Every
@@ -919,6 +1023,14 @@ detail part: the text form of each one inline in a fenced block, in the order
 they were captured, each labelled with its kind and its `mm:ss` offset into the
 recording, and the PNG beside it as a relative link for a reader who has
 downloaded the artifact.
+
+The offset is the one the `kind=capture` record holds for that still, which is
+where in the file the frame it was taken from sits (OBS-8.28). It is never
+recomputed from the suite's own timing: a suite record says when a suite ran,
+not which frame of it was kept, and a position derived that way was wrong by up
+to 4.7 seconds. A still whose capture record carries no position is labelled
+with its kind and nothing else, because a wrong position is worse than an absent
+one.
 
 A failing suite additionally gets **its first and last still only** in the
 summary part, under that suite's failing checks, because that is where somebody
@@ -1174,12 +1286,18 @@ The workflow's shape:
 | `concurrency` | one group for the whole workflow, `cancel-in-progress: false` | Two runs of the gate would drive the same devices at once. Cancelling the running one mid-suite leaves a device in an unknown state, so the second waits. |
 | `timeout-minutes` | set, and above the longest expected run | A hung suite otherwise holds the devices until someone notices. |
 | password | a repository secret, passed as `U64_PASS` in the step environment | Never on a command line, per OBS-1.8. |
-| targets | a `workflow_dispatch` input, defaulting to the standing set | The set of connected devices is an operator fact, not a repository fact. |
+| targets | a `workflow_dispatch` input, defaulting to the standing set `c64u u64 u2@c64u` | The set of connected devices is an operator fact, not a repository fact. |
+| `syslog` and `record` | `workflow_dispatch` boolean inputs, both defaulting to true, and a scheduled run passes both whatever the inputs say | The unattended run is the one whose failure has to be diagnosable from the artefacts alone, and the failure that most needs the device log and the recording is the one that does not reproduce. A dispatched run can still turn either off. |
+
+Every input reaches the step through the environment rather than being
+substituted into the script, because a workflow expression is replaced
+textually before the shell sees the line and an input carrying a semicolon would
+otherwise run on the runner.
 
 The steps, in this order, and the order matters:
 
 1. Check out.
-2. Run `./run-tests -j "$RUNNER_TEMP/e2e" <targets>`, with `--recover-command`
+2. Run `./run-tests -o "$RUNNER_TEMP/e2e" <targets>`, with `--recover-command`
    set to the operator's recovery tool and `continue-on-error` so the following
    steps still run. Its exit status is captured for step 6.
 3. Generate the report: `python3 tools/e2e_report.py "$RUNNER_TEMP/e2e"`.
@@ -1215,8 +1333,9 @@ Resolves OQ-2. The report and the JSONL are a few hundred kilobytes and are what
 anyone looks at weeks later; the recordings are the bulk of the bundle and are
 looked at within days of the run that produced them, if at all. Splitting them
 also means the report artifact stays small enough to download over a slow link
-while a failure is being investigated. The video artifact does not exist when
-the recorder was not asked for, which is the default (OBS-8.1).
+while a failure is being investigated. The workflow asks for the recorder unless
+a dispatched run turns it off, and the video artifact is empty rather than
+absent for a run that did.
 
 The artifact link in the summary is the report artifact's `artifact-url`
 (OBS-4.5).
@@ -1510,6 +1629,10 @@ whose length is zero. Carriage returns never arrive: `Syslog::charout` discards
 `\r`. The collector must not assume its line count matches the device's own
 output.
 
+A datagram carries no identification of the machine that sent it beyond its
+source address. That is why OBS-7.8 attributes a line by address alone and never
+proposes a target for one it cannot attribute.
+
 **OBS-7.7** [P5] The collector stamps every datagram with `time.time()` at the
 moment of receipt, on the host running `./run-tests`. That receive time is the
 only time any log line carries; nothing in the payload carries a time. Follows
@@ -1518,15 +1641,33 @@ from OBS-1.5.
 **OBS-7.8** [P5] The collector records the source IPv4 address per datagram and
 writes each line, prefixed with its receive timestamp, to the file for the
 target that address maps to: `DIR/<slug>/syslog.txt`. A datagram from an address
-that maps to no target in this run goes to `DIR/syslog-unmapped.txt`, with its
-source address on the line. Lines carry no device identity of any kind, so the
+that maps to no target in this run goes to `DIR/syslog-unknown-sender.txt`, with
+its source address on the line. Lines carry no device identity of any kind, so the
 source address is the only discriminator when several devices log to one
 collector, and a device nobody expected to be talking is itself the misbehaviour
 Q2 asks about, so its lines are kept rather than dropped.
 
+The file is named for the question its reader has to answer, which is who sent
+these lines, rather than for the lookup that failed. Nothing ever guesses a
+target for such a line: a datagram carries no identification but its source
+address (OBS-7.6), so the address is reported as exactly what it is. The report
+turns the file into a table of senders and line counts (OBS-3.11).
+
 **OBS-7.9** [P5] The collector maps each source address to a target token and
-emits a `kind=log` record naming the target, the output file and the collector's
-start time. See OBS-7.18 for what a cartridge target maps.
+emits a `kind=log` record per target, naming the target, the output file and the
+collector's start time. See OBS-7.18 for what a cartridge target maps.
+
+The record is written twice for each target, and the pair is what makes a device
+logging from an unexpected interface visible at all:
+
+| When | Fields it adds |
+|---|---|
+| collection starts | `addresses`, the addresses this run expects that target's lines from |
+| collection ends | `senders`, the addresses they actually arrived from with a count each, and `unknown_senders`, the addresses no target claimed with a count each |
+
+A reader who has only the expected addresses cannot see that the lines came from
+somewhere else, and a reader who has only the observed ones cannot see that
+anything was expected. The report prints both (OBS-3.11).
 
 **OBS-7.10** [P5] The collector runs for the duration of the run, starting
 before the first suite and stopping after the last, in the one process that owns
@@ -1627,7 +1768,7 @@ into logs as well. The rule:
   `DIR/<slug>/syslog.txt`. This is the log about the firmware being tested.
 - The computer's log, when the target is split and that machine's address is
   also mapped, goes to `DIR/<slug>/syslog-<computer>.txt`.
-- An address belonging to neither goes to `DIR/syslog-unmapped.txt` per OBS-7.8.
+- An address belonging to neither goes to `DIR/syslog-unknown-sender.txt` per OBS-7.8.
 
 `targets.Target` gains one property for this, `log_hosts`, returning the device
 alone for a whole-machine target and both machines for a split one. It sits
@@ -1638,7 +1779,15 @@ Addresses are resolved once, at collector start, with
 `socket.getaddrinfo(host, 0, socket.AF_INET, socket.SOCK_DGRAM)`, the same call
 `av_stream.AvStreamCapture` uses to decide which packets are its device's. A
 host name that does not resolve is reported once at startup per OBS-1.2 and its
-datagrams land in the unmapped file, where they are still evidence.
+datagrams land in the unknown-sender file, where they are still evidence.
+
+Resolution is enough because a device with two interfaces sends from the one the
+firmware's route policy prefers, and that policy prefers wired Ethernet, which
+is the interface the machine's name resolves to
+(`software/network/route_policy.c`). A machine outside this repository, or one
+whose Ethernet is down for the run, can still be given a second address for the
+collector with `U64_LOG_ADDRESSES`, and the expected-against-observed table of
+OBS-7.9 is what shows that it was needed.
 
 ### Acceptance criteria for section 7
 
@@ -1648,7 +1797,7 @@ datagrams land in the unmapped file, where they are still evidence.
   the cartridge's lines in `syslog.txt` and the computer's in
   `syslog-<computer>.txt` (OBS-7.18).
 - A device-free test feeds a datagram from a third, unmapped address and asserts
-  it lands in `DIR/syslog-unmapped.txt` with its source address on the line.
+  it lands in `DIR/syslog-unknown-sender.txt` with its source address on the line.
 - A device-free test asserts the collector starting on a busy port produces one
   warning at startup and does not raise.
 - A device-free test of the report's slicing asserts a line whose receive time
@@ -1676,7 +1825,7 @@ document"). Read it by subsection:
 | (opening requirements) | sources, addressing, sockets, re-arming | OBS-8.1 to OBS-8.5, OBS-8.16 |
 | (wire formats) | video and audio on the wire, geometry, network cost | OBS-8.6, OBS-8.17 to OBS-8.19 |
 | (composition and its sources) | the two panes, the menu tap and its spool, the configuration surface | OBS-8.20 to OBS-8.23 |
-| Edge conditions on the wire | loss, reordering, concealment, foreign senders, shedding, stills | OBS-8.24 to OBS-8.28 |
+| Edge conditions on the wire | loss, lifecycle, reordering, concealment, foreign senders, shedding, stills | OBS-8.39, OBS-8.24 to OBS-8.28 |
 | Layout and stamping | one file or two, the stamp, the failure edge, the progress bar | OBS-8.29 to OBS-8.33 |
 | How it looks | the visual system and the cards | OBS-8.35, OBS-8.36 |
 | The menu payload, exactly | what `machine:menu_screen` returns | OBS-8.37 |
@@ -1944,8 +2093,11 @@ and which that is depends on the UI mode:
 columns and the tallest is 25 rows.
 
 The text area is therefore **480x200 always**, sized for the widest and tallest
-screen either transport produces, with each screen drawn at its top-left corner
-and the remainder in the chrome colour of OBS-8.35. One fixed geometry rather
+screen either transport produces, with the remainder in the chrome colour of
+OBS-8.35. A 60-column Telnet session fills the width. A 40-column menu occupies
+320 of the 480 pixels and is centred in the rest rather than left against the
+gutter, at an indent derived from the two widths so the two cannot drift and
+snapped to the 8-pixel grid. One fixed geometry rather
 than one per mode, for three reasons: a run can pass through all three modes
 (`run-tests` loops modes outside suites, so `--mode all` is one recording
 covering all of them), OBS-8.17 requires the recording to have one geometry for
@@ -2197,6 +2349,47 @@ The distinction that keeps this proportionate: a live mirror must hide a defect
 from a viewer in real time, and a recorder only has to not corrupt the file and
 to say what it lost. Where the live implementation adapts, the recorder counts.
 
+**OBS-8.39** [P6] The loss counters count only what the network did to a stream
+that was running. An interval across which the device's own counters cannot be
+compared is a discontinuity, not loss.
+
+Both wire formats number their packets on the device, and both counters run
+whether or not anything is listening. A suite that stops the stream, a recorder
+that asks for it again, a device that restarts and a receiver that has been away
+from the socket all leave a gap in those numbers that no packet was ever sent
+into. Counting such a gap as loss reported 14187 lost video frames against 55409
+completed ones, and 29759 lost audio packets on a green 23-suite sweep, on runs
+that lost none.
+
+So a receiver is told when its baseline has stopped meaning anything, gives up
+everything half-assembled, and starts again from the next packet rather than
+measuring across the gap. Five reasons, each counted separately per stream:
+
+| Reason | What it is |
+|---|---|
+| `suite-stopped` | a suite stopped the stream, seen in the spool of OBS-8.22 |
+| `suite-started` | a suite started it again |
+| `recorder-rearm` | the recorder asked the device for it again (OBS-8.16) |
+| `stream-quiet` | nothing arrived for longer than the quiet threshold, so the run cannot say why |
+| `device-restart` | the receiver saw a forward gap larger than any that could be loss, or a backward jump too large to be reordering |
+
+The largest gap still counted as loss is two seconds' worth of the counter in
+question: two orders of magnitude above the burst a switch drops under load, and
+two orders below a restart. The quiet threshold is two seconds as well, which is
+longer than any jitter a LAN produces and shorter than the shortest interval a
+suite holds a stream for.
+
+The `kind=capture` record carries the counts as `stream_lifecycle`, one entry
+per stream and per reason (OBS-8.11). A reader comparing them with the loss
+figures can tell a run that competed for the stream from a link that dropped
+packets; without them the two were one number.
+
+Audio carries one further counter for the same distinction.
+`audio_unavailable_bytes` is audio written to keep the track the same length as
+the video while the run had the stream stopped. It is neither loss nor
+concealment of loss, because the device was not sending and nothing failed to
+arrive.
+
 **OBS-8.24** [P6] Video frame assembly follows the header, not the arrival
 order. Five rules, each of which is a defect if it is missing:
 
@@ -2223,7 +2416,11 @@ order. Five rules, each of which is a defect if it is missing:
   the next forward frame recompute an inflated gap and count a loss twice.
 
 The counts go in the `kind=capture` record (OBS-8.11): packets, packets dropped,
-packets ignored as foreign or malformed, frames completed, frames lost.
+packets ignored as foreign or malformed, frames completed, frames lost, frames
+incomplete and the discontinuities of OBS-8.39. A frame is incomplete when some
+of its packets arrived and its last one did not, so nothing was ever handed on;
+that is a different thing from a lost frame, which is one no packet of arrived
+at all.
 
 **OBS-8.25** [P6] Audio loss is concealed, on the packet sequence number, with
 four outcomes per packet:
@@ -2253,7 +2450,10 @@ tolerates a much larger gap than a live player does: concealing several seconds
 into a file is better than a discontinuity, where the same delay in a live
 mirror would be worse than a re-anchor. Each is a named constant with that
 reasoning beside it. The `kind=capture` record carries packets lost, packets
-concealed, late packets dropped, duplicates and resyncs.
+concealed, packets absent, late packets dropped, duplicates, resyncs and the
+discontinuities of OBS-8.39. Absent packets are the ones the run knows were
+never sent because it had stopped the stream, and they are counted apart from
+loss for the reason OBS-8.39 gives.
 
 **OBS-8.26** [P6] A second machine streaming into the same group is detected,
 counted and reported, and is never stopped.
@@ -2338,8 +2538,26 @@ This is also what a suite that produced no video at all still gets: with
 beyond the spool that OBS-8.22 was already writing.
 
 Stills are never stamped (OBS-8.30). They are evidence of what was on a screen,
-and a caption drawn over the border is a caption drawn over evidence. Their
-timing is in their file name, in the report entry beside them and in the JSONL.
+and a caption drawn over the border is a caption drawn over evidence.
+
+**A still's timing is in the `kind=capture` record, not in its file name.** The
+name carries an index and the kind and nothing else, because a name has to be
+predictable (OBS-2.10) and a frame number is not. The record's `stills` field is
+a list, one object per still that was written, and it is what the report reads:
+
+| Field | Content |
+|---|---|
+| `index`, `kind` | the two parts of the file name: the position in the set, and `first`, `change` or `last` |
+| `text`, `image` | the two file names, `image` absent when no PNG could be written |
+| `frame` | the recorder slot the canvas was written into |
+| `position` | where that slot sits in the file, in seconds, which the report prints as `mm:ss` |
+| `pane` | the output file the frame belongs to, since a `separate` layout writes two (OBS-8.29) |
+| `stem`, `label`, `suite`, `attempt`, `target` | the suite run it belongs to, so a reader joins a still to a check without parsing the file name back apart |
+
+The frame and the position are taken when the frame is composed and carried
+through the picker, rather than derived afterwards from when the suite ran. A
+suite record says when a suite ran, not which frame of it was kept, and deriving
+a position that way put a still up to 4.7 seconds from where it actually is.
 
 ### Layout and stamping
 
@@ -2351,9 +2569,15 @@ Everything is relative to the **canvas**, which is 872x272 under `combined` and
 | Annotation | Where | Requirement |
 |---|---|---|
 | The stamp | a two-row band across the canvas's top border, from the top-left | OBS-8.30 |
-| Pane labels | each pane's top border, right aligned, on the stamp's second row | OBS-8.35 |
+| Pane labels | each pane's top border, right aligned, on the row under the stamp | OBS-8.35 |
 | The failure edge | the canvas's outermost two rows and columns | OBS-8.32 |
 | The progress bar | the canvas's bottom border, full canvas width | OBS-8.33 |
+
+They are drawn in one fixed order: the panes, then the failure edge, then the
+stamp, then the pane labels, then the progress bar. The edge is a state marking
+rather than something a reader reads, so it goes underneath everything that is;
+drawn last it painted over the first two pixels of the stamp and over both ends
+of the progress bar.
 
 Two of these span the gutter under `combined`, and that is deliberate: the edge
 and the bar are chrome that belongs to the whole frame, while the stamp and the
@@ -2362,8 +2586,10 @@ file independently, from the same slot, so the two files carry the same stamp,
 the same edge and the same bar (OBS-8.29).
 
 None of the four ever touches a pane's 320x200 picture area. The C64 border is
-32 pixels at the sides, at least 20 at the top and at least 20 at the bottom,
-and every figure above fits inside it.
+32 pixels at the sides, and on every geometry this composition produces the
+picture area starts at least 35 lines below the top of the canvas and ends at
+least 35 lines above the bottom, so every figure above fits inside it. The three
+character rows the stamp and the labels own are 24 of those lines.
 
 **OBS-8.29** [P6] The two panes go into one file or into two, and the choice is
 `--record-layout`:
@@ -2432,6 +2658,18 @@ a narrow file. The canvas is 109 columns under `combined` and 60 or 48 under
 `separate` (OBS-8.29), and the title card carries every field in full whatever
 was truncated.
 
+**The order is two ranks, and the two are told apart by colour.** What the frame
+is of comes first and in white: the position in the recording, the target token
+and the firmware. What produced it follows in grey: the wall clock, the device's
+address and the build identity. Truncation is applied to the row rather than to
+each field, so the fields that fit are complete and the first one that does not
+carries the marker. A file too narrow for both ranks therefore loses the second
+one first.
+
+The second row is the same two ranks: the label and the suite first and in
+white, then the scenario and the check in grey. Which test this is outranks
+where inside it the run had got to.
+
 The particulars:
 
 - **Drawn at composition time, into the frame buffer, before the encoder sees
@@ -2440,10 +2678,13 @@ The particulars:
   (OBS-8.20). The frames are being built out of packed nibbles anyway, so
   drawing 96 characters into one is free next to the work already being done,
   and there is no re-encode because there was never a first encode to redo.
-- **In the border, not over the picture.** Two rows of 8-pixel glyphs need 16
-  pixels. The C64 border is 20 lines at the top on NTSC and 35 on PAL, and the
-  harness pane's own top border is 36, so the band fits across the whole canvas
-  on every geometry. It starts at the canvas's top-left corner.
+- **In the border, not over the picture.** The stamp's two rows and the pane
+  labels' row under them are three rows of 8-pixel glyphs, so the top of the
+  canvas they own is 24 pixels. The C64 border is 20 lines at the top on NTSC
+  and 35 on PAL, an NTSC frame is centred in the 272-line canvas so its picture
+  starts 36 lines down, and the harness pane's own top border is 36. The band
+  fits across the whole canvas on every geometry, and it starts at the canvas's
+  top-left corner.
 - **Fixed colours, not the border's.** A high-contrast pair chosen once, so the
   stamp stays legible whatever colour the program set the border to, and so two
   runs of the same suite produce byte-identical stamps.
@@ -2627,10 +2868,15 @@ Why each of them:
   scrubbed timeline it is noise. This also keeps every frame reproducible, which
   the tests of OBS-8.15 depend on.
 
-Pane labels sit in each pane's top border, right aligned, on the stamp's second
-row, where the first is the full-width identity band of OBS-8.30. The screen pane's is always `SCREEN`. The harness pane's names what
-it is showing at that moment, from the spool record's kind (OBS-8.22): `MENU`
-for a `machine:menu_screen` payload and `TELNET` for a Telnet session's screen. A
+Pane labels sit in each pane's top border, right aligned, on a row of their own
+under the two rows of the stamp (OBS-8.30). Nothing else is ever drawn on that
+row, so a long caption and a label cannot collide whatever either says: sharing
+the stamp's second row put the word `MENU` on top of the caption whenever the
+caption reached the right of the pane, which a suite name and a scenario name
+together routinely do. The screen pane's label is always `SCREEN`. The harness
+pane's names what it is showing at that moment, from the spool record's kind
+(OBS-8.22): `MENU` for a `machine:menu_screen` payload and `TELNET` for a Telnet
+session's screen. A
 viewer who did not build this has no other way to know which is which, and on a
 shared video that is most viewers; a reader who does know still needs to be told
 which transport the harness was driving, and the label is the cheapest place to
@@ -2642,21 +2888,43 @@ requirements, and a test asserts that a composed frame uses no colour outside
 the sixteen.
 
 **OBS-8.36** [P6] The recording opens with a title card and closes with a
-summary card, each held for a few seconds.
+summary card. The title card is held for exactly 5.0 seconds and the summary
+card for 2.0 seconds. Two figures rather than one because the title card is a
+structured overview, which is more than two seconds of reading, and the summary
+card is a verdict and a count, which is not.
 
 The title card names the run in full, including whatever the per-frame stamp of
-OBS-8.30 had to truncate: target token, the device's IPv4 address, product and
-firmware version (OBS-3.19), FPGA version, commit and branch (OBS-2.11), the CI
-run id and attempt (OBS-2.4), the host that ran it, the wall-clock start time,
-and the number of suite runs planned (OBS-2.14). The
-summary card names the outcome: the counts from the status line of OBS-3.22 and
-the names of the suites that failed.
+OBS-8.30 had to truncate, as three groups in the order a viewer asks the
+questions in:
+
+| Group | Fields |
+|---|---|
+| `DEVICE` | target token, product and firmware version (OBS-3.19), the device's IPv4 address, FPGA version |
+| `SOURCE` | branch, commit, and whether the tree was clean or modified (OBS-2.11) |
+| `RUN` | the wall-clock start time, the CI run identity (OBS-2.4), the host that ran it, and the number of suite runs planned (OBS-2.14) |
+
+A group whose fields are all absent is omitted, as is an absent field. The card
+has three ranks of text where the frame stamp has two, because it has room for a
+group heading and a field label as well as a value: headings and labels are
+grey, values are white, and colour stays reserved for state (OBS-8.35), so the
+card carries none.
+
+The layout follows from the canvas. A canvas wide enough for two columns of the
+widest group gets two, the groups dealt into them in order and as evenly as they
+go; anything narrower gets one, which is what a `separate` recording of the
+384-pixel screen pane is. A flat list of `name: value` lines was the
+alternative, and it answered none of the three questions faster than reading all
+of them.
+
+The summary card names the outcome: the counts from the status line of OBS-3.22
+and the names of the suites that failed. It is kept flat, because grouping two
+facts is structure for its own sake.
 
 They are composed frames like any other, drawn with the system of OBS-8.35, so
 they cost one frame each to build and the dwell to encode. They are what makes
 the file a thing somebody can hand to somebody else: a viewer who opens it knows
-within two seconds what they are watching, and a viewer who reaches the end
-knows how it went without opening the report.
+what they are watching before the recording starts, and a viewer who reaches the
+end knows how it went without opening the report.
 
 The cards carry no secret, per OBS-1.8. Beyond that they carry the run's own
 identity, which is the point of them.
@@ -2853,7 +3121,10 @@ started, and:
 - the counts: frames written, frames padded for a geometry change, video and
   audio re-arms (OBS-8.16), silent audio frames inserted (OBS-8.19), menu
   screens from the tap, menu screens the recorder requested, failed requests
-  (OBS-8.21).
+  (OBS-8.21), the per-stream loss counts of OBS-8.24 and OBS-8.25, and the
+  `stream_lifecycle` counts of OBS-8.39 beside them;
+- `stills`, one entry per still written, each naming its own files and the frame
+  of the recording it was taken from (OBS-8.28).
 
 Every subtitle interval, every chapter mark and every video timecode follows by
 subtraction from the start time and the intervals of OBS-2.6. A check's position
@@ -2890,6 +3161,28 @@ Each cue carries the check's identity key (OBS-3.6) and its verdict, in that
 order, so `grep` over the `.srt` for a suite name or for `FAIL` returns the
 timecodes to seek to. A sidecar whose cues read "running prg-context-menu" would
 be readable and not searchable; the identity key makes it both.
+
+**Cue times are decided in whole milliseconds**, which is the unit an `.srt`
+field carries. Deciding in seconds and rounding at the end produced cues whose
+two fields were a fraction of a millisecond apart and quantised to the same
+value, which is a cue a player shows for no time at all.
+
+Two properties hold of every emitted cue, and they are properties of the numbers
+a player parses rather than of the strings:
+
+- **A cue ends strictly after it starts.** Its end is its check's own end,
+  extended to the minimum dwell where there is room and never past the next
+  cue's start. A check followed immediately by another gets the millisecond
+  between the two starts rather than nothing.
+- **No cue overlaps the next.** A cue starts at least one millisecond after the
+  cue before it. Checks measured in microseconds land several to a millisecond,
+  and cues sharing one start cannot be given distinct non-overlapping intervals
+  at all, so the later cues of such a group are moved forward by a millisecond
+  each, which is below one output frame at any usable frame rate.
+
+A player stacks two overlapping cues, so a dwell that ran into the following
+check would put two identity keys on screen at once and leave a reader unable to
+tell which one the frame belonged to.
 
 One sidecar per video file, sharing its stem: `video.srt` beside `video.mp4`,
 and `video-harness.srt` and `video-screen.srt` under `--record-layout separate`.
@@ -3038,9 +3331,15 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 - Every suite run in a recorded run has a first still, a last still and at most
   the bounded number of transition stills, and the report shows their text form
   without a download (OBS-8.28, OBS-3.23).
+- The `mm:ss` the report prints beside a still is the position the
+  `kind=capture` record holds for it, and seeking there in the recording lands
+  on the frame the still was taken from (OBS-8.28, OBS-3.23).
 - A recorded run's `kind=capture` record accounts for every packet: written,
-  dropped, ignored, concealed or shed, with no unexplained remainder
+  dropped, ignored, concealed, absent or shed, with no unexplained remainder
   (OBS-8.24, OBS-8.25, OBS-8.27).
+- A run in which a suite stops a stream and starts it again reports the two ends
+  of that interval in `stream_lifecycle` and reports no loss across it
+  (OBS-8.39).
 - `ffprobe` lists one chapter per suite run and one per failing check, each
   titled with its identity key, and jumping to a failing check's chapter in
   `mpv` lands on that check (OBS-8.34).
@@ -3065,9 +3364,40 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 
 ## 9. Firmware work
 
-Nothing in sections 1 to 8 requires a firmware change. Each item below removes a
-named limitation, is optional, lands separately from the harness work, and
-carries a code-size cost on targets that are already tight.
+Sections 1 to 8 hold without a firmware change: a log line whose sender no
+target claims is kept rather than dropped, and `U64_LOG_ADDRESSES` attaches an
+address by hand. Each item below removes a named limitation and carries a
+code-size cost on targets that are already tight. OBS-9.4 is the one item here
+that the harness cannot work around, because no device-side setting decides it.
+
+**OBS-9.4** [P6] Select the outbound interface by an explicit preference rather
+than by the order the interfaces came up in. Wired Ethernet is preferred over
+WiFi when both are up and both can reach the destination; both stay usable;
+WiFi carries what Ethernet cannot; restoring Ethernet restores the preference;
+a socket bound to a local address sends from the interface holding it.
+
+`ip4_route` walks `netif_list` and takes the first interface whose masked
+address matches the destination, and `netif_add` prepends, so the list is the
+reverse of the order the interfaces were registered in. The WiFi netif is added
+when the ESP32 reports it has associated, after the wired one, so on a machine
+whose Ethernet and WiFi are on one subnet WiFi carries everything.
+`netif_default` does not change that: `ip4_route` reads it only after the walk
+has matched nothing, so the Ethernet-first choice in
+`NetworkInterface::set_default_interface` never applied to a destination both
+interfaces can reach. Measured: 45430 syslog lines from an Ultimate 64 arrived
+from its WiFi address while its hostname and its REST surface resolved to its
+Ethernet address.
+
+`LWIP_HOOK_IP4_ROUTE_SRC` is the only hook that can decide this.
+`LWIP_HOOK_IP4_ROUTE` is consulted after the walk and so can only supply a
+route the walk did not find. The decision itself is
+`software/network/route_policy.c`, which takes no lwIP type and is tested on
+the build host by `make route_policy_test`; the part that reads a netif is
+`software/network/lwip_route_hook.c`, built into the lwIP library so that every
+application linking it has the symbol `ip4.c` refers to. An interface declares
+its rank in `NetworkInterface::route_preference`, so the registration order is
+not the policy, and a stack where nothing has declared one produces exactly the
+answer `ip4_route` gives.
 
 **OBS-9.1** [P6, optional] Make an assertion failure reach the collector.
 `vAssertCalled` disables interrupts and spins, so the syslog task cannot forward
@@ -3091,6 +3421,10 @@ not a free reordering.
   a time, per the repository's rule in `AGENTS.md`.
 - Each item is built for every target (`./build-tool -s u64 u64ii u2 u2pl`)
   before it is reported complete, not only the target it is deployed to.
+- For OBS-9.4: with both interfaces up on one subnet and `U64_LOG_ADDRESSES`
+  unset, one collector bound to the syslog port sees the device's lines arrive
+  from the address its name resolves to, `syslog_failed_sends` and
+  `syslog_overflows` are 0, and no line of that device's is left unattributed.
 
 ---
 

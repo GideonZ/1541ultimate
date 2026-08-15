@@ -36,6 +36,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
 import health  # noqa: E402  (needs tests/lib on sys.path first)
+import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import pacing  # noqa: E402
 import report  # noqa: E402
@@ -546,6 +547,10 @@ def run_and_capture(command: List[str], environment: Dict[str, str],
 # knows not to bind it as well.
 SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
 
+# What the firmware sends to when the configured value carries no `:<port>`.
+# `Syslog::init` in software/network/syslog.cc.
+SYSLOG_DEVICE_DEFAULT_PORT = 514
+
 # The port the collector actually bound, exported to every suite the run
 # starts. The device-free gate is what uses it: a stub suite sends a datagram
 # into the running collector to prove the file it writes is the file the `log`
@@ -593,7 +598,8 @@ def start_syslog(args: argparse.Namespace,
     os.environ[SYSLOG_PORT_ENV] = str(collector.port)
     for token, path in collector.files():
         report.log_result(token, os.path.relpath(path, root),
-                          collector.started, collector.port)
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token))
     return collector
 
 
@@ -613,8 +619,31 @@ def finish_syslog(collector) -> None:
         report.gap_result("syslog", gap["started"], gap.get("ended"),
                           target=gap["target"], machine=gap["machine"],
                           reason=f"no line from {gap['machine']}")
+    root = collector.directory
+    unknown = collector.unknown_senders()
+    for token, _path in collector.files():
+        if collector.observed(token):
+            continue
+        # Nothing at all from a device the run asked for a log from. The
+        # setting was read and matched at the start, so what is left is a
+        # device whose firmware has not re-read it: the setting takes effect at
+        # the device's next boot, and `machine:reboot` does not always reach
+        # that far. Said once, here, because an empty file is otherwise
+        # indistinguishable from a device that had nothing to say.
+        report.warn(f"device log: {token} sent no line at all during this run, "
+                    f"so its syslog.txt is empty; the setting takes effect at "
+                    f"the device's next boot")
+    for token, path in collector.files():
+        # A second record for the same target, carrying what the first could
+        # not know: which addresses the lines actually came from. The report
+        # reads the two as one.
+        report.log_result(token, os.path.relpath(path, root),
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token),
+                          senders=collector.observed(token),
+                          unknown_senders=unknown)
     report.detail(f"device log:  {collector.lines} line(s) collected"
-                  + (f", {collector.unmapped} from an unmapped address"
+                  + (f", {collector.unmapped} from an unrecognised sender"
                      if collector.unmapped else "")
                   + (f", {len(gaps)} silence(s)" if gaps else ""))
     for problem in collector.problems[already:]:
@@ -646,7 +675,43 @@ def check_syslog_setting(device: "Device", when: str) -> str:
     if not value:
         report.warn(f"device log: this device is not configured to send its log "
                     f"anywhere ({when})")
+        return value
+    problem = syslog_setting_problem(value)
+    if problem:
+        report.warn(f"device log: {problem} ({when})")
     return value
+
+
+def syslog_setting_problem(value: str) -> str:
+    """Why this device's log will not reach this run's collector, or "".
+
+    The collector binds a port and the device sends to one, and nothing before
+    this compared the two. A device pointed at `<host>` with no port sends to
+    514, because that is what `Syslog::init` defaults to, and the collector
+    binds 5514 because 514 needs root. That produces a run with an empty
+    `syslog.txt`, no warning, and a report that says the device said nothing,
+    which is the same shape as a device that had stopped. Measured on the C64
+    Ultimate here: 23 suites, 0 lines, nothing anywhere saying why.
+
+    The host is compared as text rather than resolved. The setting is what an
+    operator typed, this runs on the machine the collector is on, and a name
+    that resolves here and not on the device is exactly the mistake worth
+    naming rather than one to be clever about.
+    """
+    wanted_port = os.environ.get(SYSLOG_PORT_ENV) or ""
+    if not wanted_port:
+        return ""
+    host, _, port = value.rpartition(":")
+    if not host:
+        # No colon at all, so the whole value is the host and the device will
+        # use the firmware's default port.
+        host, port = value, str(SYSLOG_DEVICE_DEFAULT_PORT)
+    if port != wanted_port:
+        return (f"this device sends its log to port {port} and this run "
+                f"collects on {wanted_port}, so none of it will arrive; set "
+                f"'{syslog_collector.CONFIG_ITEM}' to "
+                f"'{host}:{wanted_port}' and reboot the device")
+    return ""
 
 
 # Every recorder option except --record itself, and what makes each one a
@@ -771,6 +836,12 @@ def recording_identity(target: targets_lib.Target,
                                                         "HEAD")
     if commit:
         found["commit"] = commit
+    # Whether the firmware under test was built from that commit or from a
+    # working tree with changes in it. A recording of a modified tree is not
+    # evidence about the commit it names, and nothing else on the card says so.
+    changes = git_answer("status", "--porcelain")
+    if changes is not None:
+        found["dirty"] = "modified" if changes.strip() else "clean"
     return {name: value for name, value in found.items() if value}
 
 
@@ -787,8 +858,6 @@ def stop_recorder(made: Optional["recorder_lib.Recorder"],
         report.warn(f"recording: {problem}")
     if problems:
         capture.setdefault("problems", []).extend(problems)
-    if made.stills:
-        capture["stills"] = sorted(made.stills)
     report.capture_result(**capture)
     report.detail(f"recording:  {capture['frames']} frames, "
                   f"{capture['frames_shed']} shed")
@@ -1293,6 +1362,15 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                                                   "screens.jsonl")
     else:
         environment.pop("E2E_SCREENS", None)
+    if options.output_dir:
+        # Every interaction the suite has with the device, from inside the
+        # transports. One file per target, appended to by every suite and by
+        # the runner, and truncated once when the run starts rather than per
+        # suite, for the same reason the screen spool is.
+        environment["E2E_INTERACTIONS"] = os.path.join(options.output_dir,
+                                                       "interactions.jsonl")
+    else:
+        environment.pop("E2E_INTERACTIONS", None)
     # Tell the suite whether the device has just been reset and nothing has
     # touched it since, so it does not open with a reset of its own. One suite
     # ending with a reset and the next starting with one is the common case,
@@ -2390,6 +2468,13 @@ def main(argv: List[str]) -> int:
             # One file per target for the whole run, so it is emptied here
             # rather than by any of the suites that append to it.
             open(os.path.join(args.output_dir, "screens.jsonl"), "w").close()
+        # The same rule for the interaction log, and this process writes to it
+        # as well: the runner's own health sweeps and its UI-state gate are
+        # device interactions and belong in it beside the suites'.
+        path = os.path.join(args.output_dir, "interactions.jsonl")
+        open(path, "w").close()
+        interactions.set_path(path)
+        os.environ[interactions.LOG_ENV] = path
         if args.color == "auto" and report.colour_enabled():
             # A captured suite writes into a pipe, so it would decide "not a
             # terminal" and drop colour even though its lines are reprinted on

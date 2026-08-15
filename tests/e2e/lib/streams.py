@@ -294,6 +294,35 @@ _LINE_MASK = 0x7FFF
 _COUNTER_MODULUS = 0x10000
 _COUNTER_HALF = 0x8000
 
+# How many packets one PAL frame is, and how many frames a second the hardware
+# sends. Both follow from the constants above and are named so the caps below
+# can be written in seconds of stream rather than in bare numbers.
+PACKETS_PER_FRAME = HEIGHT_PAL // LINES_PER_PACKET
+FRAMES_PER_SECOND = 50
+
+# The largest forward gap in either counter that is still counted as loss.
+#
+# Above this the two counters cannot be compared at all, because the only
+# things that produce a gap this size are the device restarting its counter,
+# the stream having been stopped and started again, and the receiver having
+# been away from the socket for seconds. None of those is a packet the network
+# lost, and counting them as loss is what reported 14187 lost frames against
+# 55409 completed ones on a run whose suites simply took the stream: the frame
+# counter runs whether anything is listening or not, so every stop and start
+# added the whole quiet interval to the loss figure.
+#
+# Two seconds, which is two orders of magnitude above the burst a switch drops
+# under load and two orders below a restart. A gap larger than this is
+# recorded as a discontinuity with its reason instead.
+MAX_LOSS_SECONDS = 2.0
+MAX_PLAUSIBLE_FRAME_GAP = int(MAX_LOSS_SECONDS * FRAMES_PER_SECOND)
+MAX_PLAUSIBLE_PACKET_GAP = MAX_PLAUSIBLE_FRAME_GAP * PACKETS_PER_FRAME
+
+# The reason a receiver abandons its baseline when it works one out for itself.
+# Every other reason comes from a caller that knows why the continuity ended
+# and passes it to `reanchor`; see tests/e2e/lib/recorder.py.
+DEVICE_RESTART = "device-restart"
+
 
 @dataclass(frozen=True)
 class Frame:
@@ -415,6 +444,15 @@ class FrameAssembler:
     the `Frame` a packet completes, or None while a frame is still in
     progress or the packet was dropped. `counts` reports totals for loss
     accounting.
+
+    Loss is what the network did to a stream that was running. It is a
+    different thing from the stream not running, and this keeps the two
+    apart. A caller that knows the stream's continuity ended - because a suite
+    stopped it, because it asked the device for it again, because nothing has
+    arrived for seconds - calls `reanchor` with the reason, and the counters
+    start again from the next packet instead of measuring across the gap. The
+    two discontinuities a caller cannot see, a device that restarted its
+    counter and a gap too large to be loss, are detected here.
     """
 
     def __init__(self) -> None:
@@ -429,7 +467,17 @@ class FrameAssembler:
             "frames_completed": 0,
             "frames_lost": 0,
             "frames_reordered": 0,
+            # Frames whose packets started arriving and whose last packet
+            # never did, so nothing was ever handed to the caller. Distinct
+            # from frames_lost, which counts frames no packet of arrived.
+            "frames_incomplete": 0,
+            # Intervals across which neither counter means anything, so
+            # neither was compared. See reanchor.
+            "stream_discontinuities": 0,
         }
+        # One count per reason, so a reader can tell a run that competed for
+        # the stream from a device that kept restarting.
+        self.discontinuities: Dict[str, int] = {}
 
     def push(self, data: bytes) -> Optional[Frame]:
         """Take one datagram. Return the frame it completed, or None."""
@@ -475,8 +523,12 @@ class FrameAssembler:
             builder = _FrameBuilder(frame_number)
             self._builders[frame_number] = builder
             while len(self._builders) > MAX_FRAMES_IN_PROGRESS:
-                # The oldest by arrival, which is what dict order is here.
+                # The oldest by arrival, which is what dict order is here. It
+                # is a frame some of whose packets arrived and whose last one
+                # did not, which is a different thing from a frame no packet
+                # of arrived at all.
                 self._builders.pop(next(iter(self._builders)))
+                self._counts["frames_incomplete"] += 1
 
         payload = data[HEADER_SIZE:]
         builder.add_packet(line, is_last, payload)
@@ -489,6 +541,21 @@ class FrameAssembler:
         self._account_completed_frame(frame.number)
         return frame
 
+    def reanchor(self, reason: str) -> None:
+        """Abandon both baselines because the stream's continuity ended.
+
+        Called by whoever knows the reason. Everything half-assembled is
+        given up as incomplete rather than carried across the gap, because a
+        frame whose remaining packets were sent before a restart will never
+        be completed by packets sent after one.
+        """
+        self._counts["frames_incomplete"] += len(self._builders)
+        self._builders.clear()
+        self._last_seq = None
+        self._last_completed_frame = None
+        self._counts["stream_discontinuities"] += 1
+        self.discontinuities[reason] = self.discontinuities.get(reason, 0) + 1
+
     def counts(self) -> Dict[str, int]:
         """Packet/frame accounting since construction; see the class docstring."""
         return dict(self._counts)
@@ -496,6 +563,12 @@ class FrameAssembler:
     def _account_packet_sequence(self, seq: int) -> None:
         if self._last_seq is not None:
             gap = _wrapped_gap(seq, self._last_seq)
+            if gap > MAX_PLAUSIBLE_PACKET_GAP:
+                # Too far forward to be packets the network lost. See
+                # MAX_LOSS_SECONDS.
+                self.reanchor(DEVICE_RESTART)
+                self._last_seq = seq
+                return
             if gap > 1:
                 # gap - 1 packets between the last one counted and this one
                 # never arrived at all.
@@ -522,6 +595,13 @@ class FrameAssembler:
             # completes in forward order recompute the gap the earlier,
             # already-counted frame already accounted for.
             self._counts["frames_reordered"] += 1
+            return
+        if gap > MAX_PLAUSIBLE_FRAME_GAP:
+            # The frame counter runs whether anything is receiving or not, so
+            # a gap this size is the interval nothing was received rather
+            # than frames that went missing on the way.
+            self.reanchor(DEVICE_RESTART)
+            self._last_completed_frame = frame_number
             return
         if gap > 1:
             self._counts["frames_lost"] += gap - 1
@@ -755,11 +835,18 @@ class AudioTimeline:
             "packets_written": 0,
             "packets_lost": 0,
             "packets_concealed": 0,
+            # Packets' worth of fill written because the stream was not
+            # running, which is not the same thing as packets that were sent
+            # and did not arrive. A suite that stops the stream for a minute
+            # produces a minute of this and no loss at all.
+            "packets_absent": 0,
             "late_dropped": 0,
             "duplicates": 0,
             "resyncs": 0,
             "malformed": 0,
+            "stream_discontinuities": 0,
         }
+        self.discontinuities: Dict[str, int] = {}
 
     def _update_last_samples(self, payload: bytes) -> None:
         last_l, last_r = struct.unpack_from("<2h", payload, len(payload) - FRAME_BYTES)
@@ -853,6 +940,29 @@ class AudioTimeline:
         self._counts["packets_written"] += 1
         return Written(pcm=payload, concealed_packets=0)
 
+    @property
+    def anchored(self) -> bool:
+        """Whether any packet has arrived, so there is a timeline at all.
+
+        A caller that has to produce audio for a fixed interval whether or not
+        the device is sending needs this: before the first packet the stream
+        has not started, and what that caller writes is not concealment of
+        anything that went missing.
+        """
+        return self._has_anchor
+
+    def reanchor(self, reason: str) -> None:
+        """Abandon the timeline because the stream's continuity ended.
+
+        The next packet becomes the start of a new timeline, so the sequence
+        numbers on either side of the gap are never compared and no fill is
+        synthesised for it. Called by whoever knows the reason; the two this
+        detects for itself are counted as `resyncs`.
+        """
+        self._has_anchor = False
+        self._counts["stream_discontinuities"] += 1
+        self.discontinuities[reason] = self.discontinuities.get(reason, 0) + 1
+
     def fill(self, packets: int) -> bytes:
         """Concealment for a gap the caller does not attribute to loss.
 
@@ -861,6 +971,22 @@ class AudioTimeline:
         or two short whenever one arrives late, and counting that as loss
         would report a healthy stream as lossy.
         """
+        return self._fade(packets)
+
+    def absent(self, packets: int) -> bytes:
+        """Concealment for a stream the run knows is not running.
+
+        A suite that stops the stream leaves the file needing audio for every
+        slot until it starts it again, and that audio has to be synthesised
+        for the track to stay the same length as the video. It is not loss:
+        the device was not sending, so nothing failed to arrive. Counted
+        apart so a reader can tell a lossy link from a busy run, which
+        `packets_lost` alone could not: a green 23-suite sweep reported 29759
+        lost audio packets and had not lost one.
+        """
+        if packets <= 0:
+            return b""
+        self._counts["packets_absent"] += packets
         return self._fade(packets)
 
     def silence(self, packets: int) -> bytes:
@@ -900,7 +1026,8 @@ class AudioTimeline:
         """Return a snapshot of the running per-outcome packet counters.
 
         Keys: packets, packets_written, packets_lost, packets_concealed,
-        late_dropped, duplicates, resyncs, malformed. Every packet handed
+        packets_absent, late_dropped, duplicates, resyncs,
+        stream_discontinuities, malformed. Every packet handed
         to push() is accounted for in exactly one of packets_written,
         late_dropped, duplicates, malformed, or as part of a resync's
         packets_written; packets_lost/packets_concealed track synthesised

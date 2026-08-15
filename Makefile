@@ -1,7 +1,7 @@
 
 APP_SPACE = python3 tools/app_space.py
 
-.PHONY: all app_space app_space_test observability_test host_tests
+.PHONY: all app_space app_space_test observability_test route_policy_test host_tests
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -19,10 +19,17 @@ app_space_test:
 observability_test:
 	@python3 tests/lib/observability_test.py
 
+# Which interface outbound traffic leaves by when both Ethernet and WiFi can
+# reach the destination. A host g++ and nothing else, under two seconds, and
+# the combinations it covers are a cable and an access point each on real
+# hardware, so CI runs this one beside the observability suite.
+route_policy_test:
+	@$(MAKE) -C target/pc/linux/routepolicytest test
+
 # Unit tests that run on the build host rather than on the device. Kept out of
 # the firmware targets deliberately: those build with a cross compiler, and
 # these need a host g++.
-host_tests:
+host_tests: route_policy_test
 	@$(MAKE) -C target/pc/linux/configiotest test
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl

@@ -35,6 +35,10 @@ public:
     virtual ~NetworkLWIP_WiFi();
 
     const char *identify() { return "WiFi"; }
+    // Ordinary outbound traffic prefers the wired interface where there is
+    // one. WiFi stays fully usable and carries everything the wired link
+    // cannot, which is the whole of it on a machine with no cable in.
+    int route_preference() { return ROUTE_PREFERENCE_WIRELESS; }
     void attach_config();
 
     // User Interface

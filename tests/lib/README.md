@@ -183,7 +183,7 @@ DIR/
   index.md                     the report, written by tools/e2e_report.py
   run.jsonl                    the parent's own record, multi-target runs only
   run.log                      the parent's console output, multi-target only
-  syslog-unmapped.txt          log lines from an address no target claims
+  syslog-unknown-sender.txt          log lines from an address no target claims
   <slug>/
     run.jsonl                  this target's runner records
     run.log                    this target's runner console output
@@ -191,6 +191,10 @@ DIR/
     <label>-<suite>.log        that suite run's console output
     <label>-<suite>.telnet.log the raw Telnet session stream, telnet mode only
     screens.jsonl              every distinct screen the harness read
+    interactions.jsonl         every interaction the harness had with the device
+    transcript.txt             the same, one line each, sharing their seq numbers
+    screen-text.jsonl          the C64 screen as text, decoded from the recording
+    bodies/<digest>.bin        one response body, kept once, referred to by digest
     video.mp4                  the recording, with --record
     video.srt                  subtitles naming the suite and check
     capture/<key>-<n>-<kind>.png   a still, with its .txt beside it
@@ -231,8 +235,10 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `menu` | `cols`, `rows`, `text[]`, `raw` as hex, and `check` when one was running; `screens.jsonl` only |
 | `telnet` | the same, for a Telnet session's screen, which has no colour plane and so no `raw`; `screens.jsonl` only |
 | `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
-| `log` | `target`, `path`, `started`, `port` |
-| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, and the counts below |
+| `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
+| `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `sent_bytes`, `received_bytes`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
+| `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
+| `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
@@ -262,14 +268,21 @@ device that never sent anything. `--syslog` turns it on and needs each device's
 boot-time state on the device, so the runner reads it at both ends of a run and
 corrects it at neither.
 
-A datagram is attributed to a device by its source address, and a device with
-two interfaces logs from whichever one its routing picked, which is not always
-the address its name resolves to. Measured here: the Ultimate 64 answers REST
-on its Ethernet address and sends its log from its WiFi address, and nothing on
-its REST surface reports either. `U64_LOG_ADDRESSES="u64=192.168.1.71"` adds an
-address to a machine for the run. Without it those lines are still kept, in
-`syslog-unmapped.txt` with the address that sent them, which is what makes the
-omission visible rather than silent.
+Two `log` records are written per target: one when collection starts, which a
+killed run still leaves behind, and one when it ends. `addresses` is where the
+run expected that target's lines from, which is what its machines resolve to.
+`senders` is where they actually arrived from, with a count each, and
+`unknown_senders` is the same for addresses no target claimed. A device logging
+from an address its name does not resolve to is the difference between the
+first two, and without both it cannot be seen at all.
+
+A datagram is attributed to a device by its source address, and nothing here
+ever guesses one: an unrecognised address identifies nothing, so those lines go
+to `syslog-unknown-sender.txt` with the address that sent them and the report
+names every such sender, its line count and why it could not be attributed.
+`U64_LOG_ADDRESSES="u64=192.168.1.71"` adds an address to a machine for the
+run, for a machine outside this repository; the firmware here sends its log
+from the wired interface when there is one.
 
 `capture` carries `geometry`, the canvas the recorder composed, and
 `output_geometry`, the frame size the file carries: `--record-scale`
@@ -278,16 +291,84 @@ against `ffprobe` on the file needs both.
 
 `capture` is the recording's own health. It carries every option in force and
 every count the receive path kept: packets, packets dropped, packets malformed,
-frames completed, frames lost, frames shed because the host could not keep up,
-frames decimated to reach the output rate, frames padded for a geometry change,
-stream re-arms, and the same set for the audio. `timing` and `audio_rate` say
-which video timing the device was in and therefore what sample rate the audio
-track declares, since the audio clock is derived from the video clock.
+frames completed, frames lost, frames incomplete, frames shed because the host
+could not keep up, frames decimated to reach the output rate, frames padded for
+a geometry change, stream re-arms, and the same set for the audio. `timing` and
+`audio_rate` say which video timing the device was in and therefore what sample
+rate the audio track declares, since the audio clock is derived from the video
+clock.
+
+Loss and lifecycle are separate. `frames_lost`, `packets_dropped` and
+`audio_packets_lost` are the network's: what the device sent that did not
+arrive. `stream_lifecycle` counts the intervals across which the device's own
+counters cannot be compared at all, per stream and per reason: `suite-stopped`
+and `suite-started` for a suite taking the stream, `recorder-rearm` for the
+recorder asking for it again, `stream-quiet` for a stream that delivered
+nothing for seconds, and `device-restart` for a counter that jumped further
+than any loss could account for. Nothing missing across one of those is counted
+as loss. `audio_unavailable_bytes` is the audio written to keep the track the
+same length as the video while the run had the stream stopped, which is
+likewise not loss; `audio_concealed_bytes` is the same for a stream that should
+have been running and was not.
+
+`stills[]` is one entry per still, each naming its suite run, its kind, both of
+its files and the frame of the recording it was taken from, with `position` in
+seconds and `frame` as the slot index. The report reads that position rather
+than deriving one from the suite's timing, which was wrong by up to 4.7
+seconds.
 
 A file with thousands of padded frames or hundreds of re-arms is telling a reader that the run fought
 the recorder for the stream, which is worth knowing before drawing conclusions
 from what it shows. `started` and `lead_in` are what convert a wall-clock time
 into a position in the file.
+
+`interaction` is the exhaustive log of what the harness did to the device, and
+`action` is the curated subset of it that the report's timeline reads. The rule
+for `action` drops a GET that answered 200 first time, because a run's reads are
+its bulk and a narrative that carried them would be unreadable. `interaction`
+has no such rule: it holds every REST request and its answer, every Telnet
+exchange, every FTP command and reply and every listener probe, written from
+inside the transports so a suite gains the coverage without a line of its own.
+
+Two things keep it affordable. Consecutive identical interactions collapse into
+one record with a `repeat` count and an `until` time, which is what a settle
+loop reading the same screen thirty times becomes; the collapse is only ever of
+consecutive interactions, so nothing is reordered. And a short answer is in the record
+itself, as text when it is text and as hex when it is not, because a one-byte
+read of memory is the byte; anything larger is written once to
+`bodies/<digest>.bin` beside the log, with the record carrying `body_sha256` and
+`body_bytes`, so the second and every later occurrence of one 2000-byte menu
+screen costs a digest.
+
+Every record carries a `seq`, and `transcript.txt` beside it carries one line
+per record opening with the same number, so a reader who finds a line there and
+wants every field of it looks that number up rather than matching on a
+timestamp. Both files are written from one record, so they cannot disagree.
+
+Three fields answer questions a bare request and response cannot. `fault` names
+a connection-level failure in one word (`refused`, `reset`, `timeout`,
+`broken-pipe`, `unreachable`), because a key that never reached the device and a
+key the device ignored are different findings. `connection` says whether the
+call opened a connection or used one that was already up. `menu_open` says
+whether the device's overlay menu was open, taken from what `machine:menu_screen`
+last answered, which is what tells a key the machine ignored from a key an open
+menu swallowed while answering 200. `screen` is a digest of what the harness was
+looking at, so two consecutive records showing different digests are the
+observable effect of whatever happened between them.
+
+`vic` records are the C64's own screen as 25 rows of 40 characters, decoded from
+the frames the recorder already has by matching each 8x8 cell against the
+character ROM. It costs the device nothing, which reading its screen memory
+would not, and it is written only when the screen changed, at most once a
+second. A frame that is not a text screen this can read produces no record
+rather than a screen of question marks.
+
+Records carry the suite, the attempt, the scenario and the check that were open,
+so they join to the rest of the run with no correlation identifier of their own,
+and the report converts their wall-clock time into a position in the recording
+the same way it does for every other record. `run-tests -o DIR` exports
+`E2E_INTERACTIONS` for every suite it starts, and writes its own health sweeps
+and UI-state gate into the same file.
 
 `plan` is what the run intended before it ran anything: every suite the
 registry names, whether this run meant to run it, and one of `manual`,

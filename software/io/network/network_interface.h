@@ -23,6 +23,7 @@ extern "C" {
 #include "small_printf.h"
 #include "arch/sys_arch.h"
 }
+#include "route_policy.h"
 
 #define CFG_NET_DHCP_EN		0xE0
 #define CFG_NET_IP          0xE1
@@ -112,6 +113,12 @@ public:
 
     virtual void attach_config();
     virtual const char *identify() { return "Wired Network"; }
+
+    // Where this interface ranks when more than one of them can reach a
+    // destination. Stated per class rather than left to the order the
+    // interfaces happen to be registered in, which is a consequence of task
+    // timing. See software/network/route_policy.h.
+    virtual int route_preference() { return ROUTE_PREFERENCE_WIRED; }
 
 	bool start();
     void stop();

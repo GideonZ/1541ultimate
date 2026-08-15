@@ -17,6 +17,10 @@ extern "C" {
 #include "profiler.h"
 }
 
+// Declares route_hook_set_preference, which is where this interface says
+// where it ranks against the others. See software/network/route_policy.h.
+#include "lwip_hooks.h"
+
 #include "sntp_time.h"
 
 void start_sntp() __attribute__((weak));
@@ -197,6 +201,13 @@ bool NetworkInterface :: start()
     my_net_if.state = this;
     netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway, this, lwip_init_callback, tcpip_input);
 
+    // Where this interface ranks against the others when both can reach a
+    // destination. netif_add prepends, so the list order is the reverse of
+    // the order the interfaces happened to come up in, and stating the
+    // preference here is what stops that order from being the policy. See
+    // software/network/route_policy.h.
+    route_hook_set_preference(&my_net_if, route_preference());
+
     //netif_set_default(&my_net_if);
     if_up = false;
     return true;
@@ -205,6 +216,7 @@ bool NetworkInterface :: start()
 void NetworkInterface :: stop()
 {
 	link_down();
+	route_hook_set_preference(&my_net_if, ROUTE_PREFERENCE_NONE);
 	netif_remove(&my_net_if);
 }
 

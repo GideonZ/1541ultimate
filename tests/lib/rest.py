@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
+import interactions
 import report
 import targets
 from report import Failure, format_exception
@@ -87,15 +88,42 @@ def record_action(method: str, path: str, started: float, attempts: int,
     `started` is the start of the attempt that produced this outcome rather
     than of the first one, so `ms` is what the device took and not what the
     retry pauses did.
+
+    The exhaustive log of `tests/lib/interactions.py` is written from here too,
+    and keeps what this drops: it is the same event, recorded once for a reader
+    under the rule above and once for a program under no rule at all.
     """
+    elapsed = round((time.monotonic() - started) * 1000.0, 1)
+    if path.endswith("machine:menu_screen") and method.upper() == "GET":
+        # The one call that answers whether the overlay menu is open: 200 with
+        # a screen, 404 without one. Every record after this carries it, which
+        # is what tells a key the device ignored from a key an open menu
+        # swallowed while answering 200.
+        interactions.note_menu(True if status == 200 else
+                               False if status == 404 else None)
+        # And what it answered with, so a record written after this says what
+        # the harness was looking at. Under `--mode overlay` this is the only
+        # place a screen is read at all.
+        interactions.note_screen(answer if status == 200 else None)
+    interactions.record(
+        "rest", f"{method.upper()} {path}", ms=elapsed, status=status,
+        params=str(params) if params else None,
+        payload=str(payload) if payload is not None else None,
+        retries=attempts if attempts > 1 else None,
+        fault=interactions.fault_of(exc),
+        # One connection per request: `urllib` opens and closes one for every
+        # call, so nothing here is ever reused and a reader does not have to
+        # wonder whether a fault was on a fresh connection or an old one.
+        connection="new",
+        error=format_exception(exc) if exc is not None else None,
+        body=answer)
     if not report.JSONL_PATH:
         return
     retried = attempts > 1
     answered = status == 200
     if method.upper() == "GET" and answered and not retried:
         return
-    fields: Dict[str, object] = {
-        "ms": round((time.monotonic() - started) * 1000.0, 1)}
+    fields: Dict[str, object] = {"ms": elapsed}
     carried = params if params else payload
     if carried:
         fields["params"] = str(carried)[:ACTION_TEXT_CHARS]

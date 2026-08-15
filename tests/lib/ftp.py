@@ -13,15 +13,52 @@ from __future__ import annotations
 
 import ftplib
 import io
+import time
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator, List, Optional
 
+import interactions
 import targets
 from report import Failure
 
 FTP_USER = "user"
 FTP_DEFAULT_PASSWORD = "password"
 DEFAULT_TIMEOUT = 15.0
+
+
+class RecordedFTP(ftplib.FTP):
+    """An FTP client that writes every command and its reply to the log.
+
+    Subclassed rather than wrapped because `ftplib` builds its own commands
+    from a dozen methods, and hooking the two the protocol actually passes
+    through is the only way to record all of them without a copy of each. See
+    tests/lib/interactions.py.
+    """
+
+    _sent = None
+
+    def putcmd(self, line):
+        self._sent = (line, time.monotonic())
+        super().putcmd(line)
+
+    def getmultiline(self):
+        reply = super().getmultiline()
+        sent, self._sent = self._sent, None
+        if sent is None:
+            interactions.record("ftp", "reply", reply=reply.splitlines()[0]
+                                if reply else "")
+            return reply
+        command, started = sent
+        verb, _, argument = command.partition(" ")
+        interactions.record(
+            "ftp", verb.upper() or "reply",
+            # A password is never written down, whether or not this run
+            # registered it as a secret: the argument of PASS is one whatever
+            # it is.
+            argument="***" if verb.upper() == "PASS" else argument,
+            reply=reply.splitlines()[0] if reply else "",
+            ms=round((time.monotonic() - started) * 1000.0, 1))
+        return reply
 
 
 def connect(host: str, password: Optional[str] = None,
@@ -33,10 +70,23 @@ def connect(host: str, password: Optional[str] = None,
     `host` may be a target: the FTP server under test is the device's, so a
     cartridge target connects to the cartridge. See tests/lib/targets.py.
     """
+    started = time.monotonic()
     try:
-        client = ftplib.FTP(timeout=timeout)
+        client = RecordedFTP(timeout=timeout)
         target = targets.resolve(host)
-        client.connect(target.device, target.ftp_port)
+        try:
+            client.connect(target.device, target.ftp_port)
+        except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
+            interactions.record(
+                "ftp", f"connect {target.device}:{target.ftp_port}",
+                ms=round((time.monotonic() - started) * 1000.0, 1),
+                fault=interactions.fault_of(exc), error=str(exc),
+                connection="new")
+            raise
+        interactions.record(
+            "ftp", f"connect {target.device}:{target.ftp_port}",
+            ms=round((time.monotonic() - started) * 1000.0, 1),
+            connection="new")
         client.login(user, password or FTP_DEFAULT_PASSWORD)
         if directory:
             client.cwd(directory)

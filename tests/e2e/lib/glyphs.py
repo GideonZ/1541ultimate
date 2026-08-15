@@ -72,6 +72,11 @@ _MENU_COLUMNS = _menu_screen_tool.SCREEN_WIDTH
 _MENU_ROWS = _menu_screen_tool.SCREEN_HEIGHT
 _MENU_CELLS = _menu_screen_tool.SCREEN_CELLS
 
+# The same two numbers for a caller placing a menu screen on a larger canvas,
+# which needs the grid the payload is in to work out where it goes.
+MENU_COLUMNS = _MENU_COLUMNS
+MENU_ROWS = _MENU_ROWS
+
 
 def _load_unshifted_rom_rows(path: Path) -> List[bytes]:
     """Load the unshifted (upper case + graphics) 256-glyph set.
@@ -152,6 +157,17 @@ def _glyph_rows(character: str, fg_rgb: bytes, bg_rgb: bytes) -> "list":
     # Bit 7 is the leftmost pixel of the row, per the ROM layout note, which
     # is what _expanded_rows implements.
     return _expanded_rows(_rom_rows_for(character), fg_rgb, bg_rgb)
+
+
+def rom_rows_for_index(index: int) -> bytes:
+    """The eight row bitmasks of one character-ROM shape, bit 7 leftmost.
+
+    For a caller going the other way: matching a bitmap back to the character
+    that drew it needs the shapes, and this is where they are.
+    """
+    if 0 <= index < len(_ROM_ROWS):
+        return _ROM_ROWS[index]
+    return _BLANK_GLYPH_ROWS
 
 
 def _rom_rows_for(character: str) -> bytes:

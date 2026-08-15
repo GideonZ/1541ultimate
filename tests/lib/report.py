@@ -319,6 +319,15 @@ def current_check() -> Optional[int]:
     return _count if _depth and _count else None
 
 
+def current_scenario() -> str:
+    """The title of the open scenario, or "" when none is.
+
+    For a record written by something other than the scenario itself, so that
+    a device interaction joins to the group of checks it happened inside.
+    """
+    return str(_scenario["title"]) if _scenario else ""
+
+
 def last_label() -> str:
     """The label of the most recently started check, for crash reporting."""
     return _last_label
@@ -588,14 +597,22 @@ def plan_result(suites: Iterable[dict], sequence: Iterable[dict],
     _record(kind="plan", suites=list(suites), sequence=list(sequence), **fields)
 
 
-def log_result(target: str, path: str, started: float, port: int) -> None:
+def log_result(target: str, path: str, started: float, port: int,
+               **fields) -> None:
     """Where one device's own log is being collected, and from when.
 
     A reader who finds no log file needs to know whether the collector never
     started or the device never sent anything, and these two are different
     answers.
+
+    `fields` carries what only the collector knows: the addresses the run
+    expects this target's lines from, and, in the record written when the run
+    ends, the addresses they actually arrived from. A device that logs from a
+    second interface is the difference between those two, and without both a
+    reader cannot see it at all.
     """
-    _record(kind="log", target=target, path=path, started=started, port=port)
+    _record(kind="log", target=target, path=path, started=started, port=port,
+            **fields)
 
 
 def gap_result(component: str, started: float, ended: Optional[float] = None,

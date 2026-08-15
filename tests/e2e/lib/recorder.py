@@ -66,6 +66,7 @@ import targets as targets_lib  # noqa: E402
 import glyphs  # noqa: E402
 import screens as screen_spool  # noqa: E402
 import streams  # noqa: E402
+import vic_text  # noqa: E402
 
 # The two panes and the gutter between them. Both dimensions are even, which
 # every encoder wants, and neither pane is ever resampled: both are pixel grids
@@ -89,8 +90,9 @@ GUTTER_WIDTH = 8
 # used, not as a capture tool's overlay.
 CHROME = 11        # the darkest neutral in the palette, so screens dominate
 CHROME_TEXT = 15   # light grey, legible on the chrome without being white
-STAMP_TEXT = 1     # white, fixed rather than the border's, so two runs of one
-STAMP_BACKGROUND = 0   # suite produce byte-identical stamps
+# Fixed rather than taken from the border, so two runs of one suite produce
+# byte-identical stamps.
+STAMP_BACKGROUND = 0
 FAILURE_COLOUR = 2     # red
 WARNING_COLOUR = 8     # orange
 PASSED_COLOUR = 15     # light grey, the neutral a finished segment gets
@@ -108,10 +110,20 @@ EDGE_DWELL_SECONDS = 3.0
 # a gap above it so it never touches the picture area.
 BAR_HEIGHT = 4
 BAR_GAP = 2
+CHROME_BOTTOM_PIXELS = EDGE_PIXELS + BAR_HEIGHT + BAR_GAP
 
 # The stamp is two rows of 8-pixel glyphs in the top border, which is 20 lines
 # at the top on NTSC and 35 on PAL, so it fits on every geometry.
 STAMP_ROWS = 2
+# The pane labels go on the row under the stamp. They used to share the
+# stamp's second row, where a caption long enough to reach the right of a pane
+# was overwritten by the word MENU. One row is reserved for them and nothing
+# else is ever drawn on it, so the two cannot collide whatever either says.
+LABEL_ROW = STAMP_ROWS
+# How much of the top of a frame the stamp and the labels own, and how much of
+# the bottom the progress bar and the edge own. Between the two is the band no
+# annotation is ever drawn into, which is what a still has to reproduce.
+CHROME_TOP_PIXELS = (STAMP_ROWS + 1) * glyphs.GLYPH_HEIGHT
 
 # How long the recording thread is given to finish after it is asked to stop.
 # One slot's work plus one encoder write, with room for a host under load.
@@ -129,9 +141,12 @@ TIMING_WAIT_SECONDS = 2.0
 # the finishing pass cannot be what makes the join time out.
 ENCODER_EXIT_SECONDS = 20.0
 
-# How long the title and summary cards are held. Two seconds is long enough to
-# read and short enough that a reader seeking to the start is not waiting.
-CARD_SECONDS = 2.0
+# How long each card is held. The opening card is a structured overview of
+# three groups, which is more than two seconds of reading; the closing card is
+# a verdict and a count, which is not. They are two constants because one
+# would make the summary as long as the overview.
+OVERVIEW_SECONDS = 5.0
+SUMMARY_SECONDS = 2.0
 
 # The device sends 50 frames a second on PAL. The recording does not need them:
 # the material is a screen that is static for seconds at a time and then
@@ -148,6 +163,20 @@ SOURCE_FPS = 50
 # real gap.
 SILENCE_AFTER_PACKETS = 2
 
+# Why a stream's sequence continuity ended. Every one of these is something
+# the run or the device did on purpose, and none of them is a packet the
+# network lost, so the receiver is told to start its counters again rather
+# than measure across the gap.
+SUITE_STOPPED = "suite-stopped"
+SUITE_STARTED = "suite-started"
+RECORDER_REARM = "recorder-rearm"
+STREAM_QUIET = "stream-quiet"
+
+# How long a stream may deliver nothing before the packet after the gap cannot
+# be compared with the packet before it. Longer than any jitter a LAN
+# produces and shorter than the shortest interval a suite holds a stream for.
+QUIET_DISCONTINUITY_SECONDS = 2.0
+
 # How long a stream may be silent before the recorder asks for it again. Longer
 # than the gap a suite leaves between its own stop and start, so the recorder
 # does not fight a suite for the stream mid-check.
@@ -159,15 +188,50 @@ REARM_BACKOFF_CEILING_SECONDS = 120.0
 REARM_TIMEOUT_SECONDS = 2.0
 MENU_TIMEOUT_SECONDS = 2.0
 
+# How often the device's own screen is decoded back into text from the frame
+# the recorder already has. One a second: the C64 screen is static for seconds
+# at a time and then changes completely, so a second is finer than anything a
+# reader asks of it, and the decode is the most expensive thing in the loop.
+SCREEN_TEXT_INTERVAL_SECONDS = 1.0
+
+# Where that text goes. One file per target, beside the recording it was read
+# from, with each entry naming the frame it came from so a reader who finds a
+# line can go to the picture it was decoded from.
+SCREEN_TEXT_NAME = "screen-text.jsonl"
+
 # How long the screen tap may be silent before the recorder reads the menu
 # itself. Its own interval rather than the stream's: the two answer different
 # questions, and a suite that is navigating publishes a screen far more often
 # than this.
 MENU_QUIET_SECONDS = 6.0
 
+# The two ranks every piece of metadata on a frame belongs to. What the frame
+# is of comes first and in white; what it was produced by comes after it and in
+# grey. A field is truncated from the right, so a narrow file loses the second
+# rank before it loses any of the first.
+PRIMARY_TEXT = 1     # white
+SECONDARY_TEXT = 15  # light grey
+
+# The opening card. Its background is the darkest thing in the palette so the
+# values on it carry the contrast, and its own three ranks are separate from
+# the frame stamp's two: a group heading and a field label say what a value is
+# and are never the value.
+CARD_BACKGROUND = 0
+CARD_HEADING = 15   # light grey
+CARD_LABEL = 12     # medium grey
+CARD_VALUE = 1      # white
+CARD_SECONDARY = 15
+# One blank column at each side, and the gap between two columns of fields.
+CARD_MARGIN_COLUMNS = 1
+CARD_COLUMN_GAP = 4
+
 # What the placeholder cards say, which is as much as the run knows.
 NO_SCREEN_YET = "no screen has been read yet"
 NO_MENU_OPEN = "no menu is open"
+
+# The files under a target's directory that share the .jsonl suffix and are not
+# one suite run's records. See JsonlTail._files.
+SHARED_JSONL = ("screens.jsonl", "interactions.jsonl")
 NO_VIDEO = "waiting for the device's video"
 # Drawn above a harness pane showing a screen older than the poll that should
 # have replaced it.
@@ -300,12 +364,6 @@ class RunState:
     # right thing to make.
     between_suites: bool = True
 
-    def caption(self) -> str:
-        """What the stamp's second row says: which test, at this moment."""
-        parts = [part for part in (self.label, self.suite, self.scenario,
-                                   self.check) if part]
-        return " / ".join(parts)
-
     @property
     def key(self) -> str:
         """This suite run's identity key, which names its files."""
@@ -370,10 +428,11 @@ class JsonlTail:
                            if name.endswith(".jsonl"))
         except OSError:
             return []
-        # The screen spool shares the suffix and is not a record file: its
-        # name carries no label, so reading a suite name out of it would leave
-        # every artefact named after that suite with an empty one.
-        return [name for name in names if name != "screens.jsonl"]
+        # The screen spool and the interaction log share the suffix and are
+        # not record files: their names carry no label, so reading a suite name
+        # out of one would leave every artefact named after that suite with an
+        # empty one.
+        return [name for name in names if name not in SHARED_JSONL]
 
     def _read(self, path: str) -> List[dict]:
         try:
@@ -496,9 +555,16 @@ class Composer:
     inside it.
 
         the stamp        two rows across the canvas's top border
-        pane labels      each pane's top border, right aligned, on the second row
+        pane labels      each pane's top border, right aligned, on the row
+                         under the stamp, which nothing else is drawn on
         the failure edge the outermost two rows and columns
         the progress bar the bottom border, full width
+
+    They are drawn in one fixed order: the panes, then the state edge, then
+    the metadata, then the pane labels, then the progress bar. The edge is a
+    state marking rather than a reading, so it goes under everything a reader
+    reads; drawn last it painted over the first two pixels of the stamp and
+    over both ends of the progress bar.
 
     Colour is reserved for state. The chrome is the darkest neutral in the
     palette so the screens dominate, and a failure colour is then the only
@@ -534,9 +600,9 @@ class Composer:
             self._draw_harness(harness, harness_kind, harness_raw, stale)
         self.plain = self.canvas.to_rgb()
         if self.options.stamp:
+            self._draw_edge(state, wall)
             self._draw_stamp(state, position, wall)
             self._draw_labels(harness_kind)
-            self._draw_edge(state, wall)
             self._draw_bar(state)
             return self.canvas.to_rgb()
         return self.plain
@@ -570,7 +636,8 @@ class Composer:
             # that marks the selected row, so the menu is drawn from it and
             # the rows are the fallback for a screen that has no payload,
             # which is every Telnet one.
-            glyphs.render_menu_screen(raw, self.canvas, x, top,
+            glyphs.render_menu_screen(raw, self.canvas,
+                                      x + menu_indent(HARNESS_PANE_WIDTH), top,
                                       background=CHROME)
         else:
             glyphs.render_text_screen(rows, self.canvas, x, top,
@@ -598,23 +665,57 @@ class Composer:
         device, which firmware, which run and when, without the file it came
         from, and a title card at the start does not survive a screenshot of
         minute twelve.
+
+        Two ranks, in one order. What the frame is of comes first and in
+        white: where in the recording it is, which machine it is of, and which
+        firmware that machine was running. What produced it follows in grey:
+        the wall clock, the address and the build. A field is truncated from
+        the right, so a file too narrow to hold both ranks loses the second.
         """
-        first = "  ".join(part for part in (
-            format_position(position), format_wall(wall),
-            self.identity.get("target", ""), self.identity.get("address", ""),
-            self.identity.get("firmware", ""), self.identity.get("ci", "")
-        ) if part)
-        second = state.caption()
-        for row, text in enumerate((first, second)):
-            # Truncated from the right, so the fields a reader needs most
-            # survive a narrow file.
-            self.canvas.draw_text(0, row * glyphs.GLYPH_HEIGHT,
-                                  truncate(text, self.geometry.columns),
-                                  STAMP_TEXT, STAMP_BACKGROUND)
+        self._draw_fields(0, (
+            (format_position(position), PRIMARY_TEXT),
+            (self.identity.get("target", ""), PRIMARY_TEXT),
+            (self.identity.get("firmware", ""), PRIMARY_TEXT),
+            (format_wall(wall), SECONDARY_TEXT),
+            (self.identity.get("address", ""), SECONDARY_TEXT),
+            (self.identity.get("ci", ""), SECONDARY_TEXT)))
+        # The same rule on the second row: which test this is comes before
+        # where inside it the run had got to.
+        self._draw_fields(1, (
+            (" / ".join(part for part in (state.label, state.suite) if part),
+             PRIMARY_TEXT),
+            (state.scenario, SECONDARY_TEXT),
+            (state.check, SECONDARY_TEXT)))
+
+    def _draw_fields(self, row: int, fields: Sequence[Tuple[str, int]]) -> None:
+        """One stamp row, as fields laid out left to right in their own rank.
+
+        Truncation is applied to the row rather than to each field, so the
+        fields that fit are complete and the first one that does not is the
+        one that carries the marker.
+        """
+        y = row * glyphs.GLYPH_HEIGHT
+        used = 0
+        for text, colour in fields:
+            if not text:
+                continue
+            room = self.geometry.columns - used
+            if room <= 0:
+                return
+            piece = truncate(("  " if used else "") + text, room)
+            self.canvas.draw_text(used * glyphs.GLYPH_WIDTH, y, piece, colour,
+                                  STAMP_BACKGROUND)
+            used += len(piece)
 
     def _draw_labels(self, kind: str) -> None:
-        """Which pane is which, for a viewer who did not build this."""
-        row = glyphs.GLYPH_HEIGHT
+        """Which pane is which, for a viewer who did not build this.
+
+        On a row of their own under the stamp. Sharing the stamp's second row
+        put the word MENU on top of the caption whenever the caption reached
+        the right of the pane, which a suite and scenario name together
+        routinely do.
+        """
+        row = LABEL_ROW * glyphs.GLYPH_HEIGHT
         if self.geometry.screen_x >= 0:
             self._right_label(self.geometry.screen_x, SCREEN_PANE_WIDTH, row,
                               "SCREEN")
@@ -687,12 +788,11 @@ class Composer:
                                  RUNNING_COLOUR)
 
     def card(self, lines: Sequence[str]) -> bytes:
-        """A title or summary card, composed like any other frame.
+        """A closing card, composed like any other frame.
 
-        What makes the file a thing somebody can hand to somebody else: a
-        viewer who opens it knows within two seconds what they are watching,
-        and a viewer who reaches the end knows how it went without opening the
-        report.
+        A viewer who reaches the end knows how it went without opening the
+        report. Kept flat because it carries a verdict and a count: grouping
+        two facts is structure for its own sake.
         """
         self.canvas.fill(0, 0, self.geometry.width, self.geometry.height, CHROME)
         top = max(0, (self.geometry.height
@@ -704,6 +804,143 @@ class Composer:
                                   truncate(text, self.geometry.columns - 2),
                                   CHROME_TEXT, CHROME)
         return self.canvas.to_rgb()
+
+    def overview(self, groups: Sequence[Tuple[str, Sequence[Tuple[str, str, bool]]]]
+                 ) -> bytes:
+        """The opening card: what this recording is, grouped and aligned.
+
+        A viewer who opens the file has three questions in this order: which
+        machine is this, what was on it, and which run is this. The card is
+        those three groups, and a flat list of `name: value` lines answered
+        none of them faster than reading all of them.
+
+        Three ranks of text rather than the frame stamp's two, because a card
+        has room for a group heading and a field label as well as a value.
+        The values are white, the labels and headings grey, and colour is
+        still reserved for state, so the card carries none.
+
+        A group is `(heading, [(label, value, primary)])`. The layout falls
+        out of the canvas: a canvas wide enough for two columns of the widest
+        group gets two, and anything narrower gets one, which is what a
+        `separate` recording of the 384-pixel screen pane is.
+        """
+        width, height = self.geometry.width, self.geometry.height
+        self.canvas.fill(0, 0, width, height, CARD_BACKGROUND)
+        blocks = [self._card_block(heading, fields) for heading, fields in groups
+                  if fields]
+        if not blocks:
+            return self.canvas.to_rgb()
+        room = self.geometry.columns - 2 * CARD_MARGIN_COLUMNS
+        widest = max(_block_width(block) for block in blocks)
+        columns = 2 if widest * 2 + CARD_COLUMN_GAP <= room else 1
+        laid = _split_blocks(blocks, columns)
+        tallest = max(_column_height(column) for column in laid)
+        top = max(0, (height - tallest * glyphs.GLYPH_HEIGHT) // 2)
+        top -= top % glyphs.GLYPH_HEIGHT
+        per_column = widest if columns > 1 else max(
+            _block_width(block) for block in blocks)
+        # Centred as a group rather than pushed against the left margin: the
+        # canvas is wider than the fields need, and a block of text against one
+        # edge of a wide dark card reads as a mistake.
+        used = per_column * len(laid) + CARD_COLUMN_GAP * (len(laid) - 1)
+        left = max(CARD_MARGIN_COLUMNS, (self.geometry.columns - used) // 2)
+        for column in laid:
+            self._draw_column(column, left, top, per_column)
+            left += per_column + CARD_COLUMN_GAP
+        return self.canvas.to_rgb()
+
+    @staticmethod
+    def _card_block(heading: str,
+                    fields: Sequence[Tuple[str, str, bool]]
+                    ) -> List[List[Tuple[str, int]]]:
+        """One group as rows of coloured runs, its labels aligned to one width."""
+        label_width = max(len(label) for label, _value, _primary in fields)
+        rows: List[List[Tuple[str, int]]] = [[(heading, CARD_HEADING)]]
+        for label, value, primary in fields:
+            rows.append([("  " + label.ljust(label_width) + "  ", CARD_LABEL),
+                         (value, CARD_VALUE if primary else CARD_SECONDARY)])
+        return rows
+
+    def _draw_column(self, blocks: Sequence[List[List[Tuple[str, int]]]],
+                     left: int, top: int, room: int) -> None:
+        row = 0
+        for index, block in enumerate(blocks):
+            if index:
+                # One blank row between two groups, which is what makes them
+                # read as groups rather than as one list with headings in it.
+                row += 1
+            for runs in block:
+                used = 0
+                for text, colour in runs:
+                    space = room - used
+                    if space <= 0:
+                        break
+                    piece = truncate(text, space)
+                    self.canvas.draw_text((left + used) * glyphs.GLYPH_WIDTH,
+                                          top + row * glyphs.GLYPH_HEIGHT,
+                                          piece, colour, CARD_BACKGROUND)
+                    used += len(piece)
+                row += 1
+
+
+Block = List[List[Tuple[str, int]]]
+
+
+def _block_width(block: Block) -> int:
+    """How many columns one group needs, at its widest row."""
+    return max((sum(len(text) for text, _colour in row) for row in block),
+               default=0)
+
+
+def _column_height(column: Sequence[Block]) -> int:
+    """How many rows one column of groups needs, blank rows included."""
+    return sum(len(block) for block in column) + max(0, len(column) - 1)
+
+
+def _split_blocks(blocks: Sequence[Block], columns: int) -> List[List[Block]]:
+    """Deal the groups into `columns` columns, in order and as evenly as it goes.
+
+    In order, because the groups answer a reader's questions in the order they
+    are asked and reordering them to pack better would lose that. The split
+    point is the one that makes the taller column as short as it can be, and
+    the last such point when several tie, which fills the left column first.
+    """
+    if columns <= 1 or len(blocks) < 2:
+        return [list(blocks)]
+    best = None
+    for split in range(1, len(blocks)):
+        left, right = list(blocks[:split]), list(blocks[split:])
+        tallest = max(_column_height(left), _column_height(right))
+        if best is None or tallest <= best[0]:
+            best = (tallest, [left, right])
+    return best[1] if best else [list(blocks)]
+
+
+def menu_indent(pane_width: int) -> int:
+    """Where a 40-column menu screen starts inside the harness pane.
+
+    The pane is sized for the widest screen either transport produces, which
+    is a 60-column Telnet session at 480 pixels. A menu is 40 columns, so it
+    occupies 320 of those pixels and is centred in the rest rather than left
+    against the gutter. Derived from the two widths so the two cannot drift,
+    and snapped to the 8-pixel grid because everything here is on it.
+    """
+    indent = max(0, (pane_width - glyphs.MENU_COLUMNS * glyphs.GLYPH_WIDTH) // 2)
+    return indent - indent % glyphs.GLYPH_WIDTH
+
+
+def annotation_free_area(geometry: Geometry) -> Tuple[int, int, int, int]:
+    """The rectangle of a composed frame no annotation is ever drawn into.
+
+    The stamp and the pane labels own the top three character rows, and the
+    progress bar and the state edge own the bottom of the frame. Everything
+    between them is the panes as they were composed, which is what a still is
+    written from, so a still and the frame it was taken from have to be
+    identical here and are allowed to differ everywhere else.
+    """
+    return (EDGE_PIXELS, CHROME_TOP_PIXELS,
+            max(0, geometry.width - 2 * EDGE_PIXELS),
+            max(0, geometry.height - CHROME_TOP_PIXELS - CHROME_BOTTOM_PIXELS))
 
 
 def truncate(text: str, columns: int) -> str:
@@ -1080,6 +1317,9 @@ class SpoolTail:
         # The last thing a suite did to a device stream, so a pane with no
         # source can say who took it rather than that it is unavailable.
         self.stream_event: Dict[str, str] = {}
+        # Every one of those since the last look, for a reader that has to act
+        # on each rather than only show the latest. Drained by `take_events`.
+        self.stream_events: List[Dict[str, str]] = []
 
     def poll(self, now: float) -> None:
         try:
@@ -1122,6 +1362,12 @@ class SpoolTail:
                     "stream": str(record.get("stream") or ""),
                     "suite": str(record.get("suite") or ""),
                 }
+                self.stream_events.append(self.stream_event)
+
+    def take_events(self) -> List[Dict[str, str]]:
+        """Every stream event since the last call, oldest first."""
+        found, self.stream_events = self.stream_events, []
+        return found
 
 
 class AudioCursor:
@@ -1154,6 +1400,14 @@ class AudioCursor:
         # the device never failed to send.
         self.filled_bytes = 0
 
+        # Bytes the run knows the device was not sending, because a suite
+        # stopped the stream or the recorder could not get it back. Counted
+        # apart from both of the above: nothing failed to arrive.
+        self.unavailable_bytes = 0
+        # Whether the run believes the device should be sending right now.
+        # Set by the recorder from what the suites did to the stream.
+        self.available = True
+
     def push(self, pcm: bytes) -> None:
         self.buffer += pcm
 
@@ -1175,14 +1429,27 @@ class AudioCursor:
         self.buffer.clear()
         short = want - len(out)
         packets = -(-short // streams.PAYLOAD_BYTES)
-        if short >= streams.PAYLOAD_BYTES * SILENCE_AFTER_PACKETS:
-            # Enough missing that the stream has stopped rather than arrived
-            # late, which is the case the concealment counters are about.
-            filler = self.timeline.silence(packets)[:short]
-            self.concealed_bytes += len(filler)
-        else:
+        if short < streams.PAYLOAD_BYTES * SILENCE_AFTER_PACKETS:
+            # A packet or two behind, which is jitter rather than a stream
+            # that stopped.
             filler = self.timeline.fill(packets)[:short]
             self.filled_bytes += len(filler)
+        elif not self.available or not self.timeline.anchored:
+            # The run stopped this stream, or could not get it back, or it has
+            # not started yet: the file opens on a card held for several
+            # seconds while the device is still being asked for the stream.
+            # The track still needs a slot's audio to stay the same length as
+            # the video, and none of it is a packet the device failed to
+            # deliver. Counting the opening card as loss reported 1275 lost
+            # audio packets on a run that lost about 25.
+            filler = self.timeline.absent(packets)[:short]
+            self.unavailable_bytes += len(filler)
+        else:
+            # Enough missing from a stream that should be running that the
+            # device stopped sending on its own, which is the case the
+            # concealment counters are about.
+            filler = self.timeline.silence(packets)[:short]
+            self.concealed_bytes += len(filler)
         return out + filler
 
 
@@ -1257,11 +1524,22 @@ class Recorder:
         self.decimated = 0
         self._rearm_wait = {"video": REARM_AFTER_SECONDS,
                             "audio": REARM_AFTER_SECONDS}
+        # Whether the run believes the device should be sending each stream,
+        # and why the next packet of it cannot be compared with the last one.
+        self._available = {"video": True, "audio": True}
+        self._discontinuity = {"video": "", "audio": ""}
         # One picker per suite run, so a long suite gets the same number of
         # stills as a short one and the set stays readable.
+        # The last screen decoded out of the device's video, and when, so an
+        # unchanged screen costs one comparison rather than one decode.
+        self._screen_text: Optional[List[str]] = None
+        self._screen_text_at = 0.0
+        self._screen_text_frame = b""
+        self.screen_texts = 0
         self._picker = StillPicker()
         self._picking = ""
-        self.stills: List[str] = []
+        self._picking_identity: Dict[str, object] = {}
+        self.stills: List[dict] = []
 
     # -- lifecycle --
 
@@ -1440,6 +1718,7 @@ class Recorder:
             self._drain(min(interval, max(0.0, next_slot - self.clock())))
             now = self.clock()
             self._spool.poll(now)
+            self._apply_stream_events()
             if now < next_slot:
                 continue
             behind = int((now - next_slot) / interval)
@@ -1454,6 +1733,7 @@ class Recorder:
             next_slot += interval * (1 + min(behind, self.options.fps))
             self._maybe_rearm(now)
             self._maybe_read_menu(now)
+            self._maybe_read_screen(now, state)
 
     def _drain(self, budget: float) -> None:
         if not self._sockets or budget <= 0:
@@ -1471,10 +1751,12 @@ class Recorder:
                 self.foreign[str(id(sock))] = self.foreign.get(str(id(sock)), 0) + 1
                 continue
             if kinds.get(id(sock)) == "audio":
+                self._settle_continuity("audio", now)
                 self._sources.audio_at = now
                 if self._cursor is not None:
                     self._cursor.push(self._audio.push(data).pcm)
                 continue
+            self._settle_continuity("video", now)
             self._sources.video_at = now
             frame = self._assembler.push(data)
             if frame is not None:
@@ -1492,6 +1774,62 @@ class Recorder:
                 self._sources.frame = (frame.width, frame.height,
                                        streams.unpack(frame.packed))
                 self._sources.frame_at = now
+
+    # -- the streams' lifecycle, which is not the streams' health --
+
+    def _mark_discontinuity(self, stream: str, reason: str) -> None:
+        """Say that the next packet of `stream` starts a new timeline.
+
+        Recorded rather than acted on immediately, because the receiver has
+        nothing to reanchor onto until a packet arrives. The first reason
+        wins: a suite that stops a stream and starts it again has ended the
+        continuity once, not twice.
+        """
+        if not self._discontinuity.get(stream):
+            self._discontinuity[stream] = reason
+
+    def _settle_continuity(self, stream: str, now: float) -> None:
+        """Act on a pending discontinuity, or find one nobody declared.
+
+        Called with each arriving packet, before the receiver sees it. A
+        stream that has delivered nothing for seconds has ended its own
+        continuity whether or not the run knows why, and counting the missing
+        sequence numbers as transport loss is what put 14187 lost frames on a
+        recording where nothing was lost.
+        """
+        last = (self._sources.audio_at if stream == "audio"
+                else self._sources.video_at)
+        reason = self._discontinuity.get(stream) or ""
+        if not reason and last and now - last >= QUIET_DISCONTINUITY_SECONDS:
+            reason = STREAM_QUIET
+        if not reason:
+            return
+        self._discontinuity[stream] = ""
+        if stream == "audio":
+            self._audio.reanchor(reason)
+        else:
+            self._assembler.reanchor(reason)
+
+    def _apply_stream_events(self) -> None:
+        """Take what the suites did to the device's streams and act on it.
+
+        A suite stopping a stream and starting it again is the ordinary case,
+        and both ends of it break the sequence continuity: the device stops
+        counting where the recorder was and starts again wherever it is.
+        """
+        for event in self._spool.take_events():
+            stream = event.get("stream") or ""
+            if stream not in self._available:
+                continue
+            action = event.get("action") or ""
+            if action == "stop":
+                self._available[stream] = False
+                self._mark_discontinuity(stream, SUITE_STOPPED)
+            elif action == "start":
+                self._available[stream] = True
+                self._mark_discontinuity(stream, SUITE_STARTED)
+        if self._cursor is not None:
+            self._cursor.available = self._available["audio"]
 
     def _emit(self, state: RunState, recompose: bool) -> None:
         # The real clock rather than a slot count: under sustained shedding a
@@ -1520,25 +1858,36 @@ class Recorder:
             # died is in `problems`, which is where the difference is.
             if not encoder.write(self._last_canvas[name], budget=budget):
                 self.shed += 1
+        # The slot this frame was written into, which is what its position was
+        # computed from above and what a still taken from it carries.
+        frame = self.slots
         self.slots += 1
         if recompose:
-            self._offer_still(state)
+            self._offer_still(state, frame, position)
 
-    def _offer_still(self, state: RunState) -> None:
+    def _offer_still(self, state: RunState, frame: int, position: float) -> None:
         """Give the current frame to the suite run's still picker.
 
         A suite boundary closes the set and writes it, so a suite that failed
         has its first and last frames beside its failing checks in the report
         without anybody opening the recording.
+
+        `frame` and `position` are where this canvas went in the file, passed
+        in rather than read back, so a still that is kept carries the position
+        of the frame it is and not of the suite it belongs to.
         """
         key = state.stem
         if key != self._picking:
             self._write_stills(self._picking)
             self._picker = StillPicker()
             self._picking = key
+            # Held beside the stem because the set is written when the next
+            # suite run has already started, so the state has moved on by then.
+            self._picking_identity = {"label": state.label, "suite": state.suite,
+                                      "attempt": state.attempt}
         if not key:
             return
-        name = sorted(self._plain_canvas)[0] if self._plain_canvas else ""
+        name = self._still_pane()
         if not name:
             return
         ranked = (self._sources.frame[2] if self._sources.frame
@@ -1546,7 +1895,17 @@ class Recorder:
         # The frame without the stamp, the edge and the bar. A still is what
         # the machine showed, and this module's own text burned across it is
         # not evidence of anything.
-        self._picker.offer(self._plain_canvas[name], self._spool.rows, ranked)
+        self._picker.offer(self._plain_canvas[name], self._spool.rows, ranked,
+                           frame=frame, position=position)
+
+    def _still_pane(self) -> str:
+        """Which output file the stills of this run are frames of.
+
+        One pane rather than all of them: the report inlines one still per
+        moment, and a `separate` layout's two files are the same moment twice.
+        The first by name, so the choice is the same for the same run.
+        """
+        return sorted(self._plain_canvas)[0] if self._plain_canvas else ""
 
     def _write_stills(self, stem: str) -> None:
         if not stem:
@@ -1554,10 +1913,17 @@ class Recorder:
         chosen = self._picker.stills()
         if not chosen:
             return
-        geometry = self.geometry[sorted(self.geometry)[0]]
-        self.stills += write_stills(os.path.join(self.directory, "capture"),
-                                    stem, geometry.width, geometry.height,
-                                    chosen)
+        pane = self._still_pane() or sorted(self.geometry)[0]
+        geometry = self.geometry[pane]
+        for entry in write_stills(os.path.join(self.directory, "capture"),
+                                  stem, geometry.width, geometry.height,
+                                  chosen, pane=output_name(pane)):
+            # The suite run each still belongs to, so a reader joins a still to
+            # a check without parsing its file name back apart.
+            entry["stem"] = stem
+            entry.update(self._picking_identity)
+            entry["target"] = self.target.token
+            self.stills.append(entry)
 
     def _maybe_rearm(self, now: float) -> None:
         """Ask for a stream again when it has gone quiet.
@@ -1589,16 +1955,68 @@ class Recorder:
                                   retries=1):
                 self.rearms[stream] += 1
                 self._rearm_wait[stream] = REARM_AFTER_SECONDS
+                # The device starts sending from wherever its counter is now,
+                # which has nothing to do with where it was when it stopped.
+                self._available[stream] = True
+                self._mark_discontinuity(stream, RECORDER_REARM)
             else:
                 # A device that is off the network is the case this runs into
                 # most, and asking it every six seconds for ten minutes is a
                 # hundred requests that all fail the same way.
                 self._rearm_wait[stream] = min(
                     REARM_BACKOFF_CEILING_SECONDS, wait * 2)
+                # Nothing is going to arrive, and what the file is then short
+                # of is not something the device failed to deliver.
+                self._available[stream] = False
+            if self._cursor is not None:
+                self._cursor.available = self._available["audio"]
             if stream == "video":
                 self._sources.video_at = now
             else:
                 self._sources.audio_at = now
+
+    def _maybe_read_screen(self, now: float, state: RunState) -> None:
+        """Decode the device's own screen out of the frame already in hand.
+
+        Costs the device nothing: the frame arrived because the recording asked
+        for the stream, and reading the machine's screen memory instead would
+        be a request per screen against a device the suites are driving.
+
+        Rate limited and change gated, in that order, because the gate is a
+        comparison of two byte strings and the decode is not.
+        """
+        if now - self._screen_text_at < SCREEN_TEXT_INTERVAL_SECONDS:
+            return
+        self._screen_text_at = now
+        frame = self._sources.frame
+        if frame is None:
+            return
+        width, height, pixels = frame
+        if pixels == self._screen_text_frame:
+            return
+        self._screen_text_frame = pixels
+        rows = vic_text.decode(pixels, width, height)
+        if rows is None or rows == self._screen_text:
+            return
+        self._screen_text = rows
+        record = {"kind": "vic", "time": self.wall_clock(),
+                  "target": self.target.token, "cols": vic_text.COLUMNS,
+                  "rows": vic_text.ROWS, "text": rows,
+                  "frame": self.slots,
+                  "position": round(stamp_position(self.slots,
+                                                   self.options.fps), 4)}
+        for name, value in (("suite", state.suite), ("label", state.label),
+                            ("attempt", state.attempt), ("check", state.check)):
+            if value:
+                record[name] = value
+        try:
+            with open(os.path.join(self.directory, SCREEN_TEXT_NAME), "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+            self.screen_texts += 1
+        except (OSError, TypeError, ValueError):
+            # A file that cannot be written is not a reason to end a run.
+            pass
 
     def _maybe_read_menu(self, now: float) -> None:
         """Read the menu only where no suite is reading one.
@@ -1638,29 +2056,39 @@ class Recorder:
 
     # -- stage 6: what the run leaves behind --
 
-    def _write_cards_head(self, interval: float) -> None:
-        """The title card, held for a few seconds.
+    def overview_groups(self) -> List[Tuple[str, List[Tuple[str, str, bool]]]]:
+        """What the opening card says, as three groups of labelled fields.
 
-        A viewer who opens the file knows within two seconds what they are
-        watching. It carries every field the per-frame stamp had to truncate,
-        which is why the stamp's own row is truncated from the right rather
-        than shortened.
+        In the order a viewer asks the questions in: which machine is this,
+        what was it built from, and which run is this. The card carries every
+        field the per-frame stamp has to truncate, which is why the stamp's
+        own rows are truncated from the right rather than shortened.
         """
-        # In the order a reader asks the questions in, rather than
-        # alphabetically: which machine, then what was on it, then which run
-        # this was and when it started.
-        order = ("target", "address", "product", "firmware", "fpga", "commit",
-                 "branch", "ci", "host")
-        named = [(name, self.identity[name]) for name in order
-                 if self.identity.get(name)]
-        named += [(name, value) for name, value in sorted(self.identity.items())
-                  if value and name not in order]
-        lines = ["E2E GATE RUN"] + [f"{name}: {value}" for name, value in named]
-        lines.append(f"started: {format_wall(self.started_wall)}")
         planned = len(self._tail.poll().segments)
-        if planned:
-            lines.append(f"suite runs planned: {planned}")
-        self._hold(lines, interval)
+        device = [("target", self.identity.get("target", ""), True),
+                  ("product", self.identity.get("firmware", ""), True),
+                  ("address", self.identity.get("address", ""), False),
+                  ("fpga", self.identity.get("fpga", ""), False)]
+        source = [("branch", self.identity.get("branch", ""), True),
+                  ("commit", self.identity.get("commit", ""), True),
+                  ("tree", self.identity.get("dirty", ""), False)]
+        run = [("started", format_wall(self.started_wall), False),
+               ("build", self.identity.get("ci", ""), False),
+               ("host", self.identity.get("host", ""), False),
+               ("suite runs", str(planned) if planned else "", True)]
+        groups = []
+        for heading, fields in (("DEVICE", device), ("SOURCE", source),
+                                ("RUN", run)):
+            present = [field for field in fields if field[1]]
+            if present:
+                groups.append((heading, present))
+        return groups
+
+    def _write_cards_head(self, interval: float) -> None:
+        """The opening overview, held for exactly OVERVIEW_SECONDS."""
+        groups = self.overview_groups()
+        self._hold(lambda name: self._composers[name].overview(groups),
+                   OVERVIEW_SECONDS, interval)
         self.lead_in = self.slots * interval
 
     def _write_cards_tail(self) -> None:
@@ -1675,15 +2103,22 @@ class Recorder:
                  "  ".join(f"{verdict.lower()}={count}"
                            for verdict, count in sorted(counts.items()))]
         lines += [f"failed: {name}" for name in failed[:8]]
-        self._hold(lines, 1.0 / max(1, self.options.fps))
+        self._hold(lambda name: self._composers[name].card(lines),
+                   SUMMARY_SECONDS, 1.0 / max(1, self.options.fps))
 
-    def _hold(self, lines: Sequence[str], interval: float) -> None:
-        for _ in range(max(1, int(CARD_SECONDS / interval))):
+    def _hold(self, render: Callable[[str], bytes], seconds: float,
+              interval: float) -> None:
+        """Hold one card for `seconds`, one frame per slot.
+
+        Rounded rather than truncated: at 10 frames a second `2.0 / 0.1` is
+        19.999999999999996 in binary floating point, so the card that was
+        meant to be held for two seconds was held for 1.9.
+        """
+        for _ in range(max(1, int(round(seconds / interval)))):
             if self._audio_encoder is not None and self._cursor is not None:
                 self._audio_encoder.write(self._cursor.take(), budget=interval)
             for name, encoder in self._encoders.items():
-                encoder.write(self._composers[name].card(lines),
-                              budget=interval)
+                encoder.write(render(name), budget=interval)
             self.slots += 1
 
     def audio_path(self) -> str:
@@ -1719,11 +2154,27 @@ class Recorder:
             "frames_padded": self.padded,
             "frames_decimated": self.decimated,
             "rearms": dict(self.rearms),
+            "screen_texts": self.screen_texts,
             "menu_from_tap": self._spool.taken,
             "menu_requested": self.menu_requests,
             "menu_failed": self.menu_failures,
             "foreign_senders": sum(self.foreign.values()),
+            # Why each stream's counters were started again, and how often.
+            # A reader comparing this with the loss figures can tell a run
+            # that competed for the stream from a link that dropped packets;
+            # without it the two were one number.
+            "stream_lifecycle": {
+                name: {reason: count for reason, count in sorted(reasons.items())}
+                for name, reasons in (("video", self._assembler.discontinuities),
+                                      ("audio", self._audio.discontinuities))
+                if reasons},
         }
+        if self.stills:
+            # In the order they were taken, each naming its suite run, its
+            # kind, both its files and the frame of the recording it is. This
+            # is the only place that frame exists: a suite record says when a
+            # suite ran, not which of its frames was kept.
+            found["stills"] = list(self.stills)
         if self.audio_rate:
             found["audio_rate"] = self.audio_rate
             found["timing"] = self.timing
@@ -1731,11 +2182,15 @@ class Recorder:
         found.update({f"audio_{name}": value
                       for name, value in self._audio.counts().items()})
         if self._cursor is not None:
-            # Apart from the loss figures above: these are the bytes a slot
+            # Apart from the loss figures above: filled is the bytes a slot
             # was short because a packet had not arrived yet, which is jitter
-            # rather than a stream that stopped.
+            # rather than a stream that stopped; concealed is a stream that
+            # should have been running and was not; unavailable is a stream
+            # the run had stopped, which owes the file audio and owes it no
+            # explanation about the network.
             found["audio_filled_bytes"] = self._cursor.filled_bytes
             found["audio_concealed_bytes"] = self._cursor.concealed_bytes
+            found["audio_unavailable_bytes"] = self._cursor.unavailable_bytes
         if self.problems:
             found["problems"] = list(self.problems)
         return found
@@ -1781,12 +2236,66 @@ def position_of(when: float, started: float, lead_in: float) -> float:
 # this a cue flashes past unreadably; above it, a run of quick checks would be
 # one long cue naming the first of them.
 MINIMUM_CUE_SECONDS = 0.5
+MINIMUM_CUE_MS = int(MINIMUM_CUE_SECONDS * 1000)
+
+
+def milliseconds(seconds: float) -> int:
+    """A file position as the whole milliseconds an `.srt` field carries.
+
+    The unit an `.srt` is written in, so every decision about a cue is made in
+    it. Deciding in seconds and rounding at the end produced cues whose two
+    fields were 0.2 ms apart and quantised to the same millisecond, which is a
+    cue a player shows for no time at all.
+    """
+    return max(0, int(seconds * 1000.0 + 0.5))
+
+
+def srt_stamp(total_ms: int) -> str:
+    """One `.srt` timestamp field, from whole milliseconds."""
+    whole, remainder = divmod(max(0, int(total_ms)), 1000)
+    return (f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+            f",{remainder:03d}")
 
 
 def srt_time(seconds: float) -> str:
-    whole = int(seconds)
-    return (f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
-            f",{int((seconds - whole) * 1000):03d}")
+    return srt_stamp(milliseconds(seconds))
+
+
+def cue_times(cues: Sequence[Tuple[float, float, str]]) -> List[Tuple[int, int]]:
+    """The start and end each cue is written with, in whole milliseconds.
+
+    Separate from the formatting because the property that matters is about
+    the numbers a player parses rather than about the string: every cue ends
+    strictly after it starts, and no cue overlaps the next.
+
+    Two rules produce that, in this order:
+
+    - A cue starts at least one millisecond after the cue before it. Checks
+      measured in microseconds land several to a millisecond, and cues sharing
+      one start cannot be given distinct non-overlapping intervals at all. The
+      later cues of such a group are moved forward by a millisecond each,
+      which is below one output frame at any usable frame rate.
+    - A cue ends at its check's own end, extended to the minimum dwell where
+      there is room, and never past the next cue's start. A check followed
+      immediately by another is what a burst of sub-millisecond checks is, and
+      it gets the millisecond between the two starts rather than nothing.
+
+    `cues` is expected in start order, which `cues_and_chapters` sorts it into.
+    """
+    starts: List[int] = []
+    previous = -1
+    for start, _end, _text in cues:
+        at = max(milliseconds(start), previous + 1)
+        starts.append(at)
+        previous = at
+    times: List[Tuple[int, int]] = []
+    for index, (_start, end, _text) in enumerate(cues):
+        at = starts[index]
+        until = max(milliseconds(end), at + MINIMUM_CUE_MS)
+        if index + 1 < len(starts):
+            until = min(until, starts[index + 1])
+        times.append((at, max(until, at + 1)))
+    return times
 
 
 def subtitles(cues: Sequence[Tuple[float, float, str]]) -> str:
@@ -1796,21 +2305,17 @@ def subtitles(cues: Sequence[Tuple[float, float, str]]) -> str:
     so it can be read and searched without opening the video at all. Each cue
     carries the check's identity key and its verdict, in that order, so a grep
     for a suite name or for FAIL returns the timecodes to seek to.
+
+    A player stacks two overlapping cues, so a dwell that ran into the
+    following check would put two identity keys on screen at once and leave a
+    reader unable to tell which one the frame belonged to. `cue_times` is what
+    keeps them apart.
     """
     parts = []
-    for index, (start, end, text) in enumerate(cues, start=1):
-        # A check shorter than the minimum dwell is held on screen, but only
-        # as far as the next cue: a player stacks two overlapping cues, so a
-        # dwell that ran into the following check put two identity keys on
-        # screen at once and left a reader unable to tell which one the frame
-        # belonged to.
-        shown = max(end, start + MINIMUM_CUE_SECONDS)
-        if index < len(cues):
-            following = cues[index][0]
-            if following > start:
-                shown = min(shown, following)
-        parts.append(f"{index}\n{srt_time(start)} --> "
-                     f"{srt_time(shown)}\n{text}\n")
+    for index, ((start, end), cue) in enumerate(zip(cue_times(cues), cues),
+                                                start=1):
+        parts.append(f"{index}\n{srt_stamp(start)} --> "
+                     f"{srt_stamp(end)}\n{cue[2]}\n")
     return "\n".join(parts)
 
 
@@ -1870,6 +2375,24 @@ def finish_file(path: str, metadata: str, audio: str = "",
     return ""
 
 
+@dataclass
+class Still:
+    """One chosen frame, and exactly where in the recording it came from.
+
+    `frame` is the slot the recorder wrote that frame into and `position` is
+    where that slot sits in the file, both taken when the frame was composed
+    rather than derived afterwards from the suite's timing. Deriving it was
+    what made a still's stated position wrong by up to 4.7 seconds: a suite
+    record says when a suite ran, not which frame of it was kept.
+    """
+
+    kind: str
+    canvas: bytes
+    rows: List[str]
+    frame: int
+    position: float
+
+
 class StillPicker:
     """Keep the frames of one suite run that are worth writing out.
 
@@ -1885,47 +2408,59 @@ class StillPicker:
                  threshold: float = TRANSITION_THRESHOLD) -> None:
         self.limit = limit
         self.threshold = threshold
-        self.first: Optional[Tuple[bytes, List[str]]] = None
-        self.last: Optional[Tuple[bytes, List[str]]] = None
-        self.changes: List[Tuple[int, int, bytes, List[str]]] = []
+        self.first: Optional[Still] = None
+        self.last: Optional[Still] = None
+        self.changes: List[Tuple[int, Still]] = []
         self._previous: Optional[bytes] = None
         self._index = 0
 
     def offer(self, canvas: bytes, rows: Optional[Sequence[str]],
-              ranked_on: bytes) -> None:
-        """One composed frame, with what it was composed from."""
+              ranked_on: bytes, frame: int = 0, position: float = 0.0) -> None:
+        """One composed frame, with what it was composed from and where it is.
+
+        `frame` and `position` describe the slot this canvas was written into,
+        so the still that comes out of the picker carries the position of the
+        frame it actually is rather than of the suite it belongs to.
+        """
         text = [str(row) for row in (rows or [])]
+        candidate = Still("", canvas, text, frame, position)
         if self.first is None:
-            self.first = (canvas, text)
+            self.first = candidate
         else:
-            self.last = (canvas, text)
+            self.last = candidate
         if self._previous is not None and ranked_on:
             changed = difference(self._previous, ranked_on)
             sampled = max(1, len(ranked_on) // SAMPLE_STRIDE)
             if changed / sampled >= self.threshold:
-                self.changes.append((changed, self._index, canvas, text))
-                # Largest first, earlier index on a tie, so the set is the same
+                self.changes.append((changed, candidate))
+                # Largest first, earlier frame on a tie, so the set is the same
                 # for the same run.
-                self.changes.sort(key=lambda item: (-item[0], item[1]))
+                self.changes.sort(key=lambda item: (-item[0], item[1].frame))
                 del self.changes[self.limit:]
         self._previous = ranked_on
         self._index += 1
 
-    def stills(self) -> List[Tuple[str, bytes, List[str]]]:
-        """The chosen stills as (kind, canvas, rows), in capture order."""
-        found: List[Tuple[int, str, bytes, List[str]]] = []
+    def stills(self) -> List[Still]:
+        """The chosen stills, in capture order, each naming its own kind."""
+        # By the frame each was taken at, so the set reads in capture order
+        # whatever order the transitions were ranked in. The second key keeps
+        # first before a transition and a transition before last when a suite
+        # run was short enough that two of them fall on one frame.
+        found: List[Tuple[int, int, str, Still]] = []
         if self.first is not None:
-            found.append((-1, "first", self.first[0], self.first[1]))
-        for _changed, index, canvas, text in self.changes:
-            found.append((index, "change", canvas, text))
+            found.append((self.first.frame, 0, "first", self.first))
+        for _changed, still in self.changes:
+            found.append((still.frame, 1, "change", still))
         if self.last is not None:
-            found.append((self._index, "last", self.last[0], self.last[1]))
-        found.sort(key=lambda item: item[0])
-        return [(kind, canvas, text) for _index, kind, canvas, text in found]
+            found.append((self.last.frame, 2, "last", self.last))
+        found.sort(key=lambda item: (item[0], item[1]))
+        return [Still(kind, still.canvas, still.rows, still.frame,
+                      still.position)
+                for _frame, _rank, kind, still in found]
 
 
 def write_stills(directory: str, stem: str, width: int, height: int,
-                 chosen: Sequence[Tuple[str, bytes, List[str]]]) -> List[str]:
+                 chosen: Sequence[Still], pane: str = "") -> List[dict]:
     """Write each still as a pair of files sharing one name.
 
     The pair exists because the two readers need different things: the image
@@ -1935,36 +2470,47 @@ def write_stills(directory: str, stem: str, width: int, height: int,
     half present.
 
     Never stamped: a still is evidence of what was on a screen, and a caption
-    drawn over the border is a caption drawn over evidence. Its timing is in
-    its file name, in the report entry beside it and in the JSONL.
+    drawn over the border is a caption drawn over evidence.
+
+    Returns one entry per still, naming both files, the pane the canvas was
+    composed for and the frame it was taken at. That entry is what reaches the
+    `capture` record, so the report reads the position rather than inferring
+    one, and an entry is returned only for a still whose text file was written.
     """
     try:
         from PIL import Image
     except ImportError:
         Image = None
-    written: List[str] = []
+    written: List[dict] = []
     try:
         os.makedirs(directory, exist_ok=True)
     except OSError:
         return written
-    for index, (kind, canvas, rows) in enumerate(chosen, start=1):
-        name = f"{stem}-{index}-{kind}"
+    for index, still in enumerate(chosen, start=1):
+        name = f"{stem}-{index}-{still.kind}"
         text_path = os.path.join(directory, name + ".txt")
         try:
             with open(text_path, "w", encoding="utf-8") as handle:
-                handle.write("\n".join(rows) if rows else NO_MENU_OPEN)
+                handle.write("\n".join(still.rows) if still.rows
+                             else NO_MENU_OPEN)
                 handle.write("\n")
-            written.append(os.path.basename(text_path))
         except OSError:
             continue
-        if Image is None:
-            continue
-        try:
-            image = Image.frombytes("RGB", (width, height), canvas)
-            image.save(os.path.join(directory, name + ".png"))
-            written.append(name + ".png")
-        except (OSError, ValueError):
-            pass
+        entry = {"index": index, "kind": still.kind, "text": name + ".txt",
+                 "frame": still.frame, "position": round(still.position, 4)}
+        if pane:
+            # Which output file the frame and the position are positions in.
+            # A separate layout writes two files and a still is composed for
+            # one of them.
+            entry["pane"] = pane
+        if Image is not None:
+            try:
+                image = Image.frombytes("RGB", (width, height), still.canvas)
+                image.save(os.path.join(directory, name + ".png"))
+                entry["image"] = name + ".png"
+            except (OSError, ValueError):
+                pass
+        written.append(entry)
     return written
 
 
