@@ -12,8 +12,13 @@ load/save, bookmarks, and execution from a selected address.
 
 To open the monitor, use one of the following:
 
-- Press `C=+O` anywhere in the menu.
-- Press `F5`, open `Developer`, then select `Machine Code Monitor`.
+- Press `C=+O` in the file browser, which is the screen the menu opens on.
+- Press `F5`, open `Developer`, then select `Machine Code Monitor`. This works
+  from every menu screen.
+
+`C=+O` is a file-browser shortcut. The task menu, the settings screens, the
+system-information screen and the context menus read the key and do nothing
+with it; leave them with `RUN/STOP` first, or use `F5` instead.
 
 To leave the monitor with nothing else open, press `X`, `C=+O`, `RUN/STOP`,
 `ESC` on a USB keyboard, or the C64's top-left `←` key. Pushing the device's

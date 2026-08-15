@@ -6,11 +6,10 @@ shared UI facade in [`tests/e2e/lib/ui_backend.py`](../lib/ui_backend.py).
 
 ## How the monitor is reached
 
-Open it with `C=+O` (`Ctrl+O` over Telnet) while the on-device menu is up, or
-through `F5` -> `Developer` -> `Machine Code Monitor`. The shortcut is handled
-in `UserInterface::keymapper`, which every UI context passes its keys through;
-a popup, a string box, an editor and the monitor itself own the screen while
-they are up and do not answer it. `C=+O`, `RUN/STOP` and
+Open it with `C=+O` (`Ctrl+O` over Telnet) while the file browser is up, or
+through `F5` -> `Developer` -> `Machine Code Monitor` from any menu screen.
+The shortcut is a case in `TreeBrowser::handle_key`, so the file browser
+answers it and the other menu screens do not. `C=+O`, `RUN/STOP` and
 the top-left `←` key all leave it; see
 [`doc/machine_code_monitor.md`](../../../doc/machine_code_monitor.md) for the
 full Back hierarchy this suite verifies.
@@ -96,8 +95,31 @@ Interaction contract:
   rows of the number popup
 - every structured command prompt refuses a character no such command could
   contain, with no change to the field, and accepts the next valid one
+- `C=+O` opens the monitor from the file browser, and is ignored by the task
+  menu, the settings screens and a browser context menu, each of which is
+  still open afterwards; inside the monitor the same key leaves it
 - Hunt keeps the case of a quoted needle; Load accepts both `PRG,0,AUTO` and
   the all-empty `,,`
+
+Reliability sweeps:
+
+- every character of a command argument reaches the monitor: each argument is
+  typed once and the field is read back and compared in full before the prompt
+  is left, so a missing character, a duplicate and a transposition each fail
+- one-, two- and three-byte instructions each commit whole, with the device's
+  own `machine:readmem` read back after every commit, so an instruction that
+  wrote its opcode and not its operand fails at that commit
+
+Both sweeps run a small number of rounds in the gate. `MONITOR_STRESS_ROUNDS`
+raises that count for a deliberate stress run and changes nothing about what a
+single transaction asserts.
+
+Nothing in this suite re-sends a key to make a check pass. A key press is sent
+once and the screen is then re-read until it shows the result or a deadline
+expires, so a lost keystroke is reported rather than covered by a second copy.
+The one exception is a key that cycles through states, such as `o` for the CPU
+bank, where each press is a further intended step rather than a repeat of the
+same one, and the press count is bounded by the length of the cycle.
 
 The lexical space of what each prompt accepts is covered exhaustively by the
 host tests in `software/test/monitor/`, so the hardware gate spends its time on

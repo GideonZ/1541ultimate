@@ -117,44 +117,82 @@ class MonitorSession:
     def send_text(self, text: str, label: str) -> Snapshot:
         return self.backend.send_text(text, label)
 
-    def goto(self, address: str) -> Snapshot:
-        self.send_char("J")
-        snapshot = self.send_text(address + "\r", f"J {address}")
-        # Where the monitor actually went, checked here rather than left to
-        # whatever the caller asserts next. A cartridge target's keys are
-        # tapped into its computer's keyboard matrix and read by the cartridge
-        # on its own scan, and one lost character turns "C003" into "0C03":
-        # seen once on u2@c64u inside the ASM entry check, where every
-        # assertion afterwards then measured the wrong address and the failure
-        # named a missing instruction rather than a missing keystroke.
-        wanted = address.upper().lstrip("$").zfill(4)
+    def type_into_prompt(self, key: str, title: str, text: str) -> None:
+        """Open a command prompt and type `text` into it, proving it arrived.
+
+        The field is read back before RETURN is sent, so a character that did
+        not reach the monitor is reported where it was lost rather than as
+        whatever the command then did with a short argument. The read-back
+        compares the whole field, so a missing character, a duplicated one and
+        two characters in the wrong order are each a failure. Nothing is
+        re-sent: each character is sent exactly once, so a lost one fails the
+        check instead of being covered by a second copy.
+
+        RETURN is left to the caller, because a Go that executes closes the
+        whole menu as a side effect of that one keystroke.
+        """
+        self.send_char(key)
+        wait_for_prompt(self, title)
+        self.send_text(text, f"{key} {text}")
+
+        def typed(snapshot: Snapshot) -> bool:
+            try:
+                return prompt_field(snapshot, title) == text
+            except Failure:
+                return False  # the prompt is mid-redraw
+
+        snapshot = wait_until(self, typed)
         try:
-            header = monitor_header(snapshot)
+            shown = prompt_field(snapshot, title)
         except Failure:
-            return snapshot
-        landed = re.search(r"\$([0-9A-F]{4})", header)
-        if landed and landed.group(1) != wanted:
             raise Failure(
-                f"J {address} landed on ${landed.group(1)}: a keystroke of the "
-                f"address did not reach the monitor\n{snapshot.text()}")
+                f"the {title} prompt is not on screen after typing {text!r}\n"
+                f"{snapshot.text()}")
+        if shown != text:
+            raise Failure(
+                f"{title}: the field reads {shown!r} after {text!r} was typed. "
+                "A character of the command did not reach the monitor as typed."
+                f"\n{snapshot.text()}")
+
+    def run_prompt_command(self, key: str, title: str, text: str) -> Snapshot:
+        """Type a verified argument into a command prompt and submit it."""
+        self.type_into_prompt(key, title, text)
+        return self.send_key("ENTER")
+
+    def goto(self, address: str) -> Snapshot:
+        self.run_prompt_command("J", "Jump AAAA", address)
+        # Where the monitor actually went. The field read-back above already
+        # catches a character that did not arrive; this catches the case where
+        # the address was typed correctly and the jump still did not land on
+        # it.
+        wanted = address.upper().lstrip("$").zfill(4)
+        snapshot = wait_until(
+            self, lambda screen: monitor_header_address(screen) is not None)
+        landed = monitor_header_address(snapshot)
+        if landed is None:
+            raise Failure(
+                f"J {address}: the monitor header is not on screen\n{snapshot.text()}")
+        if landed != wanted:
+            raise Failure(
+                f"J {address} landed on ${landed}\n{snapshot.text()}")
         return snapshot
 
     def fill(self, expr: str) -> Snapshot:
-        self.send_char("F")
-        return self.send_text(expr + "\r", f"F {expr}")
+        return self.run_prompt_command("F", "Fill AAAA-BBBB,DD", expr)
 
     def compare(self, expr: str) -> Snapshot:
-        self.send_char("C")
-        return self.send_text(expr + "\r", f"C {expr}")
+        return self.run_prompt_command("C", "Compare AAAA-BBBB,CCCC", expr)
 
     def transfer(self, expr: str) -> Snapshot:
-        self.send_char("T")
-        return self.send_text(expr + "\r", f"T {expr}")
+        return self.run_prompt_command("T", "Transfer AAAA-BBBB,CCCC", expr)
 
     def goto_run(self, address: str) -> Snapshot:
-        self.send_char("G")
+        # The argument is verified while the prompt is still up, so a lost
+        # keystroke fails here rather than running the C64 from a wrong
+        # address.
+        self.type_into_prompt("G", "Go AAAA", address)
         try:
-            return self.send_text(address + "\r", f"G {address}")
+            return self.send_key("ENTER")
         except Failure:
             # Under Freeze, a G that actually executes unfreezes the C64 and
             # closes the whole menu as a direct side effect of this final
@@ -309,20 +347,23 @@ def write_rest_memory(host: str, address: int, data: bytes) -> None:
 
 
 def write_rest_memory_confirmed(host: str, address: int, data: bytes,
-                                attempts: int = 8, settle: float = 0.25) -> None:
-    actual = b""
-    for _ in range(attempts):
-        write_rest_memory(host, address, data)
-        time.sleep(settle)
-        actual = read_rest_memory(host, address, len(data))
-        if actual == data:
-            return
+                                timeout: float = 2.0) -> None:
+    """Write fixture bytes through REST and wait for the device to hold them.
+
+    One write, then the range is read back until it matches or the budget runs
+    out. Writing again would hide a device that needs more than one attempt,
+    which is a defect rather than a settling time.
+    """
+    write_rest_memory(host, address, data)
+    actual = wait_for_rest_data(host, address, data, timeout=timeout)
+    if actual == data:
+        return
     # What it holds instead is the whole diagnosis: memory that keeps changing
     # says something on the C64 owns the range, while memory that stays at one
     # wrong value says the write is not arriving.
     raise Failure(
-        f"${address:04X} would not hold {data.hex().upper()} after {attempts} "
-        f"attempts; it reads {actual.hex().upper()}"
+        f"${address:04X} would not hold {data.hex().upper()} within {timeout}s; "
+        f"it reads {actual.hex().upper()}"
     )
 
 
@@ -490,18 +531,32 @@ def cycle_cpu_bank_from_cpu7(session: MonitorSession, target_status: str, steps:
 
 
 def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
+    """Select a monitor view, pressing its key at most once.
+
+    Each view has its own key, so the key is sent once when the wanted view is
+    not already up and the header is then waited for. A key that does not
+    arrive fails here rather than being covered by a second press.
+    """
     key = VIEW_KEYS.get(expected)
     if key is None:
         raise Failure(f"Unsupported monitor view selector for {expected!r}")
-    screen = session.capture()
-    for _ in range(3):
+
+    def shows_view(snapshot: Snapshot) -> bool:
         try:
-            screen.find_line_containing(expected)
-            return screen
+            snapshot.find_line_containing(expected)
+            return True
         except Failure:
-            pass
-        screen = session.send_char(key)
-    raise Failure(f"Unable to reach expected monitor view {expected!r}; screen was\n{screen.text()}")
+            return False
+
+    screen = session.capture()
+    if shows_view(screen):
+        return screen
+    session.send_char(key)
+    screen = wait_until(session, shows_view)
+    if not shows_view(screen):
+        raise Failure(
+            f"{key!r} did not select the {expected!r} view; screen was\n{screen.text()}")
+    return screen
 
 
 def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
@@ -542,14 +597,19 @@ def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
 
 
 def enter_hex_nibble(session: MonitorSession, nibble: str, expected: str) -> Snapshot:
-    screen = session.capture()
-    for _ in range(3):
-        screen = session.send_char(nibble)
-        try:
-            assert_contains(screen, 4, expected)
-            return screen
-        except Failure:
-            pass
+    """Type one hex digit into the byte editor and wait for the row to show it.
+
+    The digit is sent once. In hex edit mode a second copy of the same digit
+    advances the nibble cursor and writes a different byte, so re-sending it
+    would not be a retry of the same intended transition at all; a digit that
+    does not arrive fails here.
+    """
+    session.send_char(nibble)
+
+    def shows(snapshot: Snapshot) -> bool:
+        return expected in snapshot.line(4)
+
+    screen = wait_until(session, shows)
     assert_contains(screen, 4, expected)
     return screen
 
@@ -643,25 +703,34 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
 
 def goto_and_read_byte(
     session: MonitorSession, address: str, address_int: int,
-    expected: Optional[int] = None, retries: int = 3,
+    expected: Optional[int] = None, timeout: float = 3.0,
 ) -> int:
-    """Navigate to `address` and read its first byte.
+    """Navigate to `address` once and read its first byte.
 
     A freshly-parked memory view can show one stale byte immediately after a
     DMA release (the same class of fetch race tracked elsewhere in this
     firmware around a fresh view's first fetch after a G that unfreezes and
-    re-parks the CPU). When `expected` is given, retry with a fresh
-    navigation (away and back, forcing a redraw rather than trusting a
-    cached one) until it matches or the budget runs out; the caller's own
-    comparison still runs on whatever this last returns, so a genuine
-    mismatch still fails the check."""
-    value = 0
-    for attempt in range(retries):
-        if attempt > 0:
-            session.goto("E000")  # away, so the next goto is a fresh navigation
-        screen = session.goto(address)
-        value = parse_memory_row(screen, address_int)[0]
-        if expected is None or value == expected:
+    re-parks the CPU). When `expected` is given, the same view is re-read
+    until it shows that byte or the budget runs out. The navigation itself is
+    performed exactly once, so a lost keystroke in the Jump address is
+    reported by `MonitorSession.goto` rather than repeated until it works.
+    The caller's own comparison still runs on whatever this last returns, so a
+    genuine mismatch still fails the check.
+    """
+    screen = session.goto(address)
+    value = parse_memory_row(screen, address_int)[0]
+    if expected is None or value == expected:
+        return value
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(0.05)
+        screen = session.capture()
+        try:
+            value = parse_memory_row(screen, address_int)[0]
+        except Failure:
+            continue  # the view is mid-redraw
+        if value == expected:
             return value
     return value
 
@@ -939,6 +1008,159 @@ def run_cpu_banked_ram_edit_test(session: MonitorSession, device_host: str,
     # expect. ensure_status presses 'o' itself until CPU7 is on screen, so
     # this does not depend on how many steps away CPU5 happens to be.
     ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN")
+
+
+# ---------------------------------------------------------------------------
+# Reliability sweeps.
+#
+# The gate runs a small number of rounds so it stays inside its time budget.
+# MONITOR_STRESS_ROUNDS raises that for a deliberate stress run without
+# changing what any single transaction asserts.
+# ---------------------------------------------------------------------------
+
+def stress_rounds(default: int) -> int:
+    raw = os.environ.get("MONITOR_STRESS_ROUNDS")
+    if not raw:
+        return default
+    try:
+        rounds = int(raw)
+    except ValueError:
+        raise Failure(f"MONITOR_STRESS_ROUNDS is not a number: {raw!r}")
+    if rounds < 1:
+        raise Failure(f"MONITOR_STRESS_ROUNDS must be at least 1, not {rounds}")
+    return rounds
+
+
+# Four-digit Jump addresses chosen for the shapes that a keyboard-matrix scan
+# can get wrong: two identical digits in a row, alternating digits, a digit
+# repeated after one other digit, and letters that need SHIFT next to digits
+# that do not.
+KEY_STRESS_ADDRESSES = (
+    "C003",  # the case seen on hardware: a repeated digit after a shifted letter
+    "1100", "2200", "0000",  # adjacent identical digits
+    "1010", "A0A0", "5555",  # alternating, and one digit four times
+    "1234", "ABCD", "0F0F",  # all distinct, and shifted letters beside digits
+)
+
+# Structured arguments for the prompts that take more than an address, so the
+# sweep covers separators and two-part operands as well as hex digits.
+KEY_STRESS_PROMPTS = (
+    ("F", "Fill AAAA-BBBB,DD", "1180-1183,55"),
+    ("H", "Hunt AAAA-BBBB", "1180-11FF"),
+    ("T", "Transfer AAAA-BBBB,CCCC", "1180-1183,1200"),
+    ("C", "Compare AAAA-BBBB,CCCC", "1180-1183,1200"),
+)
+
+
+def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
+    """Type command arguments repeatedly and require every character to arrive.
+
+    Each argument is typed once, character by character, and the field is read
+    back and compared in full before the prompt is left again. A character
+    that never arrived, one that arrived twice and two that arrived in the
+    wrong order are each a failure, and none of them can be absorbed, because
+    nothing is re-sent.
+
+    The prompts are left with Back rather than RETURN, so this measures the
+    input path on its own without also running the commands.
+    """
+    ensure_view(session, "HEX ")
+    verified = 0
+    for round_index in range(rounds):
+        cases = [("J", "Jump AAAA", address) for address in KEY_STRESS_ADDRESSES]
+        cases.extend(KEY_STRESS_PROMPTS)
+        for key, title, text in cases:
+            try:
+                session.type_into_prompt(key, title, text)
+            except Failure as failure:
+                raise Failure(
+                    f"round {round_index + 1} of {rounds}, after {verified} "
+                    f"arguments arrived character for character: {failure}")
+            session.send_key("ARROW_LEFT")
+            wait_for_monitor(session, f"leaving the {title} prompt")
+            verified += 1
+    detail(f"{verified} command arguments typed and read back character for character")
+    return verified
+
+
+def asm_commit_cases(round_index: int) -> Tuple[Tuple[str, bytes], ...]:
+    """One instruction of each length, with operands that change every round.
+
+    Changing the operand every round is what stops a stale read from passing:
+    the bytes this round expects were not in memory last round.
+    """
+    low = (round_index * 3 + 0x11) & 0xFF
+    high = (round_index * 7 + 0x40) & 0xFF
+    return (
+        ("NOP", bytes((0xEA,))),
+        (f"LDA#${low:02X}", bytes((0xA9, low))),
+        (f"JMP${high:02X}{low:02X}", bytes((0x4C, low, high))),
+    )
+
+
+def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
+                                    frozen: bool, rounds: int) -> int:
+    """A committed instruction lands whole: never its opcode without its operand.
+
+    One-, two- and three-byte instructions are assembled in turn at one
+    ordinary main-RAM address, and the device's own memory is read back after
+    each commit and compared against the whole encoding. A commit that wrote
+    the opcode and not the operand fails here, naming the bytes it left.
+
+    The read-back is `machine:readmem` rather than the monitor's own redraw,
+    so a view that is showing what it was told rather than what memory holds
+    cannot pass. After the last round the monitor is left completely and the
+    same address is read again, which is the only read that the freezer's own
+    view of memory cannot influence.
+    """
+    address = 0x1180
+    if frozen:
+        leave_monitor_fully(session)
+    original = read_rest_memory(device_host, address, 3)
+    committed = 0
+    last_expected = b""
+    try:
+        if frozen:
+            session.enter_monitor()
+        for round_index in range(rounds):
+            for text, expected in asm_commit_cases(round_index):
+                session.goto(f"{address:04X}")
+                ensure_view(session, "ASM ")
+                session.send_char("e")
+                for ch in text:
+                    session.send_char(ch)
+                session.send_key("ENTER")
+                session.send_key("ESC")
+
+                actual = wait_for_rest_data(device_host, address, expected,
+                                            timeout=2.0)
+                if actual != expected:
+                    raise Failure(
+                        f"round {round_index + 1} of {rounds}, after {committed} "
+                        f"commits: {text} at ${address:04X} left "
+                        f"{actual.hex().upper()} where {expected.hex().upper()} "
+                        f"was assembled. A commit that reports success must not "
+                        f"leave only a prefix written.")
+                committed += 1
+                last_expected = expected
+
+        # The one read the freezer cannot colour: the machine is running again.
+        if frozen:
+            leave_monitor_fully(session)
+        settled = wait_for_rest_data(device_host, address, last_expected,
+                                     timeout=2.0)
+        if settled != last_expected:
+            raise Failure(
+                f"${address:04X} holds {settled.hex().upper()} once the monitor "
+                f"is closed, not the {last_expected.hex().upper()} that was "
+                f"assembled into it")
+    finally:
+        if frozen:
+            leave_monitor_fully(session)
+        write_rest_memory_confirmed(device_host, address, original)
+        session.enter_monitor()
+    detail(f"{committed} instruction commits, every byte read back from the device")
+    return committed
 
 
 def run_asm_edit_memory_persists_test(session: MonitorSession, device_host: str,
@@ -1898,6 +2120,16 @@ def monitor_header(snapshot: Snapshot) -> str:
     return snapshot.line(snapshot.find_line_containing("MONITOR "))
 
 
+def monitor_header_address(snapshot: Snapshot) -> Optional[str]:
+    """The address the monitor header names, or None while it is not drawn."""
+    try:
+        header = monitor_header(snapshot)
+    except Failure:
+        return None
+    found = re.search(r"\$([0-9A-F]{4})", header)
+    return found.group(1) if found else None
+
+
 # The help overlay's own section heading, and nothing else on either
 # transport says it. The word HELP alone would not do: the root browser's
 # footer carries an "F3=HELP" hint that the Overlay screen shows below the
@@ -2067,14 +2299,52 @@ def enter_monitor_with_shortcut(session: MonitorSession, context: str) -> None:
     leave_monitor_fully(session)
 
 
-def run_global_monitor_shortcut_test(session: MonitorSession, mode: str) -> None:
-    """C=+O opens the monitor from the ordinary menu contexts, not the browser alone.
+# A window drawn over the file browser draws this in its border, and the bare
+# browser draws it nowhere. It is what tells "the monitor did not open" apart
+# from "the context that was supposed to still be open collapsed".
+WINDOW_BORDER_MARKER = "+--"
 
-    The shortcut was a case in `TreeBrowser::handle_key`, so the file browser
-    answered it and nothing else did: measured on an Ultimate 64, the task
-    menu, the settings screens and the system-information screen all read the
-    key and did nothing with it. It is handled once now, in
-    `UserInterface::keymapper`, which every UI context passes its keys through.
+
+def monitor_is_on_screen(snapshot: Snapshot) -> bool:
+    try:
+        find_any_status_line(snapshot)
+        return True
+    except Failure:
+        return False
+
+
+def assert_shortcut_ignored(session: MonitorSession, context: str) -> None:
+    """Press C=+O in a non-browser context and require that nothing opened.
+
+    The key is sent once. The screen is then re-read for a bounded period: the
+    check returns as soon as a monitor appears, which is the regression, and
+    otherwise spends the whole budget proving it did not. The window that was
+    open before must still be open afterwards, so a context that collapsed
+    cannot pass as a shortcut that was ignored.
+    """
+    before = session.capture()
+    if WINDOW_BORDER_MARKER not in before.text():
+        raise Failure(
+            f"{context} was not open before C=+O was pressed\n{before.text()}")
+
+    session.send_key("CTRL_O", expect_redraw=False)
+    snapshot = wait_until(session, monitor_is_on_screen, timeout=2.0)
+    if monitor_is_on_screen(snapshot):
+        raise Failure(
+            f"C=+O opened the monitor from {context}. The shortcut belongs to "
+            f"the file browser only.\n{snapshot.text()}")
+    if WINDOW_BORDER_MARKER not in snapshot.text():
+        raise Failure(
+            f"C=+O closed {context} instead of being ignored\n{snapshot.text()}")
+
+
+def run_monitor_shortcut_scope_test(session: MonitorSession, mode: str) -> None:
+    """C=+O opens the monitor from the file browser, and from nothing else.
+
+    The shortcut is a case in `TreeBrowser::handle_key`, so the file browser
+    answers it. The task menu, the settings screens and the help screen pass
+    the key to their own handlers, which do not open the monitor. Inside the
+    monitor the same key is one of the monitor's own exit keys.
 
     Each context is left the way it was entered, so the checks after this one
     meet the same monitor they would have without it.
@@ -2083,23 +2353,44 @@ def run_global_monitor_shortcut_test(session: MonitorSession, mode: str) -> None
     session.backend.ensure_ready()
     back_out_to_the_bare_browser(session)
 
-    # The context that always worked, so a regression there is not hidden by
-    # the new ones passing.
+    # 1. The file browser opens the monitor.
     enter_monitor_with_shortcut(session, "the file browser")
     back_out_to_the_bare_browser(session)
 
+    # 2. The task menu does not.
     task_key = session.backend.machine.task_menu_key
     session.send_key(task_key, settle=True)
-    enter_monitor_with_shortcut(session, f"the task menu ({task_key})")
-    # The task menu is still open under the monitor that covered it.
+    assert_shortcut_ignored(session, f"the task menu ({task_key})")
     back_out_to_the_bare_browser(session)
 
+    # 3. The settings screens do not. F2 is Shift+F1 on a C64 keyboard, which
+    #    only the REST transport sends as a combination.
     if mode != MODE_TELNET:
-        # F2 is Shift+F1 on a C64 keyboard, which only the REST transport can
-        # send: keyboard_vt100.cc has no escape sequence for it.
         session.backend.send_combo(["left_shift", "f1"])
-        enter_monitor_with_shortcut(session, "the settings screens (F2)")
+        assert_shortcut_ignored(session, "the settings screens (F2)")
         back_out_to_the_bare_browser(session)
+
+    # 4. A selection context menu over the browser does not. The browser is
+    #    still the object underneath, so this is the case a shortcut placed
+    #    one level too high would get wrong.
+    session.send_key("ENTER", settle=True)
+    assert_shortcut_ignored(session, "a browser context menu")
+    back_out_to_the_bare_browser(session)
+
+    # 5. The browser shortcut still works after visiting all of those, and
+    #    inside the monitor C=+O keeps the meaning the monitor gives it, which
+    #    is to leave rather than to open a second monitor.
+    snapshot = session.send_key("CTRL_O", settle=True)
+    try:
+        find_any_status_line(snapshot)
+    except Failure:
+        raise Failure(
+            "C=+O no longer opens the monitor from the file browser after the "
+            f"other contexts were visited\n{snapshot.text()}")
+    snapshot = session.send_key("CTRL_O", settle=True)
+    if monitor_is_on_screen(snapshot):
+        raise Failure(
+            f"C=+O did not leave the monitor from a memory view\n{snapshot.text()}")
 
     session.enter_monitor()
 
@@ -2474,11 +2765,18 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
     with check("an Assembly-view edit reaches C64 memory, not just the editor"):
         run_asm_edit_memory_persists_test(session, rest_host, frozen)
 
+    with check("one-, two- and three-byte instructions each commit whole"):
+        run_asm_commit_reliability_test(session, rest_host, frozen,
+                                        stress_rounds(4))
+
+    with check("every character of a command argument reaches the monitor"):
+        run_key_input_stress_test(session, stress_rounds(3))
+
     with check("Help is KEY-first, and its two grids stay on their columns"):
         run_help_layout_test(session)
 
-    with check("C=+O opens the monitor from menu contexts other than the browser"):
-        run_global_monitor_shortcut_test(session, mode)
+    with check("C=+O opens the monitor from the file browser and nowhere else"):
+        run_monitor_shortcut_scope_test(session, mode)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)
