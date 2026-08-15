@@ -3588,6 +3588,7 @@ def main() -> int:
         run_tests(session, memory_host, args.mode, is_u2, control,
                   live_host, device_host, live_host, frozen)
     except Failure as exc:
+        report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))
         if session is not None:
             snapshot = session.capture()
@@ -3595,6 +3596,7 @@ def main() -> int:
             detail(snapshot.text())
         return 1
     except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        report_first_attempt_losses()
         suite_fail("monitor_test", format_exception(exc))
         return 1
     finally:
