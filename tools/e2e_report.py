@@ -62,7 +62,8 @@ INDEX_NAME = "index.md"
 # suite that never ran.
 SPOOL_NAME = "screens.jsonl"
 INTERACTIONS_NAME = "interactions.jsonl"
-SHARED_FILES = ("run.jsonl", SPOOL_NAME, INTERACTIONS_NAME)
+SCREEN_TEXT_NAME = "screen-text.jsonl"
+SHARED_FILES = ("run.jsonl", SPOOL_NAME, INTERACTIONS_NAME, SCREEN_TEXT_NAME)
 
 # How much of a failing suite's console log is inlined. Enough for a traceback
 # and the checks around it, short enough that ten failures do not turn the
@@ -492,7 +493,18 @@ def load_target(directory: str, slug: str) -> TargetRun:
             if record.get("suite"):
                 suite_name = str(record["suite"])
                 break
-        label, suite_name = split_stem(name[:-len(".jsonl")], suite_name)
+        stem = name[:-len(".jsonl")]
+        # A file naming a suite its own name does not end in is not that
+        # suite's record file, whatever the list above holds. `screen-text
+        # .jsonl` carried a `suite` field and was not on that list, and the
+        # fallback in `split_stem` read it as a suite run called `text` under a
+        # label called `screen`, which then appeared in the verdict table as
+        # `incomplete` because no runner record ever closes it. The list is a
+        # way of not reading a large file; this is what keeps the table right.
+        if suite_name and stem != suite_name \
+                and not stem.endswith("-" + suite_name):
+            continue
+        label, suite_name = split_stem(stem, suite_name)
         attach_suite_records(target, by_key, label, suite_name, name,
                              file_records)
 

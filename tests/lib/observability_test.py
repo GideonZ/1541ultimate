@@ -2761,6 +2761,69 @@ def a_rearm_waits_for_the_suite_and_backs_off() -> str:
     return f"{asked} re-arms in ten minutes"
 
 
+@case(1, "OBS-8.14", "OBS-8.20")
+def a_file_that_is_not_a_suite_run_s_own_cannot_rename_the_run() -> str:
+    """Only a file whose name carries the label may say what the label is.
+
+    The suite run a frame belongs to is read from the name of the file the
+    record was appended to, because that name is the only thing that carries
+    the label. Several files in a target's directory carry a `suite` field and
+    are not one suite run's records: the screen spool, the interaction log and
+    the decoded screen text. Their names carry no label.
+
+    Treating one of them as a suite run's file blanked the label on the next
+    poll, so the identity flapped between `overlay-input-1` and `-input-1`
+    every time the recorder wrote a line. Each flap is a change of suite run to
+    the recorder: it wrote the stills it had, threw the picker away and started
+    a new one. A 24-suite run produced 994 still records naming 290 files, and
+    the frame each one named was the frame at some earlier flap rather than the
+    frame the file on disk holds. Extracting the video at the recorded position
+    then reproduced a different picture, which is the one property a still's
+    position exists to have.
+    """
+    import json
+    import tempfile
+
+    import recorder as recorder_lib
+
+    with tempfile.TemporaryDirectory() as directory:
+        tail = recorder_lib.JsonlTail(directory)
+        with open(os.path.join(directory, "overlay-input.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "input", "attempt": 1,
+                                     "verdict": "OK", "time": 1.0}) + "\n")
+        expect("the suite run is named after its own file",
+               tail.poll().stem, "overlay-input-1")
+
+        # Every file a target's directory holds that carries a suite name and
+        # is not one suite run's records.
+        for name, record in (
+                ("screen-text.jsonl", {"kind": "vic", "suite": "input",
+                                       "attempt": 1, "text": [], "time": 2.0}),
+                ("interactions.jsonl", {"kind": "interaction", "seq": 1,
+                                        "suite": "input", "attempt": 1,
+                                        "time": 3.0}),
+                ("screens.jsonl", {"kind": "screen", "suite": "input",
+                                   "attempt": 1, "time": 4.0})):
+            with open(os.path.join(directory, name), "a",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+            if tail.poll().stem != "overlay-input-1":
+                raise Failure(f"{name} renamed the suite run to "
+                              f"{tail.state.stem!r}")
+
+        # And a suite run's own file still names it, including the next one.
+        with open(os.path.join(directory, "telnet-menu-screen.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "menu-screen", "attempt": 1,
+                                     "verdict": "OK", "time": 5.0}) + "\n")
+        expect("the next suite run renames it",
+               tail.poll().stem, "telnet-menu-screen-1")
+    return "three shared files, none of them a suite run"
+
+
 @case(1, "OBS-8.27", "OBS-8.38")
 def an_encoder_that_takes_nothing_cannot_stall_the_loop() -> str:
     """The frame is shed inside its budget rather than blocking on the pipe."""
@@ -5611,6 +5674,68 @@ def a_failure_carries_what_the_run_already_knows() -> str:
         if forbidden in document:
             raise Failure(f"the document guesses: {forbidden!r}")
     return "4 kinds of fact, no guess"
+
+
+@case(1, "OBS-3.18", "OBS-3.22")
+def a_shared_file_does_not_become_a_suite_run_in_the_table() -> str:
+    """`incomplete` has to mean a suite that did not close, and nothing else.
+
+    A target's directory holds files that carry a `suite` field and are not one
+    suite run's records: the screen spool, the interaction log and the decoded
+    screen text. Their names carry no label, so reading a suite run out of one
+    invents a suite that never ran, with no runner record to close it, and the
+    verdict table then carries a row reading `incomplete`. `screen-text.jsonl`
+    did exactly that: a real run's table carried `u64 | screen | text | 1 |
+    incomplete`, and the completeness note above it named that run as one this
+    run did not finish.
+
+    A reader cannot tell such a row from the one it exists to show, which is a
+    suite the run really was killed in the middle of.
+    """
+    import json
+    import tempfile
+
+    generator = load_report_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        target = os.path.join(directory, "u64")
+        os.makedirs(target)
+        with open(os.path.join(directory, "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "run", "verdict": "OK",
+                                     "time": 9.0}) + "\n")
+        with open(os.path.join(target, "run.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "suite", "name": "input",
+                                     "mode": "overlay", "attempt": 1,
+                                     "verdict": "OK", "seconds": 1.0,
+                                     "time": 2.0}) + "\n")
+        with open(os.path.join(target, "overlay-input.jsonl"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(json.dumps({"kind": "check", "index": 1,
+                                     "suite": "input", "attempt": 1,
+                                     "verdict": "OK", "seconds": 0.1,
+                                     "time": 1.0}) + "\n")
+        for name, record in (
+                ("screen-text.jsonl", {"kind": "vic", "suite": "input",
+                                       "attempt": 1, "text": [], "time": 1.5}),
+                ("interactions.jsonl", {"kind": "interaction", "seq": 1,
+                                        "suite": "input", "attempt": 1,
+                                        "time": 1.6}),
+                ("screens.jsonl", {"kind": "screen", "suite": "input",
+                                   "attempt": 1, "time": 1.7})):
+            with open(os.path.join(target, name), "w",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+
+        run = generator.load_tree(directory)
+        found = sorted((made.label, made.suite, made.attempt)
+                       for made in run.targets[0].suites)
+        expect("one suite run, the one that ran", found,
+               [("overlay", "input", 1)])
+        expect("and nothing is incomplete",
+               [made.suite for made in run.targets[0].suites
+                if made.verdict not in ("OK", "FAIL", "WARN", "SKIP")], [])
+    return "three shared files, one suite run"
 
 
 @case(4, "OBS-3.18", "OBS-3.17")
