@@ -1377,15 +1377,20 @@ def syslog_counter_lines(target: TargetRun) -> List[str]:
                 if name in as_dict(check.get("figures"))]
         if not seen:
             continue
-        first, last = seen[0][1], seen[-1][1]
-        if last == first:
-            said.append(f"`{name}` stayed at {last} over {len(seen)} sweep(s), "
-                        f"which counts {means}.")
+        values = [value for _sweep, value in seen]
+        # Whether it moved at all, rather than whether its ends differ. The
+        # counter is cumulative since the device booted, so a device the runner
+        # recovered mid-run starts again from zero and can end the run on the
+        # value it started it on while having counted plenty in between.
+        if len(set(values)) == 1:
+            said.append(f"`{name}` stayed at {values[0]} over {len(seen)} "
+                        f"sweep(s), which counts {means}.")
         else:
-            rose = next(sweep for sweep, value in seen if value != first)
-            said.append(f"`{name}` rose from {first} to {last} over "
-                        f"{len(seen)} sweep(s), first at the sweep before "
-                        f"`{redact(str(rose.get('label') or '-'))}`. It counts "
+            moved = next(sweep for sweep, value in seen if value != values[0])
+            said.append(f"`{name}` went from {values[0]} to {values[-1]} over "
+                        f"{len(seen)} sweep(s), highest {max(values)}, first "
+                        f"moving at the sweep before "
+                        f"`{redact(str(moved.get('label') or '-'))}`. It counts "
                         f"{means}.")
     return said + [""] if said else []
 

@@ -5777,10 +5777,22 @@ def the_report_says_what_the_devices_log_counters_did() -> str:
         raise Failure(f"a counter that never moved reads {steady[0]!r}")
 
     moved = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (47, 19)]))
-    if "rose from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
+    if "went from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
         raise Failure(f"a counter that moved reads {moved[0]!r}")
-    if "rose from 0 to 19" not in moved[1]:
+    if "went from 0 to 19" not in moved[1]:
         raise Failure(f"the second counter reads {moved[1]!r}")
+
+    # A device the runner recovered mid-run starts its counters again from
+    # zero, so the run can end on the value it started on with plenty counted
+    # in between. Reading only the two ends would call that "stayed at 0".
+    restarted = generator.syslog_counter_lines(
+        sweeps([(0, 0), (47, 19), (0, 0)]))
+    if "highest 47" not in restarted[0]:
+        raise Failure(f"a counter that moved and came back reads "
+                      f"{restarted[0]!r}")
+    if "stayed at" in restarted[0]:
+        raise Failure(f"a counter that moved is called steady: "
+                      f"{restarted[0]!r}")
 
     # Firmware without them says nothing rather than saying zero, because zero
     # would be a claim this run cannot make.

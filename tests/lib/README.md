@@ -93,6 +93,28 @@ device.drives.get("a").mounted                     # -> bool
 device.files.info("/Temp/x.prg")                   # -> FileInfo, or None
 ```
 
+## Settings, and the prompt a changed one raises
+
+A setting written over REST changes the configuration the firmware holds in
+memory and not the copy in flash, and the firmware notices: backing out of the
+settings screens raises a `Save changes to Flash?` popup. `UIPopup::poll`
+answers only RETURN, SPACE and its own button hotkeys, so a suite that unwinds
+by pressing Back sits in front of it until it gives up.
+
+`UltimateApi.close_menu_from_anywhere` handles it, which is what the runner's
+own state gate and teardown use: it looks for that prompt on every screen and
+answers it with the popup's own `n` hotkey. Deliberately No. The popup's first
+button is Yes and RETURN takes whichever button is active, so answering it
+blind writes whatever the run happened to have changed into the device's flash.
+A suite that navigates the settings screens itself needs the same handling, or
+needs to unwind through that call.
+
+This is why `ui_backend` writes `Interface Type` for the session and restores it
+at the end without ever saving either value: a run killed mid-session would
+otherwise leave the session's temporary setting in the device's flash for good.
+The divergence is the correct trade and the popup is the firmware being honest
+about it.
+
 Drop to `device.rest` only when the check is about the HTTP contract itself:
 status codes, headers, malformed bodies, authentication.
 
@@ -282,10 +304,9 @@ the firmware and is enough. On an Ultimate II+ in a C64 Ultimate there is no
 equivalent, so the host has to be power cycled through its own Power & Reset
 menu.
 
-A caller that sets any setting over REST must save it to flash as well. The
-firmware otherwise holds an unsaved change, and backing out of the settings
-screens then raises a `Save changes to Flash?` prompt that a suite navigating
-back to the browser cannot answer, so it presses Back until it gives up.
+A caller that sets any setting over REST and means it to persist must save it
+to flash as well, and one that does not mean it to persist has to expect the
+prompt described next.
 
 One collector can bind the port, and a second run says so and carries on
 without a log rather than taking an arbitrary share of the first one's
