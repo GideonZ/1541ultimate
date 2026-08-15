@@ -1267,18 +1267,26 @@ def the_interface_preference_is_wired_into_every_build() -> str:
     return "declared, implemented, built and registered"
 
 
-def vic_frame(rows, width=384, height=272, background=6, foreground=14):
+def vic_frame(rows, width=384, height=272, background=6, foreground=14,
+              scroll=0, columns=40):
     """One VIC frame of colour indices showing `rows`, as the hardware draws it.
 
     Rendered from the character ROM through `glyphs.rom_rows_for_index`, which
     is the same data the decoder matches against and is production code, so the
     only thing this restates is the pixel layout of a frame.
+
+    `scroll` is `$D016`'s fine scroll, which moves the character grid 0 to 7
+    pixels to the right of the centred origin. `columns` is `$D016` bit 3: at
+    38 the VIC blanks one cell at each side of the window, over a grid that
+    does not move, which is what a frame taken while the KERNAL scrolls the
+    screen looks like.
     """
     import glyphs
     import vic_text
 
     pixels = bytearray([background]) * (width * height)
-    left, top = vic_text.picture_origin(width, height)
+    window, top = vic_text.picture_origin(width, height)
+    left = window + scroll
     for row, text in enumerate(rows[:vic_text.ROWS]):
         for column, character in enumerate(text[:vic_text.COLUMNS]):
             index = glyphs.screen_code_for(character)
@@ -1291,7 +1299,16 @@ def vic_frame(rows, width=384, height=272, background=6, foreground=14):
                         + left + column * glyphs.GLYPH_WIDTH)
                 for bit in range(glyphs.GLYPH_WIDTH):
                     if bits & (0x80 >> bit):
-                        pixels[base + bit] = foreground
+                        at = base + bit
+                        if left + column * glyphs.GLYPH_WIDTH + bit < width:
+                            pixels[at] = foreground
+    if columns == 38:
+        blanked = list(range(window, window + glyphs.GLYPH_WIDTH))
+        blanked += list(range(window + vic_text.TEXT_WIDTH - glyphs.GLYPH_WIDTH,
+                              window + vic_text.TEXT_WIDTH))
+        for y in range(height):
+            for x in blanked:
+                pixels[y * width + x] = background
     return bytes(pixels)
 
 
@@ -1366,6 +1383,83 @@ def the_c64_screen_is_read_back_out_of_the_recorded_frame() -> str:
     noise = bytes((x * 7 + y * 13) % 16 for y in range(272) for x in range(384))
     expect("a frame that is not text", vic_text.decode(noise, 384, 272), None)
     return f"{vic_text.ROWS} rows, PAL and NTSC, reverse video, and a refusal"
+
+
+def screen_text_of(image, geometry):
+    """The C64 screen a still carries, read back out of the written PNG.
+
+    The screen pane is blitted into the canvas one pixel per pixel, so mapping
+    the pane's colours back to VIC indices gives the decoder exactly what the
+    device sent, after a round trip through the composer, the encoder and the
+    file.
+    """
+    import glyphs
+    import vic_text
+
+    if geometry.screen_x < 0:
+        return None
+    width, height = 384, 272
+    pane = image.crop((geometry.screen_x, 0, geometry.screen_x + width,
+                       height)).convert("RGB")
+    index_of = {glyphs.c64_rgb(index): index for index in range(16)}
+    pixels = bytes(index_of.get(colour, 0) for colour in pane.getdata())
+    return vic_text.decode(pixels, width, height)
+
+
+@case(1, "OBS-2.18")
+def a_scrolling_screen_is_read_at_the_column_it_is_really_in() -> str:
+    """Every `$D016` state, both column modes, all eight fine scroll values.
+
+    A frame taken while the KERNAL scrolls the screen is a correct picture in
+    an ordinary VIC state, not a damaged one, and about a quarter of the frames
+    a run keeps as stills are in it. Measured on a C64 Ultimate and on an
+    Ultimate II+L in one: the picture area was 304 pixels wide at x=39 rather
+    than 320 at x=32, which is 38-column mode with the fine scroll at 7.
+
+    The decoder used to anchor its columns on the first pixel that is not the
+    border. In 38-column mode that pixel is the window edge, which sits one
+    cell inside the grid, so every cell was read one column to the left of
+    where it really is. The shifted reading still matched the character ROM
+    everywhere, because the cell it invents at the edge is blank, so it was
+    returned as if it were right: READY. came back as EADY.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import vic_text
+
+    wanted = ["READY.".ljust(40),
+              'LOAD"$",8'.ljust(40),
+              "SEARCHING FOR $".ljust(40)] + [" ".ljust(40)] * 22
+    for scroll in range(8):
+        read = vic_text.decode(vic_frame(wanted, scroll=scroll), 384, 272)
+        if read is None:
+            raise Failure(f"40 columns at fine scroll {scroll} was not read")
+        for index, (was, now) in enumerate(zip(wanted, read)):
+            if was != now:
+                raise Failure(f"40 columns at fine scroll {scroll}: row "
+                              f"{index} read back as {now!r}, not {was!r}")
+
+    # 38 columns: the VIC blanks one cell at each side, so the first column is
+    # not in the picture at all and no decode can recover it. What matters is
+    # that everything else keeps its own column number rather than sliding one
+    # to the left to fill the gap.
+    for scroll in range(8):
+        read = vic_text.decode(vic_frame(wanted, scroll=scroll, columns=38),
+                               384, 272)
+        if read is None:
+            raise Failure(f"38 columns at fine scroll {scroll} was not read")
+        for index, (was, now) in enumerate(zip(wanted, read)):
+            if was[1:] != now[1:]:
+                raise Failure(f"38 columns at fine scroll {scroll}: row "
+                              f"{index} read back as {now!r}, not {was!r}")
+            if now[0] not in (was[0], " ", vic_text.GRAPHIC):
+                raise Failure(f"38 columns at fine scroll {scroll}: the "
+                              f"blanked column read as {now[0]!r}")
+    # The one the hardware was actually seen in reads completely: at fine
+    # scroll 7 the blanked cell covers one pixel column of the first character,
+    # and no character of the set carries ink there.
+    read = vic_text.decode(vic_frame(wanted, scroll=7, columns=38), 384, 272)
+    expect("the measured state reads in full", read[0], wanted[0])
+    return "40 and 38 columns, fine scroll 0 to 7, every column in place"
 
 
 @case(1, "OBS-2.17")
@@ -2703,6 +2797,209 @@ def the_canvas_is_the_shape_the_sources_make() -> str:
     return f"872x{height}, 384x{height}, 480x{height}"
 
 
+@case(1, "OBS-8.40")
+def the_bands_columns_are_where_the_header_says_they_are() -> str:
+    """Every field starts under its own name, in order, inside the band.
+
+    A column that does not line up with its header is worse than no header:
+    a reader takes the wrong number off the wrong line and does not know it.
+    """
+    import band as band_lib
+
+    layout = band_lib.layout_for(872)
+    fields = layout.fields()
+    names = ("time", "type", "interaction", "stat", "dur", "sent", "rcvd",
+             "body", "ref")
+    line = band_lib.header(layout)
+    expect("the header is exactly the band's width", len(line), layout.columns)
+    at = 0
+    for (start, size), name in zip(fields, names):
+        if len(name) > size:
+            raise Failure(f"the {name} column is narrower than its own name")
+        if line[start:start + len(name)] != name:
+            raise Failure(f"the {name} header is not at column {start}: "
+                          f"{line[start:start + size]!r}")
+        if start < at:
+            raise Failure(f"the {name} column overlaps the one before it")
+        if start + size > layout.columns:
+            raise Failure(f"the {name} column runs off the band")
+        at = start + size
+    # The interaction absorbs the slack, and it is the only field that does.
+    narrow = band_lib.layout_for(872 - 20 * band_lib.glyphs.GLYPH_WIDTH)
+    widths = [size for _start, size in fields]
+    narrow_widths = [size for _start, size in narrow.fields()]
+    moved = [i for i, (a, b) in enumerate(zip(widths, narrow_widths)) if a != b]
+    expect("only the interaction column resizes", moved, [2])
+    expect("and it lost exactly the columns the band lost",
+           widths[2] - narrow_widths[2], 20)
+    return f"{layout.columns} columns, interaction {widths[2]} wide"
+
+
+@case(1, "OBS-8.40")
+def the_band_formats_a_number_the_same_way_on_every_line() -> str:
+    """Byte counts, durations and truncation, at the widths the columns allow."""
+    import band as band_lib
+
+    # 1000 and 1023 are the two that say the units are binary: a decimal
+    # thousand would call either of them a kilobyte.
+    sizes = [(None, ""), (0, ""), (1, "1B"), (999, "999B"), (1000, "1000B"),
+             (1023, "1023B"), (1024, "1.00K"),
+             (10 * 1024, "10.0K"), (100 * 1024, "100K"),
+             (1024 * 1024, "1.00M"), (int(2.7 * 1024 ** 3), "2.70G")]
+    for count, wanted in sizes:
+        expect(f"{count} bytes", band_lib.size_of(count), wanted)
+        if len(band_lib.size_of(count)) > band_lib.BYTES_WIDTH:
+            raise Failure(f"{count} bytes does not fit its column")
+    durations = [(None, ""), (0.0005, "0ms"), (0.25, "250ms"), (1.0, "1.0s"),
+                 (99.9, "99.9s"), (120.0, "120s")]
+    for seconds, wanted in durations:
+        expect(f"{seconds} seconds", band_lib.duration_of(seconds), wanted)
+        if len(band_lib.duration_of(seconds)) > band_lib.DURATION_WIDTH:
+            raise Failure(f"{seconds} seconds does not fit its column")
+    # Truncation keeps both ends, because a path identifies itself at both.
+    cut = band_lib.middle_truncate("/v1/drives:mount label=disks/game.d64", 20)
+    expect("cut to the column", len(cut), 20)
+    if not cut.startswith("/v1/drives") or not cut.endswith("game.d64"):
+        raise Failure(f"the head or the tail was lost: {cut!r}")
+    expect("nothing to cut", band_lib.middle_truncate("short", 20), "short")
+    return f"{cut!r}"
+
+
+@case(1, "OBS-8.40")
+def the_band_shows_what_the_run_is_doing_and_counts_the_rest() -> str:
+    """Polling is counted and never shown; work is shown; repeats collapse."""
+    import band as band_lib
+
+    ticker = band_lib.Ticker()
+    polling = [{"transport": "rest", "op": "GET /v1/machine:menu_screen",
+                "status": 404, "clock": "00:00:01", "reference": "#1",
+                "received": 40} for _ in range(50)]
+    ticker.apply(polling, now=1.0)
+    expect("no polling line", len(ticker.lines), 0)
+    expect("but every one counted", ticker.counts.get("rest"), 50)
+    ticker.apply([{"transport": "ftp", "op": "STOR game.prg", "status": 226,
+                   "clock": "00:00:02", "reference": "#51", "sent": 8192}],
+                 now=2.0)
+    expect("work is shown", len(ticker.lines), 1)
+    # Four identical calls are one line naming the range, not four copies.
+    repeats = [{"transport": "rest", "op": "PUT /v1/machine:writemem",
+                "status": 200, "clock": "00:00:03",
+                "reference": f"#{60 + n}"} for n in range(4)]
+    ticker.apply(repeats, now=3.0)
+    expect("collapsed into one line", len(ticker.lines), 2)
+    expect("naming the range it covers", ticker.lines[-1].reference,
+           "#60-63")
+    # And the band keeps only what it can show.
+    ticker.apply([{"transport": "telnet", "op": f"send {n}", "status": "ok",
+                   "clock": "00:00:04", "reference": f"#{80 + n}"}
+                  for n in range(10)], now=4.0)
+    expect("never more lines than rows", len(ticker.lines), ticker.rows)
+    counters = ticker.counters(band_lib.layout_for(872))
+    for wanted in ("ftp 1", "rest 54", "tel 10", "tx ", "rx ", "av "):
+        if wanted not in counters:
+            raise Failure(f"the counter row does not carry {wanted!r}: "
+                          f"{counters!r}")
+    return counters.strip()
+
+
+@case(1, "OBS-8.40")
+def a_line_is_stamped_when_it_is_issued_and_never_moves() -> str:
+    """An interaction appears while it is in flight and is finalised in place."""
+    import band as band_lib
+
+    ticker = band_lib.Ticker()
+    ticker.apply([{"transport": "rest", "op": "PUT /v1/machine:reset",
+                   "phase": "start", "clock": "00:00:05", "reference": "#7",
+                   "seconds": 0.2}], now=5.0)
+    expect("the line is there before the answer", len(ticker.lines), 1)
+    expect("and says so", ticker.lines[0].status, "...")
+    expect("the run is running", ticker.state(5.0, False, False),
+           band_lib.RUNNING)
+    # Something else lands while the first is still open.
+    ticker.apply([{"transport": "ftp", "op": "LIST /", "status": 226,
+                   "clock": "00:00:06", "reference": "#8"}], now=6.0)
+    expect("which does not displace it", ticker.lines[0].reference, "#7")
+    # Held long enough, the same line says it is stuck, without moving.
+    ticker.lines[0].seconds = band_lib.STALL_SECONDS
+    expect("stalled", ticker.state(6.0, False, False), band_lib.STALLED)
+    ticker.apply([{"transport": "rest", "op": "PUT /v1/machine:reset",
+                   "phase": "end", "status": 204, "clock": "00:00:07",
+                   "reference": "#7", "seconds": 2.5, "received": 12}],
+                 now=7.0)
+    expect("still the first line", ticker.lines[0].reference, "#7")
+    expect("now answered", ticker.lines[0].status, "204")
+    expect("with its own duration", ticker.lines[0].seconds, 2.5)
+    expect("and no extra line for the answer", len(ticker.lines), 2)
+    expect("nothing in flight", ticker.state(7.0, False, True),
+           band_lib.PASSED)
+    expect("and a failing run says so", ticker.state(7.0, True, True),
+           band_lib.FAILED)
+    return "issued, held, finalised in place"
+
+
+@case(1, "OBS-8.40")
+def the_band_colours_a_stall_and_a_failure_and_nothing_else() -> str:
+    """The drawn band, in pixels: colour marks the two states worth marking."""
+    import band as band_lib
+    import recorder as recorder_lib
+
+    glyphs = recorder_lib.glyphs
+    colours = {"background": 6, "primary": 1, "secondary": 15, "failure": 2,
+               "warning": 7, "accent": 3}
+    width = 872
+    layout = band_lib.layout_for(width)
+
+    def drawn(record, now, activity="SUITE X > CHECK Y", state=band_lib.RUNNING):
+        ticker = band_lib.Ticker()
+        ticker.apply([record], now)
+        canvas = glyphs.Canvas(width, band_lib.HEIGHT, 6)
+        band_lib.draw(canvas, 0, 0, width, ticker, layout, activity, state,
+                      colours, now)
+        return canvas.to_rgb() if hasattr(canvas, "to_rgb") else bytes(
+            canvas._pixels)
+
+    def colours_in(rgb, row, start, size):
+        """Which colours a field of one glyph row was drawn in."""
+        found = set()
+        for line in range(row * glyphs.GLYPH_HEIGHT,
+                          (row + 1) * glyphs.GLYPH_HEIGHT):
+            base = line * width * 3
+            for column in range(start * glyphs.GLYPH_WIDTH,
+                                (start + size) * glyphs.GLYPH_WIDTH):
+                at = base + column * 3
+                found.add(tuple(rgb[at:at + 3]))
+        return found
+
+    row = band_lib.FIRST_TICKER_ROW + band_lib.TICKER_ROWS - 1
+    warning = tuple(glyphs.c64_rgb(colours["warning"]))
+    failure = tuple(glyphs.c64_rgb(colours["failure"]))
+    ordinary = drawn({"transport": "rest", "op": "PUT /v1/machine:writemem",
+                      "status": 200, "clock": "00:00:01", "reference": "#1",
+                      "ms": 12.0}, now=1.0)
+    seen = colours_in(ordinary, row, *layout.duration)
+    if warning in seen or failure in seen:
+        raise Failure("an ordinary interaction was coloured")
+    stalled = drawn({"transport": "rest", "op": "PUT /v1/machine:writemem",
+                     "phase": "start", "clock": "00:00:01", "reference": "#1",
+                     "seconds": band_lib.STALL_SECONDS}, now=2.0)
+    if warning not in colours_in(stalled, row, *layout.duration):
+        raise Failure("a stalled interaction is not marked")
+    failed = drawn({"transport": "rest", "op": "GET /v1/drives", "status": 500,
+                    "clock": "00:00:01", "reference": "#1", "ms": 30.0},
+                   now=3.0)
+    if failure not in colours_in(failed, row, *layout.duration):
+        raise Failure("a failed interaction is not marked")
+    # The activity row's own state word, which is the other thing colour says.
+    header_row = drawn({"transport": "rest", "op": "GET /v1/info",
+                        "status": 200, "clock": "00:00:01", "reference": "#1"},
+                       now=4.0, state=band_lib.FAILED)
+    tail = layout.columns - len(band_lib.FAILED) - 1
+    if failure not in colours_in(header_row, band_lib.ACTIVITY_ROW, tail,
+                                 len(band_lib.FAILED)):
+        raise Failure("a failing run is not marked in the activity row")
+    return "stall in warning, failure in red, nothing else coloured"
+
+
 @case(1, "OBS-8.35", "OBS-8.37")
 def a_composed_frame_uses_the_machines_own_colours() -> str:
     """Sixteen colours, the character ROM, and every element on the 8-pixel grid."""
@@ -2843,7 +3140,7 @@ def the_pane_labels_are_on_a_row_of_their_own() -> str:
     return f"stamp on rows 0..{recorder_lib.STAMP_ROWS - 1}, labels on {labels}"
 
 
-@case(1, "OBS-8.20")
+@case(1, "OBS-8.20", "OBS-8.41")
 def the_left_pane_is_sticky_and_says_which_surface_it_is() -> str:
     """One surface at a time, chosen by the interactions and by nothing else.
 
@@ -3485,11 +3782,25 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
         if problem:
             raise Failure(problem)
         video = UdpSender("127.0.0.1", made._sockets[0][1].getsockname()[1])
+        # Half the frames are a screen the VIC is scrolling: 38 columns with
+        # the fine scroll at 5, which is where about a quarter of the frames a
+        # real run keeps as stills sit. A still taken from one of those has to
+        # come back out of the file exactly as it went in, the same as any
+        # other, because the shifted origin is an ordinary VIC state rather
+        # than a damaged frame.
+        scrolled = [vic_frame(["SEARCHING FOR $".ljust(40)] + [" " * 40] * 24,
+                              scroll=5, columns=38, foreground=colour)
+                    for colour in (1, 7, 13)]
         for number in range(30):
             # A picture that changes completely every few frames, so the
             # picker keeps transitions as well as the first and the last.
-            video.send(video_packets(number, number * 68,
-                                     pattern=(number // 5) % 16))
+            if number % 2:
+                video.send(video_packets(
+                    number, number * 68,
+                    pixels=scrolled[(number // 5) % len(scrolled)]))
+            else:
+                video.send(video_packets(number, number * 68,
+                                         pattern=(number // 5) % 16))
             time_lib.sleep(0.05)
         video.close()
         time_lib.sleep(0.5)
@@ -3505,6 +3816,7 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
         left, top, width, height = recorder_lib.annotation_free_area(geometry)
         height = min(height, recorder_lib.still_height(geometry) - top)
         path = os.path.join(directory, "video.mp4")
+        read: List[Optional[List[str]]] = []
         for entry in stills:
             expect("the position is the frame at this rate",
                    round(entry["position"], 4),
@@ -3534,7 +3846,28 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
                         f"the {entry['kind']} still and frame "
                         f"{entry['frame']} of the recording differ inside the "
                         f"picture area {box}")
-    return f"{len(stills)} stills, each identical to its own frame"
+                read.append(screen_text_of(still, geometry))
+    # And the ones that carry the scrolled screen still read as that screen,
+    # at the columns the machine put it in, out of the written file rather
+    # than out of the frame the recorder held in memory.
+    found = [rows for rows in read
+             if rows is not None and "EARCHING" in rows[0]]
+    if not found:
+        raise Failure("no still carried the scrolled screen, so this says "
+                      "nothing about a still taken during a scroll")
+    import vic_text
+
+    wanted = "SEARCHING FOR $".ljust(40)
+    for rows in found:
+        # 38-column mode blanks the first cell, so that column is not in the
+        # picture and reads as unreadable. Every other column has to be where
+        # the machine put it rather than shifted left to close the gap.
+        if rows[0][1:] != wanted[1:] or rows[0][0] not in (
+                wanted[0], " ", vic_text.GRAPHIC):
+            raise Failure(f"a still of the scrolled screen reads as "
+                          f"{rows[0]!r}")
+    return (f"{len(stills)} stills, each identical to its own frame, "
+            f"{len(found)} of them read back as the scrolled screen")
 
 
 # ---------------------------------------------------------------------------

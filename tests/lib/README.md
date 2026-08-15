@@ -317,14 +317,32 @@ seconds and `frame` as the slot index, and `interaction`, the reference of the
 last interaction the run had recorded when that frame was composed. A still
 carries no chrome of its own, because its whole value is that extracting the
 video at `frame` reproduces it pixel for pixel, so the way back to the raw
-record is that reference rather than something drawn over the picture. The report reads that position rather
-than deriving one from the suite's timing, which was wrong by up to 4.7
-seconds.
+record is that reference rather than something drawn over the picture. The
+report reads that position rather than deriving one from the suite's timing,
+which was wrong by up to 4.7 seconds.
 
-A file with thousands of padded frames or hundreds of re-arms is telling a reader that the run fought
-the recorder for the stream, which is worth knowing before drawing conclusions
-from what it shows. `started` and `lead_in` are what convert a wall-clock time
+A file with thousands of padded frames or hundreds of re-arms is telling a
+reader that the run fought the recorder for the stream, which is worth knowing
+before drawing conclusions from what it shows. `started` and `lead_in` are what convert a wall-clock time
 into a position in the file.
+
+The recording carries the interaction stream in the picture as well as in the
+files. Under the two panes is a band of seven character rows: the suite and
+check being run with a state word at the right, a fixed column header, the last
+four interactions, and a row of cumulative counters. A ticker line is stamped
+when its interaction is issued rather than when it answers and is then finalised
+in place, so a device that has stopped answering shows the request that is
+hanging at the moment it hangs, and a line never moves once a reader has found
+it. Polling is counted and never shown, and consecutive identical interactions
+become one line whose `ref` names the range, because `machine:menu_screen` alone
+is several hundred calls in a sweep. Colour marks two things and nothing else: a
+line held past the stall threshold, and a line that answered with a fault or a
+status of 400 or more. `tests/e2e/lib/band.py` holds the layout, the formatting
+and the ticker; the recorder only places it.
+
+The band is on the frame and not on a still. A still is cropped to the panes, so
+it stays a pixel-exact extract of the video at its own position, and the way
+back into the interaction log is the `interaction` reference in its record.
 
 `interaction` is the exhaustive log of what the harness did to the device, and
 `action` is the curated subset of it that the report's timeline reads. The rule

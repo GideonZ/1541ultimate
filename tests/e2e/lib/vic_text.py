@@ -81,15 +81,20 @@ def picture_origin(width: int, height: int) -> Tuple[int, int]:
             max(0, (height - TEXT_HEIGHT) // 2))
 
 
-# How far either side of the centred origin the window is looked for. The VIC
-# has two registers that move it: `$D016` bit 3 selects 38 columns instead of
-# 40, which blanks 8 pixels at each side, and its bottom three bits are a fine
-# scroll of 0 to 7 pixels. Both are ordinary state, set by the KERNAL while it
-# scrolls the screen, so a frame taken during a scroll sits up to 15 pixels
-# from the centred origin and is a correct picture rather than a damaged one.
-# Measured on a C64 Ultimate and on an Ultimate II+L in one: about a quarter of
-# the frames a run keeps as stills are in that state.
-ORIGIN_SEARCH = 16
+# How far right of the centred origin the character grid is looked for. The VIC
+# has two registers that change what the picture looks like: `$D016` bit 3
+# selects 38 columns instead of 40, and its bottom three bits are a fine scroll
+# of 0 to 7 pixels. Both are ordinary state, set by the KERNAL while it scrolls
+# the screen, so a frame taken during a scroll is a correct picture rather than
+# a damaged one. Measured on a C64 Ultimate and on an Ultimate II+L in one:
+# about a quarter of the frames a run keeps as stills are in that state.
+#
+# Only the fine scroll moves the grid, and it only ever moves it right, so the
+# grid is one of eight positions and nowhere else. The 38-column bit does not
+# move it at all: it blanks one cell at each side of a grid that stays put, so
+# a cell it covers is a cell no decode can read, and reading the grid from the
+# window edge instead would report every column one to the left of where it is.
+ORIGIN_SEARCH = CELL - 1
 
 
 def _background(pixels: bytes, width: int, left: int, top: int):
@@ -122,13 +127,22 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
     centred, top = picture_origin(width, height)
     found = _content(pixels, width, height)
     if found is not None:
-        # Where the machine is actually drawing. The VIC moves both axes:
-        # `$D011` selects 24 rows instead of 25 and scrolls vertically, and
-        # `$D016` selects 38 columns instead of 40 and scrolls horizontally.
-        # The vertical edge is exact, because a row of text starts where the
-        # picture starts; the horizontal one is the window edge, which the
-        # fine scroll moves the grid inside, so that axis is still searched.
-        centred, top = found
+        # Only the vertical edge is taken from the picture. `$D011` selects 24
+        # rows instead of 25 and scrolls vertically, and a row of text starts
+        # exactly where the picture starts, so that axis is read rather than
+        # searched.
+        #
+        # The horizontal edge is not the grid. The first pixel that is not the
+        # border is the left of whatever is drawn, and in 38-column mode
+        # (`$D016` bit 3) it is the window edge, which sits one cell inside the
+        # grid. Anchoring the columns there decoded every cell one column to
+        # the left of where it really is, and the shifted decode still matched
+        # the ROM, so it was returned as if it were right: a screen reading
+        # "READY." came back as "EADY." with everything after it displaced.
+        # The grid itself is centred in both column modes, and only the fine
+        # scroll moves it, so the columns are searched from the centred origin
+        # outwards and the nearest candidate that matches everything wins.
+        top = found[1]
     best: Optional[List[str]] = None
     fewest = MAX_UNMATCHED + 1
     for left in _candidates(centred, width):
@@ -173,10 +187,18 @@ def _candidates(centred: int, width: int):
     C64 Ultimate and on an Ultimate II+L in one, about a quarter of the frames
     a run keeps as stills are in that state.
 
-    Ordered so the ordinary case is the first thing tried and costs one decode.
+    The eight fine scroll positions are the whole search, and they are tried
+    from the centred origin outwards so the ordinary case costs one decode.
+
+    Nothing outside that range is offered, and that is the point. Reading the
+    grid one whole cell to the left or right of where it is also matches the
+    ROM everywhere, because the cell it invents at the edge is blank and the
+    first or last column of a screen usually is too. Both readings decode, so
+    a search wide enough to reach the wrong one will sometimes return it, and
+    the text then sits one column from where the machine put it. A screen
+    showing READY. came back as EADY. that way.
     """
-    for offset in [0] + [value for step in range(1, ORIGIN_SEARCH + 1)
-                         for value in (-step, step)]:
+    for offset in range(ORIGIN_SEARCH + 1):
         left = centred + offset
         if 0 <= left <= width - TEXT_WIDTH:
             yield left

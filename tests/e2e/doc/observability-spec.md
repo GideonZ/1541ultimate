@@ -1832,7 +1832,7 @@ document"). Read it by subsection:
 | (wire formats) | video and audio on the wire, geometry, network cost | OBS-8.6, OBS-8.17 to OBS-8.19 |
 | (composition and its sources) | the two panes, the menu tap and its spool, the configuration surface | OBS-8.20 to OBS-8.23 |
 | Edge conditions on the wire | loss, lifecycle, reordering, concealment, foreign senders, shedding, stills | OBS-8.39, OBS-8.24 to OBS-8.28 |
-| Layout and stamping | one file or two, the stamp, the failure edge, the progress bar | OBS-8.29 to OBS-8.33 |
+| Layout and stamping | one file or two, the stamp, the failure edge, the progress bar, the interaction band | OBS-8.29 to OBS-8.33, OBS-8.40, OBS-8.41 |
 | How it looks | the visual system and the cards | OBS-8.35, OBS-8.36 |
 | The menu payload, exactly | what `machine:menu_screen` returns | OBS-8.37 |
 | From three sources to one or two files | the pipeline, stage by stage | OBS-8.38 |
@@ -2569,18 +2569,21 @@ a position that way put a still up to 4.7 seconds from where it actually is.
 
 Four annotations are drawn into the composed canvas, and they share one
 coordinate system, stated once here so that none of the four has to restate it.
-Everything is relative to the **canvas**, which is 872x272 under `combined` and
-480x272 or 384x272 per file under `separate` (OBS-8.29).
+Everything is relative to the **canvas**, which is 872x336 under `combined` and
+480x336 or 384x336 per file under `separate` (OBS-8.29). The panes occupy the
+top 272 rows of it and the recorder's own chrome occupies the rest: the band of
+OBS-8.40 and, under that, the state edge and the progress bar.
 
 | Annotation | Where | Requirement |
 |---|---|---|
 | The stamp | a two-row band across the canvas's top border, from the top-left | OBS-8.30 |
 | Pane labels | each pane's top border, right aligned, on the row under the stamp | OBS-8.35 |
 | The failure edge | the canvas's outermost two rows and columns | OBS-8.32 |
+| The interaction band | the seven character rows under the panes, full canvas width | OBS-8.40 |
 | The progress bar | the canvas's bottom border, full canvas width | OBS-8.33 |
 
 They are drawn in one fixed order: the panes, then the failure edge, then the
-stamp, then the pane labels, then the progress bar. The edge is a state marking
+stamp, then the pane labels, then the band, then the progress bar. The edge is a state marking
 rather than something a reader reads, so it goes underneath everything that is;
 drawn last it painted over the first two pixels of the stamp and over both ends
 of the progress bar.
@@ -3288,6 +3291,60 @@ they are specified rather than left to the implementation:
 - the spool format, including a reader resynchronising after a truncated record;
 - subtitle text and interval arithmetic against the JSONL fixture, and
   per-target file naming.
+
+**OBS-8.40** [P6] The recording carries the interaction stream in the video
+itself, in a band of seven character rows drawn under the panes and across the
+whole canvas width. Somebody watching the recording has to be able to say what
+the harness was asking the device at the moment they are looking at, without
+opening `interactions.jsonl` beside it and matching timestamps by hand.
+
+The seven rows are fixed, and each one has one job:
+
+| Row | What it carries |
+|---|---|
+| 0 | the activity row: the suite and check being run, and one state word at the right |
+| 1 | the column header, so no line below it needs a legend |
+| 2 to 5 | the ticker: the last four interactions, oldest at the top |
+| 6 | the cumulative counters, which are never reset and are never a rate |
+
+A ticker line has nine columns, in this order: `time`, `type`, `interaction`,
+`stat`, `dur`, `sent`, `rcvd`, `body`, `ref`. Every column except `interaction`
+is the width its content fixes; `interaction` takes whatever is left, so a
+narrower band loses the subject of a line before it loses any number, and `ref`,
+which is the way back into `interactions.jsonl`, is the last thing that can go.
+Byte counts are in binary units to three significant digits so that two lines
+compared by eye are in the same unit, and a subject too long for its column is
+cut in the middle, because a path and a command both identify themselves at
+their two ends.
+
+A line is stamped when its interaction is **issued**, not when it answers, and
+it is finalised in place. This is the property that makes the band worth having:
+a device that has stopped answering shows the request that is hanging, at the
+moment it hangs, rather than showing nothing until it times out. A line held
+longer than the `START_RECORD_SECONDS` of the interaction log has its duration
+drawn in the warning colour, and one that answered with a fault or with a status
+of 400 or more has it drawn in red. Nothing else on a line carries colour.
+
+The polling that asks the device whether it is still there is counted and never
+shown. `machine:menu_screen` alone is several hundred calls in a sweep, and a
+ticker carrying them carries nothing else. Consecutive identical interactions
+collapse into one line whose `ref` names the range they cover, for the same
+reason.
+
+The state word on the activity row is derived from what is in flight and from
+nothing the run announces: `RUNNING` while an interaction is open, `STALLED`
+when an open one has passed the stall threshold, and `WAITING`, `PASSED` or
+`FAILED` when none is.
+
+**OBS-8.41** [P6] The left pane shows one surface at a time, and which surface
+it shows is decided by the interaction stream rather than by whichever screen
+arrived last. There are three modes: the overlay menu, a Telnet session and the
+injected keys. The pane names the mode it is in, and when its content is older
+than a second it says how old, so a reader never takes a stale screen for a live
+one. The pane changes mode when the interactions change what the harness is
+talking to, and not otherwise: a suite that reads a Telnet session and the
+overlay menu in the same second must leave the pane on one of them rather than
+flip between the two several times a second.
 
 Two tests need a real encoder: one asserts with `ffprobe` that the output has
 the expected duration, geometry and stream count, and one asserts that a frame

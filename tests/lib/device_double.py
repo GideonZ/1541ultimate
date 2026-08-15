@@ -49,7 +49,7 @@ import struct
 import threading
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import targets
 
@@ -602,23 +602,41 @@ AUDIO_PACKET_BYTES = 770
 AUDIO_SAMPLE_BYTES = 768
 
 
+def pack_pixels(pixels: bytes) -> bytes:
+    """One colour index per byte packed back to two per byte, low nibble first.
+
+    The inverse of `streams.unpack`, so a test can send a picture it built
+    rather than a flat fill and get that picture back out of the recorder.
+    """
+    packed = bytearray(len(pixels) // 2)
+    for index in range(len(packed)):
+        packed[index] = ((pixels[index * 2] & 0x0F)
+                         | ((pixels[index * 2 + 1] & 0x0F) << 4))
+    return bytes(packed)
+
+
 def video_packets(frame: int, first_sequence: int = 0, height: int = PAL_LINES,
-                  pattern: int = 0) -> List[bytes]:
+                  pattern: int = 0, pixels: Optional[bytes] = None) -> List[bytes]:
     """One frame's datagrams, in order.
 
     `pattern` fills every nibble, so a test can tell one frame's pixels from
-    another's without building an image.
+    another's without building an image. `pixels` sends a picture instead, one
+    colour index per byte, for a test that needs the frame to be a real screen.
     """
     made = []
     fill = bytes([(pattern & 0x0F) | ((pattern & 0x0F) << 4)]) * (
         VIDEO_LINE_BYTES * VIDEO_LINES_PER_PACKET)
+    packed = pack_pixels(pixels) if pixels is not None else None
     for index, line in enumerate(range(0, height, VIDEO_LINES_PER_PACKET)):
         last = line + VIDEO_LINES_PER_PACKET >= height
         header = struct.pack(
             "<HHHHBBH", (first_sequence + index) & 0xFFFF, frame & 0xFFFF,
             line | (0x8000 if last else 0), VIDEO_WIDTH,
             VIDEO_LINES_PER_PACKET, 4, 0)
-        made.append(header + fill)
+        body = fill if packed is None else packed[
+            line * VIDEO_LINE_BYTES:
+            (line + VIDEO_LINES_PER_PACKET) * VIDEO_LINE_BYTES]
+        made.append(header + body)
     return made
 
 
