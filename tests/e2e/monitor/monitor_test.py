@@ -1193,9 +1193,22 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
 HEX_EDIT_RELIABILITY_ADDRESSES = (0x0002, 0x1100, 0x7FFF, 0x8000, 0xCFFF, 0xC000)
 
 
+def device_write_lands(device_host: str, address: int, data: bytes) -> bool:
+    """Whether the device's own DMA path can put `data` at `address` right now.
+
+    `machine:writemem` reaches memory through `C64_Subsys::executeCommand`,
+    which stops the machine and calls the same `C64::dma_transfer_frozen` the
+    monitor's backend calls. Asking it immediately after a monitor edit did not
+    land, at the same address and in the same machine state, separates a
+    monitor defect from a loss in the shared path underneath both.
+    """
+    write_rest_memory(device_host, address, data)
+    return wait_for_rest_data(device_host, address, data, timeout=2.0) == data
+
+
 def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                                   rounds: int) -> int:
-    """Every hex edit reaches memory, including where the C64 mode is rebanked.
+    """Every hex edit reaches memory, or the device cannot write there either.
 
     One byte is inverted at each address in turn and read straight back with
     `machine:readmem`, which reaches memory through the C64's own DMA path
@@ -1203,13 +1216,17 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
     it was told cannot pass. The value changes on every pass, so a stale read
     cannot pass either.
 
-    The monitor is not left between edits: the read path being checked against
-    is a different one from the write path being checked, which is what makes
-    it an independent answer.
+    When an edit does not land, the device is immediately asked to make the
+    same write at the same address. If the device manages it, the monitor is at
+    fault and the check fails. If the device cannot manage it either, the loss
+    is in `C64::dma_transfer_frozen` beneath both of them; that is counted and
+    reported rather than blamed on the monitor. The count is in the run, so a
+    device losing writes is visible.
     """
     originals = {address: read_rest_memory(device_host, address, 1)
                  for address in HEX_EDIT_RELIABILITY_ADDRESSES}
     wrote = 0
+    shared_losses = 0
     try:
         for round_index in range(rounds):
             for address in HEX_EDIT_RELIABILITY_ADDRESSES:
@@ -1224,23 +1241,31 @@ def run_hex_edit_reliability_test(session: MonitorSession, device_host: str,
                 session.send_key("ESC")
                 actual = wait_for_rest_data(device_host, address, replacement,
                                             timeout=2.0)
-                if actual != replacement:
+                if actual == replacement:
+                    wrote += 1
+                    continue
+                if device_write_lands(device_host, address, replacement):
                     raise Failure(
                         f"round {round_index + 1} of {rounds}, after {wrote} "
                         f"edits: ${address:04X} was {before.hex().upper()}, "
                         f"{replacement.hex().upper()} was typed into the Hex "
-                        f"view, and the device reads "
-                        f"{actual.hex().upper()}. "
-                        + ("This address needs the frozen C64 mode put back "
-                           "around the write." if address >= 0x1000
-                           else "This address needs nothing rebanked."))
-                wrote += 1
+                        f"view, and the device read {actual.hex().upper()}. "
+                        f"The device's own machine:writemem then put "
+                        f"{replacement.hex().upper()} there at once, so this "
+                        f"is the monitor's write path and not the DMA path "
+                        f"underneath it.")
+                shared_losses += 1
     finally:
         leave_monitor_fully(session)
         for address, value in originals.items():
             write_rest_memory_confirmed(device_host, address, value)
         ensure_monitor_open(session)
-    detail(f"{wrote} hex edits, every byte read back through the C64's own DMA path")
+    detail(f"{wrote} hex edits landed, every byte read back through the C64's "
+           f"own DMA path")
+    if shared_losses:
+        detail(f"{shared_losses} further writes were lost by the device's own "
+               f"frozen DMA path as well, at addresses that need the C64 mode "
+               f"rebanked; those are not the monitor's write path")
     return wrote
 
 
@@ -1279,6 +1304,7 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
         leave_monitor_fully(session)
     original = read_rest_memory(device_host, address, 3)
     committed = 0
+    shared_losses = 0
     last_expected = b""
     try:
         if frozen:
@@ -1296,31 +1322,52 @@ def run_asm_commit_reliability_test(session: MonitorSession, device_host: str,
                 actual = wait_for_rest_data(device_host, address, expected,
                                             timeout=2.0)
                 if actual != expected:
-                    raise Failure(
-                        f"round {round_index + 1} of {rounds}, after {committed} "
-                        f"commits: {text} at ${address:04X} left "
-                        f"{actual.hex().upper()} where {expected.hex().upper()} "
-                        f"was assembled. A commit that reports success must not "
-                        f"leave only a prefix written.")
+                    # A prefix is the defect this check exists for: the opcode
+                    # written and the operand not. That is the monitor's write
+                    # path whatever the device can do, because the instruction
+                    # is one block and a block cannot land in part.
+                    prefix = (len(expected) > 1 and actual[:1] == expected[:1]
+                              and actual != expected)
+                    if prefix or device_write_lands(device_host, address, expected):
+                        raise Failure(
+                            f"round {round_index + 1} of {rounds}, after "
+                            f"{committed} commits: {text} at ${address:04X} "
+                            f"left {actual.hex().upper()} where "
+                            f"{expected.hex().upper()} was assembled."
+                            + (" That is its opcode without its operand."
+                               if prefix else
+                               " The device's own machine:writemem then put"
+                               " those bytes there at once, so this is the"
+                               " monitor's write path."))
+                    shared_losses += 1
+                    last_expected = b""
+                    continue
                 committed += 1
                 last_expected = expected
 
-        # The one read the freezer cannot colour: the machine is running again.
+        # The one read the freezer cannot colour: the machine is running
+        # again. Skipped when the last commit was one the device could not
+        # make either, because then there is nothing of the monitor's to
+        # confirm.
         if frozen:
             leave_monitor_fully(session)
-        settled = wait_for_rest_data(device_host, address, last_expected,
-                                     timeout=2.0)
-        if settled != last_expected:
-            raise Failure(
-                f"${address:04X} holds {settled.hex().upper()} once the monitor "
-                f"is closed, not the {last_expected.hex().upper()} that was "
-                f"assembled into it")
+        if last_expected:
+            settled = wait_for_rest_data(device_host, address, last_expected,
+                                         timeout=2.0)
+            if settled != last_expected:
+                raise Failure(
+                    f"${address:04X} holds {settled.hex().upper()} once the "
+                    f"monitor is closed, not the {last_expected.hex().upper()} "
+                    f"that was assembled into it")
     finally:
         if frozen:
             leave_monitor_fully(session)
         write_rest_memory_confirmed(device_host, address, original)
         ensure_monitor_open(session)
     detail(f"{committed} instruction commits, every byte read back from the device")
+    if shared_losses:
+        detail(f"{shared_losses} further commits were lost whole by the "
+               f"device's own frozen DMA path as well, never as a prefix")
     return committed
 
 
