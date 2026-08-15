@@ -5182,13 +5182,14 @@ int MachineMonitor :: handle_reset_shortcut(void)
 int MachineMonitor :: handle_interface_shortcut(void)
 {
     // As with the reset above: a swap that cannot happen leaves the monitor
-    // exactly as it was.
-    if (!swap_interface_type) {
+    // exactly as it was. A machine without the Interface Type setting, which
+    // is every cartridge, answers MENU_NOP and nothing was changed, so there
+    // is no reason to close.
+    if (!swap_interface_type || swap_interface_type(get_ui()) == MENU_NOP) {
         get_ui()->popup("INTERFACE SWAP UNAVAILABLE", BUTTON_OK);
         redraw_full();
         return 0;
     }
-    (void)swap_interface_type(get_ui());
     return 1;   // the monitor's own exit, the same value X returns
 }
 

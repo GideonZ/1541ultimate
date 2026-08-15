@@ -16,6 +16,7 @@ void advance_fake_ms_timer(uint16_t delta);
 
 extern int g_set_screen_title_call_count;
 extern int g_swap_interface_type_calls;
+extern int g_swap_interface_type_result;
 
 struct FakeMemoryBackend : public MemoryBackend
 {

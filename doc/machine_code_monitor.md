@@ -1032,4 +1032,6 @@ open. Leave that layer with Back first. Both do work from any memory view and
 from edit mode.
 
 On a machine whose monitor backend cannot reach a reset, `C=+X` says
-`RESET UNAVAILABLE` and changes nothing, edit mode included.
+`RESET UNAVAILABLE` and changes nothing, edit mode included. On a machine with
+no `Interface Type` setting to swap, which is every cartridge, `C=+I` says
+`INTERFACE SWAP UNAVAILABLE` and likewise changes nothing and stays.

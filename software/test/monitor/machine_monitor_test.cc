@@ -947,6 +947,7 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         const int keys[] = { KEY_CTRL_B, KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
         g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 5, &result);
         if (expect(backend.reset_calls == 0,
                    "The bookmark popup must keep C=+X from resetting the machine.")) return 1;
@@ -961,6 +962,7 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         const int keys[] = { 'N', KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
         g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 5, &result);
         if (expect(backend.reset_calls == 0,
                    "The number popup must keep C=+X from resetting the machine.")) return 1;
@@ -979,6 +981,7 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         const int keys[] = { KEY_CTRL_I };
         int result = 0;
         g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 1, &result);
         if (expect(g_swap_interface_type_calls == 1,
                    "C=+I must ask for the interface swap once.")) {
@@ -996,10 +999,43 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         const int keys[] = { 'e', KEY_CTRL_I };
         int result = 0;
         g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 2, &result);
         if (expect(g_swap_interface_type_calls == 1,
                    "C=+I must swap from edit mode too.")) return 1;
         if (expect(result == 1, "C=+I must leave the monitor from edit mode.")) return 1;
+    }
+    {
+        // A machine with no Interface Type setting to swap, which is every
+        // cartridge: nothing changed, so the monitor says so and stays, with
+        // edit mode untouched.
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        char header[39];
+        const int keys[] = { 'e', KEY_CTRL_I, KEY_BREAK };
+        FakeKeyboard kb(keys, 3);
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        monitor_reset_saved_state();
+        g_swap_interface_type_calls = 0;
+        g_swap_interface_type_result = MENU_NOP;
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "Interface shortcut test: entering edit mode failed.")) return 1;
+        if (expect(mon.poll(0) == 0,
+                   "A swap that changed nothing must stay in the monitor.")) return 1;
+        if (expect(strstr(ui.last_popup, "INTERFACE SWAP UNAVAILABLE") != 0,
+                   "A machine with no interface to swap must say so.")) {
+            printf("  popup was %s\n", ui.last_popup);
+            return 1;
+        }
+        screen.get_slice(1, 3, 38, header);
+        if (expect(strstr(header, "EDIT") != 0,
+                   "A swap that changed nothing must leave edit mode alone.")) return 1;
+        mon.deinit();
+        g_swap_interface_type_result = MENU_HIDE;
     }
     return 0;
 }

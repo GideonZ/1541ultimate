@@ -476,12 +476,15 @@ int UserInterface :: pollInactive()
 // this binary is free not to have it. Providing it here, with a counter, is
 // what lets a test see that C= plus I asked for the swap.
 int g_swap_interface_type_calls = 0;
+// What the application would answer. MENU_HIDE is a swap that happened;
+// MENU_NOP is a machine with no Interface Type setting to swap.
+int g_swap_interface_type_result = MENU_HIDE;
 
 int swap_interface_type(UserInterface *ui)
 {
     (void)ui;
     g_swap_interface_type_calls++;
-    return 0;
+    return g_swap_interface_type_result;
 }
 
 int UserInterface :: keymapper(int c, keymap_options_t map)
