@@ -361,7 +361,9 @@ the frames the recorder already has by matching each 8x8 cell against the
 character ROM. It costs the device nothing, which reading its screen memory
 would not, and it is written only when the screen changed, at most once a
 second. A frame that is not a text screen this can read produces no record
-rather than a screen of question marks.
+rather than a screen of question marks, and a cell that is a ROM shape with no
+character of its own, which is what the PETSCII graphics are, is marked rather
+than named so a screen with a logo on it still reads.
 
 Records carry the suite, the attempt, the scenario and the check that were open,
 so they join to the rest of the run with no correlation identifier of their own,

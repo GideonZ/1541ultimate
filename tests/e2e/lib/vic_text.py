@@ -33,41 +33,79 @@ CELL = glyphs.GLYPH_WIDTH
 TEXT_WIDTH = COLUMNS * CELL
 TEXT_HEIGHT = ROWS * glyphs.GLYPH_HEIGHT
 
-# How many cells of a frame may match no ROM shape before the frame is not a
-# text screen. A few cells can legitimately fail: a sprite over the text, a
-# cell from the shifted set, a raster split. Half of them cannot.
-MAX_UNMATCHED = (COLUMNS * ROWS) // 2
+# How many cells of a frame may match no ROM shape at all before the frame is
+# not a text screen this can read. A few can legitimately fail: a sprite over
+# the text, a cell from the shifted set, a raster split. A window that is one
+# pixel out fails hundreds, because every glyph becomes a fragment of two.
+MAX_UNMATCHED = 24
 
 
-def _reverse_map() -> Dict[bytes, str]:
-    """Every ROM shape, as its 8 row bitmasks, mapped back to a character.
+# What a cell that is a ROM shape with no character of its own reads as. Codes
+# 64 to 127 of the unshifted set are the PETSCII graphics, which have no ASCII
+# form at all; they are decoration on a screen a reader searches for words, so
+# they are marked rather than named. A cell that matches no ROM shape is a
+# different answer and is counted against the frame instead.
+GRAPHIC = "?"
 
-    Built once. Where two screen codes draw the same shape the lower one wins,
-    which is the printable half of the pair for every duplicate the unshifted
-    set has.
+
+def _reverse_map() -> Tuple[Dict[bytes, str], set]:
+    """Every ROM shape, mapped back to a character where it has one.
+
+    Built once, over the whole unshifted set rather than over the characters
+    with names: a screen with a logo on it is still a text screen, and a shape
+    this can identify but not name has to count as read.
     """
-    found: Dict[bytes, str] = {}
+    named: Dict[bytes, str] = {}
     for character in [chr(code) for code in range(0x20, 0x60)]:
         index = glyphs.screen_code_for(character)
         if index == glyphs.NO_GLYPH:
             continue
-        rows = bytes(glyphs.rom_rows_for_index(index))
-        found.setdefault(rows, character)
-    return found
+        named.setdefault(bytes(glyphs.rom_rows_for_index(index)), character)
+    known = {bytes(glyphs.rom_rows_for_index(index)) for index in range(128)}
+    return named, known
 
 
-_SHAPES: Dict[bytes, str] = _reverse_map()
+_SHAPES, _KNOWN = _reverse_map()
 _BLANK = bytes(glyphs.GLYPH_HEIGHT)
 
 
 def picture_origin(width: int, height: int) -> Tuple[int, int]:
-    """Where the 320x200 picture area starts inside a frame of this size.
+    """Where a 40-column picture area sits in a frame of this size, centred.
 
     The VIC centres it in the border, and the two frame heights the hardware
     produces differ by 32 lines, so this is arithmetic rather than a constant.
+    It is the starting point for `decode`, which then looks for the window the
+    machine is actually using.
     """
     return (max(0, (width - TEXT_WIDTH) // 2),
             max(0, (height - TEXT_HEIGHT) // 2))
+
+
+# How far either side of the centred origin the window is looked for. The VIC
+# has two registers that move it: `$D016` bit 3 selects 38 columns instead of
+# 40, which blanks 8 pixels at each side, and its bottom three bits are a fine
+# scroll of 0 to 7 pixels. Both are ordinary state, set by the KERNAL while it
+# scrolls the screen, so a frame taken during a scroll sits up to 15 pixels
+# from the centred origin and is a correct picture rather than a damaged one.
+# Measured on a C64 Ultimate and on an Ultimate II+L in one: about a quarter of
+# the frames a run keeps as stills are in that state.
+ORIGIN_SEARCH = 16
+
+
+def _background(pixels: bytes, width: int, left: int, top: int):
+    """The commonest colour in the picture area, which a text screen mostly is.
+
+    Sampled every fourth pixel of every fourth line, because the mode of a
+    sample of a text screen is its background and counting all of it costs
+    forty times as much.
+    """
+    counts: Dict[int, int] = {}
+    for y in range(top, top + TEXT_HEIGHT, 4):
+        for value in pixels[y * width + left:y * width + left + TEXT_WIDTH:4]:
+            counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda item: (item[1], -item[0]))[0]
 
 
 def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
@@ -81,19 +119,75 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
         return None
     if len(pixels) < width * height:
         return None
-    left, top = picture_origin(width, height)
+    centred, top = picture_origin(width, height)
+    found = _content(pixels, width, height)
+    if found is not None:
+        # Where the machine is actually drawing. The VIC moves both axes:
+        # `$D011` selects 24 rows instead of 25 and scrolls vertically, and
+        # `$D016` selects 38 columns instead of 40 and scrolls horizontally.
+        # The vertical edge is exact, because a row of text starts where the
+        # picture starts; the horizontal one is the window edge, which the
+        # fine scroll moves the grid inside, so that axis is still searched.
+        centred, top = found
+    best: Optional[List[str]] = None
+    fewest = MAX_UNMATCHED + 1
+    for left in _candidates(centred, width):
+        unmatched, text = _at(pixels, width, left, top)
+        if unmatched == 0:
+            return text
+        if unmatched < fewest:
+            best, fewest = text, unmatched
+    return best if fewest <= MAX_UNMATCHED else None
 
-    # The background is the commonest colour in the picture area, sampled every
-    # fourth pixel of every fourth line. A text screen is mostly background, so
-    # the mode of a sample is it, and sampling costs a fortieth of counting.
-    counts: Dict[int, int] = {}
-    for y in range(top, top + TEXT_HEIGHT, 4):
-        row = pixels[y * width + left:y * width + left + TEXT_WIDTH:4]
-        for value in row:
-            counts[value] = counts.get(value, 0) + 1
-    if not counts:
+
+def _content(pixels: bytes, width: int, height: int):
+    """The top left of the picture the machine is drawing, or None.
+
+    Found by asking where the frame stops being the border, which is one
+    comparison per pixel of two scans rather than a decode per candidate.
+    """
+    border = pixels[0]
+    top = None
+    for y in range(height):
+        row = pixels[y * width:(y + 1) * width]
+        if any(value != border for value in row):
+            top = y
+            break
+    if top is None or top + TEXT_HEIGHT > height:
         return None
-    background = max(counts.items(), key=lambda item: (item[1], -item[0]))[0]
+    row = pixels[top * width:(top + 1) * width]
+    left = next((x for x, value in enumerate(row) if value != border), None)
+    if left is None or left + TEXT_WIDTH > width:
+        return None
+    return left, top
+
+
+def _candidates(centred: int, width: int):
+    """Where to look for the window, centred first, then the VIC's own moves.
+
+    `$D016` bit 3 selects 38 columns instead of 40, which blanks 8 pixels at
+    each side, and its bottom three bits are a fine scroll of 0 to 7 pixels.
+    Both are ordinary state that the KERNAL sets while it scrolls the screen,
+    so a frame taken during a scroll sits up to 15 pixels from the centred
+    origin and is a correct picture rather than a damaged one. Measured on a
+    C64 Ultimate and on an Ultimate II+L in one, about a quarter of the frames
+    a run keeps as stills are in that state.
+
+    Ordered so the ordinary case is the first thing tried and costs one decode.
+    """
+    for offset in [0] + [value for step in range(1, ORIGIN_SEARCH + 1)
+                         for value in (-step, step)]:
+        left = centred + offset
+        if 0 <= left <= width - TEXT_WIDTH:
+            yield left
+
+
+def _at(pixels: bytes, width: int, left: int, top: int):
+    """One decode at one origin: how many cells matched nothing, and the text."""
+
+    background = _background(pixels, width, left, top)
+    if background is None:
+        return COLUMNS * ROWS, []
 
     # One pass over the picture area turning it into a bit per pixel: 1 where
     # the pixel is not the background. Done with translate over whole rows,
@@ -120,17 +214,16 @@ def decode(pixels: bytes, width: int, height: int) -> Optional[List[str]]:
                     value = (value << 1) | bit
                 shape[line] = value
             key = bytes(shape)
-            character = _SHAPES.get(key)
+            # Reverse video: the same shape with every bit flipped, which is
+            # how the C64 marks a selection and how the cursor blinks.
+            flipped = bytes(0xFF ^ value for value in key)
+            character = _SHAPES.get(key) or _SHAPES.get(flipped)
             if character is None:
-                # Reverse video: the same shape with every bit flipped, which
-                # is how the C64 marks a selection and how the cursor blinks.
-                flipped = bytes(0xFF ^ value for value in key)
-                character = _SHAPES.get(flipped)
-            if character is None:
-                unmatched += 1
-                character = " " if key == _BLANK else "?"
+                if key in _KNOWN or flipped in _KNOWN:
+                    character = GRAPHIC
+                else:
+                    unmatched += 1
+                    character = " " if key == _BLANK else GRAPHIC
             characters.append(character)
         text.append("".join(characters))
-    if unmatched > MAX_UNMATCHED:
-        return None
-    return text
+    return unmatched, text

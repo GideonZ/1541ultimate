@@ -1339,6 +1339,28 @@ def the_c64_screen_is_read_back_out_of_the_recorded_frame() -> str:
     if read is None or read[0] != wanted[0]:
         raise Failure("an NTSC frame was not read")
 
+    # A logo made of PETSCII graphics is still a text screen: the shapes are
+    # in the ROM and have no ASCII form, which is a different answer from a
+    # cell that is not a ROM shape at all. The C64's own boot screen has one,
+    # and rejecting the frame for it would lose the text beside it.
+    import glyphs
+
+    graphic = bytearray(vic_frame(["READY.".ljust(40)] + [" " * 40] * 24))
+    shape = glyphs.rom_rows_for_index(100)
+    for row in range(1, 20):
+        for column in range(40):
+            for line in range(8):
+                bits = shape[line]
+                base = ((top + row * 8 + line) * 384 + left + column * 8)
+                for bit in range(8):
+                    graphic[base + bit] = 14 if bits & (0x80 >> bit) else 6
+    read = vic_text.decode(bytes(graphic), 384, 272)
+    if read is None:
+        raise Failure("a screen with a graphic logo on it was rejected")
+    expect("the text beside it is still read", read[0], "READY.".ljust(40))
+    expect("and the logo is marked rather than named",
+           set(read[1]), {vic_text.GRAPHIC})
+
     # And something that is not a text screen at all says so rather than
     # returning a screen of question marks.
     noise = bytes((x * 7 + y * 13) % 16 for y in range(272) for x in range(384))
