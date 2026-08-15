@@ -124,7 +124,12 @@ class MonitorSession:
         return self.backend.send_text(text, label)
 
     def empty_open_prompt(self, title: str) -> None:
-        """Delete whatever an open prompt is showing, so the field is empty.
+        """Delete what a non-template prompt is showing, so the field is empty.
+
+        Only for the prompts that open on what they were last given. A
+        template prompt is not buffer content until the first printable key
+        replaces it wholesale, so backspace does nothing there; see
+        `type_into_prompt`.
 
         Preparation rather than a subject, so the backspaces may be repeated:
         the field is measured, that many are sent, and the result is read back,
@@ -136,13 +141,13 @@ class MonitorSession:
                 return
             self.send_key_repeat("BACKSPACE", len(current) + 1)
             wait_until(self, lambda screen: prompt_field_or_none(screen, title) == "")
-        if prompt_field(self.capture(), title):
+        remaining = prompt_field(self.capture(), title)
+        if remaining:
             raise Failure(
-                f"the {title} field would not empty; it reads "
-                f"{prompt_field(self.capture(), title)!r}")
+                f"the {title} field would not empty; it reads {remaining!r}")
 
     def type_into_prompt(self, key: str, title: str, text: str,
-                         retypes: int = 0) -> None:
+                         retypes: int = 0, template: bool = True) -> None:
         """Open a command prompt and type `text` into it, proving it arrived.
 
         The field is read back and compared in full before RETURN is sent, so a
@@ -173,12 +178,14 @@ class MonitorSession:
         for attempt in range(retypes + 1):
             self.send_char(key)
             wait_for_prompt(self, title)
-            # Not every prompt opens on a template that the first printable key
-            # replaces: Hunt and Save open on what they were last given, and
-            # typing into those appends. Emptying the field first is what makes
-            # "the field reads what was typed" mean the same thing at every
-            # prompt.
-            self.empty_open_prompt(title)
+            # Not every prompt opens on a template that the first printable
+            # key replaces wholesale. Hunt keeps its default range and takes
+            # the needle after it, so typing into it appends; that one has to
+            # be emptied first for "the field reads what was typed" to mean the
+            # same thing there as everywhere else. Which prompts are which is
+            # the template_mode flag on their MonitorCommandInput.
+            if not template:
+                self.empty_open_prompt(title)
             self.send_text(text, f"{key} {text}")
             snapshot = wait_until(self, typed)
             try:
@@ -1139,10 +1146,10 @@ KEY_STRESS_ADDRESSES = (
 # Structured arguments for the prompts that take more than an address, so the
 # sweep covers separators and two-part operands as well as hex digits.
 KEY_STRESS_PROMPTS = (
-    ("F", "Fill AAAA-BBBB,DD", "1180-1183,55"),
-    ("H", 'Hunt AAAA-BBBB,BB/"text"', "1180-11FF"),
-    ("T", "Transfer AAAA-BBBB,CCCC", "1180-1183,1200"),
-    ("C", "Compare AAAA-BBBB,CCCC", "1180-1183,1200"),
+    ("F", "Fill AAAA-BBBB,DD", "1180-1183,55", True),
+    ("H", 'Hunt AAAA-BBBB,BB/"text"', "1180-11FF", False),
+    ("T", "Transfer AAAA-BBBB,CCCC", "1180-1183,1200", True),
+    ("C", "Compare AAAA-BBBB,CCCC", "1180-1183,1200", True),
 )
 
 
@@ -1161,11 +1168,12 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
     ensure_view(session, "HEX ")
     verified = 0
     for round_index in range(rounds):
-        cases = [("J", "Jump AAAA", address) for address in KEY_STRESS_ADDRESSES]
+        cases = [("J", "Jump AAAA", address, True)
+                 for address in KEY_STRESS_ADDRESSES]
         cases.extend(KEY_STRESS_PROMPTS)
-        for key, title, text in cases:
+        for key, title, text, template in cases:
             try:
-                session.type_into_prompt(key, title, text)
+                session.type_into_prompt(key, title, text, template=template)
             except Failure as failure:
                 raise Failure(
                     f"round {round_index + 1} of {rounds}, after {verified} "
