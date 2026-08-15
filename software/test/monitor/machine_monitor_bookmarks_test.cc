@@ -924,7 +924,7 @@ static int test_monitor_bookmark_popup_close_restores_full_width_border(void)
     CaptureScreen screen;
     FakeMemoryBackend backend;
     int left = 0, top = 0, right = 0, bottom = 0;
-    const int keys[] = { KEY_CTRL_B, KEY_CTRL_B, KEY_BREAK };
+    const int keys[] = { KEY_CTRL_B, '`', KEY_BREAK };
     FakeKeyboard keyboard(keys, 3);
 
     reset_bookmark_test_state();
@@ -939,7 +939,7 @@ static int test_monitor_bookmark_popup_close_restores_full_width_border(void)
     if (expect(left == 0 && right == 39,
                "Bookmark popup border cleanup test requires a full-width overlay.")) return 1;
 
-    if (expect(monitor.poll(0) == 0, "Bookmark popup close failed (border cleanup test).")) return 1;
+    if (expect(monitor.poll(0) == 0, "Arrow-left should close the bookmark popup.")) return 1;
     if (expect(find_popup_rect(screen, NULL, NULL, NULL, NULL) == false,
                "Bookmark popup must be gone after closing.")) return 1;
     if (expect_monitor_border_restored(screen)) return 1;
