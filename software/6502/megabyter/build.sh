@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./build.sh          full 256-bank / 2 MiB hardware image, UCI test enabled
+#   ./build.sh 1m       128-bank / 1 MiB hardware image, UCI test enabled
 #   ./build.sh vice      128-bank / 1 MiB image with the UCI test compiled
 #                         out, for testing under VICE (which supports neither
 #                         2 MiB Megabyter images nor the UCI hardware)
@@ -18,6 +19,13 @@ if [ "$1" = "vice" ]; then
     CRT=megabyter_vice.crt
     EXPECT_SIZE=1048576
     EXTRA_DEFS="-D BANK_COUNT=128 -D SKIP_UCI_TEST=1"
+elif [ "$1" = "1m" ]; then
+    BIN=megabyter_1m.bin
+    CRT=megabyter_1m.crt
+    EXPECT_SIZE=1048576
+    # This is the hardware test image: unlike the VICE variant above, do
+    # not define SKIP_UCI_TEST, so megabyter.tas retains its default of 0.
+    EXTRA_DEFS="-D BANK_COUNT=128"
 else
     BIN=megabyter.bin
     CRT=megabyter.crt
