@@ -5824,6 +5824,11 @@ int MachineMonitor :: handle_key(int key)
             help_visible = false;
             set_view(MONITOR_VIEW_ASCII);
             break;
+        // `A` is the only key that opens the Assembly view. `D` is not bound
+        // to anything here and must stay that way: it is reserved for a future
+        // Debug mode. The manual does not mention it, so
+        // test_d_is_reserved_and_a_opens_assembly is what defends the
+        // reservation, and an E2E check asserts the same on hardware.
         case 'a': case 'A':
             help_visible = false;
             set_view(MONITOR_VIEW_ASM);

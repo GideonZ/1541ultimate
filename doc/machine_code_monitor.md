@@ -121,8 +121,7 @@ The monitor provides five views:
 | `I` | ASCII    | ASC | ASCII byte view                 |
 | `V` | Screen   | SCR | Screen code view                |
 
-`D` is reserved for the debugger and does not switch views. `A` is the only key
-that opens the Assembly view.
+`A` is the only key that opens the Assembly view.
 
 ### Memory / Hex View
 

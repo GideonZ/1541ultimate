@@ -2678,7 +2678,7 @@ def run_monitor_shortcut_scope_test(session: MonitorSession, mode: str) -> None:
     # 6. A bare X is not an exit. Every other letter on the monitor's keymap
     #    is a command, so an X that closed the monitor would let one mistyped
     #    command letter discard the view.
-    session.send_key("X", settle=True)
+    session.send_char("X")
     snapshot = wait_until(session, monitor_is_on_screen)
     if not monitor_is_on_screen(snapshot):
         raise Failure(f"X left the monitor; it is not an exit\n{snapshot.text()}")
@@ -3017,9 +3017,11 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # CPU sees and says CPU. The fixed column is asserted on both.
         assert_source_column_is_fixed(screen, "CPU" if is_u2 else "KRN")
 
-        # D is reserved for a future Debug mode and opens nothing. An older
-        # copy of this suite pressed D for the Assembly view, so the binding
-        # has drifted once already.
+        # D is reserved for a future Debug mode and opens nothing. The manual
+        # deliberately does not mention the key, so this check and its host
+        # counterpart are what keep the reservation. An older copy of this
+        # suite pressed D for the Assembly view, so the binding has drifted
+        # once already.
         before = session.capture()
         after = session.send_char("D")
         if after.text() != before.text():
