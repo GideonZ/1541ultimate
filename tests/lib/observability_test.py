@@ -5068,6 +5068,19 @@ FIXTURE_STUBS = (
         "say('All linked modules have been initialized and are now running.')\n"
         "report.check_start('the drive answers')\n"
         "say('1541: seek track 18')\n"
+        # What the device writes because the harness asked it something. A real
+        # device produces far more of these than of anything else: over one
+        # sequential run of the gate they were 15882 of 22930 lines. Here they
+        # are enough to push the two lines that matter out of the slice if the
+        # slice were the last of everything.
+        "for n in range(40):\n"
+        "    sock.sendto(('Accept client 0 on socket 7.  '\n"
+        "                 '192.168.1.185:4%04d' % n).encode(),\n"
+        "                ('127.0.0.1', port))\n"
+        "    time.sleep(0.01)\n"
+        "    sock.sendto(b'HTTP GET /v1/machine:menu_screen',\n"
+        "                ('127.0.0.1', port))\n"
+        "    time.sleep(0.01)\n"
         "say('1541: no answer from the drive')\n"
         "report.check_fail('the drive did not answer')\n"
         "sys.exit(1)\n")),
@@ -6274,6 +6287,22 @@ def the_report_shows_the_device_log_around_a_failure() -> str:
         raise Failure("the lines around the failure are not inlined")
     if "127.0.0.1/overlay/noisy/1/1" not in section:
         raise Failure("the slice is not attributed to the failing check")
+    # The failing check's window holds 83 lines, 80 of them the device's own
+    # echo of requests this run made. A slice that is the last of everything
+    # would be 60 of those and neither of the two lines about the drive.
+    slice_text = section.split("127.0.0.1/overlay/noisy/1/1", 1)[1]
+    slice_text = slice_text.split("```", 2)[1]
+    if "HTTP GET /v1/machine:menu_screen" in slice_text:
+        raise Failure("this run's own requests are inlined in the slice")
+    if "Accept client" in slice_text:
+        raise Failure("this run's own connections are inlined in the slice")
+    if "1541: seek track 18" not in slice_text:
+        raise Failure("the device's own lines were pushed out of the slice by "
+                      "this run's requests")
+    if "line(s) in the window" not in section:
+        raise Failure("the slice does not say how wide the window was")
+    if "this run's own requests, which are in the file and not here" not in section:
+        raise Failure("the omitted lines are not counted")
     timeline = document.split("## Timeline", 1)[1].split("## Checks", 1)[0]
     if "restarted, seen in its own log" not in timeline:
         raise Failure("a device restart is not on the timeline")

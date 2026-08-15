@@ -1425,7 +1425,33 @@ BOOT_MARKER = "All linked modules have been initialized and are now running."
 
 # How many device log lines are inlined around one failure. The whole log is a
 # sibling file, and this is the slice a reader would otherwise go looking for.
-LOG_SLICE_LINES = 30
+#
+# Measured over a sequential run of the whole gate against an Ultimate II+L,
+# 22930 collected lines over 544 checks: a check's window held 154 lines at the
+# 90th percentile and 592 at its widest, so a flat tail of 30 was already
+# cutting a quarter of the checks off before this run's own log grew. Sixty is
+# above the 90th percentile of what a window holds once the lines below are
+# taken out of it, which leaves 93% of checks showing their whole window
+# instead of 76%.
+LOG_SLICE_LINES = 60
+
+# The lines the device writes because this run asked it something: one per
+# accepted socket, one per request served, one per FTP and DMA connection. In
+# that same run they were 15882 of the 22930 lines, and 14163 of those were the
+# two shapes the harness's own polling produces.
+#
+# They are omitted from a failure's slice, and counted rather than silently
+# dropped. Two reasons, and neither is that they are noise in general. The
+# harness already records every one of those requests itself, exhaustively and
+# with the response, in `interactions.jsonl`, so the device's one-line echo of
+# a request is the one line in the log that is already known from a better
+# source. And they are produced at the harness's rate rather than the device's,
+# so a check that polls a screen fifty times pushes the device's own account of
+# what it was doing out of the slice, which is the only part a reader cannot
+# reconstruct.
+ROUTINE_LOG_LINE = re.compile(
+    r"^(Accept client |HTTP (GET|PUT|POST|DELETE|PATCH|HEAD) /"
+    r"|FTPDaemonThread\(|dmaThread |Closing socket|@?Received Ident)")
 
 LOG_CAVEAT = (
     "The device log is best-effort and incomplete by construction. It is UDP "
@@ -1552,10 +1578,22 @@ def log_section(run: Run) -> List[str]:
                                if start <= when <= check.time]
                 if not slice_lines:
                     continue
+                kept = [one for one in slice_lines
+                        if not ROUTINE_LOG_LINE.match(one)]
+                dropped = len(slice_lines) - len(kept)
+                # A window holding nothing but this run's own requests still
+                # says something, so it is shown rather than replaced by a
+                # sentence about what was left out.
+                shown = (kept or slice_lines)[-LOG_SLICE_LINES:]
+                about = [f"{len(slice_lines)} line(s) in the window"]
+                if dropped and kept:
+                    about.append(f"{dropped} of them this run's own requests, "
+                                 "which are in the file and not here")
+                if len(shown) < len(kept or slice_lines):
+                    about.append(f"the last {len(shown)} of the rest")
                 lines += [f"**{check.key}**, from the end of the check before "
-                          "it:", ""]
-                lines += fenced([redact(one) for one in
-                                 slice_lines[-LOG_SLICE_LINES:]]) + [""]
+                          f"it. {', '.join(about)}:", ""]
+                lines += fenced([redact(one) for one in shown]) + [""]
     if not lines:
         return []
     return ["## Device log", "", LOG_CAVEAT, ""] + lines

@@ -831,6 +831,27 @@ OBS-7.11 and OBS-7.12. Depends on OBS-7.8 and OBS-2.6. KISS: inlining a slice
 for every check would multiply the document by the check count to answer a
 question only asked about failures.
 
+A slice leaves out the lines the device wrote because this run asked it
+something: one per accepted socket, one per request served, one per FTP and DMA
+connection. It says how many lines the window held and how many of them were
+those, so what is not shown is a number rather than an absence, and it shows
+them anyway when they are all the window held.
+
+The reason is not that they are noise. The harness already records every one of
+those requests itself, with its response, in `interactions.jsonl`, so the
+device's one-line echo of a request is the one line in the log already known
+from a better source. They also arrive at the harness's rate rather than the
+device's: measured over a sequential run of the whole gate against an Ultimate
+II+L, they were 15882 of 22930 collected lines, and 14163 of those were the two
+shapes the harness's own screen polling produces. A check that polls a screen
+fifty times therefore pushes the device's own account of what it was doing out
+of a slice that is simply the last lines of everything. In that run a check's
+window held 154 lines at the 90th percentile and 592 at its widest, so the
+question is not hypothetical.
+
+The slice is capped at 60 lines of what remains, which is above the 90th
+percentile of a window once those lines are out of it.
+
 The same section says where the lines came from, as two tables. The first gives
 each target the addresses the run expected its lines from and the addresses they
 actually arrived from, with a count each, from the `kind=log` records of
