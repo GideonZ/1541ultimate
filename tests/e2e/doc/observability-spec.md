@@ -482,10 +482,16 @@ so editing a file that was already modified leaves its output identical.
 Tracked files only. A run writing its output under the tree would otherwise
 report its harness as changing every time it wrote a line.
 
-The limit, stated so nobody reads more into the field than it carries: a file
+Two limits, stated so nobody reads more into the field than it carries. A file
 edited and reverted within one run hashes the same at both ends and is not
-detected. This catches a tree that ended different from how it started, which
-is the case that splits a gate in two, and not every possible edit.
+detected: this catches a tree that ended different from how it started, which
+is the case that splits a gate in two, and not every possible edit. And the
+hash covers every tracked file under those roots, this document included, so a
+change to it is evidence that the tree moved rather than proof that any suite
+behaved differently, which is why the warning says the suites *may* not all
+have run the same code. Narrowing the hash to the files a suite executes would
+need a rule about which those are, and a rule that is wrong misses the case
+the field exists for.
 
 This is the same argument as the rest of this document applied to the harness
 itself: a discipline rule that a run cannot check is a rule the artefacts

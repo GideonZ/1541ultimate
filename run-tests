@@ -2443,9 +2443,15 @@ def summarise(results: List[Result], started: float, recoveries: int,
     started_with = str((identity or {}).get("harness") or "")
     finished_with = harness_hash()
     if started_with and finished_with and started_with != finished_with:
+        # "may not" rather than "did not". The hash covers every tracked file
+        # under those roots, documentation included, so a change to it is
+        # evidence that the tree moved and not proof that any suite behaved
+        # differently. Narrowing the hash to the files a suite executes would
+        # need a rule about which those are, and a rule that is wrong misses
+        # the case the field exists for.
         report.warn(f"the harness changed during this run: it started on "
                     f"{started_with} and finished on {finished_with}, so the "
-                    f"suites did not all run the same code")
+                    f"suites may not all have run the same code")
     retried = [r for r in results if r.attempts > 1]
     if retried:
         # In the summary as well as per suite, because a run that took 34

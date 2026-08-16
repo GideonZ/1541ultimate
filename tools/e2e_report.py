@@ -928,7 +928,7 @@ def header(run: Run) -> List[str]:
                         # no row; one whose files changed under it is two runs
                         # reported as one, and nothing else here says so.
                         ("harness", "CHANGED DURING THIS RUN, so the suites "
-                         "did not all run the same code"
+                         "may not all have run the same code"
                          if identity.get("harness_changed") else None),
                         ("CI run", ci_run(identity)),
                         ("host", identity.get("host")),
