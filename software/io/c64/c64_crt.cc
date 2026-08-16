@@ -206,13 +206,6 @@ SubsysResultCode_e C64_CRT::check_header(File *f, cart_def *def)
             def->name = cart_list->cart_name;
             local_type = cart_list->local_type;
             max_bank = cart_list->max_bank;
-            // Megabyter's bank register selects 8 KiB ROML pages.  The
-            // generic CRT layout is 16 KiB per bank (ROML plus ROMH), which
-            // made bank 64 of a 128-bank, 1 MiB Megabyter image appear at the
-            // end of a 1 MiB buffer and fail as too large.
-            if (local_type == CART_MEGABYTER) {
-                bank_multiplier = 8 * 1024;
-            }
             if (local_type == CART_NOT_IMPL) {
                 printf("%s - Not implemented\n", cart_list->cart_name);
                 return SSRET_NOT_IMPLEMENTED;
@@ -340,7 +333,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
 void C64_CRT::clear_cart_mem(void)
 {
-    memset(cart_memory, 0xff, max_cart); // clear all cartridge memory
+    memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
 }
 
 void C64_CRT::auto_mirror(void)
