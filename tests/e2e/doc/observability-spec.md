@@ -4892,6 +4892,14 @@ device that could not be made healthy, and those are different statuses with no
 following suite to tell them apart when the last suite of a run is the one that
 failed.
 
+That read waits for a bounded time rather than for either of the two the
+runner's health check usually takes. Its answer decides whether the run is
+abandoned, so asking once would let a device that was merely busy end a gate:
+a cartridge target answers a one-byte read in 134ms at the median and a device
+under load goes quiet for longer than that. Waiting out the recovery budget is
+the other extreme, and spending a minute on a classification the next suite's
+precondition makes anyway is a minute per failed suite.
+
 **OBS-17.3** [P1] The exit status is an ordered severity scale, and may be
 compared with an ordering operator.
 
