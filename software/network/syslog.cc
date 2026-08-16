@@ -1,49 +1,9 @@
 #include <sys/socket.h>
 
 #include "syslog.h"
-#include "lwip/opt.h"
-#include <string.h>
 #include "network_interface.h"
 #include "network_config.h"
 
-// How much of the buffer one flush sends per datagram. Below the 1472-byte
-// payload an untagged Ethernet frame carries, because lwIP is built with
-// IP_FRAG off and would not fragment an oversized one.
-static const int FLUSH_PIECE_BYTES = 1024;
-
-
-bool Syslog::open_buffer(size_t buffer_size)
-{
-    if (buf) {
-        return true;  // Already open. The first size stands.
-    }
-    buf = new char[buffer_size];
-    if (!buf) {
-        return false;  // charout writes nothing while bufsize stays 0.
-    }
-    bufsize = (int)buffer_size;
-    // Clears `overflow` as well: a character written before the buffer
-    // existed sets it, and charout returns for the rest of the run while it
-    // is set.
-    rewind();
-    return true;
-}
-
-void Syslog::close_buffer()
-{
-    // For a device with no syslog server configured, which is the default.
-    // 16 KB is worth reclaiming on the U2, whose heap is the tightest.
-    if (!buf) {
-        return;
-    }
-    char *old = buf;
-    ENTER_SAFE_SECTION;
-    buf = 0;
-    bufsize = 0;
-    rewind();
-    LEAVE_SAFE_SECTION;
-    delete[] old;
-}
 
 bool Syslog::init(size_t buffer_size)
 {
@@ -84,9 +44,9 @@ bool Syslog::init(size_t buffer_size)
 
     // If a valid ip is configured we enable the syslog
     if (ip.addr != INADDR_ANY) {
-        // Keeps whatever open_buffer already collected, so the lines printed
-        // before this point are forwarded rather than dropped.
-        open_buffer(buffer_size);
+        bufsize = buffer_size;
+        buf = new char[bufsize];
+        bufpos = 0;
         xTaskCreate(syslogTask, "Syslog Task", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &task);
         printf("Sending logs to syslog server '%s'\n", server);
         return true;
@@ -105,21 +65,20 @@ void Syslog::charout(int c)
     if (c == '\r') {
         return;
     }
-    // The bounds check and the store are inside the section together with the
-    // cursor, because close_buffer frees the buffer from another task: a check
-    // made outside it would be made against a pointer that can be freed before
-    // the store reaches it.
-    ENTER_SAFE_SECTION;
-    bool written = buf && bufpos < bufsize;
-    if (written) {
+    if (bufpos < bufsize) {
         buf[bufpos] = (char)c;
+        ENTER_SAFE_SECTION;
         if (c == '\n') {
             newlinepos = bufpos;
         }
         ++bufpos;
+        LEAVE_SAFE_SECTION;
     }
-    LEAVE_SAFE_SECTION;
-    if (!written) {
+    else {
+        // Counted once per fill rather than once per dropped character:
+        // rewind() clears `overflow`, so the next fill counts again. Read
+        // over REST as syslog_overflows, because a burst that overflowed is
+        // lost without a trace on the receiving side.
         if (!overflow) {
             ++overflows;
         }
@@ -155,13 +114,11 @@ void Syslog::forwardLogging()
     sa.sin_family = AF_INET;
     sa.sin_addr.s_addr = ip.addr;
     sa.sin_port = htons(port);
-    // Assigned to the member only once the socket is connected, so a flush
-    // from another task cannot send on a half-open one.
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0 || connect(fd, (struct sockaddr *)&sa, sizeof(sa)) != 0)
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0 || connect(sockfd, (struct sockaddr *)&sa, sizeof(sa)) != 0)
     {
-        if (fd >= 0) {
-            closesocket(fd);
+        if (sockfd >= 0) {
+            closesocket(sockfd);
             puts("Failed to open socket for sending syslog packets, terminating syslog task\n");
         }
         else {
@@ -170,29 +127,17 @@ void Syslog::forwardLogging()
         vTaskDelete(NULL);
         // Never reached
     }
-    sockfd = fd;
 
-    // Forward lines to syslog as they come in. linestartpos is a member, so
-    // a flush from another task can rewind the buffer and this cursor
-    // together; see Syslog::flush.
-    linestartpos = 0;
+    // Forward lines to syslog as they come in
+    int linestartpos = 0;  // Where the next line to be sent starts
     while (true) {
         // If there is at least one newline found we loop forever until a "break" is reached
         while (newlinepos >= 0) {
-            // Both under one section, and the length checked before it is
-            // used: a flush from another task can rewind the buffer between
-            // the two reads, and memchr takes a size_t, so a negative count
-            // would become four billion and read past the end of the buffer.
             ENTER_SAFE_SECTION;
             int safe_newlinepos = newlinepos;
-            int safe_startpos = linestartpos;
             LEAVE_SAFE_SECTION;
-            int span = safe_newlinepos - safe_startpos + 1;
-            if (span <= 0) {
-                break;
-            }
-            char *line = &buf[safe_startpos];
-            char *newline = (char *)memchr(line, '\n', span);
+            char *line = &buf[linestartpos];
+            char *newline = (char *)memchr(line, '\n', safe_newlinepos - linestartpos + 1);
             if (newline) {
                 int linelen = newline - line;  // Excluding newline char
                 if (linelen) {
@@ -203,15 +148,15 @@ void Syslog::forwardLogging()
                     }
                     vTaskDelay(5 / portTICK_PERIOD_MS);  // Throttle to 200 messages per second
                 }
-                linestartpos = safe_startpos + linelen + 1;
+                linestartpos += linelen + 1;
 
                 // See if we are all caught up and can rewind the buffer
                 if (linestartpos >= bufpos) {  // Preliminary quick peek
                     ENTER_SAFE_SECTION;
                     if (linestartpos >= bufpos) {
-                        // We are caught up. rewind() puts linestartpos back
-                        // with the rest of the cursor.
+                        // We are caught up
                         rewind();
+                        linestartpos = 0;
                     }
                     LEAVE_SAFE_SECTION;
                     break;  // No more data, done
@@ -226,65 +171,10 @@ void Syslog::forwardLogging()
         if (overflow) {
             ENTER_SAFE_SECTION;
             rewind();
+            linestartpos = 0;
             LEAVE_SAFE_SECTION;
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);  // Wait for more data
     }
     // Never reached
-}
-
-void Syslog::flush()
-{
-    // For a caller that is about to stop the machine. vAssertCalled prints
-    // the assertion and the task list and then spins with interrupts
-    // disabled, so the forwarding task never runs again and the one message
-    // worth having is the one that never leaves.
-    //
-    // Called from the failing task before it disables interrupts, so this is
-    // an ordinary send from an ordinary context. It sends blocks of the
-    // buffer rather than line by line, because there is no time left to
-    // throttle; the collector splits a block back into lines.
-    //
-    // Never from the stack's own thread. A socket call posts to the tcpip
-    // thread's mailbox and waits for it, so called from that thread it would
-    // wait for itself and the caller would block forever instead of halting.
-    // An assertion inside lwIP is exactly that case.
-    const char *self = pcTaskGetName(NULL);
-    if (self && strcmp(self, TCPIP_THREAD_NAME) == 0) {
-        return;
-    }
-    if (sockfd < 0 || !buf || overflow) {
-        // An overflowed buffer no longer holds what the caller printed: every
-        // character since it filled was dropped by charout, so sending it
-        // would send the wrong bytes at the one moment they matter.
-        return;
-    }
-    ENTER_SAFE_SECTION;
-    int start = linestartpos;
-    int length = bufpos - start;
-    LEAVE_SAFE_SECTION;
-    if (length <= 0) {
-        return;
-    }
-    // From where the forwarding task had reached, so the log is not repeated
-    // from the last rewind. That task advances the cursor after its send, so
-    // one line can still arrive twice when the flush lands inside that
-    // window, which is a better trade than a bounded flush that misses the
-    // line it exists to deliver. The task list this carries is several
-    // kilobytes, hence the loop.
-    int sent = 0;
-    while (sent < length) {
-        int piece = length - sent;
-        if (piece > FLUSH_PIECE_BYTES) {
-            piece = FLUSH_PIECE_BYTES;
-        }
-        if (send(sockfd, &buf[start + sent], piece, 0) < 0) {
-            ++failed_sends;
-            return;
-        }
-        sent += piece;
-    }
-    ENTER_SAFE_SECTION;
-    rewind();
-    LEAVE_SAFE_SECTION;
 }

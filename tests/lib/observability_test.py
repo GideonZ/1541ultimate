@@ -2155,11 +2155,11 @@ def two_collectors_cannot_share_the_port() -> str:
 def a_reader_sees_every_line_the_collector_wrote() -> str:
     """A suite reads the file rather than the port, and in order.
 
-    The last datagram carries several lines, which is what `Syslog::flush`
-    sends when an assertion is about to stop the machine. Written as one
-    output line it would be one timestamp followed by raw newlines, and every
-    line after the first would be dropped by `read`, at the one moment the
-    text matters most.
+    The last datagram carries several lines. This firmware's forwarding task
+    sends one line per datagram, but nothing in the protocol requires that and
+    the collector must not depend on it. Written as one output line it would
+    be one timestamp followed by raw newlines, and every line after the first
+    would be dropped by `read`.
     """
     import tempfile
 
