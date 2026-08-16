@@ -1584,7 +1584,6 @@ def health_section(run: Run) -> List[str]:
             rows.append(row)
         lines += [f"### {target.token}", ""]
         lines += table(["Sweep", "Verdict"] + names, rows) + [""]
-        lines += syslog_counter_lines(target)
     if not lines:
         return []
     return ["## Device health", ""] + lines
@@ -1603,51 +1602,6 @@ def render_health_check(check: Optional[dict]) -> str:
     if "free" in figures:
         return f"{as_int(figures.get('free'))}B"
     return f"{as_float(check.get('ms')):.0f}ms"
-
-
-# What the device counts about its own log, read from `/v1/info` by the ident
-# check of every sweep. They are cumulative since the device booted, so what a
-# reader wants is the value at the end of the run and whether it moved during
-# it, not one number per sweep in a table cell.
-SYSLOG_COUNTERS = (
-    ("syslog_failed_sends", "datagrams the stack refused"),
-    ("syslog_overflows", "times the forwarding buffer filled before it drained"),
-)
-
-
-def syslog_counter_lines(target: TargetRun) -> List[str]:
-    """What the device's own log counters did over the run, in one sentence each.
-
-    A device logging to an address where nothing is listening is harmless to a
-    run and completely silent, so without these a lossy link and a quiet device
-    look identical from the host. They cannot be reported through the log
-    itself without risking a loop, which is why they are on `/v1/info` and why
-    the sweep reads them.
-    """
-    said: List[str] = []
-    for name, means in SYSLOG_COUNTERS:
-        seen = [(sweep, as_int(as_dict(check.get("figures")).get(name)))
-                for sweep in target.health
-                for check in as_list(sweep.get("checks"))
-                if name in as_dict(check.get("figures"))]
-        if not seen:
-            continue
-        values = [value for _sweep, value in seen]
-        # Whether it moved at all, rather than whether its ends differ. The
-        # counter is cumulative since the device booted, so a device the runner
-        # recovered mid-run starts again from zero and can end the run on the
-        # value it started it on while having counted plenty in between.
-        if len(set(values)) == 1:
-            said.append(f"`{name}` stayed at {values[0]} over {len(seen)} "
-                        f"sweep(s), which counts {means}.")
-        else:
-            moved = next(sweep for sweep, value in seen if value != values[0])
-            said.append(f"`{name}` went from {values[0]} to {values[-1]} over "
-                        f"{len(seen)} sweep(s), highest {max(values)}, first "
-                        f"moving at the sweep before "
-                        f"`{redact(str(moved.get('label') or '-'))}`. It counts "
-                        f"{means}.")
-    return said + [""] if said else []
 
 
 # What each file in the tree is, keyed by how its name is built. The index is

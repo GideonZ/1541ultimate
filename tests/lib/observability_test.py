@@ -1017,24 +1017,17 @@ def the_heap_figures_reach_the_health_record() -> str:
         entries = [c for c in sweeps[0]["checks"] if c["name"] == "heap"]
         expect("one heap entry", len(entries), 1)
         expect("free", entries[0]["figures"]["free"], double.heap_free)
+        # `heap` is the only check that carries figures. Any other check that
+        # grows them is either a new measurement nobody reads or a figure that
+        # belongs in the check's own detail, and both are worth stopping at.
         for other in sweeps[0]["checks"]:
-            if other["name"] not in ("heap", "ident") and "figures" in other:
+            if other["name"] != "heap" and "figures" in other:
                 raise Failure(f"{other['name']} grew a figures entry")
         kinds = {r["kind"] for r in made.records("127.0.0.1", "run.jsonl")}
         if "heap" in kinds:
             raise Failure("the figures were given a record kind of their own")
-
-        # The two counters only the device has, on the check that already reads
-        # `/v1/info`, so the sweep costs the request it was making anyway. A
-        # device logging where nothing is listening is silent and harmless, so
-        # without them a lossy link and a quiet device look the same.
-        ident = [c for c in sweeps[0]["checks"] if c["name"] == "ident"]
-        expect("one ident entry", len(ident), 1)
-        expect("the syslog counters ride with it",
-               sorted(ident[0].get("figures", {})),
-               ["syslog_failed_sends", "syslog_overflows"])
         expect("and the sweep is still OK", sweeps[0]["ok"], True)
-    return "inside the health record, heap and syslog both"
+    return "inside the health record, and only on heap"
 
 
 @case(1, "OBS-7.5", "OBS-7.6", "OBS-7.7", "OBS-7.8")
@@ -1078,6 +1071,71 @@ def the_collector_attributes_a_datagram_to_its_device() -> str:
             raise Failure(f"the sender's address was not kept: {unmapped!r}")
         expect("counted", (collector.lines, collector.unmapped), (2, 1))
     return "3 datagrams, 3 files"
+
+
+@case(1, "OBS-7.8", "OBS-2.4")
+def the_unknown_sender_file_exists_only_when_it_has_something_in_it() -> str:
+    """Absence means every line was attributed, not that nothing was checked.
+
+    The file is opened at startup, so an output that cannot be written is an
+    operator's problem in the first seconds rather than a discovery at the end
+    of a run that has already cost 15 to 30 minutes. That check costs an empty
+    file in every healthy run, and an artifact present in every run says
+    nothing by being there, so it is removed at close when nothing went into
+    it.
+
+    A target's own `syslog.txt` is deliberately not treated the same way. Empty
+    there is a finding rather than noise: the device was expected to log and
+    said nothing, which is what the runner warns about and what a reader has to
+    be able to tell from a collector that never started.
+    """
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    name = syslog_collector.UNKNOWN_SENDER_NAME
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(directory=directory, port=0)
+        if not collector.bind([targets_lib.parse("127.0.0.2"),
+                               targets_lib.parse("127.0.0.3")]):
+            raise Failure(f"the collector did not start: {collector.problems}")
+        path = os.path.join(directory, name)
+        if not os.path.exists(path):
+            raise Failure(
+                f"{name} was not opened at startup, so an unwritable one "
+                f"would be found by the first datagram instead of now")
+        collector.deliver("127.0.0.2", b"a line from the device")
+        collector.stop()
+        if os.path.exists(path):
+            raise Failure(
+                f"{name} was left behind holding "
+                f"{os.path.getsize(path)} byte(s) after a run in which every "
+                f"line was attributed")
+        # The target that said nothing keeps its empty file, because that is
+        # the record of a device that was collected from and stayed silent.
+        silent = os.path.join(directory, "127.0.0.3", "syslog.txt")
+        if not os.path.exists(silent):
+            raise Failure(
+                "a silent target's own log file was removed as well; empty "
+                "there is a finding, not noise")
+        expect("and it is empty", os.path.getsize(silent), 0)
+
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(directory=directory, port=0)
+        if not collector.bind([targets_lib.parse("127.0.0.2")]):
+            raise Failure(f"the collector did not start: {collector.problems}")
+        collector.deliver("10.9.9.9", b"a machine nobody expected")
+        collector.stop()
+        path = os.path.join(directory, name)
+        if not os.path.exists(path):
+            raise Failure(f"{name} was removed although a datagram was "
+                          f"attributed to no target")
+        with open(path, encoding="utf-8") as handle:
+            kept = handle.read()
+        if "10.9.9.9" not in kept:
+            raise Failure(f"the sender's address was not kept: {kept!r}")
+    return "absent when every line was attributed, kept with the sender when not"
 
 
 @case(1, "OBS-1.2", "OBS-15.2", "OBS-7.17")
@@ -2155,11 +2213,11 @@ def two_collectors_cannot_share_the_port() -> str:
 def a_reader_sees_every_line_the_collector_wrote() -> str:
     """A suite reads the file rather than the port, and in order.
 
-    The last datagram carries several lines, which is what `Syslog::flush`
-    sends when an assertion is about to stop the machine. Written as one
-    output line it would be one timestamp followed by raw newlines, and every
-    line after the first would be dropped by `read`, at the one moment the
-    text matters most.
+    The last datagram carries several lines. This firmware's forwarding task
+    sends one line per datagram, but nothing in the protocol requires that and
+    the collector must not depend on it. Written as one output line it would
+    be one timestamp followed by raw newlines, and every line after the first
+    would be dropped by `read`.
     """
     import tempfile
 
@@ -6243,59 +6301,6 @@ def the_report_says_how_much_of_the_screen_came_back_as_text() -> str:
     expect("a run with no recorder has nothing to say",
            generator.screen_text_lines(target(None)), [])
     return "read and refused, both always"
-
-
-@case(1, "OBS-9.2")
-def the_report_says_what_the_devices_log_counters_did() -> str:
-    """Both counters, whether they moved, and which sweep first saw a move.
-
-    They are cumulative since the device booted, so a column of one value per
-    sweep answers nothing a reader asks. What is asked is whether the device
-    dropped any of its own log during this run, and if so from where on.
-    """
-    generator = load_report_tool()
-
-    def sweeps(values):
-        return generator.TargetRun(
-            token="u64", slug="u64",
-            health=[{"kind": "health", "label": f"suite-{index}", "ok": True,
-                     "checks": [{"name": "ident", "state": "ok", "ms": 9.0,
-                                 "figures": {"syslog_failed_sends": failed,
-                                             "syslog_overflows": over}}]}
-                    for index, (failed, over) in enumerate(values)])
-
-    steady = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (0, 0)]))
-    expect("one line per counter, plus the blank", len(steady), 3)
-    if "stayed at 0 over 3 sweep(s)" not in steady[0]:
-        raise Failure(f"a counter that never moved reads {steady[0]!r}")
-
-    moved = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (47, 19)]))
-    if "went from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
-        raise Failure(f"a counter that moved reads {moved[0]!r}")
-    if "went from 0 to 19" not in moved[1]:
-        raise Failure(f"the second counter reads {moved[1]!r}")
-
-    # A device the runner recovered mid-run starts its counters again from
-    # zero, so the run can end on the value it started on with plenty counted
-    # in between. Reading only the two ends would call that "stayed at 0".
-    restarted = generator.syslog_counter_lines(
-        sweeps([(0, 0), (47, 19), (0, 0)]))
-    if "highest 47" not in restarted[0]:
-        raise Failure(f"a counter that moved and came back reads "
-                      f"{restarted[0]!r}")
-    if "stayed at" in restarted[0]:
-        raise Failure(f"a counter that moved is called steady: "
-                      f"{restarted[0]!r}")
-
-    # Firmware without them says nothing rather than saying zero, because zero
-    # would be a claim this run cannot make.
-    older = generator.TargetRun(
-        token="u64", slug="u64",
-        health=[{"kind": "health", "label": "one", "ok": True,
-                 "checks": [{"name": "ident", "state": "ok", "ms": 9.0}]}])
-    expect("nothing to say about firmware that has no counters",
-           generator.syslog_counter_lines(older), [])
-    return "steady, moved, and absent"
 
 
 @case(1, "OBS-3.18", "OBS-3.22")

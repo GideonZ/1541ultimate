@@ -265,20 +265,19 @@ def _heap(api: UltimateApi) -> Check:
 
 
 def _ident(api: UltimateApi) -> Check:
-    """The product and firmware, and the two counters only the device has.
+    """The product and firmware version, from `/v1/info`.
 
-    `syslog_failed_sends` counts datagrams the stack refused and
-    `syslog_overflows` counts the times the firmware's forwarding buffer filled
-    before it drained. Neither can be reported through the log itself without
-    risking a loop, so `/v1/info` is where they are, and reading them here is
-    what makes them evidence: a device logging where nothing is listening is
-    harmless to a run and completely silent, so without the two numbers a lossy
-    link and a quiet device look the same from the host.
+    Which machine this is decides which checks a suite may run, so a sweep that
+    could not read it has found something a run needs to know before it starts
+    driving anything. See tests/lib/machine.py for what the answer is used for.
 
-    They are figures on a check that already reads `/v1/info`, so the sweep
-    costs the same request it already made. They never decide the verdict: a
-    firmware that does not carry them is older rather than unhealthy, and a
-    device that dropped a log line has not failed anything a run is testing.
+    Nothing here reports how much of the device's log went missing. The
+    firmware counts refused datagrams and buffer overflows internally, but a
+    run acts on neither, and the report would only print them: syslog is best
+    effort by design and a lost line costs a run nothing it was testing. The
+    cost of leaving them alone is stated in OBS-7.15: a device that says
+    nothing is not distinguishable from a device whose datagrams were refused,
+    and the report shows the silence without a cause.
     """
     started = time.perf_counter()
     try:
@@ -287,13 +286,7 @@ def _ident(api: UltimateApi) -> Check:
         return Check("ident", FAIL, (time.perf_counter() - started) * 1000.0,
                      str(exc))
     ms = (time.perf_counter() - started) * 1000.0
-    figures = {}
-    for name in ("syslog_failed_sends", "syslog_overflows"):
-        value = info.extra.get(name)
-        if isinstance(value, int) and not isinstance(value, bool):
-            figures[name] = value
-    return Check("ident", OK, ms,
-                 f"{info.product} {info.firmware_version}", figures or None)
+    return Check("ident", OK, ms, f"{info.product} {info.firmware_version}")
 
 
 def _moves(api: UltimateApi, address: int, means: str) -> str:

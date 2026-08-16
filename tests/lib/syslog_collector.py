@@ -10,10 +10,11 @@ endpoint that returns a log.
 A plain UDP sink, not an RFC syslog daemon. `Syslog::forwardLogging` sends the
 bare line text with `send(sockfd, line, linelen, 0)`: no priority prefix, no
 version, no timestamp, no hostname, no trailing newline, so a conformant
-daemon may refuse these datagrams outright. One datagram is one line, except
-from `Syslog::flush`, which sends a block of the buffer; empty lines never
-arrive because the firmware skips them, and carriage returns never arrive
-because `Syslog::charout` discards them.
+daemon may refuse these datagrams outright. One datagram is one line as this
+firmware sends them; empty lines never arrive because the firmware skips them,
+and carriage returns never arrive because `Syslog::charout` discards them. A
+datagram carrying several lines is still split into lines here, because
+nothing in the protocol says one may not.
 
 **The log is incomplete by construction and the loss is not measurable from
 here.** Four independent causes, none of which leaves a trace on this side:
@@ -24,9 +25,10 @@ here.** Four independent causes, none of which leaves a trace on this side:
   sets a flag and drops every subsequent character, and `forwardLogging` then
   rewinds and discards the whole buffer, so a burst loses an unbounded block.
 - Output is throttled to about 200 lines a second by a 5ms delay per line.
-- `Syslog::failed_sends` counts send errors. `GET /v1/info` carries it, and
-  nothing on this side reads it, so a send failure still leaves no trace in a
-  run's artefacts.
+- `Syslog::failed_sends` counts send errors inside the firmware and nothing
+  reads it, so a send failure leaves no trace on this side. Exposing it and
+  the overflow count over REST was built and rejected; see OBS-9.2 in
+  tests/e2e/doc/observability-spec.md for the measurements behind that.
 
 A line's receive time also lags the moment the firmware printed it by an
 unbounded amount: the forwarding task polls every 100ms, the throttle means a
@@ -34,11 +36,12 @@ unbounded amount: the forwarding task polls every 100ms, the throttle means a
 the network link comes up arrives in one burst afterwards. So a line is
 attributed as "received during this check", never as "produced during it".
 
-An assertion failure arrives only from firmware that flushes it. `vAssertCalled`
-disables interrupts and spins, so the forwarding task never runs again; the
-firmware in this repository calls `Syslog::flush` from the failing task first,
-and firmware without that flush leaves the text in the buffer. Either way the
-log stops there, which is a signal in its own right.
+An assertion failure never arrives. `vAssertCalled` enters a critical section,
+prints the text and the task list and then spins, so the forwarding task never
+runs again and the text sits in the buffer unsent. What this side sees is the
+log stopping, which is a signal in its own right and is what the report shows.
+Making the text reach a collector is firmware work and is not done here; see
+OBS-7.15 and OBS-9.1 in tests/e2e/doc/observability-spec.md.
 
 Exactly one process binds the ports, and each socket is opened so that a second
 one cannot. The datagrams are unicast, and two sockets bound to one UDP port do
@@ -68,7 +71,11 @@ exactly one machine sends to identifies that machine by construction, whatever
 address the datagram came from. A port more than one machine sends to, which is
 every machine on an unprovisioned bench, falls back to the source address, and
 an address no target claims still goes to `syslog-unknown-sender.txt` and is
-never guessed at.
+never guessed at. That file exists only when something went into it: it is
+opened at startup so an unwritable output is an operator's problem in the
+first seconds rather than a discovery at the end, and removed at close when
+nothing was unattributed, so finding no such file means every line was
+attributed.
 
 So the implementation needs no provisioning to be correct: with every machine
 on one port it behaves exactly as address attribution alone did. What
@@ -399,6 +406,30 @@ class Collector:
             for handle in self._handles.values():
                 handle.close()
             self._handles.clear()
+        self._drop_empty_unmapped()
+
+    def _drop_empty_unmapped(self) -> None:
+        """Leave no unknown-sender file behind when every line was attributed.
+
+        The file is opened at startup, because a file that cannot be written is
+        a startup problem an operator can act on, and the same discovery made
+        later is a silently discarded log in a run that has already cost 15 to
+        30 minutes. That check is worth keeping and costs an empty file in
+        every healthy run, so the file is taken away again here instead.
+
+        Its absence therefore means every datagram was attributed, which is
+        both the ordinary outcome and the good one. A target's own
+        `syslog.txt` is deliberately not treated this way: empty there is a
+        finding, the device was expected to log and said nothing, and the
+        runner warns about exactly that.
+        """
+        try:
+            if os.path.getsize(self.unmapped_path) == 0:
+                os.remove(self.unmapped_path)
+        except OSError:
+            # Never existed, already gone, or not removable. None of the three
+            # is worth failing a run over: this file has no content to lose.
+            pass
 
     # -- receiving --
 
@@ -434,10 +465,12 @@ class Collector:
         The receive time is the only time any log line carries: nothing in the
         payload has one, and the device's own clock is never used.
 
-        The forwarding task sends one line per datagram, but `Syslog::flush`
-        sends a block of the buffer, so a datagram can hold several lines. Each
-        one gets its own timestamped output line, because a written line whose
-        first field is not a timestamp is dropped by `read` below.
+        The forwarding task sends one line per datagram, but a datagram is
+        allowed to hold several and this must not depend on which firmware
+        sent it. Each line gets its own timestamped output line, because a
+        written line whose first field is not a timestamp is dropped by `read`
+        below, so a multi-line datagram written as one would lose everything
+        after its first line.
         """
         when = self.clock()
         texts = data.decode("utf-8", "replace").rstrip("\r\n").split("\n")

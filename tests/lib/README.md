@@ -205,7 +205,8 @@ DIR/
   index.md                     the report, written by tools/e2e_report.py
   run.jsonl                    the parent's own record, multi-target runs only
   run.log                      the parent's console output, multi-target only
-  syslog-unknown-sender.txt          log lines from an address no target claims
+  syslog-unknown-sender.txt    log lines from an address no target claims;
+                               absent when every line was attributed
   <slug>/
     run.jsonl                  this target's runner records
     run.log                    this target's runner console output
@@ -545,15 +546,6 @@ The `heap` check carries `free`, `min_ever_free` and `total`, and it can never
 make a sweep degraded: a degraded sweep is what fires the recovery command, and
 free heap moves for a dozen ordinary reasons. It reports `OK` with the figure,
 or `SKIP` on firmware without the endpoint.
-
-The `ident` check carries `syslog_failed_sends` and `syslog_overflows`, which
-the device counts about its own log and which `/v1/info` is the only place to
-read: reporting them through the log would risk a loop. They ride on the check
-that already makes that request, so a sweep costs no more than before, and the
-report says per target whether each moved over the run and which sweep first
-saw it move. They never decide a verdict either: firmware without them is older
-rather than unhealthy, and a device that dropped a line of its own log has not
-failed anything a run is testing.
 
 `health` is one device sweep, the same one the console shows as a single line,
 with a latency per check. A run consumed programmatically would otherwise have
