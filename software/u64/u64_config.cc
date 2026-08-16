@@ -63,6 +63,9 @@ const uint8_t default_colors[16][3] = {
     { 0x6D, 0x6A, 0xEF },
     { 0xB2, 0xB2, 0xB2 } };
 
+static uint8_t active_palette[16][3];
+static bool active_palette_valid = false;
+
 // static pointer
 U64Config *u64_configurator = NULL;
 static volatile uint32_t u64_usb_hid_status_generation = 0;
@@ -2690,7 +2693,7 @@ void U64Config :: list_palettes(ConfigItem *it, IndexedList<char *>& strings)
     }
 }
 
-void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
+static void program_palette_rgb(const uint8_t rgb[16][3])
 {
     uint8_t yuv[16][3];
 
@@ -2700,7 +2703,7 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
         *(rgb_registers++) = rgb[i][1];
         *(rgb_registers++) = rgb[i][2];
         rgb_registers++;
-        rgb_to_yuv(rgb[i], yuv[i], false);
+        U64Config::rgb_to_yuv(rgb[i], yuv[i], false);
     }
 #if U64 == 2
     volatile uint8_t *rgb_registers_hdmi = (volatile uint8_t *)U64II_HDMI_PALETTE;
@@ -2712,8 +2715,55 @@ void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
     }
 #endif
 
+    U64Config::set_palette_yuv(yuv);
+}
 
-    set_palette_yuv(yuv);
+static void program_palette_color(uint8_t index, const uint8_t rgb[3])
+{
+    volatile uint8_t *rgb_registers = (volatile uint8_t *)(C64_PALETTE + index * 4);
+    rgb_registers[0] = rgb[0];
+    rgb_registers[1] = rgb[1];
+    rgb_registers[2] = rgb[2];
+#if U64 == 2
+    volatile uint8_t *rgb_registers_hdmi = (volatile uint8_t *)(U64II_HDMI_PALETTE + index * 4);
+    rgb_registers_hdmi[0] = rgb[0];
+    rgb_registers_hdmi[1] = rgb[1];
+    rgb_registers_hdmi[2] = rgb[2];
+#endif
+
+    uint8_t yuv[3];
+    U64Config::rgb_to_yuv(rgb, yuv, false);
+    volatile uint8_t *yuv_registers = (volatile uint8_t *)(C64_PALETTE + 0x400 + index * 4);
+    yuv_registers[0] = yuv[0];
+    yuv_registers[1] = yuv[1];
+    yuv_registers[2] = yuv[2];
+}
+
+void U64Config :: set_palette_rgb(const uint8_t rgb[16][3])
+{
+    memcpy(active_palette, rgb, sizeof(active_palette));
+    active_palette_valid = true;
+    program_palette_rgb(rgb);
+}
+
+void U64Config :: get_palette_rgb(uint8_t rgb[16][3])
+{
+    memcpy(rgb, active_palette_valid ? active_palette : default_colors, sizeof(active_palette));
+}
+
+void U64Config :: set_palette_color(uint8_t index, const uint8_t rgb[3])
+{
+    if (!active_palette_valid) {
+        memcpy(active_palette, default_colors, sizeof(active_palette));
+        active_palette_valid = true;
+    }
+    memcpy(active_palette[index], rgb, 3);
+    program_palette_color(index, rgb);
+}
+
+void U64Config :: reset_palette()
+{
+    set_palette_rgb(default_colors);
 }
 
 void U64Config :: set_palette_yuv(const uint8_t yuv[16][3])
