@@ -96,8 +96,42 @@ CHROME_TEXT = 15   # light grey, legible on the chrome without being white
 STAMP_BACKGROUND = 0
 FAILURE_COLOUR = 2     # red
 WARNING_COLOUR = 8     # orange
-PASSED_COLOUR = 15     # light grey, the neutral a finished segment gets
 RUNNING_COLOUR = 1     # white, the brighter outline on the current segment
+
+# The progress bar's own colours. Five outcomes and nothing else: a segment is
+# a few pixels wide, and a bar encoding nine states needs a legend, which is a
+# bar that has failed at the only job it has. Which of the three caveats a
+# segment carries - a retry, a recovery, or a UI left outside its documented
+# state - is in the report, and the bar says only that there was one.
+#
+# Separation, as redmean between each pair, plain and again after a Vienot
+# deuteranope simulation in gamma space, taking the smaller of the two. The
+# three weakest pairs:
+#
+#   85.9  passed with a caveat / not yet run
+#   98.6  outcome unknown / not yet run
+#  102.3  passed with a caveat / outcome unknown
+#
+# The weakest pair cannot occur. Segments fill left to right in run order and
+# `_draw_bar` paints chrome for every index right of the outlined current one,
+# so not-yet-run is a contiguous suffix, and a caveat segment inside the
+# filled prefix is separated from it by position rather than by hue.
+#
+# `BAR_UNKNOWN` is what makes that true rather than merely likely: a segment
+# that ran and produced no verdict used to be painted chrome as well, inside
+# the prefix, which is exactly where the argument claims nothing can be
+# ambiguous.
+#
+# The pass and fail boundary is carried on two channels rather than by hue
+# alone: a failing check also fills all four borders with FAILURE_COLOUR for
+# EDGE_DWELL_SECONDS, and no caveat state touches the edge. Within this
+# palette the brightest red is dimmer than the passing green, 116.7 against
+# 184.4, so the bar could not carry failure salience on its own.
+BAR_PASSED = 13    # light green
+BAR_CAVEAT = 8     # orange: retried, recovered, or left the UI dirty
+BAR_FAILED = 10    # light red
+BAR_SKIPPED = 3    # cyan, informational rather than an outcome
+BAR_UNKNOWN = 4    # purple: it ran and this run never recorded how it went
 
 # The failure edge is the outermost two rows and columns. The C64 border is 32
 # pixels at the sides and at least 20 at the top, so the marking never touches
@@ -387,12 +421,20 @@ class RunState:
     label: str = ""
     attempt: int = 1
     scenario: str = ""
+    # The caption the stamp draws, and the index it was derived from. Both,
+    # because a record that names the check joins on the number and a reader
+    # looking at a frame reads the words.
     check: str = ""
+    check_index: Optional[int] = None
     failed_at: float = 0.0
     unhealthy: bool = False
     unhealthy_at: float = 0.0
     segments: List[str] = field(default_factory=list)
     verdicts: Dict[str, str] = field(default_factory=dict)
+    # Which segments took more than one attempt. A retried suite is one
+    # segment whatever it cost, because a bar whose width changes mid-run is
+    # not a progress bar, and the colour says the outcome was not clean.
+    retried: Dict[str, bool] = field(default_factory=dict)
     current_segment: int = -1
     # Whether the last thing the run recorded was a suite closing. Between
     # suites there is no Telnet session and the overlay is all there is, which
@@ -409,6 +451,14 @@ class RunState:
     def stem(self) -> str:
         """The file-name form of the key: the one substitution, no target."""
         return f"{self.label}-{self.suite}-{self.attempt}" if self.suite else ""
+
+
+def as_index(value) -> Optional[int]:
+    """A check index as a number, or None when the record does not carry one."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class JsonlTail:
@@ -456,6 +506,13 @@ class JsonlTail:
         """
         if source == "run.jsonl":
             return
+        if self.state.between_suites:
+            # A suite's first check has not closed yet, so no record names it
+            # and the caption would be blank for the whole of it. Its index is
+            # 1 by construction: `report.check_start` numbers a suite's checks
+            # from 1 in the order they run.
+            self.state.check_index = 0
+            self.state.check = "check 1"
         self.state.between_suites = False
 
     def _files(self) -> List[str]:
@@ -519,16 +576,34 @@ class JsonlTail:
             self.state.segments = [
                 f"{entry.get('label')}/{entry.get('suite')}"
                 for entry in sequence if isinstance(entry, dict)]
-        elif kind == "check":
-            self.state.check = f"check {record.get('index')}"
+        elif kind == "check" and source != "run.jsonl":
+            # A check record is written when the check CLOSES, so the index on
+            # it names the check that has just finished and the check now
+            # running is the next one. Stamping the closed index put the
+            # burned-in caption exactly one behind the subtitle cue covering
+            # the same frame, at every check for the whole of a run, and both
+            # advanced together because both advance on the same record.
+            #
+            # `report.check_start` numbers a suite's checks from 1 in order,
+            # so "the one after the last one that closed" is derived rather
+            # than guessed. `run.jsonl` is excluded because the runner's own
+            # teardown checks are numbered from 0 in a sequence of their own
+            # and belong to no suite.
+            self.state.check_index = as_index(record.get("index"))
+            self.state.check = (f"check {self.state.check_index + 1}"
+                                if self.state.check_index is not None else "")
             self.state.scenario = str(record.get("scenario") or "")
             if record.get("verdict") == "FAIL":
                 self.state.failed_at = float(record.get("time") or 0.0)
         elif kind == "suite":
             name = str(record.get("name") or "")
             label = str(record.get("mode") or "")
-            self.state.verdicts[f"{label}/{name}"] = str(record.get("verdict") or "")
+            segment = f"{label}/{name}"
+            self.state.verdicts[segment] = str(record.get("verdict") or "")
+            if as_index(record.get("attempt")) and int(record["attempt"]) > 1:
+                self.state.retried[segment] = True
             self.state.check = ""
+            self.state.check_index = None
             self.state.scenario = ""
             self.state.between_suites = True
         elif kind == "health":
@@ -822,7 +897,12 @@ class Composer:
         activity = " > ".join(part for part in (
             f"SUITE {state.label}-{state.suite}" if state.suite else "",
             f"CHECK {state.scenario or state.check}"
-            if (state.scenario or state.check) else "") if part) or "no suite"
+            if (state.scenario or state.check) else "",
+            # An attempt after the first, named on the frame itself. A
+            # recording of a retried suite must not read as a recording of a
+            # clean one.
+            f"RETRY {state.attempt - 1}" if state.attempt > 1 else "")
+            if part) or "no suite"
         failing = bool(state.failed_at
                        and wall - state.failed_at <= EDGE_DWELL_SECONDS)
         band_lib.draw(self.canvas, 0, PANE_HEIGHT, self.geometry.width, ticker,
@@ -849,14 +929,26 @@ class Composer:
             return
         for index, segment in enumerate(state.segments):
             verdict = state.verdicts.get(segment, "")
-            if index > state.current_segment >= 0 or not verdict:
+            if index > state.current_segment >= 0:
+                # Nothing here yet, and nothing can be: the bar fills left to
+                # right, so every segment right of the current one is a
+                # contiguous suffix of un-run suites.
                 colour = CHROME
+            elif not verdict:
+                # It ran, or is running, and no verdict has been recorded for
+                # it. Painting chrome here put "no result" inside the filled
+                # prefix, where a reader has every reason to read a dim colour
+                # as an outcome.
+                colour = (CHROME if index > state.current_segment
+                          else BAR_UNKNOWN)
             elif verdict == "FAIL":
-                colour = FAILURE_COLOUR
-            elif verdict in ("WARN", "SKIP"):
-                colour = WARNING_COLOUR
+                colour = BAR_FAILED
+            elif verdict == "SKIP":
+                colour = BAR_SKIPPED
+            elif verdict == "WARN" or state.retried.get(segment):
+                colour = BAR_CAVEAT
             else:
-                colour = PASSED_COLOUR
+                colour = BAR_PASSED
             left = index * width
             self.canvas.fill(left, top, width - 1, BAR_HEIGHT, colour)
             if index == state.current_segment:
@@ -1467,9 +1559,13 @@ class InteractionTail:
 def reference_of(record: dict) -> str:
     """One interaction named the way anything pointing at it names it.
 
-    The sequence number restarts for each process that writes the log, and a
-    target's log is written by every suite and by the runner, so the number
-    alone identifies nothing. Suite, attempt and number together do.
+    The sequence number is unique in a target's log, so `#4812` names one
+    record and `jq 'select(.seq == 4812)'` answers with it. The suite and the
+    attempt are still on the reference because a reader reading a frame wants
+    to know what was running without looking anything up.
+
+    A collapsed run of identical interactions carries how many it stands for,
+    so the reference names the count rather than repeating the number.
     """
     if not record.get("seq"):
         return ""
@@ -1478,7 +1574,7 @@ def reference_of(record: dict) -> str:
         parts.append(str(record["attempt"]))
     parts.append(f"#{record['seq']}")
     if record.get("repeat"):
-        parts[-1] += f"-{int(record['seq'])}"
+        parts[-1] += f"x{int(record['repeat'])}"
     return "/".join(parts)
 
 
@@ -2338,9 +2434,20 @@ class Recorder:
                   "position": round(stamp_position(self.slots,
                                                    self.options.fps), 4)}
         for name, value in (("suite", state.suite), ("label", state.label),
-                            ("attempt", state.attempt), ("check", state.check)):
+                            ("attempt", state.attempt)):
             if value:
                 record[name] = value
+        # The index, not the stamp's caption. `screens.jsonl` carries an
+        # integer here, and a reader joining the two files should not have to
+        # take one of them apart to do it.
+        #
+        # Carried only when it belongs to the suite this record names. The
+        # runner's own teardown checks are written to `run.jsonl` with index 0
+        # and its own suite name, and that file may not set the suite, so a
+        # record could otherwise claim check 0 of a suite whose checks start
+        # at 1.
+        if state.check_index is not None and not state.between_suites:
+            record["check"] = state.check_index + 1
         try:
             with open(os.path.join(self.directory, SCREEN_TEXT_NAME), "a",
                       encoding="utf-8") as handle:
@@ -2887,6 +2994,12 @@ def records_in(directory: str) -> List[Tuple[str, dict]]:
     return found
 
 
+def retry_note(record: dict) -> str:
+    """" retry N" for an attempt after the first, and "" for the first."""
+    attempt = as_index(record.get("attempt")) or 1
+    return f" retry {attempt - 1}" if attempt > 1 else ""
+
+
 def cues_and_chapters(directory: str, target: str, started: float,
                       lead_in: float) -> Tuple[List, List]:
     """The subtitle cues and the chapter marks for a finished run.
@@ -2912,7 +3025,8 @@ def cues_and_chapters(directory: str, target: str, started: float,
                                   lead_in)
                 start = end - float(record.get("seconds") or 0.0)
                 chapters.append((max(0.0, start), end,
-                                 f"{key} {record.get('verdict')}"))
+                                 f"{key} {record.get('verdict')}"
+                                 + retry_note(record)))
                 if record.get("recoveries"):
                     chapters.append((max(0.0, start), end, "recovery"))
             continue
@@ -2926,7 +3040,12 @@ def cues_and_chapters(directory: str, target: str, started: float,
         end = position_of(float(record.get("time") or 0.0), started, lead_in)
         start = end - float(record.get("seconds") or 0.0)
         verdict = str(record.get("verdict") or "")
-        cues.append((max(0.0, start), end, f"{key} {verdict}"))
+        # A retried attempt says so in words as well as in the key's last
+        # component, so a reader scrubbing a recording of a green run cannot
+        # take a second attempt for a first one, and `grep retry` over the
+        # sidecar finds every one of them.
+        cues.append((max(0.0, start), end,
+                     f"{key} {verdict}" + retry_note(record)))
         if verdict == "FAIL":
             chapters.append((max(0.0, start), end,
                              f"{key} {record.get('label')}"))
@@ -2938,7 +3057,12 @@ def cues_and_chapters(directory: str, target: str, started: float,
 def finish(directory: str, target: str, started: float, lead_in: float,
            files: Sequence[str], audio: str = "",
            binary: str = "ffmpeg") -> List[str]:
-    """Write the subtitles and put the chapters in. Returns what went wrong.
+    """Write the subtitles and put the chapters in.
+
+    Returns what went wrong and which sidecars were written, because the
+    `kind=capture` record has to name every output file the recording
+    produced and the sidecars are written after that record's `files` was
+    last touched.
 
     One sidecar per video file, sharing its stem: players load a sidecar by
     matching the video's name, so a single `video.srt` would be found by
@@ -2947,6 +3071,7 @@ def finish(directory: str, target: str, started: float, lead_in: float,
     rather than a second authored one.
     """
     problems: List[str] = []
+    written: List[str] = []
     cues, chapters = cues_and_chapters(directory, target, started, lead_in)
     text = subtitles(cues)
     metadata = chapter_metadata(chapters)
@@ -2954,10 +3079,12 @@ def finish(directory: str, target: str, started: float, lead_in: float,
         path = os.path.join(directory, name)
         if not os.path.exists(path):
             continue
+        sidecar = name[:-len(".mp4")] + ".srt"
         try:
-            with open(path[:-len(".mp4")] + ".srt", "w",
+            with open(os.path.join(directory, sidecar), "w",
                       encoding="utf-8") as handle:
                 handle.write(text)
+            written.append(sidecar)
         except OSError as exc:
             problems.append(f"the subtitles could not be written: {exc}")
         problem = finish_file(path, metadata, audio=audio, binary=binary)
@@ -2969,4 +3096,4 @@ def finish(directory: str, target: str, started: float, lead_in: float,
             os.remove(audio)
         except OSError:
             pass
-    return problems
+    return problems, written

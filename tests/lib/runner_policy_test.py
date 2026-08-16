@@ -154,22 +154,42 @@ def run_exit_status_checks(runner):
     unhealthy = runner.Result("e2e", "overlay", "unhealthy", runner.report.FAIL, 1.0,
                           device_unhealthy=True)
 
+    retried = runner.Result("e2e", "overlay", "slow", passed.verdict, 1.0,
+                            attempts=2)
+
     with check("a clean run exits 0"):
         expect("clean", runner.exit_code_for([passed], 0), runner.EXIT_OK)
 
-    with check("a failed suite exits 1"):
+    with check("a suite that needed a second attempt exits EXIT_RETRIED"):
+        expect("retried", runner.exit_code_for([passed, retried], 0),
+               runner.EXIT_RETRIED)
+
+    with check("a failed suite exits EXIT_SUITE_FAILED"):
         expect("failure", runner.exit_code_for([passed, failed], 0),
                runner.EXIT_SUITE_FAILED)
 
-    with check("a recovery with no failure exits 3"):
+    with check("a recovery with no failure exits EXIT_RECOVERED"):
         expect("recovered", runner.exit_code_for([passed], 1), runner.EXIT_RECOVERED)
+
+    with check("a recovery outranks a retry"):
+        expect("recovery and retry", runner.exit_code_for([retried], 1),
+               runner.EXIT_RECOVERED)
 
     with check("a failure outranks a recovery"):
         expect("failure and recovery", runner.exit_code_for([passed, failed], 1),
                runner.EXIT_SUITE_FAILED)
 
-    with check("a device that cannot be made healthy exits 4, outranking a failure"):
+    with check("a device that cannot be made healthy outranks a failure"):
         expect("unhealthy", runner.exit_code_for([failed, unhealthy], 1), runner.EXIT_DEVICE_UNHEALTHY)
+
+    with check("the statuses are a scale, in severity order"):
+        ladder = [runner.EXIT_OK, runner.EXIT_RETRIED, runner.EXIT_RECOVERED,
+                  runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]
+        if ladder != sorted(ladder):
+            raise Failure(f"the statuses are not in severity order: {ladder}")
+        if runner.EXIT_USAGE in ladder:
+            raise Failure("a usage error is on the scale, so a threshold "
+                          "comparison reaches it")
 
 
 def run_recovery_gating_checks(runner):
@@ -308,21 +328,42 @@ def run_degraded_recovery_checks(runner):
 
 
 def run_retry_checks(runner, tmpdir):
-    """The loop that decides whether a failed suite is run again.
+    """The loop that decides how many times a failed suite runs.
 
     Driven through run_suite with a real child process, because the rule is
     about what the loop does with a verdict rather than about any one call.
+
+    The counts are asserted on how many times the suite actually executed
+    rather than on the verdict or the exit status, because the flag counts
+    executions and an off-by-one there would survive every assertion about
+    an outcome.
     """
+    counter = os.path.join(tmpdir, "runs")
     failing = os.path.join(tmpdir, "always_fails.py")
     with open(failing, "w", encoding="utf-8") as handle:
-        handle.write("import sys\nsys.exit(1)\n")
+        handle.write("import sys\n"
+                     f"open({counter!r}, 'a').write('x')\n"
+                     "sys.exit(1)\n")
+
+    def executions() -> int:
+        try:
+            with open(counter, encoding="utf-8") as handle:
+                return len(handle.read())
+        except OSError:
+            return 0
+
+    def reset() -> None:
+        try:
+            os.remove(counter)
+        except OSError:
+            pass
     suite = runner.Suite("perf", "fixture-suite",
                          os.path.relpath(failing, runner.ROOT), "")
 
     def options(**kwargs):
         base = dict(host="device.invalid", password="", timeout="1.0",
                     soak_profile="stress", output_dir="", stop_on_fail=False,
-                    health_check=False, retry=True, recover_command="true",
+                    health_check=False, attempts=3, recover_command="true",
                     recover_max_per_suite=2, recover_max_total=10,
                     recover_timeout=5.0)
         base.update(kwargs)
@@ -360,27 +401,87 @@ def run_retry_checks(runner, tmpdir):
         made.ensure_healthy = ensure_healthy
         return made
 
-    with check("a suite that fails on a healthy device is not run again"):
-        made = device_that([(True, False)])
+    with check("the default runs a failing suite exactly three times"):
+        reset()
+        made = device_that([(True, False)] * 5)
         result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        expect("executions", executions(), 3)
+        expect("attempts on the result", result.attempts, 3)
         expect("verdict", result.verdict, runner.report.FAIL)
-        expect("recoveries", result.recoveries, 0)
 
-    with check("a suite that fails on an unhealthy device runs again after recovery"):
-        # Two recoveries are allowed, so it attempts, recovers, attempts,
-        # recovers, attempts, and then the ceiling stops it.
-        made = device_that([(True, True), (True, True), (True, False)])
-        result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
-        expect("verdict", result.verdict, runner.report.FAIL)
+    with check("--attempts counts executions, so 2 runs it twice"):
+        reset()
+        made = device_that([(True, False)] * 5)
+        result = quietly(lambda: runner.run_suite(suite, made,
+                                                  options(attempts=2), "",
+                                                  "fixture"))
+        expect("executions", executions(), 2)
+        expect("attempts on the result", result.attempts, 2)
+
+    with check("--attempts 1 and --no-retry both run it exactly once"):
+        for attempts in (1, 1):
+            reset()
+            made = device_that([(True, False)] * 5)
+            result = quietly(lambda: runner.run_suite(
+                suite, made, options(attempts=attempts), "", "fixture"))
+            expect("executions", executions(), 1)
+            expect("attempts on the result", result.attempts, 1)
+
+    with check("a healthy device does not stop a failure being retried"):
+        # The rule this reverses: a suite that failed on a healthy device used
+        # to stand as a failure and was never run again. Every failure is now
+        # retried, whatever the device looked like.
+        reset()
+        made = device_that([(True, False)] * 5)
+        quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
+        expect("executions", executions(), 3)
+        expect("recoveries", made.recoveries, 0)
+
+    with check("recoveries do not buy extra executions"):
+        # Two independent reasons to run a suite again share one ceiling, so a
+        # suite cannot run three flake retries times three recovery retries.
+        # Two recoveries and not three: the last attempt's failure is followed
+        # by a health check and not by a recovery, because recovering for an
+        # attempt that will never happen is a device action with no reason
+        # behind it.
+        reset()
+        made = device_that([(True, True)] * 5)
+        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
+                                                  "fixture"))
+        expect("executions", executions(), 3)
         expect("recoveries", result.recoveries, 2)
 
-    with check("--no-retry keeps the recovery and drops the extra attempt"):
-        made = device_that([(True, True)])
-        result = quietly(lambda: runner.run_suite(suite, made, options(retry=False), "", "fixture"))
-        expect("verdict", result.verdict, runner.report.FAIL)
-        expect("recoveries", result.recoveries, 0)
+    with check("a device that has died by the last attempt is still noticed"):
+        # The health check after the last attempt is what tells a suite that
+        # failed from a device that could not be made healthy, which are
+        # different exit statuses, and there is no following suite to find it
+        # out when the last suite of a run is the one that failed.
+        reset()
+        made = device_that([(True, False)] * 5)
+        asked = []
+
+        def health_problem(label, patient=True, extra=None, budget=None):
+            asked.append(budget)
+            return "gone"
+        made.health_problem = health_problem
+        result = quietly(lambda: runner.run_suite(suite, made, options(), "",
+                                                  "fixture"))
+        expect("executions", executions(), 3)
+        expect("device unhealthy", result.device_unhealthy, True)
+        # A bounded wait rather than either of the usual two. Its answer
+        # abandons the rest of the run, so asking once would let a device that
+        # was merely busy end a gate; the full recovery budget would spend a
+        # minute per failed suite on a classification the next suite redoes.
+        expect("one check, with a bounded budget", asked,
+               [runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS])
+        if not 0 < runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS \
+                < runner.DEVICE_RECOVERY_BUDGET_SECONDS:
+            raise Failure(
+                f"the budget is not between asking once and waiting out the "
+                f"recovery budget: {runner.LAST_ATTEMPT_HEALTH_BUDGET_SECONDS}")
 
     with check("a device that cannot be made healthy ends the run"):
+        reset()
         made = device_that([(False, True)])
         result = quietly(lambda: runner.run_suite(suite, made, options(), "", "fixture"))
         expect("verdict", result.verdict, runner.report.FAIL)
@@ -403,7 +504,7 @@ def run_retry_checks(runner, tmpdir):
         made = device_that([(True, False)], )
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured), isolated_records():
-            result = runner.run_suite(signalled, made, options(retry=False), "", "fixture")
+            result = runner.run_suite(signalled, made, options(attempts=1), "", "fixture")
         printed = captured.getvalue()
         expect("verdict", result.verdict, runner.report.FAIL)
         if "SIGTERM" not in printed:
@@ -433,7 +534,7 @@ def run_jsonl_contract_checks(runner, tmpdir):
                                recoveries=1)
         report_module.run_result(verdict="OK", suites=1, passed=1, failed=0,
                                  skipped=0, dirty=0, seconds=1.5, recoveries=1,
-                                 exit_code=3)
+                                 exit_code=runner.EXIT_RECOVERED)
         records = [json.loads(line) for line in open(path, encoding="utf-8")]
     finally:
         report_module.set_jsonl_path(previous)
@@ -462,7 +563,6 @@ def run_jsonl_contract_checks(runner, tmpdir):
         if run is None:
             raise Failure("no run record was written")
         expect("recoveries", run["recoveries"], 1)
-        expect("exit_code", run["exit_code"], 3)
         # A caller that reads only the JSONL must reach the same verdict as one
         # that reads only $?, so the two are written from the same numbers.
         expect("exit code matches a recovered run", run["exit_code"],
@@ -495,7 +595,7 @@ def run_output_dir_option_checks(runner):
                 try:
                     parser.parse_args([spelling, "runs", "u64"])
                 except SystemExit as exc:
-                    expect("exit status", exc.code, 2)
+                    expect("exit status", exc.code, runner.EXIT_USAGE)
                 else:
                     raise Failure(f"{spelling} was accepted")
 
@@ -820,15 +920,29 @@ def run_multi_target_checks(runner):
             expect(f"{token} printed every line", printed, lines_per_child)
 
     with check("the run's status is the worst of its children's"):
+        # The statuses are a severity scale, so the worst of a run's children
+        # is the largest of them and the combination is a maximum rather than
+        # a ladder of conditions that can disagree with the scale.
         expect("all clean", runner.combine_exit_codes([0, 0]), runner.EXIT_OK)
-        expect("a failure", runner.combine_exit_codes([0, 1]), runner.EXIT_SUITE_FAILED)
-        expect("a recovery", runner.combine_exit_codes([0, 3]), runner.EXIT_RECOVERED)
-        expect("a failure outranks a recovery",
-               runner.combine_exit_codes([3, 1]), runner.EXIT_SUITE_FAILED)
+        expect("a failure", runner.combine_exit_codes(
+            [runner.EXIT_OK, runner.EXIT_SUITE_FAILED]), runner.EXIT_SUITE_FAILED)
+        expect("a retry", runner.combine_exit_codes(
+            [runner.EXIT_OK, runner.EXIT_RETRIED]), runner.EXIT_RETRIED)
+        expect("a recovery", runner.combine_exit_codes(
+            [runner.EXIT_OK, runner.EXIT_RECOVERED]), runner.EXIT_RECOVERED)
+        expect("a recovery outranks a retry", runner.combine_exit_codes(
+            [runner.EXIT_RETRIED, runner.EXIT_RECOVERED]),
+            runner.EXIT_RECOVERED)
+        expect("a failure outranks a recovery", runner.combine_exit_codes(
+            [runner.EXIT_RECOVERED, runner.EXIT_SUITE_FAILED]),
+            runner.EXIT_SUITE_FAILED)
         expect("an unhealthy device outranks a failure",
-               runner.combine_exit_codes([1, 4]), runner.EXIT_DEVICE_UNHEALTHY)
-        expect("an unexpected status is a failure",
-               runner.combine_exit_codes([0, 2]), runner.EXIT_SUITE_FAILED)
+               runner.combine_exit_codes(
+                   [runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY]),
+               runner.EXIT_DEVICE_UNHEALTHY)
+        expect("a status this runner never produces is a failure",
+               runner.combine_exit_codes([0, runner.EXIT_USAGE]),
+               runner.EXIT_SUITE_FAILED)
         expect("no children", runner.combine_exit_codes([]), runner.EXIT_OK)
 
 

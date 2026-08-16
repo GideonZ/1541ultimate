@@ -60,6 +60,165 @@ class RecordedFTP(ftplib.FTP):
             ms=round((time.monotonic() - started) * 1000.0, 1))
         return reply
 
+    def ntransfercmd(self, cmd, rest=None):
+        """Open a data connection, and say so.
+
+        FTP moves its payload on a second connection, and nothing about that
+        connection reaches `putcmd` or `getmultiline`: those two carry the
+        command that asked for it and the reply that opened it, and then the
+        bytes go somewhere the log cannot see. A record of a `RETR` with no
+        record of what came back is a control channel transcript rather than
+        an account of the interaction, and a truncated listing or a short
+        transfer is invisible in it.
+
+        Every transfer in `ftplib` funnels through here - `retrbinary`,
+        `storbinary`, `retrlines`, `storlines`, `nlst`, `dir` and `mlsd` all
+        reach a data connection by this method - so one hook covers them the
+        way `putcmd` and `getmultiline` cover the control channel. The socket
+        is handed back wrapped in a counter, so the bytes are recorded as they
+        move rather than being asked for afterwards from a caller that has
+        already consumed them.
+        """
+        started = time.monotonic()
+        try:
+            conn, size = super().ntransfercmd(cmd, rest)
+        except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
+            interactions.record(
+                "ftp", f"data {cmd.split(' ')[0].upper()}",
+                argument=cmd.partition(" ")[2], connection="new",
+                fault=interactions.fault_of(exc), error=str(exc),
+                ms=round((time.monotonic() - started) * 1000.0, 1))
+            raise
+        return _CountedData(conn, cmd, size, started), size
+
+
+def _byte_length(chunk) -> int:
+    """How many bytes this is, whether it arrived as bytes or as text.
+
+    `retrlines` opens the data connection in text mode, so its lines are
+    already decoded and their character count is not their byte count on any
+    line holding a character outside ASCII. The field says bytes on every
+    other transport, so it says bytes here.
+    """
+    if isinstance(chunk, str):
+        return len(chunk.encode("utf-8", "replace"))
+    return len(chunk)
+
+
+class _CountedData:
+    """A data connection that records how much crossed it, once it closes.
+
+    Everything but the methods below is the socket's own, so `ftplib` treats
+    this exactly as it treats the connection it asked for, and a method this
+    does not know about cannot break because of it. The context-manager pair
+    is spelled out rather than delegated because Python looks a dunder up on
+    the type and never on the instance, and `retrbinary`, `storbinary` and
+    `retrlines` all take the connection with `with`.
+    """
+
+    def __init__(self, sock, command: str, size, started: float) -> None:
+        self._sock = sock
+        self._command = command
+        self._size = size
+        self._started = started
+        self._sent = 0
+        self._received = 0
+        self._recorded = False
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            # Reached only while the instance is half built, and delegating it
+            # would look `_sock` up through this same method for ever.
+            raise AttributeError(name)
+        return getattr(self._sock, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exception):
+        self.close()
+
+    def recv(self, *args, **kwargs):
+        data = self._sock.recv(*args, **kwargs)
+        self._received += _byte_length(data)
+        return data
+
+    def sendall(self, data, *args, **kwargs):
+        result = self._sock.sendall(data, *args, **kwargs)
+        self._sent += _byte_length(data)
+        return result
+
+    def send(self, data, *args, **kwargs):
+        count = self._sock.send(data, *args, **kwargs)
+        self._sent += count
+        return count
+
+    def makefile(self, *args, **kwargs):
+        # `retrlines` and `storlines` read and write through a file object
+        # rather than the socket, so the counting has to follow it there or
+        # every line-oriented transfer records zero bytes.
+        return _CountedFile(self._sock.makefile(*args, **kwargs), self)
+
+    def close(self):
+        try:
+            self._sock.close()
+        finally:
+            self._finish()
+
+    def _finish(self) -> None:
+        if self._recorded:
+            return
+        self._recorded = True
+        verb, _, argument = self._command.partition(" ")
+        interactions.record(
+            "ftp", f"data {verb.upper()}", argument=argument,
+            connection="new", declared=self._size,
+            sent=self._sent or None, received=self._received or None,
+            ms=round((time.monotonic() - self._started) * 1000.0, 1))
+
+
+class _CountedFile:
+    """The file `ftplib` reads a listing through, counting what passes."""
+
+    def __init__(self, handle, owner: "_CountedData") -> None:
+        self._handle = handle
+        self._owner = owner
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._handle, name)
+
+    def __iter__(self):
+        for line in self._handle:
+            self._owner._received += _byte_length(line)
+            yield line
+
+    def readline(self, *args, **kwargs):
+        line = self._handle.readline(*args, **kwargs)
+        self._owner._received += _byte_length(line)
+        return line
+
+    def read(self, *args, **kwargs):
+        data = self._handle.read(*args, **kwargs)
+        self._owner._received += _byte_length(data)
+        return data
+
+    def write(self, data, *args, **kwargs):
+        result = self._handle.write(data, *args, **kwargs)
+        self._owner._sent += _byte_length(data)
+        return result
+
+    def close(self):
+        return self._handle.close()
+
+    def __enter__(self):
+        self._handle.__enter__()
+        return self
+
+    def __exit__(self, *exception):
+        return self._handle.__exit__(*exception)
+
 
 def connect(host: str, password: Optional[str] = None,
             timeout: float = DEFAULT_TIMEOUT,

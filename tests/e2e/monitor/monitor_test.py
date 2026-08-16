@@ -21,7 +21,9 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import machine as machine_lib
 import rest as rest_lib
+import targets
 from api import UltimateApi
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
@@ -1421,6 +1423,25 @@ def main() -> int:
     args = parser.parse_args()
 
     rest_host = args.rest_host or args.host
+
+    # This suite drives one revision of the monitor throughout rather than in
+    # one place, so the whole of it is tagged rather than any single check.
+    # `tests/lib/machine.py` records which machines have that revision, and
+    # without this the suite ran against a monitor it was never written for
+    # and failed on a rendering difference: on a C64 Ultimate 1.2.0 it reached
+    # "ASCII view width and scrolling" and reported a highlight mismatch,
+    # three attempts running, which is a suite asserting the wrong thing
+    # rather than a device defect.
+    info = UltimateApi(rest_host, args.password or None,
+                       REST_TIMEOUT_SECONDS).info()
+    device = machine_lib.identify(
+        targets.device_of(rest_host),
+        lambda: (info.product, info.firmware_version))
+    if device.skip_without_fix(machine_lib.MONITOR_EXIT_AND_BACK_KEYS,
+                               "this machine runs the monitor revision this "
+                               "suite drives"):
+        suite_ok("monitor_test")
+        return 0
 
     reset_rest_machine(rest_host, args.password)
 

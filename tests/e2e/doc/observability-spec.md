@@ -352,6 +352,23 @@ killed before its `suite` record was written, which is exactly the run whose
 records most need reading. This is the OBS-1.4 rule applied: a field on an
 existing shape rather than a reconstruction.
 
+**OBS-2.19** [P1] An attempt after the first writes its console log and its
+failure capture into `DIR/<slug>/attempt-<n>/`. The first attempt writes where
+it always did, so a run in which nothing was retried grows no directory at all
+and every path above is unchanged.
+
+The per-suite JSONL is deliberately not split. Every record in it already
+carries `attempt` (OBS-2.3), the file is truncated on the first attempt and
+appended to afterwards (OBS-2.8), and the report joins on the
+`<target>/<label>/<suite>/<attempt>` identity key of OBS-3.6. Splitting it
+would break that rule and that key for nothing.
+
+The asymmetry is the difference between a record and a file. A console log and
+a capture carry no attempt field to join on, so a second attempt writing them
+either overwrites the first or appends without a boundary, and a reader looking
+at the capture of a suite that failed twice cannot say which failure it shows.
+A record needs no directory because it says which attempt wrote it.
+
 **OBS-2.10** [P1] The `-o` directory has one layout. Every component writes into
 it and refers to files inside it by a path relative to its root:
 
@@ -365,13 +382,21 @@ DIR/
   <slug>/
     run.jsonl                     this target's runner records
     run.log                       this target's runner console output (OBS-2.13)
-    <label>-<suite>.jsonl         one file per suite run
+    <label>-<suite>.jsonl         one file per suite run, every attempt appended (OBS-2.8)
     <label>-<suite>.log           that suite's console output (OBS-2.13)
     capture/<label>-<suite>-<attempt>-screen.txt
     capture/<label>-<suite>-<attempt>-screen.bin
     capture/<label>-<suite>-<attempt>-state.json
     capture/<label>-<suite>-<attempt>-<n>-<first|last|change>.png    optional (OBS-8.28)
     capture/<label>-<suite>-<attempt>-<n>-<first|last|change>.txt    optional (OBS-8.28)
+    attempt-<n>/                  only for an attempt after the first (OBS-2.19)
+      <label>-<suite>.log         that attempt's console output
+      capture/...                 that attempt's failure capture
+    interactions.jsonl            every interaction with this device (OBS-2.17)
+    interactions.seq              the next sequence number, and the lock every writer takes (OBS-2.17)
+    transcript.txt               the same interactions, one line each (OBS-2.17)
+    bodies/<digest>.bin           one response body, kept once (OBS-2.17)
+    screen-text.jsonl             the C64's screen as text, decoded from the video (OBS-2.18)
     syslog.txt                    optional, this target's device log (OBS-7.8)
     syslog-<host>.txt             optional, a second machine's log (OBS-7.18)
     screens.jsonl                 every distinct screen the harness saw (OBS-8.22)
@@ -437,6 +462,35 @@ rather than the run. The runner is a git worktree in the working checkout this
 document was written against, so `git rev-parse` has to be run with the
 repository root as its working directory rather than relying on the process's
 own.
+
+**OBS-2.20** [P1] The `run` record carries a hash over the harness files the
+run reads, taken when the run starts and again when it ends, and says so when
+the two differ.
+
+Every suite is a separate process started from the working tree, so the files
+under `tests/`, `tools/` and `run-tests` are read while the run is in progress
+rather than copied at the start. Editing one of them mid-run means the later
+suites ran different code from the earlier ones, which is two runs reported as
+one, and nothing in the artefacts says so. A reader cannot tell such a run from
+a run of one revision, and neither can the reader who made the edit an hour
+later.
+
+`worktree_dirty` (OBS-2.11) does not answer this. It comes from `git status
+--porcelain`, which lists which files are modified rather than what is in them,
+so editing a file that was already modified leaves its output identical.
+
+Tracked files only. A run writing its output under the tree would otherwise
+report its harness as changing every time it wrote a line.
+
+The limit, stated so nobody reads more into the field than it carries: a file
+edited and reverted within one run hashes the same at both ends and is not
+detected. This catches a tree that ended different from how it started, which
+is the case that splits a gate in two, and not every possible edit.
+
+This is the same argument as the rest of this document applied to the harness
+itself: a discipline rule that a run cannot check is a rule the artefacts
+cannot be trusted against, and the artefact should be able to tell a reader
+that the run is not what it appears to be.
 
 **OBS-2.12** [P1] A multi-target run's parent process writes its own `run`
 record to `DIR/run.jsonl`, naming the targets it ran and the status
@@ -562,9 +616,19 @@ Telnet exchange, `ftp.RecordedFTP` for every FTP command and reply, and
 `health._banner` and `health._dma_identify` for the listener probes the runner
 makes outside any suite. A suite is never asked to announce anything.
 
+FTP moves its payload on a second connection, and nothing about that connection
+reaches the control-channel hooks: they carry the command that asked for it and
+the reply that opened it, and then the bytes go somewhere the log cannot see. A
+record of a `RETR` with no record of what came back is a control-channel
+transcript rather than an account of the interaction, and a truncated listing
+or a short transfer is invisible in it. So the data connection is recorded too,
+hooked at `ftplib`'s `ntransfercmd`, which every transfer funnels through, with
+the bytes counted as they move rather than asked for afterwards from a caller
+that has already consumed them.
+
 | Field | Content |
 |---|---|
-| `seq` | this process's own counter, shared with `transcript.txt` |
+| `seq` | this target's own counter, unique in the file and shared with `transcript.txt` |
 | `time`, `suite`, `target`, `attempt` | as every record (OBS-2.3) |
 | `check`, `scenario` | what was open, absent when nothing was |
 | `transport` | `rest`, `telnet`, `ftp` or `socket` |
@@ -573,7 +637,7 @@ makes outside any suite. A suite is never asked to announce anything.
 | `menu_open` | whether the device's overlay menu was open, from what `machine:menu_screen` last answered |
 | `screen` | a digest of what the harness was looking at |
 | `op` | what was done on it: a method and a path, a key, a command |
-| `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them |
+| `ms`, `status`, `params`, `payload`, `retries`, `error` | as the transport knows them. A query or a request body is JSON with sorted keys, not `str(dict)`, so a program can read it back and two records of one call are the same string |
 | `sent`, `received` | how many bytes went each way, on every transport that knows; the Telnet payload itself is in `payload` |
 | `reply` | an FTP reply's first line |
 | `body`, `body_hex` or `body_sha256`, with `body_bytes` | the device's answer, per the rule below |
@@ -604,11 +668,19 @@ record itself is content-addressed the way a body is, so a `machine:writemem`
 of a whole block keeps its address and its bytes and a partial write is visible
 without a read-back.
 
+`seq` numbers the file, not one writer's share of it. Several processes append
+to it - the runner, the UI-state gate and every suite - so a counter held in
+each of them numbers the file from one several times over, and the recipe below
+then answers with as many records as there were writers. The number is
+allocated from a counter beside the file under a lock every writer takes, and
+the lock is held across both appends, so the number is unique, the two files
+carry the same numbers, and they carry them in the same order.
+
 `seq` is also the join between the recording and the log, in both directions,
 and no record carries a recording position of its own. From a frame to a
 record, every line of the band of OBS-8.40 ends with that record's number and
 that field is never truncated, so a viewer reads `#4812` off the frame and runs
-`jq 'select(.seq == 4812)' interactions.jsonl`. From a record to a frame, a
+`jq 'select(.seq == 4812)' interactions.jsonl` and gets one record. From a record to a frame, a
 record carries the wall clock it happened at, and the `kind=capture` record
 carries `started` and `lead_in`, so the position in the file is
 `lead_in + (time - started)`; a still needs no arithmetic at all, because its
@@ -730,7 +802,14 @@ have failed. Depends on OBS-2.5.
   `DIR/<slug>/run.jsonl` and `DIR/<slug>/<label>-<suite>.jsonl`, and neither
   produces `DIR/<slug>/<slug>/`.
 - Every record in every file carries a `target` field equal to the target token,
-  and every record a suite wrote carries an `attempt` field.
+  and every record a suite wrote carries an `attempt` field. This binds the
+  UI-state gate as well as the suites: the gate drives the device, its device
+  calls reach the interaction log like any other, and it runs as a process of
+  its own that inherits the runner's environment rather than the copy
+  `run_one_attempt` builds, so the runner sets both variables for it
+  explicitly. It carries no `attempt` when it runs between suites, because a
+  gate run then belongs to no attempt and a guessed one would read as a record
+  a suite wrote.
 - A retried suite's JSONL holds two records with the same `index` and different
   `attempt` values.
 - A device-free test reads a recorded JSONL fixture and asserts the interval
@@ -895,22 +974,35 @@ brings to a non-empty `syslog-unknown-sender.txt` is "who sent these", and the
 answer is a list of addresses rather than a guess: the report never proposes a
 target for such a line (OBS-7.8).
 
-**OBS-3.13** [P1] The generator is device-free and testable against a recorded
-`-o` tree checked into the repository at `tests/lib/fixtures/e2e-run/`. Every
-rendering decision it makes is covered by a test that runs with no hardware.
+**OBS-3.13** [P1] The generator is device-free and testable against a real `-o`
+tree the runner writes at test time. Every rendering decision it makes is
+covered by a test that runs with no hardware.
 
 Its tests are tiers 1, 3 and 4 of the suite in section 16, which is the one
 registered suite all of this document's tests live in. The generator is imported
 from `tools/` by path, the way `tests/lib/runner_policy_test.py` imports
 `run-tests`.
 
-The fixture is a reduced real tree, not a synthesised one: two targets, one of
-them a `cartridge@computer` token, a retried suite, a failing suite, a skipped
-suite, a suite with no closing record, a truncated final line, at least one
-`health` record with a failed check and one with a skipped check, and a captured
-console log holding a traceback. It is checked in with the JSONL byte for byte
-as the runner wrote it, apart from the reduction, so a change in a record shape
-shows up as a test failure rather than as a fixture nobody updated.
+The fixture is a real, scripted run against the device double rather than a
+synthesised tree: two targets, one of them a `cartridge@computer` token, a
+retried suite, a failing suite, a skipped suite, a suite with no closing
+record, a truncated final line, at least one `health` record with a failed
+check and one with a skipped check, and a captured console log holding a
+traceback. It is built fresh into scratch space by the current runner, so a
+change in a record shape shows up as a test failure rather than as a fixture
+nobody updated, and no generated artefact is committed.
+
+What is checked in is `tests/lib/fixtures/e2e-run.expected.md`, the document
+that tree renders to, because that is what a reviewer reads to see a rendering
+change: a diff of it is exactly the diff a reader of a real report would see.
+Regenerating it is a deliberate act, `--record-fixture`, and not a side effect
+of running the suite.
+
+**A fixture that cannot be built fails, and never skips.** Every acceptance
+criterion in this section lives in tier 4, so a builder that stops working
+turns all of them into skipped cases while the suite still reports a pass, and
+the section stops being tested at all without anything going red. That is a
+larger hole than any single rendering defect it would have caught.
 
 **OBS-3.14** [P1] `index.md` has one section order, and the boundary between
 what belongs on a build page and what belongs in a download is the HTML comment
@@ -923,6 +1015,7 @@ what belongs on a build page and what belongs in a download is the HTML comment
 | 3 | `## Verdict` | the table of OBS-3.4 |
 | 4 | `## Coverage` | what did not run and what was skipped, per OBS-3.25 |
 | 4a | `## What this run changed` | mutations with no matching restore, per OBS-3.30 |
+| 4b | `## Retries` | every suite run that took more than one attempt and every flaky check, per OBS-17.5 |
 | 5 | `## Changes since <run>` | the comparison of OBS-3.28, only with `--compare` |
 | 6 | `## Failing checks` | one entry per failure, with its screen text (OBS-3.10), what the run knows about it (OBS-3.27), its reproduce command and its log tail (OBS-3.20) |
 | 7 | `## Device health` | the table of OBS-3.7, one per target |
@@ -1012,8 +1105,19 @@ report `SKIP` with a reason nobody reads.
 Depends on OBS-2.14 and OBS-2.15.
 
 **OBS-3.26** [P1] The report has a `## Timeline` section in the detail part: one
-line per event, in wall-clock order, each with its time and its offset from the
-run's start.
+line per event, in wall-clock order, each opening with its wall-clock time on
+the host that ran the gate and then its offset from the run's start.
+
+Both, because they answer different questions: the offset says where in the run
+this happened, and the clock time joins the line to a device log, a console log
+or a colleague's message about the same minute. It is the same clock every
+record is stamped with (OBS-1.5) and the same one the interaction transcript
+prints.
+
+**One line per event, always.** A device's error bodies are pretty-printed
+JSON, so interpolating one put three lines into a section whose every line is
+supposed to open with a time, and any reader selecting the section's lines by
+that opening lost the two continuation lines silently.
 
 Every record in the tree already carries a `time`, so this is a merge and a
 sort, and it is the only place the whole run appears as one narrative. The
@@ -1108,8 +1212,14 @@ that no verdict reports.
 **OBS-3.23** [P6] The report shows each suite run's stills (OBS-8.28) in the
 detail part: the text form of each one inline in a fenced block, in the order
 they were captured, each labelled with its kind and its `mm:ss` offset into the
-recording, and the PNG beside it as a relative link for a reader who has
-downloaded the artifact.
+recording, and the PNG named beside it by its path relative to the tree.
+
+Named rather than linked. A link into a zipped CI artifact resolves to nothing
+on the build page a reader is looking at, which is OBS-4.7's own argument, and
+a path is what a reader who has downloaded the tree needs either way. Every
+path this document prints is relative to the tree for the same reason,
+including the recording's own files, whose target directory is the slug and not
+the token: `u2@c64u` is `u2-at-c64u` on disk.
 
 The offset is the one the `kind=capture` record holds for that still, which is
 where in the file the frame it was taken from sits (OBS-8.28). It is never
@@ -1169,12 +1279,24 @@ compares last night's run with this one.
 holding the whole run in machine-readable form:
 
 ```
-RESULT: FAIL  targets=2  suites=30  ok=27  fail=2  warn=0  skip=1  recoveries=1  exit=1
+RESULT: FAIL  targets=2  suites=30  ok=27  fail=2  warn=0  skip=1  recoveries=1  retried=3  exit=3
 ```
 
 The keys are fixed, the order is fixed, and the separator is two spaces. This is
 what a program or an agent reads first, and it is what a person greps a
 directory of runs for.
+
+`retried` is on this line rather than only in the section of OBS-17.5, because
+a green run is exactly when nobody reads past the first line, and a run that
+needed three goes at four suites is not the same result as one that did not.
+
+It also carries the weight the title cannot. A retry makes the run's verdict
+WARN, and on a bench where most runs need one, WARN becomes the usual title and
+a title that is always the same carries no information. The count gives
+magnitude where the title gives only presence, so a reader looking at a run of
+WARN titles reads the number rather than concluding the signal is broken. A
+bench where most runs need a retry is genuinely degraded and should say so;
+what it should not do is say so in a way nobody can read a trend out of.
 
 The counts come from the `run` records, never from a recount of the `suite`
 records, so the line cannot disagree with the runner. A single-target run has
@@ -1703,6 +1825,98 @@ and no reason for it: a device that was reflashed and lost the setting. The end
 read catches the one that produces no log in the *next* run, which is far harder
 to trace back.
 
+Both halves of the value are checked, because both produce the same artefact:
+an empty file, no warning, and a report saying the device said nothing, which
+is the shape a device that has stopped also has.
+
+- **The port** has to be one the collector bound. A device pointed at `<host>`
+  with no port sends to 514, because that is what `Syslog::init` defaults to,
+  and the collector binds a non-privileged port because 514 needs root.
+  Measured on the C64 Ultimate here: 23 suites, 0 lines, nothing anywhere
+  saying why.
+- **The host** has to be the address a datagram from this device would arrive
+  at. That is obtained by connecting a UDP socket to the device and reading
+  `getsockname`, which fixes the peer and picks a route without putting
+  anything on the wire, and is right on a runner host with several interfaces,
+  where the host's own name resolves to whichever one the resolver prefers
+  rather than to the one facing the bench. The configured value is compared as
+  text and never resolved: it is what an operator typed, and a name that
+  resolves here and not on the device is the mistake worth naming rather than
+  one to be clever about, so a value that is not a literal address is reported
+  as one this cannot check rather than as one that is wrong.
+
+**OBS-7.20** [P5] The run says at startup which machines the collector cannot
+hear, rather than at the end.
+
+A device whose log does not reach the collector produces an empty file and
+nothing else, and that is indistinguishable from a device that had nothing to
+say. Discovered when the run ends, it is 15 to 30 minutes after the point where
+somebody could have fixed it, and OBS-1.2 is the requirement that a component
+says at startup what it cannot do.
+
+One `GET /v1/version` per machine is enough to provoke a line: measured on a
+C64 Ultimate and an Ultimate II+L, that single request produces two, the
+accepted connection and the request itself. A machine that says nothing within
+a few seconds of being asked something is a machine whose log is not arriving.
+
+It names no cause, for the reason in OBS-7.21. It reports the observation, the
+port that machine sends to, and whether anything arrived from an address no
+target claims, which is the one discriminating fact the collector itself
+holds.
+
+**OBS-7.21** [P5] A device that sent nothing is reported as a device that sent
+nothing, and no mechanism is named.
+
+Several causes produce exactly one artefact: a setting naming somewhere else, a
+setting written during a run and not yet in force because `Syslog::init` reads
+it only at boot, a forwarding task that terminated at `socket()` or
+`connect()`, and a link dropping every datagram. Two of those are
+*structurally* indistinguishable from any artefact, however hard the collector
+tries: `Syslog::init` prints its own success and failure, and
+`Syslog::forwardLogging` prints `"Failed to open socket for sending syslog
+packets, terminating syslog task"`, and every one of those lines goes into the
+very buffer that is not being forwarded. The account of the failure is inside
+the thing that failed.
+
+So the run states what was observed and names the facts that discriminate
+between the causes it can tell apart - the value the setting held at both ends
+of the run, the `syslog_failed_sends` and `syslog_overflows` figures on every
+ident sweep (OBS-9.2), and whether `syslog-unknown-sender.txt` holds anything -
+and stops there. This is the Purpose section's rule about never stating a cause
+applied to the one component whose failures most invite one, and it is a
+requirement because the harness had a warning that ended "the setting takes
+effect at the device's next boot", which the run had not established and which
+was flatly wrong for a device whose setting was empty and which the same file
+warned about twice.
+
+**Establishing a boot boundary from artefacts.** Both syslog counters are
+cumulative since the device booted, so an argument from either is worthless
+across a reboot, and nothing on the REST surface answers "has this device
+rebooted". The free-heap low-water mark does: `min_ever_free` from
+`GET /v1/machine:heap` (OBS-6.2) never rises within a boot, so a reading higher
+than a run's last sweep recorded is proof that the device rebooted between the
+two. It is the only such proof available without a log, and the next person
+arguing from a cumulative counter needs it.
+
+**There is no software route to restarting device firmware.**
+`PUT /v1/machine:reboot` sends `SubsysCommand(NULL, SUBSYSID_C64,
+MENU_C64_REBOOT, 0)` in `software/api/route_machine.cc`, which reboots the C64
+and leaves the Ultimate firmware running, so nothing that `ultimate_main` does
+once is done again. Measured with the heap mark above: an Ultimate II+L read
+`min_ever_free` 4910720 before `machine:reboot` and 4910720 after it, and that
+mark cannot survive a restart.
+
+This is what makes the boot-time reads real constraints rather than
+inconveniences. A syslog destination written during a run does not take effect
+until somebody power-cycles the machine, and no amount of REST reaches that
+far. A bench provisions these settings once, out of band; a run reads them and
+reports what it finds.
+
+The distinction to keep is between this mechanism and any particular run's
+silence. That the setting is read once at boot is proven and belongs here. That
+it is why a given run collected nothing is not proven by it, and OBS-7.21 is
+why the artefact does not say so.
+
 ### The collector
 
 **OBS-7.5** [P5] The collector is a plain UDP sink, not an RFC syslog daemon.
@@ -1868,13 +2082,61 @@ Addresses are resolved once, at collector start, with
 host name that does not resolve is reported once at startup per OBS-1.2 and its
 datagrams land in the unknown-sender file, where they are still evidence.
 
-Resolution is enough because a device with two interfaces sends from the one the
-firmware's route policy prefers, and that policy prefers wired Ethernet, which
-is the interface the machine's name resolves to
-(`software/network/route_policy.c`). A machine outside this repository, or one
-whose Ethernet is down for the run, can still be given a second address for the
-collector with `U64_LOG_ADDRESSES`, and the expected-against-observed table of
-OBS-7.9 is what shows that it was needed.
+Resolution is not enough on its own. A machine with two interfaces sends from
+whichever one the stack's route picks, which is not always the one its name
+resolves to, and OBS-7.19 is what identifies such a datagram. A machine
+sharing a port whose log arrives from an address its name does not resolve to
+can still be given that address with `U64_LOG_ADDRESSES`, and the
+expected-against-observed table of OBS-7.9 is what shows that it was needed.
+
+**OBS-7.19** [P5] A datagram is attributed by the socket that received it
+wherever that is possible, and by its source address otherwise.
+
+A datagram carries no identification but its source address (OBS-7.6), and a
+machine's source address is not always the address its name resolves to: an
+Ultimate 64 with Ethernet and WiFi both up answers REST on one and can send its
+log from the other, and a datagram from the second address matches no target.
+Attributing such a datagram by which target happened to be running would be a
+guess, and two targets can be live at once, so the guess is not even
+well-defined.
+
+`Syslog::init` parses the configured destination as `<ip>[:<port>]` and accepts
+any port from 1 to 65535, so each machine can be given a port of its own. The
+runner reads each machine's configured destination before it binds anything -
+the same read OBS-7.4 already makes - and binds one socket per port named,
+plus the run's own `--syslog-port` default.
+
+**The harness reads that setting and never writes it.** Writing it back would
+delete the finding of any suite testing that setting, and OBS-15.10 records
+that a partial `.cfg` load can write `Network Settings` without naming it; it
+would also put a flash write in the path of every run. Which port a device
+sends to is a deployment step, exactly as OBS-7.1 frames the setting as a
+whole.
+
+Four cases, in this order:
+
+| The datagram arrived | Attributed by | Goes to |
+|---|---|---|
+| on a port exactly one machine sends to | the receiving socket, whatever the source address | that machine's file |
+| on a port more than one machine sends to, from an address a target claims | the source address, as before | that target's file |
+| on a port more than one machine sends to, from an address no target claims | nothing | `syslog-unknown-sender.txt`, with the address |
+| from an address two machines resolve to | the first claim, and the ambiguity is reported | the first claimant's file |
+
+**No provisioning is required for the implementation to be correct.** With
+every machine on one port, no port owns anything, every datagram falls through
+to source-address attribution and then to the unknown-sender file, and the
+behaviour is exactly what it was before ports were read at all. What
+provisioning buys is attribution that survives a device logging from an address
+the run did not expect. A maintainer should not come away thinking the feature
+needs the bench set up a particular way; a bench that is set up that way is
+demonstrating the WiFi case rather than enabling the mechanism.
+
+The source address is recorded either way, on the `senders` field of OBS-7.9,
+so a device that moved interfaces stays visible in the expected-against-observed
+table rather than being absorbed by the port match. The `kind=log` record
+carries the port assignment as `ports` and how the lines were attributed as
+`attributed`, counting `port` and `address` separately, so a later reader can
+check both attributions against the addresses beside them.
 
 ### Acceptance criteria for section 7
 
@@ -1883,6 +2145,14 @@ OBS-7.9 is what shows that it was needed.
   timestamps, and correct target attribution for a `cartridge@computer` token:
   the cartridge's lines in `syslog.txt` and the computer's in
   `syslog-<computer>.txt` (OBS-7.18).
+- A device-free test feeds a datagram from an address belonging to no target at
+  all, on a port exactly one machine sends to, and asserts it is attributed to
+  that machine, that the record says the port attributed it, and that the
+  address it actually came from is recorded as observed and not as expected
+  (OBS-7.19).
+- A device-free test feeds a datagram from an unclaimed address on a port more
+  than one machine sends to, and asserts it lands in
+  `syslog-unknown-sender.txt` with its address (OBS-7.19).
 - A device-free test feeds a datagram from a third, unmapped address and asserts
   it lands in `DIR/syslog-unknown-sender.txt` with its source address on the line.
 - A device-free test asserts the collector starting on a busy port produces one
@@ -2288,10 +2558,21 @@ Telnet-mode suite was looking at, which is why this lands at P3 beside it.
 | Written by | `tests/e2e/lib/ui_backend.py`, in the suite process that read the screen |
 | Enabled by | `-o DIR`, through an environment variable the runner exports the way `E2E_JSONL` is; off with `--no-screens` |
 | Fields | `time`, `suite`, `attempt`, `check`, `kind`, `cols`, `rows`, `text`, `raw` |
-| `kind` | `menu` for a `machine:menu_screen` payload, `telnet` for a session's screen |
+| `kind` | `menu` for a `machine:menu_screen` payload, `telnet` for a session's screen, `stream` for a suite starting or stopping one of the device's streams |
 | `text` | the screen as a list of strings, one per row, exactly as a reader would see it |
 | `raw` | the device's bytes, hex encoded: the 2000-byte two-plane payload for `menu`, absent for `telnet` |
-| Written when | the payload differs from the last one written |
+| Written when | the payload differs from the last one this process wrote |
+
+A `stream` record carries `action`, `stream` and `address` and none of the
+screen fields, because it is not a screen: it is a suite taking one of the
+device's streams, which the recorder has to know about (OBS-8.39) and which
+arrives on the same channel because there is no second one to put it on.
+
+The deduplication is per suite process, so the first screen a suite reads is
+never compared against the last screen the previous suite wrote and a handful
+of byte-identical records appear at process boundaries. Comparing across
+processes would need shared state to save about eight records in a
+2400-record file, which is a worse trade than the duplicates.
 
 JSONL rather than a bespoke binary format, and both `text` and `raw` rather than
 one of them. Both choices follow OBS-1.9:
@@ -2612,8 +2893,11 @@ The bound is per suite run, so a long suite gets the same number as a short one
 and the set stays readable.
 
 **A still is a pair of files sharing one name**: a `.png` holding the composed
-canvas at that moment, and a `.txt` holding the menu screen at that moment as
-40x25 text. Both are written under the target's `capture/` directory, named from
+canvas at that moment, and a `.txt` holding, as text, whatever the harness pane
+was showing at that moment. That is the 40x25 menu screen for a suite driving
+the overlay and the 60x24 session screen for one driving Telnet, because the
+pane shows the surface the suite was on and the text form has to be of the same
+thing as the image beside it. Both are written under the target's `capture/` directory, named from
 the suite-run key of OBS-3.6 plus an index and the kind. The pair exists because
 the two readers need different things: the image is what a person opens, and the
 text is what the report inlines (OBS-4.7) and what a program or an agent can
@@ -2885,13 +3169,31 @@ bottom border is the remaining space, and a progress bar is what best uses it:
 at any frame it answers "how far into the run am I" and "what has gone wrong so
 far" without reading a word.
 
-| Segment state | Meaning |
-|---|---|
-| dark | not run yet |
-| neutral, bright | passed |
-| red | failed |
-| amber | warned, skipped, or the device had to be recovered around it |
-| a brighter outline | the suite running at this frame |
+Five outcomes and nothing else. A segment is a few pixels wide, and a bar
+encoding nine states needs a legend, which is a bar that has failed at the only
+job it has. Which of the three caveats a segment carries - a retry, a recovery,
+or a UI left outside its documented state - is in the report; the bar says only
+that there was one.
+
+| Segment | VIC colour | Meaning |
+|---|---|---|
+| not yet run | the chrome, dark grey | the absence of a fill rather than a colour |
+| running | a white outline | over whatever fill the segment already has |
+| passed | light green | it passed, first time |
+| passed with a caveat | orange | retried, recovered around, or it left the UI dirty |
+| failed | light red | it failed every attempt it was given |
+| skipped | cyan | the suite itself reported `SKIP` |
+| outcome unknown | purple | it ran and no verdict was ever recorded for it |
+
+`outcome unknown` is not a nicety. A segment that ran and produced no verdict
+used to be painted the chrome colour, inside the filled prefix, which is where
+a reader has every reason to read a dim colour as an outcome.
+
+The edge flash of OBS-8.32 is what carries failure salience, and it has to:
+within this palette the brightest red is dimmer than the passing green, so the
+bar cannot be the only thing marking a failure. `FAILURE_COLOUR` and
+`WARNING_COLOUR` are not repointed by any of the above; the bar's colours are
+constants of its own.
 
 Six rules, for the same reason OBS-8.32 has them:
 
@@ -2899,14 +3201,21 @@ Six rules, for the same reason OBS-8.32 has them:
   computed once from the planned sequence in OBS-2.14. Sizing them by duration
   would be more truthful and would make the bar's shape change every suite,
   which is the opposite of glanceable.
+- **One segment per planned suite run, whatever it costs.** A retried suite is
+  one segment repainted, not one segment per attempt: a bar whose width changes
+  mid-run moves every segment after it, which destroys the one thing a progress
+  bar is for. The report's verdict table is one row per attempt (OBS-3.4);
+  these are different artefacts answering different questions and both are
+  right.
 - **Full width of the frame, a few pixels high, with a gap above it** so it
   never touches the picture area.
-- **It fills left to right and never rewrites history.** A segment's colour
-  changes once, when that suite run closes.
+- **It fills left to right and never rewrites history.** A segment is repainted
+  as its outcome changes - white while it runs, red the moment an attempt
+  fails, orange when a later attempt passes - so the final colour is the final
+  outcome by construction rather than by a closing pass.
 - **Segments to the right of the current one are always dark**, because their
   outcome is not known yet. This is a progress bar, not a summary, and the last
   frames of the recording are where the whole picture is.
-- **The same four colours as OBS-8.32, plus the neutral.** No new palette.
 - **Governed by `--no-record-stamp`**, with the stamp and the edge.
 
 It shares OBS-8.31's JSONL tail for its state, so it costs one more thing to
@@ -3509,39 +3818,24 @@ which is the only way to prove OBS-8.8's first property rather than assert it.
 ## 9. Firmware work
 
 Sections 1 to 8 hold without a firmware change: a log line whose sender no
-target claims is kept rather than dropped, and `U64_LOG_ADDRESSES` attaches an
-address by hand. Each item below removes a named limitation and carries a
-code-size cost on targets that are already tight. OBS-9.4 is the one item here
-that the harness cannot work around, because no device-side setting decides it.
+target claims is kept rather than dropped, the port a datagram arrives on
+identifies its sender where a bench gives each machine one (OBS-7.19), and
+`U64_LOG_ADDRESSES` attaches an address by hand. Each item below removes a
+named limitation and carries a code-size cost on targets that are already
+tight.
 
-**OBS-9.4** [P6] Select the outbound interface by an explicit preference rather
-than by the order the interfaces came up in. Wired Ethernet is preferred over
-WiFi when both are up and both can reach the destination; both stay usable;
-WiFi carries what Ethernet cannot; restoring Ethernet restores the preference;
-a socket bound to a local address sends from the interface holding it.
+An observation about the forwarding task, recorded here rather than acted on.
+`Syslog::forwardLogging` calls `vTaskDelete(NULL)` if `socket()` or `connect()`
+fails, so a single transient at boot would disable that device's logging until
+the next boot, with no retry and no counter that moves. That is the shape of a
+device which collected nothing in one run while its configured destination was
+correct and both counters read 0 in every health sweep of it, and which logged
+correctly on a later boot.
 
-`ip4_route` walks `netif_list` and takes the first interface whose masked
-address matches the destination, and `netif_add` prepends, so the list is the
-reverse of the order the interfaces were registered in. The WiFi netif is added
-when the ESP32 reports it has associated, after the wired one, so on a machine
-whose Ethernet and WiFi are on one subnet WiFi carries everything.
-`netif_default` does not change that: `ip4_route` reads it only after the walk
-has matched nothing, so the Ethernet-first choice in
-`NetworkInterface::set_default_interface` never applied to a destination both
-interfaces can reach. Measured: 45430 syslog lines from an Ultimate 64 arrived
-from its WiFi address while its hostname and its REST surface resolved to its
-Ethernet address.
-
-`LWIP_HOOK_IP4_ROUTE_SRC` is the only hook that can decide this.
-`LWIP_HOOK_IP4_ROUTE` is consulted after the walk and so can only supply a
-route the walk did not find. The decision itself is
-`software/network/route_policy.c`, which takes no lwIP type and is tested on
-the build host by `make route_policy_test`; the part that reads a netif is
-`software/network/lwip_route_hook.c`, built into the lwIP library so that every
-application linking it has the symbol `ip4.c` refers to. An interface declares
-its rank in `NetworkInterface::route_preference`, so the registration order is
-not the policy, and a stack where nothing has declared one produces exactly the
-answer `ip4_route` gives.
+**It is a hypothesis and it is written down as one.** The evidence does not
+establish it: the same artefacts are produced by `Syslog::init` returning
+false, and OBS-7.21 is why neither can be told from the other. Nothing here
+changes the firmware on the strength of it.
 
 **OBS-9.1** [P6, optional] Make an assertion failure reach the collector.
 `vAssertCalled` disables interrupts and spins, so the syslog task cannot forward
@@ -3577,17 +3871,6 @@ not a free reordering.
   a time, per the repository's rule in `AGENTS.md`.
 - Each item is built for every target (`./build-tool -s u64 u64ii u2 u2pl`)
   before it is reported complete, not only the target it is deployed to.
-- For OBS-9.4: with both interfaces up on one subnet and `U64_LOG_ADDRESSES`
-  unset, one collector bound to the syslog port sees the device's lines arrive
-  from the address its name resolves to, `syslog_failed_sends` and
-  `syslog_overflows` are 0, and no line of that device's is left unattributed.
-- For OBS-9.4: a WiFi link that drops and reconnects, on a new address, does
-  not change which interface ordinary traffic leaves by. The preference is
-  declared once, when the interface is added, and `wifi.cc` takes a reconnect
-  through `link_up` and `link_down` rather than through `start` and `stop`, so
-  a reconnect changes the interface's up state and nothing else. The hook reads
-  that state on every packet and never reads `netif_default`, so the reconnect
-  path cannot assert itself as the route.
 
 ---
 
@@ -4561,3 +4844,129 @@ prompt's definition of done.
   double was scripted to produce.
 - Reverting any one requirement's implementation makes exactly the tests that
   name it fail, and no others.
+
+---
+
+## 17. Retrying a failed suite
+
+A gate that reports a failure nobody can reproduce costs more than it saves,
+and a gate that reports green while something is intermittently broken costs
+more still. This section is the whole of how those two are traded against each
+other, and it is the one part of this document that can make the harness hide a
+defect, so most of it is about the evidence rather than about the retrying.
+
+**OBS-17.1** [P1] Every failure is retried. A suite that failed is run again,
+up to the ceiling in OBS-17.2, whatever made it fail and whatever the device
+looked like at the time.
+
+There is no classifier deciding which failures deserve another go. A rule that
+decided would be wrong sometimes and unauditable always, and the evidence is on
+the record either way: every attempt writes its own records, its own console
+log and its own failure capture (OBS-2.19), so a reader can see what each
+attempt did rather than being told what the harness concluded about them.
+
+A failure that repeats every time is a failure. One that does not is a flake,
+and OBS-17.5 is how a reader is told which they are looking at.
+
+**OBS-17.2** [P1] `--attempts N` is one absolute ceiling on how many times a
+suite runs, whatever mixture of reasons produced the attempts.
+
+The flag counts **executions**, not retries, and says so in `--help`. The
+default is 3, so a failing suite is retried twice. `--no-retry` is an alias for
+`--attempts 1`, which is exactly one execution.
+
+Counting executions is what removes the off-by-one: the flag's value, the
+highest `attempt` any record can carry (OBS-2.3), and the highest `attempt-<n>`
+directory a run can write (OBS-2.19) are one number with one meaning.
+
+A recovery does not buy an extra attempt. `--recover-max-per-suite` keeps its
+meaning as a bound on recoveries and can only reduce the number of executions,
+never add one, so a suite cannot run three flake retries times three recovery
+retries.
+
+A suite that has used its last attempt is not recovered, because recovering a
+device for an attempt that will never happen is a device action with no reason
+behind it and the next suite's own precondition recovers it anyway. Its health
+is still read, because that is what distinguishes a suite that failed from a
+device that could not be made healthy, and those are different statuses with no
+following suite to tell them apart when the last suite of a run is the one that
+failed.
+
+**OBS-17.3** [P1] The exit status is an ordered severity scale, and may be
+compared with an ordering operator.
+
+| Status | Meaning |
+|---|---|
+| 0 | every suite passed first time, and nothing needed recovering |
+| 1 | every suite passed, but at least one needed more than one attempt |
+| 2 | every suite passed, but a device had to be recovered |
+| 3 | at least one suite failed every attempt it was given |
+| 4 | a device could not be made healthy, and the run was abandoned |
+| 64 | the command line was invalid |
+
+`[ $? -le 2 ]` therefore means "I will tolerate a retry and a recovery and
+nothing worse", and reads as it says. An enumeration whose numeric order
+disagreed with its severity order would make every threshold comparison a
+latent defect in somebody else's CI script.
+
+A usage error is not an outcome of a run, so it is off the scale entirely. 64
+is `EX_USAGE` from `sysexits.h`, the established value for exactly this, and it
+is far enough above the scale that no threshold reaches it.
+
+**The hardware workflow tolerates a caveat and fails an outcome**, so it passes
+on 0, 1 and 2 and fails on 3, 4 and 64. A workflow that failed on a retry would
+cancel the whole point of retrying, because a flake would still fail the gate.
+What keeps a retried pass from being ignored is that it is loud rather than
+that it is red: the status line of OBS-3.22 carries `retried=`, and the report
+has the section of OBS-17.5. This is stated here because a workflow seen to
+ignore a non-zero status reads as a defect unless the reader knows the scale is
+ordered on purpose.
+
+`argparse.ArgumentParser.error` calls `sys.exit(2)` of its own before any of
+the runner's code runs, so the parser is subclassed to exit with this scale's
+usage status instead. Without that, every malformed command line the parser
+rejects reports "every suite passed, but a device had to be recovered".
+
+**OBS-17.4** [P1] A multi-target run's status is the largest of its children's.
+The statuses are a scale, so the worst of them is the maximum, and a child that
+exited with a status this runner never produces crashed or was killed and is
+reported as a failed suite.
+
+**OBS-17.5** [P1] Retrying is never silent. Four artefacts carry it, and a
+reader who sees only one of them is still told.
+
+| Where | What it says |
+|---|---|
+| the console | the attempt as it starts, not only in the summary, so a live watcher sees `attempt 2 of 3` rather than a suite apparently running twice |
+| the report | a `## Retries` section in the summary part: every suite run that took more than one attempt with its verdicts in order, and every check that failed on one attempt and passed on another with the number of attempts it needed |
+| the recording | the subtitle cue and the band's activity row carry the attempt for anything after the first, so a recording of a retried suite cannot be mistaken for a recording of a clean one, and the bar segment is orange rather than green (OBS-8.33) |
+| the `run` record | `retried` and `extra_attempts`, so a later reader comparing runs can see a bench getting worse |
+
+Two figures on the record rather than one, because a bench where one suite
+always needs three goes and a bench where six suites each need two are
+different problems and both read as "some retries happened" from either figure
+alone.
+
+The standard this section is held to: if a maintainer can read a green run and
+not notice that four suites needed three attempts each, the feature is wrong
+however the bar looks.
+
+### Acceptance criteria for section 17
+
+- Device-free tests assert the exact number of executions rather than a
+  verdict or a status: a failing suite runs 3 times by default, 2 with
+  `--attempts 2`, and 1 with each of `--attempts 1` and `--no-retry`.
+- A device-free test asserts that a suite failing on a device that was never
+  unhealthy is still retried, which is the rule this section reverses.
+- A device-free test asserts that a three-attempt run of a suite that fails
+  every time performs two recoveries and not three.
+- A device-free test asserts that a device unhealthy after the last attempt is
+  reported as an unhealthy device rather than as a failed suite.
+- A device-free test asserts the statuses are in severity order and that the
+  usage status is not among them.
+- A device-free test drives a malformed command line through the real parser,
+  not through the runner's own raise, and asserts 64; and asserts `--help`
+  still exits 0.
+- A device-free test asserts that a second attempt writes its console log and
+  its capture under `attempt-2/`, that the first attempt writes neither into a
+  directory of its own, and that the per-suite JSONL holds both attempts.

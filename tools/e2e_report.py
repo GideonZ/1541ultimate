@@ -74,6 +74,11 @@ LOG_TAIL_LINES = 40
 # the timeline. Actions are by far the most numerous entry, and a reader
 # following what happened wants the shape rather than every request.
 TIMELINE_ACTION_RUN = 3
+# How many events either side of a failure have their actions listed in full
+# rather than collapsed. Enough to carry the requests that produced a failure
+# and the ones the harness made straight after it, and small enough that a run
+# with many failures does not expand into the whole action log.
+TIMELINE_FAILURE_WINDOW = 12
 # A request the harness repeats all run long is shown once and counted after
 # that. The menu-open probe in every health sweep is the case: without this the
 # timeline is that one line between every pair of events.
@@ -95,7 +100,30 @@ PASSWORD_PATTERNS = (
     re.compile(r"(-p\s+)(\S+)"),
     re.compile(r"([Xx]-[Pp]assword:\s*)(\S+)"),
     re.compile(r"(['\"]?password['\"]?\s*[:=]\s*['\"]?)([^\s'\",}]+)"),
+    # The environment. OBS-1.8 names an environment beside a command line, and
+    # the CI step passes the password in `U64_PASS`, so a suite that printed
+    # its own environment on the way down published the repository's secret
+    # into a downloadable artifact.
+    re.compile(r"((?:U64_PASS|ULTIMATE_PASSWORD|E2E_PASSWORD)=)(\S+)"),
+    # `curl -u user:secret`, which is how a person reproduces a request by
+    # hand and therefore how a suite prints one.
+    re.compile(r"(-u\s+[^\s:]+:)(\S+)"),
 )
+
+# What a masked value may not be. Every pattern above fires on the words
+# around a password rather than on a password, so each also fires on a
+# sentence that happens to use one of those words, and the token after the
+# trigger is then an ordinary English word. Measured on a real run: a check
+# recorded `--password not supplied` and the report rendered `--password ***
+# supplied`, which states the opposite of the record.
+#
+# So a token is masked unless it is one of these words, matched whole and in
+# any case. A password that begins with one of them is still masked, because
+# the whole token has to be the word.
+NOT_A_PASSWORD = frozenset((
+    "not", "none", "empty", "unset", "missing", "supplied", "required",
+    "given", "absent", "blank", "no", "is", "was", "and", "or",
+))
 
 # GitHub displays at most 1 MiB per step summary and a step summary cannot be
 # modified by a later step, so the whole thing is written once and this is the
@@ -116,13 +144,25 @@ INCOMPLETE = "incomplete"
 
 # Exit statuses run-tests documents, so the header can say what one meant
 # without the reader looking them up.
+# The words are the runner's own, from its `--help`, and a case in the
+# device-free suite asserts they still are. Restating them rather than
+# importing them is deliberate: this program renders a tree written by some
+# version of the runner, possibly not the one installed beside it, so a
+# runtime dependency on the current ladder would be wrong. Deriving in the
+# test and copying at runtime is the split that keeps both properties.
 EXIT_MEANING = {
-    0: "every suite passed and the device never needed recovering",
-    1: "at least one suite failed",
-    2: "the command line was wrong",
-    3: "every suite passed, but the device had to be recovered",
-    4: "the device could not be made healthy, and the run was abandoned",
+    0: "every suite passed first time, and nothing needed recovering",
+    1: "every suite passed, but at least one needed more than one attempt",
+    2: "every suite passed, but a device needed recovering",
+    3: "a suite failed every attempt it was given",
+    4: "a device could not be made healthy; the run was abandoned",
+    64: "the command line was invalid",
 }
+
+# The worst status that still means every suite passed. The statuses are a
+# severity scale, so this is a comparison rather than a set, and a status
+# above it is an outcome rather than a caveat.
+EXIT_WORST_PASS = 2
 
 # The four suites that validate the harness itself. When one of these has
 # already failed, every later failure that depends on it is suspect, and
@@ -159,7 +199,22 @@ def as_float(value, fallback: float = 0.0) -> float:
 
 
 def as_dict(value) -> dict:
-    return value if isinstance(value, dict) else {}
+    """A record field as a mapping, whether it was stored as one or as JSON.
+
+    `params` and `payload` are written as JSON text rather than as objects, so
+    that one field carries a query, a request body and a plain string alike.
+    Reading them back here is what lets this document name the configuration
+    item a write changed rather than repeating the request that changed it.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.startswith("{"):
+        try:
+            found = json.loads(value)
+        except ValueError:
+            return {}
+        return found if isinstance(found, dict) else {}
+    return {}
 
 
 def as_list(value) -> list:
@@ -229,6 +284,19 @@ class SuiteRun:
     checks: List[Check] = field(default_factory=list)
     actions: List[dict] = field(default_factory=list)
     log_name: str = ""
+
+    @property
+    def attempt_prefix(self) -> str:
+        """The directory this attempt's non-record files sit in, or "".
+
+        Attempt 1 writes where it always did, so a clean run has no extra
+        level anywhere. Only an attempt after the first has a directory, and
+        only for the files that carry no attempt field of their own: a console
+        log and a capture. The per-suite JSONL is one file at the top level
+        for every attempt, because every record in it already says which
+        attempt wrote it.
+        """
+        return "" if self.attempt <= 1 else f"attempt-{self.attempt}"
     # Whether a failure capture exists for this suite run, so the timeline can
     # say the run stopped to look at the device.
     captured: bool = False
@@ -264,6 +332,10 @@ class TargetRun:
     # sweeps, the UI-state gate and the teardown. A suite's own actions sit on
     # the suite run that made them.
     actions: List[dict] = field(default_factory=list)
+    # Checks the runner itself reported, outside any suite: the teardown that
+    # runs after the last suite of a mode. They are `check` records like any
+    # other and belong in a section that says it lists every check.
+    checks: List["Check"] = field(default_factory=list)
     plan: Optional[dict] = None
     run: Optional[dict] = None
     # Where the collector put this device's own log, from the `log` record it
@@ -286,16 +358,21 @@ class TargetRun:
         return "firmware unknown"
 
     def firmware_changed(self) -> Tuple[str, str]:
-        """The first and last device identity, when they differ.
+        """The first device identity and the first one that differed from it.
 
-        A change means the recovery command reflashed the device mid-run, so
-        every result before that point was produced by different firmware from
-        every result after. No reader can reconstruct that and few would think
-        to look for it.
+        A change means the device was reflashed mid-run, so every result before
+        that point was produced by different firmware from every result after.
+        No reader can reconstruct that and few would think to look for it.
+
+        Whether any sweep differed from the first, rather than whether the ends
+        differ. A device reflashed mid-run and reflashed back before the last
+        sweep changed the firmware under the run twice, and comparing the two
+        ends reports that as no change at all.
         """
         seen = list(self._ident_details())
-        if len(seen) >= 2 and seen[0] != seen[-1]:
-            return seen[0], seen[-1]
+        for later in seen[1:]:
+            if later != seen[0]:
+                return seen[0], later
         return "", ""
 
     def _ident_details(self) -> Iterable[str]:
@@ -312,6 +389,10 @@ class Run:
     directory: str
     targets: List[TargetRun] = field(default_factory=list)
     parent: Optional[dict] = None
+    # What the process that owns the whole run warned about. The device log
+    # collector runs there, so its warnings are the run's account of why a
+    # log is empty or whose lines went where, and they belong to no target.
+    warnings: List[dict] = field(default_factory=list)
     skipped_lines: int = 0
 
     @property
@@ -326,7 +407,7 @@ class Run:
         in a second implementation that can drift from them.
         """
         totals = {"targets": len(self.targets), "suites": 0, "ok": 0, "fail": 0,
-                  "warn": 0, "skip": 0, "recoveries": 0}
+                  "warn": 0, "skip": 0, "recoveries": 0, "retried": 0}
         for record in self.run_records:
             totals["suites"] += as_int(record.get("suites"))
             totals["ok"] += as_int(record.get("passed"))
@@ -334,6 +415,7 @@ class Run:
             totals["warn"] += as_int(record.get("dirty"))
             totals["skip"] += as_int(record.get("skipped"))
             totals["recoveries"] += as_int(record.get("recoveries"))
+            totals["retried"] += as_int(record.get("retried"))
         return totals
 
     @property
@@ -458,6 +540,17 @@ def load_target(directory: str, slug: str) -> TargetRun:
             target.gaps.append(record)
         elif kind == "action":
             target.actions.append(record)
+        elif kind == "check":
+            target.checks.append(Check(
+                target=token, label="", suite=str(record.get("suite") or ""),
+                attempt=as_int(record.get("attempt"), 1),
+                index=as_int(record.get("index")),
+                check_label=str(record.get("label") or ""),
+                verdict=str(record.get("verdict") or ""),
+                extra=str(record.get("extra") or ""),
+                seconds=as_float(record.get("seconds")),
+                time=as_float(record.get("time")),
+                scenario=str(record.get("scenario") or "")))
         elif kind == "capture":
             target.capture = record
         elif kind == "log":
@@ -522,10 +615,10 @@ def load_target(directory: str, slug: str) -> TargetRun:
         attach_suite_records(target, by_key, label, suite_name, name,
                              file_records)
 
-    captures = os.path.join(directory, "capture")
     for made in target.suites:
-        made.captured = os.path.exists(
-            os.path.join(captures, f"{made.stem}-{made.attempt}-screen.txt"))
+        made.captured = os.path.exists(os.path.join(
+            directory, made.attempt_prefix, "capture",
+            f"{made.stem}-{made.attempt}-screen.txt"))
 
     target.suites.sort(key=lambda s: (s.time, s.suite, s.attempt))
     return target
@@ -563,7 +656,8 @@ def attach_suite_records(target: TargetRun,
                                       for r in records), default=0.0))
             by_key[key] = made
             target.suites.append(made)
-        made.log_name = stem + ".log"
+        made.log_name = os.path.join(made.attempt_prefix, stem + ".log") \
+            if made.attempt_prefix else stem + ".log"
         for record in records:
             if as_int(record.get("attempt"), 1) != attempt:
                 continue
@@ -595,6 +689,14 @@ def load_tree(directory: str) -> Run:
             logs[str(record["target"])] = record
         elif record.get("kind") == "gap" and record.get("target"):
             gaps.setdefault(str(record["target"]), []).append(record)
+        elif record.get("kind") == "warning":
+            # The parent process owns the device log collector, so every
+            # warning about attribution, about a device that sent nothing and
+            # about a port that could not be opened is written here rather
+            # than under a target. Dropping them took the run's own account of
+            # why a log is empty out of the one document that is supposed to
+            # carry it.
+            run.warnings.append(record)
 
     for name in sorted(os.listdir(directory) if os.path.isdir(directory) else []):
         path = os.path.join(directory, name)
@@ -624,10 +726,22 @@ def redact(text: str) -> str:
 
     The run masks its own command line before recording it. This catches a
     password that reached a captured console log through a suite's own
-    arguments, which the run had no chance to mask.
+    arguments, its environment or a reproduce command it printed, none of
+    which the run had a chance to mask.
+
+    A word from `NOT_A_PASSWORD` after the trigger is left alone. Masking
+    every token that follows one of these words is how the document came to
+    print `--password *** supplied` where the record said `--password not
+    supplied`, which is not a redaction but a reversal of meaning.
     """
+
+    def mask(match) -> str:
+        if match.group(2).strip("'\",.)").lower() in NOT_A_PASSWORD:
+            return match.group(0)
+        return match.group(1) + PASSWORD_MASK
+
     for pattern in PASSWORD_PATTERNS:
-        text = pattern.sub(lambda m: m.group(1) + PASSWORD_MASK, text)
+        text = pattern.sub(mask, text)
     return text
 
 
@@ -688,6 +802,28 @@ def clock(when: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(when))
 
 
+def stamp(when: float, start: float) -> str:
+    """One event's wall-clock time and its offset from the run's start.
+
+    Both, because they answer different questions: the offset says where in
+    the run this happened and the clock time joins the line to a device log,
+    a console log or a colleague's message about the same minute.
+    """
+    return f"{time.strftime('%H:%M:%S', time.localtime(when))} {offset(when, start)}"
+
+
+def near_failure(events, index: int) -> bool:
+    """Whether this event sits within a few events of a failure.
+
+    Cheap and local: an action is expanded when a failure is close enough to
+    it in the event order that a reader looking at the failure would want to
+    see what the harness had just done.
+    """
+    low = max(0, index - TIMELINE_FAILURE_WINDOW)
+    high = min(len(events), index + TIMELINE_FAILURE_WINDOW + 1)
+    return any("failed" in events[near][3] for near in range(low, high))
+
+
 def offset(when: float, start: float) -> str:
     """How far into the run something happened, as +MM:SS."""
     if not when or not start:
@@ -745,9 +881,13 @@ def status_line(run: Run) -> str:
     """The whole run in one machine-readable line."""
     counts = run.counts()
     exit_code = run.exit_code
+    # `retried` is on this line rather than only in `## Retries`, because a
+    # green run is exactly when nobody reads past the first line, and a run
+    # that needed three goes at four suites is not the same result as one that
+    # did not.
     return ("RESULT: {verdict}  targets={targets}  suites={suites}  ok={ok}  "
             "fail={fail}  warn={warn}  skip={skip}  recoveries={recoveries}  "
-            "exit={exit}").format(
+            "retried={retried}  exit={exit}").format(
         verdict=overall_verdict(run), exit="-" if exit_code is None else exit_code,
         **counts)
 
@@ -756,9 +896,20 @@ def overall_verdict(run: Run) -> str:
     """The run's verdict, on the same rule the runner's own summary uses."""
     counts = run.counts()
     exit_code = run.exit_code
-    if counts["fail"] or (exit_code not in (None, 0, 3)):
+    # A comparison against the scale, not a list of the statuses that happened
+    # to mean "passed" when this was written. The literal that was here read
+    # `exit_code not in (None, 0, 3)`, and when the ladder was renumbered 3
+    # became "a suite failed", so the report called a recovered run FAIL and a
+    # failed run something else.
+    if counts["fail"] or (exit_code is not None
+                          and exit_code > EXIT_WORST_PASS):
         return "FAIL"
-    if counts["recoveries"] or counts["warn"]:
+    # A retry is a caveat like a recovery, and the two are one state
+    # everywhere else here: the bar paints both "passed with a caveat"
+    # (OBS-8.33) and the exit scale puts both between a clean pass and a
+    # failure. A run that needed three goes at four suites should not carry
+    # the same word in its title as one that needed none.
+    if counts["recoveries"] or counts["warn"] or counts["retried"]:
         return "WARN"
     return "OK"
 
@@ -772,6 +923,13 @@ def header(run: Run) -> List[str]:
                         ("branch", identity.get("branch")),
                         ("worktree", "dirty" if identity.get("worktree_dirty")
                          else ("clean" if "worktree_dirty" in identity else None)),
+                        # Only when it moved. A run whose harness files were
+                        # the same at both ends is the ordinary case and needs
+                        # no row; one whose files changed under it is two runs
+                        # reported as one, and nothing else here says so.
+                        ("harness", "CHANGED DURING THIS RUN, so the suites "
+                         "did not all run the same code"
+                         if identity.get("harness_changed") else None),
                         ("CI run", ci_run(identity)),
                         ("host", identity.get("host")),
                         ("python", identity.get("python")),
@@ -830,6 +988,56 @@ def completeness(run: Run) -> List[str]:
     if not lines:
         return []
     return ["**Completeness.** " + " ".join(lines), ""]
+
+
+def retries_section(run: Run) -> List[str]:
+    """Every suite run that took more than one attempt, and every flaky check.
+
+    Retrying every failure is what lets a run report green when something is
+    intermittently broken, so the evidence for it is in the summary part where
+    a reader on a build page is already looking rather than in the detail. A
+    reader who cannot see that four suites needed three attempts each is being
+    told a run went better than it did.
+    """
+    attempts: Dict[Tuple[str, str, str], List[SuiteRun]] = {}
+    for made in run.all_suites():
+        attempts.setdefault((made.target, made.label, made.suite),
+                            []).append(made)
+    retried = {key: sorted(runs, key=lambda s: s.attempt)
+               for key, runs in attempts.items() if len(runs) > 1}
+    if not retried:
+        return []
+    lines = ["## Retries", "",
+             "A suite that failed was run again. Every attempt is in the "
+             "records and in the verdict table above; this is the same "
+             "information collected in one place, because a run whose verdict "
+             "is OK can still be a run in which something is intermittently "
+             "broken.", ""]
+    rows = []
+    for key in sorted(retried):
+        runs = retried[key]
+        outcome = runs[-1].verdict
+        rows.append([runs[-1].key, str(len(runs)),
+                     " then ".join(one.verdict for one in runs), outcome])
+    lines += table(["Suite run", "Attempts", "Verdicts", "Outcome"], rows)
+    lines += [""]
+    flaky = []
+    for check in run.all_checks():
+        if check.verdict != "OK":
+            continue
+        same = [c for c in run.all_checks()
+                if c.target == check.target and c.suite == check.suite
+                and c.index == check.index and c.label == check.label]
+        if len(same) > 1 and any(c.verdict == "FAIL" for c in same):
+            flaky.append((check, len(same)))
+    if flaky:
+        lines += ["Checks that failed on one attempt and passed on another:", ""]
+        lines += table(["Check", "Label", "Attempts"],
+                       [[check.key, check.check_label, str(total)]
+                        for check, total in sorted(
+                            flaky, key=lambda pair: pair[0].key)])
+        lines += [""]
+    return lines
 
 
 def verdict_section(run: Run) -> List[str]:
@@ -917,13 +1125,39 @@ INVERSE_ACTIONS = {
 # by writing it again, and a file the run created is removed over FTP, which
 # this log does not see. Both are reported for what they are.
 CONFIG_PREFIX = "/v1/configs/"
-FILE_ACTION = "/v1/files:"
+
+# What a file-creating action's path looks like. The resource comes first and
+# the verb after the colon, so the shape is `/v1/files/<path>:<verb>` and a
+# prefix of `/v1/files:` matches nothing the device is ever asked. Measured on
+# a real run: 26 successful `create_d64` and its siblings, none of them
+# matched, so "a file created and not deleted" was unreachable in a report
+# whose own requirement names it as a real defect class.
+FILE_PREFIX = "/v1/files"
+FILE_VERBS = ("create_d64", "create_d71", "create_d81", "create_dnp",
+              "create_dir")
 
 
 def split_action(path: str) -> Tuple[str, str]:
     """A device action path as (resource, verb)."""
     resource, _, verb = path.partition(":")
     return resource, verb
+
+
+def value_written(query: str, action: dict) -> str:
+    """What a configuration write set the item to, as text.
+
+    A `configs` write carries the value in the request's query rather than in
+    a body, and the recorded path carries that query, so the value is already
+    on the record. A caller that passed it as a parameter instead has it in
+    `params`.
+    """
+    for name, value in urllib.parse.parse_qsl(query):
+        if name == "value":
+            return value
+    carried = as_dict(action.get("params"))
+    if "value" in carried:
+        return str(carried["value"])
+    return ""
 
 
 def unmatched_changes(run: Run) -> List[List[str]]:
@@ -950,15 +1184,22 @@ def unmatched_changes(run: Run) -> List[List[str]]:
         status = as_int(action.get("status"), 0)
         if method == "GET" or not 200 <= status < 300:
             continue
-        if path.startswith(CONFIG_PREFIX):
-            config_writes.setdefault((target_token, path), []).append(made_key)
-            continue
-        if path.startswith(FILE_ACTION):
-            created.append([target_token, made_key, "created",
-                            str(as_dict(action.get("params")).get("path")
-                                or action.get("params") or path)])
-            continue
         resource, verb = split_action(path)
+        if path.startswith(CONFIG_PREFIX):
+            # Keyed by the item rather than by the request. The query carries
+            # the value, so a setting written at setup and written back at
+            # teardown was two keys with one write each, which read as two
+            # changes left behind where there were none.
+            item, _, query = resource.partition("?")
+            config_writes.setdefault((target_token, item), []).append(
+                (made_key, value_written(query, action)))
+            continue
+        if resource.startswith(FILE_PREFIX) and verb in FILE_VERBS:
+            created.append([target_token, made_key, "created",
+                            urllib.parse.unquote(
+                                resource[len(FILE_PREFIX):].lstrip("/"))
+                            or str(as_dict(action.get("params")) or path)])
+            continue
         if verb in INVERSE_ACTIONS:
             opened = open_by_resource.setdefault((target_token, resource), [])
             if any(entry[0] == verb for entry in opened):
@@ -981,12 +1222,19 @@ def unmatched_changes(run: Run) -> List[List[str]]:
     for (target, resource), opened in sorted(open_by_resource.items()):
         for verb, suite_key in opened:
             rows.append([target, suite_key, f"{verb} not undone", resource])
-    for (target, path), writers in sorted(config_writes.items()):
-        # Which value a setting had before the run is not in any record, so
-        # this states what the run wrote rather than guessing at whether it put
-        # it back. A suite that sets a value and sets it back writes twice.
-        rows.append([target, writers[-1], f"written {len(writers)} time(s)",
-                     urllib.parse.unquote(path)])
+    for (target, item), writers in sorted(config_writes.items()):
+        # The value an item held before the run is in no record: the read a
+        # well-behaved suite makes before it writes is a GET that answered 200,
+        # which the action log drops by design. So this does not claim to know
+        # whether a suite restored the device's own value. What it states
+        # exactly is how many times the run wrote the item and what it wrote
+        # last, and an item written once is one nothing put back.
+        values = [value for _writer, value in writers]
+        left = values[-1] or "a value"
+        state = (f"set to {left}" if len(values) == 1
+                 else f"written {len(values)} times, last set to {left}")
+        rows.append([target, writers[-1][0], state,
+                     urllib.parse.unquote(item)])
     rows += created
     return rows
 
@@ -1038,10 +1286,14 @@ def what_the_run_knows(run: Run, check: Check,
             if c.target == check.target and c.suite == check.suite
             and c.label == check.label and c.index == check.index]
     repeated = [c for c in same if c.attempt != check.attempt]
-    if any(c.verdict == "FAIL" for c in repeated):
-        lines.append("- Repeated: this check failed on more than one attempt.")
-    if any(c.verdict == "OK" for c in repeated):
-        lines.append("- Passed on retry: this check passed on another attempt.")
+    failures = [c for c in same if c.verdict == "FAIL"]
+    if len(failures) > 1:
+        lines.append(f"- Repeated: this check failed on {len(failures)} of the "
+                     f"{len(same)} attempts this suite was given.")
+    passes = [c for c in repeated if c.verdict == "OK"]
+    if passes:
+        lines.append(f"- Passed on retry: this check passed on attempt "
+                     f"{min(c.attempt for c in passes)} of {len(same)}.")
 
     elsewhere = [c for c in run.all_checks()
                  if c.target != check.target and c.suite == check.suite
@@ -1111,7 +1363,10 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
     if target is None:
         return []
     stem = f"{made.stem}-{made.attempt}"
-    directory = os.path.join(run.directory, target.slug, "capture")
+    directory = os.path.join(run.directory, target.slug, made.attempt_prefix,
+                             "capture")
+    where = "/".join(part for part in
+                     (target.slug, made.attempt_prefix, "capture") if part)
     screen = read_text(os.path.join(directory, stem + "-screen.txt"))
     state = read_state(os.path.join(directory, stem + "-state.json"))
     lines: List[str] = []
@@ -1122,7 +1377,7 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
         ended = "" if source == "telnet-spool-earlier" else " when this suite ended"
         lines += ["", f"{SCREEN_SOURCE.get(source, 'The screen')}"
                       f"{ended} "
-                      f"(`{target.slug}/capture/{stem}-screen.txt`):", ""]
+                      f"(`{where}/{stem}-screen.txt`):", ""]
         lines += fenced([redact(row) for row in screen])
     if str(state.get("source")) == "readmem":
         # The menu was already closed when the capture ran, so the C64's own
@@ -1139,7 +1394,7 @@ def capture_block(run: Run, made: SuiteRun) -> List[str]:
     summary = describe_state(state)
     if summary:
         lines += ["", summary + f" Everything the capture read is in "
-                                f"`{target.slug}/capture/{stem}-state.json`."]
+                                f"`{where}/{stem}-state.json`."]
     return lines
 
 
@@ -1292,7 +1547,7 @@ def log_tail_block(run: Run, made: SuiteRun) -> List[str]:
                     if s.target == made.target and s.label == made.label
                     and s.suite == made.suite})
     covering = ("" if attempts < 2 else
-                f", which holds all {attempts} attempts appended in order")
+                f", which is attempt {made.attempt} of {attempts}")
     return (["", f"Last {len(found)} line(s) of `{relative}`{covering}:", ""]
             + fenced([redact(line) for line in found]))
 
@@ -1398,6 +1653,12 @@ def syslog_counter_lines(target: TargetRun) -> List[str]:
 # What each file in the tree is, keyed by how its name is built. The index is
 # how a reader who has downloaded the artifact finds the JSONL, the captures
 # and the recording without listing the directory and guessing.
+# A still's text sidecar: the suite-run stem, an index and one of the three
+# kinds OBS-8.28 names. Matched rather than listed, because the stem is a
+# suite name and cannot be enumerated here.
+STILL_TEXT = re.compile(r"-\d+-(first|last|change)\.txt$")
+
+
 def describe_file(relative: str) -> str:
     name = os.path.basename(relative)
     if relative == INDEX_NAME:
@@ -1426,6 +1687,11 @@ def describe_file(relative: str) -> str:
     if name.endswith(".jsonl"):
         return "one suite run's checks, scenarios and device actions"
     if name.endswith(".log"):
+        where = relative.replace(os.sep, "/")
+        if "/attempt-" in where:
+            attempt = where.split("/attempt-")[1].split("/")[0]
+            return (f"that suite run's console output on attempt {attempt}, "
+                    "stderr merged in, ANSI stripped")
         return "that suite run's console output, stderr merged in, ANSI stripped"
     if name == "syslog-unknown-sender.txt":
         return ("log lines from an address no target in this run claimed, "
@@ -1441,6 +1707,16 @@ def describe_file(relative: str) -> str:
         return "the drive state and free heap when a suite failed"
     if name.endswith(".png"):
         return "a still from the recording"
+    if STILL_TEXT.search(name):
+        # Named before the generic `.txt` rules below, because a still's text
+        # is the artefact OBS-1.9 makes mandatory beside its image and a file
+        # index that says only "part of this run" about a third of itself
+        # tells a reader nothing about the third that matters most.
+        return ("the same still as text: the screen the harness pane was "
+                "showing at that frame")
+    if name == "interactions.seq":
+        return ("the next sequence number for `interactions.jsonl`, and the "
+                "lock every process writing it takes")
     if name.endswith(".srt"):
         return "subtitles naming the suite and check at each moment"
     if name.endswith(".mp4"):
@@ -1580,17 +1856,38 @@ def unmapped_senders(run: Run) -> Optional[dict]:
 
 
 def expected_senders(run: Run) -> List[List[str]]:
-    """Each target, the addresses its log was expected from, and which sent."""
+    """Each target, where its log was expected from, and where it came from.
+
+    Four columns rather than two, because a port a single machine sends to
+    identifies that machine by construction and an address does not. Without
+    the port and the attribution the table reads as though a target whose
+    lines arrived from an unexpected address had been guessed at, when in
+    fact it was identified by the socket that received it.
+    """
     rows = []
     for target in run.targets:
         if not target.log:
             continue
         expected = as_strings(target.log.get("addresses"))
         observed = as_dict(target.log.get("senders"))
+        ports = [str(port) for port in target.log.get("ports") or []]
+        how = as_dict(target.log.get("attributed"))
+        # An absence and a zero are different answers, and they were rendered
+        # the same. The collector writes `senders` only in the record it
+        # writes when it stops, so a run still going or killed has no such
+        # key, and printing "none" for that says the device sent nothing when
+        # what happened is that nobody has counted yet. Seen on a partial copy
+        # of a live run: this table read "none" while the section under it
+        # read "1402 line(s) received".
+        arrived = ("not recorded" if "senders" not in target.log
+                   else ", ".join(f"`{a}` ({count})" for a, count
+                                  in sorted(observed.items())) or "none")
         rows.append([target.token,
                      ", ".join(f"`{a}`" for a in expected) or "-",
-                     ", ".join(f"`{a}` ({count})" for a, count
-                               in sorted(observed.items())) or "none"])
+                     ", ".join(f"`{p}`" for p in ports) or "-",
+                     arrived,
+                     ", ".join(f"{name} ({count})" for name, count
+                               in sorted(how.items())) or "-"])
     return rows
 
 
@@ -1604,8 +1901,24 @@ def log_section(run: Run) -> List[str]:
     senders = expected_senders(run)
     if senders:
         lines += ["Each target's log was expected from the addresses its "
-                  "machines resolve to, and arrived from these:", ""]
-        lines += table(["Target", "Expected from", "Arrived from"], senders)
+                  "machines resolve to, and arrived from these. A target "
+                  "whose lines were attributed by the port they arrived on is "
+                  "attributed correctly whatever address they came from, and "
+                  "the addresses are still shown so a device logging from an "
+                  "unexpected one stays visible.", ""]
+        lines += table(["Target", "Expected from", "Collected on",
+                        "Arrived from", "Attributed by"], senders)
+        lines += [""]
+    complaints = [redact(str(warning.get("message") or ""))
+                  for warning in run.warnings
+                  if str(warning.get("message") or "").startswith("device log:")]
+    if complaints:
+        # The collector runs in the process that owns the whole run, so what
+        # it could not do is recorded there and belongs to no target. A reader
+        # looking at an empty log asks why, and the run's own answer was in a
+        # file this section never opened.
+        lines += ["What the collector reported about this run:", ""]
+        lines += [f"- {one[len('device log: '):]}" for one in complaints]
         lines += [""]
     unmapped = unmapped_senders(run)
     if unmapped:
@@ -1690,6 +2003,10 @@ def timeline_section(run: Run) -> List[str]:
     # rather than something read back out of the text, because the collapsing
     # below has to be able to tell them apart without parsing what it wrote.
     events: List[Tuple[float, int, bool, str]] = []
+    for warning in run.warnings:
+        events.append((as_float(warning.get("time")), DURING, False,
+                       "the run warned: "
+                       + redact(str(warning.get("message") or ""))))
     for target in run.targets:
         for sweep in target.health:
             state = "OK" if sweep.get("ok") else "DEGRADED"
@@ -1750,7 +2067,9 @@ def timeline_section(run: Run) -> List[str]:
         return []
 
     start = run.started
-    lines = ["## Timeline", ""]
+    lines = ["## Timeline", "",
+             "Each line opens with the wall-clock time on the host that ran "
+             "the gate, then the offset from the start of the run.", ""]
     pending: List[Tuple[float, int, bool, str]] = []
     # A request the harness makes once per sweep would otherwise sit between
     # every pair of events for the length of the run.
@@ -1773,25 +2092,35 @@ def timeline_section(run: Run) -> List[str]:
                 suffix = ("" if total <= TIMELINE_REPEAT_LIMIT
                           else f"  (this request is made {total} times in this "
                                "run and is shown twice)")
-                lines.append(f"{offset(when, start)}  {text}{suffix}")
+                lines.append(f"{stamp(when, start)}  {text}{suffix}")
         else:
             methods = sorted({text.split()[1] for _w, _r, _a, text in pending})
-            lines.append(f"{offset(pending[0][0], start)}  {len(pending)} device "
+            lines.append(f"{stamp(pending[0][0], start)}  {len(pending)} device "
                          f"requests ({', '.join(methods)})")
         pending.clear()
 
-    for when, rank, is_action, text in events:
-        if is_action:
+    for index, (when, rank, is_action, text) in enumerate(events):
+        if is_action and not near_failure(events, index):
             pending.append((when, rank, is_action, text))
             continue
+        # A run of actions collapses between two other events, and is listed
+        # in full around a failure. Collapsing on the run's length alone hid
+        # the requests immediately before a failing check, which is the one
+        # place a reader reads this section for.
         flush()
-        lines.append(f"{offset(when, start)}  {text}")
+        lines.append(f"{stamp(when, start)}  {text}")
     flush()
     return lines + [""]
 
 
 def describe_action(action: dict) -> str:
-    """One harness action, in the words the timeline reads best in."""
+    """One harness action, in the words the timeline reads best in.
+
+    Always one line. The device's own error bodies are pretty-printed JSON, so
+    interpolating one put three lines into a section whose every line is
+    supposed to open with a time, and the two continuation lines were lost by
+    any reader selecting the section's lines by that opening.
+    """
     text = f"{action.get('method')} {action.get('path')}"
     params = action.get("params")
     if isinstance(params, dict):
@@ -1806,7 +2135,12 @@ def describe_action(action: dict) -> str:
         text += f" after {action['retries']} attempts"
     if action.get("error"):
         text += f": {redact(str(action['error']))}"
-    return redact(text)
+    return one_line(redact(text))
+
+
+def one_line(text: str) -> str:
+    """`text` with its line breaks turned into spaces and runs collapsed."""
+    return " ".join(text.split())
 
 
 def checks_section(run: Run) -> List[str]:
@@ -1820,6 +2154,20 @@ def checks_section(run: Run) -> List[str]:
     different results.
     """
     lines: List[str] = []
+    for target in run.targets:
+        if not target.checks:
+            continue
+        lines += [f"### {target.token}, the runner itself", "",
+                  "Checks the runner reported outside any suite, which is its "
+                  "teardown after the last suite of a mode.", ""]
+        lines += table(
+            ["#", "Check", "Verdict", "Duration", "Opened at", "Closed at",
+             "Reported"],
+            [[str(c.index), c.check_label,
+              c.verdict + (" SLOW" if c.slow else ""),
+              duration(c.seconds), clock(c.started), clock(c.time),
+              redact(c.extra) or "-"]
+             for c in sorted(target.checks, key=lambda c: c.time)]) + [""]
     for made in sorted(run.all_suites(), key=lambda s: (s.target, s.time)):
         if not made.checks:
             continue
@@ -1893,6 +2241,7 @@ def render(run: Run, previous: Optional[Run] = None) -> str:
     lines += verdict_section(run)
     lines += coverage_section(run)
     lines += changes_section(run)
+    lines += retries_section(run)
     if previous is not None:
         lines += compare_section(run, previous)
     lines += failing_section(run)
@@ -2205,8 +2554,13 @@ def recording_block(run: Run) -> List[str]:
                     for name, label in RECORDER_COUNTS
                     if as_int(capture.get(name))]
         rows.append([target.token,
-                     ", ".join(f"`{name}`" for name in as_strings(
-                         capture.get("files"))) or "-",
+                     # Under the target's slug, because that is where the file
+                     # is and because the slug is not the token: `u2@c64u` is
+                     # `u2-at-c64u` on disk, so a bare name leaves a reader
+                     # composing a path from a substitution this document
+                     # never states.
+                     ", ".join(f"`{target.slug}/{name}`" for name in
+                               as_strings(capture.get("files"))) or "-",
                      f"{frames}",
                      f"{frames // fps // 60:02d}:{frames // fps % 60:02d}",
                      ", ".join(transport) or "nothing lost",
