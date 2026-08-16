@@ -39,6 +39,27 @@ TEST(KeyboardUsbQueueTest, ControlBookmarkDigitsStayDistinctFromRecall)
 	EXPECT_EQ(KEY_CTRL_E, keyboard.getch());
 }
 
+// HID usage 0x15 is R and 0x51 is the down arrow. R's ASCII control code is
+// 0x12, which is also KEY_DOWN, so if the control map carried that code the
+// monitor could not tell the reset shortcut from cursor-down. KEY_CTRL_R is
+// outside the ASCII range for that reason.
+TEST(KeyboardUsbQueueTest, ControlRIsDistinctFromCursorDown)
+{
+	Keyboard_USB keyboard;
+	uint8_t ctrl_r[USB_DATA_SIZE] = { 0x01, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t down[USB_DATA_SIZE] = { 0x00, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	EXPECT_TRUE(KEY_CTRL_R != KEY_DOWN);
+
+	keyboard.process_data(ctrl_r);
+	EXPECT_EQ(KEY_CTRL_R, keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(down);
+	EXPECT_EQ(KEY_DOWN, keyboard.getch());
+}
+
 TEST(KeyboardUsbQueueTest, CbmDigitDecodeRejectsInvalidKeys)
 {
 	EXPECT_TRUE(key_is_ctrl_digit(KEY_CTRL_0));

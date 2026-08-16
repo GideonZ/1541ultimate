@@ -370,7 +370,16 @@ TEST(KeyboardC64StateTest, MatrixLookupTranslatesUiKeyCodes)
         { "f1", 0x01, KEY_F2 },
         { "a", 0x00, 'a' },
         { "a", 0x01, 'A' },
+        // C=+R and Ctrl+R are the monitor's reset shortcut. They must not
+        // resolve to KEY_DOWN, which is what the ASCII control code for R
+        // (0x12) is: the monitor tests the reset shortcut before it reaches
+        // its cursor-key handling, so a shared code would make cursor-down
+        // reset the machine. 0x02 is the C= modifier flag and 0x04 is Ctrl.
+        { "r", 0x00, 'r' },
+        { "r", 0x02, KEY_CTRL_R },
+        { "r", 0x04, KEY_CTRL_R },
     };
+    EXPECT_TRUE(KEY_CTRL_R != KEY_DOWN);
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         const InputKeyboardMapEntry *entry = find_keyboard_entry(cases[i].name);

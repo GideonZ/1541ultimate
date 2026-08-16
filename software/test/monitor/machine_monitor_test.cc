@@ -864,31 +864,31 @@ static int test_reset_shortcut_resets_and_leaves(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeResettableBackend backend;
-        const int keys[] = { KEY_CTRL_X };
+        const int keys[] = { KEY_CTRL_R };
         int result = 0;
         bool asked = false;
         run_monitor_keys(ui, screen, backend, keys, 1, &result, &asked);
-        if (expect(asked, "C=+X must ask for a machine reset.")) return 1;
-        if (expect(result == 1, "C=+X must leave the monitor.")) return 1;
+        if (expect(asked, "C=+R must ask for a machine reset.")) return 1;
+        if (expect(result == 1, "C=+R must leave the monitor.")) return 1;
     }
     {
         // From edit mode: edit mode is left and the reset still happens.
         TestUserInterface ui;
         CaptureScreen screen;
         FakeResettableBackend backend;
-        const int keys[] = { 'e', KEY_CTRL_X };
+        const int keys[] = { 'e', KEY_CTRL_R };
         int result = 0;
         bool asked = false;
         run_monitor_keys(ui, screen, backend, keys, 2, &result, &asked);
-        if (expect(asked, "C=+X must ask for a reset from edit mode too.")) return 1;
-        if (expect(result == 1, "C=+X must leave the monitor from edit mode.")) return 1;
+        if (expect(asked, "C=+R must ask for a reset from edit mode too.")) return 1;
+        if (expect(result == 1, "C=+R must leave the monitor from edit mode.")) return 1;
     }
     {
         // A backend that cannot reset says so and stays in the monitor.
         TestUserInterface ui;
         CaptureScreen screen;
         FakeMemoryBackend backend;   // supports_reset() is false
-        const int keys[] = { KEY_CTRL_X, KEY_BREAK };
+        const int keys[] = { KEY_CTRL_R, KEY_BREAK };
         int result = 0;
         run_monitor_keys(ui, screen, backend, keys, 2, &result);
         if (expect(strstr(ui.last_popup, "RESET UNAVAILABLE") != 0,
@@ -905,7 +905,7 @@ static int test_reset_shortcut_resets_and_leaves(void)
         CaptureScreen screen;
         FakeMemoryBackend backend;   // supports_reset() is false
         char header[39];
-        const int keys[] = { 'e', KEY_CTRL_X, KEY_BREAK };
+        const int keys[] = { 'e', KEY_CTRL_R, KEY_BREAK };
         FakeKeyboard kb(keys, 3);
         ui.screen = &screen;
         ui.keyboard = &kb;
@@ -932,6 +932,71 @@ static int test_reset_shortcut_resets_and_leaves(void)
     return 0;
 }
 
+// C=+R cannot use the ASCII control code for R. That code, 0x12, is KEY_DOWN,
+// so the reset shortcut and the cursor-down key would be the same integer by
+// the time handle_key sees them, and handle_key dispatches the reset shortcut
+// hundreds of lines above its `case KEY_DOWN`. KEY_CTRL_R is therefore 0xBA,
+// outside the ASCII range.
+//
+// This is the check that fails if KEY_CTRL_R is ever given the ASCII code:
+// cursor-down would reset the machine and close the monitor. The third
+// assertion, that the cursor moved, is what stops it passing on a monitor
+// where cursor-down does nothing at all rather than only where it does not
+// reset.
+static int test_cursor_down_is_not_the_reset_shortcut(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeResettableBackend backend;
+    char header[39];
+    const int keys[] = { KEY_DOWN };
+    FakeKeyboard kb(keys, 1);
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0000") == header,
+               "Cursor-down test: the monitor did not open on $0000.")) {
+        printf("  header was %s\n", header);
+        return 1;
+    }
+    if (expect(mon.poll(0) == 0,
+               "Cursor-down must not leave the monitor.")) return 1;
+    if (expect(!mon.consume_pending_reset(),
+               "Cursor-down must not ask for a machine reset.")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "MONITOR HEX $0008") == header,
+               "Cursor-down must move the cursor one row on.")) {
+        printf("  header was %s\n", header);
+        return 1;
+    }
+    mon.deinit();
+    return 0;
+}
+
+// The shortcut used to be C=+X, whose code is 0x18. Nothing is bound to that
+// code now, so it must not reset the machine and must not close the monitor.
+static int test_old_reset_shortcut_code_does_nothing(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeResettableBackend backend;
+    // 0x18 as a literal: KEY_CTRL_X no longer exists, and the point of this
+    // check is the raw code the C64 and USB keymaps still produce for C=+X.
+    const int keys[] = { 0x18 };
+    int result = 0;
+    bool asked = false;
+
+    run_monitor_keys(ui, screen, backend, keys, 1, &result, &asked);
+    if (expect(!asked, "C=+X must no longer ask for a machine reset.")) return 1;
+    if (expect(result == 0, "C=+X must no longer leave the monitor.")) return 1;
+    return 0;
+}
+
 static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
 {
     // The bookmark popup, the opcode picker and the number popup each own the
@@ -941,15 +1006,15 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         TestUserInterface ui;
         CaptureScreen screen;
         FakeResettableBackend backend;
-        // C=+B opens the bookmark popup, then C=+X and C=+I are pressed into it.
-        const int keys[] = { KEY_CTRL_B, KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        // C=+B opens the bookmark popup, then C=+R and C=+I are pressed into it.
+        const int keys[] = { KEY_CTRL_B, KEY_CTRL_R, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
         bool asked = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
         if (expect(!asked,
-                   "The bookmark popup must keep C=+X from asking for a reset.")) return 1;
+                   "The bookmark popup must keep C=+R from asking for a reset.")) return 1;
         if (expect(g_swap_interface_type_calls == 0,
                    "The bookmark popup must keep C=+I from swapping the interface.")) return 1;
     }
@@ -958,14 +1023,14 @@ static int test_reset_and_interface_shortcuts_never_reach_a_popup_layer(void)
         CaptureScreen screen;
         FakeResettableBackend backend;
         // N opens the number popup, then the two shortcuts are pressed into it.
-        const int keys[] = { 'N', KEY_CTRL_X, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
+        const int keys[] = { 'N', KEY_CTRL_R, KEY_CTRL_I, KEY_BREAK, KEY_BREAK };
         int result = 0;
         bool asked = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
         run_monitor_keys(ui, screen, backend, keys, 5, &result, &asked);
         if (expect(!asked,
-                   "The number popup must keep C=+X from asking for a reset.")) return 1;
+                   "The number popup must keep C=+R from asking for a reset.")) return 1;
         if (expect(g_swap_interface_type_calls == 0,
                    "The number popup must keep C=+I from swapping the interface.")) return 1;
     }
@@ -8782,6 +8847,8 @@ int main()
     if (test_opcode_metadata_consistency()) return 1;
     if (test_memory_helpers()) return 1;
     if (test_reset_shortcut_resets_and_leaves()) return 1;
+    if (test_cursor_down_is_not_the_reset_shortcut()) return 1;
+    if (test_old_reset_shortcut_code_does_nothing()) return 1;
     if (test_reset_and_interface_shortcuts_never_reach_a_popup_layer()) return 1;
     if (test_interface_shortcut_swaps_and_leaves()) return 1;
     if (test_x_is_not_an_exit()) return 1;

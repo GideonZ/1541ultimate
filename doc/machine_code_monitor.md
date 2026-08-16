@@ -22,7 +22,7 @@ file browser first, or take the `F5` route, which works everywhere.
 
 To leave the monitor with no popup, prompt or edit mode open, press `C=+O`,
 `RUN/STOP`, `ESC` on a USB keyboard, the C64's top-left `←` key, or the device's
-menu button. `C=+X` and `C=+I` leave it as well, after resetting the machine and
+menu button. `C=+R` and `C=+I` leave it as well, after resetting the machine and
 after swapping the interface mode respectively; see
 [Resetting the machine](#resetting-the-machine).
 
@@ -1008,17 +1008,29 @@ effect the next time it opens. Reopen it with `C=+O` from the file browser.
 
 ## Resetting the machine
 
-`C=+X` resets the C64 the monitor is looking at, and leaves the monitor. After a
+`C=+R` resets the C64 the monitor is looking at, and leaves the monitor. After a
 reset the address, the bytes and the CPU state that were on screen describe the
 machine as it was before, and on a cartridge the freezer has released it, so the
 view is closed with the reset.
 
-`C=+X` and `C=+I` act on the machine, so both work from any memory view and from
+`C=+R` and `C=+I` act on the machine, so both work from any memory view and from
 edit mode. With a popup, a command prompt, the Bookmarks list, the Number
 calculator, or a hunt, compare or opcode result picker open, leave that layer
 with Back first.
 
-Where the monitor backend reaches a reset, `C=+X` performs it. Elsewhere it says
+`R` on its own is Range and is unrelated: the C= modifier is what makes the key
+a reset. There is no confirmation step, so `C=+R` resets as soon as it is
+pressed.
+
+On a Telnet session the key is `ESC` followed by `Ctrl+R`. A Telnet terminal has
+no byte for the C= modifier, and the key's code is above the range a Telnet
+session can carry as a literal character, so an escape sequence is the only way
+to reach it there. `C=+B` and `C=+0` to `C=+9` use the same route but end in the
+plain letter or digit; the reset ends in a control byte instead, because it is
+destructive and unconfirmed and `ESC` followed by `R` is a sequence a user types
+on purpose when backing out of a layer and then starting a Range.
+
+Where the monitor backend reaches a reset, `C=+R` performs it. Elsewhere it says
 `RESET UNAVAILABLE` and leaves the machine and the view as they are, edit mode
 included. `C=+I` works where the target has an `Interface Type` setting to swap,
 and on a cartridge it says `INTERFACE SWAP UNAVAILABLE` and stays in the

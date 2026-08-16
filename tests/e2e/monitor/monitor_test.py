@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import pacing
 import rest as rest_lib
 import machine as machine_lib
 import targets
@@ -33,6 +34,8 @@ from ui_backend import (
     MODE_TELNET,
     Snapshot,
     TelnetBackend,
+    UI_ITEM,
+    UI_STORE,
     add_mode_argument,
     make_backend,
 )
@@ -400,8 +403,12 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
 
 
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
-    url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
-    # Transport and retry policy come from tests/lib/rest.py; see rest.may_retry.
+    # rest.url_for decides which machine of a target serves the path and writes
+    # the REST port when it is not the default; this suite must not assemble an
+    # authority of its own. Transport and retry policy come from the same
+    # library; see rest.may_retry.
+    url = rest_lib.url_for(host, "/v1/machine:readmem",
+                           {"address": f"{address:04X}", "length": length})
     with rest_lib.retrying_urlopen(urllib.request.Request(url), 5.0) as response:
         return response.read()
 
@@ -493,13 +500,15 @@ def close_rest_menu(control: str, password: Optional[str]) -> None:
     same machine. See tests/lib/targets.py.
     """
     headers = {"X-Password": password} if password else {}
+    # rest.url_for routes each path to the machine that serves it, so the split
+    # between the device's menu and the computer's keyboard is applied by
+    # Target.host_for rather than restated here.
     target = targets.parse(control)
-    menu_host = target.device
-    input_host = target.input_host
     for attempt in range(12):
         try:
             request = urllib.request.Request(
-                f"http://{menu_host}/v1/machine:menu_screen", headers=headers, method="GET"
+                rest_lib.url_for(target, "/v1/machine:menu_screen"),
+                headers=headers, method="GET"
             )
             with rest_lib.retrying_urlopen(request, 5.0):
                 pass
@@ -514,7 +523,7 @@ def close_rest_menu(control: str, password: Optional[str]) -> None:
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"http://{input_host}/v1/machine:input",
+            rest_lib.url_for(target, "/v1/machine:input"),
             data=body,
             headers={**headers, "Content-Type": "application/json"},
             method="POST",
@@ -528,7 +537,8 @@ def close_rest_menu(control: str, password: Optional[str]) -> None:
         time.sleep(0.25)
     else:
         request = urllib.request.Request(
-            f"http://{menu_host}/v1/machine:menu_button", data=b"", headers=headers, method="PUT"
+            rest_lib.url_for(target, "/v1/machine:menu_button"),
+            data=b"", headers=headers, method="PUT"
         )
         with rest_lib.retrying_urlopen(request, 5.0):
             pass
@@ -866,9 +876,19 @@ def ensure_monitor_open(session: MonitorSession) -> None:
 
     Idempotent, unlike `MonitorSession.enter_monitor`, whose C=+O would close a
     monitor that is already up.
+
+    A closed on-device UI answers 404 for the menu screen rather than showing
+    an empty one, which the REST backend reports as a Failure. That is one of
+    the states this has to be able to start from: C=+R resets the machine by
+    releasing the host, so the whole UI goes away with the monitor.
     """
-    if monitor_is_on_screen(session.capture()):
-        return
+    try:
+        if monitor_is_on_screen(session.capture()):
+            return
+    except Failure as exc:
+        if not menu_screen_closed(exc):
+            raise
+    session.backend.ensure_ready()
     session.enter_monitor()
 
 
@@ -2367,7 +2387,8 @@ def wait_for_screen_contains(session: MonitorSession, text: str,
 
 
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
-    url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
+    url = rest_lib.url_for(host, f"/v1/files{path}:create_d64",
+                           {"diskname": diskname})
     request = urllib.request.Request(url, data=b"", method="PUT")
     # Creating the same image twice leaves the same image.
     with rest_lib.retrying_urlopen(request, 15.0, idempotent=True):
@@ -2377,7 +2398,8 @@ def rest_create_d64(host: str, path: str, diskname: str) -> None:
 def rest_file_exists(host: str, path: str) -> bool:
     try:
         with rest_lib.retrying_urlopen(
-                urllib.request.Request(f"http://{host}/v1/files{path}:info"), 5.0) as response:
+                urllib.request.Request(
+                    rest_lib.url_for(host, f"/v1/files{path}:info")), 5.0) as response:
             return response.status == 200
     except urllib.error.HTTPError:
         return False
@@ -3181,7 +3203,7 @@ def banked_ram_reason(is_u2: bool, frozen: bool) -> Optional[str]:
 
 def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
               control: str, video_host: str, files_host: str, live_host: str,
-              frozen: bool) -> None:
+              frozen: bool, device_host: str) -> None:
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
@@ -3528,6 +3550,501 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         else:
             run_telnet_dropdown_scroll_flood_test(session, rest_host)
 
+    # Last, because it is the only check that reboots the machine every other
+    # check shares. Nothing after it would meet the C64 it was written for.
+    section("machine shortcuts")
+    with check("C=+I swaps the interface from outside the monitor"):
+        assert_interface_shortcut_works_outside_the_monitor(
+            session, rest_host, device_host, control)
+
+    with check("C=+R resets the machine and leaves, C=+X does neither"):
+        run_machine_reset_shortcut_test(session, rest_host, mode, live_host)
+
+    with check("reset and interface swap combined, in both orders"):
+        run_reset_interface_combination_test(
+            session, rest_host, live_host, device_host, control)
+
+
+# $0334 is in the unused part of the cassette buffer page. The KERNAL's RAMTAS
+# routine zeroes $0200-$03FF on every reset, and nothing writes there while the
+# machine sits at the BASIC prompt, so a sentinel put there stays until a reset
+# clears it. That makes it a reset oracle with no timing window, which the
+# jiffy clock at $A0-$A2 is not: this suite's own Go checks leave the C64
+# running code with its interrupts off, and a stopped jiffy cannot tell a reset
+# from a machine that simply is not counting. Measured on an Ultimate 64:
+# written as A5A5A5A5, still A5A5A5A5 after an idle period, 00000000 after a
+# machine:reset.
+RESET_SENTINEL_ADDRESS = 0x0334
+RESET_SENTINEL = bytes((0xA5, 0xA5, 0xA5, 0xA5))
+
+
+def reset_sentinel_survives(host: str) -> bool:
+    return read_rest_memory(host, RESET_SENTINEL_ADDRESS,
+                            len(RESET_SENTINEL)) == RESET_SENTINEL
+
+
+# The KERNAL writes $EA31 to the IRQ vector at $0314-$0315 during CINT, which
+# runs after RAMTAS has cleared page 3. A C64 held in reset therefore reads
+# $0000 there while its VIC keeps running, and its jiffy clock never advances.
+# That is the state this suite has to be able to name: "the monitor closed" and
+# "the machine came back" are different claims, and a reset that restarts the
+# 6510 but leaves it held satisfies the first without the second.
+KERNAL_IRQ_VECTOR = 0x0314
+KERNAL_IRQ_HANDLER = bytes((0x31, 0xEA))
+
+
+def assert_machine_is_running(live_host: str, context: str,
+                              timeout: float = 15.0) -> None:
+    """Require the C64 to be executing the KERNAL, not held after a reset.
+
+    Two independent readings, because either alone can be misread. The IRQ
+    vector says the KERNAL got past CINT, and a jiffy clock that advances says
+    the interrupt it installed is actually being taken. A machine held in
+    reset fails the first; a machine that booted and then had its interrupts
+    stopped fails the second.
+    """
+    deadline = time.time() + timeout
+    vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
+    while time.time() < deadline and vector != KERNAL_IRQ_HANDLER:
+        time.sleep(0.2)
+        vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
+    if vector != KERNAL_IRQ_HANDLER:
+        raise Failure(
+            f"{context}: the C64 is held in reset. ${KERNAL_IRQ_VECTOR:04X} "
+            f"reads {vector.hex()} rather than {KERNAL_IRQ_HANDLER.hex()}, so "
+            f"the 6510 restarted but never finished the KERNAL's boot")
+
+    first = read_rest_memory(live_host, 0x00A0, 3)
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if read_rest_memory(live_host, 0x00A0, 3) != first:
+            return
+    raise Failure(
+        f"{context}: the C64 booted but is not running. The jiffy clock at "
+        f"$A0-$A2 stayed at {first.hex()} for three seconds, so the KERNAL "
+        f"interrupt is not being taken")
+
+
+def menu_screen_closed(exc: Failure) -> bool:
+    """Whether `exc` is ui_backend reporting that the menu screen has gone.
+
+    The REST backend raises a Failure with this text when the device answers
+    404 for the menu screen, which is what a closed on-device UI looks like
+    from outside. Matched on the message the same way back_out_to_the_root
+    does in tests/e2e/lib/ui_backend.py, because it is a distinguishable
+    condition rather than a transport error.
+    """
+    return str(exc).startswith("menu screen unavailable after")
+
+
+def send_key_that_may_close_the_ui(session: MonitorSession, key: str) -> None:
+    """Send one key whose own effect can be to close the on-device UI.
+
+    Both machine shortcuts do this: the reset releases the host, and the
+    interface swap answers MENU_HIDE. The REST backend reads the menu screen
+    to settle after a key and reports a 404 as a Failure, so the send has to
+    treat that particular Failure as the key having worked rather than as a
+    transport error. The key is still sent exactly once.
+    """
+    try:
+        session.send_key(key, expect_redraw=False)
+    except Failure as exc:
+        if not menu_screen_closed(exc):
+            raise
+
+
+def monitor_has_gone(session: MonitorSession) -> bool:
+    """True once the monitor is off the screen, including when the UI went too.
+
+    A reset releases the host, so the on-device UI closes with the monitor and
+    the menu screen stops answering at all. Reading that as anything other
+    than "the monitor is gone" would make the reset look like a failure to
+    leave.
+    """
+    try:
+        return not monitor_is_on_screen(session.capture())
+    except Failure as exc:
+        if menu_screen_closed(exc):
+            return True
+        raise
+
+
+def press_reset_shortcut(session: MonitorSession, rest_host: str,
+                         live_host: str, context: str) -> bool:
+    """C=+R from the open monitor, proved to have reset a machine that came back.
+
+    Three claims, asserted separately because a reset can satisfy any one of
+    them without the others: the monitor left, the KERNAL cleared the sentinel,
+    and the machine is running afterwards rather than held.
+
+    Returns False where the backend cannot reach a reset at all, which is the
+    monitor's other documented answer and not a failure. The popup is dismissed
+    before returning, so the caller meets the monitor it started with.
+    """
+    write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
+    send_key_that_may_close_the_ui(session, "CBM_R")
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline and not monitor_has_gone(session):
+        time.sleep(0.2)
+    if not monitor_has_gone(session):
+        screen = session.capture()
+        if "RESET" in screen.text() and "UNAVAILABLE" in screen.text():
+            session.send_key("ENTER", settle=True)
+            return False
+        raise Failure(f"{context}: C=+R did not leave the monitor\n"
+                      f"{screen.text()}")
+
+    deadline = time.time() + 15.0
+    while time.time() < deadline and reset_sentinel_survives(rest_host):
+        time.sleep(0.2)
+    if reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"{context}: C=+R left the monitor but did not reset the C64; the "
+            f"sentinel at ${RESET_SENTINEL_ADDRESS:04X} is untouched")
+    assert_machine_is_running(live_host, f"{context}: after C=+R")
+    return True
+
+
+def swap_interface(session: MonitorSession, device_host: str,
+                   context: str) -> str:
+    """C=+I once, proved by the setting changing. Returns the new value."""
+    was = read_interface_type(device_host)
+    send_key_that_may_close_the_ui(session, "CBM_I")
+    now = wait_for_interface_type(device_host, was)
+    if now == was:
+        raise Failure(f"{context}: C=+I did not swap '{UI_ITEM}' away from "
+                      f"{was!r}")
+    return now
+
+
+def run_reset_interface_combination_test(
+        session: MonitorSession, rest_host: str, live_host: str,
+        device_host: str, control: str) -> None:
+    """Reset and interface swap in the orders a user can actually reach them.
+
+    Both shortcuts close the monitor and one of them reboots the machine, so
+    each leaves the next one starting from a different place. The cases below
+    are the orders that differ in what the firmware has to put back: a swap
+    that has to survive a reboot, a reset issued from a monitor drawn in the
+    interface that was just swapped in, a second reset through a latch the
+    first one used, and a reset from edit mode rather than a view.
+
+    Every case ends with the machine running. A reset that restarts the 6510
+    and leaves it held would otherwise pass every screen-level assertion here.
+    """
+    original = read_interface_type(device_host)
+    try:
+        ensure_monitor_open(session)
+        if not press_reset_shortcut(session, rest_host, live_host, "probe"):
+            check_skip("this backend cannot reach a machine reset, so the "
+                       "orders below have nothing to combine")
+            return
+        session.backend.ensure_ready()
+
+        # 1. Swap, then reset from a monitor drawn in the new interface. The
+        #    swap must survive the reboot, because it is a stored setting and
+        #    not a property of the session.
+        if original is not None:
+            ensure_monitor_open(session)
+            swapped = swap_interface(session, device_host, "swap then reset")
+            session.backend.ensure_ready()
+            ensure_monitor_open(session)
+            press_reset_shortcut(session, rest_host, live_host,
+                                 "swap then reset")
+            after = read_interface_type(device_host)
+            if after != swapped:
+                raise Failure(
+                    f"the reset changed '{UI_ITEM}' from {swapped!r} to "
+                    f"{after!r}; a machine reset must not rewrite a device "
+                    f"setting")
+            detail(f"swap then reset: {UI_ITEM} held at {after!r} across the "
+                   f"reboot")
+
+            # 2. And the other order: swap back from a monitor opened after a
+            #    reset, which is the case where the UI has just been rebuilt.
+            session.backend.ensure_ready()
+            ensure_monitor_open(session)
+            back = swap_interface(session, device_host, "reset then swap")
+            if back != original:
+                raise Failure(
+                    f"the second C=+I gave {back!r}, expected the original "
+                    f"{original!r}: the setting has only two values")
+            detail(f"reset then swap: {UI_ITEM} back to {back!r}")
+
+        # 3. Two resets in a row. reset_pending is a latch the monitor sets and
+        #    run_machine_monitor consumes, so a second reset through the same
+        #    latch is the case a one-shot bug would fail.
+        ensure_monitor_open(session)
+        press_reset_shortcut(session, rest_host, live_host, "first of two")
+        ensure_monitor_open(session)
+        press_reset_shortcut(session, rest_host, live_host, "second of two")
+
+        # 4. From edit mode rather than a view. The manual says both shortcuts
+        #    work from edit mode, and edit mode is a state the monitor has to
+        #    leave on the way out rather than a layer that swallows the key.
+        ensure_monitor_open(session)
+        ensure_view(session, "HEX ")
+        screen = session.send_char("E", settle=True)
+        if "EDIT" not in screen.text():
+            raise Failure(f"edit mode did not start\n{screen.text()}")
+        press_reset_shortcut(session, rest_host, live_host, "from edit mode")
+    finally:
+        if original is not None and read_interface_type(device_host) != original:
+            rest_api(device_host).configs.set(UI_STORE, UI_ITEM, original)
+        reset_rest_machine(control, None)
+        ensure_monitor_open(session)
+
+
+def read_interface_type(device_host: str) -> Optional[str]:
+    """The device's `Interface Type` setting, or None where it has none.
+
+    Read over REST rather than off the screen, so the same oracle works on
+    every transport and does not depend on which menu is drawn. A cartridge
+    has no such setting; see ui_freezes_machine.
+    """
+    try:
+        entry = rest_api(device_host).configs.item(UI_STORE, UI_ITEM)
+    except Failure:
+        return None
+    current = entry.get("current")
+    return current if isinstance(current, str) else None
+
+
+def wait_for_interface_type(device_host: str, unwanted: Optional[str],
+                            timeout: float = 6.0) -> Optional[str]:
+    """Re-read the setting until it is no longer `unwanted`, or the budget ends."""
+    deadline = time.time() + timeout
+    current = read_interface_type(device_host)
+    while time.time() < deadline and current == unwanted:
+        time.sleep(0.2)
+        current = read_interface_type(device_host)
+    return current
+
+
+def assert_interface_shortcut_works_outside_the_monitor(
+        session: MonitorSession, rest_host: str, device_host: str,
+        control: str) -> None:
+    """C=+I swaps the interface from the file browser, where C=+R does nothing.
+
+    The contrast is the point. The reset is a case in
+    `MachineMonitor::handle_key` and belongs to the monitor alone, while the
+    interface swap is reachable from the browser and the settings menu too, so
+    a check that only looked inside the monitor could not tell a global key
+    from a monitor-local one.
+
+    The setting is read over REST rather than off the screen, and the swap is
+    made twice so the suite hands back the interface it was given. A machine
+    with no `Interface Type` setting is a cartridge, whose UI is always the
+    freezer; there the shortcut has nothing to swap.
+    """
+    original = read_interface_type(device_host)
+    if original is None:
+        check_skip("this machine has no Interface Type setting to swap "
+                   "(a cartridge: its UI is the freezer)")
+        return
+
+    write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
+    try:
+        back_out_to_the_bare_browser(session)
+        send_key_that_may_close_the_ui(session, "CBM_I")
+        swapped = wait_for_interface_type(device_host, original)
+        if swapped == original:
+            raise Failure(
+                f"C=+I did not swap the interface from the file browser: "
+                f"'{UI_ITEM}' is still {original!r}")
+        if not reset_sentinel_survives(rest_host):
+            raise Failure(
+                f"C=+I reset the C64: the sentinel at "
+                f"${RESET_SENTINEL_ADDRESS:04X} was cleared, and swapping the "
+                f"interface must not touch the machine")
+        detail(f"C=+I from the file browser: {UI_ITEM} {original!r} -> "
+               f"{swapped!r}")
+    finally:
+        # The interface this suite was started in is the one the checks after
+        # it, the next suite, and the person at the machine all expect. The
+        # restore reads the setting back rather than trusting a variable the
+        # code above may never have reached: an exception raised by the send
+        # itself still leaves the device swapped, and a restore that is skipped
+        # in exactly that case strands the device on the other interface. That
+        # is not hypothetical; it happened here and left a U64 in Freeze.
+        if read_interface_type(device_host) != original:
+            rest_api(device_host).configs.set(UI_STORE, UI_ITEM, original)
+            if wait_for_interface_type(device_host, None) != original:
+                raise Failure(
+                    f"could not put '{UI_ITEM}' back to {original!r}; the "
+                    f"device is left on {read_interface_type(device_host)!r}")
+        # The swap closes the menu, and a reset issued while the interface was
+        # changing can leave the C64 held, so the machine is put back the way
+        # the suite found it before anything else runs.
+        reset_rest_machine(control, None)
+        session.backend.ensure_ready()
+        # Every check in this suite is written against an open monitor, and
+        # this one deliberately leaves the browser showing.
+        ensure_monitor_open(session)
+
+
+def assert_reset_shortcuts_inert_outside_the_monitor(
+        session: MonitorSession, rest_host: str, mode: str) -> None:
+    """Neither shortcut does anything from the file browser.
+
+    The reset is a case in `MachineMonitor::handle_key` and nothing else
+    answers KEY_CTRL_R, so outside the monitor the key has no owner. This is
+    also where the one behaviour change outside the monitor shows: C=+R used
+    to carry $12, which is KEY_DOWN, so it moved the browser cursor. The row
+    assertion below is what tells the two apart, and it runs on the transports
+    that can report which row is marked.
+    """
+    leave_monitor_fully(session)
+    before = back_out_to_the_bare_browser(session)
+    before_row = None if mode == MODE_TELNET else session.backend.selected_row()
+
+    for key in ("CBM_R", "CBM_X"):
+        session.send_key(key, expect_redraw=False)
+        after = wait_until(session, monitor_is_on_screen, timeout=2.0)
+        if monitor_is_on_screen(after):
+            raise Failure(
+                f"{key} opened the monitor from the file browser; it is the "
+                f"monitor's own key\n{after.text()}")
+        if after.text() != before.text():
+            raise Failure(
+                f"{key} changed the file browser, which owns neither "
+                f"shortcut\nbefore:\n{before.text()}\nafter:\n{after.text()}")
+        if before_row is not None:
+            after_row = session.backend.selected_row()
+            if after_row != before_row:
+                raise Failure(
+                    f"{key} moved the browser cursor from row {before_row} to "
+                    f"{after_row}. KEY_CTRL_R is $BA so that nothing reads it "
+                    f"as KEY_DOWN")
+        if not reset_sentinel_survives(rest_host):
+            raise Failure(
+                f"{key} reset the C64 from the file browser: the sentinel at "
+                f"${RESET_SENTINEL_ADDRESS:04X} was cleared")
+
+    ensure_monitor_open(session)
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(f"the monitor did not reopen\n{snapshot.text()}")
+
+
+def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
+                                    mode: str, live_host: str) -> None:
+    """`C=+R` resets the C64 and leaves the monitor. `C=+X` does neither.
+
+    The monitor closing is not on its own evidence of a reset, because several
+    other keys close it too, so the C64 is the oracle. A sentinel is put in the
+    RAM the KERNAL clears on every reset; the reset is proved by the sentinel
+    going away, and its absence by the sentinel surviving.
+
+    `C=+X` is checked on the machine rather than only in a host test because
+    both keymaps still produce its code, $18. A key that is merely unbound has
+    to be seen doing nothing to the machine it used to reset.
+
+    Each key is sent once. Where the shortcut must do nothing the screen is
+    then re-read for a bounded period, returning as soon as the regression
+    appears and otherwise spending the budget proving it did not.
+    """
+    ensure_view(session, "HEX ")
+    write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
+
+    # 0. Outside the monitor neither key has an owner.
+    assert_reset_shortcuts_inert_outside_the_monitor(session, rest_host, mode)
+    ensure_view(session, "HEX ")
+
+    # 1. The old shortcut is inert: the monitor stays and the machine keeps the
+    #    boot it was already on.
+    session.send_key("CBM_X", expect_redraw=False)
+    snapshot = wait_until(session, lambda screen: not monitor_is_on_screen(screen),
+                          timeout=2.0)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(f"C=+X left the monitor; it is bound to nothing now\n"
+                      f"{snapshot.text()}")
+    if not reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"C=+X reset the C64: the sentinel at ${RESET_SENTINEL_ADDRESS:04X} "
+            f"was cleared, which only a reset does")
+
+    # 2. The popup layer keeps the new shortcut from reaching the machine.
+    #    This is the hardware form of what the host tests assert: a destructive
+    #    action must not fire from under a layer that owns the keyboard.
+    screen = session.send_key("CTRL_B", settle=True)
+    screen.find_line_containing("BOOKMARKS")
+    session.send_key("CBM_R", expect_redraw=False)
+    snapshot = wait_until(session, lambda scr: not monitor_is_on_screen(scr),
+                          timeout=2.0)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(
+            f"C=+R acted from under the bookmark popup and left the monitor\n"
+            f"{snapshot.text()}")
+    # The popup has to still be the layer holding the keyboard, so a popup that
+    # closed cannot pass as a shortcut that was scoped out of it.
+    snapshot.find_line_containing("BOOKMARKS")
+    if not reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"C=+R reset the C64 from under the bookmark popup: the sentinel "
+            f"at ${RESET_SENTINEL_ADDRESS:04X} was cleared")
+    screen = session.send_key("CTRL_B", settle=True)
+    screen.find_line_containing("MONITOR")
+
+    # 3. From a memory view the shortcut resets the machine and leaves.
+    #    The reset releases the host, so on the REST-backed modes the whole
+    #    on-device UI closes with the monitor and the menu screen stops
+    #    answering. That is this key's success signal, not a transport error,
+    #    so the send itself has to tolerate it.
+    try:
+        session.send_key("CBM_R", settle=True)
+        screen = session.capture()
+    except Failure as exc:
+        if not menu_screen_closed(exc):
+            raise
+        screen = None
+    if screen is not None and "RESET" in screen.text() and "UNAVAILABLE" in screen.text():
+        # The other behaviour worth holding: a backend that cannot reach a
+        # reset says so and changes nothing, which is what a cartridge does.
+        session.send_key("ENTER", settle=True)
+        snapshot = wait_until(session, monitor_is_on_screen)
+        if not monitor_is_on_screen(snapshot):
+            raise Failure(
+                f"the monitor did not survive a refused reset\n{snapshot.text()}")
+        detail("C=+R: this backend cannot reach a reset, so the monitor "
+               "refused and stayed. The reset path is exercised where the "
+               "backend owns the machine")
+        return
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline and not monitor_has_gone(session):
+        time.sleep(0.2)
+    if not monitor_has_gone(session):
+        raise Failure(
+            f"C=+R did not leave the monitor\n{session.capture().text()}")
+
+    # The machine reboots on its own clock, so this waits for the sentinel to
+    # go rather than reading it once.
+    deadline = time.time() + 15.0
+    while time.time() < deadline and reset_sentinel_survives(rest_host):
+        time.sleep(0.2)
+    if reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"C=+R left the monitor but did not reset the C64: the sentinel at "
+            f"${RESET_SENTINEL_ADDRESS:04X} still reads "
+            f"{RESET_SENTINEL.hex()} fifteen seconds later, so the KERNAL "
+            f"never cleared it")
+    detail(f"C=+R: the sentinel at ${RESET_SENTINEL_ADDRESS:04X} was cleared "
+           f"by the reset the shortcut asked for")
+    # Clearing the sentinel only proves RAMTAS ran. A 6510 that restarted and
+    # was then held would clear it and go no further, so the machine has to be
+    # seen running before this is called a working reset.
+    assert_machine_is_running(live_host, "C=+R from a memory view")
+
+    # Leave the monitor open, the way every other check in this suite expects
+    # to find it.
+    ensure_monitor_open(session)
+    snapshot = wait_until(session, monitor_is_on_screen)
+    if not monitor_is_on_screen(snapshot):
+        raise Failure(f"the monitor did not reopen after the reset\n{snapshot.text()}")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate the machine monitor over REST, Freeze, or Telnet")
@@ -3544,6 +4061,21 @@ def main() -> int:
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
+
+    # A settled Telnet command is finished only once the screen has been quiet
+    # for pacing.TELNET_SETTLE_GAP_SECONDS, and TelnetBackend._drain_until_idle
+    # looks for that gap inside the per-command budget --timeout sets. A budget
+    # no larger than the gap cannot contain it, so every settled command that
+    # draws even one byte fails with "Timed out waiting for telnet screen to go
+    # idle". Rejected here, where the number is chosen, because deep inside the
+    # drain it reads as a device fault rather than as an unusable setting. This
+    # suite's default timeout is below the gap, so a direct invocation without
+    # -t is one of the cases this catches; run-tests passes a larger one.
+    if args.mode == MODE_TELNET and args.timeout <= pacing.TELNET_SETTLE_GAP_SECONDS:
+        parser.error(
+            f"--mode telnet needs --timeout greater than the telnet settle gap "
+            f"of {pacing.TELNET_SETTLE_GAP_SECONDS}s; {args.timeout}s cannot "
+            f"contain it, so every settled command would time out")
 
     try:
         target = targets.parse(args.host)
@@ -3586,7 +4118,7 @@ def main() -> int:
         )
         session = MonitorSession(backend)
         run_tests(session, memory_host, args.mode, is_u2, control,
-                  live_host, device_host, live_host, frozen)
+                  live_host, device_host, live_host, frozen, device_host)
     except Failure as exc:
         report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))

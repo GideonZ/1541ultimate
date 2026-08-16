@@ -50,6 +50,25 @@ int Keyboard_VT100 :: getch()
 		} else if (charin == 'b' || charin == 'B') {
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
+		} else if (charin == 0x12) {
+			// C=+R, the monitor's reset shortcut. KEY_CTRL_R is 0xBA, and
+			// SocketStream::get_char returns (int) of a plain char, so a byte
+			// above 0x7F cannot be sent as itself over a Telnet session; an
+			// escape sequence is the only way this transport can reach the key.
+			//
+			// The terminating byte is 0x12, Ctrl+R, and not the letter R as it
+			// is for C=+B above. The reset is destructive and has no
+			// confirmation on any interface, so it has to take a sequence a
+			// user cannot arrive at while meaning something else. Two
+			// properties of this driver make the letter form unsafe: an escape
+			// that finds no byte yet leaves escape_state at e_esc_escape
+			// indefinitely, so a pending ESC waits for whatever is typed next
+			// however much later; and ESC is the monitor's Back key while R
+			// starts Range, so "back out a layer, then start a range" is a
+			// sequence a user types on purpose. No terminal emits a control
+			// byte straight after ESC, so this form has no such neighbour.
+			escape_state = e_esc_idle;
+			ret = KEY_CTRL_R;
 		} else {
 			if (charin != '\e')
 				escape_state = e_esc_idle;

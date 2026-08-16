@@ -63,7 +63,7 @@ const char *const monitor_help_lines[] = {
     "RUNSTOP/<- Back     RETURN  Follow/Ret",
     // Machine row: the two keys that act on the machine rather than the view,
     // and both of which leave the monitor.
-    "C=+X       Reset    C=+I    Interface",
+    "C=+R       Reset    C=+I    Interface",
     NULL
     // Page Up/Down remains the window's own last row, drawn by draw_status:
     // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
@@ -5179,7 +5179,7 @@ bool MachineMonitor :: opcode_picker_commit_typed()
     return true;
 }
 
-// C= plus X resets the machine the monitor is looking at, then leaves: after a
+// C= plus R resets the machine the monitor is looking at, then leaves: after a
 // reset the address, the bytes and the CPU state on screen describe a machine
 // that no longer exists, and on a cartridge the freezer's hold on it is over.
 // Leaving is the only state that is true on every target.
@@ -5198,7 +5198,7 @@ int MachineMonitor :: handle_reset_shortcut(void)
     // runs. run_machine_monitor releases the host and unfreezes first, which
     // is the same order C64_Subsys uses for MENU_C64_RESET.
     reset_pending = true;
-    return 1;   // the monitor's own exit, the same value X returns
+    return 1;   // the monitor's own exit, the same value Back returns
 }
 
 bool MachineMonitor :: consume_pending_reset(void)
@@ -5222,7 +5222,7 @@ int MachineMonitor :: handle_interface_shortcut(void)
         redraw_full();
         return 0;
     }
-    return 1;   // the monitor's own exit, the same value X returns
+    return 1;   // the monitor's own exit, the same value Back returns
 }
 
 void MachineMonitor :: exit_edit_mode()
@@ -5363,7 +5363,7 @@ int MachineMonitor :: handle_key(int key)
     // command prompt and every picker are polled before it or dispatched above
     // it, so none of them can reach a destructive action while a text field
     // has the keyboard. From a memory view and from edit mode they both work.
-    if (key == KEY_CTRL_X) {
+    if (key == KEY_CTRL_R) {
         return handle_reset_shortcut();
     }
     if (key == KEY_CTRL_I) {

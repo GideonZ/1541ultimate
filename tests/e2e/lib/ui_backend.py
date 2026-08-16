@@ -437,6 +437,17 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "CBM_B": ["commodore", "b"],
     "CBM_1": ["commodore", "1"],
     "CBM_9": ["commodore", "9"],
+    # The monitor's reset shortcut, and the code the shortcut used to have.
+    # Both resolve through Keyboard_C64's keymap_control
+    # (software/io/c64/keyboard_c64.cc), which the REST menu route reads with
+    # matrixToKeyCode: C=+R gives KEY_CTRL_R and C=+X gives $18, which is now
+    # bound to nothing.
+    "CBM_R": ["commodore", "r"],
+    "CBM_X": ["commodore", "x"],
+    # C=+I swaps the interface between the freeze menu and the HDMI overlay.
+    # Unlike C=+R it is not the monitor's alone: the file browser and the
+    # settings menu answer it too.
+    "CBM_I": ["commodore", "i"],
 }
 
 # A letter key alone types uppercase in the firmware's default character set;
@@ -1443,6 +1454,23 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
     "CBM_9": b"\x1b9",
+    # KEY_CTRL_R is $BA, and SocketStream::get_char returns (int) of a plain
+    # char, so a Telnet session cannot carry the code as a literal byte.
+    # keyboard_vt100.cc getch() decodes ESC followed by $12, the Ctrl+R byte,
+    # into it. The terminator is a control byte rather than the letter, because
+    # the reset is destructive and unconfirmed and ESC-then-R is a sequence a
+    # user types on purpose; see the comment on that case.
+    "CBM_R": b"\x1b\x12",
+    # C=+X used to be the reset shortcut and its code, $18, is plain ASCII, so
+    # the VT100 driver passes it through unchanged (getch(), e_esc_idle case).
+    # No monitor handler claims it now.
+    "CBM_X": b"\x18",
+    # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
+    "CBM_I": b"\x09",
+    # ESC is ESC followed by a byte the driver does not decode, which its
+    # e_esc_escape default returns as KEY_ESCAPE, dropping the second byte.
+    # 'x' is such a byte and stays one: CBM_R above ends in $12 rather than
+    # the letter 'r', so no letter is claimed by that case.
     "ESC": b"\x1bx",
     "ENTER": b"\r",
     # DEL and BACKSPACE are the same physical key (KEY_ALIASES maps both to
