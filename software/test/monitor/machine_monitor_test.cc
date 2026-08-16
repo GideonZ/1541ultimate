@@ -8813,9 +8813,16 @@ static int test_io_region_is_data_not_code(void)
                 printf("  row %d: %s\n", row, rows[row]);
                 return 1;
             }
-            // The source column is asserted first. Without it this check would
-            // pass on a monitor still banked to I/O, which also draws .BYTE,
-            // and would prove nothing about CHAR.
+            // The source column is asserted FIRST, before anything is claimed
+            // about the row. Without that this check passes on a monitor still
+            // banked to I/O, which also draws .BYTE, and proves nothing about
+            // CHAR. Any view test added here should assert its bank before its
+            // contents for the same reason.
+            //
+            // The bank is also reached by pressing the key that changes it,
+            // not by calling set_monitor_cpu_port on the backend: the monitor
+            // owns its own CPU bank, starts at $07, and pushes that to the
+            // backend at init, overwriting anything set beforehand.
             if (expect(strstr(rows[row], "[CHR]") != NULL,
                        "CHAR disassembly: the rows must be CHAR ROM, not I/O.")) {
                 printf("  row %d: %s\n", row, rows[row]);

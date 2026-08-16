@@ -3604,6 +3604,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         assert_interface_shortcut_works_outside_the_monitor(
             session, rest_host, device_host, control)
 
+    with check("C=+I from inside the monitor closes the whole UI"):
+        assert_interface_swap_from_the_monitor_closes_the_ui(
+            session, device_host, control, mode)
+
     with check("C=+R resets the machine and leaves, C=+X does neither"):
         run_machine_reset_shortcut_test(session, rest_host, mode, live_host)
 
@@ -3929,6 +3933,95 @@ def assert_interface_shortcut_works_outside_the_monitor(
         session.backend.ensure_ready()
         # Every check in this suite is written against an open monitor, and
         # this one deliberately leaves the browser showing.
+        ensure_monitor_open(session)
+
+
+def assert_interface_swap_from_the_monitor_closes_the_ui(
+        session: MonitorSession, device_host: str, control: str,
+        mode: str) -> None:
+    """`C=+I` inside the monitor closes the whole on-device UI, not just it.
+
+    The swapped `Interface Type` only takes effect the next time the menu is
+    opened. Closing the monitor alone therefore drops the user back into the
+    file browser drawn in the interface they have just swapped away from, and
+    the swap looks like it did nothing until they close the browser by hand.
+    The file browser's own `C=+I` never had this problem, because
+    `TreeBrowser::handle_key` answers `MENU_HIDE` and the UI loop tears the
+    stack down.
+
+    Reading the setting back cannot see any of this: the setting changed
+    correctly the whole time the monitor was leaving the browser open. What
+    distinguishes the two is what is on screen afterwards, so that is what this
+    asserts.
+
+    A closed on-device UI answers HTTP 404 for the menu screen, which is what
+    `menu_screen_closed` recognises.
+
+    Telnet is deliberately different and is asserted the other way. That
+    session is not the interface being swapped: `Interface Type` selects
+    between the freeze menu and the HDMI overlay, both local to the device, and
+    `UserInterface::run_remote` ends only on `MENU_EXIT`. A remote session
+    closing itself because a local display preference changed would be the
+    surprising behaviour, so here the remote UI is required to survive.
+    """
+    original = read_interface_type(device_host)
+    if original is None:
+        check_skip("this machine has no Interface Type setting to swap "
+                   "(a cartridge: its UI is the freezer)")
+        return
+
+    try:
+        ensure_monitor_open(session)
+        send_key_that_may_close_the_ui(session, "CBM_I")
+        swapped = wait_for_interface_type(device_host, original)
+        if swapped == original:
+            raise Failure(
+                f"C=+I did not swap the interface from inside the monitor: "
+                f"'{UI_ITEM}' is still {original!r}")
+
+        deadline = time.time() + 5.0
+        closed = False
+        while time.time() < deadline and not closed:
+            try:
+                session.capture()
+            except Failure as exc:
+                if not menu_screen_closed(exc):
+                    raise
+                closed = True
+            else:
+                time.sleep(0.2)
+
+        if mode == MODE_TELNET:
+            if closed:
+                raise Failure(
+                    "C=+I closed the Telnet session. That session is not the "
+                    "interface being swapped: Interface Type selects between "
+                    "the freeze menu and the HDMI overlay, so a remote UI must "
+                    "survive the swap")
+            detail("C=+I over Telnet: the setting swapped and the remote UI "
+                   "stayed, which is the interface the swap does not govern")
+        else:
+            if not closed:
+                raise Failure(
+                    f"C=+I from inside the monitor left the on-device UI open. "
+                    f"The monitor closed but the file browser stayed up, so "
+                    f"the user is left in the interface they just swapped away "
+                    f"from; '{UI_ITEM}' only takes effect the next time the "
+                    f"menu opens")
+            detail(f"C=+I from inside the monitor: {UI_ITEM} {original!r} -> "
+                   f"{swapped!r}, and the whole UI closed with it")
+    finally:
+        # Same restore discipline as the check above: read the setting back
+        # rather than trust a variable the code may never have reached, since
+        # a failure part way through still leaves the device swapped.
+        if read_interface_type(device_host) != original:
+            rest_api(device_host).configs.set(UI_STORE, UI_ITEM, original)
+            if wait_for_interface_type(device_host, None) != original:
+                raise Failure(
+                    f"could not put '{UI_ITEM}' back to {original!r}; the "
+                    f"device is left on {read_interface_type(device_host)!r}")
+        reset_rest_machine(control, None)
+        session.backend.ensure_ready()
         ensure_monitor_open(session)
 
 
