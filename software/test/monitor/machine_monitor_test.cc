@@ -834,7 +834,8 @@ struct FakeResettableBackend : public FakeMemoryBackend
 
 static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
                             MemoryBackend &backend, const int *keys, int count,
-                            int *last_result, bool *asked_for_reset = 0)
+                            int *last_result, bool *asked_for_reset = 0,
+                            bool *asked_for_interface_swap = 0)
 {
     FakeKeyboard kb(keys, count);
     ui.screen = &screen;
@@ -849,6 +850,9 @@ static int run_monitor_keys(TestUserInterface &ui, CaptureScreen &screen,
     }
     if (asked_for_reset) {
         *asked_for_reset = mon.consume_pending_reset();
+    }
+    if (asked_for_interface_swap) {
+        *asked_for_interface_swap = mon.consume_pending_interface_swap();
     }
     mon.deinit();
     if (last_result) {
@@ -1045,9 +1049,10 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         FakeMemoryBackend backend;
         const int keys[] = { KEY_CTRL_I };
         int result = 0;
+        bool swapped = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
-        run_monitor_keys(ui, screen, backend, keys, 1, &result);
+        run_monitor_keys(ui, screen, backend, keys, 1, &result, 0, &swapped);
         if (expect(g_swap_interface_type_calls == 1,
                    "C=+I must ask for the interface swap once.")) {
             printf("  swap calls %d\n", g_swap_interface_type_calls);
@@ -1055,6 +1060,15 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         }
         if (expect(result == 1,
                    "C=+I must leave the monitor so the new mode takes effect.")) return 1;
+        // Leaving the monitor is not enough on its own. The swapped setting
+        // only takes effect the next time the menu opens, so the file browser
+        // underneath has to close too, or the user is left sitting in the
+        // interface they just swapped away from. run_machine_monitor turns
+        // this into MENU_HIDE, which is the answer the file browser already
+        // gives for the same key.
+        if (expect(swapped,
+                   "C=+I must ask for the whole user interface to close, not "
+                   "just the monitor.")) return 1;
     }
     {
         // From edit mode as well.
@@ -1063,12 +1077,16 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         FakeMemoryBackend backend;
         const int keys[] = { 'e', KEY_CTRL_I };
         int result = 0;
+        bool swapped = false;
         g_swap_interface_type_calls = 0;
         g_swap_interface_type_result = MENU_HIDE;
-        run_monitor_keys(ui, screen, backend, keys, 2, &result);
+        run_monitor_keys(ui, screen, backend, keys, 2, &result, 0, &swapped);
         if (expect(g_swap_interface_type_calls == 1,
                    "C=+I must swap from edit mode too.")) return 1;
         if (expect(result == 1, "C=+I must leave the monitor from edit mode.")) return 1;
+        if (expect(swapped,
+                   "C=+I must close the whole user interface from edit mode "
+                   "too.")) return 1;
     }
     {
         // A machine with no Interface Type setting to swap, which is every
@@ -1099,6 +1117,12 @@ static int test_interface_shortcut_swaps_and_leaves(void)
         screen.get_slice(1, 3, 38, header);
         if (expect(strstr(header, "EDIT") != 0,
                    "A swap that changed nothing must leave edit mode alone.")) return 1;
+        // Nothing was swapped, so nothing needs closing. A monitor that asked
+        // for the interface to close here would take the file browser down
+        // with it over a swap that never happened.
+        if (expect(!mon.consume_pending_interface_swap(),
+                   "A swap that changed nothing must not ask the user "
+                   "interface to close.")) return 1;
         mon.deinit();
         g_swap_interface_type_result = MENU_HIDE;
     }
@@ -8702,9 +8726,9 @@ static int test_io_region_is_data_not_code(void)
         mon.deinit();
     }
 
-    // The same addresses are ordinary memory once I/O is banked out, and are
-    // disassembled again: the rule is about what the address reads, not about
-    // where it is.
+    // reads_live_io answers what the address reads, and only I/O reads as I/O.
+    // Character ROM is not I/O and this must keep saying so: the Assembly view
+    // shows both as data, but it asks shows_as_data for that, not this.
     {
         FakeBankedMemoryBackend backend;
 
@@ -8717,6 +8741,140 @@ static int test_io_region_is_data_not_code(void)
         if (expect(!backend.reads_live_io(0xD020), "$D020 is not I/O with CHAR banked in.")) return 1;
         backend.set_monitor_cpu_port(0x00);   // RAM at $D000
         if (expect(!backend.reads_live_io(0xD020), "$D020 is not I/O with RAM banked in.")) return 1;
+    }
+
+    // shows_as_data answers a different question: how the Assembly view should
+    // draw the address. I/O and CHAR both qualify, for the two reasons on the
+    // predicate itself, and RAM at the same addresses does not.
+    {
+        FakeBankedMemoryBackend backend;
+
+        backend.live_cpu_port = 0x07;
+        backend.set_monitor_cpu_port(0x07);
+        if (expect(backend.shows_as_data(0xD020),
+                   "$D020 must show as data with I/O banked in.")) return 1;
+        backend.set_monitor_cpu_port(0x03);   // CHAR ROM at $D000
+        if (expect(backend.shows_as_data(0xD020),
+                   "$D020 must show as data with CHAR banked in: it is bitmap "
+                   "data, not code.")) return 1;
+        backend.set_monitor_cpu_port(0x00);   // RAM at $D000
+        if (expect(!backend.shows_as_data(0xD020),
+                   "$D020 must be decoded with RAM banked in.")) return 1;
+
+        // Outside $D000-$DFFF nothing is affected, whatever is banked.
+        backend.set_monitor_cpu_port(0x07);
+        if (expect(!backend.shows_as_data(0xC000), "$C000 is always decoded.")) return 1;
+        if (expect(!backend.shows_as_data(0xE000),
+                   "$E000 is KERNAL ROM, which is code and is decoded.")) return 1;
+        if (expect(!backend.shows_as_data(0xA000),
+                   "$A000 is BASIC ROM, which is code and is decoded.")) return 1;
+    }
+
+    // Character ROM is bitmap data, so the Assembly view shows it one byte per
+    // row even though it is perfectly stable and could be decoded without the
+    // re-alignment problem I/O has. The bytes planted below are a valid three
+    // byte instruction, so a view that decoded CHAR would draw "LDA $C0A9"
+    // here; that is what makes this fail if shows_as_data stops covering CHAR.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char rows[4][40];
+        const int keys[] = { 'J', 'A', 'o', 'o', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.charrom[0] = 0xAD;      // LDA absolute
+        backend.charrom[1] = 0xA9;
+        backend.charrom[2] = 0xC0;
+        backend.charrom[3] = 0xEA;      // NOP
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: jump to $D000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: switching to ASM failed.")) return 1;
+        // The monitor owns its own CPU bank and starts at $07, so the bank is
+        // reached through the key that changes it rather than by poking the
+        // backend, which the monitor would overwrite. next_cpu_mode counts up
+        // from $07, so two presses is $01: RAM at $A000, CHAR at $D000.
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: first CPU bank step failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "CHAR disassembly: second CPU bank step failed.")) return 1;
+
+        for (int row = 0; row < 4; row++) {
+            char expected[8];
+            screen.get_slice(1, 4 + row, 38, rows[row]);
+            sprintf(expected, "D0%02X ", row);
+            if (expect(strncmp(rows[row], expected, 5) == 0,
+                       "Each CHAR ROM address must be its own Assembly row.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+            // The source column is asserted first. Without it this check would
+            // pass on a monitor still banked to I/O, which also draws .BYTE,
+            // and would prove nothing about CHAR.
+            if (expect(strstr(rows[row], "[CHR]") != NULL,
+                       "CHAR disassembly: the rows must be CHAR ROM, not I/O.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+            if (expect(strstr(rows[row], ".BYTE $") != NULL,
+                       "A CHAR ROM row must read as data: it is bitmap data, "
+                       "not code.")) {
+                printf("  row %d: %s\n", row, rows[row]);
+                return 1;
+            }
+        }
+        if (expect(strstr(rows[0], "LDA") == NULL,
+                   "CHAR ROM must not be decoded as an instruction.")) {
+            printf("  row 0: %s\n", rows[0]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CHAR disassembly: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // The same addresses with RAM banked in are decoded, which is the other
+    // half of the rule: it follows the banked source, not the address range.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', 'o', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.ram[0xD000] = 0xAD;     // LDA absolute
+        backend.ram[0xD001] = 0xA9;
+        backend.ram[0xD002] = 0xC0;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: jump failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: ASM switch failed.")) return 1;
+        // One step from the monitor's own starting $07 is $00: RAM everywhere.
+        if (expect(mon.poll(0) == 0, "RAM-at-$D000 disassembly: CPU bank step failed.")) return 1;
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "[RAM]") != NULL,
+                   "RAM-at-$D000: the row must be RAM, not I/O or CHAR.")) {
+            printf("  row 0: %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "LDA $C0A9") != NULL,
+                   "RAM banked at $D000 must still be decoded as code.")) {
+            printf("  row 0: %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "RAM-at-$D000 disassembly: exit failed.")) return 1;
+        mon.deinit();
     }
 
     // With RAM banked in everywhere there are no regions at all, so the whole

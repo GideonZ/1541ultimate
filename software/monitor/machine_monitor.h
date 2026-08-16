@@ -195,9 +195,14 @@ class MachineMonitor : public UIObject
     uint16_t last_go_addr;
     bool go_pending;
     uint16_t go_pending_addr;
-    // C= plus X asks for a reset and leaves; the caller that owns the
+    // C= plus R asks for a reset and leaves; the caller that owns the
     // machine performs it, as it does for Go.
     bool reset_pending;
+    // C= plus I swaps the interface and leaves. The whole user interface has
+    // to close, not just the monitor, because the swapped setting only takes
+    // effect the next time the menu is opened. The caller answers MENU_HIDE
+    // for this, the same answer the file browser gives for the same key.
+    bool interface_swap_pending;
     uint8_t memory_bytes_per_row;
     uint8_t binary_bytes_per_row;
     Clipboard clipboard;
@@ -456,8 +461,11 @@ public:
     void deinit(void);
     int poll(int);
     bool consume_pending_go(uint16_t *address);
-    // Whether C= plus X asked for a machine reset before leaving.
+    // Whether C= plus R asked for a machine reset before leaving.
     bool consume_pending_reset(void);
+    // Whether C= plus I swapped the interface before leaving, which means the
+    // whole user interface has to close rather than just the monitor.
+    bool consume_pending_interface_swap(void);
 };
 
 #endif

@@ -2009,6 +2009,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_go_addr = monitor_last_go_addr;
     go_pending = false;
     reset_pending = false;
+    interface_swap_pending = false;
     go_pending_addr = 0;
     memory_bytes_per_row = monitor_memory_bytes_per_row;
     binary_bytes_per_row = monitor_binary_bytes_per_row;
@@ -3512,13 +3513,21 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
     disassemble_6502(address, row_bytes, state.illegal_enabled, decoded);
     monitor_disasm_tail_cutover(address, decoded);
 
-    // A live I/O register is not code, and it does not read the same twice.
-    // Decoding one as an opcode gives an instruction length that changes
-    // between redraws, and with it the address of every row below, so the
-    // whole view re-aligns while the user is only scrolling. One byte per row
-    // takes the register values out of the layout entirely: the rows stay
-    // where they are and each one shows what its register holds now.
-    if (backend && backend->reads_live_io(address)) {
+    // Two sources are shown as data rather than decoded, for two different
+    // reasons. A live I/O register does not read the same twice, so decoding
+    // one gives an instruction length that changes between redraws, and with
+    // it the address of every row below, so the whole view re-aligns while the
+    // user is only scrolling. Character ROM is perfectly stable and has none
+    // of that problem; it is shown as data because it is character bitmaps and
+    // never was code, so any instruction decoded from it is meaningless.
+    //
+    // One byte per row serves both: the rows stay where they are, an I/O row
+    // shows what its register holds now, and a CHAR row shows the bitmap byte
+    // instead of inventing an opcode for it. RAM banked at the same addresses
+    // is still decoded, so the rule follows the banked source rather than the
+    // address range. The source column, [I/O], [CHR] or [RAM], says which case
+    // a row is in, so the view is not hiding the distinction.
+    if (backend && backend->shows_as_data(address)) {
         decoded->valid = false;
         decoded->illegal = false;
         decoded->operand_bytes = 0;
@@ -5222,7 +5231,22 @@ int MachineMonitor :: handle_interface_shortcut(void)
         redraw_full();
         return 0;
     }
+    // Closing the monitor is not enough. The swapped Interface Type only takes
+    // effect when the menu is next opened, so leaving the file browser on
+    // screen would leave the user in the interface they just swapped away
+    // from, and the swap would appear not to have worked until they closed the
+    // browser by hand. The whole user interface has to go, which is what the
+    // file browser already does for this key by answering MENU_HIDE.
+    // run_machine_monitor consumes this and gives the same answer.
+    interface_swap_pending = true;
     return 1;   // the monitor's own exit, the same value Back returns
+}
+
+bool MachineMonitor :: consume_pending_interface_swap(void)
+{
+    bool wanted = interface_swap_pending;
+    interface_swap_pending = false;
+    return wanted;
 }
 
 void MachineMonitor :: exit_edit_mode()

@@ -97,6 +97,40 @@ public:
         return source && source[0] == 'I' && source[1] == 'O' && source[2] == 0;
     }
 
+    // Whether the Assembly view should show this address as data rather than
+    // decode it. Two sources qualify, for two unrelated reasons:
+    //
+    //   I/O   is volatile. See reads_live_io above: the bytes change between
+    //         reads, so the decoded instruction length changes with them and
+    //         every row below re-aligns while the user is only scrolling.
+    //
+    //   CHAR  is stable and has none of that problem. It is excluded because
+    //         it is character bitmap data and never was code, so decoding it
+    //         produces instructions that are meaningless whatever they say.
+    //
+    // Deliberately separate from reads_live_io rather than folded into it.
+    // That predicate answers what the address *reads*, character ROM is not
+    // I/O, and a test asserts it says so. This one answers how the view should
+    // *draw* the address, which is a different question with a different
+    // answer for CHAR.
+    //
+    // RAM at these addresses is unaffected and still disassembles, which is
+    // what makes the $D000-$DFFF rule about the banked source rather than
+    // about the address range.
+    virtual bool shows_as_data(uint16_t address) const
+    {
+        const char *source = source_name(address);
+
+        if (!source) {
+            return false;
+        }
+        if (source[0] == 'I' && source[1] == 'O' && source[2] == 0) {
+            return true;
+        }
+        return source[0] == 'C' && source[1] == 'H' && source[2] == 'A' &&
+               source[3] == 'R' && source[4] == 0;
+    }
+
     virtual const char *source_name(uint16_t address) const
     {
         uint8_t cpu_port = get_monitor_cpu_port();
