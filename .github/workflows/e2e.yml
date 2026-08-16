@@ -101,11 +101,19 @@ jobs:
             ${{ (github.event_name == 'schedule' || inputs.record)
                 && '--record' || '' }}
         run: |
+          set +e
           ./run-tests -o "$RUNNER_TEMP/e2e" \
             --mode "$MODES" \
             $SYSLOG $RECORD \
             ${RECOVER:+--recover-command "$RECOVER"} \
             $TARGETS
+          # Published because a workflow can read a step's outcome but not the
+          # number the process exited with, and this runner's statuses are a
+          # severity scale that the step below compares against. Written
+          # before the exit so a non-zero status still carries it.
+          status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          exit $status
 
       # Steps 3 to 5 run whatever the gate did. A run that was cancelled or
       # that timed out is the run whose evidence is worth most, and a step that
@@ -157,13 +165,34 @@ jobs:
           E2E_ARTIFACT_URL: ${{ steps.report.outputs.artifact-url }}
         run: python3 tools/e2e_report.py "$RUNNER_TEMP/e2e" --job-summary
 
+      # The gate's exit status is a severity scale, so this job tolerates a
+      # caveat and fails an outcome: 0, 1 and 2 all mean every suite passed,
+      # and 3, 4 and 64 do not. Failing on a retry would cancel the point of
+      # retrying, because a flake would still fail the gate. What keeps a
+      # retried pass from being ignored is that it is loud rather than that it
+      # is red: the status line carries `retried=` and the job summary carries
+      # the Retries section.
+      #
       # `outcome` is what the step did before continue-on-error was applied,
-      # so this sees the failure the step swallowed. Anything other than
-      # success fails the job, which covers a gate that was cancelled or that
-      # hit the job's own timeout as well as one that reported a bad status.
-      - name: Fail on the gate's own status
-        if: always() && steps.gate.outcome != 'success'
+      # so a gate that was cancelled or that hit the job's own timeout is
+      # caught by the first branch, which has no status to compare.
+      - name: Decide on the gate's own status
+        if: always()
+        env:
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          GATE_STATUS: ${{ steps.gate.outputs.status }}
         run: |
-          echo "the gate did not pass (${{ steps.gate.outcome }}); see the job"
-          echo "summary and the e2e-report artifact"
-          exit 1
+          if [ "$GATE_OUTCOME" = "cancelled" ] || [ -z "$GATE_STATUS" ]; then
+            echo "the gate did not finish ($GATE_OUTCOME); see the job summary"
+            echo "and the e2e-report artifact"
+            exit 1
+          fi
+          case "$GATE_STATUS" in
+            0) echo "every suite passed first time" ;;
+            1) echo "every suite passed, but at least one needed more than one"
+               echo "attempt; see the Retries section of the job summary" ;;
+            2) echo "every suite passed, but a device needed recovering" ;;
+            *) echo "the gate exited $GATE_STATUS; see the job summary and the"
+               echo "e2e-report artifact"
+               exit 1 ;;
+          esac

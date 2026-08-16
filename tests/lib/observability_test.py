@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -670,6 +671,71 @@ def a_check_that_answers_for_itself_is_reported_once() -> str:
     return "three checks, three records"
 
 
+@case(1, "OBS-8.30", "OBS-8.12")
+def the_stamped_check_is_the_check_the_subtitle_names() -> str:
+    """The caption on a frame names the same check as the cue over it.
+
+    Two artefacts of one run disagreeing about one frame is worse than either
+    being absent, and this pair disagreed for the whole of every run: a check
+    record is written when the check closes, so the tail that feeds the stamp
+    named the check that had just finished while the cue, generated afterwards
+    from the same records with the whole interval known, named the one that was
+    running. Both advanced on the same record, so the two counters moved
+    together and stayed exactly one apart, which reads as a rendering choice
+    rather than as a defect.
+    """
+    import json
+    import tempfile
+
+    sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+    import recorder as recorder_lib
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "overlay-browse.jsonl")
+        # Three checks, each closing at the moment the next begins.
+        records = [{"kind": "check", "suite": "browse", "index": index,
+                    "verdict": "OK", "seconds": 1.0, "time": 100.0 + index,
+                    "attempt": 1}
+                   for index in (1, 2, 3)]
+        with open(path, "w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
+
+        # What the stamp says once each record has been read. After check N
+        # closes, the check running is N + 1.
+        tail = recorder_lib.JsonlTail(directory)
+        stamped = []
+        with open(path, "w", encoding="utf-8") as handle:
+            pass
+        tail = recorder_lib.JsonlTail(directory)
+        for record in records:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+            stamped.append(tail.poll().check)
+        expect("the stamp names the check now running", stamped,
+               ["check 2", "check 3", "check 4"])
+
+        # And the cue covering the interval each check actually ran in.
+        cues, _chapters = recorder_lib.cues_and_chapters(directory, "u64",
+                                                         started=100.0,
+                                                         lead_in=0.0)
+        named = [text.split()[0].rsplit("/", 1)[1] for _s, _e, text in cues]
+        expect("the cues name every check once", named, ["1", "2", "3"])
+        # The frame in the middle of check 2's interval: the cue over it says
+        # check 2, and so must the stamp, which is the state after check 1's
+        # record and before check 2's.
+        tail = recorder_lib.JsonlTail(directory)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(records[0]) + "\n")
+        covering = [text for start, end, text in cues
+                    if start <= 1.5 <= end]
+        expect("one cue covers that moment", len(covering), 1)
+        expect("the cue and the stamp agree",
+               covering[0].split()[0].rsplit("/", 1)[1],
+               tail.poll().check.split()[-1])
+    return "3 checks, stamp and cue agree on every one"
+
+
 @case(1, "OBS-8.30", "OBS-8.11")
 def the_stamped_timecode_is_where_the_frame_is() -> str:
     """The timecode burned into a frame is the one a player reports for it.
@@ -1046,6 +1112,400 @@ def a_collector_that_cannot_start_says_so_once() -> str:
     return collector.problems[-1]
 
 
+@case(2, "OBS-2.17")
+def the_sequence_number_names_one_record_in_the_file() -> str:
+    """`seq` is unique in a target's log, across every process that writes it.
+
+    A target's `interactions.jsonl` is appended to by the runner, by the
+    UI-state gate and by every suite, all of them separate processes. A
+    counter held in each of them numbers the file from one several times over,
+    so the recipe the design prescribes, `jq 'select(.seq == 4812)'`, answered
+    with as many records as there were writers, and the `#4812` the recording
+    burns onto a frame named all of them.
+
+    Driven through real subprocesses appending at the same time, because the
+    defect is what two processes do to one file and nothing about one process
+    can show it.
+    """
+    import json
+    import subprocess
+    import tempfile
+
+    writer = ("import os, sys, time\n"
+              "sys.path.insert(0, %r)\n"
+              "import interactions\n"
+              "for index in range(40):\n"
+              "    interactions.record('rest', 'GET /v1/version',\n"
+              "                        status=200, ms=float(index))\n"
+              "interactions.flush()\n" % os.path.join(ROOT, "tests", "lib"))
+    with tempfile.TemporaryDirectory() as directory:
+        script = os.path.join(directory, "writer.py")
+        with open(script, "w", encoding="utf-8") as handle:
+            handle.write(writer)
+        path = os.path.join(directory, "interactions.jsonl")
+        environment = dict(os.environ, E2E_INTERACTIONS=path)
+        running = [subprocess.Popen([sys.executable, script], env=environment)
+                   for _ in range(4)]
+        for one in running:
+            one.wait(timeout=60)
+        records = [json.loads(line) for line in open(path, encoding="utf-8")
+                   if line.strip()]
+        if len(records) < 4:
+            raise Failure(f"only {len(records)} records were written")
+        numbers = [record["seq"] for record in records]
+        if len(set(numbers)) != len(numbers):
+            repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+            raise Failure(f"{len(numbers) - len(set(numbers))} record(s) share "
+                          f"a sequence number: {repeated[:6]}")
+        # And the transcript carries the same numbers, in the same order, so a
+        # reader who found a line has the record and the other way round.
+        lines = [line.split()[0] for line in
+                 open(os.path.join(directory, "transcript.txt"),
+                      encoding="utf-8").read().splitlines() if line.strip()]
+        expect("one transcript line per record", len(lines), len(records))
+        if lines != [str(number) for number in numbers]:
+            raise Failure("the transcript and the log disagree about the order")
+    return f"{len(records)} records from 4 processes, every number distinct"
+
+
+@case(1, "OBS-7.8", "OBS-7.9")
+def a_port_one_machine_sends_to_identifies_it() -> str:
+    """Attribution by the receiving socket, and never a guess.
+
+    A device with two interfaces answers REST on one and can send its log from
+    the other, so its datagrams arrive from an address no target claims. A
+    port exactly one machine sends to identifies that machine whatever address
+    the datagram came from; a port more than one machine sends to identifies
+    nothing, so its datagrams fall back to the source address and an
+    unrecognised one is still never guessed at.
+    """
+    import tempfile
+
+    import syslog_collector
+    import targets as targets_lib
+
+    with tempfile.TemporaryDirectory() as directory:
+        collector = syslog_collector.Collector(directory=directory, port=0)
+        # A port for the first target and nothing for the second, which is
+        # what an unprovisioned machine looks like.
+        exclusive = free_udp_port()
+        # Two machines left on the run's default port, so that port owns
+        # nothing and its datagrams are attributed by source address, which is
+        # what an unprovisioned bench looks like.
+        wanted = [targets_lib.parse("127.0.0.2"),
+                  targets_lib.parse("127.0.0.3"),
+                  targets_lib.parse("127.0.0.4")]
+        if not collector.bind(wanted, {"127.0.0.2": exclusive}):
+            raise Failure(f"the collector did not start: {collector.problems}")
+        try:
+            expect("one machine owns that port",
+                   collector.owners.get(exclusive), "127.0.0.2")
+            # From an address that belongs to no target at all, on the port
+            # only that machine sends to. This is the WiFi case.
+            collector.deliver("192.0.2.71", b"from the other interface",
+                              exclusive)
+            # And from an address no target claims, on the shared default
+            # port, which identifies nothing.
+            collector.deliver("192.0.2.99", b"a stranger", collector.port)
+        finally:
+            collector.stop()
+        attributed = syslog_collector.read(
+            os.path.join(directory, "127.0.0.2", "syslog.txt"))
+        expect("the wireless line was attributed", [text for _t, text in attributed],
+               ["from the other interface"])
+        expect("by the port it arrived on",
+               collector.attribution_of("127.0.0.2"), {"port": 1})
+        # The address it actually came from is still recorded, so a device
+        # logging from somewhere unexpected stays visible rather than being
+        # absorbed by the port match.
+        expect("the observed sender", collector.observed("127.0.0.2"),
+               {"192.0.2.71": 1})
+        if "192.0.2.71" in collector.addresses_of("127.0.0.2"):
+            raise Failure("an address the run never expected is listed as "
+                          "expected")
+        with open(os.path.join(directory,
+                               syslog_collector.UNKNOWN_SENDER_NAME),
+                  encoding="utf-8") as handle:
+            unknown = handle.read()
+        if "192.0.2.99" not in unknown or "a stranger" not in unknown:
+            raise Failure(f"the unclaimed sender was not kept: {unknown!r}")
+        if "192.0.2.71" in unknown:
+            raise Failure("a datagram the port identified was still treated "
+                          "as unattributable")
+    return "1 attributed by port, 1 unattributable, neither guessed"
+
+
+def free_udp_port() -> int:
+    """A UDP port nothing holds, for a test that needs a specific number."""
+    import socket
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    holder.bind(("0.0.0.0", 0))
+    port = holder.getsockname()[1]
+    holder.close()
+    return port
+
+
+@case(1, "OBS-1.8", "OBS-3.5")
+def the_mask_hides_a_password_and_nothing_else() -> str:
+    """Every shape a password reaches a console log in, and no ordinary word.
+
+    The mask fires on the words around a password rather than on a password,
+    so it also fires on a sentence using one of those words. A check recorded
+    `--password not supplied` and the document rendered `--password ***
+    supplied`, which is not a redaction but a reversal: the report stated the
+    opposite of the record, on six lines of a real run.
+    """
+    generator = load_report_tool()
+    secret = "Sw0rdf1sh-Hunter2"
+    for text in (f"./run-tests --password {secret} u64",
+                 f"env U64_PASS={secret}",
+                 f"curl -u admin:{secret} http://192.0.2.1/v1/info",
+                 f"X-Password: {secret}",
+                 f'{{"password": "{secret}"}}'):
+        masked = generator.redact(text)
+        if secret in masked:
+            raise Failure(f"the password survived: {masked!r}")
+        if "***" not in masked:
+            raise Failure(f"nothing was masked in {text!r}")
+    for kept in ("--password not supplied",
+                 "-p none was given",
+                 "the password is required"):
+        if generator.redact(kept) != kept:
+            raise Failure(f"an ordinary word was masked: "
+                          f"{generator.redact(kept)!r}")
+    return "5 shapes masked, 3 sentences left alone"
+
+
+# Every variable the runner exports that a scripted run must not inherit.
+# Derived from what the runner actually exports rather than listed by hand:
+# see `no_runner_variable_escapes_the_scrubbing_list` for why.
+INHERITED_VARIABLES = {
+    "E2E_ATTEMPT", "E2E_INTERACTIONS", "E2E_JSONL", "E2E_SCREENS", "E2E_SUITE",
+    "E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_SYSLOG_PORTS", "E2E_TARGET",
+    # Not a runner variable but a suite one: --assume-fix reaches every suite
+    # through it, so a scripted run would otherwise inherit the gate's
+    # assumptions.
+    "E2E_ASSUME_FIX",
+}
+
+
+def runner_variables() -> "set":
+    """Every `E2E_` variable name the runner's own source mentions."""
+    import re
+
+    with open(RUNNER_PATH, encoding="utf-8") as handle:
+        source = handle.read()
+    return set(re.findall(r'"(E2E_[A-Z0-9_]+)"', source))
+
+
+# The variables a scripted run may keep, with the reason each is harmless.
+# Anything not here is scrubbed, so a new one is scrubbed by default and a
+# deliberate exception has to be written down.
+KEPT_VARIABLES: "set" = set()
+
+
+@case(1, "OBS-2.20")
+def a_harness_edited_mid_run_is_reported() -> str:
+    """A run whose own files change under it says so on its record.
+
+    Every suite is a separate process started from the working tree, so an
+    edit to `tests/`, `tools/` or `run-tests` while a run is in progress means
+    the later suites ran different code from the earlier ones. That is two
+    runs reported as one and nothing in the artefacts said it.
+
+    It is not hypothetical. Building this branch, a gate was invalidated
+    exactly that way: two targets ran a suite of 169 cases and passed, the
+    third ran 170 and failed two, because a script that was believed to be a
+    dry run rewrote four files thirteen minutes in. Nothing but the case
+    counts, buried in three console logs, distinguished that run from a run of
+    one revision.
+
+    `worktree_dirty` cannot answer it, which is why this field exists beside
+    it: `git status --porcelain` reports which files are modified and not what
+    is in them, so editing a file that was already modified leaves its output
+    identical. The edit that caused the incident was to files that were
+    already modified.
+    """
+    import shutil
+    import tempfile
+
+    runner = load_runner()
+    before = runner.harness_hash()
+    if not before:
+        raise Skipped("git does not answer in this checkout")
+    expect("the same tree hashes the same twice", runner.harness_hash(), before)
+
+    # Edit a tracked file the runner reads, and put it back. Appending a
+    # comment is enough: what the field detects is a change in content, not a
+    # change in which files are modified.
+    victim = os.path.join(ROOT, "tests", "lib", "report.py")
+    with tempfile.TemporaryDirectory() as scratch:
+        keep = os.path.join(scratch, "report.py")
+        shutil.copy2(victim, keep)
+        try:
+            with open(victim, "a", encoding="utf-8") as handle:
+                handle.write("\n# written by a test, removed immediately\n")
+            after = runner.harness_hash()
+            if after == before:
+                raise Failure("an edited harness file hashed the same, so a "
+                              "run edited under itself would report nothing")
+            # And `git status --porcelain` says the same thing before and
+            # after, which is why it cannot stand in for this.
+            dirty = runner.git_answer("status", "--porcelain")
+            if dirty is not None and victim.replace(ROOT, "") not in "".join(
+                    line[3:] for line in dirty.splitlines()):
+                pass  # the file may have been modified already, which is the point
+        finally:
+            shutil.copy2(keep, victim)
+    expect("and the restored tree hashes as it did", runner.harness_hash(),
+           before)
+    return f"{before} changed and came back"
+
+
+@case(1, "OBS-3.15")
+def a_device_error_cannot_be_read_as_a_tag() -> str:
+    """Text the device or the transport produced never becomes markup.
+
+    The timeline quotes what a failed request answered, and those words are
+    whatever they are: `urllib` reports a failed lookup as
+    `<urlopen error [Errno -2] Name or service not known>`. Interpolated bare
+    into Markdown a renderer reads the angle brackets as a tag and swallows
+    the line, which is both the one thing OBS-3.15 forbids and the loss of the
+    one sentence a reader needs. Found in this branch's own gate report, where
+    two timeline lines carried it.
+    """
+    generator = load_report_tool()
+    text = generator.describe_action({
+        "method": "GET", "path": "/v1/machine:menu_screen", "status": 500,
+        "retries": 3,
+        "error": "<urlopen error [Errno -2] Name or service not known>"})
+    if "`<urlopen error" not in text:
+        raise Failure(f"the error is not in a code span: {text!r}")
+    stripped = re.sub(r"`[^`]*`", "", text)
+    tags = re.findall(r"<(?!!--)[a-zA-Z/][^>]*>", stripped)
+    if tags:
+        raise Failure(f"the line still reads as markup: {tags}")
+    # And it stays one line, so the timeline's one-line-per-event rule holds
+    # even when the device answers with a pretty-printed body.
+    many = generator.describe_action({
+        "method": "PUT", "path": "/v1/machine:reset", "status": 500,
+        "error": "{\n  \"errors\" : [ \"no\" ]\n}"})
+    expect("one line", many.count("\n"), 0)
+    return "the error is quoted, and it is one line"
+
+
+@case(1, "OBS-17.3", "OBS-3.22")
+def the_report_says_what_the_runner_says_about_each_exit_status() -> str:
+    """The generator's ladder is the runner's, word for word.
+
+    The ladder is defined in `run-tests` and restated in the generator, which
+    has to keep its own copy because it renders a tree written by some version
+    of the runner and cannot depend on the one installed beside it. A copy
+    that nothing compares is a copy that rots: the ladder was renumbered and
+    the generator kept the old words, so it would have told a reader that a
+    retried run failed and that a failed run was a usage error.
+
+    Comparing the KEYS would not have caught that. Every key was already
+    present; it was the prose against each that was wrong. So this compares
+    the words.
+    """
+    import re
+
+    runner = load_runner()
+    generator = load_report_tool()
+    help_text = runner.build_parser().format_help()
+    block = re.search(r"exit status.*?\n((?:  \d+ .*\n(?:      .*\n)*)+)",
+                      help_text, re.S)
+    if not block:
+        raise Failure("the runner's --help no longer states its exit statuses, "
+                      "so this case is not checking anything")
+    stated = {}
+    for line in block.group(1).splitlines():
+        found = re.match(r"  (\d+)  (.+)", line)
+        if found:
+            stated[int(found.group(1))] = found.group(2).strip()
+    if not stated:
+        raise Failure(f"no status was parsed out of: {block.group(1)!r}")
+    for status, words in sorted(stated.items()):
+        # The runner's own wording, cut at the first sentence, because its
+        # help adds a note after the usage status that a table cell does not
+        # want.
+        wanted = words.split(". ")[0].rstrip(".")
+        given = generator.EXIT_MEANING.get(status)
+        if given is None:
+            raise Failure(f"the generator has no meaning for status {status}, "
+                          f"which the runner documents as {wanted!r}")
+        if given != wanted:
+            raise Failure(f"status {status}: the runner says {wanted!r} and "
+                          f"the generator says {given!r}")
+    extra = sorted(set(generator.EXIT_MEANING) - set(stated))
+    if extra:
+        raise Failure(f"the generator documents {extra}, which the runner "
+                      f"does not define")
+    # And the verdict the report prints at each status, which is the thing a
+    # reader acts on. Each run is built self-consistent with its status, so a
+    # recovered run carries a recovery and a retried one carries a retry, the
+    # way the runner writes them.
+    for status in sorted(stated):
+        record = {"kind": "run", "suites": 1, "passed": 1,
+                  "recoveries": 1 if status == runner.EXIT_RECOVERED else 0,
+                  "retried": 1 if status == runner.EXIT_RETRIED else 0,
+                  "failed": 1 if status == runner.EXIT_SUITE_FAILED else 0}
+        run = generator.Run(directory="runs",
+                            parent={"kind": "run", "exit_code": status},
+                            targets=[generator.TargetRun(
+                                token="u64", slug="u64", run=record)])
+        verdict = generator.overall_verdict(run)
+        if status > runner.EXIT_RECOVERED:
+            wanted = "FAIL"
+        elif status == runner.EXIT_OK:
+            wanted = "OK"
+        else:
+            # A retry and a recovery are one state: passed, with a caveat.
+            wanted = "WARN"
+        if verdict != wanted:
+            raise Failure(f"exit {status}: the report says {verdict}, "
+                          f"expected {wanted}")
+    return f"{len(stated)} statuses, words and verdicts both"
+
+
+@case(1, "OBS-16.6", "OBS-15.2")
+def no_runner_variable_escapes_the_scrubbing_list() -> str:
+    """A variable the runner exports cannot be forgotten by the scrubbing list.
+
+    A scripted run is a run of its own, and every `E2E_` variable the gate has
+    exported means something to the runner it starts. One that survives makes
+    the fixture behave as part of the gate: measured live, a case that clears
+    the collector-port variable and asserts a run with no collector compares
+    nothing compared itself against the four ports the gate was collecting on,
+    because a second port variable had been added to the runner and not to the
+    list.
+
+    Fixing the two names would have left the third occurrence available, and
+    the list already carried a comment about a previous instance of the same
+    thing. So the list is derived from the runner's own source and this case
+    fails when the two disagree, which is what retires the defect class rather
+    than another instance of it.
+    """
+    exported = runner_variables()
+    if not exported:
+        raise Failure("no E2E_ variable was found in the runner's source, so "
+                      "this case is not checking anything")
+    missing = sorted(exported - INHERITED_VARIABLES - KEPT_VARIABLES)
+    if missing:
+        raise Failure(f"the runner exports {missing}, which a scripted run "
+                      f"would inherit. Add each to INHERITED_VARIABLES, or to "
+                      f"KEPT_VARIABLES with the reason it is harmless.")
+    # `E2E_ASSUME_FIX` is machine.py's, reached through the environment rather
+    # than named in the runner, so it is expected not to appear there.
+    stale = sorted(INHERITED_VARIABLES - exported - {"E2E_ASSUME_FIX"})
+    if stale:
+        raise Failure(f"the scrubbing list carries {stale}, which the runner "
+                      f"no longer exports")
+    return f"{len(exported)} variables, every one scrubbed"
+
+
 @contextmanager
 def interaction_log(directory):
     """Point the interaction log at a file of its own for one block."""
@@ -1226,56 +1686,6 @@ def a_run_writes_one_interaction_log_per_target() -> str:
     if "held" not in writers:
         raise Failure(f"the suite's own device call is missing: {writers}")
     return f"{len(found)} interactions from {sorted(writers)}"
-
-
-@case(1, "OBS-9.4")
-def the_interface_preference_is_wired_into_every_build() -> str:
-    """The hook is declared, implemented, built, and the policy is stated.
-
-    The decision itself is tested by `make route_policy_test` on the build
-    host. What that cannot catch is the wiring coming undone: an lwIP built
-    without the hook, or a preference nothing declares, answers exactly as it
-    did before and nothing observable changes until a device logs from the
-    wrong address again.
-    """
-    def read(*parts):
-        with open(os.path.join(ROOT, *parts), encoding="utf-8",
-                  errors="replace") as handle:
-            return handle.read()
-
-    options = read("software", "network", "config", "lwipopts.h")
-    for wanted, why in (
-            ("#define LWIP_HOOK_FILENAME", "the hook has no prototype in scope"),
-            ("LWIP_HOOK_IP4_ROUTE_SRC(src, dest)  ultimate_route_src(src, dest)",
-             "the hook is not called"),):
-        if wanted not in options:
-            raise Failure(f"lwipopts.h: {why}")
-    if "LWIP_HOOK_IP4_ROUTE(" in options.replace("LWIP_HOOK_IP4_ROUTE_SRC(", ""):
-        raise Failure("LWIP_HOOK_IP4_ROUTE is consulted after the list walk, "
-                      "so it cannot override a match")
-    hook = read("software", "network", "lwip_route_hook.c")
-    if "route_choose(" not in hook:
-        raise Failure("the hook does not call the decision")
-    for makefile in ("target/libs/nios2/lwip/makefile",
-                     "target/libs/riscv/lwip/makefile"):
-        text = read(*makefile.split("/"))
-        for source in ("route_policy.c", "lwip_route_hook.c"):
-            if source not in text:
-                raise Failure(f"{makefile} does not build {source}, so every "
-                              "application linking the library is short a "
-                              "symbol ip4.c refers to")
-    interface = read("software", "io", "network", "network_interface.h")
-    if "route_preference()" not in interface:
-        raise Failure("no interface declares a preference")
-    if "ROUTE_PREFERENCE_WIRED" not in interface:
-        raise Failure("the wired interface declares no preference")
-    wifi = read("software", "io", "network", "network_esp32.h")
-    if "ROUTE_PREFERENCE_WIRELESS" not in wifi:
-        raise Failure("the WiFi interface does not override the preference")
-    body = read("software", "io", "network", "network_interface.cc")
-    if "route_hook_set_preference(&my_net_if, route_preference())" not in body:
-        raise Failure("nothing registers the preference after netif_add")
-    return "declared, implemented, built and registered"
 
 
 def vic_frame(rows, width=384, height=272, background=6, foreground=14,
@@ -1665,8 +2075,14 @@ def a_device_pointed_at_another_port_is_named() -> str:
     said nothing, which is what a device that had stopped also looks like.
     """
     runner = load_runner()
-    saved = os.environ.get(runner.SYSLOG_PORT_ENV)
+    # Both variables, because this case runs inside the gate as a registered
+    # suite and the gate's own collector exports them. Reading whichever one
+    # the environment happened to carry is how this case came to compare a
+    # fixture against the four ports a live run was collecting on.
+    names = (runner.SYSLOG_PORT_ENV, runner.SYSLOG_PORTS_ENV)
+    saved = {name: os.environ.get(name) for name in names}
     os.environ[runner.SYSLOG_PORT_ENV] = "5514"
+    os.environ[runner.SYSLOG_PORTS_ENV] = "5514"
     try:
         expect("the right port is no problem",
                runner.syslog_setting_problem("192.168.1.185:5514"), "")
@@ -1678,17 +2094,27 @@ def a_device_pointed_at_another_port_is_named() -> str:
         wrong = runner.syslog_setting_problem("192.168.1.185:9999")
         if "port 9999" not in wrong:
             raise Failure(f"another port is not named: {wrong!r}")
+        # Several ports, which is a bench that gives each machine one. A
+        # device sending to any of them is collected.
+        os.environ[runner.SYSLOG_PORTS_ENV] = "5514,5515,5516"
+        expect("a port this run collects on is no problem",
+               runner.syslog_setting_problem("192.168.1.185:5516"), "")
+        outside = runner.syslog_setting_problem("192.168.1.185:5599")
+        if "port 5599" not in outside or "5514, 5515, 5516" not in outside:
+            raise Failure(f"a port outside the set is not named: {outside!r}")
         # A run with no collector compares nothing: the setting is then the
         # operator's business and not this run's.
-        os.environ.pop(runner.SYSLOG_PORT_ENV)
+        for name in names:
+            os.environ.pop(name, None)
         expect("and with no collector there is nothing to compare",
                runner.syslog_setting_problem("192.168.1.185"), "")
     finally:
-        if saved is None:
-            os.environ.pop(runner.SYSLOG_PORT_ENV, None)
-        else:
-            os.environ[runner.SYSLOG_PORT_ENV] = saved
-    return "a bare address, a wrong port and the right one"
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+    return "a bare address, a wrong port, a port set and the right one"
 
 
 @case(2, "OBS-7.7", "OBS-7.9")
@@ -2639,10 +3065,30 @@ def the_gate_workflow_is_the_one_described() -> str:
             ("e2e-report-${{ github.run_id }}", "the report artifact"),
             ("e2e-video-${{ github.run_id }}", "the recordings artifact"),
             ("retention-days: 7", "the recordings have their own lifetime"),
-            ("steps.gate.outcome != 'success'",
-             "a cancelled or timed-out gate has to fail the job")):
+            ("steps.gate.outputs.status",
+             "the job decides on the gate's exit status, and a workflow can "
+             "read a step's outcome but not the number it exited with"),
+            ('GATE_OUTCOME" = "cancelled"',
+             "a cancelled or timed-out gate has to fail the job, and it has "
+             "no status to compare")):
         if wanted not in text:
             raise Failure(f"{wanted!r} is not in the workflow: {why}")
+
+    # The job tolerates a caveat and fails an outcome. A workflow that failed
+    # on a retry would cancel the point of retrying, because a flake would
+    # still fail the gate; what keeps a retried pass from being ignored is
+    # that it is loud rather than that it is red.
+    runner = load_runner()
+    decide = text.split("Decide on the gate's own status", 1)[1]
+    for status in (runner.EXIT_OK, runner.EXIT_RETRIED, runner.EXIT_RECOVERED):
+        if f"\n            {status})" not in decide:
+            raise Failure(f"the workflow does not tolerate exit {status}, "
+                          f"which means every suite passed")
+    for status in (runner.EXIT_SUITE_FAILED, runner.EXIT_DEVICE_UNHEALTHY,
+                   runner.EXIT_USAGE):
+        if f"\n            {status})" in decide:
+            raise Failure(f"the workflow tolerates exit {status}, which is an "
+                          f"outcome rather than a caveat")
     if "${{ inputs" in text.split("run: |", 1)[1].split("- name", 1)[0]:
         raise Failure("an input is substituted into the script rather than "
                       "passed through the environment")
@@ -4181,7 +4627,7 @@ with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
 
 # The double serves REST, FTP, Telnet and the DMA control port. It does not
 # fake the on-device UI object stack, which is what this gate drives.
-runner.ui_state_gate = lambda action, options, label="", quiet=False: True
+runner.ui_state_gate = lambda action, options, label="", quiet=False, attempt=None: True
 
 _child_command = runner.child_command
 
@@ -4319,9 +4765,7 @@ def scripted_run(double: DeviceDouble, stubs: Sequence[Stub],
     # three cases about the device log then fail for a reason that has nothing
     # to do with them. Measured under `run-tests u64 u2@c64u c64u`, where every
     # target's copy of this suite failed the same three.
-    for inherited in ("E2E_SYSLOG_OWNED", "E2E_SYSLOG_PORT", "E2E_JSONL",
-                      "E2E_SCREENS", "E2E_SUITE", "E2E_TARGET", "E2E_ATTEMPT",
-                      "E2E_ASSUME_FIX", "GITHUB_STEP_SUMMARY"):
+    for inherited in sorted(INHERITED_VARIABLES | {"GITHUB_STEP_SUMMARY"}):
         environment.pop(inherited, None)
     completed = subprocess.run(
         [sys.executable, wrapper, "-o", output, *arguments, *tokens],
@@ -4465,8 +4909,14 @@ def the_runner_console_is_captured_beside_the_suites() -> str:
 
 
 @case(3, "OBS-2.13", "OBS-2.8")
-def a_second_attempt_appends_to_the_log() -> str:
-    """The first attempt truncates and every one after it appends."""
+def a_second_attempt_writes_beside_the_first() -> str:
+    """Attempt 1 writes where it always did; attempt 2 gets a directory.
+
+    The console log carries no attempt field, so two attempts sharing one file
+    leave a reader unable to say which failure they are looking at. The
+    per-suite JSONL is the opposite case and stays one file: every record in
+    it already says which attempt wrote it, and the report joins on that.
+    """
     import tempfile
 
     with DeviceDouble() as double, tempfile.TemporaryDirectory() as workspace:
@@ -4476,17 +4926,31 @@ def a_second_attempt_appends_to_the_log() -> str:
             double, [Stub("flaky", body=RETRY_BODY)],
             arguments=("--recover-command", f"rm -f {flag}"),
             workspace=workspace, extra_environment={"OBS_FLAG": flag})
-        with open(made.path("127.0.0.1", "overlay-flaky.log"),
-                  encoding="utf-8") as handle:
-            saved = handle.read()
-        expect("both attempts", saved.count("the device is well"), 2)
-        if "FAIL" not in saved or "OK" not in saved:
-            raise Failure(f"one attempt is missing from the log: {saved!r}")
+        tree = made.tree()
+        first = made.path("127.0.0.1", "overlay-flaky.log")
+        second = made.path("127.0.0.1", "attempt-2", "overlay-flaky.log")
+        for wanted in (first, second):
+            if not os.path.exists(wanted):
+                raise Failure(f"{os.path.basename(wanted)} is missing "
+                              f"from {tree}")
+        with open(first, encoding="utf-8") as handle:
+            one = handle.read()
+        with open(second, encoding="utf-8") as handle:
+            two = handle.read()
+        expect("the first attempt alone", one.count("the device is well"), 1)
+        expect("the second attempt alone", two.count("the device is well"), 1)
+        if "FAIL" not in one:
+            raise Failure(f"the first attempt did not fail: {one!r}")
+        if "OK" not in two:
+            raise Failure(f"the second attempt did not pass: {two!r}")
+        # And the records stay in one file, keyed by attempt.
         checks = [r for r in made.records("127.0.0.1", "overlay-flaky.jsonl")
                   if r["kind"] == "check"]
         expect("one record per attempt", [c["attempt"] for c in checks], [1, 2])
         expect("one index", {c["index"] for c in checks}, {1})
-    return "2 attempts in one log"
+        if any("attempt-1" in name for name in tree):
+            raise Failure("a first attempt made a directory of its own")
+    return "2 attempts, 2 logs, 1 jsonl"
 
 
 @case(3, "OBS-2.14")
@@ -4955,7 +5419,12 @@ def a_capture_that_cannot_read_the_device_changes_nothing() -> str:
                             workspace=workspace,
                             arguments=("--no-health-check", "--no-retry"),
                             extra_environment={"OBS_GONE": gone})
-        expect("the run still failed for the suite's reason", made.status, 1)
+        # The device double has gone, so the health check after the last
+        # attempt reports an abandoned run rather than a failed suite, which
+        # is the distinction that check exists to make. What this case is
+        # about is that the capture changed neither the suite's verdict nor
+        # the status the run reaches without it.
+        expect("the run still failed for the suite's reason", made.status, 4)
         with open(made.path("127.0.0.1", "capture",
                             "overlay-broken-1-state.json"),
                   encoding="utf-8") as handle:
@@ -5304,11 +5773,18 @@ def require_fixture() -> None:
     than building its own copy, so 22 golden cases pay the cost of one real
     run rather than one each. Rebuilt, bounded, when the build itself lost the
     one race it contains; see `_fixture_is_well_formed`.
+
+    A builder that cannot build fails every case that needed it, and never
+    skips them. Every acceptance criterion for the report generator lives in
+    tier 4, so a builder that stopped working turned all of them into skipped
+    cases while this suite still reported a pass, and the whole section
+    stopped being tested without anything going red. That is a larger hole
+    than any rendering defect those cases exist to catch.
     """
     global FIXTURE, _FIXTURE_PROBLEM
 
     if _FIXTURE_PROBLEM is not None:
-        raise Skipped(_FIXTURE_PROBLEM)
+        raise Failure(_FIXTURE_PROBLEM)
     if FIXTURE is not None:
         return
     try:
@@ -5318,9 +5794,11 @@ def require_fixture() -> None:
                 break
             made = build_fixture()
         FIXTURE = made.directory
-    except Exception as error:  # noqa: BLE001 - reported as a skip, not a crash
+    except Failure:
+        raise
+    except Exception as error:  # noqa: BLE001
         _FIXTURE_PROBLEM = f"the fixture could not be built: {error}"
-        raise Skipped(_FIXTURE_PROBLEM) from error
+        raise Failure(_FIXTURE_PROBLEM) from error
 
 
 def record_fixture() -> int:
@@ -5499,6 +5977,10 @@ def canonicalize_document(text: str) -> str:
                       "---" for _ in m.group(0).strip("|").split("|")) + " |",
                   text)
     text = re.sub(r"\b[0-9a-f]{40}\b", "0" * 40, text)
+    # The collector binds an ephemeral port in a fixture, so the number it got
+    # is whatever the kernel had free at that moment.
+    text = re.sub(r"(?<=UDP )\d{4,5}\b", "0", text)
+    text = re.sub(r"`(\d{4,5})`", "`0`", text)
     text = re.sub(r"\d+\.\d+s\b", "0.000s", text)
     text = re.sub(r"(?<=[=\s])\d+ms\b", "0ms", text)
     text = re.sub(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "0000-00-00 00:00:00",
@@ -5652,9 +6134,15 @@ def the_status_line_agrees_with_the_run_records() -> str:
         raise Failure(f"the status line is not second: {status!r}")
     fields = dict(part.split("=", 1) for part in status.split("  ")[1:])
     counts = run.counts()
-    for name in ("targets", "suites", "ok", "fail", "warn", "skip", "recoveries"):
+    for name in ("targets", "suites", "ok", "fail", "warn", "skip",
+                 "recoveries", "retried"):
         expect(name, fields[name], str(counts[name]))
     expect("exit", fields["exit"], str(run.exit_code))
+    # The order is part of the contract, not only the keys: this line is
+    # parsed by position by anything that does not want a parser of its own.
+    expect("the keys, in order", list(fields),
+           ["targets", "suites", "ok", "fail", "warn", "skip", "recoveries",
+            "retried", "exit"])
     return status
 
 
@@ -5697,13 +6185,18 @@ def the_recording_table_names_the_files_it_is_about() -> str:
     """
     generator = load_report_tool()
     run = generator.Run(directory="runs", targets=[generator.TargetRun(
-        token="u64", slug="u64",
+        token="u2@c64u", slug="u2-at-c64u",
         capture={"files": ["video.mp4", "video-harness.mp4"], "frames": 100,
                  "fps": 10, "frames_lost": 3})])
     rendered = "\n".join(generator.recording_block(run))
+    # Under the target's slug, which is not its token: every other path in the
+    # document is relative to the tree, and a bare name left a reader to
+    # compose one from a substitution the document never states.
     for name in ("video.mp4", "video-harness.mp4"):
-        if f"`{name}`" not in rendered:
+        if f"`u2-at-c64u/{name}`" not in rendered:
             raise Failure(f"{name} is not named in the recording table")
+        if f"`{name}`" in rendered:
+            raise Failure(f"{name} is named without the directory it is in")
     if "3 frames lost" not in rendered:
         raise Failure("the loss column lost its figure")
     # And the one place a reader with a video is looking says how to get from
@@ -5938,7 +6431,7 @@ def a_report_is_generated_from_a_run_the_runner_just_wrote() -> str:
     expect("verdict", lines[0], "# E2E gate run: FAIL")
     status = lines[1]
     for wanted in ("RESULT: FAIL", "targets=1", "suites=2", "ok=1", "fail=1",
-                   "exit=1"):
+                   "exit=3"):
         if wanted not in status:
             raise Failure(f"{wanted!r} is not in {status!r}")
     if "127.0.0.1/overlay/broken/1/1" not in document:
@@ -6225,10 +6718,28 @@ def a_recorder_flag_without_record_is_refused() -> str:
             completed = subprocess.run(
                 [sys.executable, RUNNER_PATH] + arguments + ["127.0.0.1"],
                 capture_output=True, text=True, cwd=directory, timeout=60)
-            expect(f"{arguments} exits 2", completed.returncode, 2)
+            # 64 is EX_USAGE. A usage error is not an outcome of a run, so it
+            # is off the severity scale the other statuses form; on that scale
+            # 2 now means "every suite passed, but a device needed
+            # recovering", which is what a malformed command line used to
+            # report.
+            expect(f"{arguments} exits 64", completed.returncode, 64)
             if wanted not in completed.stderr:
                 raise Failure(f"{arguments}: {completed.stderr.strip()[:120]}")
-    return "4 usage errors"
+    # And the status argparse chooses for itself, which is the path that
+    # breaks: `ArgumentParser.error` calls `sys.exit(2)` before any code in
+    # the runner runs, so an option the parser rejects never reaches the
+    # runner's own raise.
+    with tempfile.TemporaryDirectory() as directory:
+        completed = subprocess.run(
+            [sys.executable, RUNNER_PATH, "--no-such-option"],
+            capture_output=True, text=True, cwd=directory, timeout=60)
+        expect("an option argparse rejects", completed.returncode, 64)
+        completed = subprocess.run(
+            [sys.executable, RUNNER_PATH, "--help"],
+            capture_output=True, text=True, cwd=directory, timeout=60)
+        expect("--help", completed.returncode, 0)
+    return "6 usage errors"
 
 
 @case(1, "OBS-3.23", "OBS-8.28")

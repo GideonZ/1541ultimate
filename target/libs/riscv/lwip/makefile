@@ -39,8 +39,6 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
 SRCS_C   =	sys_arch.c \
-			route_policy.c \
-			lwip_route_hook.c \
 			def.c \
 			dns.c \
 			inet_chksum.c \

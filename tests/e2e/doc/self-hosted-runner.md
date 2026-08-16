@@ -121,29 +121,61 @@ refuses rather than guesses.
 
 ## Collecting the devices' own log
 
-`--syslog` collects what the devices send to UDP 5514 on the runner. It does
-not configure anything: each device's `Network Settings` / `Log to Syslog
-Server` has to point at the runner's address, and that setting takes effect at
-the device's next boot. The runner reads the setting at both ends of a run and
-warns if it changed, but corrects it at neither end.
+`--syslog` collects what the devices send. It does not configure anything: each
+device's `Network Settings` / `Log to Syslog Server` has to point at the
+runner's address, and that setting takes effect at the device's next boot. The
+runner reads the setting at both ends of a run and warns if it is wrong or
+changed, but corrects it at neither end.
 
-A datagram is attributed to a device by its source address, which is the only
-identification it carries. A device with two interfaces therefore has to send
-from the one its name resolves to, and the firmware makes that choice
-explicitly: each interface declares a preference, and the preference is applied
-at route time through lwIP's `LWIP_HOOK_IP4_ROUTE_SRC` hook
-(`software/network/route_policy.c` and `software/network/lwip_route_hook.c`).
-Wired Ethernet is preferred over WiFi when both are up and both can reach the
-destination. It is a preference and not an exclusion: both interfaces stay
-usable, WiFi carries everything Ethernet cannot, restoring Ethernet restores the
-preference, and a socket bound to a specific local address sends from the
-interface holding that address. So an Ultimate's log arrives from the address
-its name resolves to, and the runner needs nothing configured for it.
+The runner also reads the port out of that setting before it binds anything,
+and binds one socket per port the devices name, plus its own `--syslog-port`
+default. A datagram is then attributed by the socket that received it wherever
+that is possible: a port exactly one machine sends to identifies that machine
+whatever address the datagram came from.
 
-`U64_LOG_ADDRESSES` remains as an escape hatch for a machine outside this
-repository: one running firmware without the route policy, or one reachable only
-over an interface its name does not resolve to. It attaches further addresses to
-a named machine for the length of the run:
+That matters because a datagram carries no identification but its source
+address, and a machine's source address is not always the address its name
+resolves to. An Ultimate 64 with Ethernet and WiFi both up answers REST on one
+and can send its log from the other.
+
+Give each device a port of its own and the WiFi case is attributed correctly:
+
+```
+c64u    Log to Syslog Server = 192.0.2.10:5515
+u64     Log to Syslog Server = 192.0.2.10:5516
+u2      Log to Syslog Server = 192.0.2.10:5517
+```
+
+Setting it is a provisioning step, not something a run does. `Syslog::init` is
+called once from `ultimate_main`, so a value written during a run does nothing
+until the machine boots again, and `PUT /v1/machine:reboot` does not reach that
+far: it reboots the C64 and leaves the Ultimate firmware running. Write the
+value, save that one store with
+`PUT /v1/configs/Network Settings:save_to_flash`, and power-cycle the machine.
+The C64 Ultimate's own F1 menu has Power & Reset then Power Cycle, which
+`tools/api/u2_flash.py` drives, and which restarts its cartridge port with it.
+
+Save one store rather than the whole tree. In safe mode every store reads as
+its defaults, and `PUT /v1/configs:save_to_flash` would then write those
+defaults over the real values. Before saving anything, read the store and check
+that at least one item differs from its default, which a device loading
+defaults cannot show.
+
+None of this is required. A bench where every device sends to one port behaves
+exactly as it did before: the port identifies nothing, so attribution falls
+back to the source address, and an address no target claims still goes to
+`syslog-unknown-sender.txt` rather than being guessed at. What the ports buy is
+attribution that survives a device logging from an address the run did not
+expect.
+
+The source address is recorded either way. The report shows each target's
+expected addresses, the ports it was collected on, the addresses its lines
+actually arrived from and whether the port or the address attributed them, so a
+device that moved interfaces is visible rather than absorbed by the port match.
+
+`U64_LOG_ADDRESSES` remains as an escape hatch for a machine sharing a port
+whose log arrives from an address its name does not resolve to. It attaches
+further addresses to a named machine for the length of the run:
 
 ```sh
 U64_LOG_ADDRESSES="u64=192.0.2.71" ./run-tests -o runs/ --syslog u64

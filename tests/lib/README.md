@@ -259,11 +259,11 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `stream` | `stream`, `action`, `address`; `screens.jsonl` only |
 | `vic` | `cols`, `rows`, `text[]`, `frame`, `position`, and the suite run that was open; `screen-text.jsonl` only |
 | `interaction` | `seq`, `transport`, `op`, then whatever that transport knows: `ms`, `status`, `params`, `payload`, `retries`, `error`, `sent`, `received`, `reply`, `fault`, `connection`, `menu_open`, `screen`; plus `body`, `body_hex` or `body_sha256`, with `body_bytes`, and `repeat` and `until` on a collapsed run; `interactions.jsonl` only |
-| `log` | `target`, `path`, `started`, `port`, `addresses[]`; the record written when collection ends also carries `senders` and `unknown_senders` |
+| `log` | `target`, `path`, `started`, `port`, `addresses[]`, `ports[]`; the record written when collection ends also carries `senders`, `unknown_senders` and `attributed` |
 | `capture` | `target`, `files[]`, `started`, `lead_in`, `fps`, `geometry`, `options`, `stills[]`, `stream_lifecycle`, `screen_texts`, `screens_unreadable`, and the counts below |
 | `plan` | `suites[]` of `name`, `category`, `path`, `run`, `reason`; `sequence[]` of `category`, `mode`, `label`, `suite` |
 | `action` | `method`, `path`, and where each applies `check`, `params`, `status`, `ms`, `retries`, `error` |
-| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `exit_code`, plus the run identity below |
+| `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `retried`, `extra_attempts`, `harness_changed`, `exit_code`, plus the run identity below |
 
 A `suite` record written by `run-tests` carries what only the harness knows:
 the UI profile, which attempt it was, and how many times the device had to be
@@ -316,18 +316,34 @@ device that had gone quiet.
 Two `log` records are written per target: one when collection starts, which a
 killed run still leaves behind, and one when it ends. `addresses` is where the
 run expected that target's lines from, which is what its machines resolve to.
-`senders` is where they actually arrived from, with a count each, and
-`unknown_senders` is the same for addresses no target claimed. A device logging
-from an address its name does not resolve to is the difference between the
-first two, and without both it cannot be seen at all.
+`ports` is which UDP ports it collected them on. `senders` is where they
+actually arrived from, with a count each, `unknown_senders` is the same for
+addresses no target claimed, and `attributed` counts how the lines were filed,
+by `port` or by `address`.
 
-A datagram is attributed to a device by its source address, and nothing here
-ever guesses one: an unrecognised address identifies nothing, so those lines go
-to `syslog-unknown-sender.txt` with the address that sent them and the report
-names every such sender, its line count and why it could not be attributed.
+A datagram is attributed by the socket that received it wherever that is
+possible. The runner reads each machine's `Log to Syslog Server` before it
+binds anything, and binds one socket per port the devices name plus its own
+default, so a port exactly one machine sends to identifies that machine
+whatever address the datagram came from. That is what files the log of a device
+with two interfaces: an Ultimate 64 with Ethernet and WiFi both up answers REST
+on one address and can send its log from the other.
+
+A port more than one machine sends to identifies nothing, so its datagrams are
+attributed by source address as before, and an unrecognised address still
+identifies nothing: those lines go to `syslog-unknown-sender.txt` with the
+address that sent them, and the report names every such sender and its line
+count. Nothing ever guesses a target.
+
+No provisioning is needed for any of this to be correct. With every machine on
+one port the behaviour is exactly what it was before ports were read at all.
+Giving each machine a port of its own buys attribution that survives a device
+logging from an address the run did not expect, and the observed addresses are
+recorded either way so the report still shows that it happened.
+
 `U64_LOG_ADDRESSES="u64=192.168.1.71"` adds an address to a machine for the
-run, for a machine outside this repository; the firmware here sends its log
-from the wired interface when there is one.
+run, for a machine sharing a port whose log arrives from an address its name
+does not resolve to.
 
 `capture` carries `geometry`, the canvas the recorder composed, and
 `output_geometry`, the frame size the file carries: `--record-scale`
@@ -499,8 +515,17 @@ jq -r 'select(.kind=="action" and .error) | "\(.suite) \(.path) \(.status) \(.er
 A `run` record also says what the run is a run of, so a downloaded tree needs
 no second file to identify itself: `commit`, `branch` and `worktree_dirty` from
 git or from `GITHUB_SHA` and `GITHUB_REF_NAME`, `host`, `python`, `argv` with
-the device password masked, `started` as a wall-clock time, and `assumptions`
-naming the firmware fixes in force. Those come from `E2E_ASSUME_FIX`, which is
+the device password masked, `started` as a wall-clock time, `harness` as a hash
+over the tracked files under `run-tests`, `tests/` and `tools/`, and
+`assumptions` naming the firmware fixes in force.
+
+`harness` is taken when the run starts and again when it ends, and
+`harness_changed` says whether the two differ. Every suite is a separate
+process started from the working tree, so editing one of those files mid-run
+means the later suites ran different code from the earlier ones, which is two
+runs reported as one. `worktree_dirty` cannot answer that: `git status
+--porcelain` lists which files are modified rather than what is in them, so
+editing a file that was already modified leaves its output identical. Those come from `E2E_ASSUME_FIX`, which is
 what `--assume-fix` sets and what a child run and every suite are told through,
 so a child's record says the same thing as its parent's.
 

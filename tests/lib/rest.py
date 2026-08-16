@@ -92,6 +92,27 @@ def message_bytes(*parts) -> int:
     return total
 
 
+def as_text(value: object) -> str:
+    """A request's query or body as a string a program can read back.
+
+    JSON rather than `str(dict)`. The three readers in the observability
+    design are a person, a program and an agent, and `{'address': '00A2'}` is
+    only the first one's format: it is Python's `repr`, so single quotes,
+    `True` and `None` make it neither JSON nor anything with a parser. The
+    same dictionary as `{"address": "00A2"}` is read by `json.loads` in every
+    language, and a person reads it just as well.
+
+    Keys are sorted so two records of the same call are the same string and
+    the collapse rule in tests/lib/interactions.py sees them as one
+    interaction. A value JSON cannot carry is rendered by `str` rather than
+    losing the record.
+    """
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def record_action(method: str, path: str, started: float, attempts: int,
                   status: Optional[int], answer: Optional[bytes],
                   exc: Optional[BaseException] = None,
@@ -131,8 +152,8 @@ def record_action(method: str, path: str, started: float, attempts: int,
         interactions.note_screen(answer if status == 200 else None)
     fields = dict(
         ms=elapsed, status=status,
-        params=str(params) if params else None,
-        payload=str(payload) if payload is not None else None,
+        params=as_text(params) if params else None,
+        payload=as_text(payload) if payload is not None else None,
         retries=attempts if attempts > 1 else None,
         fault=interactions.fault_of(exc),
         # One connection per request: `urllib` opens and closes one for every
@@ -155,7 +176,7 @@ def record_action(method: str, path: str, started: float, attempts: int,
     fields: Dict[str, object] = {"ms": elapsed}
     carried = params if params else payload
     if carried:
-        fields["params"] = str(carried)[:ACTION_TEXT_CHARS]
+        fields["params"] = as_text(carried)[:ACTION_TEXT_CHARS]
     if status is not None:
         fields["status"] = status
     if retried:
@@ -424,7 +445,7 @@ class RestClient:
         for attempt in range(allowed):
             started = time.monotonic()
             call = interactions.begin("rest", f"{method.upper()} {path}",
-                                      params=str(params) if params else None,
+                                      params=as_text(params) if params else None,
                                       sent=outbound, connection="new")
             try:
                 with urllib.request.urlopen(

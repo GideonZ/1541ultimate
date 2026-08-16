@@ -37,6 +37,15 @@ the attempt, the scenario and the check that were open, so they join to the
 rest of the run with no correlation identifier of their own, and the report
 turns their wall-clock time into a position in the recording the same way it
 does for every other record.
+
+`seq` numbers one target's file rather than one process's share of it. Several
+processes append to it - the runner, the UI-state gate and every suite - so a
+counter held in each of them numbers the file one to N several times over, and
+`jq 'select(.seq == 4812)'` then answers with as many records as there were
+writers. The number is allocated from a counter beside the file, under a lock
+every writer takes, and the lock is held across both appends, so `seq` is
+unique in the file, the transcript and the JSONL carry the same numbers in the
+same order, and the band's `#4812` names one record.
 """
 
 from __future__ import annotations
@@ -48,6 +57,11 @@ import os
 import threading
 import time
 from typing import Dict, List, Optional
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows is not a supported host
+    fcntl = None  # type: ignore[assignment]
 
 import report
 
@@ -101,6 +115,12 @@ DIGEST_CHARS = 16
 # cannot disagree.
 TRANSCRIPT_NAME = "transcript.txt"
 
+# Where the next sequence number for one target's log is kept, and the lock
+# every writer takes before it appends. One file rather than one counter per
+# process, because the number has to be unique in the file a reader opens
+# rather than in the share of it one process wrote.
+SEQUENCE_NAME = "interactions.seq"
+
 # How wide one field may be on a transcript line. A line a person scans is one
 # that fits a terminal; the JSONL record with the same `seq` is where the whole
 # of a long field is, and a long one is content-addressed on top of that.
@@ -122,9 +142,11 @@ FAULTS = (
 # body costs one write however many interactions carry it.
 _written_bodies: set = set()
 
-# The sequence number the next record gets. One counter per destination, so a
-# target's file numbers from one and a reader joining the transcript to the
-# JSONL matches on (suite, attempt, seq).
+# The number to use when the shared counter beside the log cannot be read or
+# written. Only reachable when the output directory itself has become
+# unwritable, in which case the appends below fail too and the run carries on
+# without a log, so this exists to keep the module working rather than to be
+# a second numbering scheme anybody relies on.
 _next_seq = [1]
 
 # What the harness last saw of the device, carried onto every record so that a
@@ -148,26 +170,130 @@ def set_path(path: str) -> None:
     global LOG_PATH
     flush()
     LOG_PATH = path
-    # A new destination is a new bodies directory and a new sequence, so what
-    # this process has already written is nothing to do with the new one.
+    # A new destination is a new bodies directory, a new counter file and a new
+    # sequence, so what this process has already written is nothing to do with
+    # the new one.
     _written_bodies.clear()
     _next_seq[0] = 1
+    _close_sequence()
 
 
 class _Pending:
-    """The record held back so an identical one after it can collapse into it."""
+    """The record held back so an identical one after it can collapse into it.
+
+    Held so that the settle loops collapse, and released after
+    `START_RECORD_SECONDS` of nothing joining it. A record held until the next
+    different interaction is a record that sits in memory for as long as the
+    process is quiet: measured over a three-target gate run, the longest hold
+    was 375 seconds, and its line landed that far out of order in a transcript
+    a person reads top to bottom. Worse, a process killed while holding one
+    loses it, and a suite killed on its timeout is exactly the run whose last
+    interaction is the one worth having.
+    """
 
     def __init__(self) -> None:
         self.record: Optional[dict] = None
         self.identity: tuple = ()
         self.repeat = 0
+        self.updated = 0.0
 
 
 _pending = _Pending()
+# `_record` runs on whichever thread made the call and `_watch` runs on its
+# own, and both hold and release the pending record, so the two touch one
+# object. Re-entrant because `_record` flushes the record it is displacing
+# while it holds it.
+_pending_lock = threading.RLock()
 
 
 def _body_directory() -> str:
     return os.path.join(os.path.dirname(LOG_PATH) or ".", BODY_DIRECTORY)
+
+
+def sequence_path() -> str:
+    return os.path.join(os.path.dirname(LOG_PATH) or ".", SEQUENCE_NAME)
+
+
+# The counter file, opened once per destination and kept open, because the
+# lock is on the open description and reopening it per record would cost a
+# path lookup per interaction for nothing.
+_sequence_handle: Optional[int] = None
+_sequence_for = ""
+
+
+def _close_sequence() -> None:
+    global _sequence_handle, _sequence_for
+    handle, _sequence_handle = _sequence_handle, None
+    _sequence_for = ""
+    if handle is not None:
+        try:
+            os.close(handle)
+        except OSError:
+            pass
+
+
+def _sequence_file() -> Optional[int]:
+    """The open counter file for this destination, or None if there is none."""
+    global _sequence_handle, _sequence_for
+    if _sequence_handle is not None and _sequence_for == LOG_PATH:
+        return _sequence_handle
+    _close_sequence()
+    if fcntl is None:
+        return None
+    try:
+        directory = os.path.dirname(LOG_PATH)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        _sequence_handle = os.open(sequence_path(), os.O_RDWR | os.O_CREAT,
+                                   0o644)
+        _sequence_for = LOG_PATH
+        return _sequence_handle
+    except OSError:
+        _sequence_handle = None
+        return None
+
+
+class _shared_append:
+    """Hold the log against every other writer, and hand out the next number.
+
+    The lock covers allocating the number and both appends, so two processes
+    writing at once cannot interleave a JSONL line with the other's transcript
+    line, and the order of the numbers is the order of the lines in both
+    files. A writer that cannot take the lock numbers from its own counter and
+    appends anyway: a log is never a reason to end a run, and a file with
+    ambiguous numbers is better than no file.
+    """
+
+    def __init__(self) -> None:
+        self.handle: Optional[int] = None
+        self.seq = 0
+
+    def __enter__(self) -> "_shared_append":
+        self.handle = _sequence_file()
+        if self.handle is None:
+            self.seq = _next_seq[0]
+            _next_seq[0] += 1
+            return self
+        try:
+            fcntl.flock(self.handle, fcntl.LOCK_EX)
+            os.lseek(self.handle, 0, os.SEEK_SET)
+            raw = os.read(self.handle, 32).strip()
+            self.seq = (int(raw) if raw.isdigit() else 0) + 1
+            os.lseek(self.handle, 0, os.SEEK_SET)
+            os.write(self.handle, b"%d\n" % self.seq)
+            os.ftruncate(self.handle, len(b"%d\n" % self.seq))
+        except (OSError, ValueError):
+            self.seq = _next_seq[0]
+            _next_seq[0] += 1
+        return self
+
+    def __exit__(self, *_exception) -> None:
+        if self.handle is None:
+            return
+        try:
+            fcntl.flock(self.handle, fcntl.LOCK_UN)
+        except OSError:
+            pass
 
 
 def _describe_body(body) -> Dict[str, object]:
@@ -313,7 +439,9 @@ def begin(transport: str, operation: str, **fields) -> Optional[Call]:
 def finish(call: Optional[Call], **fields) -> None:
     """Say that an issued interaction has answered. Never raises."""
     if call is None:
-        return record_ended(None, **fields)
+        # `begin` returns None when this run keeps no log, so there is nothing
+        # to close and nothing to write.
+        return
     try:
         with _in_flight_lock:
             if call in _in_flight:
@@ -327,10 +455,6 @@ def finish(call: Optional[Call], **fields) -> None:
         record(call.transport, call.operation, **merged)
     except Exception:  # noqa: BLE001
         pass
-
-
-def record_ended(_call, **fields) -> None:
-    return None
 
 
 def in_flight() -> List[dict]:
@@ -370,6 +494,12 @@ def _watch() -> None:
             for call in late:
                 record(call.transport, call.operation, phase="start",
                        **call.fields)
+            # And release a held record that nothing has joined, so a quiet
+            # process does not sit on its last interaction. See _Pending.
+            with _pending_lock:
+                if (_pending.record is not None
+                        and now - _pending.updated >= START_RECORD_SECONDS):
+                    flush()
         except Exception:  # noqa: BLE001 - a log may never end a run
             pass
 
@@ -385,6 +515,11 @@ def record(transport: str, operation: str, **fields) -> None:
     if not LOG_PATH:
         return
     try:
+        # Started here as well as in `begin`, because the transports that
+        # record a completed exchange in one call - Telnet, FTP, the listener
+        # probes - never call `begin`, and the watcher is what releases their
+        # last held record.
+        _start_watcher()
         _record(transport, operation, fields)
     except Exception:  # noqa: BLE001 - a log may never end a run
         pass
@@ -431,30 +566,31 @@ def _record(transport: str, operation: str, fields: Dict[str, object]) -> None:
     identity = (transport, operation, check, scenario,
                 tuple(sorted((name, str(value)) for name, value in entry.items()
                              if name != "ms")))
-    if _pending.record is not None and identity == _pending.identity:
-        _pending.repeat += 1
-        _pending.record["repeat"] = _pending.repeat
-        _pending.record["until"] = now
-        if "ms" in entry:
-            _pending.record["ms_last"] = entry["ms"]
-        return
+    with _pending_lock:
+        if _pending.record is not None and identity == _pending.identity:
+            _pending.repeat += 1
+            _pending.record["repeat"] = _pending.repeat
+            _pending.record["until"] = now
+            _pending.updated = time.monotonic()
+            if "ms" in entry:
+                _pending.record["ms_last"] = entry["ms"]
+            return
 
-    flush()
-    entry["seq"] = _next_seq[0]
-    _next_seq[0] += 1
-    entry["time"] = now
-    entry["suite"] = report.SUITE_NAME
-    if report.TARGET_NAME:
-        entry["target"] = report.TARGET_NAME
-    if report.ATTEMPT is not None:
-        entry["attempt"] = report.ATTEMPT
-    if check is not None:
-        entry["check"] = check
-    if scenario:
-        entry["scenario"] = scenario
-    _pending.record = entry
-    _pending.identity = identity
-    _pending.repeat = 1
+        flush()
+        entry["time"] = now
+        entry["suite"] = report.SUITE_NAME
+        if report.TARGET_NAME:
+            entry["target"] = report.TARGET_NAME
+        if report.ATTEMPT is not None:
+            entry["attempt"] = report.ATTEMPT
+        if check is not None:
+            entry["check"] = check
+        if scenario:
+            entry["scenario"] = scenario
+        _pending.record = entry
+        _pending.identity = identity
+        _pending.repeat = 1
+        _pending.updated = time.monotonic()
 
 
 def flush() -> None:
@@ -464,22 +600,32 @@ def flush() -> None:
     last interaction of a suite reaches the file even when the suite ends
     immediately after it.
     """
-    entry, _pending.record = _pending.record, None
-    _pending.identity = ()
-    _pending.repeat = 0
+    with _pending_lock:
+        entry, _pending.record = _pending.record, None
+        _pending.identity = ()
+        _pending.repeat = 0
     if entry is None or not LOG_PATH:
         return
     try:
-        line = json.dumps(entry, default=repr)
-        with open(LOG_PATH, "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except (OSError, TypeError, ValueError):
-        # A log that cannot be written is not a reason to end a run, and the
-        # report says the file is short rather than that the run went quiet.
-        pass
-    try:
-        with open(transcript_path(), "a", encoding="utf-8") as handle:
-            handle.write(transcript_line(entry) + "\n")
+        with _shared_append() as slot:
+            entry["seq"] = slot.seq
+            # Rendered inside the lock, so a record and its line carry one
+            # number and neither file can hold a number the other does not.
+            line = json.dumps(entry, default=repr)
+            text = transcript_line(entry)
+            try:
+                with open(LOG_PATH, "a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+            except OSError:
+                # A log that cannot be written is not a reason to end a run,
+                # and the report says the file is short rather than that the
+                # run went quiet.
+                pass
+            try:
+                with open(transcript_path(), "a", encoding="utf-8") as handle:
+                    handle.write(text + "\n")
+            except OSError:
+                pass
     except (OSError, TypeError, ValueError):
         pass
 

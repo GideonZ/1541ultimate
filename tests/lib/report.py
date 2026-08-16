@@ -606,10 +606,13 @@ def log_result(target: str, path: str, started: float, port: int,
     answers.
 
     `fields` carries what only the collector knows: the addresses the run
-    expects this target's lines from, and, in the record written when the run
-    ends, the addresses they actually arrived from. A device that logs from a
-    second interface is the difference between those two, and without both a
-    reader cannot see it at all.
+    expects this target's lines from, the ports it collects them on, and, in
+    the record written when the run ends, the addresses they actually arrived
+    from and whether the port or the address is what attributed them. A device
+    that logs from a second interface is the difference between the expected
+    addresses and the observed ones, and without both a reader cannot see it
+    at all; `ports` and `attributed` are what say whether the run was still
+    able to file its lines correctly.
     """
     _record(kind="log", target=target, path=path, started=started, port=port,
             **fields)
