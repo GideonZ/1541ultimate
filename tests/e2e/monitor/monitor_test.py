@@ -219,7 +219,9 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
 
 
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
-    url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
+    url = rest_lib.url_for(
+        host, "/v1/machine:readmem",
+        {"address": f"{address:04X}", "length": length})
     # Transport and retry policy come from tests/lib/rest.py; see rest.may_retry.
     with rest_lib.retrying_urlopen(urllib.request.Request(url), 5.0) as response:
         return response.read()
@@ -268,7 +270,8 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
     for attempt in range(12):
         try:
             request = urllib.request.Request(
-                f"http://{host}/v1/machine:menu_screen", headers=headers, method="GET"
+                rest_lib.url_for(host, "/v1/machine:menu_screen"),
+                headers=headers, method="GET"
             )
             with rest_lib.retrying_urlopen(request, 5.0):
                 pass
@@ -283,7 +286,7 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:input",
+            rest_lib.url_for(host, "/v1/machine:input"),
             data=body,
             headers={**headers, "Content-Type": "application/json"},
             method="POST",
@@ -297,14 +300,16 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
         time.sleep(0.25)
     else:
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:menu_button", data=b"", headers=headers, method="PUT"
+            rest_lib.url_for(host, "/v1/machine:menu_button"),
+            data=b"", headers=headers, method="PUT"
         )
         with rest_lib.retrying_urlopen(request, 5.0):
             pass
         time.sleep(0.5)
 
     request = urllib.request.Request(
-        f"http://{host}/v1/machine:reset", data=b"", headers=headers, method="PUT"
+        rest_lib.url_for(host, "/v1/machine:reset"),
+        data=b"", headers=headers, method="PUT"
     )
     # Resetting twice leaves the same machine as resetting once.
     with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
@@ -611,7 +616,7 @@ def stop_running_program(rest_host: str) -> None:
     follow leave it stopped instead of resuming it between them.
     """
     request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:pause", data=b"", method="PUT")
+        rest_lib.url_for(rest_host, "/v1/machine:pause"), data=b"", method="PUT")
     with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
         pass
 
@@ -619,7 +624,7 @@ def stop_running_program(rest_host: str) -> None:
 def resume_machine(rest_host: str) -> None:
     """Undo stop_running_program, so G starts from the normal running state."""
     request = urllib.request.Request(
-        f"http://{rest_host}/v1/machine:resume", data=b"", method="PUT")
+        rest_lib.url_for(rest_host, "/v1/machine:resume"), data=b"", method="PUT")
     with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
         pass
 
@@ -1124,7 +1129,8 @@ def clear_prompt_field(session: MonitorSession) -> None:
 
 
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
-    url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
+    url = rest_lib.url_for(host, f"/v1/files{path}:create_d64",
+                           {"diskname": diskname})
     request = urllib.request.Request(url, data=b"", method="PUT")
     # Creating the same image twice leaves the same image.
     with rest_lib.retrying_urlopen(request, 15.0, idempotent=True):
@@ -1134,7 +1140,8 @@ def rest_create_d64(host: str, path: str, diskname: str) -> None:
 def rest_file_exists(host: str, path: str) -> bool:
     try:
         with rest_lib.retrying_urlopen(
-                urllib.request.Request(f"http://{host}/v1/files{path}:info"), 5.0) as response:
+                urllib.request.Request(
+                    rest_lib.url_for(host, f"/v1/files{path}:info")), 5.0) as response:
             return response.status == 200
     except urllib.error.HTTPError:
         return False
@@ -1422,6 +1429,18 @@ def main() -> int:
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
+    # The target token, not a bare host name. `--host` carries whatever the
+    # runner was given, and for a cartridge that is `u2@c64u`, which names two
+    # machines. Every URL this suite builds goes through `rest_lib.url_for`,
+    # which sends each path to the machine that serves it: the keyboard to the
+    # computer, everything else to the cartridge. See tests/lib/targets.py.
+    #
+    # Both halves were measured against `u2@c64u`. Interpolating the token
+    # into a URL failed all three attempts with `<urlopen error [Errno -2]
+    # Name or service not known>` from `reset_rest_machine`, before a single
+    # check had run. Resolving the token to the cartridge alone got past that
+    # and then failed on the first keystroke with `HTTP 501: Keyboard and
+    # joystick injection require Ultimate 64-class hardware`.
     rest_host = args.rest_host or args.host
 
     # This suite drives one revision of the monitor throughout rather than in

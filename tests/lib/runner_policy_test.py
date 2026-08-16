@@ -23,6 +23,7 @@ import importlib.util
 import io
 import argparse
 import os
+import re
 import sys
 import tempfile
 
@@ -946,6 +947,80 @@ def run_multi_target_checks(runner):
         expect("no children", runner.combine_exit_codes([]), runner.EXIT_OK)
 
 
+# Routing markers: every one of these asks tests/lib/targets.py which machine
+# serves a path, rather than assuming the string in hand is a host name.
+URL_ROUTED_BY = ("url_for", "host_for", "device_of", "input_host",
+                 "video_host", "authority", ".computer", ".device")
+# The one place a REST authority is allowed to be interpolated, because it is
+# where the rule lives: rest.url_for resolves the target and picks the machine.
+URL_BUILDER = os.path.join("tests", "lib", "rest.py")
+URL_INTERPOLATION = re.compile(r"http://\{([^}]*)\}")
+
+
+def run_suite_url_routing_checks():
+    """No suite may interpolate whatever it was given into a REST URL.
+
+    A suite is started with a target token, and for a cartridge that token
+    names two machines: `u2@c64u` is not a host name and does not resolve.
+    Even resolved to the cartridge alone it is not one host, because the
+    keyboard belongs to the computer and the cartridge answers
+    machine:input with HTTP 501.
+
+    Both halves were measured on hardware against `u2@c64u`. The monitor suite
+    interpolated the token and failed all three attempts with `<urlopen error
+    [Errno -2] Name or service not known>` before a single check ran; resolved
+    to the cartridge it got as far as the first keystroke and failed with
+    `HTTP 501: Keyboard and joystick injection require Ultimate 64-class
+    hardware`. Only the per-path rule in tests/lib/targets.py addresses both,
+    so this reads every suite rather than trusting each one to remember.
+    """
+    root = os.path.join(ROOT, "tests")
+    offenders = []
+    for directory, _, names in os.walk(root):
+        for name in sorted(names):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(directory, name)
+            if path.endswith(URL_BUILDER):
+                continue
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                for number, line in enumerate(handle, 1):
+                    for expression in URL_INTERPOLATION.findall(line):
+                        if any(mark in expression for mark in URL_ROUTED_BY):
+                            continue
+                        # Spelled in pieces so this line is not itself an
+                        # example of what it is looking for.
+                        offenders.append(
+                            f"{os.path.relpath(path, ROOT)}:{number}: "
+                            + "http://" + "{" + expression + "}")
+
+    with check("no suite builds a REST URL from an unrouted host"):
+        if offenders:
+            raise Failure(
+                "these interpolate a bare name where the machine that serves "
+                "the path has to be chosen:\n  "
+                + "\n  ".join(offenders)
+                + "\n\nThe required shape is a URL whose authority came from "
+                "the target rather than from the string the suite was given. "
+                "Any of these satisfies it:\n"
+                "  rest_lib.url_for(host, path)          the builder in "
+                "tests/lib/rest.py, and the one to reach for\n"
+                "  targets.host_for(host, path)          the same rule, when a "
+                "suite assembles its own URL\n"
+                "  targets.device_of(host)               a path only the "
+                "device under test serves\n"
+                "  target.input_host / target.video_host the computer's "
+                "keyboard and picture\n"
+                "This is a rule about where a request goes, not about which "
+                "function spells it: a suite that picks the machine per path "
+                "by some other route satisfies it as long as the choice is "
+                "visible on the line that builds the URL. See "
+                "tests/lib/targets.py for why a cartridge target is two "
+                "machines.")
+        detail(f"{len(URL_ROUTED_BY)} routing forms accepted, "
+               f"{URL_BUILDER} is where the rule lives")
+
+
 def run_ui_state_routing_checks():
     """The UI-state gate has to drive both halves of a cartridge target.
 
@@ -1008,6 +1083,7 @@ def main():
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()
+            run_suite_url_routing_checks()
             run_exit_status_checks(runner)
             run_recovery_gating_checks(runner)
             run_recovery_limit_checks(runner)
