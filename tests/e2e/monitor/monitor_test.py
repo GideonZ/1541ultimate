@@ -3979,28 +3979,45 @@ def assert_interface_swap_from_the_monitor_closes_the_ui(
                 f"C=+I did not swap the interface from inside the monitor: "
                 f"'{UI_ITEM}' is still {original!r}")
 
-        deadline = time.time() + 5.0
-        closed = False
-        while time.time() < deadline and not closed:
-            try:
-                session.capture()
-            except Failure as exc:
-                if not menu_screen_closed(exc):
-                    raise
-                closed = True
-            else:
-                time.sleep(0.2)
-
         if mode == MODE_TELNET:
-            if closed:
+            # Two halves here, because "the remote session survived" must not
+            # be allowed to mean "the key did nothing". The monitor still has
+            # to close: `run_machine_monitor` deinits and deletes it before the
+            # file browser answers at all, so a monitor still on screen would
+            # be a real defect rather than the mode difference below.
+            #
+            # Deliberately not asserted through `menu_screen_closed`. That text
+            # is raised only by `RestBackend`; `TelnetBackend` reads the telnet
+            # stream and never produces it, so a check resting on it here could
+            # not fail whatever the firmware did.
+            snapshot = wait_until(session,
+                                  lambda scr: not monitor_is_on_screen(scr),
+                                  timeout=5.0)
+            if monitor_is_on_screen(snapshot):
                 raise Failure(
-                    "C=+I closed the Telnet session. That session is not the "
-                    "interface being swapped: Interface Type selects between "
-                    "the freeze menu and the HDMI overlay, so a remote UI must "
-                    "survive the swap")
-            detail("C=+I over Telnet: the setting swapped and the remote UI "
-                   "stayed, which is the interface the swap does not govern")
+                    "C=+I over Telnet did not close the monitor. The remote "
+                    "session is not the interface being swapped, but the key "
+                    "still leaves the monitor\n" + snapshot.text())
+            # The other half: the session itself is still there. A capture that
+            # raises is a remote session that went away with the swap, which is
+            # the behaviour this transport must not have.
+            session.capture()
+            detail("C=+I over Telnet: the setting swapped, the monitor closed "
+                   "and the remote session stayed. Interface Type selects "
+                   "between the freeze menu and the HDMI overlay, neither of "
+                   "which is this session")
         else:
+            deadline = time.time() + 5.0
+            closed = False
+            while time.time() < deadline and not closed:
+                try:
+                    session.capture()
+                except Failure as exc:
+                    if not menu_screen_closed(exc):
+                        raise
+                    closed = True
+                else:
+                    time.sleep(0.2)
             if not closed:
                 raise Failure(
                     f"C=+I from inside the monitor left the on-device UI open. "
