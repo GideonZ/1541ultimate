@@ -378,7 +378,8 @@ DIR/
   index.pdf                       optional, derived from index.md (OBS-3.16)
   run.jsonl                       the parent's own record, multi-target runs only (OBS-2.12)
   run.log                         the parent's console output, multi-target runs only (OBS-2.13)
-  syslog-unknown-sender.txt       optional, datagrams no target claimed (OBS-7.8)
+  syslog-unknown-sender.txt       datagrams no target claimed (OBS-7.8);
+                                  absent when there were none
   <slug>/
     run.jsonl                     this target's runner records
     run.log                       this target's runner console output (OBS-2.13)
@@ -1956,6 +1957,18 @@ its source address on the line. Lines carry no device identity of any kind, so t
 source address is the only discriminator when several devices log to one
 collector, and a device nobody expected to be talking is itself the misbehaviour
 Q2 asks about, so its lines are kept rather than dropped.
+
+The file exists only when a datagram went into it. It is opened when the
+collector starts, because an output that cannot be written is an operator's
+problem in the first seconds of a run rather than a discovery at the end of one
+that has already cost 15 to 30 minutes, and it is removed when the collector
+closes if nothing was ever written to it. So its absence means every line was
+attributed, which is both the ordinary outcome and the good one, and a reader
+looking for it after a clean run should expect not to find it. A target's own
+`DIR/<slug>/syslog.txt` is deliberately not treated this way: an empty one
+there is the recorded fact that a device the run collected from said nothing,
+which OBS-7.20 requires a reader to be able to tell from a collector that never
+started.
 
 The file is named for the question its reader has to answer, which is who sent
 these lines, rather than for the lookup that failed. Nothing ever guesses a

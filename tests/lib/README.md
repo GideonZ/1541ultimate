@@ -205,7 +205,8 @@ DIR/
   index.md                     the report, written by tools/e2e_report.py
   run.jsonl                    the parent's own record, multi-target runs only
   run.log                      the parent's console output, multi-target only
-  syslog-unknown-sender.txt          log lines from an address no target claims
+  syslog-unknown-sender.txt    log lines from an address no target claims;
+                               absent when every line was attributed
   <slug>/
     run.jsonl                  this target's runner records
     run.log                    this target's runner console output

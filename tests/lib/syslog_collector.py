@@ -25,10 +25,10 @@ here.** Four independent causes, none of which leaves a trace on this side:
   sets a flag and drops every subsequent character, and `forwardLogging` then
   rewinds and discards the whole buffer, so a burst loses an unbounded block.
 - Output is throttled to about 200 lines a second by a 5ms delay per line.
-- `Syslog::failed_sends` counts send errors and `Syslog::overflows` counts the
-  fills above. `GET /v1/info` carries both and the `ident` check of every
-  health sweep records them, so a run can tell a lossy link from a quiet
-  device; neither says which lines were lost.
+- `Syslog::failed_sends` counts send errors inside the firmware and nothing
+  reads it, so a send failure leaves no trace on this side. Exposing it and
+  the overflow count over REST was built and rejected; see OBS-9.2 in
+  tests/e2e/doc/observability-spec.md for the measurements behind that.
 
 A line's receive time also lags the moment the firmware printed it by an
 unbounded amount: the forwarding task polls every 100ms, the throttle means a
@@ -71,7 +71,11 @@ exactly one machine sends to identifies that machine by construction, whatever
 address the datagram came from. A port more than one machine sends to, which is
 every machine on an unprovisioned bench, falls back to the source address, and
 an address no target claims still goes to `syslog-unknown-sender.txt` and is
-never guessed at.
+never guessed at. That file exists only when something went into it: it is
+opened at startup so an unwritable output is an operator's problem in the
+first seconds rather than a discovery at the end, and removed at close when
+nothing was unattributed, so finding no such file means every line was
+attributed.
 
 So the implementation needs no provisioning to be correct: with every machine
 on one port it behaves exactly as address attribution alone did. What
@@ -402,6 +406,30 @@ class Collector:
             for handle in self._handles.values():
                 handle.close()
             self._handles.clear()
+        self._drop_empty_unmapped()
+
+    def _drop_empty_unmapped(self) -> None:
+        """Leave no unknown-sender file behind when every line was attributed.
+
+        The file is opened at startup, because a file that cannot be written is
+        a startup problem an operator can act on, and the same discovery made
+        later is a silently discarded log in a run that has already cost 15 to
+        30 minutes. That check is worth keeping and costs an empty file in
+        every healthy run, so the file is taken away again here instead.
+
+        Its absence therefore means every datagram was attributed, which is
+        both the ordinary outcome and the good one. A target's own
+        `syslog.txt` is deliberately not treated this way: empty there is a
+        finding, the device was expected to log and said nothing, and the
+        runner warns about exactly that.
+        """
+        try:
+            if os.path.getsize(self.unmapped_path) == 0:
+                os.remove(self.unmapped_path)
+        except OSError:
+            # Never existed, already gone, or not removable. None of the three
+            # is worth failing a run over: this file has no content to lose.
+            pass
 
     # -- receiving --
 
