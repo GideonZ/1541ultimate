@@ -75,13 +75,6 @@ void Syslog::charout(int c)
         LEAVE_SAFE_SECTION;
     }
     else {
-        // Counted once per fill rather than once per dropped character:
-        // rewind() clears `overflow`, so the next fill counts again. Read
-        // over REST as syslog_overflows, because a burst that overflowed is
-        // lost without a trace on the receiving side.
-        if (!overflow) {
-            ++overflows;
-        }
         overflow = true;
     }
 }

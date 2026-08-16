@@ -838,10 +838,10 @@ def finish_syslog(collector) -> None:
                     f"{', '.join(str(port) for port in collector.ports())}, "
                     f"and this run expected its lines from "
                     f"{', '.join(collector.addresses_of(token)) or 'no address'}"
-                    f". The setting this run read, the syslog_failed_sends and "
-                    f"syslog_overflows figures on each ident sweep, and "
+                    f". The setting this run read at both ends and "
                     f"{syslog_collector.UNKNOWN_SENDER_NAME} are the facts "
-                    f"that tell one silence from another")
+                    f"that tell one silence from another; nothing here says "
+                    f"whether the device sent lines that never arrived")
     for token, path in collector.files():
         # A second record for the same target, carrying what the first could
         # not know: which addresses the lines actually came from, and whether

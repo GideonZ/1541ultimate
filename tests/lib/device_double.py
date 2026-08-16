@@ -194,10 +194,6 @@ class DeviceDouble:
         self.heap_free = 1_500_000
         self.heap_min_ever_free = 1_200_000
         self.heap_total = 2_000_000
-        # The device's own account of its log: datagrams the stack refused, and
-        # times the forwarding buffer filled before it drained.
-        self.syslog_failed_sends = 0
-        self.syslog_overflows = 0
         self.mounted_image = ""
         # What the double was asked to stream, and where to. A caller that has
         # to leave the streams as it found them is tested against these.
@@ -343,12 +339,7 @@ class DeviceDouble:
             "product": self.product,
             "firmware_version": self.firmware_version,
             "fpga_version": self.fpga_version,
-            "hostname": "double",
-            # What the firmware counts about its own log. Neither can be
-            # reported through the log without risking a loop, so this is where
-            # they are, and the health sweep reads them from here.
-            "syslog_failed_sends": self.syslog_failed_sends,
-            "syslog_overflows": self.syslog_overflows}), "application/json"
+            "hostname": "double"}), "application/json"
 
     def _menu_screen(self, params):
         if self.menu_open_flag:

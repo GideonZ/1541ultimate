@@ -1017,24 +1017,17 @@ def the_heap_figures_reach_the_health_record() -> str:
         entries = [c for c in sweeps[0]["checks"] if c["name"] == "heap"]
         expect("one heap entry", len(entries), 1)
         expect("free", entries[0]["figures"]["free"], double.heap_free)
+        # `heap` is the only check that carries figures. Any other check that
+        # grows them is either a new measurement nobody reads or a figure that
+        # belongs in the check's own detail, and both are worth stopping at.
         for other in sweeps[0]["checks"]:
-            if other["name"] not in ("heap", "ident") and "figures" in other:
+            if other["name"] != "heap" and "figures" in other:
                 raise Failure(f"{other['name']} grew a figures entry")
         kinds = {r["kind"] for r in made.records("127.0.0.1", "run.jsonl")}
         if "heap" in kinds:
             raise Failure("the figures were given a record kind of their own")
-
-        # The two counters only the device has, on the check that already reads
-        # `/v1/info`, so the sweep costs the request it was making anyway. A
-        # device logging where nothing is listening is silent and harmless, so
-        # without them a lossy link and a quiet device look the same.
-        ident = [c for c in sweeps[0]["checks"] if c["name"] == "ident"]
-        expect("one ident entry", len(ident), 1)
-        expect("the syslog counters ride with it",
-               sorted(ident[0].get("figures", {})),
-               ["syslog_failed_sends", "syslog_overflows"])
         expect("and the sweep is still OK", sweeps[0]["ok"], True)
-    return "inside the health record, heap and syslog both"
+    return "inside the health record, and only on heap"
 
 
 @case(1, "OBS-7.5", "OBS-7.6", "OBS-7.7", "OBS-7.8")
@@ -6243,59 +6236,6 @@ def the_report_says_how_much_of_the_screen_came_back_as_text() -> str:
     expect("a run with no recorder has nothing to say",
            generator.screen_text_lines(target(None)), [])
     return "read and refused, both always"
-
-
-@case(1, "OBS-9.2")
-def the_report_says_what_the_devices_log_counters_did() -> str:
-    """Both counters, whether they moved, and which sweep first saw a move.
-
-    They are cumulative since the device booted, so a column of one value per
-    sweep answers nothing a reader asks. What is asked is whether the device
-    dropped any of its own log during this run, and if so from where on.
-    """
-    generator = load_report_tool()
-
-    def sweeps(values):
-        return generator.TargetRun(
-            token="u64", slug="u64",
-            health=[{"kind": "health", "label": f"suite-{index}", "ok": True,
-                     "checks": [{"name": "ident", "state": "ok", "ms": 9.0,
-                                 "figures": {"syslog_failed_sends": failed,
-                                             "syslog_overflows": over}}]}
-                    for index, (failed, over) in enumerate(values)])
-
-    steady = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (0, 0)]))
-    expect("one line per counter, plus the blank", len(steady), 3)
-    if "stayed at 0 over 3 sweep(s)" not in steady[0]:
-        raise Failure(f"a counter that never moved reads {steady[0]!r}")
-
-    moved = generator.syslog_counter_lines(sweeps([(0, 0), (0, 0), (47, 19)]))
-    if "went from 0 to 47" not in moved[0] or "`suite-2`" not in moved[0]:
-        raise Failure(f"a counter that moved reads {moved[0]!r}")
-    if "went from 0 to 19" not in moved[1]:
-        raise Failure(f"the second counter reads {moved[1]!r}")
-
-    # A device the runner recovered mid-run starts its counters again from
-    # zero, so the run can end on the value it started on with plenty counted
-    # in between. Reading only the two ends would call that "stayed at 0".
-    restarted = generator.syslog_counter_lines(
-        sweeps([(0, 0), (47, 19), (0, 0)]))
-    if "highest 47" not in restarted[0]:
-        raise Failure(f"a counter that moved and came back reads "
-                      f"{restarted[0]!r}")
-    if "stayed at" in restarted[0]:
-        raise Failure(f"a counter that moved is called steady: "
-                      f"{restarted[0]!r}")
-
-    # Firmware without them says nothing rather than saying zero, because zero
-    # would be a claim this run cannot make.
-    older = generator.TargetRun(
-        token="u64", slug="u64",
-        health=[{"kind": "health", "label": "one", "ok": True,
-                 "checks": [{"name": "ident", "state": "ok", "ms": 9.0}]}])
-    expect("nothing to say about firmware that has no counters",
-           generator.syslog_counter_lines(older), [])
-    return "steady, moved, and absent"
 
 
 @case(1, "OBS-3.18", "OBS-3.22")

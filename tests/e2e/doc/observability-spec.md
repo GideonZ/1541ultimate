@@ -1886,17 +1886,20 @@ the thing that failed.
 
 So the run states what was observed and names the facts that discriminate
 between the causes it can tell apart - the value the setting held at both ends
-of the run, the `syslog_failed_sends` and `syslog_overflows` figures on every
-ident sweep (OBS-9.2), and whether `syslog-unknown-sender.txt` holds anything -
-and stops there. This is the Purpose section's rule about never stating a cause
+of the run, and whether `syslog-unknown-sender.txt` holds anything - and stops
+there. The set is deliberately small: the firmware counts refused datagrams and
+buffer overflows internally, and reading those over REST was built and then
+removed, because no part of a run acts on either number. See OBS-9.2.
+
+This is the Purpose section's rule about never stating a cause
 applied to the one component whose failures most invite one, and it is a
 requirement because the harness had a warning that ended "the setting takes
 effect at the device's next boot", which the run had not established and which
 was flatly wrong for a device whose setting was empty and which the same file
 warned about twice.
 
-**Establishing a boot boundary from artefacts.** Both syslog counters are
-cumulative since the device booted, so an argument from either is worthless
+**Establishing a boot boundary from artefacts.** Every counter the firmware
+keeps is cumulative since the device booted, so an argument from one is worthless
 across a reboot, and nothing on the REST surface answers "has this device
 rebooted". The free-heap low-water mark does: `min_ever_free` from
 `GET /v1/machine:heap` (OBS-6.2) never rises within a boot, so a reading higher
@@ -1998,8 +2001,9 @@ measurable from the receiving side. Four independent causes:
   A burst loses an unbounded block.
 - Output is throttled to about 200 lines per second by a 5ms delay after each
   sent line in `Syslog::forwardLogging`.
-- `Syslog::failed_sends` counts send errors. Until OBS-9.2 nothing read it, so
-  a send failure left no trace anywhere.
+- `Syslog::failed_sends` counts send errors and nothing reads it, so a send
+  failure leaves no trace in a run's artefacts. Reading it over REST was built
+  and rejected; see OBS-9.2 for the measurements behind that.
 
 **OBS-7.12** [P5] A line's receive time lags the moment the firmware printed it
 by an unbounded amount, so attributing a line to a check by interval is
@@ -3849,21 +3853,37 @@ the assertion text (OBS-7.15). A fix flushes the syslog buffer synchronously
 from inside `vAssertCalled` rather than relying on the task. Firmware work in
 `software/system/assert.c` and `software/network/syslog.cc`.
 
-**OBS-9.2** [P6] Expose `Syslog::failed_sends` and `Syslog::overflowed`, so a
-run can tell a silently lossy link from a quiet device (OBS-7.11). Neither can
-be reported through the log itself without risking a loop, so `GET /v1/info`
-carries them as `syslog_failed_sends` and `syslog_overflows`.
+**OBS-9.2** [P6, rejected] Expose `Syslog::failed_sends` and
+`Syslog::overflowed` on `GET /v1/info`, so a run can tell a silently lossy link
+from a quiet device (OBS-7.11). Built, measured, and removed. It is written down
+here because the ambiguity it addresses is real and someone will propose it
+again.
 
-The harness has to read them or the firmware change is inert. The `ident` check
-of every health sweep already reads `/v1/info`, so it carries both as figures
-on its health record at no extra request, and the report says per target
-whether each counter moved over the run and which sweep first saw it move. They
-are cumulative since the device booted, so one value per sweep in a table cell
-would answer nothing a reader asks.
+The argument for it is epistemic: a short or empty device log is ambiguous,
+because nothing else on the network separates a device that had little to say
+from a device whose datagrams were refused or whose buffer overflowed.
 
-They never decide a verdict. A firmware that does not carry them is older
-rather than unhealthy, and a device that dropped a line of its own log has not
-failed anything a run is testing.
+Three measurements from this branch's own runs decide against it.
+
+- The one time this ambiguity arose on hardware, the counters answered nothing.
+  A run collected zero lines from two of its three targets, and the `ident`
+  sweep read `syslog_failed_sends` 0 and `syslog_overflows` 0 on all 24 sweeps
+  for both. Zero and zero says a send path did not run, which zero collected
+  lines already said. Why it did not run is the only thing worth knowing, and
+  the counters cannot say: `Syslog::init` returning false and `forwardLogging`
+  terminating at `socket()` or `connect()` produce identical artefacts.
+- The evidence that would separate those two cases is structurally out of
+  reach, whatever `/v1/info` carries: both print their diagnosis into the
+  buffer that is not being forwarded. See OBS-7.21.
+- Nothing in the harness acts on either number. No verdict, no retry and no
+  recovery reads them, so their whole effect is a sentence in a report.
+
+The cost of not having them is accepted and stated rather than hidden: a device
+that says nothing is not distinguishable from a device whose datagrams were
+refused, and the report shows the silence with no cause attached. That is
+OBS-7.15's rule applied to a second case: an abrupt end, or an absence, of a
+device's log is a signal in its own right, and syslog collection is best effort
+by design, so a lost line costs a run nothing it was testing.
 
 **OBS-9.3** [P6, optional] Move the `custom_outbyte` assignment earlier in
 `ultimate_main`, so the product version banner and the init-function output
