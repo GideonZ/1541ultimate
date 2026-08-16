@@ -2082,6 +2082,41 @@ def run_reentry_test(session: MonitorSession) -> None:
     ensure_view(session, "HEX ")
 
 
+# The two popups `Z` can raise, from MachineMonitor's `case 'z'`: the monitor
+# refuses when the backend's freezer is not reachable from the interface the
+# monitor is being driven through.
+FREEZE_REFUSAL_MARKERS = ("FREEZE ONLY IN OVERLAY MODE", "FREEZE UNAVAILABLE")
+
+
+def freeze_refusal_on_screen(snapshot: Snapshot) -> str:
+    """Which freeze refusal is on screen, or an empty string for none."""
+    text = snapshot.text()
+    for marker in FREEZE_REFUSAL_MARKERS:
+        if marker in text:
+            return marker
+    return ""
+
+
+def assert_no_freeze_popup(session: MonitorSession, context: str) -> None:
+    """Require that no freeze refusal is still holding the keyboard.
+
+    `monitor_is_on_screen` cannot carry this. It is `find_any_status_line`, and
+    a popup covers the middle of the screen while the header and the status
+    line stay visible underneath, so it reads True for the monitor and for the
+    monitor under a modal alike. Several checks depend on exactly that: the
+    machine-shortcut check opens the bookmark popup on purpose and then uses
+    `monitor_is_on_screen` to prove `C=+R` did not leave the monitor from under
+    it. The predicate means what its name says, and this is the assertion that
+    was missing beside it.
+    """
+    marker = freeze_refusal_on_screen(session.capture())
+    if marker:
+        raise Failure(
+            f"{context}: the {marker!r} popup is still open. A check dismisses "
+            f"what it raised, so that the next key reaches the monitor rather "
+            f"than the popup")
+
+
 def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
     """`Z` stops and releases the C64, on a machine whose freezer it can reach.
 
@@ -2100,10 +2135,16 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
                 return True
         return False
 
-    screen = session.send_char("Z")
-    text = screen.text()
-    if "FREEZE" in text and "UNAVAILABLE" in text or "ONLY IN OVERLAY" in text:
+    # Settled, because the branch taken below is decided from this capture.
+    # An unsettled one can be read before the refusal popup has drawn, and then
+    # the refusal is missed and the jiffy oracle runs against a machine the
+    # monitor never froze.
+    screen = session.send_char("Z", settle=True)
+    if freeze_refusal_on_screen(screen):
         session.send_key("ENTER", settle=True)
+        # What this check raised, this check clears. Otherwise the popup owns
+        # the keyboard and the next check loses its first keystroke to it.
+        assert_no_freeze_popup(session, "after dismissing the freeze refusal")
         snapshot = wait_until(session, monitor_is_on_screen)
         if not monitor_is_on_screen(snapshot):
             raise Failure(
@@ -2117,10 +2158,15 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
                "exercised under --mode freeze, not here")
         return
 
+    # No refusal, so the monitor took the freeze path and the jiffy clock is a
+    # meaningful oracle. Asserted rather than assumed: a refusal on screen here
+    # means the freeze did not happen, whatever the jiffy is doing, and the
+    # jiffy cannot tell a frozen machine from one that is merely not counting.
+    assert_no_freeze_popup(session, "Z reported no refusal")
     if jiffy_advances():
         raise Failure(
             "Z did not stop the C64: the jiffy clock at $00A2 kept advancing")
-    session.send_char("Z")
+    session.send_char("Z", settle=True)
     if not jiffy_advances():
         raise Failure(
             "Z did not release the C64: the jiffy clock at $00A2 stayed still")
@@ -2128,6 +2174,7 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
     if not monitor_is_on_screen(snapshot):
         raise Failure(
             f"the monitor did not survive a freeze and release\n{snapshot.text()}")
+    assert_no_freeze_popup(session, "after Z released the machine")
     detail("Z stopped the C64 and released it again, with the jiffy clock at "
            "$00A2 as the oracle")
 
@@ -3885,43 +3932,63 @@ def assert_interface_shortcut_works_outside_the_monitor(
         ensure_monitor_open(session)
 
 
-def assert_reset_shortcuts_inert_outside_the_monitor(
-        session: MonitorSession, rest_host: str, mode: str) -> None:
-    """Neither shortcut does anything from the file browser.
+def assert_reset_shortcuts_from_the_file_browser(
+        session: MonitorSession, rest_host: str, live_host: str,
+        mode: str) -> None:
+    """From the file browser, `C=+X` does nothing and `C=+R` resets the machine.
 
-    The reset is a case in `MachineMonitor::handle_key` and nothing else
-    answers KEY_CTRL_R, so outside the monitor the key has no owner. This is
-    also where the one behaviour change outside the monitor shows: C=+R used
-    to carry $12, which is KEY_DOWN, so it moved the browser cursor. The row
-    assertion below is what tells the two apart, and it runs on the transports
-    that can report which row is marked.
+    `C=+R` is answered in two places: `MachineMonitor::handle_key`, and
+    `TreeBrowser::handle_key`, which dispatches the same `MENU_C64_RESET` that
+    the task menu's own "Reset C64" uses. `C=+X` is bound nowhere and has to
+    stay inert, because both keymaps still produce its code, $18.
+
+    This also carries the guard against the $12 aliasing regression, and the
+    guard is stronger here than the cursor-row comparison it replaces. A key
+    read as `KEY_DOWN` moves the browser cursor and does not reset the machine,
+    so requiring `C=+R` to clear the sentinel rules that out on its own. The
+    row comparison stays on `C=+X`, which must still move nothing, and it runs
+    only on the transports that can report which row is marked.
     """
     leave_monitor_fully(session)
     before = back_out_to_the_bare_browser(session)
     before_row = None if mode == MODE_TELNET else session.backend.selected_row()
 
-    for key in ("CBM_R", "CBM_X"):
-        session.send_key(key, expect_redraw=False)
-        after = wait_until(session, monitor_is_on_screen, timeout=2.0)
-        if monitor_is_on_screen(after):
+    # C=+X: bound to nothing since the shortcut moved to C=+R.
+    session.send_key("CBM_X", expect_redraw=False)
+    after = wait_until(session, monitor_is_on_screen, timeout=2.0)
+    if monitor_is_on_screen(after):
+        raise Failure(
+            f"C=+X opened the monitor from the file browser; it is bound to "
+            f"nothing now\n{after.text()}")
+    if after.text() != before.text():
+        raise Failure(
+            f"C=+X changed the file browser, which does not answer it\n"
+            f"before:\n{before.text()}\nafter:\n{after.text()}")
+    if before_row is not None:
+        after_row = session.backend.selected_row()
+        if after_row != before_row:
             raise Failure(
-                f"{key} opened the monitor from the file browser; it is the "
-                f"monitor's own key\n{after.text()}")
-        if after.text() != before.text():
-            raise Failure(
-                f"{key} changed the file browser, which owns neither "
-                f"shortcut\nbefore:\n{before.text()}\nafter:\n{after.text()}")
-        if before_row is not None:
-            after_row = session.backend.selected_row()
-            if after_row != before_row:
-                raise Failure(
-                    f"{key} moved the browser cursor from row {before_row} to "
-                    f"{after_row}. KEY_CTRL_R is $BA so that nothing reads it "
-                    f"as KEY_DOWN")
-        if not reset_sentinel_survives(rest_host):
-            raise Failure(
-                f"{key} reset the C64 from the file browser: the sentinel at "
-                f"${RESET_SENTINEL_ADDRESS:04X} was cleared")
+                f"C=+X moved the browser cursor from row {before_row} to "
+                f"{after_row}; nothing answers $18 now")
+    if not reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"C=+X reset the C64 from the file browser: the sentinel at "
+            f"${RESET_SENTINEL_ADDRESS:04X} was cleared")
+
+    # C=+R: resets the machine from the browser, the same action the task menu
+    # offers. The key can close the on-device UI, because MENU_C64_RESET
+    # releases the user interface's hold on the machine before resetting it.
+    write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
+    send_key_that_may_close_the_ui(session, "CBM_R")
+    deadline = time.time() + 15.0
+    while time.time() < deadline and reset_sentinel_survives(rest_host):
+        time.sleep(0.2)
+    if reset_sentinel_survives(rest_host):
+        raise Failure(
+            f"C=+R did not reset the C64 from the file browser: the sentinel "
+            f"at ${RESET_SENTINEL_ADDRESS:04X} survived. A key still carrying "
+            f"$12 would move the browser cursor and leave it intact")
+    assert_machine_is_running(live_host, "C=+R from the file browser")
 
     ensure_monitor_open(session)
     snapshot = wait_until(session, monitor_is_on_screen)
@@ -3949,8 +4016,9 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
     ensure_view(session, "HEX ")
     write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
 
-    # 0. Outside the monitor neither key has an owner.
-    assert_reset_shortcuts_inert_outside_the_monitor(session, rest_host, mode)
+    # 0. From the file browser: C=+X has no owner, C=+R resets the machine.
+    assert_reset_shortcuts_from_the_file_browser(
+        session, rest_host, live_host, mode)
     ensure_view(session, "HEX ")
 
     # 1. The old shortcut is inert: the monitor stays and the machine keeps the

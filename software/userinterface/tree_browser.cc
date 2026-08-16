@@ -19,6 +19,7 @@
 #include "assembly_search.h"
 #include "monitor_init.h"
 #include "subsys.h"
+#include "c64.h"        // MENU_C64_RESET, for the C=+R reset shortcut
 
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
@@ -465,6 +466,30 @@ int TreeBrowser :: handle_key(int c)
             reset_quick_seek();
             ret = swap_interface_type(user_interface);
             break;
+        case KEY_CTRL_R: {
+            // C=+R resets the C64 from the browser, the same key the machine
+            // code monitor uses for it. This is a keyboard route to an action
+            // the browser already offers: C64_Subsys registers it as the task
+            // menu's "Reset C64", and the REST route issues the same command.
+            //
+            // No ownership handling belongs here. MENU_C64_RESET releases the
+            // user interface's hold on the machine, unfreezes it and resets
+            // it, in that order, inside C64_Subsys::executeCommand. The
+            // machine code monitor open-codes that same order only because it
+            // has to return an exit code and delete itself before the reset
+            // can happen, which the browser has no equivalent of.
+            //
+            // There is no confirmation, for the same reason C=+I has none: the
+            // task menu's own Reset C64 is on this screen and unconfirmed, so
+            // guarding the keyboard route more heavily than the menu route to
+            // the identical action would be inconsistent.
+            reset_quick_seek();
+            SubsysCommand *cmd = new SubsysCommand(user_interface, SUBSYSID_C64,
+                                                   MENU_C64_RESET, 0);
+            cmd->execute();   // deletes itself; see SubsysCommand::execute
+            ret = (int)(user_interface->menu_response_to_action);
+            break;
+        }
         case KEY_CTRL_O:
             reset_quick_seek();
             state->refresh = true;
