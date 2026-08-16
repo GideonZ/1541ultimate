@@ -1454,13 +1454,12 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
     "CBM_9": b"\x1b9",
-    # KEY_CTRL_R is $BA, and SocketStream::get_char returns (int) of a plain
-    # char, so a Telnet session cannot carry the code as a literal byte.
-    # keyboard_vt100.cc getch() decodes ESC followed by $12, the Ctrl+R byte,
-    # into it. The terminator is a control byte rather than the letter, because
-    # the reset is destructive and unconfirmed and ESC-then-R is a sequence a
-    # user types on purpose; see the comment on that case.
-    "CBM_R": b"\x1b\x12",
+    # One keystroke, the same as on a USB keyboard: Ctrl+R is the byte $12,
+    # which keyboard_vt100.cc getch() maps to KEY_CTRL_R. It does not collide
+    # with the cursor, because a terminal's down arrow arrives as ESC [ B and
+    # is decoded separately; a bare $12 only comes from someone pressing
+    # Ctrl+R.
+    "CBM_R": b"\x12",
     # C=+X used to be the reset shortcut and its code, $18, is plain ASCII, so
     # the VT100 driver passes it through unchanged (getch(), e_esc_idle case).
     # No monitor handler claims it now.

@@ -31,6 +31,29 @@ int Keyboard_VT100 :: getch()
         }
 		if (charin == '\e')
 			escape_state = e_esc_escape;
+		else if (charin == 0x12)
+			// Ctrl+R, the monitor's reset shortcut, as one keystroke.
+			//
+			// 0x12 is also the value of KEY_DOWN, and passing it through
+			// unchanged is what made Ctrl+R move the cursor down on a Telnet
+			// session. The two are distinguishable here even though they are
+			// not further up: a terminal's down arrow arrives as ESC [ B and
+			// is decoded by the e_esc_bracket case below, so the only thing
+			// that produces a bare 0x12 is somebody actually holding Ctrl and
+			// pressing R. Mapping it to KEY_CTRL_R therefore costs the cursor
+			// nothing and gives this transport the same single keystroke the
+			// USB keyboard has.
+			//
+			// Flow control cannot reach this either. The bytes a terminal
+			// sends unprompted are DC1 at 0x11 and DC3 at 0x13, XON and XOFF.
+			// DC2 at 0x12 is not used that way.
+			//
+			// All three transports converge on KEY_CTRL_R, 0xBA, by the time
+			// the monitor sees the key: Telnet by this translation, the C64
+			// and USB keyboards by allocation in their keymaps. The keymaps
+			// cannot simply use 0x12, because there it would alias KEY_DOWN
+			// for every screen in the user interface.
+			ret = KEY_CTRL_R;
 		else  // -1 is also else
 			ret = charin;
 		break;
@@ -50,25 +73,6 @@ int Keyboard_VT100 :: getch()
 		} else if (charin == 'b' || charin == 'B') {
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
-		} else if (charin == 0x12) {
-			// C=+R, the monitor's reset shortcut. KEY_CTRL_R is 0xBA, and
-			// SocketStream::get_char returns (int) of a plain char, so a byte
-			// above 0x7F cannot be sent as itself over a Telnet session; an
-			// escape sequence is the only way this transport can reach the key.
-			//
-			// The terminating byte is 0x12, Ctrl+R, and not the letter R as it
-			// is for C=+B above. The reset is destructive and has no
-			// confirmation on any interface, so it has to take a sequence a
-			// user cannot arrive at while meaning something else. Two
-			// properties of this driver make the letter form unsafe: an escape
-			// that finds no byte yet leaves escape_state at e_esc_escape
-			// indefinitely, so a pending ESC waits for whatever is typed next
-			// however much later; and ESC is the monitor's Back key while R
-			// starts Range, so "back out a layer, then start a range" is a
-			// sequence a user types on purpose. No terminal emits a control
-			// byte straight after ESC, so this form has no such neighbour.
-			escape_state = e_esc_idle;
-			ret = KEY_CTRL_R;
 		} else {
 			if (charin != '\e')
 				escape_state = e_esc_idle;
