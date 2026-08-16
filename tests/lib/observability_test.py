@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -1360,6 +1361,38 @@ def a_harness_edited_mid_run_is_reported() -> str:
     expect("and the restored tree hashes as it did", runner.harness_hash(),
            before)
     return f"{before} changed and came back"
+
+
+@case(1, "OBS-3.15")
+def a_device_error_cannot_be_read_as_a_tag() -> str:
+    """Text the device or the transport produced never becomes markup.
+
+    The timeline quotes what a failed request answered, and those words are
+    whatever they are: `urllib` reports a failed lookup as
+    `<urlopen error [Errno -2] Name or service not known>`. Interpolated bare
+    into Markdown a renderer reads the angle brackets as a tag and swallows
+    the line, which is both the one thing OBS-3.15 forbids and the loss of the
+    one sentence a reader needs. Found in this branch's own gate report, where
+    two timeline lines carried it.
+    """
+    generator = load_report_tool()
+    text = generator.describe_action({
+        "method": "GET", "path": "/v1/machine:menu_screen", "status": 500,
+        "retries": 3,
+        "error": "<urlopen error [Errno -2] Name or service not known>"})
+    if "`<urlopen error" not in text:
+        raise Failure(f"the error is not in a code span: {text!r}")
+    stripped = re.sub(r"`[^`]*`", "", text)
+    tags = re.findall(r"<(?!!--)[a-zA-Z/][^>]*>", stripped)
+    if tags:
+        raise Failure(f"the line still reads as markup: {tags}")
+    # And it stays one line, so the timeline's one-line-per-event rule holds
+    # even when the device answers with a pretty-printed body.
+    many = generator.describe_action({
+        "method": "PUT", "path": "/v1/machine:reset", "status": 500,
+        "error": "{\n  \"errors\" : [ \"no\" ]\n}"})
+    expect("one line", many.count("\n"), 0)
+    return "the error is quoted, and it is one line"
 
 
 @case(1, "OBS-17.3", "OBS-3.22")

@@ -2134,7 +2134,12 @@ def describe_action(action: dict) -> str:
     if action.get("retries"):
         text += f" after {action['retries']} attempts"
     if action.get("error"):
-        text += f": {redact(str(action['error']))}"
+        # In a code span, because this is the device's or the transport's own
+        # words and they contain whatever they contain. `urllib` reports a
+        # failed lookup as `<urlopen error ...>`, and a renderer reads a bare
+        # angle bracket as a tag and swallows the line, which is the one thing
+        # OBS-3.15 forbids and the one place a reader most needs the text.
+        text += f": `{one_line(redact(str(action['error'])))}`"
     return one_line(redact(text))
 
 
