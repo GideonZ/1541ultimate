@@ -4020,6 +4020,10 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
     assert_reset_shortcuts_from_the_file_browser(
         session, rest_host, live_host, mode)
     ensure_view(session, "HEX ")
+    # That step ends with a real reset, which is what cleared the sentinel, so
+    # the steps below start from a fresh one. Without this they would read the
+    # browser reset's own evidence and report it against the next key.
+    write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
 
     # 1. The old shortcut is inert: the monitor stays and the machine keeps the
     #    boot it was already on.
