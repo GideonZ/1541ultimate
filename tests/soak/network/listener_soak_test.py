@@ -37,6 +37,7 @@ from typing import List, Optional
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import targets
 from report import Failure, check, check_ok, check_start, suite_fail, suite_ok
 
 
@@ -55,8 +56,17 @@ DEGRADATION_FACTOR = 4.0
 
 
 def rest_latency(host: str, password: Optional[str], timeout: float) -> float:
+    """How long /v1/version takes on the device under test.
+
+    Every surface this suite touches - REST, Telnet, FTP - is served by the
+    device under test, so each one resolves the target token to that machine.
+    `host` is whatever the runner passed, and for a cartridge that is
+    `u2@c64u`, which is not a name anything can resolve. See
+    tests/lib/targets.py.
+    """
     headers = {"X-Password": password} if password else {}
-    request = urllib.request.Request(f"http://{host}/v1/version", headers=headers)
+    request = urllib.request.Request(
+        f"http://{targets.device_of(host)}/v1/version", headers=headers)
     start = time.monotonic()
     with urllib.request.urlopen(request, timeout=timeout) as response:
         response.read()
@@ -84,7 +94,8 @@ def abandon(host: str, port: int, count: int) -> int:
     opened = 0
     for _ in range(count):
         try:
-            s = socket.create_connection((host, port), timeout=4.0)
+            s = socket.create_connection(
+                (targets.device_of(host), port), timeout=4.0)
         except OSError:
             continue  # service at capacity right now; that is what we are measuring
         opened += 1
@@ -99,7 +110,8 @@ def abandon(host: str, port: int, count: int) -> int:
 
 def accepts_connection(host: str, port: int, timeout: float = 6.0) -> bool:
     try:
-        s = socket.create_connection((host, port), timeout=timeout)
+        s = socket.create_connection(
+            (targets.device_of(host), port), timeout=timeout)
     except OSError:
         return False
     s.close()

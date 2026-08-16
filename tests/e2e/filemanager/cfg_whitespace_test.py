@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """E2E: a hand-edited CFG may space its names and values how a person would.
 
-Enum labels are padded so the menu can right align them, and the Audio Mixer is
+Enum labels are padded so the menu can right align them, and a volume ladder is
 the plainest example on any machine: its values are " 0 dB", "-6 dB", "+3 dB".
 A .cfg the firmware wrote carries that padding verbatim, but nobody typing one
 by hand writes "Vol Master= 0 dB" with the leading space, and before this change
 "Vol Master=0 dB" was answered with "not a valid choice" and the load failed.
+
+Which store holds that ladder is asked of the machine rather than assumed: an
+Ultimate 64 serves it as "Audio Mixer", an Ultimate II+L as "Audio Output
+Settings". See ConfigsApi.find_padded_enum.
 
 Two checks, both through the real loader on real hardware:
 
@@ -32,13 +36,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from api import UltimateApi
+import machine as machine_lib
+import targets
 import ftp as ftp_lib
-from report import Failure, check, detail, format_exception, section, suite_fail, suite_ok
+from report import (Failure, check, check_skip, check_start, detail,
+                    format_exception, section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
-
-# A store every machine has, whose enum labels are padded and contain a space.
-STORE = "Audio Mixer"
-ITEM = "Vol Master"
 
 CFG_NAME = "cfg-space-e2e.cfg"
 
@@ -48,24 +51,24 @@ TELNET_ENTRY_ROWS = range(2, 23)
 TELNET_STATUS_ROW = 23
 
 
-def padded_value(api: UltimateApi) -> str:
+def padded_value(api: UltimateApi, store: str, item: str) -> str:
     """The value carrying leading padding, which is what makes this test mean
-    something. On the Audio Mixer that is " 0 dB", padded to the width of the
+    something. On a volume ladder that is " 0 dB", padded to the width of the
     negative values beside it."""
-    values = api.configs.item(STORE, ITEM).get("values", [])
+    values = api.configs.item(store, item).get("values", [])
     for value in values:
         if isinstance(value, str) and value != value.strip() and " " in value.strip():
             return value
-    raise Failure(f"{STORE}/{ITEM} has no padded value to test with: {values!r}")
+    raise Failure(f"{store}/{item} has no padded value to test with: {values!r}")
 
 
-def plain_value(api: UltimateApi, avoid: str) -> str:
+def plain_value(api: UltimateApi, store: str, item: str, avoid: str) -> str:
     """A value with no padding but an inner space, e.g. "-6 dB"."""
-    values = api.configs.item(STORE, ITEM).get("values", [])
+    values = api.configs.item(store, item).get("values", [])
     for value in values:
         if isinstance(value, str) and value != avoid and value == value.strip() and " " in value:
             return value
-    raise Failure(f"{STORE}/{ITEM} has no unpadded value to test with: {values!r}")
+    raise Failure(f"{store}/{item} has no unpadded value to test with: {values!r}")
 
 
 def upload(host: str, password: str, body: str) -> None:
@@ -101,7 +104,22 @@ def main() -> int:
     args = parser.parse_args()
 
     api = UltimateApi(args.host, args.password or None, args.timeout)
-    original = api.configs.current(STORE, ITEM)
+    info = api.info()
+    device = machine_lib.identify(
+        targets.device_of(args.host),
+        lambda: (info.product, info.firmware_version))
+    if device.skip_without_fix(machine_lib.CFG_LOADS_UNKNOWN_AND_PADDED,
+                               "a CFG written the way a person would loads and applies"):
+        suite_ok("cfg_whitespace_test")
+        return 0
+    chosen = api.configs.find_padded_enum()
+    if chosen is None:
+        check_start("a CFG written the way a person would loads and applies")
+        check_skip("no store this machine serves has an enum whose labels are padded")
+        suite_ok("cfg_whitespace_test")
+        return 0
+    store, item = chosen
+    original = api.configs.current(store, item)
     browser = make_browser(
         args.mode, args.host, args.password or None, args.timeout,
         entry_rows=ENTRY_ROWS, status_row=STATUS_ROW, telnet_port=args.telnet_port,
@@ -110,30 +128,30 @@ def main() -> int:
 
     try:
         section("an unpadded value matches its padded label")
-        wanted = padded_value(api)
+        wanted = padded_value(api, store, item)
         # Start somewhere else, so applying the file is what moves it.
-        api.configs.set(STORE, ITEM, plain_value(api, wanted))
-        with check(f"a CFG saying {ITEM}={wanted.strip()!r} loads and applies"):
+        api.configs.set(store, item, plain_value(api, store, item, wanted))
+        with check(f"a CFG saying {item}={wanted.strip()!r} loads and applies"):
             # Written the way a person would: no leading padding, but the space
             # inside the label kept, because that one is part of the value.
-            upload(args.host, args.password, f"[{STORE}]\n{ITEM}={wanted.strip()}\n")
+            upload(args.host, args.password, f"[{store}]\n{item}={wanted.strip()}\n")
             load_cfg(browser)
-            now = api.configs.current(STORE, ITEM)
+            now = api.configs.current(store, item)
             if now != wanted:
                 raise Failure(
-                    f"{STORE}/{ITEM} is {now!r}, expected the padded label {wanted!r}")
+                    f"{store}/{item} is {now!r}, expected the padded label {wanted!r}")
             detail(f"file said {wanted.strip()!r}, device holds {now!r}")
 
         section("spaces around the name and the value are ignored")
-        spaced = plain_value(api, wanted)
-        api.configs.set(STORE, ITEM, wanted)
+        spaced = plain_value(api, store, item, wanted)
+        api.configs.set(store, item, wanted)
         with check("a CFG with spaces around both loads and applies"):
-            upload(args.host, args.password, f"[{STORE}]\n  {ITEM}  =  {spaced}  \n")
+            upload(args.host, args.password, f"[{store}]\n  {item}  =  {spaced}  \n")
             load_cfg(browser)
-            now = api.configs.current(STORE, ITEM)
+            now = api.configs.current(store, item)
             if now != spaced:
-                raise Failure(f"{STORE}/{ITEM} is {now!r}, expected {spaced!r}")
-            detail(f"file said '  {ITEM}  =  {spaced}  ', device holds {now!r}")
+                raise Failure(f"{store}/{item} is {now!r}, expected {spaced!r}")
+            detail(f"file said '  {item}  =  {spaced}  ', device holds {now!r}")
 
         suite_ok("cfg_whitespace_test")
         return 0
@@ -145,7 +163,7 @@ def main() -> int:
         return 1
     finally:
         try:
-            api.configs.set(STORE, ITEM, original)
+            api.configs.set(store, item, original)
         except Exception:
             pass
         try:

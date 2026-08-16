@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
-# run-tests - hardware test runner for one Ultimate device.
+# run-tests - hardware test runner for Ultimate devices.
 #
 # Runs the E2E gate by default, and can additionally or instead run the perf
 # benchmarks and the soak tests. Every suite drives the real firmware over
 # REST/FTP/Telnet, so a device has to be reachable and idle. Suites run
 # sequentially; the exit status is non-zero if any of them fails.
 #
+# One target runs here. Several targets run as several of these, one child
+# process each, scheduled so that no two of them hold the same physical
+# machine at once. Nothing below run_targets knows about more than one device.
+#
 # Reports through tests/lib/report.py, the same module every suite calls, so
 # harness lines and suite lines follow one set of rules.
 
 import argparse
+import dataclasses
+import hashlib
+import http.client
+import json
 import os
+import platform
+import re
+import selectors
 import shlex
+import shutil
+import signal
+import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -22,9 +37,27 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
 import health  # noqa: E402  (needs tests/lib on sys.path first)
+import interactions  # noqa: E402
+import machine as machine_lib  # noqa: E402  (needs tests/lib first)
+import pacing  # noqa: E402
 import report  # noqa: E402
+import targets as targets_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
+
+# What a device call can raise past tests/lib/rest.py's own handler. rest.py
+# catches OSError, TimeoutError and URLError; an http.client.HTTPException that
+# is not an OSError, such as a truncated response from a device being reset
+# mid-read, is not caught there, and a malformed body reaches a decoder as a
+# TypeError or a ValueError. A capture taken from a device that has just been
+# taken down meets all of these, and none of them may end the run.
+DEVICE_ERRORS = (Failure, OSError, TimeoutError, ValueError, TypeError,
+                 http.client.HTTPException)
+
+sys.path.insert(0, os.path.join(ROOT, "tests", "e2e", "lib"))
+import recorder as recorder_lib  # noqa: E402
+import screens  # noqa: E402  (needs tests/e2e/lib on sys.path first)
+import syslog_collector  # noqa: E402
 
 CATEGORIES = ("e2e", "perf", "soak")
 MODES = ("overlay", "freeze", "telnet")
@@ -40,12 +73,23 @@ UI_STATE_TOOL = os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py")
 # often to ask. Comfortably past the roughly 18 seconds the device needs to
 # free an abandoned HTTP connection, so being busy is not mistaken for gone.
 DEVICE_RECOVERY_BUDGET_SECONDS = 60.0
+
+# How long the check after a suite's last attempt waits for the device. Long
+# enough that a device which is merely busy is not called gone, because that
+# answer abandons the remaining suites; short enough that a run with several
+# failed suites does not spend a minute on each one deciding something the
+# next suite's precondition decides anyway.
+LAST_ATTEMPT_HEALTH_BUDGET_SECONDS = 10.0
 DEVICE_RECOVERY_POLL_SECONDS = 2.0
 # The recovery probe gets its own short per-request timeout rather than the
 # run's --timeout. The shared client retries a GET three times, so at the
 # 30 second default one probe could outlast the whole budget on a device that
 # accepts connections but never answers, and the budget would mean nothing.
 DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS = 5.0
+# How long the recorder's own requests wait. Short, because both of them are
+# issued from a loop that has to keep draining the device's streams, and short
+# again because a failure there is an answer: the next slot asks again.
+RECORDER_TIMEOUT_SECONDS = 2.0
 # After the recovery command has run, the device is booting rather than busy,
 # so it gets its own longer budget to come back in.
 POST_RECOVERY_BUDGET_SECONDS = 180.0
@@ -57,13 +101,38 @@ DEFAULT_RECOVER_TIMEOUT_SECONDS = 900.0
 DEFAULT_RECOVER_MAX_PER_SUITE = 3
 DEFAULT_RECOVER_MAX_TOTAL = 10
 
+# What the recorder writes when nothing says otherwise. The rate is well below
+# the device's 50 Hz because the material is a screen that is static for
+# seconds at a time and then changes completely in one frame: encoding an
+# unchanged screen fifty times a second costs a reader nothing and costs the
+# host, which is a Raspberry Pi, everything. The keyframe interval bounds how
+# far a player decodes back when it steps backwards through a stretch where no
+# scene cut fired.
+RECORD_FPS = 10
+RECORD_KEYINT_SECONDS = 1.0
+
 # Exit statuses. Documented in --help and in tests/README.md, because a
 # programmatic caller reads these rather than the console output.
+# The exit status is a severity scale, and it is ordered, so `[ $? -le 2 ]`
+# means "I will tolerate a retry and a recovery" and reads as it says. A
+# caller comparing the status with an ordering operator is doing the right
+# thing, which is why the values are in this order rather than in the order
+# they were thought of.
 EXIT_OK = 0
-EXIT_SUITE_FAILED = 1
-EXIT_USAGE = 2
-EXIT_RECOVERED = 3
+EXIT_RETRIED = 1
+EXIT_RECOVERED = 2
+EXIT_SUITE_FAILED = 3
 EXIT_DEVICE_UNHEALTHY = 4
+# A usage error is not an outcome of a run, so it is not on the scale. 64 is
+# `EX_USAGE` from sysexits.h, which is the established value for exactly this
+# and is far enough above the scale that no threshold reaches it.
+EXIT_USAGE = 64
+
+# How many times a suite may run in total, counting the first. The flag counts
+# executions rather than retries, so this number and the highest `attempt`
+# value that can appear in the JSONL and the highest `attempt-<n>` directory
+# are one number with one meaning.
+DEFAULT_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -107,6 +176,17 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    # Also needs no device: the observability harness watches a run and by
+    # design cannot change a verdict, so nothing else notices when it breaks.
+    # A run whose report generator has stopped rendering fails here, rather
+    # than weeks later when somebody opens the artifact to diagnose something
+    # else and finds an empty document.
+    Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: the Telnet backend decides a redraw is over by
+    # watching the stream go quiet, and the three waits that do that cannot be
+    # told apart by watching a real device, which never produces them on
+    # demand. Scripted bursts can.
+    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", ""),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
@@ -136,6 +216,14 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Manual: loading a partial .cfg is supposed to leave the stores it does
+    # not name alone, and that no longer holds. Measured on a C64 Ultimate
+    # 1.2.0, a file naming one store listed nineteen in its loader
+    # diagnostics. The half that still holds, that such a file loads at all,
+    # stays in cfg-single-group above and in the gate.
+    Suite("e2e", "cfg-partial-effectuate",
+          "tests/e2e/filemanager/cfg_partial_effectuate_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", manual=True),
     # A CFG naming a store or item this machine does not have has to load
     # anyway: that is what a file from another Ultimate looks like.
     Suite("e2e", "cfg-unknown-items", "tests/e2e/filemanager/cfg_unknown_items_test.py",
@@ -240,6 +328,10 @@ class Result:
     device_unhealthy: bool = False
     # How many times the device had to be recovered around this suite.
     recoveries: int = 0
+    # How many times this suite ran, counting the first. Anything above one
+    # is a suite that failed and was run again, whatever made it fail, and it
+    # is what the retried exit status and the report's retry section read.
+    attempts: int = 1
 
 
 @dataclass
@@ -248,14 +340,793 @@ class Options:
     password: str
     timeout: str
     soak_profile: str
-    jsonl_dir: str
+    output_dir: str
     stop_on_fail: bool
     health_check: bool
-    retry: bool
+    # How many times a suite may run in total, counting the first.
+    attempts: int
     recover_command: str
     recover_max_per_suite: int
     recover_max_total: int
     recover_timeout: float
+    # Whether the suites spool the screens they read. Defaulted, because it is
+    # the only option here a caller can reasonably leave alone.
+    screens: bool = True
+
+
+def git_answer(*arguments: str) -> Optional[str]:
+    """One git query about this checkout, or None when git does not answer.
+
+    Run with the repository root as its working directory rather than with
+    whatever the operator started the run in: this checkout is frequently a
+    git worktree, so the process's own directory says nothing useful.
+
+    None and "" are different answers: `git status --porcelain` is empty for a
+    clean tree, and absent for a directory git will not talk about.
+    """
+    try:
+        completed = subprocess.run(("git",) + arguments, cwd=ROOT,
+                                   capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def run_identity(argv: Sequence[str], started: float) -> Dict[str, object]:
+    """What this run is a run of, for the `run` record.
+
+    A downloaded artifact has to say what produced it without a second file.
+    Three git calls, all cheap, all on the host, none reaching the device; a
+    checkout where git does not answer loses those fields rather than the run.
+    """
+    fields: Dict[str, object] = {
+        "host": socket.gethostname(),
+        "python": platform.python_version(),
+        # report.mask_secret has been told the password, so the record writer
+        # takes it out of this and out of every other field it writes.
+        "argv": list(argv),
+        "started": started,
+        # What this run assumed rather than proved. tests/lib/machine.py
+        # reports a check tagged with a fix its machine lacks as SKIP, and
+        # --assume-fix runs it anyway, so a reader who cannot see the
+        # assumptions cannot tell a suite that passed from one that skipped
+        # the part that would have failed.
+        #
+        # Read from the environment rather than from this process's flags,
+        # because that is what is in force: --assume-fix reaches a child run
+        # and every suite through ASSUME_ENV, so a child, and a run started
+        # with the variable already exported, both have assumptions and
+        # neither has the flag.
+        "assumptions": sorted(machine_lib.parse_assumptions(
+            os.environ.get(machine_lib.ASSUME_ENV, ""))),
+    }
+    commit = os.environ.get("GITHUB_SHA") or git_answer("rev-parse", "HEAD")
+    if commit:
+        fields["commit"] = commit
+    branch = os.environ.get("GITHUB_REF_NAME") or \
+        git_answer("rev-parse", "--abbrev-ref", "HEAD")
+    if branch:
+        fields["branch"] = branch
+    # The only join from a downloaded artifact back to the build page that
+    # produced it, and it comes from the environment alone: an identifier the
+    # runner generated for itself could not be traced back to anything, which
+    # is worse than none.
+    for name, variable in (("ci_run_id", "GITHUB_RUN_ID"),
+                           ("ci_run_attempt", "GITHUB_RUN_ATTEMPT")):
+        value = os.environ.get(variable)
+        if value:
+            fields[name] = value
+    status = git_answer("status", "--porcelain")
+    if status is not None:
+        # Not `dirty`: report.run_result already spends that name on the count
+        # of suites that left the UI outside its documented state, and naming
+        # one field twice with two meanings is worse than a longer name.
+        fields["worktree_dirty"] = bool(status)
+    tree = harness_hash()
+    if tree:
+        fields["harness"] = tree
+    return fields
+
+
+# What a run reads its own behaviour out of. Every suite is a separate process
+# started from the working tree, so these files are read while the run is in
+# progress rather than copied at the start.
+HARNESS_PATHS = ("run-tests", "tests", "tools")
+
+
+def harness_hash() -> str:
+    """One hash over the harness files this run reads, as they are on disk.
+
+    A suite is started from the working tree, so editing one of these files
+    while a run is in progress means the later suites ran different code from
+    the earlier ones. Nothing in the artefacts says so, and a reader cannot
+    tell such a run from a run of one revision. Measured here rather than
+    trusted: the hash is taken when the run starts and again when it ends, and
+    a run whose harness moved says so on its own record.
+
+    `git status --porcelain` cannot answer this. It lists which files are
+    modified, not what is in them, so editing a file that was already modified
+    leaves its output identical.
+
+    Tracked files only, because untracked ones are scratch: a run writing its
+    own output under the tree would otherwise report its harness as changing
+    every time it wrote a line.
+    """
+    listing = git_answer("ls-files", "-z", *HARNESS_PATHS)
+    if not listing:
+        return ""
+    digest = hashlib.sha256()
+    for name in sorted(listing.split("\0")):
+        if not name:
+            continue
+        digest.update(name.encode("utf-8", "replace"))
+        try:
+            with open(os.path.join(ROOT, name), "rb") as handle:
+                digest.update(handle.read())
+        except OSError:
+            # A tracked file that is not on disk is itself a difference, and
+            # naming it in the hash is what makes it one.
+            digest.update(b"\0missing")
+    return digest.hexdigest()[:16]
+
+
+# Anything a terminal reads as formatting rather than as text: the colour
+# escapes report.py emits, and the cursor and erase sequences a suite could
+# emit. Stripped on the way to a file so a saved log greps cleanly, and left
+# alone on the way to the console so the terminal keeps its colour.
+ANSI_ESCAPES = re.compile(
+    rb"\x1b\[[0-9;?]*[ -/]*[@-~]"        # CSI, which is what colour uses
+    rb"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC, terminated either way
+    rb"|\x1b[@-Z\\-_]")                   # a two-character escape
+
+
+def for_the_log(line: bytes) -> bytes:
+    """One console line as it is saved: no escapes, and no device password.
+
+    The console keeps its escapes so the terminal stays readable, and the file
+    loses them so it greps cleanly. The password goes from both copies of the
+    file because the artefacts leave the machine that produced them, and a
+    suite that printed the password it was given would otherwise put it in one.
+    """
+    line = ANSI_ESCAPES.sub(b"", line)
+    for secret in report.secrets():
+        line = line.replace(secret.encode("utf-8", "replace"),
+                            report.SECRET_MASK.encode())
+    return line
+
+
+class ConsoleCapture:
+    """Copy this process's console output into a file as well as showing it.
+
+    At the file-descriptor level rather than by replacing `sys.stdout`, because
+    the UI-state gate and the operator's recovery command are subprocesses that
+    inherit this process's stdout, and when a recovery fails its output is the
+    only record of why. A Python-level tee would miss both.
+
+    The console keeps its escapes and the file does not, so the terminal stays
+    readable and the saved log greps cleanly.
+    """
+
+    def __init__(self, path: str) -> None:
+        self.console_fd = os.dup(1)
+        self.handle = open(path, "wb")
+        read_fd, write_fd = os.pipe()
+        sys.stdout.flush()
+        os.dup2(write_fd, 1)
+        os.close(write_fd)
+        self._read_fd = read_fd
+        self._thread = threading.Thread(target=self._pump, name="run-log",
+                                        daemon=True)
+        self._thread.start()
+
+    def _pump(self) -> None:
+        pending = b""
+        while True:
+            try:
+                chunk = os.read(self._read_fd, 65536)
+            except OSError:
+                break
+            if not chunk:
+                break
+            os.write(self.console_fd, chunk)
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                self.handle.write(for_the_log(line) + b"\n")
+            self.handle.flush()
+        if pending:
+            self.handle.write(for_the_log(pending) + b"\n")
+        self.handle.flush()
+
+    def close(self) -> None:
+        """Put the console back and let the pump drain what is left."""
+        sys.stdout.flush()
+        # Restoring fd 1 drops the last reference to the pipe's write end, so
+        # the pump reads end-of-file and finishes what it has.
+        os.dup2(self.console_fd, 1)
+        self._thread.join(timeout=5)
+        os.close(self._read_fd)
+        self.handle.close()
+        os.close(self.console_fd)
+
+
+# The one console capture a process has, when it was asked for one.
+_CONSOLE: Optional[ConsoleCapture] = None
+
+
+def start_console_capture(path: str) -> None:
+    """Send this process's console output to `path` as well as to the console."""
+    global _CONSOLE
+    if _CONSOLE is None:
+        _CONSOLE = ConsoleCapture(path)
+
+
+def stop_console_capture() -> None:
+    global _CONSOLE
+    if _CONSOLE is not None:
+        _CONSOLE.close()
+        _CONSOLE = None
+
+
+def console_fd() -> int:
+    """The descriptor this run's console output started on.
+
+    While a capture is running fd 1 is a pipe into the run log, so a suite's
+    own lines go here instead: they belong in the suite's log rather than a
+    second time in the runner's.
+    """
+    return _CONSOLE.console_fd if _CONSOLE else 1
+
+
+def run_and_capture(command: List[str], environment: Dict[str, str],
+                    path: str, truncate: bool, console_fd: int) -> int:
+    """Run a suite, sending every line to the console and to `path`.
+
+    Three properties, each of which has to be held deliberately:
+
+    - The file is appended to across attempts and truncated on the first,
+      matching the per-suite JSONL rule, so a retried suite keeps every attempt.
+    - Stderr is merged into the same file, in order. A traceback interleaved
+      with the check line that produced it is the evidence, and two files would
+      lose the interleaving.
+    - The output is written as it arrives rather than at the end. A suite runs
+      for minutes, and both destinations need its lines while it is happening.
+
+    The console copy goes to the descriptor the run started with rather than
+    through this process's stdout, so a suite's lines land in the suite's own
+    log and not a second time in the runner's.
+    """
+    process = subprocess.Popen(command, env=environment,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+    with open(path, "wb" if truncate else "ab") as handle:
+        pending = b""
+        while True:
+            chunk = process.stdout.read1(65536)
+            if not chunk:
+                break
+            os.write(console_fd, chunk)
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                handle.write(for_the_log(line) + b"\n")
+            handle.flush()
+        if pending:
+            # A suite killed mid-line ends here, and the partial line is
+            # itself the answer, so it is kept rather than dropped.
+            handle.write(for_the_log(pending) + b"\n")
+    process.stdout.close()
+    return process.wait()
+
+
+# Set by the process that binds the device log port, so a child it starts
+# knows not to bind it as well.
+SYSLOG_OWNED_ENV = "E2E_SYSLOG_OWNED"
+
+# What the firmware sends to when the configured value carries no `:<port>`.
+# `Syslog::init` in software/network/syslog.cc.
+SYSLOG_DEVICE_DEFAULT_PORT = 514
+
+# The port the collector actually bound, exported to every suite the run
+# starts. The device-free gate is what uses it: a stub suite sends a datagram
+# into the running collector to prove the file it writes is the file the `log`
+# record names. The number cannot be chosen in advance, because two runs
+# starting at the same moment are handed the same one, which is what a
+# multi-target gate does by design. The collector binds first and says which
+# port it got.
+SYSLOG_PORT_ENV = "E2E_SYSLOG_PORT"
+
+# Every port the collector bound, comma separated. A bench that gives each
+# machine a port of its own has more than one, and a device pointed at a port
+# nothing is listening on is the failure `syslog_setting_problem` exists to
+# name, so the check needs the whole set rather than the default.
+SYSLOG_PORTS_ENV = "E2E_SYSLOG_PORTS"
+
+# How long the parent waits for a device to say which port it logs to. This
+# runs before the first suite and a device that does not answer costs the run
+# nothing but attribution by source address, so it is short.
+SYSLOG_SETTING_TIMEOUT_SECONDS = 5.0
+
+
+def syslog_ports(machines: Sequence[str], password: str) -> Dict[str, int]:
+    """Which port each machine's own configuration says it logs to.
+
+    Read, never written. `Syslog::init` runs once from `ultimate_main`, so the
+    value is boot-time state and writing it during a run does nothing until
+    the device reboots; a suite that changed it may have been testing exactly
+    that, and putting it back would delete that suite's finding. See OBS-7.3.
+
+    A port exactly one machine sends to is what lets the collector attribute a
+    datagram by the socket that received it rather than by its source address,
+    which is the only thing that works for a device logging from an interface
+    the run did not expect. A machine that does not answer, or names no port,
+    is left to the run's default port and to source-address attribution, which
+    is what every machine had before.
+    """
+    found: Dict[str, int] = {}
+    for machine in machines:
+        try:
+            api = UltimateApi(machine, password,
+                              SYSLOG_SETTING_TIMEOUT_SECONDS)
+            value = str(api.configs.get(syslog_collector.CONFIG_STORE,
+                                        syslog_collector.CONFIG_ITEM) or "")
+        except (Failure, OSError, TimeoutError, ValueError) as exc:
+            report.detail(f"device log:  {machine} did not say which port it "
+                          f"logs to ({report.format_exception(exc)}), so its "
+                          f"lines are attributed by source address")
+            continue
+        _host, _, port = value.rpartition(":")
+        if port.isdigit() and 0 < int(port) < 65536:
+            found[machine] = int(port)
+    return found
+
+
+def start_syslog(args: argparse.Namespace,
+                 wanted: Sequence[targets_lib.Target],
+                 directory: str = "") -> Optional[
+                     "syslog_collector.Collector"]:
+    """Open the device log collector for this run, or say why it did not open.
+
+    Started in the process that owns the whole run, because it binds one port
+    and maps source addresses to targets: it has to know every target and there
+    has to be exactly one of it. A collector that cannot start reports the
+    reason here, before any suite runs, rather than late in a run that has
+    already cost 15 to 30 minutes.
+    """
+    if not (args.syslog and args.output_dir):
+        return None
+    if os.environ.get(SYSLOG_OWNED_ENV):
+        # A child of a multi-target run. Exactly one process binds the port:
+        # two sockets on one unicast UDP port each get about half the
+        # datagrams and neither looks wrong. The child still checks its own
+        # device's setting, which is the device it owns.
+        return None
+    # The run's root, not one target's directory: the collector writes one
+    # file per machine under each target's own slug, so it is handed the tree
+    # it composes those paths against.
+    root = directory or args.output_dir
+    machines = sorted({machine for target in wanted
+                       for machine in target.log_hosts})
+    collector = syslog_collector.Collector(directory=root,
+                                           port=args.syslog_port)
+    opened = collector.bind(wanted, syslog_ports(machines, args.password))
+    for problem in collector.problems:
+        report.warn(f"device log: {problem}")
+    if not opened:
+        return None
+    report.detail(f"device log:  collecting on UDP "
+                  f"{', '.join(str(port) for port in collector.ports())}")
+    for token, entries in sorted(collector.elsewhere.items()):
+        for machine, where in entries:
+            report.detail(f"device log:  {token}'s {machine} logs to {where}, "
+                          f"which is that machine's own file")
+    # In this process's own environment, so every suite it starts inherits it
+    # through the copy run_one_attempt makes.
+    os.environ[SYSLOG_PORT_ENV] = str(collector.port)
+    os.environ[SYSLOG_PORTS_ENV] = ",".join(str(port)
+                                            for port in collector.ports())
+    for token, path in collector.files():
+        report.log_result(token, os.path.relpath(path, root),
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token),
+                          ports=collector.ports_of(token))
+    check_syslog_reachable(collector, machines, args.password)
+    return collector
+
+
+# How long the collector waits to hear a machine it has just provoked. Two
+# datagrams come back from a single `GET /v1/version` - the accept and the
+# request - and they cross a LAN, so this is generous rather than tight.
+SYSLOG_READY_SECONDS = 3.0
+
+
+def check_syslog_reachable(collector, machines: Sequence[str],
+                           password: str) -> List[str]:
+    """Say at startup which machines the collector cannot hear. Never raises.
+
+    A device whose log does not reach the collector produces an empty file and
+    nothing else, and that is indistinguishable from a device that had nothing
+    to say. Until this ran, the difference was only visible when the run ended,
+    which is 15 to 30 minutes after the point where it could have been fixed,
+    and OBS-1.2 is the requirement that a component says at startup what it
+    cannot do.
+
+    One `GET /v1/version` per machine is enough to provoke a line: measured on
+    a C64 Ultimate and an Ultimate II+L, that one request produces two, the
+    accepted connection and the request itself. So a machine that says nothing
+    within a few seconds of being asked something is a machine whose log is
+    not arriving, and the run says so while somebody can still act on it.
+
+    It names no cause. A setting pointing elsewhere, a forwarding task that
+    terminated at boot and a link dropping datagrams all produce this, and the
+    facts that separate them are elsewhere: the setting the run read, the two
+    counters on each ident sweep, and whether anything arrived from an address
+    no target claims, which this reports beside it because it is the one of
+    the three the collector itself knows.
+    """
+    silent: List[str] = []
+    for machine in machines:
+        try:
+            UltimateApi(machine, password,
+                        SYSLOG_SETTING_TIMEOUT_SECONDS).rest.request(
+                            "GET", "/v1/version")
+        except (Failure, OSError, TimeoutError, ValueError):
+            # A machine that does not answer REST is a problem the health
+            # sweep reports properly, and not this one's to duplicate.
+            continue
+    deadline = time.monotonic() + SYSLOG_READY_SECONDS
+    while time.monotonic() < deadline:
+        silent = [machine for machine in machines
+                  if not collector.heard(machine)]
+        if not silent:
+            break
+        time.sleep(0.1)
+    for machine in silent:
+        stranger = sum(collector.unknown_senders().values())
+        report.warn(f"device log: {machine} sent nothing when this run asked "
+                    f"it for /v1/version, so its log is not reaching the "
+                    f"collector on UDP "
+                    f"{collector.machine_ports.get(machine, collector.port)}"
+                    + (f"; {stranger} line(s) did arrive from an address no "
+                       f"target claims, which are in "
+                       f"{syslog_collector.UNKNOWN_SENDER_NAME}"
+                       if stranger else ""))
+    return silent
+
+
+def finish_syslog(collector) -> None:
+    """Stop the collector and record what it saw, including what it missed.
+
+    Three things a reader needs and only this knows: how much arrived, every
+    interval a device that had been logging went quiet, and any problem the
+    collector hit after it started. The last of those used to be reported only
+    at startup, so a file that became unwritable mid-run discarded the rest of
+    that device's log and said so nowhere.
+    """
+    already = len(collector.problems)
+    collector.stop()
+    gaps = collector.gaps()
+    for gap in gaps:
+        report.gap_result("syslog", gap["started"], gap.get("ended"),
+                          target=gap["target"], machine=gap["machine"],
+                          reason=f"no line from {gap['machine']}")
+    root = collector.directory
+    unknown = collector.unknown_senders()
+    for token, _path in collector.files():
+        if collector.observed(token):
+            continue
+        # Nothing at all from a device the run asked for a log from. Said
+        # once, here, because an empty file is otherwise indistinguishable
+        # from a device that had nothing to say.
+        #
+        # What is deliberately not said is why. Several causes produce this
+        # one shape - a setting that names somewhere else, a setting written
+        # during a run and not yet in force because `Syslog::init` reads it
+        # only at boot, a forwarding task that terminated at `socket()` or
+        # `connect()`, a link that dropped every datagram - and the run cannot
+        # tell them apart from here. `Syslog::init` and `forwardLogging` both
+        # print their failure, and both print it into the buffer that is not
+        # being forwarded, so the account of the failure is inside the thing
+        # that failed and no amount of collecting recovers it. A guess printed
+        # in a fixed format is read as a finding, so the warning states what
+        # was observed and names the facts that discriminate.
+        report.warn(f"device log: {token} sent no line at all during this run, "
+                    f"so its log is empty; the collector received "
+                    f"{collector.lines} line(s) in total on UDP "
+                    f"{', '.join(str(port) for port in collector.ports())}, "
+                    f"and this run expected its lines from "
+                    f"{', '.join(collector.addresses_of(token)) or 'no address'}"
+                    f". The setting this run read at both ends, and whether "
+                    f"anything reached {syslog_collector.UNKNOWN_SENDER_NAME}, "
+                    f"are the facts that tell one silence from another; "
+                    f"nothing here says whether the device sent lines that "
+                    f"never arrived")
+    for token, path in collector.files():
+        # A second record for the same target, carrying what the first could
+        # not know: which addresses the lines actually came from, and whether
+        # the port or the address is what attributed them. The report reads
+        # the two as one.
+        report.log_result(token, os.path.relpath(path, root),
+                          collector.started, collector.port,
+                          addresses=collector.addresses_of(token),
+                          ports=collector.ports_of(token),
+                          senders=collector.observed(token),
+                          attributed=collector.attribution_of(token),
+                          unknown_senders=unknown)
+    report.detail(f"device log:  {collector.lines} line(s) collected"
+                  + (f", {collector.unmapped} from an unrecognised sender"
+                     if collector.unmapped else "")
+                  + (f", {len(gaps)} silence(s)" if gaps else ""))
+    for problem in collector.problems[already:]:
+        report.warn(f"device log: {problem}")
+
+
+def check_syslog_setting(device: "Device", when: str) -> str:
+    """What this device says it is sending its log to, and a warning when it is
+    not sending it anywhere.
+
+    Read rather than written, and never corrected. `Syslog::init` runs once
+    from `ultimate_main`, so writing this during a run does nothing until the
+    device reboots, and a suite that changed it may have been testing exactly
+    that: putting it back would delete that suite's finding.
+
+    The start read catches a device that was reflashed and lost the setting,
+    which otherwise produces no log and no reason for it. The end read catches
+    the one that produces no log in the *next* run, which is far harder to
+    trace back, because a partial .cfg load can write stores it never names and
+    Network Settings is one of them.
+    """
+    try:
+        value = str(device.api.configs.get(syslog_collector.CONFIG_STORE,
+                                           syslog_collector.CONFIG_ITEM) or "")
+    except Failure as exc:
+        report.warn(f"device log: the syslog setting could not be read {when}: "
+                    f"{report.format_exception(exc)}")
+        return ""
+    if not value:
+        report.warn(f"device log: this device is not configured to send its log "
+                    f"anywhere ({when})")
+        return value
+    problem = syslog_setting_problem(value, device.host)
+    if problem:
+        report.warn(f"device log: {problem} ({when})")
+    return value
+
+
+def collector_address_for(machine: str) -> str:
+    """Which of this host's addresses a datagram from `machine` would reach.
+
+    A UDP socket that is connected and never written to: `connect` on a
+    datagram socket only fixes the peer and picks a route, so nothing goes on
+    the wire and `getsockname` then reports the local address that route
+    chose. That is exactly the address the device has to be pointed at, and it
+    is right on a host with several interfaces, where the host's name resolves
+    to whichever one the resolver prefers rather than to the one that faces
+    the bench.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect((machine, syslog_collector.DEFAULT_PORT))
+        return probe.getsockname()[0]
+    except OSError:
+        return ""
+    finally:
+        probe.close()
+
+
+def syslog_setting_problem(value: str, machine: str = "") -> str:
+    """Why this device's log will not reach this run's collector, or "".
+
+    Two ways a setting that looks right sends the log nowhere, and both
+    produce the same artefact: an empty file, no warning, and a report saying
+    the device said nothing, which is the shape a device that had stopped
+    also has.
+
+    The port. A device pointed at `<host>` with no port sends to 514, because
+    that is what `Syslog::init` defaults to, and the collector binds a
+    non-privileged port because 514 needs root. Measured on the C64 Ultimate
+    here: 23 suites, 0 lines, nothing anywhere saying why. The collector now
+    binds every port the devices name, so what is left to catch is a port it
+    could not open.
+
+    The host. The value can name a machine that is not the one collecting, and
+    a bench that has been reconfigured, or a runner host whose address has
+    moved, produces exactly that. The comparison is against the address a
+    datagram from this device would arrive at rather than against this host's
+    name, because a host with several interfaces has several answers and only
+    one of them is the one the device can reach.
+
+    The host is compared as text and never resolved. The setting is what an
+    operator typed, and a name that resolves here and not on the device is the
+    mistake worth naming rather than one to be clever about, so a value that
+    is not a literal address is reported as one this cannot check rather than
+    as one that is wrong.
+    """
+    wanted_ports = [port for port in
+                    (os.environ.get(SYSLOG_PORTS_ENV)
+                     or os.environ.get(SYSLOG_PORT_ENV) or "").split(",")
+                    if port]
+    if not wanted_ports:
+        return ""
+    host, _, port = value.rpartition(":")
+    if not host:
+        # No colon at all, so the whole value is the host and the device will
+        # use the firmware's default port.
+        host, port = value, str(SYSLOG_DEVICE_DEFAULT_PORT)
+    if port not in wanted_ports:
+        return (f"this device sends its log to port {port} and this run "
+                f"collects on {', '.join(wanted_ports)}, so none of it will "
+                f"arrive; set '{syslog_collector.CONFIG_ITEM}' to "
+                f"'{host}:{wanted_ports[0]}' and reboot the device")
+    here = collector_address_for(machine) if machine else ""
+    if here and host != here and not host.replace(".", "").isdigit():
+        return (f"this device sends its log to '{host}', which is a name "
+                f"rather than an address, so what it resolves to on the "
+                f"device decides whether it reaches this run's collector at "
+                f"{here}")
+    if here and host != here:
+        return (f"this device sends its log to {host} and this run collects "
+                f"at {here}, so none of it will arrive; set "
+                f"'{syslog_collector.CONFIG_ITEM}' to '{here}:{port}' and "
+                f"reboot the device")
+    return ""
+
+
+# Every recorder option except --record itself, and what makes each one a
+# non-default. A run given one of these without --record would otherwise
+# produce no recording and no complaint, which is the shape of mistake that
+# costs a whole gate run to discover.
+RECORDING_OPTIONS = (
+    ("record_video", True, "--no-record-video"),
+    ("record_audio", True, "--no-record-audio"),
+    ("record_menu", True, "--no-record-menu"),
+    ("record_stamp", True, "--no-record-stamp"),
+    ("record_menu_min_interval_ms", 0, "--record-menu-min-interval-ms"),
+    ("record_layout", "combined", "--record-layout"),
+    ("record_quality", "lossless", "--record-quality"),
+    ("record_scale", 1, "--record-scale"),
+    ("record_fps", RECORD_FPS, "--record-fps"),
+    ("record_keyint", RECORD_KEYINT_SECONDS, "--record-keyint"),
+    ("record_ffmpeg_args", "", "--record-ffmpeg-args"),
+)
+
+
+def make_output_tree(directory: str) -> bool:
+    """Create the -j destination, or report why not and let the run continue.
+
+    Where the run records itself is not part of what the run is testing, so a
+    path that cannot be created is a message and a run without JSONL, never a
+    traceback before the first suite. It is caught here, before any device is
+    touched, so the operator learns of it at the start rather than from an
+    empty directory afterwards.
+    """
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        report.warn(f"-o {directory} could not be created ({exc}); this run "
+                    "keeps no artifacts")
+        return False
+    return True
+
+
+def check_recording_options(args: argparse.Namespace) -> None:
+    """Refuse a recorder option given without --record, before the run starts."""
+    if not args.record:
+        given = [flag for name, default, flag in RECORDING_OPTIONS
+                 if getattr(args, name) != default]
+        if given:
+            die(f"{', '.join(given)} needs --record; without it nothing is "
+                "recorded and these do nothing")
+        return
+    if not (args.record_video or args.record_audio or args.record_menu):
+        die("--record with every source dropped records nothing; keep at least "
+            "one of the video, the audio and the harness pane")
+    if args.record_scale < 1:
+        die("--record-scale is an integer factor of 1 or more; a fractional "
+            "scale resamples pixel art")
+    if args.record_fps < 1:
+        die("--record-fps must be at least 1")
+    if not args.output_dir:
+        die("--record needs -o DIR to write the recording into")
+
+
+def start_recorder(args: argparse.Namespace, target: targets_lib.Target,
+                   device: "Device") -> Optional["recorder_lib.Recorder"]:
+    """Open this target's recording, or say why it did not open.
+
+    In the process that owns one target: the output is per target, multicast
+    is delivered to every socket that joined, and one per target needs no
+    coordination.
+    """
+    if not (args.record and args.output_dir):
+        return None
+    options = recorder_lib.Options(
+        video=args.record_video, audio=args.record_audio, menu=args.record_menu,
+        stamp=args.record_stamp, layout=args.record_layout,
+        quality=args.record_quality, scale=args.record_scale, fps=args.record_fps,
+        keyint=args.record_keyint,
+        menu_min_interval_ms=args.record_menu_min_interval_ms,
+        ffmpeg_args=args.record_ffmpeg_args)
+    # Its own client rather than the runner's probe. The recorder's PUTs run
+    # on its own thread and would advance the probe's mutation counter, which
+    # api.MachineApi.reset compares against to decide whether the device has
+    # been touched since the last reset.
+    api = UltimateApi(target, device.password, RECORDER_TIMEOUT_SECONDS)
+    made = recorder_lib.Recorder(args.output_dir, target, api, options,
+                                 identity=recording_identity(target, device))
+    problem = made.start()
+    if problem:
+        report.warn(f"recording: {problem}")
+        return None
+    report.detail("recording:  " + ", ".join(made.files))
+    return made
+
+
+def recording_identity(target: targets_lib.Target,
+                       device: "Device") -> Dict[str, str]:
+    """What every frame's stamp and the title card say about this run.
+
+    A single frame travels: somebody screenshots a failure into an issue,
+    somebody shares the video, an agent is handed one still. Any of those has
+    to answer which device, which firmware, which run and when, without the
+    file it came from.
+    """
+    found = {"target": target.token, "host": socket.gethostname()}
+    for address in sorted(syslog_collector.resolve(target.video_host)):
+        found["address"] = address
+        break
+    try:
+        info = device.probe.info()
+        found["firmware"] = f"{info.product} {info.firmware_version}"
+        found["fpga"] = info.fpga_version
+    except Failure:
+        # A device that will not say is not a reason to record nothing.
+        pass
+    for name, variable in (("ci", "GITHUB_RUN_ID"), ("branch", "GITHUB_REF_NAME")):
+        value = os.environ.get(variable)
+        if value:
+            found[name] = value
+    if "branch" not in found:
+        branch = git_answer("rev-parse", "--abbrev-ref", "HEAD")
+        if branch:
+            found["branch"] = branch
+    commit = os.environ.get("GITHUB_SHA") or git_answer("rev-parse", "--short",
+                                                        "HEAD")
+    if commit:
+        found["commit"] = commit
+    # Whether the firmware under test was built from that commit or from a
+    # working tree with changes in it. A recording of a modified tree is not
+    # evidence about the commit it names, and nothing else on the card says so.
+    changes = git_answer("status", "--porcelain")
+    if changes is not None:
+        found["dirty"] = "modified" if changes.strip() else "clean"
+    return {name: value for name, value in found.items() if value}
+
+
+def stop_recorder(made: Optional["recorder_lib.Recorder"],
+                  directory: str, token: str) -> None:
+    """End the recording, write its sidecars and record its own health."""
+    if made is None:
+        return
+    capture = made.stop()
+    problems, sidecars = recorder_lib.finish(directory, token,
+                                             made.started_wall, made.lead_in,
+                                             made.files,
+                                             audio=made.audio_path())
+    for problem in problems:
+        report.warn(f"recording: {problem}")
+    if problems:
+        capture.setdefault("problems", []).extend(problems)
+    # The subtitles are written after the recorder stopped, so the record it
+    # produced does not know about them yet. OBS-8.11 asks the record to name
+    # every output file it wrote, and a reader who cannot see the sidecar in
+    # the record has no reason to look for it.
+    capture["files"] = sorted(set(capture.get("files") or []) | set(sidecars))
+    report.capture_result(**capture)
+    report.detail(f"recording:  {capture['frames']} frames, "
+                  f"{capture['frames_shed']} shed")
 
 
 def die(message: str) -> None:
@@ -392,7 +1263,8 @@ class Device:
         return False
 
     def health_problem(self, label: str, patient: bool = True,
-                  extra: Optional[Callable[[], str]] = None) -> str:
+                  extra: Optional[Callable[[], str]] = None,
+                  budget: Optional[float] = None) -> str:
         """Why the device is not healthy enough to test on, or "" when it is.
 
         Health is the runner's one notion of a usable device, and everything
@@ -420,10 +1292,19 @@ class Device:
         open, so running the sweep first would throw away its only reading of
         whether the C64 is alive.
 
+        `budget` overrides the patient and impatient budgets for a caller that
+        needs neither. The two are chosen for deciding whether to go on:
+        patient waits out the recovery budget because a busy device is far
+        more common than a gone one, and impatient asks once. A caller that is
+        classifying a result rather than deciding whether to proceed wants
+        something in between; see `run_suite`.
+
         Nothing here acts. Deciding and acting are separate so that the same
         answer can be used to log, to fail a precondition, and to recover.
         """
-        if not self.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS if patient else 0.0):
+        if budget is None:
+            budget = DEVICE_RECOVERY_BUDGET_SECONDS if patient else 0.0
+        if not self.wait_until_reachable(budget):
             return "it is not answering"
         if extra is not None:
             problem = extra()
@@ -470,8 +1351,7 @@ class Device:
                 report.detail(f"    {name}: {note}")
         report.health_result(
             label.rstrip(": ") or "device", sweep.ok,
-            ({"name": c.name, "state": c.state, "ms": round(c.ms, 1),
-              "detail": c.detail} for c in sweep.checks))
+            (health_entry(c) for c in sweep.checks))
         return sweep
 
     def close_active_menu(self) -> bool:
@@ -489,6 +1369,27 @@ class Device:
             return False
 
 
+def health_entry(check: "health.Check") -> Dict[str, object]:
+    """One health check as a record, with its figures when it has any.
+
+    The figures are present only on a check that measured any, so a sweep of
+    latencies carries the four keys it always carries. They go here rather
+    than into `detail`, which is a
+    human sentence printed under a failing check's name, because packing three
+    numbers into prose would make every consumer parse it back out.
+
+    Under one name for every check that has any, rather than under the check's
+    own name: two checks carry figures now, the heap's three and the ident's
+    two syslog counters, and a key per check would make a consumer know the set
+    of checks before it could read one.
+    """
+    entry: Dict[str, object] = {"name": check.name, "state": check.state,
+                                "ms": round(check.ms, 1), "detail": check.detail}
+    if check.figures:
+        entry["figures"] = dict(check.figures)
+    return entry
+
+
 def reset_to_clean_slate(device: Device, phase: str) -> bool:
     for label, action in (
         (f"{phase}: release input", device.release_input),
@@ -500,19 +1401,37 @@ def reset_to_clean_slate(device: Device, phase: str) -> bool:
             report.check_fail()
             return False
         report.check_ok()
-    time.sleep(0.5)
+    time.sleep(pacing.RESET_SETTLE_SECONDS)
     return True
 
 
 def ui_state_gate(action: str, options: Options, label: str = "",
-                  quiet: bool = False) -> bool:
-    """Shared UI-state gate. See tests/e2e/lib/ui_state.py for the contract."""
+                  quiet: bool = False, attempt: Optional[int] = None) -> bool:
+    """Shared UI-state gate. See tests/e2e/lib/ui_state.py for the contract.
+
+    The gate drives the device, so its device calls reach the interaction log
+    like any other, and they have to carry the target the way every other
+    record does. It runs as a process of its own, and a subprocess inherits
+    this one's environment rather than the copy `run_one_attempt` builds, so
+    the two variables `report._record` reads are set here. Without them the
+    gate's records named neither the target nor the attempt, which is the one
+    thing the section 2 acceptance criteria say every record carries.
+    """
     command = [sys.executable, UI_STATE_TOOL, "-H", options.host, "--action", action]
     if options.password:
         command += ["-p", options.password]
     if label:
         command += ["--label", label]
-    result = subprocess.run(command, stdout=subprocess.DEVNULL if quiet else None)
+    environment = dict(os.environ)
+    environment["E2E_TARGET"] = options.host
+    if attempt is not None:
+        environment["E2E_ATTEMPT"] = str(attempt)
+    else:
+        # A gate run between suites belongs to no attempt, and a guessed one
+        # would read as a record the suite wrote. See OBS-2.3.
+        environment.pop("E2E_ATTEMPT", None)
+    result = subprocess.run(command, env=environment,
+                            stdout=subprocess.DEVNULL if quiet else None)
     return result.returncode == 0
 
 
@@ -546,6 +1465,202 @@ def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
     return command
 
 
+def describe_exit(returncode: int) -> str:
+    """Why a suite's exit status is not zero, or "" when it merely failed.
+
+    A suite that ended by itself has already said what went wrong: every check
+    prints its own verdict, and report.check prints one for any exception it
+    catches. A suite that was terminated printed nothing, because a signal
+    raises nothing to catch, so the runner's own line is the only record of it
+    and has to carry the reason. subprocess reports this as a negative status
+    (Popen.returncode: "a negative value -N indicates the child was terminated
+    by signal N"), which is the only place the distinction survives.
+
+    Seen live: a stray `pkill -f prg_context_menu_test` aimed at another
+    device's run killed this one's copy of the same suite. The log ended in the
+    middle of a check line and the run said only "prg-context-menu: failed",
+    and the suite passed on the next run against the same firmware.
+    """
+    if returncode >= 0:
+        return ""
+    try:
+        name = signal.Signals(-returncode).name
+    except ValueError:
+        name = f"signal {-returncode}"
+    return f"killed by {name}, so it reported nothing of its own"
+
+
+# Where an attempt after the first writes the files it would otherwise
+# overwrite. Attempt 1 writes exactly where it always did, so a clean run gains
+# no directory at all and every path in the layout stays as it was; only a run
+# that actually retried something grows one level.
+ATTEMPT_DIRECTORY = "attempt-%d"
+
+
+def attempt_directory(output_dir: str, attempt: int) -> str:
+    """Where this attempt's per-attempt files go.
+
+    The per-suite JSONL is deliberately not here. Every record already carries
+    `attempt`, the report joins on the `<target>/<label>/<suite>/<attempt>`
+    identity key, and the file is truncated on the first attempt and appended
+    to afterwards, so it already holds every attempt in order. Splitting it
+    would break that rule and the report's key for nothing.
+
+    The console log and the failure capture are here because they are not
+    records: they have no attempt field to join on, so a second attempt
+    writing them either overwrites the first or appends without a boundary,
+    and a reader looking at the capture of a suite that failed twice cannot
+    tell which failure it is looking at.
+    """
+    if attempt <= 1 or not output_dir:
+        return output_dir
+    return os.path.join(output_dir, ATTEMPT_DIRECTORY % attempt)
+
+
+# What the capture reads out of the C64's own screen when no menu is open. The
+# screen matrix is at $0400 and 1000 bytes is one 40x25 plane, well inside the
+# API's own read limit, so it needs no chunking.
+SCREEN_RAM = 0x0400
+SCREEN_CELLS = 1000
+
+
+def capture_failure(device: Device, options: Options, mode: str, label: str,
+                    suite_name: str, attempt: int) -> None:
+    """Write what the device looked like after a suite failed.
+
+    Taken after every suite that exits non-zero, needing no flag beyond
+    somewhere to write: on a green run it costs nothing, because no suite
+    failed. Three reads, all GET, all on the runner's five-second
+    probe client, so a device that has just been taken down cannot make this
+    outlast the run's own budget.
+
+    Taken here rather than later because `ui_state.verify` presses RUN/STOP,
+    opens the file browser and closes the menu, so by the time the gate has run
+    the screen a suite left is gone.
+
+    Nothing here can fail a run. A suite that has just taken the device down is
+    exactly the case where these calls will not answer, and a capture that
+    propagated would turn a suite failure into a harness failure.
+    """
+    directory = os.path.join(attempt_directory(options.output_dir, attempt),
+                             "capture")
+    stem = f"{label}-{suite_name}-{attempt}"
+    state: Dict[str, object] = {"mode": mode, "source": "", "errors": []}
+    screen_text: List[str] = []
+    screen_raw = b""
+
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        report.detail(f"{suite_name}: the capture could not be written: {exc}")
+        return
+
+    api = device.probe
+    if mode == "telnet":
+        # machine:menu_screen returns the first live user interface whose
+        # screen is exactly 40x25, and a Telnet session is 60x24, so it answers
+        # with the overlay's screen or with 404 and neither is what the suite
+        # was looking at. The suite published every screen it read, so the last
+        # record before it ended is exactly that, and reading a file the run
+        # already wrote costs the device nothing.
+        spool = os.path.join(options.output_dir, "screens.jsonl")
+        now = time.time()
+        record = screens.last_before(spool, now, screens.TELNET,
+                                     suite=suite_name, attempt=attempt)
+        source = "telnet-spool"
+        if record is not None and not any(
+                str(row).strip() for row in record.get("text") or []):
+            # A session that dropped mid-suite publishes an empty screen last,
+            # and an empty block answers nothing. The screen before it is what
+            # the suite was working on, and it is named apart so the report
+            # does not present it as the screen the suite ended on.
+            earlier = screens.last_before(spool, now, screens.TELNET,
+                                          suite=suite_name, attempt=attempt,
+                                          non_blank=True)
+            if earlier is not None:
+                record = earlier
+                source = "telnet-spool-earlier"
+        if record:
+            state["source"] = source
+            screen_text = [str(row) for row in record.get("text") or []]
+        else:
+            state["source"] = "unavailable"
+            state["errors"].append(
+                "no Telnet screen was spooled for this suite, and "
+                "machine:menu_screen would answer with a screen nobody drove")
+    else:
+        try:
+            body = api.machine.menu_screen()
+            if body is not None:
+                state["source"] = "menu_screen"
+                screen_raw = body
+                screen_text = api.machine.menu_rows()
+            else:
+                # 404 here means no menu is open rather than old firmware, so
+                # this is the ordinary path: most suites leave the menu closed
+                # and the interesting screen is the C64's.
+                state["source"] = "readmem"
+                screen_raw = api.machine.readmem(SCREEN_RAM, SCREEN_CELLS)
+                screen_text = c64_screen_rows(screen_raw)
+        except DEVICE_ERRORS as exc:
+            state["source"] = state["source"] or "unavailable"
+            state["errors"].append(f"screen: {report.format_exception(exc)}")
+
+    try:
+        state["heap"] = api.machine.heap()
+    except DEVICE_ERRORS as exc:
+        state["errors"].append(f"heap: {report.format_exception(exc)}")
+    try:
+        state["drives"] = {slot: dataclasses.asdict(info)
+                           for slot, info in api.drives.list().items()}
+    except DEVICE_ERRORS as exc:
+        state["errors"].append(f"drives: {report.format_exception(exc)}")
+
+    write_capture(directory, stem, screen_text, screen_raw, state)
+
+
+def c64_screen_rows(data: bytes) -> List[str]:
+    """The C64 screen matrix as 25 rows of 40 characters.
+
+    Screen codes, not the literal ASCII the menu plane carries, and the two
+    must not share a decode path. In the unshifted set code 0 is `@`, 1 to 26
+    are the letters, 27 to 31 are `[`, a pound sign, `]`, an up arrow and a
+    left arrow, and 32 to 63 are the ASCII characters of the same value.
+    Everything from 64 up is a graphics character with no text form, so it
+    reads as a space rather than as the letter its byte value would give in
+    ASCII. Bit 7 is reverse video and is masked off, as
+    `api.MachineApi.menu_rows` masks it for the other screen.
+
+    Best effort, and the report says so: the matrix moves with the VIC bank and
+    with $D018, so a program that has moved it is not rendered here.
+    """
+    high = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\u00a3]\u2191\u2190"
+    text = "".join(high[byte] if byte < 0x20
+                   else (chr(byte) if byte < 0x40 else " ")
+                   for byte in (b & 0x7F for b in data[:SCREEN_CELLS]))
+    return [text[row * 40:(row + 1) * 40] for row in range(SCREEN_CELLS // 40)]
+
+
+def write_capture(directory: str, stem: str, text: List[str], raw: bytes,
+                  state: Dict[str, object]) -> None:
+    """The three artefacts, named so the report finds them with no lookup table."""
+    try:
+        with open(os.path.join(directory, f"{stem}-screen.txt"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(report.masked("\n".join(text)) + ("\n" if text else ""))
+        if raw:
+            with open(os.path.join(directory, f"{stem}-screen.bin"), "wb") as handle:
+                handle.write(raw)
+        # Serialised before it is opened, so a value json cannot encode leaves
+        # no half-written file behind for the artifact to carry.
+        body = json.dumps(report.masked(state), indent=2, sort_keys=True) + "\n"
+        with open(os.path.join(directory, f"{stem}-state.json"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(body)
+    except (OSError, TypeError, ValueError) as exc:
+        report.detail(f"the capture could not be written: {exc}")
+
+
 def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                     label: str, attempt: int) -> Tuple[str, float, bool]:
     """One go at a suite. Returns (verdict, seconds, device_unhealthy).
@@ -560,19 +1675,47 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
 
     environment = dict(os.environ)
     environment["E2E_SUITE"] = suite.name
+    # Which device the suite is aimed at and which go at it this is, so every
+    # record it writes joins to a target and to an attempt with no correlation
+    # identifier of its own. Both are values this function already holds.
+    environment["E2E_TARGET"] = options.host
+    environment["E2E_ATTEMPT"] = str(attempt)
+    if options.output_dir and options.screens:
+        # Every distinct screen the suite reads, published from the fetches it
+        # was making anyway. One file per target, appended to by every suite,
+        # which is why the runner truncates it once when the run starts rather
+        # than per suite as it does the per-suite files.
+        environment["E2E_SCREENS"] = os.path.join(options.output_dir,
+                                                  "screens.jsonl")
+    else:
+        environment.pop("E2E_SCREENS", None)
+    if options.output_dir:
+        # Every interaction the suite has with the device, from inside the
+        # transports. One file per target, appended to by every suite and by
+        # the runner, and truncated once when the run starts rather than per
+        # suite, for the same reason the screen spool is.
+        environment["E2E_INTERACTIONS"] = os.path.join(options.output_dir,
+                                                       "interactions.jsonl")
+    else:
+        environment.pop("E2E_INTERACTIONS", None)
     # Tell the suite whether the device has just been reset and nothing has
     # touched it since, so it does not open with a reset of its own. One suite
     # ending with a reset and the next starting with one is the common case,
     # and neither process can see the other. Cleared as soon as anything
     # mutating is sent; see api.MachineApi.reset.
     environment["U64_DEVICE_RESET"] = "1" if device.just_reset else "0"
-    if options.jsonl_dir:
-        path = os.path.join(options.jsonl_dir, f"{label}-{suite.name}.jsonl")
+    if options.output_dir:
+        path = os.path.join(options.output_dir, f"{label}-{suite.name}.jsonl")
         # Truncated on the first attempt and appended to afterwards, so the
         # JSONL keeps every attempt. A reader that wants the outcome takes the
         # last suite record.
         if attempt == 1:
             open(path, "w").close()
+            # The raw Telnet transcript shares this stem and is reset with it,
+            # so a second run into one directory does not read as one session.
+            transcript = path[:-len(".jsonl")] + ".telnet.log"
+            if os.path.exists(transcript):
+                open(transcript, "w").close()
         environment["E2E_JSONL"] = path
 
     if suite.category == "e2e":
@@ -585,30 +1728,44 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
             report.suite_fail(suite.name, "precondition: the device is unhealthy", 0.0)
             return report.FAIL, 0.0, True
 
+    command = build_command(suite, options, mode)
     started = time.monotonic()
-    completed = subprocess.run(build_command(suite, options, mode), env=environment)
+    if options.output_dir:
+        where = attempt_directory(options.output_dir, attempt)
+        os.makedirs(where, exist_ok=True)
+        returncode = run_and_capture(
+            command, environment,
+            os.path.join(where, f"{label}-{suite.name}.log"),
+            truncate=True, console_fd=console_fd())
+    else:
+        returncode = subprocess.run(command, env=environment).returncode
     elapsed = time.monotonic() - started
 
     fields = {"mode": mode, "attempt": attempt,
               "recoveries": device.suite_recoveries}
-    if completed.returncode == 0:
+    if returncode == 0:
         report.suite_ok(suite.name, "", elapsed, **fields)
         verdict = report.OK
     else:
-        report.suite_fail(suite.name, "", elapsed, **fields)
+        report.suite_fail(suite.name, describe_exit(returncode),
+                          elapsed, **fields)
         verdict = report.FAIL
+
+    if returncode != 0 and options.output_dir:
+        capture_failure(device, options, mode, label, suite.name, attempt)
 
     # Attribution only: the precondition owns the state, so leaving the browser
     # elsewhere is not a defect. Naming who left what is what makes an
     # inherited failure traceable to its cause; it does not change the verdict.
-    if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name):
+    if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name,
+                                                     attempt=attempt):
         # `elapsed` is passed for the same reason the OK/FAIL lines above pass
         # it: report._suite_line falls back to the time since the harness
         # process started when it is given no duration, so a WARN printed an
         # hour into a run read as an hour-long suite.
         report.suite_warn(suite.name, "left the device UI outside the documented state",
                           elapsed, **fields)
-        ui_state_gate("ensure", options, suite.name, quiet=True)
+        ui_state_gate("ensure", options, suite.name, quiet=True, attempt=attempt)
         if verdict == report.OK:
             verdict = report.WARN
 
@@ -617,23 +1774,40 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
 
 def run_suite(suite: Suite, device: Device, options: Options, mode: str,
               label: str) -> Result:
-    """Run one suite, repeating it while the device is what failed it.
+    """Run one suite, repeating it until it passes or it runs out of attempts.
 
     The rule this loop implements, and the only one there is:
 
-        a suite that fails on a healthy device has found something. A suite that
-        fails on an unhealthy one has told you nothing, so the device is recovered
-        and the suite runs again.
+        a suite that failed is run again, up to `--attempts` executions in
+        total. A failure that repeats every time is a failure; one that does
+        not is a flake, and either way the run says which.
 
-    Repetition is therefore bounded by the recovery ceilings rather than by a
-    count of its own: --recover-max-per-suite is both how many times this suite
-    may have its device brought back and how many extra attempts it can get.
-    --no-retry keeps the recovery and drops the extra attempt.
+    There is no classifier deciding which failures deserve another go. A rule
+    that decided would be wrong sometimes and unauditable always, and the
+    evidence for what happened is on the record either way: every attempt
+    writes its own records, its own console log and its own capture.
+
+    `--attempts` is one absolute ceiling on executions, whatever mixture of
+    reasons produced them. A recovery does not buy an extra attempt, so a
+    suite cannot run three flake retries times three recovery retries;
+    `--recover-max-per-suite` bounds recoveries and can only reduce the number
+    of executions, never add one.
+
+    Retrying every failure is the one thing in this design that can hide a
+    real defect, so the evidence is deliberately loud: the console names the
+    attempt as it starts, the report lists every multi-attempt suite run and
+    every check that needed one, the recording's subtitle and band carry the
+    attempt, and the run's exit status is `EXIT_RETRIED` rather than
+    `EXIT_OK`.
     """
     full_path = os.path.join(ROOT, suite.path)
     if not os.path.isfile(full_path):
         print()
-        report.suite_skip(suite.name, f"missing {suite.path}", 0.0)
+        # The same fields every other suite record carries, so a skipped
+        # suite is named by the identity key the rest of the run uses rather
+        # than by one with an empty label in the middle of it.
+        report.suite_skip(suite.name, f"missing {suite.path}", 0.0,
+                          mode=mode, attempt=1, recoveries=0)
         return Result(suite.category, mode, suite.name, report.SKIP, 0.0)
 
     recoveries_before = device.recoveries
@@ -641,35 +1815,74 @@ def run_suite(suite: Suite, device: Device, options: Options, mode: str,
 
     attempt = 1
     while True:
+        if attempt > 1:
+            # Named as it happens rather than only in the summary, so somebody
+            # watching a live run sees "attempt 2 of 3" instead of a suite
+            # apparently running twice for no stated reason.
+            report.detail(f"{suite.name}: attempt {attempt} of "
+                          f"{options.attempts}")
         verdict, elapsed, lost = run_one_attempt(
             suite, device, options, mode, label, attempt)
         recoveries = device.recoveries - recoveries_before
         if lost:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
-                          device_unhealthy=True, recoveries=recoveries)
-        if verdict != report.FAIL or not options.retry:
+                          device_unhealthy=True, recoveries=recoveries,
+                          attempts=attempt)
+        if verdict != report.FAIL:
             return Result(suite.category, mode, suite.name, verdict, elapsed,
-                          recoveries=recoveries)
+                          recoveries=recoveries, attempts=attempt)
 
-        # The suite failed. Whether that verdict is believed depends on the
-        # device: a healthy one means the suite found a defect and there is nothing
-        # to retry, an unhealthy one means the attempt proved nothing.
-        before = device.recoveries
+        # The suite failed. Out of attempts is the end of the retrying, but not
+        # of the run's interest in the device: the check is what still tells
+        # "this suite failed" from "the device could not be made healthy",
+        # which are different statuses, and a run whose last suite failed on a
+        # dead device has no following suite to find that out. So the health
+        # is read and the device is not recovered, because recovering it for
+        # an attempt that will never happen is a device action with no reason
+        # behind it and the next suite's own precondition recovers it anyway.
+        if attempt >= options.attempts:
+            # A bounded wait, which is neither of the two this call usually
+            # takes. Its answer decides `device_unhealthy`, and that abandons
+            # the rest of the run rather than only colouring a verdict, so
+            # asking once would let a device that was merely busy end a gate:
+            # a cartridge target answers a one-byte read in 134ms at the
+            # median and this bench has devices that go quiet under load. The
+            # full recovery budget is the other extreme, and spending 60
+            # seconds on a classification the next suite's own precondition
+            # will redo is a minute per failed suite for nothing.
+            problem = device.health_problem(
+                f"{suite.name}: after the last attempt,",
+                budget=LAST_ATTEMPT_HEALTH_BUDGET_SECONDS,
+                extra=(lambda: ui_state_ready(options, suite.name))
+                if suite.category == "e2e" else None)
+            return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
+                          device_unhealthy=bool(problem),
+                          recoveries=recoveries, attempts=attempt)
+        # There is another attempt, so the device is brought back if it needs
+        # bringing back: an attempt on a degraded device tells nobody
+        # anything. The suite then runs again whether or not it needed
+        # recovering, which is the rule this reverses.
         healthy = device.ensure_healthy(
             f"{suite.name}: after failure,",
             extra=(lambda: ui_state_ready(options, suite.name))
             if suite.category == "e2e" else None)
         recoveries = device.recoveries - recoveries_before
-        if healthy and device.recoveries == before:
-            # It was healthy all along, so the failure stands.
-            return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
-                          recoveries=recoveries)
         if not healthy:
             return Result(suite.category, mode, suite.name, report.FAIL, elapsed,
-                          device_unhealthy=True, recoveries=recoveries)
-        report.detail(f"{suite.name}: the device was recovered, so this failure "
-                      "proves nothing; running it again")
+                          device_unhealthy=True, recoveries=recoveries,
+                          attempts=attempt)
         attempt += 1
+
+
+def chosen_categories(args: argparse.Namespace) -> List[str]:
+    """Which categories this run covers, in the order they run in."""
+    if args.suite:
+        # Naming suites selects exactly those, whichever category they are in.
+        return [c for c in CATEGORIES
+                if any(s.category == c and s.name in args.suite for s in SUITES)]
+    chosen = [c for c in CATEGORIES
+              if args.all or getattr(args, c.replace("-", "_"))]
+    return chosen or ["e2e"]
 
 
 def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite]:
@@ -685,198 +1898,429 @@ def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite
     return chosen
 
 
+# Why a registered suite is not in this run. Every suite the registry names is
+# either in the run or carries one of these.
+PLAN_MANUAL = "manual"
+PLAN_NOT_SELECTED = "not-selected"
+PLAN_CATEGORY = "category"
+
+
+def plan_reason(suite: Suite, names: List[str], manual: bool,
+                categories: Sequence[str]) -> str:
+    """Why `suite` is not in this run. Only called for one that is not.
+
+    Which suites run is `selected_suites`' answer and is read from the
+    sequence; this says why one of the rest was left out, in the order the
+    three causes are decided.
+    """
+    if names and suite.name not in names:
+        # Naming suites selects exactly those, manual ones included.
+        return PLAN_NOT_SELECTED
+    if suite.category not in categories:
+        return PLAN_CATEGORY
+    if suite.manual and not manual:
+        return PLAN_MANUAL
+    return PLAN_CATEGORY
+
+
+def record_plan(args: argparse.Namespace, categories: Sequence[str],
+                modes: Sequence[str], **extra) -> None:
+    """Record what this run intends to run, before it runs any of it.
+
+    A green run that quietly ran 17 of the 25 registered suites reads exactly
+    like a green run that ran all of them. The registry is the authority for
+    what exists and `selected_suites` has already decided what runs, so this
+    records a decision rather than deriving a new one.
+
+    The sequence is not the selection: an e2e category runs its whole suite
+    list once per mode, so a two-mode run of ten suites is twenty entries.
+
+    A mode pass covers every selected e2e suite, including the ones that drive
+    one transport and ignore --mode, so a suite is never left out because of
+    the mode. The reason a registered suite is absent is always one of the
+    three above.
+    """
+    sequence = []
+    for category in categories:
+        chosen = selected_suites(category, args.suite, args.manual)
+        for mode in (modes if category == "e2e" else [""]):
+            for suite in chosen:
+                # The label is what names this run of the suite everywhere
+                # else: the UI mode for an e2e suite, the category otherwise.
+                sequence.append({"category": category,
+                                 "mode": mode or DEFAULT_MODE,
+                                 "label": mode or category,
+                                 "suite": suite.name})
+
+    running = {entry["suite"] for entry in sequence}
+    entries = []
+    for suite in SUITES:
+        entry = {"name": suite.name, "category": suite.category,
+                 "path": suite.path, "run": suite.name in running}
+        if not entry["run"]:
+            entry["reason"] = plan_reason(suite, args.suite, args.manual,
+                                          categories)
+        entries.append(entry)
+    report.plan_result(entries, sequence, **extra)
+
+
+# The help page, on one grid: every heading is flush left, lower case and
+# followed by a colon, which is what argparse renders for its own argument
+# groups, and every body line sits two columns in. argparse passes the
+# description and the epilog through untouched, so those are written to the
+# same shape by hand.
+HELP_WIDTH = 80               # the page never uses more columns than this
+HELP_INDENT = 2               # where a section's body starts
+HELP_DESCRIPTION_COLUMN = 26  # where an option's description starts
+
+
+class HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Write each option the way a GNU tool does.
+
+    argparse repeats the value's name once per spelling, as in
+    "-s NAME, --suite NAME" and "-m LIST, --mode LIST, --modes LIST". That
+    is hard to read and it pushes the descriptions across the page. This
+    names the value once, after the last spelling, and holds the whole page
+    to one width whatever the terminal's is.
+    """
+
+    def __init__(self, prog, indent_increment=HELP_INDENT,
+                 max_help_position=HELP_DESCRIPTION_COLUMN, width=None):
+        if width is None:
+            width = min(shutil.get_terminal_size().columns, HELP_WIDTH) - 2
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+    def _format_action_invocation(self, action) -> str:
+        if not action.option_strings:                      # a positional
+            return self._metavar_formatter(action, action.dest)(1)[0]
+        if action.nargs == 0:                              # a flag
+            return ", ".join(action.option_strings)
+        value = self._format_args(
+            action, self._get_default_metavar_for_optional(action))
+        spellings = list(action.option_strings)
+        last = spellings.pop()
+        # "--suite=NAME", as GNU writes it; "-s NAME" for a short spelling.
+        spellings.append(last + ("=" if last.startswith("--") else " ") + value)
+        return ", ".join(spellings)
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    """`argparse.ArgumentParser` that exits with this runner's usage status.
+
+    `ArgumentParser.error` calls `sys.exit(2)` of its own, before any code
+    here runs, so every malformed command line the parser rejects took the
+    exit status argparse chose rather than the one this runner documents. On
+    the scale in `EXIT_OK` and its siblings, 2 is `EXIT_RECOVERED`, so
+    `./run-tests --nonsense` reported a run in which every suite passed and
+    the device had to be recovered.
+
+    `exit` is overridden as well as `error`, because `--help` and `--version`
+    reach `exit` directly and a successful one of those must still be 0.
+    """
+
+    def exit(self, status: int = 0, message: Optional[str] = None) -> None:
+        if message:
+            self._print_message(message, sys.stderr)
+        raise SystemExit(EXIT_USAGE if status else 0)
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         prog="run-tests",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        usage="run-tests [OPTIONS] [HOST]",
+        formatter_class=HelpFormatter,
+        usage="run-tests [OPTIONS] [TARGET ...]",
+        add_help=False,  # added below, so that it sits in a named section
         description=(
-            "Run hardware test suites against one Ultimate device.\n"
+            "Run the hardware test suites against one or more Ultimate devices.\n"
             "\n"
-            "Suites execute sequentially as separate processes, each driving the\n"
-            "firmware over REST, FTP or Telnet. They share one device and one UI\n"
-            "object stack, so the runner re-establishes a known state around each\n"
-            "one. With no arguments: the E2E suites once, in overlay mode.\n"
+            "Each suite is a separate process driving the firmware over REST, FTP or\n"
+            "Telnet. The suites share one device, so the runner puts it back into a\n"
+            "known state around each one. With no options the runner runs the E2E gate\n"
+            "once, in overlay mode, against $U64_HOST.\n"
             "\n"
-            "DEVICE HEALTH\n"
+            "targets:\n"
+            "  host                    a device that is also its own C64, as u64\n"
+            "  cartridge@computer      a cartridge, in the computer that supplies its\n"
+            "                          keyboard and video, as u2@c64u\n"
             "\n"
-            "Every E2E suite is preceded by a health check, and any suite that\n"
-            "fails is followed by a second one. Three predicates, evaluated in\n"
-            "order, short-circuiting on the first failure:\n"
-            "\n"
-            "  reachable   GET /v1/version succeeds, polled for up to 60s. The\n"
-            "              device serves few concurrent connections and reclaims\n"
-            "              an abandoned one after roughly 18s, so a single\n"
-            "              timeout is not conclusive.\n"
-            "  drivable    The on-device UI returns to the documented state:\n"
-            "              menu closed, root browser at /, listing non-empty.\n"
-            "              Independent of reachability, since a UI task that has\n"
-            "              stopped consuming injected keys still serves REST.\n"
-            "  functional  ICMP, REST, FTP (21), Telnet (23), /v1/info and the\n"
-            "              DMA control port (64) all respond, and $D012 and $00A2\n"
-            "              advance, evidencing that the VIC is scanning and the\n"
-            "              KERNAL interrupt is running. Emitted as one line per\n"
-            "              suite with per-check latency.\n"
-            "\n"
-            "The health check is both the precondition for running a suite and\n"
-            "the sole trigger for recovery. A non-zero exit status alone cannot\n"
-            "distinguish these three outcomes; the health check can:\n"
-            "\n"
-            "  suite failed, device healthy    the suite found a defect and the\n"
-            "                                  result stands\n"
-            "  suite failed, device unhealthy  the result is uninformative, so\n"
-            "                                  recover the device and re-run\n"
-            "  device cannot be made healthy   abandon the run rather than\n"
-            "                                  attribute one device fault to\n"
-            "                                  every remaining suite\n"
-            "\n"
-            "RECOVERY\n"
-            "\n"
-            "--recover-command supplies the recovery action; the runner has no\n"
-            "default, since the mechanism is site-specific (JTAG download, power\n"
-            "cycle, flash tool). It is invoked only for an unhealthy device,\n"
-            "never for a failing suite, and is bounded per suite and per run.\n"
-            "Recovery is not free: a run requiring one exits 3, not 0.\n"),
+            "  Each target runs in a child process of its own, and every line of\n"
+            "  output names the target it came from. Independent targets run at the\n"
+            "  same time; targets sharing a machine take turns, so u64 and u2@c64u run\n"
+            "  together and c64u and u2@c64u do not.\n"),
         epilog=(
             "examples:\n"
-            "  run-tests                          the E2E gate, overlay mode\n"
-            "  run-tests -H 192.168.0.64          the same, against another device\n"
-            "  run-tests -s prg-context-menu      one suite\n"
-            "  run-tests -m all                   the gate in all three modes\n"
-            "  run-tests -m telnet,freeze         two chosen modes\n"
-            "  run-tests --perf --soak            perf and soak only, no E2E\n"
-            "  run-tests --all -m all             everything; takes hours\n"
-            "  run-tests --list                   show every registered suite\n"
-            "  run-tests --recover-command 'build u64' -j runs/\n"
-            "                                     recover an unhealthy device, and write\n"
-            "                                     machine-readable results\n"
+            "  run-tests                           the E2E gate, overlay mode\n"
+            "  run-tests u2@c64u                   a cartridge, in its computer\n"
+            "  run-tests u64 u2@c64u               both, at the same time\n"
+            "  run-tests -s prg-context-menu       one suite\n"
+            "  run-tests -m telnet,freeze          two UI transports\n"
+            "  run-tests --list                    every registered suite\n"
+            "\n"
+            "  Keeping a run, and reading it afterwards:\n"
+            "\n"
+            "  run-tests -o runs/ u64              keep every artifact\n"
+            "  run-tests -o runs/ --syslog u64     and the device's own log\n"
+            "  run-tests -o runs/ --record u64     and a video of the run\n"
+            "  python3 tools/e2e_report.py runs/   write runs/index.md\n"
+            "  less runs/index.md                  read it; no device needed\n"
+            "\n"
+            "  Less often:\n"
+            "\n"
+            "  Bring a wedged device back:\n"
+            "    run-tests --recover-command 'build u64' -o runs/\n"
+            "\n"
+            "  Take the device log from a second interface:\n"
+            "    U64_LOG_ADDRESSES='u64=192.0.2.71' run-tests -o runs/ --syslog u64\n"
+            "\n"
+            "  Watch a recording, subtitled with the check that was running:\n"
+            "    mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4\n"
             "\n"
             "exit status:\n"
-            f"  {EXIT_OK}  all suites passed, no recovery required\n"
-            f"  {EXIT_SUITE_FAILED}  at least one suite failed\n"
-            f"  {EXIT_USAGE}  invalid command line\n"
-            f"  {EXIT_RECOVERED}  all suites passed, but the device required recovery\n"
-            f"  {EXIT_DEVICE_UNHEALTHY}  the device could not be made healthy; run abandoned\n"
+            "  A severity scale, so it may be compared with an ordering\n"
+            "  operator: `[ $? -le 2 ]` tolerates a retry and a recovery and\n"
+            "  nothing worse.\n"
+            f"  {EXIT_OK}  every suite passed first time, and nothing needed recovering\n"
+            f"  {EXIT_RETRIED}  every suite passed, but at least one needed more than one attempt\n"
+            f"  {EXIT_RECOVERED}  every suite passed, but a device needed recovering\n"
+            f"  {EXIT_SUITE_FAILED}  a suite failed every attempt it was given\n"
+            f"  {EXIT_DEVICE_UNHEALTHY}  a device could not be made healthy; the run was abandoned\n"
+            f"  {EXIT_USAGE}  the command line was invalid. Not on the scale: a usage\n"
+            "      error is not an outcome of a run. The value is EX_USAGE from\n"
+            "      sysexits.h.\n"
             "\n"
             "notes:\n"
-            "  The device must be otherwise idle: suites open the menu, reset the\n"
-            "  machine and mount disk images, and some mutate device settings and\n"
-            "  restore them on exit.\n"
-            "  Suite ordering is significant and fixed; see the comments in the\n"
-            "  registry at the top of this file.\n"
+            "  The devices must be otherwise idle. The suites open the menu, reset the\n"
+            "  machine, mount images, and put the settings back afterwards.\n"
+            "\n"
+            "  Suite order is fixed and significant. The registry at the top of this\n"
+            "  file sets it.\n"
             "\n"
             "see also:\n"
-            "  tests/README.md            categories, environment and exit status\n"
-            "  tests/e2e/README.md        adding or changing a suite\n"
-            "  tests/lib/README.md        the JSONL record shapes\n"))
+            "  tests/README.md         categories, environment, exit status\n"
+            "  tests/e2e/README.md     adding or changing a suite\n"
+            "  tests/lib/README.md     the JSONL record shapes\n"
+            "  tests/e2e/doc/          what a run records, and why\n"))
 
-    parser.add_argument("host_positional", nargs="?", metavar="HOST",
-                        help="Device host name or IP. May also be given with -H.")
+    arguments = parser.add_argument_group("arguments")
+    arguments.add_argument("targets", nargs="*", metavar="TARGET",
+                           help="Name a host, or cartridge@computer, in the "
+                                "forms listed under targets. May also be "
+                                "given with -H.")
 
-    what = parser.add_argument_group(
-        "what to run",
-        "Categories to run. With none given, E2E only.")
-    what.add_argument("--e2e", action="store_true",
-                      help="Functional and regression suites; the release gate. "
-                           "This is the default.")
-    what.add_argument("--perf", action="store_true",
-                      help="Benchmarks. These report measurements rather than "
-                           "pass/fail verdicts.")
-    what.add_argument("--soak", action="store_true",
-                      help="Duration and load tests, for leaks, exhaustion and "
-                           "transport degradation.")
-    what.add_argument("--all", action="store_true",
-                      help="All three categories, in the order e2e, perf, soak.")
+    general = parser.add_argument_group("general")
+    general.add_argument("-h", "--help", action="help",
+                         help="Show this help and exit.")
+
+    selection = parser.add_argument_group(
+        "run selection",
+        "Which categories run. With none of these, the E2E gate runs.")
+    selection.add_argument("--e2e", action="store_true",
+                      help="Run the functional and regression suites. They "
+                           "are the release gate, and the default.")
+    selection.add_argument("--perf", action="store_true",
+                      help="Run the benchmarks. They report a measurement, "
+                           "not a verdict.")
+    selection.add_argument("--soak", action="store_true",
+                      help="Run the duration and load tests: leaks, "
+                           "exhaustion, transport degradation.")
+    selection.add_argument("--all", action="store_true",
+                      help="Run all three categories, in the order e2e, "
+                           "perf, soak.")
+    selection.add_argument("-l", "--list", action="store_true",
+                      help="List every registered suite with its category "
+                           "and path, then exit.")
 
     e2e = parser.add_argument_group(
         "e2e options",
-        "Suite selection and UI transport.")
+        "Which suites run, and which UI transport drives them.")
+    e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
+                     help="Run only this suite. Repeatable, and it selects "
+                          "manual suites as well. The names are in --list.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
                      default=DEFAULT_MODE, metavar="LIST",
-                     help="UI transport to drive the E2E suites through: overlay, "
-                          "freeze, telnet, a comma-separated list, or all. Each "
-                          "listed mode is a full pass over the selected suites "
-                          f"(default: {DEFAULT_MODE}). Same flag and values as the "
-                          "suites take. Suites bound to one transport ignore it.")
-    e2e.add_argument("-s", "--suite", action="append", default=[], metavar="NAME",
-                     help="Restrict the run to this suite. Repeatable, and "
-                          "selects manual suites as well. Names are in --list.")
+                     help="Drive the suites through this UI transport: "
+                          "overlay, freeze, telnet, a comma-separated list, "
+                          "or all. Each transport is a full pass over the "
+                          f"selected suites (default: {DEFAULT_MODE}).")
     e2e.add_argument("--manual", action="store_true",
-                     help="Include suites excluded from the default run because "
-                          "they need an operator decision, elevated privileges or "
-                          "a long wall-clock wait.")
+                     help="Also run the suites kept out of the default run: "
+                          "those needing an operator, root, or a long wait.")
+    e2e.add_argument("--assume-fix", action="append", default=[], metavar="NAME",
+                     help="Run the checks this machine normally skips for "
+                          "want of a firmware fix, which is how a backport "
+                          "is found. Repeatable, and 'all' assumes every "
+                          "fix. The names are in tests/lib/machine.py.")
+    e2e.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
+                     help="Set how long the network soak runs: stress takes "
+                          "about two minutes, soak twelve hours (default: "
+                          "stress).")
 
     device = parser.add_argument_group(
         "device",
-        "Target device and request timeouts.")
-    device.add_argument("-H", "--host", default=DEFAULT_HOST,
-                        help="Device host name or IP (default: $U64_HOST or u64).")
-    device.add_argument("-p", "--password", default=DEFAULT_PASSWORD,
-                        help="REST and FTP password (default: $U64_PASS, empty).")
-    device.add_argument("-t", "--timeout", default=DEFAULT_TIMEOUT,
-                        help="Per-request REST timeout in seconds, passed to each "
-                             f"suite (default: {DEFAULT_TIMEOUT}).")
-    device.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
-                        help="Duration profile for the network connection soak: "
-                             "stress is about two minutes, soak is twelve hours "
-                             "(default: stress).")
+        "Where the device is, and how long to wait for it.")
+    device.add_argument("-H", "--host", metavar="TARGET", default=DEFAULT_HOST,
+                        help="Name the target, when it is not given as a "
+                             "positional (default: $U64_HOST, or u64).")
+    device.add_argument("-p", "--password", metavar="PASSWORD",
+                        default=DEFAULT_PASSWORD,
+                        help="Authenticate REST and FTP with this password "
+                             "(default: $U64_PASS, empty).")
+    device.add_argument("-t", "--timeout", metavar="SECONDS", default=DEFAULT_TIMEOUT,
+                        help="Wait this long for one REST request to answer, "
+                             f"in every suite (default: {DEFAULT_TIMEOUT}).")
 
     health = parser.add_argument_group(
-        "device health",
-        "Predicates for a usable device, and the response when one fails.\n"
-        "See DEVICE HEALTH above.")
-    health.add_argument("--no-health-check", dest="health_check",
-                         action="store_false", default=True,
-                         help="Drop the 'functional' predicate, reducing health to "
-                              "reachable and drivable. The check costs about 150ms "
-                              "per suite. Use when a listener is disabled on this "
-                              "device by design and would otherwise report unhealthy "
-                              "before every suite.")
-    health.add_argument("--no-retry", dest="retry", action="store_false", default=True,
-                         help="Report a failure from an unhealthy device as-is "
-                              "instead of re-running the suite. Recovery still "
-                              "happens, so subsequent suites get a working device.")
+        "health and recovery",
+        "Before each E2E suite, and again after one fails, the device must be\n"
+        "reachable, drivable and functional. A suite that fails on a healthy device\n"
+        "found something; one that fails on an unhealthy device showed nothing, so\n"
+        "the device is recovered and the suite runs again. A run that needed a\n"
+        "recovery exits 3, not 0.")
     health.add_argument("--recover-command", default="", metavar="CMD",
-                         help="Shell command that restores the device, e.g. "
-                              "'build u64'. Invoked only for an unhealthy device. "
-                              "No default: the mechanism is site-specific. Exit "
-                              "status is advisory; the health check decides whether "
-                              "the device came back."),
+                         help="Run this shell command to bring an unhealthy "
+                              "device back, for example 'build u64'. There is "
+                              "no default: the mechanism is site-specific, so "
+                              "without it nothing is recovered. Its exit "
+                              "status is advisory; the health check decides "
+                              "whether the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
-                         help="Recovery budget for one suite. Also caps its "
-                              "re-runs, since a re-run follows each recovery "
+                         help="Allow one suite this many recoveries, which is "
+                              "also the number of extra attempts it gets "
                               f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
     health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
-                         help="Recovery budget for the whole run; exhausting it "
-                              "abandons the run "
-                              f"(default: {DEFAULT_RECOVER_MAX_TOTAL}).")
+                         help="Allow the whole run this many recoveries; "
+                              "exhausting them abandons the run (default: "
+                              f"{DEFAULT_RECOVER_MAX_TOTAL}).")
     health.add_argument("--recover-timeout", type=float,
-                         default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SEC",
-                         help="Wall-clock limit for the recovery command, after "
-                              "which it is terminated "
-                              f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}s).")
+                         default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SECONDS",
+                         help="Kill the recovery command after this long "
+                              f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
+    health.add_argument("--no-health-check", dest="health_check",
+                         action="store_false", default=True,
+                         help="Reduce health to reachable and drivable. Use "
+                              "it when a listener is off on this device by "
+                              "design; the full sweep costs about 150ms per "
+                              "suite.")
+    health.add_argument("--attempts", type=int, default=DEFAULT_ATTEMPTS,
+                         metavar="N",
+                         help="How many times a suite may run in total, "
+                              "counting the first. The flag counts "
+                              "executions, not retries, so --attempts 3 runs "
+                              "a failing suite three times and 3 is the "
+                              "highest `attempt` any record can carry "
+                              f"(default: {DEFAULT_ATTEMPTS}).")
+    health.add_argument("--no-retry", dest="attempts", action="store_const",
+                         const=1,
+                         help="Run every suite exactly once. An alias for "
+                              "--attempts 1.")
 
-    output = parser.add_argument_group(
-        "output",
-        "Console rendering, and machine-readable output.")
-    output.add_argument("--color", choices=("auto", "always", "never"), default="auto",
-                        help="auto emits ANSI colour to a terminal and plain text "
-                             "when redirected. NO_COLOR and FORCE_COLOR are honoured "
-                             "and are propagated to the suites (default: auto).")
-    output.add_argument("-l", "--list", action="store_true",
-                        help="Print the suite registry, one per line with its "
-                             "category, path and whether it is manual, then exit.")
-    output.add_argument("-x", "--stop-on-fail", action="store_true",
-                        help="Halt after the first failing suite. The default runs "
-                             "every selected suite, so one failure does not mask "
-                             "the others.")
-    output.add_argument("-j", "--jsonl-dir", default="", metavar="DIR",
-                        help="Emit JSONL into DIR: one file per suite run, plus "
-                             "run.jsonl carrying the run's own counts, recovery "
-                             "total and exit status. Record shapes are documented "
-                             "in tests/lib/README.md.")
+    artifacts = parser.add_argument_group(
+        "run artifacts",
+        "What the run keeps for reading afterwards. tools/e2e_report.py turns an\n"
+        "output directory into runs/index.md, which needs no device: a status line,\n"
+        "then every failing check with the screen, the log tail and the command that\n"
+        "runs it again.")
+    artifacts.add_argument("-o", "--output-dir", default="", metavar="DIR",
+                        help="Keep the whole run under DIR, one directory per "
+                             "target: every check, suite, health sweep and "
+                             "device request as JSONL, each suite's console "
+                             "log, and the screens it read. The record shapes "
+                             "are in tests/lib/README.md.")
+    artifacts.add_argument("--syslog", action="store_true",
+                        help="Collect the devices' own log into DIR, and check "
+                             "at both ends of the run that each is still "
+                             "configured to send it. Needs Network Settings / "
+                             "Log to Syslog Server pointed at this host, which "
+                             "takes effect when the device next boots.")
+    artifacts.add_argument("--syslog-port", type=int,
+                        default=syslog_collector.DEFAULT_PORT, metavar="PORT",
+                        help="Collect the device log on this port (default: "
+                             f"{syslog_collector.DEFAULT_PORT}). Not 514, "
+                             "which needs root.")
+    artifacts.add_argument("--no-screens", dest="screens", action="store_false",
+                        default=True,
+                        help="Stop keeping the screens the suites read. They "
+                             "cost the device nothing, since the suites fetch "
+                             "them anyway, and they are the only record of "
+                             "what was on screen when a check failed.")
+
+    recording = parser.add_argument_group(
+        "recording",
+        "A video of the run. Off by default: it costs the device two streams and\n"
+        "the LAN their bandwidth for the whole run.")
+    recording.add_argument("--record", action="store_true",
+                           help="Record the harness's screen beside the "
+                                "device's video, with the device's audio, one "
+                                "file per target. Needs ffmpeg with "
+                                "libx264rgb.")
+    recording.add_argument("--no-record-video", dest="record_video",
+                           action="store_false", default=True,
+                           help="Drop the device's video and its stream.")
+    recording.add_argument("--no-record-audio", dest="record_audio",
+                           action="store_false", default=True,
+                           help="Drop the audio track and its stream.")
+    recording.add_argument("--no-record-menu", dest="record_menu",
+                           action="store_false", default=True,
+                           help="Drop the harness pane. The screens are still "
+                                "kept under -o.")
+    recording.add_argument("--record-menu-min-interval-ms", type=int, default=0,
+                           metavar="MS",
+                           help="Leave at least this long between two "
+                                "menu_screen requests the recorder makes for "
+                                "itself, which it does only while no suite is "
+                                "reading one (default: 0). The device serves "
+                                "about four HTTP connections.")
+    recording.add_argument("--record-layout", choices=("combined", "separate"),
+                           default="combined",
+                           help="Write both panes into one file, or one file "
+                                "each (default: combined). Separate files stay "
+                                "frame aligned and carry the same audio.")
+    recording.add_argument("--no-record-stamp", dest="record_stamp",
+                           action="store_false", default=True,
+                           help="Draw nothing into the frames: no timecode, "
+                                "failure edge, progress bar or cards. The "
+                                "device's pixels and nothing else.")
+    recording.add_argument("--record-quality", default="lossless", metavar="LEVEL",
+                           help="Encode at this quality: lossless, or a number "
+                                "for a lossy encode (default: lossless). The "
+                                "material is 40-column text, which a lossy "
+                                "encode blurs.")
+    recording.add_argument("--record-scale", type=int, default=1, metavar="N",
+                           help="Upscale the canvas by this whole number, "
+                                "nearest neighbour (default: 1). A fractional "
+                                "scale resamples pixel art.")
+    recording.add_argument("--record-fps", type=int, default=RECORD_FPS,
+                           metavar="N",
+                           help="Write this many frames a second (default: "
+                                f"{RECORD_FPS}). Well below 50: a mostly "
+                                "static screen shows a reader no more at fifty "
+                                "frames a second than at ten.")
+    recording.add_argument("--record-keyint", type=float,
+                           default=RECORD_KEYINT_SECONDS, metavar="SECONDS",
+                           help="Place a keyframe this often while the screen "
+                                f"is static (default: {RECORD_KEYINT_SECONDS:g}). "
+                                "Bounds how far a player decodes when stepping "
+                                "backwards.")
+    recording.add_argument("--record-ffmpeg-args", default="", metavar="ARGS",
+                           help="Add these arguments to the encoder command. "
+                                "They go last, so they override everything "
+                                "above, including the pixel exactness the "
+                                "lossless default is for.")
+
+    console = parser.add_argument_group(
+        "output and execution",
+        "What the console shows, and when to stop.")
+    report.add_colour_argument(console)
+    console.add_argument("-x", "--stop-on-fail", action="store_true",
+                        help="Stop at the first failing suite instead of "
+                             "running the rest.")
+
     return parser
 
 
@@ -907,10 +2351,11 @@ def exit_code_for(results: List[Result], recoveries: int) -> int:
     """The run's status, worst thing first.
 
     A device that could not be made healthy outranks a failed suite: it says
-    nothing could run rather than something did not hold. A recovery outranks a clean run even when every
-    suite passed afterwards, because a run that needed the device brought back
-    is not the same result as one that did not, and a caller polling only `$?`
-    would otherwise never learn it happened.
+    nothing could run rather than something did not hold. A recovery outranks
+    a retry, because a device that had to be brought back is a stronger signal
+    than a suite that needed a second go, and a retry outranks a clean run
+    because a caller polling only `$?` would otherwise never learn that four
+    suites needed three attempts each.
     """
     if any(r.device_unhealthy for r in results):
         return EXIT_DEVICE_UNHEALTHY
@@ -918,10 +2363,13 @@ def exit_code_for(results: List[Result], recoveries: int) -> int:
         return EXIT_SUITE_FAILED
     if recoveries:
         return EXIT_RECOVERED
+    if any(r.attempts > 1 for r in results):
+        return EXIT_RETRIED
     return EXIT_OK
 
 
-def summarise(results: List[Result], started: float, recoveries: int) -> int:
+def summarise(results: List[Result], started: float, recoveries: int,
+              identity: Optional[Dict[str, object]] = None) -> int:
     report.banner("Summary")
 
     groups: Dict[str, List[Result]] = {}
@@ -990,6 +2438,29 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
     report.detail(f"{report.format_duration(total)} total")
 
     failed = [r for r in results if r.verdict == report.FAIL]
+    # The harness this run finished with, against the one it started with. A
+    # run whose files changed under it is two runs reported as one, and only
+    # the run itself can notice.
+    started_with = str((identity or {}).get("harness") or "")
+    finished_with = harness_hash()
+    if started_with and finished_with and started_with != finished_with:
+        # "may not" rather than "did not". The hash covers every tracked file
+        # under those roots, documentation included, so a change to it is
+        # evidence that the tree moved and not proof that any suite behaved
+        # differently. Narrowing the hash to the files a suite executes would
+        # need a rule about which those are, and a rule that is wrong misses
+        # the case the field exists for.
+        report.warn(f"the harness changed during this run: it started on "
+                    f"{started_with} and finished on {finished_with}, so the "
+                    f"suites may not all have run the same code")
+    retried = [r for r in results if r.attempts > 1]
+    if retried:
+        # In the summary as well as per suite, because a run that took 34
+        # attempts to make 30 suites pass is a bench getting worse and no
+        # single suite's line says so.
+        report.detail(f"{plural(len(retried), 'suite run')} needed more than "
+                      f"one attempt, "
+                      f"{sum(r.attempts - 1 for r in retried)} extra in all")
     status = exit_code_for(results, recoveries)
     report.run_result(
         verdict=report.FAIL if failed else report.OK,
@@ -1000,7 +2471,16 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
         dirty=sum(1 for r in results if r.verdict == report.WARN),
         seconds=total,
         recoveries=recoveries,
-        exit_code=status)
+        # What retrying cost this run. Two numbers rather than one, because a
+        # bench where one suite always needs three goes and a bench where six
+        # suites each need two are different problems and both read as "some
+        # retries happened" from either figure alone.
+        retried=len(retried),
+        extra_attempts=sum(r.attempts - 1 for r in retried),
+        harness_changed=bool(started_with and finished_with
+                             and started_with != finished_with),
+        exit_code=status,
+        **(identity or {}))
 
     if status == EXIT_DEVICE_UNHEALTHY:
         print(f"\n{report.colour('FAIL', report.RED)}  "
@@ -1022,33 +2502,371 @@ def summarise(results: List[Result], started: float, recoveries: int) -> int:
 def apply_colour_choice(choice: str) -> None:
     """Honour --color here and in every suite this process starts.
 
-    The suites are child processes, so the choice is exported rather than only
-    applied locally: NO_COLOR and FORCE_COLOR are the conventional names and
-    report.py reads both.
+    One implementation for every program in this tree, in report.py: the
+    suites are child processes, so the choice is exported rather than only
+    applied locally, and NO_COLOR and FORCE_COLOR are the names report.py
+    reads. Under `auto` the suites share this stdout and reach the same
+    answer on their own.
     """
-    if choice == "always":
+    report.apply_colour(choice)
+
+
+# ---------------------------------------------------------------------------
+# Several targets: several ordinary runs of this program, one per target.
+#
+# Nothing below this section knows that more than one device exists. A suite is
+# started the same way, the device is driven the same way, and the report is
+# written the same way; the only thing added here is which of them may be
+# running at the same time, and whose line is whose.
+# ---------------------------------------------------------------------------
+
+# The options a child needs to run the same work its parent was asked for.
+# Every option the parser accepts is either listed here or named in
+# CHILD_EXCLUDED_OPTIONS below, and runner_policy_test.py fails when one is in
+# neither: an option silently dropped here would make a multi-target run quietly
+# different from the single-target run it is supposed to repeat.
+CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
+                         "record")
+CHILD_FORWARDED_VALUES = (
+    ("modes", "--mode"),
+    ("password", "--password"),
+    ("timeout", "--timeout"),
+    ("soak_profile", "--soak-profile"),
+    ("recover_command", "--recover-command"),
+    ("recover_max_per_suite", "--recover-max-per-suite"),
+    ("recover_max_total", "--recover-max-total"),
+    ("recover_timeout", "--recover-timeout"),
+    ("attempts", "--attempts"),
+    ("color", "--color"),
+    ("syslog_port", "--syslog-port"),
+    ("record_menu_min_interval_ms", "--record-menu-min-interval-ms"),
+    ("record_layout", "--record-layout"),
+    ("record_quality", "--record-quality"),
+    ("record_scale", "--record-scale"),
+    ("record_fps", "--record-fps"),
+    ("record_keyint", "--record-keyint"),
+    ("record_ffmpeg_args", "--record-ffmpeg-args"),
+)
+CHILD_FORWARDED_NEGATIVE = (
+    ("health_check", "--no-health-check"),
+    ("screens", "--no-screens"),
+    ("record_video", "--no-record-video"),
+    ("record_audio", "--no-record-audio"),
+    ("record_menu", "--no-record-menu"),
+    ("record_stamp", "--no-record-stamp"),
+)
+# host and targets become the child's one target; output_dir is rewritten per
+# target so two children cannot write the same file; stop_on_fail is forwarded
+# by hand because it is a short flag with a different destination name; list
+# never reaches a child, because the parent prints the registry and stops;
+# assume_fix reaches every child through the environment instead, because a
+# suite started by hand has to be able to set it the same way (see
+# machine.ASSUME_ENV).
+CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
+                          "assume_fix")
+
+
+def child_command(args: argparse.Namespace, target: targets_lib.Target,
+                  output_dir: str) -> List[str]:
+    """The command that runs `target` on its own, with this run's options."""
+    command = [sys.executable, os.path.abspath(__file__)]
+    for name in CHILD_FORWARDED_FLAGS:
+        if getattr(args, name):
+            command.append("--" + name.replace("_", "-"))
+    for name, flag in CHILD_FORWARDED_VALUES:
+        command += [flag, str(getattr(args, name))]
+    for name, flag in CHILD_FORWARDED_NEGATIVE:
+        if not getattr(args, name):
+            command.append(flag)
+    for suite in args.suite:
+        command += ["--suite", suite]
+    if args.stop_on_fail:
+        command.append("--stop-on-fail")
+    if output_dir:
+        command += ["--output-dir", output_dir]
+    command.append(target.token)
+    return command
+
+
+def schedulable(target: targets_lib.Target,
+                active: Sequence[targets_lib.Target]) -> bool:
+    """Whether `target` can start now: no machine it needs is in use."""
+    return not any(target.conflicts_with(other) for other in active)
+
+
+def combine_exit_codes(codes: Sequence[int]) -> int:
+    """One status for the whole run, worst thing first.
+
+    The same order a single run uses, for the same reason: a device that could
+    not be made healthy says nothing ran, which outranks a suite that failed,
+    which outranks a run that needed the device brought back.
+    """
+    if not codes:
+        return EXIT_OK
+    known = (EXIT_OK, EXIT_RETRIED, EXIT_RECOVERED, EXIT_SUITE_FAILED,
+             EXIT_DEVICE_UNHEALTHY)
+    if any(code not in known for code in codes):
+        # A child that exited with something this runner does not produce
+        # crashed or was killed, and a run whose child did that has not
+        # passed. Reported as a failed suite rather than as a new status,
+        # because that is what it is from the run's point of view.
+        return EXIT_SUITE_FAILED
+    # The statuses are a severity scale, so the worst of them is the largest.
+    return max(codes)
+
+
+def signal_group(process: "subprocess.Popen", number: int) -> None:
+    """Signal a child and the suite process it is running.
+
+    The child is a run-tests of its own, and what actually drives the device is
+    the suite it started. Signalling only the child would leave that suite
+    running against hardware the operator now thinks is free, so the whole
+    session started for the child is signalled instead.
+    """
+    try:
+        os.killpg(os.getpgid(process.pid), number)
+    except (ProcessLookupError, PermissionError):
+        process.send_signal(number)
+
+
+def stop(runs: "Sequence[ChildRun]", first: int) -> None:
+    """End these children, escalating to a kill if they do not go."""
+    runs = list(runs)
+    for run in runs:
+        signal_group(run.process, first)
+    for run in runs:
+        try:
+            run.process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            signal_group(run.process, signal.SIGKILL)
+            run.process.wait()
+
+
+class ChildRun:
+    """One target's run: its process, and the half-line left in its pipe."""
+
+    def __init__(self, target: targets_lib.Target, command: List[str],
+                 slot: int) -> None:
+        self.target = target
+        self.slot = slot
+        self.prefix = f"[{target.token}] "
+        # Which of the concurrent runs this one is, so a suite that has to
+        # listen on a port of its own can pick one no other run will pick.
+        # The ftp-client suite runs a real FTP server for the device to
+        # connect back to, and two of them bound the same control port: the
+        # second died with "Address already in use" before its first check.
+        # Slots are reused as runs finish, so this is the lowest free index
+        # rather than the target's position in the list.
+        environment = dict(os.environ, E2E_PORT_SLOT=str(slot))
+        # Its own session, so signalling the child reaches the suite process
+        # the child is running rather than only the child itself.
+        self.process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            start_new_session=True, env=environment)
+        self.pending = b""
+        self.drained = False
+
+    def consume(self) -> bool:
+        """Print whatever has arrived. Returns whether the pipe is still open.
+
+        read1 rather than read: read would block until it had the whole 64K or
+        the child exited, which is the opposite of streaming its output.
+        """
+        chunk = self.process.stdout.read1(65536)
+        if not chunk:
+            if self.pending:
+                self.emit(self.pending)
+                self.pending = b""
+            self.drained = True
+            return False
+        self.pending += chunk
+        *lines, self.pending = self.pending.split(b"\n")
+        for line in lines:
+            self.emit(line)
+        return True
+
+    def emit(self, line: bytes) -> None:
+        # Prefixed per complete line, so a child's own colour and column
+        # alignment survive and every line says which device it came from.
+        print(self.prefix + line.decode("utf-8", "replace").rstrip("\r"), flush=True)
+
+
+def run_targets(args: argparse.Namespace,
+                wanted: Sequence[targets_lib.Target]) -> int:
+    """Run every target, never two that need the same machine at once."""
+    started_wall = time.time()
+    if args.output_dir:
+        # This process has no target of its own, so its records go beside the
+        # per-target directories rather than into one of them.
+        report.set_jsonl_path(os.path.join(args.output_dir, "run.jsonl"))
+        start_console_capture(os.path.join(args.output_dir, "run.log"))
+        # The plan for the run as a whole, before any target starts. A target
+        # waiting for a machine another one holds has no directory and no file
+        # of its own until it starts, so without this nothing says it was
+        # planned, and a run killed while that target was still waiting leaves
+        # no record that it was ever going to run. Each child records the same
+        # plan for itself.
+        record_plan(args, chosen_categories(args), resolve_modes(args.modes),
+                    targets=[t.token for t in wanted])
+    collector = start_syslog(args, wanted)
+    if collector is not None:
+        os.environ[SYSLOG_OWNED_ENV] = "1"
+    if args.color == "auto" and report.colour_enabled():
+        # Each child writes into a pipe, so it would decide "not a terminal"
+        # and drop colour even though this process reprints its lines on one.
         os.environ["FORCE_COLOR"] = "1"
-        os.environ.pop("NO_COLOR", None)
-        report.set_colour(True)
-    elif choice == "never":
-        os.environ["NO_COLOR"] = "1"
-        os.environ.pop("FORCE_COLOR", None)
-        report.set_colour(False)
-    # auto: the suites share this stdout, so they reach the same answer.
+    report.banner("Ultimate hardware test run")
+    report.detail(f"targets:    {', '.join(t.token for t in wanted)}")
+    serialised = [(a.token, b.token) for index, a in enumerate(wanted)
+                  for b in wanted[index + 1:] if a.conflicts_with(b)]
+    for first, second in serialised:
+        report.detail(f"            {first} and {second} share a machine, so they "
+                      "take turns")
+
+    pending = list(wanted)
+    active: Dict[int, ChildRun] = {}
+    # Keyed by target rather than appended in completion order, so the summary
+    # names the right status for each one.
+    codes: Dict[str, int] = {}
+    selector = selectors.DefaultSelector()
+
+    def start_ready() -> None:
+        for target in list(pending):
+            if schedulable(target, [run.target for run in active.values()]):
+                # The child is the process that knows its one target, so it
+                # appends its own slug and this one passes DIR through
+                # unchanged. Appending it here as well would make the tree
+                # DIR/<slug>/<slug>/.
+                output_dir = args.output_dir
+                taken = {run.slot for run in active.values()}
+                slot = next(i for i in range(len(wanted) + 1) if i not in taken)
+                run = ChildRun(target, child_command(args, target, output_dir), slot)
+                pending.remove(target)
+                active[run.process.stdout.fileno()] = run
+                selector.register(run.process.stdout, selectors.EVENT_READ)
+                report.detail(f"started {target.token}")
+
+    def reap() -> None:
+        """Retire the children that have both exited and been read to the end.
+
+        A child that exits still has whatever it wrote last sitting in the
+        pipe. Retiring on the exit status alone would close that pipe unread
+        and drop the tail of the run, which is the part carrying the per-suite
+        verdicts and the summary.
+        """
+        for handle, run in list(active.items()):
+            if not run.drained or run.process.poll() is None:
+                continue
+            selector.unregister(run.process.stdout)
+            run.process.stdout.close()
+            del active[handle]
+            codes[run.target.token] = run.process.returncode
+            report.detail(f"finished {run.target.token} with status "
+                          f"{run.process.returncode}")
+
+    def write_parent_record(status: int) -> int:
+        """Record the run's own verdict, which only this process can state.
+
+        This function returns before `summarise`, so without it a multi-target
+        run records no overall verdict anywhere and a reader would have to
+        re-implement combine_exit_codes to state one. The counts stay with the
+        children, which each counted their own.
+        """
+        if args.output_dir:
+            report.run_result(
+                verdict=report.OK if status in (EXIT_OK, EXIT_RECOVERED)
+                else report.FAIL,
+                seconds=time.time() - started_wall,
+                exit_code=status,
+                targets=[t.token for t in wanted],
+                **run_identity(sys.argv, started_wall))
+        return status
+
+    try:
+        while pending or active:
+            start_ready()
+            if not active:
+                # Unreachable: with nothing running, nothing can conflict, so
+                # start_ready always starts at least one pending target.
+                raise Failure(f"{len(pending)} targets could not be started")
+            for key, _ in selector.select(timeout=0.5):
+                run = active.get(key.fileobj.fileno())
+                if run is not None and not run.consume():
+                    # Drained; the process is about to be reaped below.
+                    run.process.wait()
+            reap()
+    except KeyboardInterrupt:
+        report.detail("interrupted; stopping the remaining targets")
+        stop(active.values(), signal.SIGINT)
+        for run in active.values():
+            codes[run.target.token] = run.process.returncode
+        return write_parent_record(EXIT_SUITE_FAILED)
+    finally:
+        # Whatever brought the loop down, no child outlives this process: a
+        # stray run would keep driving hardware the operator thinks is free.
+        stop([run for run in active.values() if run.process.poll() is None],
+             signal.SIGTERM)
+        selector.close()
+
+    if collector is not None:
+        finish_syslog(collector)
+    status = combine_exit_codes(list(codes.values()))
+    print()
+    for target in wanted:
+        report.detail(f"{target.token}: exit {codes.get(target.token, 'not started')}")
+    return write_parent_record(status)
+
+
+def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
+    """Every target this run was asked for, validated before anything starts."""
+    tokens = list(args.targets) or [args.host]
+    resolved: List[targets_lib.Target] = []
+    for token in tokens:
+        try:
+            target = targets_lib.parse(token)
+        except targets_lib.TargetError as exc:
+            die(str(exc))
+        if any(target.token == other.token for other in resolved):
+            die(f"{target.token} is named twice")
+        resolved.append(target)
+    return resolved
 
 
 def main(argv: List[str]) -> int:
+    # Wall clock as well as the monotonic clock the summary measures with:
+    # every artefact correlates on time.time() taken on this host, and a
+    # monotonic reading names no moment a reader could look up.
+    started_wall = time.time()
     args = build_parser().parse_args(argv)
     apply_colour_choice(args.color)
+    # No artefact may carry it, and the record writer is the one place that can
+    # take it out of every record shape at once.
+    report.mask_secret(args.password)
+    if args.assume_fix:
+        # Exported rather than passed on: the suites are child processes, and
+        # a misspelt tag has to stop the run here, because a run that quietly
+        # went on skipping the checks looks exactly like one where the fix had
+        # not landed.
+        try:
+            assumed = machine_lib.parse_assumptions(" ".join(args.assume_fix))
+        except machine_lib.UnknownFix as exc:
+            die(str(exc))
+        os.environ[machine_lib.ASSUME_ENV] = " ".join(sorted(assumed))
 
     if args.list:
         print_listing()
         return 0
 
-    categories = [c for c in CATEGORIES
-                  if args.all or getattr(args, c.replace("-", "_"))]
-    if not categories:
-        categories = ["e2e"]
+    # Before anything is resolved or started, so a flag that would have done
+    # nothing is a message rather than a run that quietly recorded nothing.
+    check_recording_options(args)
+
+    wanted = resolve_targets(args)
+    if len(wanted) > 1:
+        if args.output_dir and not make_output_tree(args.output_dir):
+            args.output_dir = ""
+        return run_targets(args, wanted)
+    target = wanted[0]
 
     modes = resolve_modes(args.modes)
 
@@ -1056,10 +2874,7 @@ def main(argv: List[str]) -> int:
     for wanted in args.suite:
         if wanted not in known:
             die(f"unknown suite: {wanted} (use --list)")
-    if args.suite:
-        # Naming suites selects exactly those, whichever category they are in.
-        categories = [c for c in CATEGORIES
-                      if any(s.category == c and s.name in args.suite for s in SUITES)]
+    categories = chosen_categories(args)
 
     if args.recover_max_per_suite < 0:
         die("--recover-max-per-suite cannot be negative")
@@ -1076,24 +2891,56 @@ def main(argv: List[str]) -> int:
         except ValueError as exc:
             die(f"--recover-command is not a valid shell command: {exc}")
 
-    if args.jsonl_dir:
-        os.makedirs(args.jsonl_dir, exist_ok=True)
+    tree_root = args.output_dir
+    if args.output_dir:
+        # One tree shape, whether the run was asked for one target or several:
+        # this process knows its one target, so it appends the slug, and a
+        # parent that started it passed DIR through unchanged.
+        args.output_dir = os.path.join(args.output_dir, target.slug)
+        if not make_output_tree(args.output_dir):
+            args.output_dir = ""
+            tree_root = ""
+    if args.output_dir:
         # The run's own record goes in its own file. The per-suite files are
         # written by the suites themselves, which are separate processes and
         # never see this one's result.
-        report.set_jsonl_path(os.path.join(args.jsonl_dir, "run.jsonl"))
+        report.set_jsonl_path(os.path.join(args.output_dir, "run.jsonl"))
+        # The suites are told through E2E_TARGET, which report.py reads at
+        # import; this process resolved its target after importing it, so it
+        # says the same thing about its own health sweeps and suite records.
+        report.set_target(target.token)
+        start_console_capture(os.path.join(args.output_dir, "run.log"))
+        if args.screens:
+            # One file per target for the whole run, so it is emptied here
+            # rather than by any of the suites that append to it.
+            open(os.path.join(args.output_dir, "screens.jsonl"), "w").close()
+        # The same rule for the interaction log, and this process writes to it
+        # as well: the runner's own health sweeps and its UI-state gate are
+        # device interactions and belong in it beside the suites'.
+        path = os.path.join(args.output_dir, "interactions.jsonl")
+        open(path, "w").close()
+        interactions.set_path(path)
+        os.environ[interactions.LOG_ENV] = path
+        if args.color == "auto" and report.colour_enabled():
+            # A captured suite writes into a pipe, so it would decide "not a
+            # terminal" and drop colour even though its lines are reprinted on
+            # one. run_targets already runs its children this way.
+            os.environ["FORCE_COLOR"] = "1"
 
-    options = Options(host=args.host_positional or args.host, password=args.password,
+    options = Options(host=target.token, password=args.password,
                       timeout=args.timeout, soak_profile=args.soak_profile,
-                      jsonl_dir=args.jsonl_dir, stop_on_fail=args.stop_on_fail,
-                      health_check=args.health_check, retry=args.retry,
+                      output_dir=args.output_dir, stop_on_fail=args.stop_on_fail,
+                      health_check=args.health_check, attempts=args.attempts,
+                      screens=args.screens,
                       recover_command=args.recover_command,
                       recover_max_per_suite=args.recover_max_per_suite,
                       recover_max_total=args.recover_max_total,
                       recover_timeout=args.recover_timeout)
 
     report.banner("Ultimate hardware test run")
-    report.detail(f"host:       {options.host}")
+    report.detail(f"target:     {target.token}"
+                  + ("" if not target.split else
+                     f"  (device {target.device}, computer {target.computer})"))
     report.detail(f"categories: {', '.join(categories)}")
     if "e2e" in categories:
         report.detail(f"modes:      {', '.join(modes)}")
@@ -1103,13 +2950,21 @@ def main(argv: List[str]) -> int:
     report.detail(f"on failure: {'stop at the first one' if options.stop_on_fail else 'continue'}")
     report.detail("health:    "
                   + ("answers + health sweep" if options.health_check else "answers only")
-                  + (", retry after recovery" if options.retry else ", no retry"))
+                  + (f", up to {options.attempts} attempts per suite"
+                     if options.attempts > 1 else ", one attempt per suite"))
     if options.recover_command:
         report.detail(f"recovery:   {options.recover_command} "
                       f"(up to {options.recover_max_per_suite} per suite, "
                       f"{options.recover_max_total} in the run)")
-    if options.jsonl_dir:
-        report.detail(f"jsonl:      {options.jsonl_dir}/")
+    if options.output_dir:
+        report.detail(f"jsonl:      {options.output_dir}/")
+
+    # Before anything runs, so a run that was killed part way still says what
+    # it set out to do.
+    record_plan(args, categories, modes)
+
+    # A single-target run has no parent, so this process owns both roles.
+    collector = start_syslog(args, [target], directory=tree_root)
 
     device = Device(options.host, options.password, float(options.timeout),
                     health_check=options.health_check,
@@ -1117,60 +2972,86 @@ def main(argv: List[str]) -> int:
                     recover_max_per_suite=options.recover_max_per_suite,
                     recover_max_total=options.recover_max_total,
                     recover_timeout=options.recover_timeout)
-    results: List[Result] = []
-    started = time.monotonic()
-    stopped = False
-    device_unhealthy = False
+    before_syslog = check_syslog_setting(device, "at the start of the run") \
+        if args.syslog else ""
+    recording = start_recorder(args, target, device)
 
-    for index, category in enumerate(categories):
-        suites = selected_suites(category, args.suite, args.manual)
-        if not suites:
-            continue
-        # The device needs a moment between categories. The perf benchmark
-        # leaves the httpd saturated: measured live, listener-soak's first REST
-        # call timed out at 30 seconds when it started straight after one, while
-        # the same suite passes on its own. The device frees an abandoned HTTP
-        # connection after about 18 seconds, so waiting for it to answer again
-        # is what makes --all mean anything. It costs nothing when it is idle.
-        if index:
-            print()
-            report.step_start(f"settle: device answers before {category}")
-            if device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
-                report.check_ok()
-            else:
-                report.check_warn("still busy; starting anyway")
-        passes = modes if category == "e2e" else [""]
-        for mode in passes:
-            for suite in suites:
-                result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
-                results.append(result)
-                if result.device_unhealthy:
-                    print()
-                    report.detail("the device could not be made healthy; abandoning the "
-                                  "run rather than failing every suite left for the "
-                                  "same reason")
-                    if not options.recover_command:
-                        report.detail("--recover-command names a command that could "
-                                      "have been tried here")
-                    stopped = True
-                    device_unhealthy = True
-                    break
-                if result.verdict == report.FAIL and options.stop_on_fail:
-                    stopped = True
-                    break
-            # Teardown still runs after --stop-on-fail, where the device is
-            # there to be cleaned; it is only pointless once the device is gone.
-            if category == "e2e" and not device_unhealthy:
+    try:
+        results: List[Result] = []
+        started = time.monotonic()
+        stopped = False
+        device_unhealthy = False
+
+        for index, category in enumerate(categories):
+            suites = selected_suites(category, args.suite, args.manual)
+            if not suites:
+                continue
+            # The device needs a moment between categories. The perf benchmark
+            # leaves the httpd saturated: measured live, listener-soak's first REST
+            # call timed out at 30 seconds when it started straight after one, while
+            # the same suite passes on its own. The device frees an abandoned HTTP
+            # connection after about 18 seconds, so waiting for it to answer again
+            # is what makes --all mean anything. It costs nothing when it is idle.
+            if index:
                 print()
-                if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
-                    results.append(Result(category, mode, "teardown", report.FAIL, 0.0))
+                report.step_start(f"settle: device answers before {category}")
+                if device.wait_until_reachable(DEVICE_RECOVERY_BUDGET_SECONDS):
+                    report.check_ok()
+                else:
+                    report.check_warn("still busy; starting anyway")
+            passes = modes if category == "e2e" else [""]
+            for mode in passes:
+                for suite in suites:
+                    result = run_suite(suite, device, options, mode or DEFAULT_MODE, mode or category)
+                    results.append(result)
+                    if result.device_unhealthy:
+                        print()
+                        report.detail("the device could not be made healthy; abandoning the "
+                                      "run rather than failing every suite left for the "
+                                      "same reason")
+                        if not options.recover_command:
+                            report.detail("--recover-command names a command that could "
+                                          "have been tried here")
+                        stopped = True
+                        device_unhealthy = True
+                        break
+                    if result.verdict == report.FAIL and options.stop_on_fail:
+                        stopped = True
+                        break
+                # Teardown still runs after --stop-on-fail, where the device is
+                # there to be cleaned; it is only pointless once the device is gone.
+                if category == "e2e" and not device_unhealthy:
+                    print()
+                    if not reset_to_clean_slate(device, f"TEARDOWN ({mode})"):
+                        results.append(Result(category, mode, "teardown", report.FAIL, 0.0))
+                if stopped:
+                    break
             if stopped:
                 break
-        if stopped:
-            break
 
-    return summarise(results, started, device.recoveries)
+        if args.syslog:
+            # Read at both ends, and corrected at neither.
+            after = check_syslog_setting(device, "at the end of the run")
+            if before_syslog and after and before_syslog != after:
+                report.warn(f"device log: the syslog setting changed during the "
+                            f"run, from {before_syslog!r} to {after!r}. The next "
+                            "run's log depends on what it is at the next boot.")
+    finally:
+        # In a finally, because whatever ends the run early is exactly when
+        # this matters: an unstopped recorder leaves the device streaming to a
+        # socket nobody is reading and leaves its ffmpeg children unreaped,
+        # and an unstopped collector holds its UDP port.
+        stop_recorder(recording, options.output_dir, target.token)
+        if collector is not None:
+            finish_syslog(collector)
+    return summarise(results, started, device.recoveries,
+                     run_identity(sys.argv, started_wall))
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    finally:
+        # However the run ended, the console goes back and the run log is
+        # closed with whatever had been written to it.
+        stop_console_capture()

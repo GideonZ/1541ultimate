@@ -18,6 +18,7 @@ Needs no device, so it runs first and costs nothing.
 """
 
 import ast
+import argparse
 import os
 import sys
 
@@ -122,6 +123,11 @@ def uses_policy(path):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
+                                     if __doc__ else "")
+    report_module = sys.modules["report"]
+    report_module.add_colour_argument(parser)
+    report_module.apply_colour(parser.parse_args().color)
     problems = []
     scanned = 0
     for path in sorted(MUST_USE_POLICY):

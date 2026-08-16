@@ -58,12 +58,14 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "..", "lib"))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
-from ui_backend import char_to_combo  # noqa: E402  (needs tests/e2e/lib first)
+import rest as rest_lib
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
+from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
+    char_to_combo, find_selected_row_rest, measure_cursor_colour)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_count, check_fail, check_ok, check_start, check_warn, detail, last_label,
-    section, suite_fail, warn)
+    section, suite_fail, suite_ok, warn)
 
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -72,10 +74,16 @@ SCREEN_PLANES = 2
 SCREEN_BYTES = SCREEN_CELLS * SCREEN_PLANES
 
 # Shared with every suite; see tests/lib/pacing.py.
+# Ports each concurrent run of this suite reserves. The suite serves the
+# device from its own FTP server, using the control port and the one after it
+# (a second server, for the alternate-port checks), and the passive range plus
+# six ports above it. The blocks below leave room around both.
+CONTROL_PORTS_PER_RUN = 8
+PASSIVE_PORTS_PER_RUN = 32
+
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 # Shared with every suite; see tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
-SELECTED_ROW_MIN_MARKED_CELLS = 12
 
 # C64 keyboard-matrix names from software/api/input_api.h. Cursor keys are a
 # single physical key; shift selects the reverse direction.
@@ -114,7 +122,8 @@ class RestSession:
     MIN_REQUEST_INTERVAL = 0.0
 
     def __init__(self, host, password, timeout=5.0):
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -157,7 +166,10 @@ class RestSession:
                 time.sleep(gap)
             self.rest_requests += 1
             self._last_request_at = time.monotonic()
-            conn = http.client.HTTPConnection(self.host, timeout=timeout or self.timeout)
+            # Keyboard injection belongs to the C64-side computer on a
+            # cartridge target; see tests/lib/targets.py.
+            conn = http.client.HTTPConnection(self.target.host_for(path),
+                                              timeout=timeout or self.timeout)
             sent = False
             try:
                 conn.connect()
@@ -252,6 +264,12 @@ class RestSession:
 # MenuScreen: decode the 40x25 char/attr planes and locate the selected row.
 # ---------------------------------------------------------------------------
 class MenuScreen:
+    # The foreground colour this machine marks its cursor row with, once a
+    # screen has been seen that can say. A machine that marks with a background
+    # colour never teaches one and does not need it. Held on the class because
+    # it is a property of the machine, and a MenuScreen is built per capture.
+    cursor_colour = None
+
     def __init__(self, body):
         self.body = body
         self.chars = body[:SCREEN_CELLS]
@@ -262,42 +280,28 @@ class MenuScreen:
             for r in range(SCREEN_HEIGHT)
         ]
         self.text = "\n".join(self.rows)
+        if MenuScreen.cursor_colour is None:
+            MenuScreen.cursor_colour = measure_cursor_colour(
+                self.chars, self.colors, range(2, SCREEN_HEIGHT - 1))
         self.selected_row = self._find_selected_row()
         self.selected_text = self.rows[self.selected_row].strip() if self.selected_row >= 0 else ""
 
     def _find_selected_row(self):
-        best_bg_row, best_bg = -1, 0
-        best_rev_row, best_rev = -1, 0
-        best_fg_row, best_fg = -1, 0
-        for row in range(2, SCREEN_HEIGHT - 1):
-            bg_counts, fg_counts, rev = {}, {}, 0
-            rc = self.chars[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-            cc = self.colors[row * SCREEN_WIDTH + 1:(row + 1) * SCREEN_WIDTH - 1]
-            for ch, code in zip(rc, cc):
-                if ch & 0x80:
-                    rev += 1
-                fg = code & 0x0F
-                bg = (code >> 4) & 0x0F
-                if bg == 0:
-                    if fg != 0x0F:
-                        fg_counts[fg] = fg_counts.get(fg, 0) + 1
-                    continue
-                bg_counts[bg] = bg_counts.get(bg, 0) + 1
-            bgc = max(bg_counts.values()) if bg_counts else 0
-            fgc = max(fg_counts.values()) if fg_counts else 0
-            if bgc > best_bg:
-                best_bg, best_bg_row = bgc, row
-            if rev > best_rev:
-                best_rev, best_rev_row = rev, row
-            if fgc > best_fg:
-                best_fg, best_fg_row = fgc, row
-        if best_bg >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_bg_row
-        if best_rev >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_rev_row
-        if best_fg >= SELECTED_ROW_MIN_MARKED_CELLS:
-            return best_fg_row
-        return -1
+        """The cursor row, read by the one shared rule.
+
+        This used to carry its own copy of the heuristic, which had no notion
+        of a machine that marks the cursor with a foreground colour alone. On
+        an Ultimate II+L that copy returned the top of the listing every time,
+        which is what made the browser walk here give up after 40 steps
+        without ever reaching the entry it wanted. See
+        ui_backend.find_selected_row_rest.
+        """
+        try:
+            return find_selected_row_rest(
+                self.chars, self.colors, range(2, SCREEN_HEIGHT - 1),
+                cursor_colour=self.cursor_colour)
+        except Failure:
+            return -1
 
     def contains(self, text):
         return text.lower() in self.text.lower()
@@ -363,8 +367,13 @@ class MenuDriver:
         self.s.key_events += len(combos)
         menu_lib.send_taps(self.s.post_input, combos)
         # The batch is accepted at once and drains through the matrix after, so
-        # the caller must not read the field back until it has arrived.
-        time.sleep(len(combos) * pacing.KEY_DRAIN_SECONDS)
+        # the caller must not read the field back, or commit it, until it has
+        # arrived. The rate depends on the target: this charged every target
+        # the device's own rate, and on a cartridge that is five times too
+        # fast, so the RETURN committing a form field was sent while the
+        # field's last character was still on its way and the field was stored
+        # one character short.
+        time.sleep(len(combos) * pacing.key_drain_seconds(self.s.target.split))
 
     # -- menu open/close ---------------------------------------------------
     def menu_is_open(self):
@@ -439,26 +448,22 @@ class MenuDriver:
 
     @staticmethod
     def _selected_popup_row(screen):
-        """Locate the highlighted item of any overlay popup (context menu, F5
-        Tasks menu, or a nested Create submenu). They render at different column
-        offsets, but they all share one property that separates them from the
-        browser's own row highlight: the popup's highlight run never reaches the
-        last column, while the browser's full-width highlight does. Among the
-        non-browser rows, the selected popup item is the one whose highlight
-        extends furthest to the right (a persistent category label sits further
-        left than the moving submenu selection, so this tracks the selection)."""
-        best_row, best_rightmost = -1, -1
-        for row in range(2, SCREEN_HEIGHT - 1):
-            cc = screen.colors[row * SCREEN_WIDTH:(row + 1) * SCREEN_WIDTH]
-            if (cc[SCREEN_WIDTH - 1] >> 4) & 0x0F:
-                continue  # browser full-row highlight reaches the last column
-            rightmost = -1
-            for i in range(1, SCREEN_WIDTH - 1):
-                if (cc[i] >> 4) & 0x0F:
-                    rightmost = i
-            if rightmost > best_rightmost:
-                best_rightmost, best_row = rightmost, row
-        return best_row if best_rightmost >= 15 else -1
+        """The highlighted item of any open popup: context menu, F5 Tasks menu,
+        New Host form or a nested Create submenu.
+
+        All of them are framed windows, so the one shared rule already answers
+        this: find_selected_row_rest restricts its scan to the frontmost
+        frame, which is what separates the popup's own cursor from the browser
+        row highlighted underneath it. This used to carry a second heuristic
+        that took the marked run reaching furthest right, having first dropped
+        any run reaching the last column as the browser's. That works only
+        where the browser's highlight is the wider of the two. On an Ultimate
+        II+L the New Host form's Alias field was 10 marked cells against 30 on
+        the browser row behind it, and the browser row did not reach the last
+        column, so the browser row was returned and the form was never filled
+        in.
+        """
+        return screen.selected_row
 
     def _navigate_popup(self, text, max_steps, kind):
         seen = False
@@ -829,7 +834,9 @@ class ControlledFtpServer:
 # ---------------------------------------------------------------------------
 class DeviceFtpInspector:
     def __init__(self, host, user="user", password="password", timeout=15):
-        self.host = host
+        # The device's own FTP server, so a cartridge target means the
+        # cartridge; see tests/lib/targets.py.
+        self.host = targets.device_of(host)
         self.user = user
         self.password = password
         self.timeout = timeout
@@ -2045,8 +2052,18 @@ def parse_args(argv=None):
     p.add_argument("--ftp-bind-host", default="0.0.0.0", help="local FTP bind address")
     p.add_argument("--ftp-advertised-host", default=None,
                    help="address the Ultimate should connect to (required unless inferable)")
-    p.add_argument("--ftp-port", type=int, default=2121, help="local FTP control port")
-    p.add_argument("--ftp-passive-ports", default="30000-30019", help="passive port range lo-hi")
+    # Two targets tested at once are two runs of this suite, each serving the
+    # device it drives from its own FTP server, so the ports have to differ.
+    # The runner gives every concurrent run an index and this shifts both the
+    # control port and the passive range by it. Without it the second run died
+    # on "Address already in use" before its first check. A run started by
+    # hand has no index and keeps the ports this suite has always used.
+    slot = int(os.environ.get("E2E_PORT_SLOT", "0"))
+    passive_lo = 30000 + slot * PASSIVE_PORTS_PER_RUN
+    p.add_argument("--ftp-port", type=int, default=2121 + slot * CONTROL_PORTS_PER_RUN,
+                   help="local FTP control port")
+    p.add_argument("--ftp-passive-ports", default=f"{passive_lo}-{passive_lo + 19}",
+                   help="passive port range lo-hi")
     p.add_argument("--ftp-user", default="u64e2e", help="remote FTP username")
     p.add_argument("--ftp-password", default="u64e2e", help="remote FTP password")
     p.add_argument("--remote-root", default=None, help="serve an existing local directory instead of a temp one")
@@ -2070,7 +2087,9 @@ def infer_advertised_host(device_host):
     """Find the local source IP the device would see us on."""
     import socket
     try:
-        target = socket.gethostbyname(device_host)
+        # The FTP server is on the device itself, so a cartridge target means
+        # the cartridge; see tests/lib/targets.py.
+        target = socket.gethostbyname(targets.device_of(device_host))
     except OSError:
         return None
     try:
@@ -2166,8 +2185,14 @@ def main(argv=None):
         server.cleanup()
 
     if crashed:
+        suite_fail("ftp_client_test", "hard crash; manual recovery needed")
         return 3
-    return 1 if failed or fails else 0
+    if failed or fails:
+        suite_fail("ftp_client_test",
+                   f"{len(fails)} operation(s) failed" if fails else "failed")
+        return 1
+    suite_ok("ftp_client_test", f"{len(ctx.results)} operation(s)")
+    return 0
 
 
 if __name__ == "__main__":

@@ -41,7 +41,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
+import machine as machine_lib
 import rest as rest_lib
+import targets
 from report import detail, suite_fail, suite_ok
 
 from menu_screen_test import (
@@ -162,6 +164,23 @@ def format_snapshot(snapshot: Snapshot) -> str:
     return ", ".join(repr(snapshot[name]) for name in sorted(snapshot))
 
 
+def strip_browser_frame(row: str, width: int) -> Tuple[str, int]:
+    """A browser row without the window frame, and the width that leaves.
+
+    A C64 Ultimate draws its file browser inside a framed window, so every
+    field sits one column to the right of where the other two machines put it
+    and the row is two columns narrower. parse_browser_row measures its fields
+    from the first content column, so the frame has to come off first.
+    Measured on a C64 Ultimate: with the frame left on, every row parsed as
+    empty, so all three observers reported an empty directory while the screen
+    plainly listed the file, and all 35 matrix rows failed to converge.
+    """
+    row = row.ljust(width)
+    if row[0] == "|" and row[width - 1] == "|":
+        return row[1:width - 1], width - 2
+    return row, width
+
+
 def parse_browser_row(row: str, width: int) -> Optional[Entry]:
     """Split one rendered browser line.
 
@@ -196,7 +215,9 @@ def restrict(snapshot: Snapshot, names: Sequence[str]) -> Snapshot:
 def rest_json(host: str, password: str, method: str, path: str, timeout: float = 15.0) -> Dict[str, object]:
     headers = {"X-Password": password} if password else {}
     request = urllib.request.Request(
-        f"http://{host}{path}",
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        f"http://{targets.host_for(host, path)}{path}",
         data=b"" if method == "PUT" else None,
         headers=headers,
         method=method,
@@ -316,7 +337,7 @@ class FilesystemRefreshBrowser(ui_backend.Browser):
         result: Snapshot = {}
         rows = self.capture().lines
         for index in self.entry_rows:
-            entry = parse_browser_row(rows[index], self.width)
+            entry = parse_browser_row(*strip_browser_frame(rows[index], self.width))
             if entry:
                 result[entry.name] = entry
         return result
@@ -380,6 +401,14 @@ class Context:
         self.ftp_observer: Optional[FtpObserver] = None
         self.ftp_driver: Optional[ftplib.FTP] = None
         self.oracle = RestOracle(self.host, self.password, f"Temp/{self.test_dir}")
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, for the rows that need a firmware fix."""
+        return machine_lib.identify(
+            targets.device_of(self.host),
+            lambda: ui_backend.fetch_product(self.host, self.password or None,
+                                             self.timeout))
 
     def observers(self, exclude: Sequence[str] = ()) -> List[object]:
         assert self.menu is not None and self.telnet is not None and self.ftp_observer is not None
@@ -482,6 +511,17 @@ def seed_files(ctx: Context, entries: Sequence[Tuple[str, int]]) -> None:
 
 
 def drop_names(ctx: Context, names: Sequence[str]) -> None:
+    """Remove a row's fixtures, and wait until every observer has seen them go.
+
+    The wait is what makes each row independent. A row ends by deleting its
+    fixtures and the next row begins by requiring every observer to already
+    agree, so a deletion still working its way through an observer's event
+    queue is reported against the next row's seed rather than this one's
+    teardown. Observed on an Ultimate II+L in a full run: the row that
+    deliberately floods the observers with ten extra files left the Telnet
+    browser still showing that row's renamed file, and the next row's baseline
+    failed with a name it had never heard of.
+    """
     assert ctx.ftp_driver is not None
     ftp = ctx.ftp_driver
     for name in names:
@@ -489,7 +529,12 @@ def drop_names(ctx: Context, names: Sequence[str]) -> None:
         try:
             ftp.delete(target)
         except ftplib.all_errors:
-            ftp_try(lambda path=target: ftp.rmd(path))
+            # RMD alone leaves a directory with contents in place, and the
+            # rows that rename or move a directory put a file inside it. The
+            # failure was silent until the wait below started checking, and
+            # the directory stayed on the device for the rest of the run.
+            remove_tree(ftp, target)
+    ctx.converge("cleanup", "-", expected_snapshot([]), names, record_passes=False)
 
 
 # --------------------------------------------------------------------------
@@ -966,6 +1011,30 @@ def row_short_write(ctx: Context, name: str) -> None:
 # --------------------------------------------------------------------------
 
 
+# The rows that cannot converge without a given firmware fix. Kept beside the
+# rows themselves so a label renamed below is renamed here too.
+ROWS_NEEDING_FIX = {
+    machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
+        "rename under observer-queue pressure from the Menu",
+        "rename under observer-queue pressure from Telnet",
+    ),
+    machine_lib.BROWSER_REFRESH_ON_DIRECTORY_CHANGE: (
+        "rename a directory from the Menu",
+        "rename a directory from Telnet",
+        "delete a non-empty directory from the Menu",
+        "delete a non-empty directory from Telnet",
+        "remove a directory from FTP",
+        "create from FTP (mkd)",
+        "failed write creates nothing",
+    ),
+    machine_lib.BROWSER_REFRESH_FROM_TELNET_WRITER: (
+        "write from Telnet",
+        "copy over an existing file from Telnet",
+        "paste into the watched directory from Telnet",
+    ),
+}
+
+
 def build_rows(ctx: "Context") -> List[Tuple[str, Callable[[], None], Sequence[str]]]:
     """Every matrix row, in run order. Labels are what -r/--row matches on."""
     return [
@@ -1148,7 +1217,9 @@ def open_observers(ctx: Context) -> None:
 
     ctx.telnet = FilesystemRefreshBrowser(
         ui_backend.TelnetBackend(
-            ctx.host,
+            # Telnet is a session on the device itself, so a cartridge target
+            # connects to the cartridge; see tests/lib/targets.py.
+            targets.device_of(ctx.host),
             23,
             ctx.password,
             ctx.timeout,
@@ -1221,6 +1292,24 @@ def main() -> int:
         assert ctx.telnet is not None
 
         rows = build_rows(ctx)
+
+        # A row whose browser cannot recover from a dropped event leaves that
+        # browser stale for the rest of the run, so every later row compares
+        # against a listing that never caught up. Skipped rather than failed
+        # where the firmware lacks the fix, because one failure there costs
+        # twelve.
+        # Named one by one rather than matched on the label, because the row
+        # that needs a fix is not always the row that says so: "failed write
+        # creates nothing" blocks its STOR with a directory it creates first,
+        # so it needs the directory notification like the rows that say
+        # "directory" in their name.
+        for fix, labels in ROWS_NEEDING_FIX.items():
+            if not ctx.machine.missing_fix(fix):
+                continue
+            for label in labels:
+                if any(row[0] == label for row in rows):
+                    ctx.machine.skip_without_fix(fix, label)
+            rows = [row for row in rows if row[0] not in labels]
 
         if args.row:
             wanted = [text.lower() for text in args.row]

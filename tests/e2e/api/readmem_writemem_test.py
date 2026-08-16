@@ -14,8 +14,10 @@ from typing import Dict, List, Optional, Set, Tuple
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (
     FAIL, OK, SKIP, Failure, check, detail, format_exception, section, suite_fail,
@@ -108,18 +110,28 @@ def summarize_ranges(addrs: List[int], limit: int = 20) -> List[str]:
 
 class RestSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
 
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, for the checks that need a firmware fix."""
+        info = self.api.info()
+        return machine_lib.identify(self.host, lambda: (info.product,
+                                                        info.firmware_version))
+
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        return f"http://{self.target.host_for(path)}{path}{query}"
 
     def request(
         self,
@@ -246,6 +258,39 @@ def probe_live_noise(session: RestSession, samples: int, interval: float) -> Set
     return noisy
 
 
+# One probe per 4 KB of plain RAM, avoiding page zero (whose first two bytes are
+# the CPU port), the stack, and screen RAM.
+FROZEN_PROBE_ADDRESSES = [0x0800] + list(range(0x1000, 0xD000, 0x1000))
+FROZEN_PROBE_BYTES = 4
+
+
+def frozen_dma_blind_spots(session: "RestSession") -> List[int]:
+    """The 4 KB windows a DMA write does not reach while the machine is frozen.
+
+    A cartridge freezes the computer it is plugged into rather than a machine of
+    its own, and that computer can stop answering DMA for part of its RAM while
+    it is held frozen: writemem reports success and the read gives $FF back.
+    Measured on u2@c64u, $1000-$7FFF behaves that way while $0000-$0FFF and
+    $8000-$CFFF answer normally; on u64 every window answers.
+
+    Probed rather than derived from the target name, so this reports what the
+    machine under test actually does. The addresses it returns are excluded from
+    the frozen round-trip comparison and named in the output; everything else
+    is still compared byte for byte.
+    """
+    blind: List[int] = []
+    for address in FROZEN_PROBE_ADDRESSES:
+        # A ROM window answers with the ROM image whatever the write did, which
+        # skip_rom already accounts for; only plain RAM is probed here.
+        if classify(address) != "ram":
+            continue
+        probe = bytes(((address >> 8) ^ i) & 0xFF for i in range(FROZEN_PROBE_BYTES))
+        session.writemem(address, probe)
+        if session.readmem(address, FROZEN_PROBE_BYTES) != probe:
+            blind.append(address)
+    return blind
+
+
 def compare(
     expected: bytes,
     actual: bytes,
@@ -254,6 +299,7 @@ def compare(
     allow_screen_mismatch: bool,
     noise_addrs: Set[int],
     skip_rom: bool = False,
+    unreachable_addrs: Set[int] = frozenset(),
     session: Optional["RestSession"] = None,
 ) -> bool:
     ram_mismatches: List[int] = []
@@ -261,10 +307,15 @@ def compare(
     screen_mismatches: List[int] = []
     ignored_noise = 0
     ignored_rom = 0
+    ignored_unreachable = 0
 
     for addr in range(MEM_SIZE):
         cls = classify(addr)
         if cls == "io":
+            continue
+        if addr in unreachable_addrs:
+            if expected[addr] != actual[addr]:
+                ignored_unreachable += 1
             continue
         if expected[addr] == actual[addr]:
             continue
@@ -308,6 +359,9 @@ def compare(
     detail(f"[{label}] screen ($0400-$07FF) mismatches: {len(screen_mismatches)} "
           f"({'expected, menu owns this range while frozen' if allow_screen_mismatch else 'expected 0 in same-mode round trip'})")
     detail(f"[{label}] ignored known-live-noise mismatches: {ignored_noise}")
+    if unreachable_addrs:
+        detail(f"[{label}] ignored mismatches in windows this machine does not answer "
+               f"DMA for while frozen: {ignored_unreachable}")
     detail(f"[{label}] color RAM (low nibble) mismatches: {len(color_mismatches)}")
     detail(f"[{label}] RAM mismatches: {len(ram_mismatches)}")
 
@@ -353,6 +407,30 @@ def run_selfcheck(
     with check(f"open menu ({interface})"):
         session.set_menu_open(True)
 
+    unreachable: Set[int] = set()
+    noise_addrs = set(noise_addrs)
+    if interface == INTERFACE_FREEZE:
+        with check("every 4 KB of RAM answers DMA while the machine is frozen"):
+            blind = frozen_dma_blind_spots(session)
+            if blind:
+                for start in blind:
+                    unreachable.update(range(start, start + 0x1000))
+                detail("excluded from the frozen round trip, this machine does not "
+                       "answer DMA there while frozen: "
+                       + ", ".join(f"${a:04X}-${a + 0xFFF:04X}" for a in blind))
+        with check("probe addresses that still change while the machine is frozen"):
+            # Freeze halts the CPU of the machine the firmware runs on, so on an
+            # Ultimate 64 nothing moves. A cartridge freezes the computer it is
+            # plugged into by running its own stub on that computer's CPU, and
+            # that stub keeps using zero page and the stack. Measured rather
+            # than assumed, so the same comparison holds on both.
+            frozen_noise = probe_live_noise(session, samples=3, interval=0.4)
+            frozen_noise -= unreachable
+            noise_addrs |= frozen_noise
+            detail(f"{len(frozen_noise)} address(es) change on their own while frozen"
+                   + (": " + ", ".join(f"${a:04X}" for a in sorted(frozen_noise)[:20])
+                      if frozen_noise else ""))
+
     pattern = make_pattern(xor_value)
     paused = interface == INTERFACE_OVERLAY
     if paused:
@@ -387,7 +465,9 @@ def run_selfcheck(
     # transaction. Otherwise the CPU can legitimately mutate RAM between the
     # three writes and the read, making an exact round-trip assertion sporadic.
     ok = compare(pattern, actual, label=label, allow_screen_mismatch=allow_screen_mismatch,
-                 noise_addrs=set() if paused else noise_addrs, skip_rom=True)
+                 noise_addrs=set() if paused else noise_addrs, skip_rom=True,
+                 unreachable_addrs=unreachable,
+                 session=None if paused else session)
 
     with check(f"close menu ({interface})"):
         session.set_menu_open(False)
@@ -494,15 +574,21 @@ def run_reset(session: RestSession) -> None:
 # has to be able to fail: `operator new` PANICs and spins forever on OOM
 # (software/system/memory_wrap.cc), which takes the device down with no reset, so
 # the handler uses malloc and reports HTTP 500 instead.
+# Each entry is (params, label, fix). `fix` names the firmware fix the
+# rejection needs, or None where every machine under test has always refused
+# the request. A tagged entry is skipped on a machine that lacks the fix
+# rather than failed, because the scenario below raises on the first
+# unexpected answer and would otherwise take the whole suite with it.
 BAD_READ_REQUESTS = [
-    ({"address": "0000", "length": 0}, "zero length"),
-    ({"address": "0000", "length": -1}, "negative length"),
-    ({"address": "0000", "length": 65537}, "length one past the 64KB cap"),
-    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap"),
-    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long"),
-    ({"address": "ff00", "length": 65536}, "read running past $FFFF"),
-    ({"address": "10000", "length": 1}, "address above $FFFF"),
-    ({"address": "-1", "length": 1}, "negative address"),
+    ({"address": "0000", "length": 0}, "zero length",
+     machine_lib.READMEM_REJECTS_ZERO_LENGTH),
+    ({"address": "0000", "length": -1}, "negative length", None),
+    ({"address": "0000", "length": 65537}, "length one past the 64KB cap", None),
+    ({"address": "0000", "length": 16 * 1024 * 1024}, "length far past the cap", None),
+    ({"address": "0000", "length": "99999999999999999999"}, "length that overflows a long", None),
+    ({"address": "ff00", "length": 65536}, "read running past $FFFF", None),
+    ({"address": "10000", "length": 1}, "address above $FFFF", None),
+    ({"address": "-1", "length": 1}, "negative address", None),
 ]
 # Repeats chosen so a 64KB-per-call leak is a few megabytes without making the
 # suite slow. This is a smoke check, not proof of a leak-free heap: nothing over
@@ -525,7 +611,10 @@ def run_bounds(session: RestSession) -> bool:
     section("bounds: readmem rejects out-of-range parameters before allocating, "
             "and max-size reads do not degrade the device")
 
-    for params, label in BAD_READ_REQUESTS:
+    for params, label, fix in BAD_READ_REQUESTS:
+        if fix is not None and session.machine.skip_without_fix(
+                fix, f"readmem rejects {label}"):
+            continue
         with check(f"readmem rejects {label}"):
             status, _, body = session.request("GET", READMEM_PATH, params=params)
             if status != 400:

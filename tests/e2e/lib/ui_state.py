@@ -25,11 +25,18 @@ import urllib.error
 import urllib.request
 from typing import List, Optional
 
-# tests/lib holds the pacing every suite shares.
+# tests/lib holds the pacing every suite shares; this directory holds the
+# window parser this gate borrows rather than writing a second one. Both are
+# added here because this module is imported from elsewhere in the tree as
+# well as run directly.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import ui_backend  # noqa: E402  (needs this directory on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 
 SCREEN_BYTES = 2000
 SCREEN_COLS = 40
@@ -47,6 +54,11 @@ UNWIND_PRESSES = 14
 # Deeper than any listing the suites build.
 HOME_PRESSES = 16
 REPAIR_ROUNDS = 4
+# Enough Back presses to climb out of the deepest settings screen a launcher
+# leads to, and one descent into the browser; see Device.enter_file_browser.
+LAUNCHER_DESCENT_STEPS = 10
+# Deeper than the launcher's own list, so Back reaches its first entry.
+LAUNCHER_ENTRY_LIMIT = 24
 
 
 class Unrecoverable(RuntimeError):
@@ -54,10 +66,67 @@ class Unrecoverable(RuntimeError):
 
 
 class Device:
+    """The device this gate drives, addressed through its target.
+
+    The two halves of this gate belong to different machines on a cartridge
+    target such as "u2@c64u": the menu screen, the menu button and the reset
+    are the cartridge's, while the keys that back out of a nested object have
+    to be injected into the computer it is plugged into, because the cartridge
+    answers machine:input with HTTP 501. Assuming one host for both is what
+    made the gate report "the root browser is not on top; a nested object
+    still holds the UI" for the whole of a U2 run: every unwind key went to the
+    cartridge, was refused, and nothing on the menu ever moved. See
+    tests/lib/targets.py.
+    """
+
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
+        self.input_host = self.target.input_host
         self.password = password
         self.timeout = timeout
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, asked once of the device.
+
+        The contract this gate enforces is the same on all three, but the way
+        to reach it is not: a C64 Ultimate keeps the file browser one level
+        inside a launcher. See tests/lib/machine.py.
+        """
+        return machine_lib.identify(self.host, self._fetch_product)
+
+    def _fetch_product(self) -> str:
+        body = self._request("GET", "/v1/info")
+        if body is None:
+            raise Unrecoverable("/v1/info returned nothing")
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise Unrecoverable(f"/v1/info returned no readable product: {exc}")
+        return (str(payload.get("product", "")),
+                str(payload.get("firmware_version", "")))
+
+    def enter_file_browser(self) -> None:
+        """Descend from a launcher into the file browser, where there is one.
+
+        A no-op on a machine whose menu button opens the browser itself. The
+        browser is the launcher's first entry, so Back to the top of the list
+        and then Return reaches it without reading the cursor.
+        """
+        entry = self.machine.launcher_browser_entry
+        if entry is None:
+            return
+        for _ in range(LAUNCHER_DESCENT_STEPS):
+            rows = self.screen()
+            if rows is None or not describe_path(rows):
+                return
+            if not any(entry in row for row in rows):
+                self.tap(["left_shift", "cursor_left_right"])
+                continue
+            for _ in range(LAUNCHER_ENTRY_LIMIT):
+                self.tap(["left_shift", "cursor_up_down"])
+            self.tap(["return"])
 
     def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
         headers = {}
@@ -68,7 +137,8 @@ class Device:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
-            f"http://{self.host}{path}", data=body, headers=headers, method=method
+            rest_lib.url_for(self.target, path),
+            data=body, headers=headers, method=method
         )
         # Transport and retry policy come from tests/lib/rest.py; see
         # rest.may_retry. The device serves few concurrent HTTP connections, so
@@ -97,6 +167,13 @@ class Device:
             for c in body[: SCREEN_ROWS * SCREEN_COLS]
         )
         return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
+
+    def showing_ok_dialog(self) -> bool:
+        """Whether a dialog offering only Ok is on top; see showing_ok_dialog."""
+        body = self._request("GET", "/v1/machine:menu_screen")
+        if body is None or len(body) != SCREEN_BYTES:
+            return False
+        return showing_ok_dialog(body)
 
     def menu_is_open(self) -> bool:
         return self.screen() is not None
@@ -152,6 +229,55 @@ class Device:
             pass
         time.sleep(1.0)
 
+    def computer_menu_open(self) -> bool:
+        """Whether the C64-side computer has its own menu up.
+
+        Only meaningful for a cartridge target. The computer's menu takes the
+        keyboard while it is open, so keys meant for the cartridge never reach
+        the C64 matrix it reads, and the cartridge's menu sits there unmoved
+        while every key is answered with HTTP 200. Reproduced directly: with
+        the computer's menu left open, RUN/STOP changed nothing on the
+        cartridge; with it closed, the same key closed the cartridge's menu.
+        """
+        if not self.target.split:
+            return False
+        headers = {"X-Password": self.password} if self.password else {}
+        request = urllib.request.Request(
+            rest_lib.url_for(self.target.computer, "/v1/machine:menu_screen"),
+            headers=headers, method="GET")
+        try:
+            with rest_lib.retrying_urlopen(request, self.timeout):
+                return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise Unrecoverable(
+                f"the computer's menu_screen returned HTTP {exc.code}") from exc
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise Unrecoverable(f"the computer stopped answering: {exc}") from exc
+
+    def clear_computer_menu(self) -> None:
+        """Get the computer's own menu out of the way of the cartridge."""
+        for _ in range(2):
+            if not self.computer_menu_open():
+                return
+            headers = {"X-Password": self.password} if self.password else {}
+            request = urllib.request.Request(
+                rest_lib.url_for(self.target.computer,
+                                 "/v1/machine:menu_button"),
+                data=b"", headers=headers, method="PUT")
+            try:
+                with rest_lib.retrying_urlopen(request, self.timeout):
+                    pass
+            except (OSError, TimeoutError, urllib.error.URLError,
+                    urllib.error.HTTPError):
+                pass
+            time.sleep(MENU_SETTLE_SECONDS)
+        if self.computer_menu_open():
+            raise Unrecoverable(
+                f"{self.target.computer} keeps its own menu open, so keys "
+                f"cannot reach {self.target.device}")
+
     def wait_menu(self, want_open: bool) -> bool:
         deadline = time.monotonic() + MENU_TOGGLE_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
@@ -160,18 +286,51 @@ class Device:
             time.sleep(pacing.POLL_INTERVAL_SECONDS)
         return False
 
+    def wait_screen_change(self, before: List[str]) -> Optional[List[str]]:
+        """The screen once it differs from `before`.
 
-def describe(rows: List[str]) -> str:
-    """Why this screen is not the clean root browser, or "" when it is."""
-    text = "\n".join(rows)
-    if EMPTY_MARKER in text:
-        return f"browser listing is {EMPTY_MARKER!r}"
+        Returns None if the menu closed, and `before` unchanged if the screen
+        never moved within the timeout, so a caller that only needs the latest
+        state can use the result without checking which happened.
+
+        A keystroke does not land at the same speed everywhere. Injected into
+        the machine it drives, it is applied almost at once; injected into the
+        computer a cartridge is plugged into, it goes out over REST, into that
+        computer's C64 keyboard matrix, and is picked up when the cartridge
+        next scans it. One sample taken straight after the key reads the
+        screen the key has not reached yet, and every decision made from it is
+        about a state that no longer exists a moment later.
+        """
+        deadline = time.monotonic() + MENU_TOGGLE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            after = self.screen()
+            if after is None or after != before:
+                return after
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        return before
+
+
+def describe_path(rows: List[str]) -> str:
+    """Why this screen is not the file browser at the root, or "" when it is.
+
+    The browser puts the directory it is showing on the status row and nothing
+    else does, so a screen with no path there is not the browser at all: on a
+    C64 Ultimate that is the launcher, or one of the settings screens it leads
+    to.
+    """
     path = rows[PATH_ROW].split()
     if not path:
         return "no path shown on the status row"
     if path[0] != ROOT_PATH:
         return f"browser is at {path[0]!r}, not {ROOT_PATH!r}"
     return ""
+
+
+def describe(rows: List[str]) -> str:
+    """Why this screen is not the clean root browser, or "" when it is."""
+    if EMPTY_MARKER in "\n".join(rows):
+        return f"browser listing is {EMPTY_MARKER!r}"
+    return describe_path(rows)
 
 
 def open_menu(device: Device) -> List[str]:
@@ -192,6 +351,9 @@ def open_menu(device: Device) -> List[str]:
                         "the menu will not open; the UI task is blocked and RUN/STOP "
                         "did not release it"
                     )
+    # A C64 Ultimate's menu button opens a launcher, not the browser, and it
+    # reopens wherever it was last left. Everything below expects the browser.
+    device.enter_file_browser()
     rows = device.screen()
     if rows is None:
         raise Unrecoverable("menu reported open but returned no screen")
@@ -199,24 +361,40 @@ def open_menu(device: Device) -> List[str]:
 
 
 def close_menu(device: Device) -> None:
-    if device.menu_is_open():
+    if not device.menu_is_open():
+        return
+    device.press_menu_button()
+    if device.wait_menu(want_open=False):
+        return
+    # A dialog offering only Ok holds the menu open and ignores the button.
+    # Answering it is the only way past, and this is the first place that
+    # notices: every caller below reaches for close_menu before it reaches for
+    # the unwind that also knows about such a dialog. Observed on a C64
+    # Ultimate, where a CFG load left "There were errors." on screen and the
+    # gate reported a UI that was not reading keys at all.
+    if device.showing_ok_dialog():
+        device.tap(["return"])
         device.press_menu_button()
-        if not device.wait_menu(want_open=False):
-            raise Unrecoverable("the menu will not close")
+        if device.wait_menu(want_open=False):
+            return
+    raise Unrecoverable("the menu will not close")
 
 
 def describe_open_menu(device: Device) -> str:
     """Why the open menu is not the root browser, or "" when it is.
 
-    Costs one RUN/STOP press, and leaves the menu closed either way, which is
-    the state the contract asks for.
+    Costs one RUN/STOP press per level between the browser and the closed
+    menu, and leaves the menu closed either way, which is the state the
+    contract asks for.
 
     The screen cannot answer this on its own. The Assembly 64 query form prints
     the same "/" status row as the root browser and leaves the listing area
     filled with its own fields, so describe() calls it clean and the gate hands
     the next suite a modal instead of a browser. RUN/STOP leaves the menu only
     once the root browser has focus, so the menu closing is what proves nothing
-    is stacked on top of it.
+    is stacked on top of it. How many presses that takes is a property of the
+    machine: a C64 Ultimate's launcher sits between the browser and the closed
+    menu, so one press there only returns to the launcher.
     """
     rows = device.screen()
     if rows is None:
@@ -225,11 +403,52 @@ def describe_open_menu(device: Device) -> str:
     if problem:
         close_menu(device)
         return problem
-    device.tap(["run_stop"])
-    if device.menu_is_open():
-        close_menu(device)
-        return "the root browser is not on top; a nested object still holds the UI"
-    return ""
+    for _ in range(device.machine.back_presses_to_close_menu):
+        device.tap(["run_stop"])
+    # Waited for rather than sampled: see Device.wait_screen_change. Reading
+    # once here called a cartridge target dirty on every suite, and then
+    # pressed the menu button against a RUN/STOP that was still in flight.
+    if device.wait_menu(want_open=False):
+        return ""
+    close_menu(device)
+    return "the root browser is not on top; a nested object still holds the UI"
+
+
+def showing_ok_dialog(body: bytes) -> bool:
+    """Whether the frontmost window is a dialog whose only action is Ok.
+
+    Some dialogs report a result and offer one button. Back does not dismiss
+    them, so the unwind below presses its way around the object stack for ever
+    and the device is abandoned as unhealthy with a perfectly responsive UI on
+    screen. Observed on a C64 Ultimate, where a CFG load left "There were
+    errors." over the browser and every later suite in that run was skipped.
+
+    Read from the character plane rather than the text rows, because those
+    render the window frame as spaces: the dialog is drawn over a listing, so
+    its row reads "base_7.bin         Ok         N  750K" and the button
+    cannot be told from a file called Ok. Inside the window's own columns it
+    is the only thing there. The frame parser is the one the suites use; see
+    ui_backend.find_open_window.
+
+    RETURN is otherwise refused here because it activates whatever the cursor
+    is on. It is safe on this screen and only this screen: a lone Ok is the
+    single thing the window can do, so the keystroke cannot pick anything
+    else.
+    """
+    rows = range(2, SCREEN_ROWS - 1)
+    chars = body[:ui_backend.SCREEN_CELLS]
+    window = ui_backend.find_open_window(chars, rows)
+    if window == ui_backend.whole_screen(rows):
+        return False
+    said = []
+    for row in window.rows:
+        start = row * ui_backend.SCREEN_WIDTH
+        text = "".join(
+            chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " "
+            for c in chars[start + window.first_column:start + window.last_column])
+        if text.strip():
+            said.append(text.strip())
+    return bool(said) and said[-1].lower() == "ok"
 
 
 def unwind(device: Device) -> None:
@@ -241,26 +460,32 @@ def unwind(device: Device) -> None:
     screen shows instead would stop on the Assembly 64 query form, which reports
     the root browser's own "/" path.
 
-    Never RETURN or F5 here: RETURN activates the entry under the cursor, and F5
-    opens the task menu onto the Assembly 64 entry, which is what creates this
-    mess in the first place.
+    F5 is never pressed here: it opens the task menu onto the Assembly 64
+    entry, which is what creates this mess in the first place. RETURN is
+    pressed only to answer a dialog that offers nothing else; see
+    sole_action_row.
     """
     for _ in range(UNWIND_PRESSES):
         rows = device.screen()
         if rows is None:
             return
-        before = rows[PATH_ROW]
         # LEFT leaves a directory or disk, which is what the menu's own help
         # calls "go one level up". RUN/STOP leaves the menu or backs out of a
         # nested object, so it cannot walk the path.
         device.tap(["left_shift", "cursor_left_right"])
-        after = device.screen()
+        after = device.wait_screen_change(rows)
         if after is None:
             return
-        if after[PATH_ROW] == before:
+        if after[PATH_ROW] == rows[PATH_ROW]:
             # The path did not move, so this is a nested object rather than a
             # directory. Back out of it instead.
             device.tap(["run_stop"])
+            settled = device.wait_screen_change(after)
+            if settled is None:
+                return
+            if settled == after and device.showing_ok_dialog():
+                device.tap(["return"])
+                device.wait_screen_change(settled)
 
 
 def repair(device: Device) -> None:
@@ -318,12 +543,21 @@ def verify(device: Device) -> str:
     Observing costs one menu open and close, and leaves the menu closed on every
     path.
     """
+    # On a cartridge target the computer's own menu has to be out of the way
+    # first, or every key below is delivered to it instead.
+    device.clear_computer_menu()
     if device.menu_is_open():
         close_menu(device)
         return "the menu was left open"
     device.press_menu_button()
     if not device.wait_menu(want_open=True):
         return "the menu will not open; the UI task is blocked in a modal"
+    # Where the menu button lands is a property of the machine, so reaching
+    # the browser from it is part of satisfying the contract rather than a
+    # breach of it: a C64 Ultimate always opens its launcher, and reporting
+    # that as dirty would make every suite on it pay for a repair that had
+    # nothing to fix.
+    device.enter_file_browser()
     return describe_open_menu(device)
 
 
@@ -355,7 +589,7 @@ def diagnose(device: Device) -> List[str]:
     # stopped reading them. RUN/STOP is used because it is the one key that
     # cannot activate anything.
     device.tap(["run_stop"])
-    after = device.screen()
+    after = device.wait_screen_change(rows)
     if after is None:
         lines.append("RUN/STOP closed the menu, so the UI is reading keys")
     elif after == rows:

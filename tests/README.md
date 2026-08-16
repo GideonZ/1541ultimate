@@ -11,9 +11,45 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 | [`soak/`](soak/) | Time- and load-based checks for leaks, exhaustion, races and transport degradation. Not the gate. |
 | [`lib/`](lib/) | Support code shared by all three categories, plus the two gate checks that need no device. |
 
-`./run-tests -H <host>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
+`./run-tests <target>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
+
+## Targets
+
+A target names what is being tested:
+
+| Form | Meaning |
+| --- | --- |
+| `host` | a device that is also its own C64-side computer |
+| `cartridge@computer` | a cartridge under test, in the computer that supplies its C64 keyboard and video |
+
+An Ultimate II is a cartridge. It serves its own menu, memory and
+configuration, but has no keyboard of its own: `machine:input` answers HTTP 501
+there, so keys are injected into the computer it is plugged into and reach it
+over the expansion port. Everything else stays with the cartridge.
+
+```sh
+./run-tests u64
+./run-tests u2@c64u
+./run-tests u64 c64u u2@u64-2
+```
+
+Naming several targets runs several ordinary runs of the runner, one child
+process per target, and prefixes every output line with the target it came
+from. A target occupies the machines it names, and two targets that share one
+never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
+`u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
+
+The same token is accepted wherever a device is named, including by a suite
+started by hand:
+
+```sh
+python3 tests/e2e/monitor/monitor_test.py -H u2@c64u -m telnet
+```
+
+[`tests/lib/targets.py`](lib/targets.py) is the one place the grammar and the
+routing live.
 
 ## Host requirements
 
@@ -29,6 +65,8 @@ pip install -r tests/requirements.txt
 | `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
+| `ffmpeg`, `ffprobe` | `./run-tests --record` only. Not Python packages. The lossless default needs the `libx264rgb` encoder, which keeps the frames pixel exact; a build without it is refused at startup rather than after half an hour of capture. |
+| `pandoc`, `weasyprint` | Optional, never installed in CI: one command turns `index.md` into a PDF. |
 
 `pytesseract` is a wrapper around a separate binary, so it also needs
 `tesseract` on `PATH` (`brew install tesseract`, or `apt install
@@ -58,7 +96,7 @@ so a command line reads the same wherever it is typed:
 
 | Flag | Meaning |
 | --- | --- |
-| `-H`, `--host` | Device host name or IP |
+| `-H`, `--host` | Target: a host, or `cartridge@computer` |
 | `-p`, `--password` | REST and FTP password |
 | `-t`, `--timeout` | Per-request REST timeout, in seconds |
 | `-r`, `--rest-host` | REST address, when it differs from `--host` |
@@ -79,11 +117,14 @@ when a suite is started by hand. One name each, used by every suite:
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `U64_HOST` | Device host name or IP | `u64` |
+| `U64_HOST` | Target, when none is given on the command line | `u64` |
 | `U64_PASS` | REST and FTP password | empty |
 | `U64_TIMEOUT` | Per-request REST timeout, in seconds | per suite |
 | `U64_REST_HOST` | REST address, when it differs from `U64_HOST` | `U64_HOST` |
+| `U64_REST_PORT` | REST port | `80` |
+| `U64_FTP_PORT` | FTP port | `21` |
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
+| `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI profile: `overlay`, `freeze` or `telnet` | `overlay` |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
@@ -195,15 +236,46 @@ console output:
 | `3` | Every suite passed, but the device had to be recovered |
 | `4` | The device could not be made healthy, and the run was abandoned |
 
-`-j DIR` writes the same thing as JSONL: one file per suite run, plus
-`run.jsonl` holding the run's own `run` record with `passed`, `failed`,
-`skipped`, `dirty`, `recoveries` and `exit_code`. See
-[tests/lib/README.md](lib/README.md) for the record shapes.
+With several targets the run takes the worst of its children's statuses, in
+that same order.
+
+`-o DIR` keeps the whole run under one directory per target:
+`DIR/<slug>/run.jsonl` holds that target's `run` record with `passed`,
+`failed`, `skipped`, `dirty`, `recoveries` and `exit_code`, beside one file per
+suite run. A run of several targets also writes `DIR/run.jsonl` for the run as
+a whole. See [tests/lib/README.md](lib/README.md) for the record shapes and the
+tree.
 
 ```sh
-./run-tests -H u64 --recover-command 'build u64' -j runs/
-jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/run.jsonl
+./run-tests -H u64 --recover-command 'build u64' -o runs/
+jq -r 'select(.kind=="run") | "\(.verdict) failed=\(.failed) recoveries=\(.recoveries)"' runs/u64/run.jsonl
 ```
+
+`tools/e2e_report.py` turns that tree into one Markdown document covering the
+whole run, every target included. It needs no device and runs afterwards:
+
+```sh
+python3 tools/e2e_report.py runs/
+less runs/index.md
+```
+
+`--record` adds a video of the run: the harness's screen and the device's video
+side by side with the device's audio, one file per target, subtitles naming the
+check at each moment, chapters per suite run, and a handful of stills the report
+inlines as text. It is off by default because it costs the device two streams
+and the LAN their bandwidth for the length of the run.
+
+```sh
+mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4
+grep FAIL runs/u64/video.srt
+```
+
+`runs/index.md` opens with one greppable status line, then the verdicts, what
+the run did not run, every failing check with the facts the run recorded about
+it and the command that runs it again, and every health sweep. Below the
+`<!-- detail -->` marker it carries the whole timeline, every check and where
+the time went. Why each part is the shape it is, is in
+[tests/e2e/doc/observability-spec.md](e2e/doc/observability-spec.md).
 
 ## Rules
 

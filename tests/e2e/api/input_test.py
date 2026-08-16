@@ -6,8 +6,6 @@ import http.client
 import json
 import os
 import re
-import socket
-import struct
 import sys
 import time
 import urllib.error
@@ -22,9 +20,14 @@ from PIL import Image
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import pacing
 import rest as rest_lib
+import targets
 from api import UltimateApi
 from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
+from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
     "all",
@@ -65,24 +68,44 @@ MENU_KEY_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_KEY_SETTLE", "0.3
 MENU_HOLD_SECONDS = float(os.environ.get("U64_INPUT_MENU_HOLD_SECONDS", "1.2"))
 MENU_POST_RELEASE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_POST_RELEASE_SETTLE", "0.35"))
 MENU_NAV_PREPARE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_PREPARE_SETTLE", "0.15"))
-MENU_NAV_OPEN_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_OPEN_SETTLE", "0.75"))
-MENU_NAV_STEP_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_STEP_SETTLE", "0.08"))
-MENU_NAV_SELECT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_SELECT_SETTLE", "0.45"))
-MENU_EDITOR_OPEN_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EDITOR_OPEN_SETTLE", "0.70"))
-MENU_EDITOR_SAVE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EDITOR_SAVE_SETTLE", "0.25"))
+# Bounds on the menu waits below, not expected durations: each of those waits
+# returns as soon as the menu screen shows the state it asked for, and these
+# only decide when to give up and report what the screen held instead.
+#
+# MENU_STATE_TIMEOUT covers one menu transition - the menu opening, F2 drawing
+# the settings list, a settings list opening, an editor window opening or
+# closing. MENU_STEP_TIMEOUT covers one cursor key moving the highlight by one
+# entry, and is also what a highlight that has stopped at the end of a list
+# costs before the walk turns around, so it is deliberately short.
+# MENU_SELECT_TIMEOUT bounds a whole walk to a named entry.
+MENU_STATE_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STATE_TIMEOUT", "10.0"))
+MENU_STEP_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STEP_TIMEOUT", "1.5"))
+MENU_SELECT_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_SELECT_TIMEOUT", "45.0"))
 MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0.25"))
 MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
 MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
-MULTICAST_GROUP = "239.0.1.64"
-VIDEO_PORT = 11000
 RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
 MODEM_SETTINGS_CATEGORY = "Modem Settings"
 MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
 DEFAULT_MODEM_OFFLINE_TEXT = "/flash/offline.txt"
+# machine:menu_screen serves 25 rows of 40 screen codes, followed by the same
+# number of colour bytes. The firmware draws the highlighted entry in colour 1,
+# so one request reads both the text and which entry is selected. The window
+# frame is drawn in colour 1 too, which is why the selected entry is recognised
+# by the colour of its first character column rather than by the whole row.
+MENU_SCREEN_BYTES = 2000
+MENU_SCREEN_COLS = 40
+MENU_SCREEN_ROWS = 25
+MENU_SELECTED_COLOUR = 0x01
+MENU_LABEL_COLUMN = 1
+# The rows a settings list occupies: row 0 is the version banner, rows 1 and 2
+# and row 23 are the window frame, and row 24 is the status line.
+MENU_LIST_FIRST_ROW = 3
+MENU_LIST_LAST_ROW = 22
 FONT_PATH = Path(__file__).resolve().parents[3] / "roms" / "chars.bin"
 FONT_BYTES = FONT_PATH.read_bytes()[: 256 * 8]
 PRINTABLE_FALLBACK = {
@@ -170,7 +193,8 @@ def wants_keyboard_echo_tests(selected: Optional[List[str]]) -> bool:
 
 class RestInputSession:
     def __init__(self, host: str, password: Optional[str], timeout: float) -> None:
-        self.host = host
+        self.target = targets.parse(host)
+        self.host = self.target.device
         self.password = password
         self.timeout = timeout
         # For the calls this suite makes no assertion about, so that the menu
@@ -181,7 +205,9 @@ class RestInputSession:
         query = ""
         if params:
             query = "?" + urllib.parse.urlencode(params)
-        return f"http://{self.host}{path}{query}"
+        # Keyboard injection belongs to the C64-side computer on a cartridge
+        # target; see tests/lib/targets.py.
+        return f"http://{self.target.host_for(path)}{path}{query}"
 
     def request(
         self,
@@ -256,7 +282,7 @@ class RestInputSession:
         connection = None
         try:
             status, _headers, body = rest_lib.retrying_http_request(
-                self.host, "POST", "/v1/machine:input", body=b"", headers=headers,
+                self.target.input_host, "POST", "/v1/machine:input", body=b"", headers=headers,
                 timeout=self.timeout)
             if status != expected_code:
                 raise Failure(f"Expected HTTP {expected_code}, got HTTP {status}")
@@ -324,55 +350,6 @@ class FrameText:
     def contains(self, needle: str) -> bool:
         needle_upper = needle.upper()
         return any(needle_upper in line for line in self.lines)
-
-
-class VicStreamCapture:
-    def __init__(self) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(2.0)
-        self.sock.bind(("", VIDEO_PORT))
-        group = socket.inet_aton(MULTICAST_GROUP)
-        membership = struct.pack("4sL", group, socket.INADDR_ANY)
-        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
-
-    def close(self) -> None:
-        try:
-            self.sock.close()
-        except OSError:
-            pass
-
-    def _drain_partial_frame(self) -> None:
-        while True:
-            data, _ = self.sock.recvfrom(1024)
-            _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-            if line & 0x8000:
-                return
-
-    def capture_image(self) -> Image.Image:
-        for _ in range(8):
-            self._drain_partial_frame()
-            raw = bytearray()
-            while True:
-                data, _ = self.sock.recvfrom(1024)
-                _, _, line, _ = struct.unpack("<HHHH", data[0:8])
-                raw.extend(data[12:])
-                if line & 0x8000:
-                    break
-
-            lines = len(raw) // 192
-            if lines < 180:
-                continue
-
-            image = Image.new("P", (384, lines))
-            i = 0
-            for y in range(lines):
-                for x in range(192):
-                    value = raw[i]
-                    image.putpixel((2 * x, y), value & 0x0F)
-                    image.putpixel((2 * x + 1, y), value >> 4)
-                    i += 1
-            return image
-        raise Failure("Did not receive a complete VIC frame.")
 
 
 class C64FrameOCR:
@@ -1223,14 +1200,158 @@ def close_menu_keyboard(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
 
-def menu_move_to_top(session: RestInputSession, settle: float = 0.05, count: int = 32) -> None:
-    for _ in range(count):
-        menu_keyboard_tap(session, ["left_shift", "cursor_up_down"], settle)
+def read_menu_screen(session: RestInputSession) -> Optional[Tuple[List[str], List[List[int]]]]:
+    """The open menu as text rows and colour rows, or None when it is closed."""
+    body = session.menu_screen()
+    if body is None:
+        return None
+    if len(body) != MENU_SCREEN_BYTES:
+        raise Failure(f"menu_screen returned {len(body)} bytes, expected {MENU_SCREEN_BYTES}")
+    cells = MENU_SCREEN_ROWS * MENU_SCREEN_COLS
+    rows: List[str] = []
+    colours: List[List[int]] = []
+    for row in range(MENU_SCREEN_ROWS):
+        start = row * MENU_SCREEN_COLS
+        codes = body[start:start + MENU_SCREEN_COLS]
+        rows.append("".join(chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " " for c in codes))
+        colours.append([c & 0x0F for c in body[cells + start:cells + start + MENU_SCREEN_COLS]])
+    return rows, colours
 
 
-def menu_move_down(session: RestInputSession, count: int, settle: float = 0.05) -> None:
-    for _ in range(count):
-        menu_keyboard_tap(session, ["cursor_up_down"], settle)
+def menu_selection(rows: List[str], colours: List[List[int]]) -> Optional[Tuple[int, str]]:
+    """The highlighted entry as (row, text), or None when nothing is highlighted."""
+    for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
+        if rows[row].strip() and colours[row][MENU_LABEL_COLUMN] == MENU_SELECTED_COLOUR:
+            return row, rows[row]
+    return None
+
+
+def menu_row_with(rows: List[str], label: str) -> Optional[int]:
+    """The list row holding `label`, or None when it is not on screen."""
+    for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
+        if label in rows[row]:
+            return row
+    return None
+
+
+def menu_is_settings_root(rows: List[str]) -> bool:
+    """Whether the settings category list is on top, rather than the file browser.
+
+    BrowsableConfigRoot in software/userinterface/config_menu.h gives that one
+    list section headers written as "-- Peripherals --", unconditionally, so
+    this holds on any machine. The file browser lists file and directory names
+    and has no such row, and the items inside one category head their sections
+    with a plain name such as "Handshaking".
+    """
+    for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
+        text = rows[row].strip()
+        if text.startswith("-- ") and text.endswith(" --"):
+            return True
+    return False
+
+
+def menu_editor_is_open(rows: List[str], label: str) -> bool:
+    """Whether the value editor for `label` is drawn over the settings list.
+
+    The editor is a window with the item's name as its title, drawn over the
+    list the item is still listed in, so the name is on screen twice while it
+    is open and once when it is not.
+    """
+    return sum(1 for row in rows if label in row) > 1
+
+
+def wait_for_menu(session: RestInputSession, predicate, description: str,
+                  timeout: float = MENU_STATE_TIMEOUT_SECONDS):
+    """Poll the menu screen until `predicate(rows, colours)` returns non-None.
+
+    Every menu step below waits for its result to be on the screen instead of
+    sleeping long enough that it usually is. The pause a single-device target
+    needs is not the pause this path needs: on a cartridge target a key posted
+    to machine:input is applied to the keyboard matrix of the computer the
+    cartridge is plugged into, and only reaches the menu on the cartridge's
+    next scan of that matrix. See tests/lib/targets.py.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        screen = read_menu_screen(session)
+        if screen is not None:
+            found = predicate(*screen)
+            if found is not None:
+                return found
+        if time.monotonic() >= deadline:
+            shown = "the menu is closed" if screen is None else "\n".join(screen[0])
+            raise Failure(f"Timed out after {timeout:g}s waiting for {description}. "
+                          f"Menu screen was:\n{shown}")
+        time.sleep(pacing.POLL_INTERVAL_SECONDS)
+
+
+def wait_for_menu_selection(session: RestInputSession, description: str) -> Tuple[List[str], Tuple[int, str]]:
+    """The screen and its highlighted entry, once the menu shows one."""
+    def highlighted(rows, colours):
+        found = menu_selection(rows, colours)
+        return None if found is None else (rows, found)
+
+    return wait_for_menu(session, highlighted, description)
+
+
+def wait_for_menu_selection_change(session: RestInputSession,
+                                   before: Tuple[int, str]) -> Optional[Tuple[int, str]]:
+    """The highlighted entry once it differs from `before`, or None if it never does.
+
+    A cursor key moves the highlight to another row, or, at the edge of a list
+    that scrolls, keeps the row and changes its text. Comparing the pair covers
+    both. The highlight stops at the ends of a list, where a key legitimately
+    changes nothing, so not moving is a result rather than a failure here.
+    """
+    deadline = time.monotonic() + MENU_STEP_TIMEOUT_SECONDS
+    while True:
+        screen = read_menu_screen(session)
+        if screen is not None:
+            current = menu_selection(*screen)
+            if current is not None and current != before:
+                return current
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(pacing.POLL_INTERVAL_SECONDS)
+
+
+def select_menu_entry(session: RestInputSession, label: str) -> None:
+    """Move the highlight onto the entry whose row holds `label`.
+
+    Reading the highlight back after every key is what makes this work on more
+    than one machine. Fixed press counts do not: they encode one machine's
+    settings list, and an Ultimate II+L has fourteen settings categories, so
+    the nineteen cursor-down presses this replaced stopped on the last of them,
+    "Network Settings". The suite then typed into "Time Server 1" while reading
+    "Modem Offline Text" back, and reported the empty value it had set itself.
+    """
+    deadline = time.monotonic() + MENU_SELECT_TIMEOUT_SECONDS
+    descending = True
+    reversed_once = False
+    while True:
+        rows, current = wait_for_menu_selection(
+            session, f"a highlighted entry while looking for {label!r}")
+        if label in current[1]:
+            return
+        target = menu_row_with(rows, label)
+        if target is not None:
+            descending = target > current[0]
+        # The REST API uses C64 matrix names: cursor-up is shifted cursor-down.
+        keys = ["cursor_up_down"] if descending else ["left_shift", "cursor_up_down"]
+        session.post_events([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+        if wait_for_menu_selection_change(session, current) is None:
+            if reversed_once or target is not None:
+                raise Failure(
+                    f"Could not reach {label!r}: the highlight stopped on "
+                    f"{current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
+            # Nothing moved, so this is the end of the list and the entry is on
+            # the other side of where the highlight started.
+            reversed_once = True
+            descending = not descending
+        if time.monotonic() >= deadline:
+            raise Failure(
+                f"Timed out after {MENU_SELECT_TIMEOUT_SECONDS:g}s moving the highlight to "
+                f"{label!r}; it is on {current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
 
 
 def clear_menu_editor_field(session: RestInputSession, character_count: int) -> None:
@@ -1281,18 +1402,33 @@ def save_offline_text_evidence(tag: str, value: str) -> None:
     save_menu_note(tag, f"{MODEM_OFFLINE_TEXT_ITEM}: {value}")
 
 
+def open_menu(session: RestInputSession) -> None:
+    """Bring the menu up, unless it is already showing."""
+    if session.menu_screen_open():
+        return
+    session.put("menu_button")
+    wait_for_menu(session, lambda rows, colours: True, "the menu to open")
+
+
 def navigate_to_modem_offline_text_editor(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
     time.sleep(MENU_NAV_PREPARE_SETTLE_SECONDS)
-    session.put("menu_button")
-    time.sleep(MENU_NAV_OPEN_SETTLE_SECONDS)
-    menu_keyboard_f2_tap(session, MENU_NAV_SELECT_SETTLE_SECONDS)
-    menu_move_to_top(session, settle=MENU_NAV_STEP_SETTLE_SECONDS, count=20)
-    menu_move_down(session, 19, settle=MENU_NAV_STEP_SETTLE_SECONDS)
-    menu_keyboard_tap(session, ["return"], MENU_NAV_SELECT_SETTLE_SECONDS)
-    menu_move_to_top(session, settle=MENU_NAV_STEP_SETTLE_SECONDS, count=20)
-    menu_move_down(session, 11, settle=MENU_NAV_STEP_SETTLE_SECONDS)
-    menu_keyboard_tap(session, ["return"], MENU_EDITOR_OPEN_SETTLE_SECONDS)
+    open_menu(session)
+    menu_keyboard_f2_tap(session, 0.0)
+    wait_for_menu(session, lambda rows, colours: menu_is_settings_root(rows) or None,
+                  "F2 to replace the file browser with the settings categories")
+    select_menu_entry(session, MODEM_SETTINGS_CATEGORY)
+    menu_keyboard_tap(session, ["return"], 0.0)
+    # The category's own name is on the category list and on none of its item
+    # lists, so that name being gone is what says the items are now on screen.
+    # The wanted item is not what is waited for, because a category with more
+    # items than the window has rows opens scrolled to its first one.
+    wait_for_menu(
+        session,
+        lambda rows, colours: (menu_row_with(rows, MODEM_SETTINGS_CATEGORY) is None) or None,
+        f"return to open the {MODEM_SETTINGS_CATEGORY!r} items")
+    select_menu_entry(session, MODEM_OFFLINE_TEXT_ITEM)
+    open_menu_editor(session)
 
 
 def read_menu_editor_window(frame: FrameText, row: int, col: int, width: int = 20) -> str:
@@ -1300,17 +1436,33 @@ def read_menu_editor_window(frame: FrameText, row: int, col: int, width: int = 2
 
 
 def save_menu_editor_value(session: RestInputSession, tag: str) -> str:
-    menu_keyboard_tap(session, ["return"], MENU_EDITOR_SAVE_SETTLE_SECONDS)
+    menu_keyboard_tap(session, ["return"], 0.0)
+    # BrowsableConfigItem::requestString in software/userinterface/config_menu.h
+    # stores the edited value when its string_box returns, so the editor window
+    # having gone from the screen says the value is there to be read back.
+    # Measured on u2@c64u over five saves: the configuration already held the
+    # new value on the first read that saw the window closed, 76ms to 154ms
+    # after the return key was posted, and once 56ms before that.
+    wait_for_menu_editor(session, want_open=False)
     session.post_events([{"kind": "release_all"}])
-    time.sleep(0.40)
     value = read_offline_text_field(session)
     save_offline_text_evidence(tag, value)
     assert_state_empty(session)
     return value
 
 
-def reopen_menu_editor(session: RestInputSession) -> None:
-    menu_keyboard_tap(session, ["return"], MENU_EDITOR_OPEN_SETTLE_SECONDS)
+def wait_for_menu_editor(session: RestInputSession, want_open: bool) -> None:
+    state = "open" if want_open else "closed"
+    wait_for_menu(
+        session,
+        lambda rows, colours: (menu_editor_is_open(rows, MODEM_OFFLINE_TEXT_ITEM) == want_open) or None,
+        f"the {MODEM_OFFLINE_TEXT_ITEM!r} editor window to be {state}")
+
+
+def open_menu_editor(session: RestInputSession) -> None:
+    """Press return on the highlighted item and wait for its editor window."""
+    menu_keyboard_tap(session, ["return"], 0.0)
+    wait_for_menu_editor(session, want_open=True)
 
 
 def restore_offline_text_field(session: RestInputSession) -> None:
@@ -1692,7 +1844,7 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
         def prepare_editor(initial_value: str = "") -> None:
             nonlocal editor_open, editor_value
             if not editor_open:
-                reopen_menu_editor(session)
+                open_menu_editor(session)
             clear_menu_editor_field(session, len(editor_value))
             if initial_value:
                 type_menu_editor_text(session, initial_value)

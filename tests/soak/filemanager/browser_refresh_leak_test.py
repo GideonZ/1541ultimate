@@ -44,12 +44,12 @@ from pathlib import Path
 # tests/lib holds the reporting rules and the shared REST client.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
+import api as api_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402
     Failure, check, check_ok, check_skip, check_start, detail, format_exception,
     section, suite_fail, suite_ok)
 
-HEAP_PATH = "/v1/machine:heap"
 SUITE = (Path(__file__).resolve().parents[2]
          / "e2e" / "filemanager" / "browser_filesystem_refresh_test.py")
 
@@ -67,7 +67,7 @@ SETTLE_SECONDS = 8.0
 
 
 def heap_free(rest: rest_lib.RestClient) -> int:
-    return int(rest.json(HEAP_PATH)["free"])
+    return int(api_lib.MachineApi(rest).heap()["free"])
 
 
 def run_suite(host: str, password: str, timeout: float) -> None:
@@ -130,7 +130,7 @@ def main() -> int:
     rest = rest_lib.RestClient(args.host, args.password or None, args.timeout)
 
     check_start("device exposes GET /v1/machine:heap")
-    if rest.status("GET", HEAP_PATH) != 200:
+    if api_lib.MachineApi(rest).heap() is None:
         check_skip("firmware predates GET /v1/machine:heap, nothing to measure")
         section("summary")
         detail("skipped: device firmware has no machine:heap endpoint")
