@@ -457,37 +457,6 @@ def classify(product: str, firmware: str = "") -> Machine:
 _cache: Dict[str, Machine] = {}
 
 
-def cartridge_launch_reason(split: bool, computer: Machine) -> Optional[str]:
-    """Why a program handed to this target cannot start, or None when it can.
-
-    A cartridge does not drive the C64 itself. It asserts signals on the
-    expansion port of the computer it is plugged into, and that computer
-    decides which of them reach its 6510. A C64 Ultimate forwards the
-    cartridge's DMA and its reset but not its NMI, so a cartridge in one can
-    put bytes into the C64's memory and cannot start what it put there.
-
-    Measured on u2@c64u: the context menu's DMA action passes, while Run, Load,
-    Mount & Run and Real Run all leave the C64 at an untouched BASIC screen.
-    The same program handed to `POST /v1/runners:run_prg`, which does not go
-    through the browser at all, also never runs, so this is the expansion port
-    rather than any one path through the UI. On an Ultimate 64 and on a C64
-    Ultimate, where the device under test is its own computer, all of them
-    pass.
-
-    Keyed on the computer, not on the cartridge: the same cartridge in a real
-    C64 does start its programs, so this must not read as a property of the
-    Ultimate II+.
-
-    `split` is the target's own answer to whether the C64-side computer is a
-    second machine; see tests/lib/targets.py.
-    """
-    if not split or computer.kind != C64U:
-        return None
-    return (f"a cartridge in a {computer.described} cannot start a program: "
-            f"the computer forwards the cartridge's DMA and reset but not its "
-            f"NMI, so DMA lands and every launch leaves the C64 untouched")
-
-
 def identify(host: str, fetch_product: Callable[[], Reported]) -> Machine:
     """The machine `host` is, fetching its product string at most once.
 

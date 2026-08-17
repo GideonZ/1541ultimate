@@ -47,10 +47,8 @@ from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
-from report import check_skip, check_start, detail, section, suite_fail, suite_ok
-from ui_backend import (Browser, TelnetBackend, add_mode_argument, fetch_product,
-                        make_browser, strip_frame)
-import targets as targets_lib
+from report import check_skip, detail, section, suite_fail, suite_ok
+from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
 
 
 FTP_USER = "user"
@@ -69,19 +67,7 @@ SIGNATURE_ADDRESS = 0xC000
 # "Could not obtain lock of subsystem" (software/infra/subsys.h). Transient by
 # definition, so a read that meets it waits and asks again.
 HTTP_LOCKED = 423
-# How long a read waits out the lock before calling it a failure.
-#
-# 5s was enough for a device that is its own computer and is not enough for a
-# cartridge. Measured on u2@c64u by polling `machine:readmem $C000` from the
-# moment the context menu's Run was invoked: the read answered 423 for 7.7s and
-# then returned normally. At 5s the same seven actions that read memory after a
-# launch - Run, Load, Mount & Run, Real Run on both locations, and the
-# long-name Run - failed on every attempt, and the message named the request
-# rather than the launch it was waiting for.
-#
-# A budget that is not reached costs nothing: the loop returns on the first
-# HTTP 200, so an Ultimate 64, which answers immediately, does not pay for this.
-LOCK_RETRY_SECONDS = 20.0
+LOCK_RETRY_SECONDS = 5.0
 SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
@@ -1086,20 +1072,6 @@ FILE_ACTIONS = [
 ]
 
 
-# The actions that hand a program to the C64 and expect it to be there
-# afterwards. DMA is deliberately not among them; see launch_block_reason.
-LAUNCH_ACTIONS = ("Run", "Load", "Mount & Run", "Real Run")
-
-
-def launch_block_reason(target, password: Optional[str], timeout: float) -> Optional[str]:
-    """Why a launch cannot reach the C64 on this target; see machine.py."""
-    if not target.split:
-        return None
-    computer = machine_lib.identify(
-        target.computer, lambda: fetch_product(target.computer, password, timeout))
-    return machine_lib.cartridge_launch_reason(target.split, computer)
-
-
 def load_actions(machine: Machine, fixtures: Fixtures, location):
     """The load/run entries, bound to one location."""
     actions = [
@@ -1186,8 +1158,6 @@ def main() -> int:
     )
     machine = Machine(session, browser)
     fixtures = Fixtures(args.fixture_token)
-    launch_blocked = launch_block_reason(targets_lib.parse(args.host),
-                                         args.password or None, args.timeout)
 
     locations = [PlainLocation(), DiskLocation()]
 
@@ -1230,14 +1200,8 @@ def main() -> int:
                          machine, fixtures, loc, off))
 
             for label, action in load_actions(machine, fixtures, location):
-                if label not in offered:
-                    continue
-                case_label = f"{label} on {location.label}"
-                if launch_blocked and label in LAUNCH_ACTIONS:
-                    check_start(case_label)
-                    check_skip(launch_blocked)
-                    continue
-                run_case(case_label, action)
+                if label in offered:
+                    run_case(f"{label} on {location.label}", action)
             for label, handler in FILE_ACTIONS:
                 if label in offered:
                     run_case(
@@ -1251,10 +1215,7 @@ def main() -> int:
         # does not come back without a power cycle and every suite after it in
         # the run would report an unreachable device.
         long_name_label = "Run a PRG whose name is far longer than the boot-cart display"
-        if launch_blocked:
-            check_start(long_name_label)
-            check_skip(launch_blocked)
-        elif not machine.browser.backend.machine.skip_without_fix(
+        if not machine.browser.backend.machine.skip_without_fix(
                 machine_lib.BOOTCART_LONG_NAME_SAFE, long_name_label):
             run_case(long_name_label,
                      lambda: run_action_run(machine, fixtures, open_long_name_prg))
