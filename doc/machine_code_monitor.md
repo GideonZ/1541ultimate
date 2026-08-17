@@ -22,8 +22,6 @@ To close the monitor:
 
 `RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
 
-A bare `X` does not close the monitor.
-
 Two shortcuts act on the machine rather than the view, and both work from a memory view and from edit mode:
 
 | Key | Action |

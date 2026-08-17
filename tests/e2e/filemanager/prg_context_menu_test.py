@@ -434,8 +434,17 @@ class Machine:
                 # Shift+F7 is F8, the full UI-exit command. RUN/STOP may only
                 # hide a nested config/search stack, which then reappears when
                 # this independently selected suite opens the menu.
+                #
+                # Over Telnet that exit is not available at all. F8 closes the
+                # remote session itself and the socket breaks on the next
+                # keypress, wherever it is pressed and not only at the plain
+                # root the check above covers: arriving here with a context
+                # menu still open was enough to kill the session before this
+                # loop had read the screen a second time. Telnet peels one
+                # layer at a time with Back instead, which the root check
+                # above then stops, and the session it has to keep survives.
                 try:
-                    self.browser.press("F8")
+                    self.browser.press("RUNSTOP" if telnet else "F8")
                 except Failure:
                     return
         try:
