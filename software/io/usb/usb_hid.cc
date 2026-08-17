@@ -590,8 +590,8 @@ static void usb_hid_queue_key(int key, int repeat)
     if (repeat <= 0) {
         return;
     }
-    if (repeat > (USB_KEY_BUFFER_SIZE - 1)) {
-        repeat = USB_KEY_BUFFER_SIZE - 1;
+    if (repeat > (USB_INJECTED_BUFFER_SIZE - 1)) {
+        repeat = USB_INJECTED_BUFFER_SIZE - 1;
     }
     system_usb_keyboard.push_head_repeat(key, repeat);
 }

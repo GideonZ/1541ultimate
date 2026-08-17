@@ -79,13 +79,36 @@ TEST(KeyboardUsbQueueTest, PushHeadRepeatIsBounded)
 	uint8_t release[USB_DATA_SIZE] = { 0x00 };
 
 	keyboard.process_data(report);
-	keyboard.push_head_repeat(KEY_UP, USB_KEY_BUFFER_SIZE + 8);
+	keyboard.push_head_repeat(KEY_UP, USB_INJECTED_BUFFER_SIZE + 8);
 	keyboard.process_data(release);
 
-	for (int i = 0; i < USB_KEY_BUFFER_SIZE - 1; i++) {
+	for (int i = 0; i < USB_INJECTED_BUFFER_SIZE - 1; i++) {
 		EXPECT_EQ(KEY_UP, keyboard.getch());
 	}
 	EXPECT_EQ('a', keyboard.getch());
+	EXPECT_EQ(-1, keyboard.getch());
+}
+
+// The input API accepts a batch of 64 keyboard events and the menu path pushes
+// each of them into the injected ring. The ring keeps one slot empty to tell a
+// full ring from an empty one, so a 64-entry ring held only 63 keys and dropped
+// the 64th without an error. The ring is one slot larger than the batch limit
+// so a full batch arrives complete.
+TEST(KeyboardUsbQueueTest, AFullInputApiBatchIsNotDropped)
+{
+	static const int INPUT_API_BATCH = 64;
+	Keyboard_USB keyboard;
+
+	EXPECT_TRUE(USB_INJECTED_BUFFER_SIZE > INPUT_API_BATCH);
+
+	for (int i = 0; i < INPUT_API_BATCH; i++) {
+		keyboard.push_head(KEY_UP);
+	}
+	EXPECT_EQ(INPUT_API_BATCH, keyboard.count_injected_key(KEY_UP));
+
+	for (int i = 0; i < INPUT_API_BATCH; i++) {
+		EXPECT_EQ(KEY_UP, keyboard.getch());
+	}
 	EXPECT_EQ(-1, keyboard.getch());
 }
 

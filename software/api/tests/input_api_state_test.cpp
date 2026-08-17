@@ -234,17 +234,24 @@ TEST(RestKeyboardStateTest, QueuedTapPreservesChordAndOrder)
     EXPECT_TRUE(key_active(matrix, "a"));
     EXPECT_FALSE(key_active(matrix, "b"));
 
+    // The tick that releases the first tap also starts the gap and spends its
+    // first tick, so REST_TAP_GAP_TICKS - 1 further idle ticks follow before
+    // the queued "b" may start. Ticked from the constant rather than from a
+    // number written out again, so changing the rate cannot silently change
+    // what this proves.
     keyboard.tickRestOverlays();
     keyboard.restSnapshot(matrix, restore);
     EXPECT_FALSE(key_active(matrix, "left_shift"));
     EXPECT_FALSE(key_active(matrix, "a"));
     EXPECT_FALSE(key_active(matrix, "b"));
 
-    keyboard.tickRestOverlays();
-    keyboard.restSnapshot(matrix, restore);
-    EXPECT_FALSE(key_active(matrix, "b"));
-    EXPECT_FALSE(key_active(matrix, "left_shift"));
-    EXPECT_FALSE(key_active(matrix, "a"));
+    for (int gap = 1; gap < REST_TAP_GAP_TICKS; gap++) {
+        keyboard.tickRestOverlays();
+        keyboard.restSnapshot(matrix, restore);
+        EXPECT_FALSE(key_active(matrix, "left_shift"));
+        EXPECT_FALSE(key_active(matrix, "a"));
+        EXPECT_FALSE(key_active(matrix, "b"));
+    }
 
     keyboard.tickRestOverlays();
     keyboard.restSnapshot(matrix, restore);
