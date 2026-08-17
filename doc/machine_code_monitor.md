@@ -1290,7 +1290,17 @@ Telnet:       Ctrl+R
 
 `C=+R` performs the same action as the task menu's `Reset C64` and the `machine:reset` REST route: the on-device user interface lets go of the machine, the machine is unfrozen, and the reset is pulsed. Letting go is what makes the reset reach the C64; a machine still held by the menu keeps its CPU parked and never runs the KERNAL.
 
-The monitor closes with the rest of the user interface, because the interface no longer holds the machine. The C64 then performs its normal reset and boot sequence. Reopen the monitor with `C=+O` when the machine has booted.
+The C64 then performs its normal reset and boot sequence.
+
+What happens to the monitor follows from which interface it was drawn in, and is the same as for any other reset of the machine:
+
+| Interface | After `C=+R` |
+| --- | --- |
+| Freeze menu | The menu closes with the monitor, because that interface is drawn into the C64's own screen |
+| HDMI overlay | The monitor stays on screen |
+| Telnet | The monitor stays on screen and the session stays connected |
+
+While the machine runs unfrozen, `machine:menu_screen` answers HTTP 404, because the device only serves the menu screen of an interface that is holding the machine. That applies to every reset, not only this one.
 
 ### Where Reset Works
 
