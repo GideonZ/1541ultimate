@@ -802,35 +802,6 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
     C64_DMA_MEMONLY = saved_memonly;
 }
 
-// The SID master volume is the freezer's mute, and it also sets the DC offset
-// of the SID output, so writing it 15->0 or 0->15 in one go steps that offset
-// and is heard as a low click. Stepping by one spreads the same total change
-// over 15 steps of a fifteenth the size.
-//
-// Measured on an Ultimate 64 over the device's own audio stream, as the peak
-// sample the mute and the unmute produce: 20000 for the single write, 3100 at
-// 1 ms per step, 1980 at 2 ms, 1400 at 4 ms. One volume step is about 1400,
-// so 4 ms is the shortest spacing that gets the click down to the size of a
-// single step; longer spacing costs freeze and resume time for nothing.
-#define SID_RAMP_STEP_MS 4
-
-static void ramp_sid_volume(int from, int to)
-{
-    int step = (to > from) ? 1 : -1;
-
-    for (int volume = from; volume != to; ) {
-        volume += step;
-        SID_VOLUME = (uint8_t)volume;
-        SID2_VOLUME = (uint8_t)volume;
-        SID3_VOLUME = (uint8_t)volume;
-        for (int ms = 0; ms < SID_RAMP_STEP_MS; ms++) {
-            ioWrite8(ITU_TIMER, 200); // 1 ms
-            while (ioRead8(ITU_TIMER))
-                ;
-        }
-    }
-}
-
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
@@ -859,7 +830,9 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-    ramp_sid_volume(15, 0);
+    SID_VOLUME = 0;
+    SID2_VOLUME = 0;
+    SID3_VOLUME = 0;
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -1019,8 +992,9 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-    // Back to full volume. Unfortunately we could not know what it was set to.
-    ramp_sid_volume(0, 15);
+    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!
