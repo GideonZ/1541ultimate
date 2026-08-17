@@ -80,9 +80,8 @@ UI_STORE = "User Interface Settings"
 UI_ITEM = "Interface Type"
 OVERLAY_MODE = "Overlay on HDMI"
 
-# The batch limit the input API publishes, and now also the number of keys the
-# ring behind it holds; see api.MAX_INPUT_EVENTS.
-INPUT_MAX_EVENTS = api_lib.MAX_INPUT_EVENTS
+# How a run of events is split into requests: see api.input_batches, which
+# applies both of the device's limits, the event count and the body size.
 # How fast this facade drives the UI is not decided here; see tests/lib/pacing.py.
 POLL_INTERVAL_SECONDS = pacing.POLL_INTERVAL_SECONDS
 SETTLE_TIMEOUT_SECONDS = pacing.SETTLE_TIMEOUT_SECONDS
@@ -1294,8 +1293,7 @@ class RestBackend(Backend):
 
     # -- input --
     def _post_events(self, events: List[dict]) -> None:
-        for start in range(0, len(events), INPUT_MAX_EVENTS):
-            batch = events[start:start + INPUT_MAX_EVENTS]
+        for batch in api_lib.input_batches(events):
             status, body = self._request("POST", INPUT_PATH, payload={"events": batch})
             if status != 200:
                 raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")

@@ -171,6 +171,12 @@ SUITES: Sequence[Suite] = (
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
     Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", ""),
+    # Needs no device either: machine:input has an event limit and a body-size
+    # limit, and a request that breaks either is refused. Splitting on the
+    # count alone sent a 64-keypress field clear as one 4110-byte request and
+    # failed every context-menu action that types into a field, with a message
+    # about the request rather than about the keys.
+    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", ""),
     # Also needs no device: it checks the two decisions this runner makes when
     # a run goes wrong - when the recovery command may fire, and what status the
     # run exits with. Both only show themselves on a run that has already gone

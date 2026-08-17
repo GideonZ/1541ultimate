@@ -192,11 +192,39 @@ same batch lost exactly one key every time.
 
 ## What the harness adopted
 
-`tests/lib/api.py` sets `MAX_INPUT_EVENTS = 64` and
-`tests/e2e/lib/ui_backend.py` takes its own batch limit from it rather than
-carrying a second number, which had drifted to 60. The gate suite now sends one
+`tests/lib/api.py` sets `MAX_INPUT_EVENTS = 64`. The gate suite now sends one
 batch of 64 rather than ten keys, so the size that used to lose a key is the
 size the gate exercises.
+
+### The second limit, which the event count does not imply
+
+`machine:input` has a body-size limit as well as an event limit:
+`INPUT_JSON_BODY_MAX_SIZE` is 4096 bytes (`route_input.cc:32`), and a longer
+body is refused with HTTP 400 `JSON body is too large.` An event is not a fixed
+size, so the two do not convert into one another: a tap of `"a"` serialises to
+about 55 bytes and a tap of `"inst_del"` to 62, which puts 64 backspaces at
+4110 bytes and 64 letters at 3852.
+
+Raising the harness batch limit from a hard-coded 60 to the API's 64 therefore
+broke the file browser, whose field clear is exactly 64 backspaces
+(`EDIT_FIELD_CLEAR_TAPS`). Every context-menu action that types into a field -
+Rename, Move to..., Delete - failed, and because the rename dialog was left
+open, the navigation after them failed too. The whole suite reported `could not
+return to '/'`, which names neither the request nor the limit.
+
+Batching now measures rather than counts. `api.input_batches` fills a batch up
+to whichever limit binds first, using the same serialisation the transport
+sends, and `tests/e2e/lib/ui_backend.py` and `tests/e2e/lib/menu.py` both use
+it. `api.MachineApi.send_input` also refuses an oversized body itself, naming
+the limit and the splitter, rather than letting the device answer HTTP 400.
+
+That also closes a case the old constant did not cover. A cursor-key tap is two
+inputs and 83 bytes, so 60 of them come to 5023 bytes: a batch of 60 cursor
+keys would have been refused for the same reason. No suite sends that many at
+once today, which is why it had not been seen.
+
+`tests/lib/input_batching_test.py` covers both limits and needs no device.
+Making the splitter count events only makes it fail on the long-key case.
 
 The pacing constants in `tests/lib/pacing.py` were left alone, and the
 measurements say why: `SPLIT_KEY_DRAIN_SECONDS` is 100 ms, which is exactly the

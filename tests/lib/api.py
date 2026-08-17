@@ -41,6 +41,15 @@ MAX_READ_LENGTH = 65536
 # (keyboard_usb.h:21) and a full batch arrives complete. See
 # tests/e2e/doc/key-injection-rate.md.
 MAX_INPUT_EVENTS = 64
+# The device caps the request body as well as the event count:
+# INPUT_JSON_BODY_MAX_SIZE is 4096 bytes (software/api/route_input.cc:32) and a
+# longer body is refused with HTTP 400 "JSON body is too large." The two limits
+# are not interchangeable, because an event is not a fixed size: a tap of one
+# short key name is about 55 bytes and a tap of "inst_del" is 62, so 64
+# inst_del taps come to 4110 bytes and are refused although they are within the
+# event limit. A batch therefore has to be measured, which is what
+# input_batches below does.
+MAX_INPUT_BODY_BYTES = 4096
 # PUT /v1/machine:writemem takes at most this many bytes as a hex string;
 # anything longer has to go through the POST upload form.
 MAX_WRITEMEM_HEX_BYTES = 128
@@ -121,6 +130,43 @@ def _errors(payload: object, what: str) -> Dict[str, object]:
     if reported:
         raise Failure(f"{what} failed: {'; '.join(str(e) for e in reported)}")
     return payload
+
+
+def input_body_bytes(events: Sequence[Dict[str, object]]) -> int:
+    """How large the request body for these events is, as the device sees it.
+
+    The same serialisation the transport uses, so the number this returns is
+    the number the device measures against INPUT_JSON_BODY_MAX_SIZE.
+    """
+    return len(json.dumps({"events": list(events)}).encode("utf-8"))
+
+
+def input_batches(events: Sequence[Dict[str, object]]) -> List[List[Dict[str, object]]]:
+    """Split events into batches `machine:input` accepts, one request each.
+
+    Both device limits apply and neither implies the other: at most
+    MAX_INPUT_EVENTS events, and at most MAX_INPUT_BODY_BYTES of body. Counting
+    alone sent 64 backspaces as one request and was answered HTTP 400 "JSON
+    body is too large", because those events are 62 bytes each; measuring alone
+    would let a batch of short events past the event limit.
+
+    A single event larger than the body limit cannot be split further and is
+    returned as its own batch, so the device reports it rather than this
+    silently dropping it.
+    """
+    batches: List[List[Dict[str, object]]] = []
+    current: List[Dict[str, object]] = []
+    for event in events:
+        candidate = current + [event]
+        if current and (len(candidate) > MAX_INPUT_EVENTS
+                        or input_body_bytes(candidate) > MAX_INPUT_BODY_BYTES):
+            batches.append(current)
+            current = [event]
+        else:
+            current = candidate
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _hex_address(address: int) -> str:
@@ -342,6 +388,11 @@ class MachineApi:
     def send_input(self, events: Sequence[Dict[str, object]]) -> None:
         if not 0 < len(events) <= MAX_INPUT_EVENTS:
             raise Failure(f"an input batch holds 1..{MAX_INPUT_EVENTS} events, got {len(events)}")
+        body_bytes = input_body_bytes(events)
+        if body_bytes > MAX_INPUT_BODY_BYTES:
+            raise Failure(f"an input batch body holds at most {MAX_INPUT_BODY_BYTES} "
+                          f"bytes, got {body_bytes} for {len(events)} events; "
+                          f"split it with api.input_batches")
         for event in events:
             inputs = event.get("inputs") or []
             if event.get("kind") == "keyboard" and len(inputs) > MAX_KEYBOARD_INPUTS:

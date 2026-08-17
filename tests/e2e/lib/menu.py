@@ -25,10 +25,8 @@ from typing import Callable, List, Optional, Sequence, Tuple
 # why these are not constants of this module any more.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
-import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-
-# software/api/route_input.cc rejects a larger batch with HTTP 400.
-INPUT_MAX_EVENTS = 60
+import api  # noqa: E402  (needs tests/lib on sys.path first)
+import pacing  # noqa: E402
 
 # Kept as names so callers read the same way; the values live in tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
@@ -40,9 +38,12 @@ def tap_event(keys: Sequence[str]) -> dict:
 
 
 def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
-    """Split a run of taps into batches the firmware will accept."""
-    events = [tap_event(k) for k in keys_list]
-    return [events[i:i + INPUT_MAX_EVENTS] for i in range(0, len(events), INPUT_MAX_EVENTS)]
+    """Split a run of taps into batches the firmware will accept.
+
+    Both device limits decide that, the event count and the request body size;
+    see api.input_batches.
+    """
+    return api.input_batches([tap_event(k) for k in keys_list])
 
 
 def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
