@@ -22,7 +22,7 @@ With no popup, prompt, or edit mode open, any of these actions closes the monito
 - the device menu button
 - `C=+I`, on targets that support interface swapping, after changing the interface mode
 
-`C=+R` resets the machine and keeps the monitor open. See [Resetting the Machine](#resetting-the-machine).
+`C=+R` resets the machine and closes the monitor. See [Resetting the Machine](#resetting-the-machine).
 
 When a popup, prompt, or edit mode is active, `RUN/STOP`, `ESC`, and `←` perform the Back action first. See [Back](#back).
 
@@ -199,19 +199,20 @@ Each tag occupies three characters inside the brackets, keeping the source colum
 
 An undefined opcode is shown as `???` and consumes one byte. Press `U` to enable undocumented opcodes. An instruction whose operand would cross `$FFFF` is also shown as `???`.
 
-#### I/O Registers in Assembly View
+#### I/O Registers and Character ROM in Assembly View
 
-With I/O banked in, reads from `$D000-$DFFF` can change between accesses because they read live registers.
-
-Assembly view therefore represents each I/O address as one byte:
+Assembly view shows `$D000-$DFFF` as one byte per row when either I/O or Character ROM is banked in:
 
 ```text
 .BYTE $xx   [I/O]
+.BYTE $xx   [CHR]
 ```
 
-Each row retains its address while scrolling and shows the value read for that register.
+The two sources qualify for different reasons. I/O reads live registers, so the same address can answer differently between accesses; decoding it would change the instruction length, and with it the address of every row below, on each redraw. Character ROM is stable, but it holds character bitmaps that never were code, so any instruction decoded from it is meaningless.
 
-When Character ROM or RAM is banked into `$D000-$DFFF`, the monitor disassembles the bytes in that region normally.
+Each row retains its address while scrolling and shows the value read at that address.
+
+With RAM banked into `$D000-$DFFF`, the monitor disassembles the bytes in that region normally. The rule follows the banked source, not the address range.
 
 On an Ultimate II+, `$D000-$DFFF` is always disassembled.
 
@@ -1277,7 +1278,7 @@ From the file browser, press `C=+O` to reopen it.
 
 ## Resetting the Machine
 
-Press `C=+R` to reset the C64 while keeping the monitor open.
+Press `C=+R` to reset the C64.
 
 Key mapping:
 
@@ -1287,19 +1288,9 @@ USB keyboard: Ctrl+R
 Telnet:       Ctrl+R
 ```
 
-The machine performs its normal reset and boot sequence.
+`C=+R` performs the same action as the task menu's `Reset C64` and the `machine:reset` REST route: the on-device user interface lets go of the machine, the machine is unfrozen, and the reset is pulsed. Letting go is what makes the reset reach the C64; a machine still held by the menu keeps its CPU parked and never runs the KERNAL.
 
-On a cartridge, an active freezer session is released so the reset reaches the C64. The monitor reacquires the freezer after the machine has rebooted. If the monitor was not frozen before reset, it remains unfrozen.
-
-The monitor stays on the current view and address. Displayed memory and CPU state are refreshed from the reset machine. The status line briefly shows:
-
-```text
-MACHINE RESET
-```
-
-Edit mode remains active if it was active before the reset.
-
-`C=+R` is not a Back or exit action.
+The monitor closes with the rest of the user interface, because the interface no longer holds the machine. The C64 then performs its normal reset and boot sequence. Reopen the monitor with `C=+O` when the machine has booted.
 
 ### Where Reset Works
 
