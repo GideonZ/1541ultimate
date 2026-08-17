@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -888,6 +889,18 @@ CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
 CARTRIDGE_PREFERENCE_EXTERNAL = "External"
 
 
+class CartridgePreferenceUnavailable(Failure):
+    """The computer could not be asked for the setting. The message says why.
+
+    Its own type because the two outcomes need different verdicts. A computer
+    that serves the setting and refuses the value has to stop the run, since
+    every launch after it fails for a reason that names neither. A computer
+    that cannot be asked at all - a loopback stand-in with no config store, a
+    machine that is not answering - is a reason to say so and carry on, because
+    the suites that need it report their own failures.
+    """
+
+
 def ensure_cartridge_preference(target, password: Optional[str] = None,
                                 timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
     """Make the computer of a cartridge target prefer the cartridge in its port.
@@ -898,9 +911,8 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
                       computer already prefers the external cartridge
       a description   the value it changed, and from what
 
-    Raises `Failure` when the computer serves the setting and will not take it,
-    because a cartridge run on a computer that has not handed its bus over
-    fails later in ways that name neither the setting nor the computer.
+    Raises `CartridgePreferenceUnavailable` when the computer cannot be asked,
+    and `Failure` when it serves the setting and will not take it.
 
     The change is not saved to flash. It takes effect through the item's own
     change hook, and leaving flash alone keeps a test run from deciding what a
@@ -910,7 +922,17 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
     if not handle.split:
         return None
     computer = UltimateApi(handle.computer, password, timeout)
-    current = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    try:
+        current = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    except Failure as exc:
+        # The URL is taken out of the reason rather than passed on. This
+        # message reaches the run's records and from there the generated
+        # report, where a link to a machine is an external reference the
+        # document must not carry; the host is already named beside it.
+        reason = re.sub(r"https?://\S+", "its config API", str(exc))
+        raise CartridgePreferenceUnavailable(
+            f"{handle.computer} did not answer for "
+            f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
     if current == CARTRIDGE_PREFERENCE_EXTERNAL:
         return None
     computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
