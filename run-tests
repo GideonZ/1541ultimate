@@ -42,6 +42,7 @@ import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import pacing  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
+import api as api_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -2989,6 +2990,19 @@ def main(argv: List[str]) -> int:
     before_syslog = check_syslog_setting(device, "at the start of the run") \
         if args.syslog else ""
     recording = start_recorder(args, target, device)
+
+    # Before any suite, because a cartridge whose computer has not handed its
+    # bus over fails later in ways that name neither the setting nor the
+    # computer. A no-op on a target that is its own computer.
+    if target.split:
+        report.step_start("cartridge: the computer prefers its external cartridge")
+        try:
+            changed = api_lib.ensure_cartridge_preference(
+                target, options.password, float(options.timeout))
+        except DEVICE_ERRORS as exc:
+            report.check_fail(str(exc))
+            return EXIT_SUITE_FAILED
+        report.check_ok(changed or "already set")
 
     try:
         results: List[Result] = []

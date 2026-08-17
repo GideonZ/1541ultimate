@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pacing
+import targets
 from report import Failure
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
@@ -867,3 +868,58 @@ def _in_range(name: str, value: int, bounds: Tuple[int, int]) -> None:
     low, high = bounds
     if not low <= value <= high:
         raise Failure(f"{name} {value} is outside {low}..{high}")
+
+
+# What a cartridge target needs of the computer it is plugged into.
+#
+# The computer decides which of its resources the cartridge in its port owns
+# (software/io/c64/c64.cc, CFG_C64_CART_PREF and C64::setCartPref). On "Auto"
+# it hands the bus over only when it detects an external cartridge, and a
+# Commodore 64 Ultimate with an Ultimate II+ in its port does not always detect
+# one: the cartridge can then put bytes into the C64's memory while nothing it
+# starts ever runs, which reads as the launch failing rather than as the bus
+# never having been handed over. "External" forces the handover.
+#
+# The item lives in a store the U64-class builds compile in, which is what the
+# computer of a cartridge target always is, so a store or item that is not
+# there is worth reporting rather than passing over.
+CARTRIDGE_STORE = "C64 and Cartridge Settings"
+CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
+CARTRIDGE_PREFERENCE_EXTERNAL = "External"
+
+
+def ensure_cartridge_preference(target, password: Optional[str] = None,
+                                timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """Make the computer of a cartridge target prefer the cartridge in its port.
+
+    Answers what it did, for a caller that reports it:
+
+      None            nothing to do - the target is its own computer, or the
+                      computer already prefers the external cartridge
+      a description   the value it changed, and from what
+
+    Raises `Failure` when the computer serves the setting and will not take it,
+    because a cartridge run on a computer that has not handed its bus over
+    fails later in ways that name neither the setting nor the computer.
+
+    The change is not saved to flash. It takes effect through the item's own
+    change hook, and leaving flash alone keeps a test run from deciding what a
+    machine boots with.
+    """
+    handle = targets.resolve(target)
+    if not handle.split:
+        return None
+    computer = UltimateApi(handle.computer, password, timeout)
+    current = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if current == CARTRIDGE_PREFERENCE_EXTERNAL:
+        return None
+    computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                         CARTRIDGE_PREFERENCE_EXTERNAL)
+    now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if now != CARTRIDGE_PREFERENCE_EXTERNAL:
+        raise Failure(
+            f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+            f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
+            f"cartridge in its port will not own the bus")
+    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
