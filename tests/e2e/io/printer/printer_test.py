@@ -44,7 +44,7 @@ import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_fail, check_ok, check_start, detail, section,
+    Failure, check_fail, check_ok, check_skip, check_start, detail, section,
     suite_fail, suite_ok, warn)
 
 try:
@@ -286,6 +286,17 @@ class U64Client:
         payload = json.loads(body.decode("utf-8"))
         return (str(payload.get("product", "")),
                 str(payload.get("firmware_version", "")))
+
+    def fetch_computer_product(self):
+        """The product and firmware of the C64-side computer.
+
+        The same thing as `_fetch_product` on a device that is its own
+        computer. On a cartridge target it is the machine the cartridge is
+        plugged into, which is what decides whether a program can be started.
+        """
+        info = UltimateApi(self.target.computer, self.password,
+                           self.timeout).info()
+        return info.product, info.firmware_version
 
     def tap_key(self, key):
         self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
@@ -1076,6 +1087,20 @@ def main():
         check_fail("no response from /v1/version")
         return 1
     check_ok()
+
+    # The whole suite is one C64 program printing and reporting its progress
+    # through memory, so a target that cannot start a program cannot run any of
+    # it. Without this the run reads as a printer failure: the program is
+    # uploaded, the launch answers normally, and the status block never fills
+    # in, which is reported 60 seconds later as a print that timed out.
+    launch_blocked = machine_lib.cartridge_launch_reason(
+        client.target.split,
+        machine_lib.identify(client.target.computer, client.fetch_computer_product))
+    if launch_blocked:
+        check_start("run the printer workload")
+        check_skip(launch_blocked)
+        suite_ok("printer_test", "skipped: the C64 cannot be given a program here")
+        return 0
 
     check_start("reset before run")
     client.close_menu_from_anywhere()
