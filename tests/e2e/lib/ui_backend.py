@@ -44,6 +44,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import api as api_lib
 import interactions
 import machine as machine_lib
 import pacing
@@ -79,7 +80,9 @@ UI_STORE = "User Interface Settings"
 UI_ITEM = "Interface Type"
 OVERLAY_MODE = "Overlay on HDMI"
 
-INPUT_MAX_EVENTS = 60  # software/api/route_input.cc rejects a larger batch with HTTP 400.
+# The batch limit the input API publishes, and now also the number of keys the
+# ring behind it holds; see api.MAX_INPUT_EVENTS.
+INPUT_MAX_EVENTS = api_lib.MAX_INPUT_EVENTS
 # How fast this facade drives the UI is not decided here; see tests/lib/pacing.py.
 POLL_INTERVAL_SECONDS = pacing.POLL_INTERVAL_SECONDS
 SETTLE_TIMEOUT_SECONDS = pacing.SETTLE_TIMEOUT_SECONDS
@@ -1319,11 +1322,12 @@ class RestBackend(Backend):
         if change_timeout is None:
             change_timeout = pacing.KEY_CHANGE_TIMEOUT_SECONDS
         started = time.monotonic()
-        self.last_key_changed = wait_screen_changes(
+        self.last_key_changed, body = wait_screen_changes(
             self._menu_screen_body, before, timeout=change_timeout,
             min_samples=pacing.KEY_CHANGE_MIN_SAMPLES,
             hard_timeout=SETTLE_TIMEOUT_SECONDS)
-        wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+        _, body = wait_screen_settled(self._menu_screen_body,
+                                      timeout=SETTLE_TIMEOUT_SECONDS, known=body)
         # A batch is still draining through the matrix after the screen has
         # gone quiet once: a gap between two of its keystrokes looks exactly
         # like the end of it. Give the rest of the batch the time it needs to
@@ -1331,8 +1335,17 @@ class RestBackend(Backend):
         remaining = min_drain - (time.monotonic() - started)
         if remaining > 0:
             time.sleep(remaining)
-            wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
-        return self.capture()
+            _, body = wait_screen_settled(self._menu_screen_body,
+                                          timeout=SETTLE_TIMEOUT_SECONDS)
+        # The screen the settle stopped on is the screen this returns. Reading
+        # it again would cost a further round trip to be told the same thing,
+        # and the settle has just proved it is not changing. A menu that closed
+        # under the caller leaves nothing to decode, which capture() reports as
+        # the failure it is.
+        if body is None:
+            return self.capture()
+        self._learn_cursor_colour(body, None)
+        return self._decode(body)
 
     def send_combo(self, matrix_keys: Sequence[str]) -> Snapshot:
         before = self._menu_screen_body()

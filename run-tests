@@ -259,10 +259,12 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Measures the keystroke injection every other suite depends on: a lost key
     # fails whichever check was typing at the time and names no rate, so this
-    # names one. Ten keys here; the rates and the batch limit it established are
-    # in tests/e2e/doc/key-injection-rate.md, and larger runs are a soak.
+    # names one. One batch of the largest size the input API accepts, which is
+    # the size that used to lose its last key to a ring one slot too small; the
+    # rates are in tests/e2e/doc/key-injection-rate.md, and larger runs are a
+    # soak.
     Suite("e2e", "key-injection", "tests/e2e/io/c64/key_injection_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --keys 10 --batch 10"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --keys 64 --batch 64"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.

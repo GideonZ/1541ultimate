@@ -33,16 +33,14 @@ from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 DRIVE_SLOTS = ("a", "b")
 MAX_ADDRESS = 0xFFFF
 MAX_READ_LENGTH = 65536
-# One request may carry 64 events by the API's own limit
-# (INPUT_API_MAX_EVENTS, software/api/input_api.h:10), but a batch of 64
-# reaches the device and loses its last key. With the on-device menu up,
-# injected keys are pushed into Keyboard_USB's ring
-# (keyboard_usb.cc:556 push_head_repeat), which refuses when
-# next_head == injected_tail and so holds USB_KEY_BUFFER_SIZE - 1 = 63
-# (keyboard_usb.h:18). Measured on an Ultimate 64, three runs each:
-# batches of 60, 62 and 63 lost nothing, batches of 64 lost exactly one
-# key every time. See tests/e2e/doc/key-injection-rate.md.
-MAX_INPUT_EVENTS = 63
+# One request may carry 64 events, which is the API's own limit
+# (INPUT_API_MAX_EVENTS, software/api/input_api.h:10). A batch of exactly 64
+# used to lose its last key with the on-device menu up: the ring those keys
+# are pushed into keeps one slot empty to tell full from empty, so a 64-slot
+# ring held 63 keys. The ring is now USB_INJECTED_BUFFER_SIZE = 65
+# (keyboard_usb.h:21) and a full batch arrives complete. See
+# tests/e2e/doc/key-injection-rate.md.
+MAX_INPUT_EVENTS = 64
 # PUT /v1/machine:writemem takes at most this many bytes as a hex string;
 # anything longer has to go through the POST upload form.
 MAX_WRITEMEM_HEX_BYTES = 128

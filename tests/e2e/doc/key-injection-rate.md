@@ -58,7 +58,7 @@ Controls used throughout:
 ## Delivery rate
 
 Time from posting one batch until every key of it is readable, divided by the
-batch size. Both machines, both destinations:
+batch size. Both machines, both destinations, as first measured:
 
 | Target | Destination | 16 keys | 32 keys | 64 keys |
 | --- | --- | ---: | ---: | ---: |
@@ -66,6 +66,21 @@ batch size. Both machines, both destinations:
 | u64 | basic | - | 99.5 ms/key | 100.4 ms/key |
 | u2@c64u | mcm | 101.0 ms/key | 100.4 ms/key | 100.5 ms/key |
 | u2@c64u | basic | 105.9 ms/key | 103.2 ms/key | 100.6 ms/key |
+
+The same measurement after the two firmware changes below, in batches of 64:
+
+| Target | Destination | Rate | Arrived |
+| --- | --- | ---: | --- |
+| u64 | mcm | 51.1, 51.7, 52.2 ms/key | 64 of 64, three runs |
+| u64 | basic | 60.6, 60.6, 60.8 ms/key | 64 of 64, three runs |
+| u2@c64u | mcm | 100.7, 100.8 ms/key | 64 of 64, two runs |
+| u2@c64u | basic | 99.9, 101.0 ms/key | 64 of 64, two runs |
+
+The `u2@c64u` rates are unchanged on purpose. Those keys are injected into the
+keyboard matrix of the C64 Ultimate the cartridge is plugged into, and that
+computer runs its own released firmware (1.2.0 on this bench), which this
+branch does not build or flash. The tick change below is in firmware we flash,
+so it moves the machines we flash and nothing else.
 
 The POST itself is not the cost: a 32-key batch posts in 53 ms and takes
 3.2 s to arrive, so the wire is about 1 ms a key against the device's own
@@ -89,13 +104,23 @@ tap hold: halving `REST_KEYBOARD_TAP_HOLD_TICKS` (60 ms to 20 ms) and
 `REST_KEYBOARD_TAP_GAP_TICKS` (40 ms to 20 ms) left the rate at 100 ms/key
 unchanged, because the menu-closed path does not use those constants at all.
 Reducing the queue ticks instead did move it: 3+2 ticks gave 100 ms/key, 2+1
-gave 60.7 ms/key and 1+1 gave 41.3 ms/key, each lossless over 64-key batches,
-and a 560-key BASIC soak at 1+1 lost nothing. That change is **not** shipped
-here: it shortens the window in which the C64 can see a key to a single video
-frame, it benefits only machines whose firmware we flash (a cartridge's keys
-are injected by its host computer, whose firmware is not ours to change), and
-the soak behind it covers one destination on one machine. It is recorded so
-the next person knows where the 100 ms comes from and what moving it costs.
+gave 60.7 ms/key and 1+1 gave 41.3 ms/key, each lossless over 64-key batches.
+
+### The queue ticks now shipped
+
+`REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS` is 2 and `REST_TAP_GAP_TICKS` is 1, which
+measured 60.6 to 60.8 ms/key over three 64-key batches and lost nothing in a
+560-key BASIC soak on an Ultimate 64.
+
+The reason to stop at 2+1 rather than 1+1 is what each tick has to cover. A
+tick is 20 ms (`REST_INPUT_TIMER_TICKS`, `keyboard_usb.cc:42`) and the C64
+KERNAL scans the keyboard once per video frame, which is also about 20 ms. A
+two-tick hold therefore puts the key in front of at least two scans, and the
+one-tick gap puts the release in front of at least one, so neither depends on
+where a tick happens to fall relative to a frame. At 1+1 the key is in front of
+a single scan and a hold that drifted against the frame could miss it. 1+1 was
+measured as lossless here, but on one machine and over one soak, and the margin
+it removes is not one this bench can observe directly.
 
 ## Where keys start going missing
 
@@ -139,17 +164,39 @@ buffer behind it can hold, and the surplus key is dropped without an error:
 the request still answers HTTP 200.
 
 The prediction that follows from reading the code - lossless at 63, exactly one
-lost at 64 - is what the table above measures. This is a firmware defect rather
-than a harness one, and it is reported here rather than fixed: the fix is
-either to raise `USB_KEY_BUFFER_SIZE` or to lower `INPUT_API_MAX_EVENTS`, both
-of which change a published API limit and belong with the input API rather than
-with a monitor change.
+lost at 64 - is what the table above measures.
 
-## What was adopted
+### The fix
 
-`tests/lib/api.py` now sets `MAX_INPUT_EVENTS = 63`, so the harness never posts
-a batch the device cannot hold. No caller in the tree sends batches near that
-size, so nothing else changed.
+The ring is now one slot larger than the batch limit, rather than the same
+size as it:
+
+```c
+static const int USB_KEY_BUFFER_SIZE = 64;
+static const int USB_INJECTED_BUFFER_SIZE = USB_KEY_BUFFER_SIZE + 1;
+```
+
+`injected_buffer` and the four wrap tests that walk it use the new constant;
+`key_buffer`, which holds what a USB keyboard typed and is not what the input
+API writes into, keeps the old one. The published limit does not move: the API
+still accepts 64 events and the ring now holds 64 keys.
+
+`usb_keyboard_queue_test.cpp` covers it twice. `AFullInputApiBatchIsNotDropped`
+pushes 64 keys and reads all 64 back, and fails with the ring at its old size.
+`PushHeadRepeatIsBounded` asks for more than the ring holds and counts what
+comes back, which is what pins the capacity.
+
+On hardware, a 64-key batch into the monitor destination arrived complete on
+every run, and a 640-key soak in batches of 64 lost nothing. Before the fix the
+same batch lost exactly one key every time.
+
+## What the harness adopted
+
+`tests/lib/api.py` sets `MAX_INPUT_EVENTS = 64` and
+`tests/e2e/lib/ui_backend.py` takes its own batch limit from it rather than
+carrying a second number, which had drifted to 60. The gate suite now sends one
+batch of 64 rather than ten keys, so the size that used to lose a key is the
+size the gate exercises.
 
 The pacing constants in `tests/lib/pacing.py` were left alone, and the
 measurements say why: `SPLIT_KEY_DRAIN_SECONDS` is 100 ms, which is exactly the
@@ -158,10 +205,62 @@ neither optimistic nor wasteful. `KEY_DRAIN_SECONDS` is 20 ms for a device
 target, below the 51 ms measured for the u64 menu, which is safe because every
 suite polls for the state it expects rather than trusting the wait alone.
 
+## What a keystroke costs the harness
+
+The rates above are what the device does with a key. They are not what a suite
+pays for one, and the difference is most of a run. Measured on the Ultimate 64
+over the REST backend, `RestBackend.send_key` cost 411 to 465 ms a key and
+issued 9.3 requests for it, of which 45% of the wall clock was on the wire and
+the rest was the harness sleeping. The suite that pays this most is the
+machine-code monitor: one recorded run made 3670 requests over 575 s, of which
+59 s was request time.
+
+What the device actually needs is much less. Polling the menu screen as fast as
+the transport allows after an injected key, over 15 keys on an Ultimate 64: the
+first changed byte appeared 28 to 41 ms after the request returned, and the
+last change of the redraw landed by 47 to 65 ms. An idle menu screen does not
+change on its own, which was checked before relying on it: 60 reads over 3 s
+returned one distinct screen, so a screen that differs from the last one read
+differs because a key changed it.
+
+Three costs were measured and two were removed:
+
+- `wait_screen_settled` re-read a screen `wait_screen_changes` had just read,
+  to use as its first sample. It now takes that screen as `known`. The rule it
+  applies is unchanged: it still requires `SETTLE_STABLE_SAMPLES` further reads
+  that match.
+- `_settle` ended by calling `capture()`, which read the screen a further time
+  to be told what the settle had just proved. `wait_screen_settled` now returns
+  the screen it stopped on and `_settle` decodes that.
+- `wait_screen_changes` slept a full `POLL_INTERVAL_SECONDS` between reads even
+  when that pushed the last of its `KEY_CHANGE_MIN_SAMPLES` reads past the
+  budget. With 6 samples, a 0.3 s budget and an 18 ms read, a keypress that
+  changed nothing cost 408 ms: 108 ms of reads and 250 ms of five full pauses.
+  The pause is now shortened to fit the remaining reads into the remaining
+  budget. Both of the conditions that end the wait are untouched, so it still
+  ends only once the budget has elapsed and the reads have been taken, and on a
+  device slow enough that its reads alone exceed the budget the pause goes to
+  zero and the wait is exactly what it was.
+
+Requests per key fell from 9.3 to 7.8 where the keys mostly changed nothing and
+to 4.5 where every key changed the screen, at 222 to 226 ms a key for the
+latter.
+
+Keeping the HTTP connection open was measured and rejected. Every REST request
+in a run opens a new connection (5928 of 5928 in one recorded run), but the
+device answers `Connection: close`, so a client that offers to keep the
+connection reconnects anyway: 40 reads took a mean of 18.5 ms on new
+connections and 18.3 ms through a client asking to reuse one. The 18 ms is the
+device's own work, not the handshake.
+
+`POLL_INTERVAL_SECONDS` was left at 0.05. The settle is the largest cost left,
+at about 155 ms a key for its two-sample quiet window, and shortening that
+window is what the earlier calibration sweep found breaks first.
+
 ## What this does and does not explain
 
 It explains a lost key in any batch of exactly 64, which no suite in the tree
-currently sends.
+sent before the gate suite was changed to send one.
 
 It does **not** explain the `u2@c64u` monitor failures that prompted the
 measurement. On that target, injection was lossless in every configuration
@@ -191,3 +290,10 @@ checks passing throughout.
 - Arrival is polled through `machine:readmem`, which itself takes a DMA cycle.
   That inflates the measured per-key time by an amount not separated out here;
   it cannot hide a lost key, which is what the boundary claim rests on.
+- The 2+1 tick rate was soaked on one destination of one machine: 560 keys into
+  BASIC on the Ultimate 64. The argument that two ticks cover two KERNAL scans
+  is a reading of the tick period against the frame rate, not a measurement of
+  the scan itself.
+- The harness costs above are from an Ultimate 64 driving the file browser over
+  the REST backend. A screen that redraws more of itself per key, or a device
+  under load, moves them.
