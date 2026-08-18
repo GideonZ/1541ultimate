@@ -11,6 +11,7 @@
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "power_state.h"
 #include "driver/uart.h"
 #include "rpc_calls.h"
 #include "rpc_dispatch.h"
@@ -307,6 +308,33 @@ void cmd_get_serial(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+void cmd_set_power_mode(command_buf_t *buf)
+{
+    rpc_set_power_mode_req *param = (rpc_set_power_mode_req *)buf->data;
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+
+    if (buf->size < (int)sizeof(rpc_set_power_mode_req)) {
+        resp->esp_err = ESP_ERR_INVALID_ARG;
+        buf->size = sizeof(rpc_espcmd_resp);
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    }
+    uint8_t mode = param->mode; // read before the response overwrites the request
+    resp->esp_err = power_set_mode(mode);
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_power_mode(command_buf_t *buf)
+{
+    rpc_get_power_mode_resp *resp = (rpc_get_power_mode_resp *)buf->data;
+    resp->mode = power_get_mode();
+    resp->last_state = power_get_last_state();
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_get_power_mode_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -427,6 +455,12 @@ void dispatch(void *ct)
             break;
         case CMD_GET_SERIAL:
             cmd_get_serial(pbuffer);
+            break;
+        case CMD_SET_POWER_MODE:
+            cmd_set_power_mode(pbuffer);
+            break;
+        case CMD_GET_POWER_MODE:
+            cmd_get_power_mode(pbuffer);
             break;
         default:
             cmd_not_implemented(pbuffer);

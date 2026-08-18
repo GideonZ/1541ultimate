@@ -136,6 +136,31 @@ int wifi_get_serial(char *serial)
     }
     RETURN_ESP;
 }
+
+int wifi_set_power_mode(uint8_t mode)
+{
+    BUFARGS(set_power_mode, CMD_SET_POWER_MODE);
+    args->mode = mode;
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_get_power_mode(uint8_t *mode, uint8_t *last_state)
+{
+    BUFARGS(identify, CMD_GET_POWER_MODE);
+    TRANSMIT(get_power_mode);
+    if (result->esp_err == 0) {
+        if (mode) {
+            *mode = result->mode;
+        }
+        if (last_state) {
+            *last_state = result->last_state;
+        }
+    } else {
+        printf("Get Power Mode returned %d as error code.\n", result->esp_err);
+    }
+    RETURN_ESP;
+}
 #endif
 
 int wifi_is_connected(uint8_t &status)
