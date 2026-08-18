@@ -8774,6 +8774,359 @@ struct AllRamBackend : public FakeMemoryBackend
     virtual const char *source_name(uint16_t) const { return "RAM"; }
 };
 
+// A data region whose length is not a whole number of rows, so the last row of
+// it is short. $D000-$DFFF divides exactly by two and cannot show this.
+struct OddDataRegionBackend : public FakeMemoryBackend
+{
+    // Data at $2000-$2004: five bytes, so two rows of two and one of one.
+    virtual const char *source_name(uint16_t address) const
+    {
+        if (address >= 0x2000 && address <= 0x2004) {
+            return "IO";
+        }
+        return "RAM";
+    }
+};
+
+static int test_assembly_data_rows_group_and_edit(void)
+{
+    // Rendering and grouping. Two bytes a row, counted from the start of the
+    // region, and the bytes appear both in the byte columns and after DATA.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.io[0x000] = 0x01;
+        backend.io[0x001] = 0x02;
+        backend.io[0x002] = 0x03;
+        backend.io[0x003] = 0x04;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "DATA rows: jump to $D000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "DATA rows: switching to ASM failed.")) return 1;
+
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "D000 01 02") != NULL,
+                   "A DATA row must show its bytes in the byte columns.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "DATA 01 02") != NULL,
+                   "A DATA row must show its bytes after DATA.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(strstr(line, "[I/O]") != NULL,
+                   "A DATA row must still name its source.")) return 1;
+
+        screen.get_slice(1, 5, 38, line);
+        if (expect(strstr(line, "D002 03 04") != NULL,
+                   "The next DATA row must start two bytes on.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA rows: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // The end of a region. Five data bytes are two rows of two and one of one,
+    // and the row after the region is decoded again.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        OddDataRegionBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        for (uint16_t i = 0; i < 5; i++) {
+            backend.write((uint16_t)(0x2000 + i), (uint8_t)(0x11 * (i + 1)));
+        }
+        backend.write(0x2005, 0xEA);   // NOP, decoded normally
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("2000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        if (expect(mon.poll(0) == 0, "DATA end: jump to $2000 failed.")) return 1;
+        if (expect(mon.poll(0) == 0, "DATA end: switching to ASM failed.")) return 1;
+
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "2000 11 22") != NULL, "First row of the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 5, 38, line);
+        if (expect(strstr(line, "2002 33 44") != NULL, "Second row of the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 6, 38, line);
+        if (expect(strstr(line, "2004 55") != NULL && strstr(line, "DATA 55") != NULL,
+                   "The last row of a region must stop at its end.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        // The second byte column is where a full row would put its other byte.
+        if (expect(line[8] == ' ' && line[9] == ' ',
+                   "The short last row must not show a byte from beyond the region.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        screen.get_slice(1, 7, 38, line);
+        if (expect(strstr(line, "2005 EA") != NULL && strstr(line, "NOP") != NULL,
+                   "RAM after the region must be disassembled as before.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA end: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Editing. Each byte of a DATA row is its own edit part, typed as two hex
+    // digits, and RIGHT walks the bytes across the row boundary.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        // Two hex digits complete a byte and move on to the next one by
+        // themselves, including on to the first byte of the row below.
+        const int keys[] = { 'J', 'A', 'E', '7', 'F', 'A', '5', '1', '2',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA edit: command failed.")) return 1;
+        }
+
+        // The first two edits are the two bytes of the row at $D000, and the
+        // third is the first byte of the row below it.
+        if (expect(backend.io[0x000] == 0x7F, "DATA edit must write the first byte.")) {
+            printf("  $D000 is $%02X\n", backend.io[0x000]);
+            return 1;
+        }
+        if (expect(backend.io[0x001] == 0xA5, "DATA edit must write the second byte.")) {
+            printf("  $D001 is $%02X\n", backend.io[0x001]);
+            return 1;
+        }
+        if (expect(backend.io[0x002] == 0x12,
+                   "Completing the last byte of a DATA row must reach the next row.")) {
+            printf("  $D002 is $%02X\n", backend.io[0x002]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA edit: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // RIGHT walks the bytes one at a time and carries on into the row below,
+    // so every displayed byte is reachable without leaving edit mode.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        const int keys[] = { 'J', 'A', 'E', KEY_RIGHT, KEY_RIGHT, '3', 'C',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA navigation: command failed.")) return 1;
+        }
+        if (expect(backend.io[0x002] == 0x3C,
+                   "Two RIGHTs from the first byte must land on the row below.")) {
+            printf("  $D002 is $%02X, $D000 is $%02X, $D001 is $%02X\n",
+                   backend.io[0x002], backend.io[0x000], backend.io[0x001]);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA navigation: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // A letter on a DATA row is a no-op: there is no mnemonic to pick, and the
+    // opcode picker must not open over a region that is not code.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        char line[40];
+        const int keys[] = { 'J', 'A', 'E', 'L', KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.io[0x000] = 0x33;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 5; i++) {
+            if (expect(mon.poll(0) == 0, "DATA picker: command failed.")) return 1;
+        }
+        screen.get_slice(1, 4, 38, line);
+        if (expect(strstr(line, "DATA 33") != NULL,
+                   "A letter on a DATA row must leave it a DATA row.")) {
+            printf("  %s\n", line);
+            return 1;
+        }
+        if (expect(backend.io[0x000] == 0x33,
+                   "A letter on a DATA row must not write anything.")) return 1;
+        if (expect(mon.poll(0) == 1, "DATA picker: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // Character ROM stays read-only: it is shown as data for the same reason
+    // I/O is, but an edit typed into it does not change what it reads.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        // 'A' then 'A' selects CHAR at $D000; see the CHAR disassembly test.
+        const int keys[] = { 'J', 'A', 'O', 'O', 'O', 'O', 'E', '9', '9',
+                             KEY_BREAK, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+        uint8_t before;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        before = backend.charrom[0];
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "CHAR edit: command failed.")) return 1;
+        }
+        if (expect(backend.charrom[0] == before,
+                   "A DATA edit must not change character ROM.")) {
+            printf("  $D000 reads $%02X, was $%02X\n", backend.charrom[0], before);
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CHAR edit: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
+static int test_assembly_data_range_is_byte_addressable(void)
+{
+    // A range anchored inside a DATA row takes the bytes it covers, not the
+    // row it started in: the two-byte row is how the bytes are shown, not what
+    // a range is made of.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        const int keys[] = { 'J', 'A', KEY_RIGHT, 'R', KEY_RIGHT, KEY_CTRL_C,
+                             'J', KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        for (uint16_t i = 0; i < 8; i++) {
+            backend.io[i] = (uint8_t)(0xA0 + i);
+        }
+        backend.write(0xC100, 0x00);
+        backend.write(0xC101, 0x00);
+        backend.write(0xC102, 0x00);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        ui.push_prompt("C100", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "DATA range: command failed.")) return 1;
+        }
+
+        // Anchored on $D001 and moved to $D002: two bytes, not the whole row
+        // either end.
+        if (expect(backend.read(0xC100) == 0xA1 && backend.read(0xC101) == 0xA2,
+                   "A range across two DATA rows must copy exactly its bytes.")) {
+            printf("  copied $%02X $%02X\n", backend.read(0xC100), backend.read(0xC101));
+            return 1;
+        }
+        if (expect(backend.read(0xC102) == 0x00,
+                   "A DATA range must not copy the rest of the row it ended in.")) {
+            printf("  third byte $%02X\n", backend.read(0xC102));
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "DATA range: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    // A range that starts in code and ends in data covers both, with the code
+    // end still taken as a whole instruction.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        OddDataRegionBackend backend;
+        const int keys[] = { 'J', 'A', 'R', KEY_DOWN, KEY_CTRL_C,
+                             'J', KEY_CTRL_V, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        // $1FFD: LDA #$42, three bytes short of the region, then the region.
+        backend.write(0x1FFD, 0xA9);
+        backend.write(0x1FFE, 0x42);
+        backend.write(0x2000, 0x11);
+        backend.write(0x2001, 0x22);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("1FFD", 1);
+        ui.push_prompt("3000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (int)(sizeof(keys) / sizeof(keys[0])) - 1; i++) {
+            if (expect(mon.poll(0) == 0, "CODE/DATA range: command failed.")) return 1;
+        }
+
+        // The instruction at $1FFD is two bytes, so the row below it starts at
+        // $1FFF and the range ends where that row does.
+        if (expect(backend.read(0x3000) == 0xA9 && backend.read(0x3001) == 0x42,
+                   "A range starting in code must copy the whole instruction.")) {
+            printf("  copied $%02X $%02X\n", backend.read(0x3000), backend.read(0x3001));
+            return 1;
+        }
+        if (expect(mon.poll(0) == 1, "CODE/DATA range: exit failed.")) return 1;
+        mon.deinit();
+    }
+
+    return 0;
+}
+
 static int test_io_region_is_data_not_code(void)
 {
     // With I/O banked in, $D000-$DFFF answers with whatever the registers hold
@@ -8799,18 +9152,19 @@ static int test_io_region_is_data_not_code(void)
         if (expect(mon.poll(0) == 0, "I/O disassembly: jump to $D000 failed.")) return 1;
         if (expect(mon.poll(0) == 0, "I/O disassembly: switching to ASM failed.")) return 1;
 
-        // Every row is one address on from the one above it, no matter what
-        // the registers answered while the screen was being drawn.
+        // Every row is three addresses on from the one above it, counted from
+        // the start of the region, no matter what the registers answered while
+        // the screen was being drawn.
         for (int row = 0; row < 6; row++) {
             char expected[8];
             screen.get_slice(1, 4 + row, 38, rows[row]);
-            sprintf(expected, "D0%02X ", row);
+            sprintf(expected, "D0%02X ", row * MONITOR_DATA_ROW_BYTES);
             if (expect(strncmp(rows[row], expected, 5) == 0,
-                       "Each live I/O address must be its own Assembly row.")) {
+                       "Each live I/O row must start where the grouping puts it.")) {
                 printf("  row %d: %s\n", row, rows[row]);
                 return 1;
             }
-            if (expect(strstr(rows[row], ".BYTE $") != NULL,
+            if (expect(strstr(rows[row], "DATA ") != NULL,
                        "A live I/O row must read as data, not as an instruction.")) {
                 printf("  row %d: %s\n", row, rows[row]);
                 return 1;
@@ -8911,9 +9265,9 @@ static int test_io_region_is_data_not_code(void)
         for (int row = 0; row < 4; row++) {
             char expected[8];
             screen.get_slice(1, 4 + row, 38, rows[row]);
-            sprintf(expected, "D0%02X ", row);
+            sprintf(expected, "D0%02X ", row * MONITOR_DATA_ROW_BYTES);
             if (expect(strncmp(rows[row], expected, 5) == 0,
-                       "Each CHAR ROM address must be its own Assembly row.")) {
+                       "Each CHAR ROM row must start where the grouping puts it.")) {
                 printf("  row %d: %s\n", row, rows[row]);
                 return 1;
             }
@@ -8932,7 +9286,7 @@ static int test_io_region_is_data_not_code(void)
                 printf("  row %d: %s\n", row, rows[row]);
                 return 1;
             }
-            if (expect(strstr(rows[row], ".BYTE $") != NULL,
+            if (expect(strstr(rows[row], "DATA ") != NULL,
                        "A CHAR ROM row must read as data: it is bitmap data, "
                        "not code.")) {
                 printf("  row %d: %s\n", row, rows[row]);
@@ -9220,6 +9574,8 @@ int main()
     if (test_command_input_agrees_with_the_parsers()) return 1;
     if (test_monitor_interaction_text_is_a_contract()) return 1;
     if (test_io_region_is_data_not_code()) return 1;
+    if (test_assembly_data_rows_group_and_edit()) return 1;
+    if (test_assembly_data_range_is_byte_addressable()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
 
     puts("machine_monitor_test: OK");

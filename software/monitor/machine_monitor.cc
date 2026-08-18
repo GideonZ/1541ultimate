@@ -2109,6 +2109,9 @@ MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, boo
 MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) : UIObject(ui)
 {
     backend = mem_backend;
+    data_region_start = 0;
+    data_region_end = 0;
+    data_region_valid = false;
     if (monitor_saved_state_valid) {
         state = monitor_saved_state;
     } else {
@@ -2352,6 +2355,18 @@ Cursor MachineMonitor :: active_cursor(void) const
     return cursor;
 }
 
+// How far a range reaches from one end of it. An instruction is taken whole,
+// because half of one is not a thing a range should carry; a data row is not,
+// because its two bytes are how the view groups them for display and a range
+// anchored on one of them means that byte.
+uint8_t MachineMonitor :: range_span(uint16_t address) const
+{
+    if (address_is_data(address)) {
+        return 1;
+    }
+    return disasm_length(address);
+}
+
 bool MachineMonitor :: range_contains(uint16_t address) const
 {
     if (!range_mode) {
@@ -2360,8 +2375,8 @@ bool MachineMonitor :: range_contains(uint16_t address) const
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
     if (state.view == MONITOR_VIEW_ASM) {
-        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
         if (state.current_addr < range_anchor) {
             start = state.current_addr;
             end = anchor_end;
@@ -2413,8 +2428,8 @@ bool MachineMonitor :: clipboard_copy_range(void)
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
     if (state.view == MONITOR_VIEW_ASM) {
-        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
         if (state.current_addr < range_anchor) {
             start = state.current_addr;
             end = anchor_end;
@@ -3285,6 +3300,9 @@ bool MachineMonitor :: restore_location(const MonitorBookmarkSlot *bookmark)
     if (backend && backend->supports_cpu_banking()) {
         state.cpu_port = (uint8_t)(bookmark->cpu_bank & 0x07);
         backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
     } else if ((state.cpu_port & 0x07) != (bookmark->cpu_bank & 0x07)) {
         return false;
     }
@@ -3627,6 +3645,76 @@ void MachineMonitor :: reset_poll_deadline(void)
     poll_deadline = (uint16_t)(getMsTimer() + next_poll_interval_ms());
 }
 
+// Whether the Assembly view shows this address as data rather than decoding it.
+bool MachineMonitor :: address_is_data(uint16_t address) const
+{
+    return backend && backend->shows_as_data(address);
+}
+
+// The run of addresses around `address` that are all shown as data. A data row
+// is grouped from the start of its own region and never reaches past its end,
+// so the grouping is a property of the region rather than of where the view
+// happens to be looking.
+//
+// The bounds are remembered because the rows of one redraw are all in the same
+// region: without that, every row would walk the region again.
+bool MachineMonitor :: data_region_bounds(uint16_t address, uint16_t *start,
+                                          uint16_t *end) const
+{
+    if (!address_is_data(address)) {
+        return false;
+    }
+    if (data_region_valid && address >= data_region_start && address <= data_region_end) {
+        *start = data_region_start;
+        *end = data_region_end;
+        return true;
+    }
+
+    uint16_t low = address;
+    uint16_t high = address;
+
+    while ((low > 0) && address_is_data((uint16_t)(low - 1))) {
+        low--;
+    }
+    while ((high < 0xFFFF) && address_is_data((uint16_t)(high + 1))) {
+        high++;
+    }
+
+    data_region_start = low;
+    data_region_end = high;
+    data_region_valid = true;
+    *start = low;
+    *end = high;
+    return true;
+}
+
+// How many bytes the data row starting at `address` covers:
+// MONITOR_DATA_ROW_BYTES, counted from the start of the region, and fewer
+// where the region ends first.
+//
+// Counting from the region start rather than from the row is what makes the
+// grouping the same whatever route the view took to get there. $D000-$DFFF is
+// 4096 bytes, so it is 2048 rows of two with none left over; a region of odd
+// length ends with a row of one.
+uint8_t MachineMonitor :: data_group_length(uint16_t address) const
+{
+    uint16_t start = 0;
+    uint16_t end = 0;
+
+    if (!data_region_bounds(address, &start, &end)) {
+        return 0;
+    }
+
+    uint8_t within = (uint8_t)(((uint32_t)(address - start)) % MONITOR_DATA_ROW_BYTES);
+    uint8_t length = (uint8_t)(MONITOR_DATA_ROW_BYTES - within);
+    uint32_t left = (uint32_t)(end - address) + 1;
+
+    if (length > left) {
+        length = (uint8_t)left;
+    }
+    return length ? length : 1;
+}
+
 // What one Assembly row at `address` is: the bytes it covers, and how they
 // decode. Every caller goes through here, so the length the view steps by, the
 // text it draws, the target it follows and the operand the number tool edits
@@ -3652,14 +3740,24 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
     // is still decoded, so the rule follows the banked source rather than the
     // address range. The source column, [I/O], [CHR] or [RAM], says which case
     // a row is in, so the view is not hiding the distinction.
-    if (backend && backend->shows_as_data(address)) {
+    if (address_is_data(address)) {
+        uint8_t length = data_group_length(address);
+        int pos;
+
         decoded->valid = false;
         decoded->illegal = false;
         decoded->operand_bytes = 0;
         decoded->has_target = false;
         decoded->target = 0;
-        decoded->length = 1;
-        sprintf(decoded->text, ".BYTE $%02X", row_bytes[0]);
+        decoded->length = length;
+        strcpy(decoded->text, "DATA");
+        pos = 4;
+        for (uint8_t i = 0; i < length; i++) {
+            decoded->text[pos++] = ' ';
+            dump_hex_byte(decoded->text, pos, row_bytes[i]);
+            pos += 2;
+        }
+        decoded->text[pos] = 0;
         return;
     }
 
@@ -3717,6 +3815,11 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 {
     uint8_t len = disasm_length(address);
     if (len == 0) len = 1;
+    // A data row has no mnemonic, so each of its bytes is a part of its own and
+    // the parts are the bytes in the order they are shown.
+    if (address_is_data(address)) {
+        return len;
+    }
     if (asm_is_branch(address) && len == 2) return 3;
     return len;
 }
@@ -4597,7 +4700,12 @@ void MachineMonitor :: draw_disassembly()
             if (part >= part_count) part = 0;
             // All asm-edit highlights live inside the decoded text region
             // (never on the raw byte columns to the left).
-            if (part == 0) {
+            if (address_is_data(addr)) {
+                // "DATA xx yy zz": the parts are the byte pairs, so the cursor
+                // sits on one pair rather than on a mnemonic or an operand.
+                hl_x = MONITOR_DISASM_TEXT_COL + 5 + (part * 3);
+                hl_len = 2;
+            } else if (part == 0) {
                 int mnem_len = 0;
                 while (mnem_len < text_len && decoded.text[mnem_len] != ' ') mnem_len++;
                 if (mnem_len == 0) mnem_len = (text_len > 0) ? text_len : 1;
@@ -5414,6 +5522,9 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     state.cpu_port = normalize_cpu_mode(state.cpu_port);
     if (backend->supports_cpu_banking()) {
         backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
     }
     current_vic_bank = backend->supports_vic_bank() ? backend->get_live_vic_bank() : 0;
     if (bookmarks) {
@@ -5737,6 +5848,38 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
+            if (address_is_data(state.current_addr) && is_hex_char((char)key)) {
+                // A data row is edited as the bytes it shows: part N is the
+                // Nth byte of the row, including the first, which on an
+                // instruction row is the mnemonic instead. Writing goes through
+                // canonical_write like every other edit, so a read-only source
+                // such as character ROM refuses it there rather than here.
+                uint8_t nib = (key >= '0' && key <= '9') ? (uint8_t)(key - '0')
+                                                        : (uint8_t)(to_upper_char((char)key) - 'A' + 10);
+                uint16_t byte_addr = (uint16_t)(state.current_addr + asm_edit_part);
+                uint8_t prev_byte = canonical_read(byte_addr);
+                uint8_t prev_part = asm_edit_part;
+                uint8_t prev_pending = asm_edit_pending;
+
+                if (asm_edit_pending == 0) {
+                    canonical_write(byte_addr, (uint8_t)((nib << 4) | (prev_byte & 0x0F)));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 1;
+                } else {
+                    canonical_write(byte_addr, (uint8_t)((prev_byte & 0xF0) | nib));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 0;
+                    if (asm_edit_part + 1 < part_count) {
+                        asm_edit_part++;
+                    } else {
+                        step_disassembly(1);
+                        asm_edit_part = 0;
+                        asm_edit_history_reset(state.current_addr);
+                    }
+                }
+                draw();
+                return 0;
+            }
             if (asm_edit_part > 0 && is_hex_char((char)key)) {
                 uint8_t nib = (key >= '0' && key <= '9') ? (uint8_t)(key - '0')
                                                         : (uint8_t)(to_upper_char((char)key) - 'A' + 10);
@@ -5814,7 +5957,11 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
-            if (asm_edit_part == 0 && ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
+            if (asm_edit_part == 0 && !address_is_data(state.current_addr) &&
+                ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
+                // A data row has no mnemonic to pick, so a letter there is a
+                // no-op rather than an opcode the view would then have to
+                // decode out of I/O or character ROM.
                 // Opening the picker also validates the first mnemonic letter.
                 // An invalid first letter (no supported mnemonic starts with it)
                 // is rejected: the picker stays closed and the key is a no-op.
@@ -5961,6 +6108,9 @@ int MachineMonitor :: handle_key(int key)
             state.cpu_port = next_cpu_mode(state.cpu_port);
             printf("MCM cpu bank %d\n", (int)(state.cpu_port & 0x07));
             backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
             if (state.view == MONITOR_VIEW_ASM) {
                 restore_disasm_cursor_row(asm_row);
             }

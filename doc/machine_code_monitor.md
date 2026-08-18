@@ -112,20 +112,23 @@ Assembly view shows decoded 6510 instructions, their instruction bytes, and the 
 
 The source tag occupies three characters inside the brackets, so the column stays aligned across bank boundaries: `[RAM]`, `[BAS]`, `[CHR]`, `[I/O]`, `[KRN]`, and `[CPU]` for the memory currently visible to the CPU on an Ultimate II+.
 
-`$D000-$DFFF` is shown as one `.BYTE $xx` per row when either I/O or Character ROM is banked in. I/O reads live registers, so decoding it would change the instruction length, and with it the address of every row below, on each redraw. Character ROM is stable but holds character bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally: the rule follows the banked source, not the address range. On an Ultimate II+, `$D000-$DFFF` is always disassembled.
+`$D000-$DFFF` is shown as `DATA` rows of two bytes each when either I/O or Character ROM is banked in. I/O reads live registers, so decoding it would change the instruction length, and with it the address of every row below, on each redraw. Character ROM is stable but holds character bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally: the rule follows the banked source, not the address range. On an Ultimate II+, `$D000-$DFFF` is always disassembled.
+
+The rows are grouped from the start of the region, so where a `DATA` row begins does not depend on how the view arrived there. `$D000-$DFFF` is 4096 bytes and divides into 2048 rows of two; a region whose length is odd ends with a row of one byte.
+
+A `DATA` row is edited in Assembly view like any other row. `E` enters edit mode and the cursor sits on the first byte; each displayed byte is its own edit position, two hex digits complete one, and `LEFT`/`RIGHT` step from byte to byte and on into the row above or below. There is no opcode picker on a `DATA` row, because there is no mnemonic to pick, and a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write as it does everywhere else. Editing the same bytes in Memory view with `M` works as before.
+
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
 Example:
 
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF9 FF           .BYTE $FF      [I/O]|
-|DFFA 00           .BYTE $00      [I/O]|
-|DFFB 12           .BYTE $12      [I/O]|
-|DFFC FF           .BYTE $FF      [I/O]|
-|DFFD 00           .BYTE $00      [I/O]|
-|DFFE 3C           .BYTE $3C      [I/O]|
-|DFFF 00           .BYTE $00      [I/O]|
+|DFF8 FF 00        DATA FF 00     [I/O]|
+|DFFA 12 FF        DATA 12 FF     [I/O]|
+|DFFC 00 3C        DATA 00 3C     [I/O]|
+|DFFE 00 00        DATA 00 00     [I/O]|
 |E000 85 56        STA $56        [KRN]|
 |E002 20 0F BC     JSR $BC0F      [KRN]|
 |E005 A5 61        LDA $61        [KRN]|

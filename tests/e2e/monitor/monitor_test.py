@@ -30,6 +30,7 @@ from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, v
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
+    strip_frame,
     MODE_FREEZE,
     MODE_TELNET,
     Snapshot,
@@ -60,6 +61,8 @@ TRANSFER_PROMPT_TITLE = "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]"
 STATUS_LINE_RE = re.compile(
     r"(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) "
     r"\$E:(?:RAM|KRN) VIC[0-3] \$[0-9A-F]{4}")
+# An Assembly DATA row: an address, its bytes, and the DATA text.
+DATA_ROW_RE = re.compile(r"^\|?[0-9A-F]{4} [0-9A-F]{2}.*DATA ")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
@@ -3455,6 +3458,47 @@ def run_hunt_refuses_a_reversed_range_test(session: MonitorSession) -> None:
     wait_for_monitor(session, "dismissing the hunt range error")
 
 
+def run_assembly_data_rows_test(session: MonitorSession) -> None:
+    """$D000 reads as DATA rows of two bytes, grouped from the region start.
+
+    I/O is not decoded, because a live register reads differently each time and
+    the instruction length decoded from it would move every row below. The rows
+    are two bytes wide and start where the grouping puts them, so the second
+    row is two addresses on from the first whatever the registers answered
+    while the screen was being drawn.
+    """
+    ensure_view(session, "ASM ")
+    screen = session.goto("D000")
+    screen = ensure_view(session, "ASM ")
+
+    # Matched on the row shape rather than on the address alone: the header
+    # line carries "$D000" too, and it is not a row.
+    first = screen.find_line_matching(DATA_ROW_RE)
+    row = strip_frame(screen.line(first)).rstrip()
+    if not row.startswith("D000 "):
+        raise Failure(
+            f"the first DATA row is at {row[:4]!r}, expected $D000\n{screen.text()}")
+    if "[I/O]" not in row:
+        raise Failure(f"the $D000 row does not name I/O as its source: {row!r}")
+
+    # The two bytes appear in the byte columns and again after DATA, and they
+    # are the same two bytes.
+    columns = row[5:10].split()
+    after = row[row.index("DATA ") + 5:].split("[")[0].split()
+    if len(columns) != 2 or columns != after:
+        raise Failure(
+            f"a DATA row must show the same two bytes twice, got {columns} and "
+            f"{after}: {row!r}")
+
+    below = strip_frame(screen.line(first + 1)).rstrip()
+    if not below.startswith("D002 "):
+        raise Failure(
+            f"the row below $D000 must start at $D002, got {below!r}\n"
+            f"{screen.text()}")
+    if "DATA " not in below:
+        raise Failure(f"the row below $D000 must be a DATA row too: {below!r}")
+
+
 def assert_u2_footer_consistent(snapshot: Snapshot) -> int:
     """Return the U2 VIC bank after checking that its base address agrees."""
     line_index = find_u2_footer_line(snapshot)
@@ -3769,6 +3813,13 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("HUNT refuses a range that ends before it starts"):
         run_hunt_refuses_a_reversed_range_test(session)
+
+    with check("Assembly shows I/O as two-byte DATA rows"):
+        if is_u2:
+            check_skip("U2+L reports one source for the whole CPU view, so it "
+                       "has no I/O or CHAR region to show as data")
+        else:
+            run_assembly_data_rows_test(session)
 
     with check("leaving and re-entering the monitor keeps its place"):
         run_reentry_test(session)

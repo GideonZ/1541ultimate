@@ -49,6 +49,10 @@ enum {
     MONITOR_DISASM_ROW_CHARS = 38,
     MONITOR_DISASM_SOURCE_COL = 30,
     MONITOR_DISASM_TEXT_COL = 15,
+    // How many bytes one Assembly DATA row shows. Two rather than three: it
+    // divides the $D000-$DFFF region exactly, so the region has no short row
+    // at its end and every row holds the same number of editable bytes.
+    MONITOR_DATA_ROW_BYTES = 2,
     MONITOR_HUNT_NEEDLE_MAX = 80,
 };
 
@@ -251,6 +255,12 @@ class MachineMonitor : public UIObject
     const char *hunt_picker_label;
     uint8_t asm_edit_part;
     uint8_t asm_edit_pending;
+    // The data region the Assembly view last grouped a row in, so the region
+    // bounds are found once per redraw rather than once per row. Mutable
+    // because decode_row is const and is where the lookup happens.
+    mutable uint16_t data_region_start;
+    mutable uint16_t data_region_end;
+    mutable bool data_region_valid;
     // Per-instruction undo trail used by DEL in ASM edit mode. Each slot
     // captures the byte we are about to overwrite so DEL can restore it.
     enum { ASM_EDIT_HISTORY_MAX = 16 };
@@ -442,6 +452,10 @@ class MachineMonitor : public UIObject
     uint8_t disasm_length(uint16_t address) const;
     bool    asm_is_branch(uint16_t address);
     uint8_t asm_edit_part_count(uint16_t address);
+    bool address_is_data(uint16_t address) const;
+    bool data_region_bounds(uint16_t address, uint16_t *start, uint16_t *end) const;
+    uint8_t data_group_length(uint16_t address) const;
+    uint8_t range_span(uint16_t address) const;
     uint16_t disasm_next_addr(uint16_t address);
     uint16_t disasm_prev_addr(uint16_t address);
     uint16_t disasm_prev_visible_addr(uint16_t address);
