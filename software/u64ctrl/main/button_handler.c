@@ -10,6 +10,7 @@
 #include "rpc_dispatch.h"
 #include "jtag.h"
 #include "wifi_modem.h"
+#include "power_state.h"
 
 #define SHORT_PRESS 100
 #define LONG_PRESS 1000
@@ -78,15 +79,18 @@ static void handle_button_event(int event)
         case BUTTON_ON:
             ESP_LOGI(TAG, "** ON **");
             regulator_enable(1, 0);
+            power_store_last_state(1);
             break;
         case BUTTON_ON2:
             ESP_LOGI(TAG, "** ON with delay **");
             regulator_enable(1, 20);
+            power_store_last_state(1);
             break;
         case BUTTON_OFF:
             ESP_LOGI(TAG, "** OFF **");
             regulator_enable(0, 0);
             disable_hook();
+            power_store_last_state(0);
             break;
     }
 }
