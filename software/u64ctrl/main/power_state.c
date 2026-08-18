@@ -104,6 +104,7 @@ int power_initial_state(int fpga_running)
 {
     if (fpga_running) {
         ESP_LOGI(TAG, "Application FPGA is already loaded; leaving the machine on.");
+        power_store_last_state(1);
         return 1;
     }
 
@@ -123,5 +124,9 @@ int power_initial_state(int fpga_running)
     }
     ESP_LOGI(TAG, "Cold start with mode %s; machine comes up %s.", power_mode_name(mode),
              machine_on ? "ON" : "OFF");
+    // The state the machine comes up in is a power transition like any other:
+    // record it, or a later switch to LAST_STATE acts on the state before this
+    // boot rather than on the state this boot established.
+    power_store_last_state((uint8_t)machine_on);
     return machine_on;
 }
