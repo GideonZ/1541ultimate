@@ -84,25 +84,25 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR HEX $0168                     |
-|00E0 85 85 85 85 85 85 86 86 ........ |
-|00E8 86 86 86 86 86 87 87 87 ........ |
-|00F0 87 87 87 F0 DB 00 00 00 ........ |
-|00F8 00 00 00 00 00 00 00 20 .......  |
-|0100 33 38 39 31 31 00 30 30 38911.00 |
-|0108 30 30 00 00 10 10 35 02 00....5. |
-|0110 00 00 10 10 35 02 00 00 ....5... |
-|0118 1C 10 35 02 00 00 22 10 ..5...". |
-|0120 35 02 00 00 28 10 35 02 5...(.5. |
-|0128 00 10 35 02 00 00 32 10 ..5...2. |
-|0130 35 02 00 00 38 10 35 02 5...8.5. |
-|0138 00 00 3E 10 35 02 00 00 ..>.5... |
-|0140 44 10 35 02 00 00 44 10 D.5...D. |
-|0148 35 02 00 00 50 10 35 02 5...P.5. |
-|0150 00 00 56 10 35 02 00 00 ..V.5... |
-|0158 5C 10 35 02 00 00 62 10 \.5...b. |
-|0160 35 02 00 00 68 10 35 02 5...h.5. |
-|0168 00 00 6E 10 35 02 00 00 ..n.5... |
-|CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000  |
+|0160 6400360500806A00 3605008070003605|
+|0170 0080760036050080 7C00360500808200|
+|0180 3605008088003605 00808E0036050080|
+|0190 9400360500809A00 36050080A0003605|
+|01A0 0080A60036050080 AC0036050080B200|
+|01B0 36050080B8003605 BC0036050080C200|
+|01C0 36050080C8003605 0080CE0036050080|
+|01D0 D40036050080DA00 36050080E0003605|
+|01E0 0080E600367DEA18 050E21DF7DEA0A00|
+|01F0 0022CFE5000A14E1 64A585A479A69CE3|
+|0200 0000000000000000 0000000000000000|
+|0210 0000000000000000 0000000000000000|
+|0220 0000000000000000 0000000000000000|
+|0230 0000000000000000 0000000000000000|
+|0240 0000000000000000 0000000000000000|
+|0250 0000000000000000 0000000000000000|
+|0260 0000000000000000 0000000000000000|
+|0270 0000000000000000 0000000000000000|
+|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
 
@@ -120,6 +120,33 @@ A `DATA` row is edited in Assembly view like any other row. `E` enters edit mode
 
 `DEL` clears a `DATA` row's bytes to `$00`. On a decoded instruction it still writes `NOP`, which is what keeps the code around it runnable; `NOP` means nothing in a region that is not code.
 
+A region shown as `DATA`:
+
+```text
++--------------------------------------+
+|MONITOR ASM $D000                     |
+|D000 00 00     DATA 00 00        [I/O]|
+|D002 00 00     DATA 00 00        [I/O]|
+|D004 00 00     DATA 00 00        [I/O]|
+|D006 00 00     DATA 00 00        [I/O]|
+|D008 00 00     DATA 00 00        [I/O]|
+|D00A 00 00     DATA 00 00        [I/O]|
+|D00C 00 00     DATA 00 00        [I/O]|
+|D00E 00 00     DATA 00 00        [I/O]|
+|D010 00 1B     DATA 00 1B        [I/O]|
+|D012 AF 5E     DATA AF 5E        [I/O]|
+|D014 9E 00     DATA 9E 00        [I/O]|
+|D016 C8 00     DATA C8 00        [I/O]|
+|D018 15 78     DATA 15 78        [I/O]|
+|D01A F0 00     DATA F0 00        [I/O]|
+|D01C 00 00     DATA 00 00        [I/O]|
+|D01E 00 00     DATA 00 00        [I/O]|
+|D020 FE F6     DATA FE F6        [I/O]|
+|D022 F1 F2     DATA F1 F2        [I/O]|
+|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
++--------------------------------------+
+```
+
 The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
 Example:
@@ -127,21 +154,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF8 FF 00        DATA FF 00     [I/O]|
-|DFFA 12 FF        DATA 12 FF     [I/O]|
-|DFFC 00 3C        DATA 00 3C     [I/O]|
-|DFFE 00 00        DATA 00 00     [I/O]|
-|E000 85 56        STA $56        [KRN]|
-|E002 20 0F BC     JSR $BC0F      [KRN]|
-|E005 A5 61        LDA $61        [KRN]|
-|E007 C9 88        CMP #$88       [KRN]|
-|E009 90 03        BCC $E00E      [KRN]|
-|E00B 20 D4 BA     JSR $BAD4      [KRN]|
-|E00E 20 CC BC     JSR $BCCC      [KRN]|
-|E011 A5 07        LDA $07        [KRN]|
-|E013 18           CLC            [KRN]|
-|E014 69 81        ADC #$81       [KRN]|
-|E016 F0 F3        BEQ $E00B      [KRN]|
+|E011 A5 07     LDA $07           [KRN]|
+|E013 18        CLC               [KRN]|
+|E014 69 81     ADC #$81          [KRN]|
+|E016 F0 F3     BEQ $E00B         [KRN]|
+|E018 38        SEC               [KRN]|
+|E019 E9 01     SBC #$01          [KRN]|
+|E01B 48        PHA               [KRN]|
+|E01C A2 05     LDX #$05          [KRN]|
+|E01E B5 69     LDA $69,X         [KRN]|
+|E020 B4 61     LDY $61,X         [KRN]|
+|E022 95 61     STA $61,X         [KRN]|
+|E024 94 69     STY $69,X         [KRN]|
+|E026 CA        DEX               [KRN]|
+|E027 10 F5     BPL $E01E         [KRN]|
+|E029 A5 56     LDA $56           [KRN]|
+|E02B 85 70     STA $70           [KRN]|
+|E02D 20 53 B8  JSR $B853         [KRN]|
+|E030 20 B4 BF  JSR $BFB4         [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -159,24 +189,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR BIN $DC00/7                   |
-|DC00 ........ 00                      |
-|DC01 ******** FF                      |
-|DC02 ******** FF                      |
-|DC03 ........ 00                      |
-|DC04 *.*..*.* A5                      |
-|DC05 ...**.** 1B                      |
-|DC06 ******** FF                      |
-|DC07 ******** FF                      |
-|DC08 ........ 00                      |
-|DC09 ........ 00                      |
-|DC0A ........ 00                      |
-|DC0B *..*...* 91                      |
-|DC0C ........ 00                      |
-|DC0D *......* 81                      |
-|DC0E .......* 01                      |
-|DC0F ....*... 08                      |
-|DC10 ........ 00                      |
-|DC11 ******** FF                      |
+|DC00 .***********************........ |
+|DC04 **.**..*...**...**************** |
+|DC08 ........................*..*...* |
+|DC0C .......................*....*... |
+|DC10 .***********************........ |
+|DC14 ***.****....*.****************** |
+|DC18 ........................*..*...* |
+|DC1C .......................*....*... |
+|DC20 .***********************........ |
+|DC24 *.***.*..*.....***************** |
+|DC28 ........................*..*...* |
+|DC2C .......................*....*... |
+|DC30 .***********************........ |
+|DC34 .*.**.....**.*..**************** |
+|DC38 ........................*..*...* |
+|DC3C .......................*....*... |
+|DC40 .***********************........ |
+|DC44 **.***.*..*..**.**************** |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -197,21 +227,21 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASC $A000                     |
-|A000 .{.CBMBASIC0.A...................|
-|A020 P........:..J.,.g.U.d...#....... |
-|A040 U...j..}.....:Z.A.g.U.X...}...g. |
-|A060 ....d.k......|.e..............g  |
-|A080 yi.yR.{*.{...z.p..F..}...Z..d.EN |
-|A0A0 .FO.NEX.DATA.INPUT.DIM.REA.LE    |
+|A000 ..{.CBMBASIC0.A................. |
+|A020 p.'.......:...J.,.g.U.d...#..... |
+|A040 V...]...).....z.A.9...X...}...q. |
+|A060 ......d.k.......|.e.........,.7. |
+|A080 yi.yR.{*.{...z.P..F..}..Z..d..EN |
+|A0A0 .FO.NEX.DAT.INPUT.INPU.DI.REA.LE |
 |A0C0 .GOT.RU.I.RESTOR.GOSU.RETUR.RE.S |
-|A0E0 TO.O.WAI.LOA.SAVU.VERIF.DE.POK.PR|
-|A100 INT.PRIN.CON.LIS.CLR.CM.SY.OPE.CL|
+|A0E0 TO.O.WAI.LOA.SAV.VERIF.DE.POK.PR |
+|A100 INT.PRIN.CON.LIS.CL.CM.SY.OPE.CL |
 |A120 OS.GE.NE.TAB.T.F.SPC.THE.NO.STE. |
 |A140 .....AN.O....SG.IN.AB.US.FR.PO.S |
 |A160 Q.RN.LO.EX.CO.SI.TA.AT.PEE.LE.ST |
 |A180 R.VA.AS.CHR.LEFT.RIGHT.MID.G..TO |
-|A1A0 D.MANY FILE.FILE OPEN.FILE NOT OP|
-|A1C0 E.FILE NOT FOUND.DEVICE NOT PRESE|
+|A1A0 O MANY FILE.FILE OPE.FILE NOT OP |
+|A1C0 E.FILE NOT FOUN.DEVICE NOT PRESE |
 |A1E0 N.NOT INPUT FIL.NOT OUTPUT FIL.M |
 |A200 ISSING FILE NAM.ILLEGAL DEVICE N |
 |A220 UMBE.NEXT WITHOUT FO.SYNTA.RETUR |
@@ -249,14 +279,14 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR SCR U/G $0400                 |
-|0400 █                                |
-|0420           ***** COMMODORE 64 BA  |
-|0440 SIC V3 *****                     |
-|0460                         64K RAM  |
-|0480  SYSTEM 38911 BASIC BYTES FREE   |
+|MONITOR SCR L/U $0400                 |
+|0400                                  |
+|0420             **** commodore 64 ba |
+|0440 sic v2 ****                      |
+|0460                          64k ram |
+|0480  system  38911 basic bytes free  |
 |04A0                                  |
-|04C0             READY.               |
+|04C0         ready.                   |
 |04E0                                  |
 |0500                                  |
 |0520                                  |
@@ -595,16 +625,16 @@ Default slots are aimed at common C64 locations:
 +--------------------------------------+
 |BOOKMARKS                             |
 |                                      |
-|0 ZERO    $0000 HEX  8 CPU7 VIC0      |
-|1 SCREEN  $0400 SCR 32 CPU7 VIC0      |
-|2 BASIC   $0801 ASM    CPU7 VIC0      |
-|3 BASROM  $A000 ASM    CPU7 VIC0      |
-|4 HIRAM   $C000 ASM    CPU7 VIC0      |
-|5 VIC     $D000 HEX  8 CPU7 VIC0      |
-|6 SID     $D400 HEX  8 CPU7 VIC0      |
-|7 CIA1    $DC00 BIN  1 CPU7 VIC0      |
-|8 CIA2    $DD00 BIN  1 CPU7 VIC0      |
-|9 KERNAL  $E000 ASM    CPU7 VIC0      |
+|0 ZP     $0000 HEX  8 CPU7 VIC0       |
+|1 SCREEN $0400 SCR 32 CPU7 VIC0       |
+|2 BASIC  $0801 ASM    CPU7 VIC0       |
+|3 BASROM $A000 ASM    CPU7 VIC0       |
+|4 HIRAM  $C000 ASM    CPU7 VIC0       |
+|5 VIC    $D000 HEX  8 CPU7 VIC0       |
+|6 SID    $D400 HEX  8 CPU7 VIC0       |
+|7 CIA1   $DC00 BIN  1 CPU7 VIC0       |
+|8 CIA2   $DD00 BIN  1 CPU7 VIC0       |
+|9 KERNAL $E000 ASM    CPU7 VIC0       |
 |                                      |
 |0-9/RET Jmp  S Set  L Label  DEL Reset|
 +--------------------------------------+

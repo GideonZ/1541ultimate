@@ -279,11 +279,25 @@ class MonitorSession:
     def enter_monitor(self) -> Snapshot:
         self.backend.ensure_ready()
         snapshot = self.send_key("CTRL_O")
-        try:
-            find_any_status_line(snapshot)
+
+        # Polled rather than read once. C=+O is answered by the browser
+        # redrawing into the monitor, and the redraw does not always finish
+        # inside the settle that follows the key: the machine has often just
+        # been reset, which is exactly when the device is busiest. Judging from
+        # the first snapshot alone took the task-menu fallback below on a slow
+        # redraw, which opens something else and leaves the browser up, so the
+        # next view key was pressed at a browser and the suite failed there
+        # instead of here.
+        def monitor_is_up(shot: Snapshot) -> bool:
+            try:
+                find_any_status_line(shot)
+                return True
+            except Failure:
+                return False
+
+        snapshot = wait_until(self, monitor_is_up)
+        if monitor_is_up(snapshot):
             return snapshot
-        except Failure:
-            pass
 
         snapshot = self.send_key("F5")
         snapshot = self.send_char("D")
