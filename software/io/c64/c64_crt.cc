@@ -333,7 +333,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
 void C64_CRT::clear_cart_mem(void)
 {
-    memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
+    memset(cart_memory, 0xff, max_cart); // clear the whole cartridge region
 }
 
 void C64_CRT::auto_mirror(void)
