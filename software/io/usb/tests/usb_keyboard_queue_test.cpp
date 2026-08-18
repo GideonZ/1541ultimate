@@ -402,3 +402,23 @@ TEST(KeyboardUsbRepeatTest, StaleRepeatStaysOffWhenTheMillisecondTimerWraps)
 	keyboard.process_data(press);
 	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, press) > UNCEILED_REPEATS);
 }
+
+TEST(KeyboardUsbRepeatTest, ClearBufferStopsARepeatThatIsRunning)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	host_test_set_ms_timer(0);
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// Let the initial delay run out so the repeat is emitting.
+	EXPECT_TRUE(poll_ui(keyboard, 'a', 40, NULL) > 0);
+
+	keyboard.clear_buffer();
+
+	// The key is still held, so the repeat has to serve the initial delay again
+	// instead of emitting into the buffer that was just cleared.
+	EXPECT_EQ(0, poll_ui(keyboard, 'a', 16, NULL));
+	EXPECT_EQ('a', keyboard.getch());
+}

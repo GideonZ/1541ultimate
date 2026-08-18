@@ -388,4 +388,7 @@ void Keyboard_C64 :: set_delays(int initial, int repeat)
 void Keyboard_C64 :: clear_buffer(void)
 {
     key_head = key_tail = 0;
+    // getch() falls through to the USB keyboard, so its queued input has to go
+    // too. Keys injected through the input API are left alone.
+    system_usb_keyboard.clear_pending_input();
 }

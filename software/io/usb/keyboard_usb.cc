@@ -697,9 +697,18 @@ void Keyboard_USB :: wait_free(void)
 	}
 }
 
-void Keyboard_USB :: clear_buffer(void)
+// Queued characters and the repeat that produces them. A repeat that is already
+// running would emit into the buffer that was just cleared, so a key that is
+// genuinely held serves the full initial delay again before it repeats.
+void Keyboard_USB :: clear_pending_input(void)
 {
 	key_tail = key_head;
+	delay_count = first_delay;
+}
+
+void Keyboard_USB :: clear_buffer(void)
+{
+	clear_pending_input();
 	portENTER_CRITICAL();
 	injected_tail = injected_head;
 	portEXIT_CRITICAL();

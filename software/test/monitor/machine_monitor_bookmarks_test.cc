@@ -58,6 +58,10 @@ bool Keyboard_USB::anyKeyPressed(void) const
     return false;
 }
 
+void Keyboard_USB::clear_pending_input(void)
+{
+}
+
 void Keyboard_USB::clear_buffer(void)
 {
 }

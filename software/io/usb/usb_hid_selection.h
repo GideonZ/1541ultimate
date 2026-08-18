@@ -91,6 +91,36 @@ static inline bool usb_hid_idle_rate_accepted(uint8_t requested_units,
     return (requested_units != 0) && (get_idle_result == 1) && (reported_units == requested_units);
 }
 
+// What to do when a sibling interface takes over a boot function. Stopping the
+// interface stops every function it served, so a composite interface must drop its
+// merged keyboard source even when only its mouse was taken over; otherwise its
+// last report stays merged and a key that was down stays pressed.
+struct t_usb_hid_relinquish_actions
+{
+    bool relinquish;
+    bool release_keyboard;
+    bool release_mouse;
+};
+
+static inline t_usb_hid_relinquish_actions usb_hid_relinquish_actions(bool keyboard, bool mouse,
+                                                                     bool descriptor_keyboard,
+                                                                     bool descriptor_mouse,
+                                                                     bool take_over_keyboard,
+                                                                     bool take_over_mouse)
+{
+    t_usb_hid_relinquish_actions actions = { false, false, false };
+    bool taken_keyboard = take_over_keyboard && keyboard && !descriptor_keyboard;
+    bool taken_mouse = take_over_mouse && mouse && !descriptor_mouse;
+
+    if (!(taken_keyboard || taken_mouse)) {
+        return actions;
+    }
+    actions.relinquish = true;
+    actions.release_keyboard = keyboard;
+    actions.release_mouse = mouse;
+    return actions;
+}
+
 // How many keyboard interfaces are currently delivering reports, and how many of
 // those accepted a non-zero SET_IDLE duration.
 struct t_usb_hid_keyboard_idle_state

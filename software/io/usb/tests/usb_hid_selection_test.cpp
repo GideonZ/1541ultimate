@@ -174,3 +174,42 @@ TEST(HidSetIdleTest, OnlyAReadBackDurationCountsAsAcceptance)
 	// Nothing was requested, so there is nothing to accept.
 	EXPECT_FALSE(usb_hid_idle_rate_accepted(0, 1, 0));
 }
+
+TEST(HidRelinquishTest, TakingOverOneFunctionReleasesEveryFunctionOfTheInterface)
+{
+	// Boot mouse with a keyboard collection in its report descriptor. A sibling
+	// takes over the mouse, the interface stops, so its keyboard source must go
+	// too or its last report stays merged with a key still down.
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, true, false,
+	                                                                 false, true);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_TRUE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, TakingOverTheKeyboardOfACompositeReleasesItsMouseToo)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, false, true,
+	                                                                 true, false);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_TRUE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, BootKeyboardOnlyReleasesItsKeyboard)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, false, false, false,
+	                                                                 true, false);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_FALSE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, AReportProtocolInterfaceKeepsItsFunctions)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, true, true,
+	                                                                 true, true);
+	EXPECT_FALSE(actions.relinquish);
+	EXPECT_FALSE(actions.release_keyboard);
+	EXPECT_FALSE(actions.release_mouse);
+}

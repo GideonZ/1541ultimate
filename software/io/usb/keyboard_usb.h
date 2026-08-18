@@ -106,6 +106,7 @@ public:
     void setReportIdlePeriod(int period_ms);
     int  reportIdlePeriod(void) const { return report_idle_period_ms; }
     bool anyKeyPressed(void) const;
+    void clear_pending_input(void);
     void clear_buffer(void);
 
 	void restPress(uint8_t row, uint8_t col_bit);

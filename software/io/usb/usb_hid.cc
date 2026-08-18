@@ -843,17 +843,20 @@ bool UsbHidDriver :: has_active_report_mouse(void) const
 
 void UsbHidDriver :: relinquish_boot_function(bool release_keyboard, bool release_mouse)
 {
-    bool should_release_keyboard = release_keyboard && keyboard && !descriptor_keyboard;
-    bool should_release_mouse = release_mouse && mouse && !descriptor_mouse;
-    if (!(should_release_keyboard || should_release_mouse)) {
+    t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(keyboard, mouse,
+                                                                      descriptor_keyboard,
+                                                                      descriptor_mouse,
+                                                                      release_keyboard,
+                                                                      release_mouse);
+    if (!actions.relinquish) {
         return;
     }
 
     disable();
-    if (should_release_mouse) {
+    if (actions.release_mouse) {
         usb_hid_clear_visibility_if_source_matches(usb_hid_mouse_visibility, device, interface);
     }
-    if (should_release_keyboard) {
+    if (actions.release_keyboard) {
         unregisterKeyboardIdle();
         usb_hid_remove_keyboard_source(device, interface);
         usb_hid_clear_visibility_if_source_matches(usb_hid_keyboard_visibility, device, interface);
