@@ -5,19 +5,44 @@
 #include "c64.h"
 #endif
 
+// True only when the user interface is holding the machine frozen, which is the
+// freeze menu. The overlay and the telnet user interface leave the machine
+// running, so a Go there does not have to let go of anything.
+static bool ui_holds_machine_frozen(void)
+{
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+    C64 *machine = C64::getMachine();
+    return machine && machine->is_accessible();
+#else
+    return false;
+#endif
+}
+
 void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     MachineMonitor *monitor = new MachineMonitor(this, backend);
     uint16_t go_address = 0;
     monitor->init(screen, keyboard);
     int ret = 0;
+    bool do_go = false;
     while(!ret && host->exists()) {
         ret = monitor->poll(0);
+        // Go closes the monitor only where letting go of the machine tears the
+        // user interface down with it. Everywhere else the jump is made with the
+        // monitor still on screen.
+        if ((ret == 1) && monitor->consume_pending_go(&go_address)) {
+            if (ui_holds_machine_frozen()) {
+                do_go = true;
+                break;
+            }
+            monitor_io::jump_to(go_address);
+            ret = 0;
+        }
         if (!ret && pollMenuButtonPush()) {
             break;
         }
     }
-    bool do_go = monitor->consume_pending_go(&go_address);
+    do_go = do_go || monitor->consume_pending_go(&go_address);
     bool do_reset = monitor->consume_pending_reset();
     bool did_swap_interface = monitor->consume_pending_interface_swap();
     monitor->deinit();

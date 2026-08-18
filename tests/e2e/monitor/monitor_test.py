@@ -87,6 +87,15 @@ def find_any_status_line(snapshot: Snapshot) -> int:
         return find_u2_footer_line(snapshot)
 
 
+def monitor_is_up(snapshot: Snapshot) -> bool:
+    """Whether the snapshot shows the monitor rather than what is behind it."""
+    try:
+        find_any_status_line(snapshot)
+        return True
+    except Failure:
+        return False
+
+
 VIEW_KEYS = {
     "HEX ": "M",
     "ASC ": "I",
@@ -278,6 +287,11 @@ class MonitorSession:
 
     def enter_monitor(self) -> Snapshot:
         self.backend.ensure_ready()
+        # A G under Overlay or Telnet leaves the monitor on screen, so a caller
+        # re-entering after a run finds it already up. C=+O would close it.
+        already = self.capture()
+        if monitor_is_up(already):
+            return already
         snapshot = self.send_key("CTRL_O")
 
         # Polled rather than read once. C=+O is answered by the browser
@@ -288,13 +302,6 @@ class MonitorSession:
         # redraw, which opens something else and leaves the browser up, so the
         # next view key was pressed at a browser and the suite failed there
         # instead of here.
-        def monitor_is_up(shot: Snapshot) -> bool:
-            try:
-                find_any_status_line(shot)
-                return True
-            except Failure:
-                return False
-
         snapshot = wait_until(self, monitor_is_up)
         if monitor_is_up(snapshot):
             return snapshot
@@ -1671,6 +1678,44 @@ def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
         )
 
     session.enter_monitor()
+
+
+def run_go_keeps_monitor_open_test(session: MonitorSession, rest_host: str) -> None:
+    """A G runs the program and leaves the monitor on screen.
+
+    Only for the modes where the user interface never froze the machine, which
+    is Overlay and Telnet. Under Freeze, handing the machine back tears the
+    whole user interface down with it, so the monitor cannot survive its own G.
+
+    Both halves matter. Without the run the check would pass on a monitor that
+    ignored the key, and without the header the run alone would pass on the
+    behaviour this exists to catch, where the monitor closes and leaves the file
+    browser on screen.
+    """
+    done = 0x6B
+    # LDA #done / STA $CF00 / JMP $FCE2. The program ends at the KERNAL restart
+    # rather than an RTS, because G reaches it through the NMI trampoline and
+    # there is no return address of ours on the stack. Both the program and its
+    # sentinel sit above $C000, which the restart leaves alone: a monitor view of
+    # memory the restart clears keeps redrawing, and over telnet a screen that
+    # never goes quiet is a harness timeout rather than a verdict on the monitor.
+    write_rest_memory(rest_host, 0xC000,
+                      bytes((0xA9, done, 0x8D, 0x00, 0xCF, 0x4C, 0xE2, 0xFC)))
+    write_rest_memory(rest_host, 0xCF00, bytes((0x00,)))
+    wait_for_rest_byte(rest_host, 0xCF00, 0x00)
+
+    session.enter_monitor()
+    ensure_view(session, "HEX ")
+    before = monitor_header_address(session.capture())
+
+    session.goto_run("C000")
+    wait_for_rest_byte(rest_host, 0xCF00, done)
+
+    screen = session.capture()
+    if monitor_header_address(screen) is None:
+        raise Failure(
+            f"G closed the monitor: the header row read ${before} before the run "
+            f"and is gone now, leaving {strip_frame(screen.line(3))!r} on screen")
 
 
 def run_bookmark_test(session: MonitorSession) -> None:
@@ -3875,6 +3920,12 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
             check_skip("the on-device UI owns the VIC while it is up; only comparable over telnet")
         else:
             run_go_visible_state_test(session, rest_host)
+
+    with check("G keeps the monitor open"):
+        if mode == MODE_FREEZE:
+            check_skip("Freeze hands the machine back, which closes the whole user interface")
+        else:
+            run_go_keeps_monitor_open_test(session, rest_host)
 
     with check("bookmarks recall, set, list, and label edit"):
         run_bookmark_test(session)
