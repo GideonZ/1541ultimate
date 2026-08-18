@@ -93,23 +93,23 @@ static void handle_button_event(int event)
 
 static void button_handler(void *arg)
 {
-    int initial_power_state = *((int *)arg);
+    int initial_state = *((int *)arg);
     int up, down;
     int up_count = 0;
     int down_count = 0;
-    int machine_on = initial_power_state;
+    int machine_on = initial_state;
     uint8_t event;
 
     gpio_set_direction(IO_BUTTON_UP, GPIO_MODE_INPUT);
     gpio_set_direction(IO_BUTTON_DOWN, GPIO_MODE_INPUT);
     gpio_set_pull_mode(IO_BUTTON_UP, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(IO_BUTTON_DOWN, GPIO_PULLUP_ONLY);
-    gpio_set_level(IO_ENABLE_V50, initial_power_state);
-    gpio_set_level(IO_ENABLE_MOD, initial_power_state);
+    gpio_set_level(IO_ENABLE_V50, initial_state);
+    gpio_set_level(IO_ENABLE_MOD, initial_state);
     gpio_set_direction(IO_ENABLE_V50, GPIO_MODE_OUTPUT);
     gpio_set_direction(IO_ENABLE_MOD, GPIO_MODE_OUTPUT);
     vTaskDelay(100 / portTICK_PERIOD_MS); // Allow pull up to do its work.
-    regulator_enable(initial_power_state, 0); // turn off uart also
+    regulator_enable(initial_state, 0); // turn off uart also
 
     while (1) {
         up = gpio_get_level(IO_BUTTON_UP);
@@ -177,8 +177,11 @@ static void button_handler(void *arg)
 
 void start_button_handler(int initial)
 {
+    // The task reads its argument after this function has returned, so it must
+    // not point into our own stack frame.
+    initial_power_state = initial;
     button_queue = xQueueCreate(8, sizeof(uint8_t));
-    xTaskCreate(button_handler, "button_handler", 3072, &initial, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(button_handler, "button_handler", 3072, &initial_power_state, tskIDLE_PRIORITY + 2, NULL);
 }
 
 void extern_button_event(uint8_t button)
