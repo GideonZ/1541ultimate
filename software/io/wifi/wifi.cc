@@ -14,6 +14,9 @@
 #include "rpc_calls.h"
 #include "filemanager.h"
 #include "network_esp32.h"
+#if U64 == 2
+#include "u64_config.h"
+#endif
 #include "init_function.h"
 
 #define DEBUG_INPUT  0
@@ -255,6 +258,9 @@ void WiFi :: RunModeThread()
                 if (voltages.vbus < 8500) {
                     UserInterface :: postMessage("Low input voltage.");
                 }
+                // The module keeps the power on behavior in its own NVS; make
+                // sure it matches the setting of this machine.
+                U64Config :: pushPowerOnMode();
 #endif
                 RefreshRoot();
             }

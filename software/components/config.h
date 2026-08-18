@@ -40,6 +40,7 @@
 #define SORT_ORDER_CFG_MEM      210 //
 #define SORT_ORDER_CFG_TURBO    220 //
 #define SORT_ORDER_CFG_TWEAKS   230 //
+#define SORT_ORDER_CFG_POWER    240 //
 
 #define SORT_ORDER_HDR_USERIF   300
 #define SORT_ORDER_CFG_USERIF   310 //
