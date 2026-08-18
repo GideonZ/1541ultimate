@@ -95,6 +95,20 @@ static inline uint8_t usb_hid_set_idle_units(bool keyboard, bool mouse)
     return (keyboard && !mouse) ? USB_HID_SET_IDLE_UNITS : 0;
 }
 
+// Whether the keyboard stored the requested idle rate. A keyboard can acknowledge
+// SET_IDLE without storing the duration, and control_exchange() returns the number
+// of bytes transferred, which is 0 for a request without a data stage whether or
+// not its status phase succeeded. Neither result proves that periodic reporting is
+// on, so the rate counts as accepted only when a following GET_IDLE reads back
+// exactly the duration that was requested. A keyboard that stalls GET_IDLE keeps
+// the previous unbounded repeat behaviour.
+static inline bool usb_hid_idle_rate_accepted(uint8_t requested_units,
+                                              int get_idle_result,
+                                              uint8_t reported_units)
+{
+    return (requested_units != 0) && (get_idle_result == 1) && (reported_units == requested_units);
+}
+
 // How many keyboard interfaces are currently delivering reports, and how many of
 // those accepted a non-zero SET_IDLE duration.
 struct t_usb_hid_keyboard_idle_state

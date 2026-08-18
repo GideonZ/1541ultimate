@@ -160,3 +160,17 @@ TEST(HidKeyboardIdleStateTest, PeriodReturnsWhenTheSecondKeyboardIsUnplugged)
 	EXPECT_EQ(0, state.interfaces);
 	EXPECT_EQ(0, state.interfaces_periodic);
 }
+
+TEST(HidSetIdleTest, OnlyAReadBackDurationCountsAsAcceptance)
+{
+	// The keyboard returns the duration that was requested.
+	EXPECT_TRUE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 1, USB_HID_SET_IDLE_UNITS));
+	// GET_IDLE stalled, so control_exchange returned an error.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, -4, USB_HID_SET_IDLE_UNITS));
+	// The request completed without transferring the duration byte.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 0, USB_HID_SET_IDLE_UNITS));
+	// The keyboard acknowledged SET_IDLE but kept reporting only on change.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 1, 0));
+	// Nothing was requested, so there is nothing to accept.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(0, 1, 0));
+}

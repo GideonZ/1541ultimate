@@ -854,6 +854,7 @@ void UsbHidDriver :: relinquish_boot_function(bool release_keyboard, bool releas
         usb_hid_clear_visibility_if_source_matches(usb_hid_mouse_visibility, device, interface);
     }
     if (should_release_keyboard) {
+        unregisterKeyboardIdle();
         usb_hid_remove_keyboard_source(device, interface);
         usb_hid_clear_visibility_if_source_matches(usb_hid_keyboard_visibility, device, interface);
     }
@@ -988,10 +989,23 @@ void UsbHidDriver :: install(UsbInterface *intf)
     }
     uint8_t set_idle_units = usb_hid_set_idle_units(keyboard, mouse);
     c_set_idle[3] = set_idle_units;
-    int set_idle_result = host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
+    host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
     if (keyboard && !keyboard_registered) {
+        bool idle_accepted = false;
+        if (set_idle_units != 0) {
+            // GET_IDLE for report id 0 returns one byte holding the stored duration
+            // in units of 4ms. The buffer is word aligned and four bytes long because
+            // the USB engine writes it by DMA.
+            uint8_t c_get_idle[] = { 0xA1, 0x02, 0x00, 0x00, 0xFF, 0x00, 0x01, 0x00 };
+            uint32_t idle_readback = 0;
+            c_get_idle[4] = interface->getInterfaceDescriptor()->interface_number;
+            int get_idle_result = host->control_exchange(&dev->control_pipe, c_get_idle, 8,
+                                                         &idle_readback, 1);
+            idle_accepted = usb_hid_idle_rate_accepted(set_idle_units, get_idle_result,
+                                                       (uint8_t)(idle_readback & 0xFF));
+        }
         keyboard_registered = true;
-        keyboard_idle_accepted = (set_idle_units != 0) && (set_idle_result >= 0);
+        keyboard_idle_accepted = idle_accepted;
         usb_hid_keyboard_idle_add(usb_hid_keyboard_idle_state, keyboard_idle_accepted);
         usb_hid_update_keyboard_idle_period();
     }
@@ -1020,6 +1034,22 @@ void UsbHidDriver :: install(UsbInterface *intf)
     host->resume_input_pipe(irq_transaction);
 }
 
+// The idle registration follows the lifetime of the merged keyboard source rather
+// than that of the interrupt pipe. disable() runs from event context when a device
+// is unplugged, while the reports of that source stay in the merged report until
+// the cleanup task removes the source. Dropping the registration in disable() would
+// change the idle period while a held key of the removed source is still merged.
+void UsbHidDriver :: unregisterKeyboardIdle()
+{
+    if (!keyboard_registered) {
+        return;
+    }
+    usb_hid_keyboard_idle_remove(usb_hid_keyboard_idle_state, keyboard_idle_accepted);
+    keyboard_registered = false;
+    keyboard_idle_accepted = false;
+    usb_hid_update_keyboard_idle_period();
+}
+
 void UsbHidDriver :: disable()
 {
     if (wheel_pulse_timer) {
@@ -1035,12 +1065,6 @@ void UsbHidDriver :: disable()
         }
         mouse_registered = false;
         usb_hid_apply_mouse_output_enable();
-    }
-    if (keyboard_registered) {
-        usb_hid_keyboard_idle_remove(usb_hid_keyboard_idle_state, keyboard_idle_accepted);
-        keyboard_registered = false;
-        keyboard_idle_accepted = false;
-        usb_hid_update_keyboard_idle_period();
     }
 
     mouse_joy = 0x1F;
@@ -1087,6 +1111,7 @@ void UsbHidDriver :: deinstall(UsbInterface *intf)
         usb_hid_clear_visibility_if_source_matches(usb_hid_mouse_visibility, device, interface);
     }
     if (keyboard) {
+        unregisterKeyboardIdle();
         usb_hid_remove_keyboard_source(device, interface);
         usb_hid_clear_visibility_if_source_matches(usb_hid_keyboard_visibility, device, interface);
     }

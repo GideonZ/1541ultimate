@@ -58,6 +58,7 @@ class UsbHidDriver : public UsbDriver
     bool mouse_registered;
     bool keyboard_registered;
     bool keyboard_idle_accepted;
+    void unregisterKeyboardIdle();
     bool menu_left_button_consumed;
     bool menu_right_button_consumed;
     int menu_wheel_h_latch;

@@ -517,6 +517,13 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 // arrive at all while a key is held, silence carries no information, and a ceiling
 // would break auto-repeat instead. The result is latched until the next report so
 // that the 16-bit millisecond timer wrapping cannot make a stale report look fresh.
+// Two limits are accepted here. process_data() runs on the USB event task and
+// getch() on the user interface task, and these fields are not locked, so a report
+// that arrives while the age is being evaluated can cost a single repeat decision,
+// which the next report corrects. The latch is also only set once getch() has seen
+// the age exceed the ceiling, so a user interface stall longer than the 65.536
+// second period of the timer makes an old report look recent for up to three idle
+// periods before the ceiling applies again.
 bool Keyboard_USB :: repeatIsLive(void)
 {
 	if (report_idle_period_ms <= 0) {
