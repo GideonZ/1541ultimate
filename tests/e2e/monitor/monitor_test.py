@@ -1019,13 +1019,12 @@ def run_main_ram_edit_persists_test(session: MonitorSession, device_host: str,
                                     frozen: bool) -> None:
     """A hex edit at an ordinary main-RAM address reaches C64 memory itself.
 
-    $1000 is plain main RAM: no ROM overlay, no I/O, and no banking, but the
-    monitor being open is not a neutral vantage point to check it from: while
-    it holds the machine, a U2's freezer banks its own scratch RAM over
-    exactly $1000-$3FFF (`banked_ram_reason`), so a read through the device
-    would pass on freezer state that looks like a persisted edit whether or
-    not the underlying write did anything. Once the monitor is closed that
-    banking is gone and `device_host` reads the C64's own RAM; a C64 Ultimate
+    $1000 is plain main RAM: no ROM overlay, no I/O, and no banking. The check
+    still reads it back with the monitor closed rather than through it: the
+    subject is that the edit reached the C64's own memory and stayed there, and
+    a read taken while the monitor holds the machine cannot distinguish that
+    from a value the monitor is merely showing. `device_host` reads the C64's
+    own RAM once the monitor is closed; a C64 Ultimate
     host's own REST view of the same address does not reliably see a byte a
     cartridge wrote to it over DMA, verified live against this device, so it
     is not used as the second oracle here. `device_host` still is one: it is
@@ -3247,6 +3246,215 @@ def run_hunt_quoted_text_test(session: MonitorSession, rest_host: str) -> None:
     wait_for_monitor(session, "dismissing the no-matches popup")
 
 
+# Where the byte-command matrix builds its fixtures. High RAM, clear of the
+# addresses the other checks seed, and long enough that a command which stops
+# early is caught: every check in the suite before this one used ranges of four
+# or five bytes, which is why a Transfer that landed only its first two bytes
+# on a cartridge went unnoticed.
+BYTE_COMMAND_BASE = 0xC800
+BYTE_COMMAND_LENGTH = 0x100
+
+
+def byte_command_pattern(seed: int, length: int = BYTE_COMMAND_LENGTH) -> bytes:
+    """A pattern with no repeats, so a copy landing short is visible."""
+    return bytes(((seed + index * 7) & 0xFF) for index in range(length))
+
+
+def assert_range_equals(rest_host: str, address: int, expected: bytes,
+                        what: str) -> None:
+    got = read_rest_memory(rest_host, address, len(expected))
+    if got == expected:
+        return
+    for index in range(len(expected)):
+        if got[index] != expected[index]:
+            raise Failure(
+                f"{what}: ${address + index:04X} is ${got[index]:02X}, expected "
+                f"${expected[index]:02X}; {index} of {len(expected)} bytes are "
+                f"right")
+    raise Failure(f"{what}: read back {len(got)} bytes, expected {len(expected)}")
+
+
+def assert_command_refuses(session: MonitorSession, key: str, title: str,
+                           text: str, what: str) -> None:
+    """A command whose argument the monitor rejects says so and changes nothing.
+
+    The popup text is not asserted, only that one appeared and that the monitor
+    came back: which error a bad range earns is the parser's business and is
+    covered by the host tests, while what matters here is that the device
+    refuses rather than acting on it.
+    """
+    session.type_into_prompt(key, title, text, retypes=PROMPT_RETYPES)
+    session.send_key("ENTER")
+    screen = wait_until(session, lambda snapshot: "?" in snapshot.text())
+    if "?" not in screen.text():
+        raise Failure(f"{what}: no error was shown for {text!r}\n{screen.text()}")
+    session.send_key("ENTER")
+    wait_for_monitor(session, f"dismissing the error from {what}")
+
+
+def run_fill_range_test(session: MonitorSession, rest_host: str) -> None:
+    """Fill covers its whole range, both ends, and nothing past it."""
+    base = BYTE_COMMAND_BASE
+    length = BYTE_COMMAND_LENGTH
+    guard = 0x5A
+
+    ensure_view(session, "HEX ")
+    write_rest_memory_confirmed(rest_host, base, byte_command_pattern(0x11))
+    write_rest_memory_confirmed(rest_host, base + length, bytes((guard,)))
+
+    session.fill(f"{base:04X}-{base + length - 1:04X},7E")
+    wait_for_monitor(session, "after a Fill")
+
+    assert_range_equals(rest_host, base, bytes((0x7E,)) * length, "Fill")
+    after = read_rest_memory(rest_host, base + length, 1)[0]
+    if after != guard:
+        raise Failure(f"Fill wrote past its range: ${base + length:04X} is "
+                      f"${after:02X}, expected ${guard:02X}")
+
+
+def run_fill_refuses_a_reversed_range_test(session: MonitorSession) -> None:
+    base = BYTE_COMMAND_BASE
+    assert_command_refuses(session, "F", "Fill AAAA-BBBB,DD",
+                           f"{base + 0x10:04X}-{base:04X},7E",
+                           "Fill with the range reversed")
+
+
+def run_transfer_long_range_test(session: MonitorSession, rest_host: str) -> None:
+    """A copy longer than a handful of bytes lands in full.
+
+    The length is the point. A backend that flips the frozen C64's bank around
+    every access loses everything after the first couple of bytes, and a
+    four-byte fixture cannot tell that apart from a working copy.
+    """
+    base = BYTE_COMMAND_BASE
+    length = BYTE_COMMAND_LENGTH
+    dest = base + 0x200
+    payload = byte_command_pattern(0x31)
+
+    ensure_view(session, "HEX ")
+    write_rest_memory_confirmed(rest_host, base, payload)
+    write_rest_memory_confirmed(rest_host, dest, bytes(length))
+
+    session.transfer(f"{base:04X}-{base + length - 1:04X},{dest:04X}")
+    wait_for_monitor(session, "after a long Transfer")
+
+    assert_range_equals(rest_host, dest, payload, "Transfer of a long range")
+
+
+def run_transfer_overlap_test(session: MonitorSession, rest_host: str) -> None:
+    """Overlapping copies keep the bytes the source held before the copy."""
+    base = BYTE_COMMAND_BASE
+    length = BYTE_COMMAND_LENGTH
+    payload = byte_command_pattern(0x53)
+
+    ensure_view(session, "HEX ")
+
+    # Upwards: the destination sits inside the source, above its start, so a
+    # copy that ran forwards would read bytes it had already overwritten.
+    write_rest_memory_confirmed(rest_host, base, payload)
+    session.transfer(f"{base:04X}-{base + length - 1:04X},{base + 0x40:04X}")
+    wait_for_monitor(session, "after an overlapping Transfer upwards")
+    assert_range_equals(rest_host, base + 0x40, payload, "Transfer overlapping upwards")
+
+    # Downwards, the other direction of the same rule.
+    write_rest_memory_confirmed(rest_host, base + 0x40, payload)
+    session.transfer(f"{base + 0x40:04X}-{base + 0x40 + length - 1:04X},{base:04X}")
+    wait_for_monitor(session, "after an overlapping Transfer downwards")
+    assert_range_equals(rest_host, base, payload, "Transfer overlapping downwards")
+
+
+def run_transfer_refuses_a_reversed_range_test(session: MonitorSession) -> None:
+    base = BYTE_COMMAND_BASE
+    assert_command_refuses(session, "T", TRANSFER_PROMPT_TITLE,
+                           f"{base + 0x10:04X}-{base:04X},{base + 0x200:04X}",
+                           "Transfer with the range reversed")
+
+
+def run_compare_long_range_test(session: MonitorSession, rest_host: str) -> None:
+    """Compare walks its whole range: identical says so, one byte does not."""
+    base = BYTE_COMMAND_BASE
+    length = BYTE_COMMAND_LENGTH
+    other = base + 0x200
+    payload = byte_command_pattern(0x77)
+
+    ensure_view(session, "HEX ")
+    write_rest_memory_confirmed(rest_host, base, payload)
+    write_rest_memory_confirmed(rest_host, other, payload)
+
+    session.compare(f"{base:04X}-{base + length - 1:04X},{other:04X}")
+    wait_for_screen_contains(session, "No differences")
+    session.send_key("ENTER")
+    wait_for_monitor(session, "dismissing the no-differences popup")
+
+    # One byte, at the very last address of the range, so a compare that
+    # stopped short of the end would still report no differences.
+    last = base + length - 1
+    write_rest_memory_confirmed(rest_host, other + length - 1,
+                               bytes((payload[length - 1] ^ 0xFF,)))
+    session.compare(f"{base:04X}-{last:04X},{other:04X}")
+    screen = wait_for_screen_contains(session, f"{last:04X}")
+    screen.find_line_containing(f"{last:04X}")
+    session.send_key("ENTER")
+    wait_for_monitor(session, "dismissing the compare results")
+
+
+def run_compare_refuses_a_reversed_range_test(session: MonitorSession) -> None:
+    base = BYTE_COMMAND_BASE
+    assert_command_refuses(session, "C", "Compare AAAA-BBBB,CCCC",
+                           f"{base + 0x10:04X}-{base:04X},{base + 0x200:04X}",
+                           "Compare with the range reversed")
+
+
+def run_hunt_long_range_test(session: MonitorSession, rest_host: str) -> None:
+    """Hunt finds a needle near the end of a long range, and reports a miss."""
+    base = BYTE_COMMAND_BASE
+    length = BYTE_COMMAND_LENGTH
+    needle = bytes((0xDE, 0xAD, 0xBE, 0xEF))
+    at = base + length - len(needle)
+
+    ensure_view(session, "HEX ")
+    # A pattern with no repeats, so the needle is the only match, and the
+    # needle itself is placed at the far end: a hunt that scanned only the
+    # first bytes of the range would report no matches.
+    write_rest_memory_confirmed(rest_host, base, byte_command_pattern(0x02))
+    write_rest_memory_confirmed(rest_host, at, needle)
+
+    session.send_char("H")
+    wait_for_prompt(session, "Hunt AAAA-BBBB")
+    clear_prompt_field(session)
+    session.send_text(f"{base:04X}-{base + length - 1:04X},DE AD BE EF\r",
+                      "hunt a needle at the end of a long range")
+    screen = wait_for_screen_contains(session, HUNT_RESULTS_HEADER)
+    screen.find_line_containing(f"{at:04X}")
+    session.send_key("ARROW_LEFT")
+    wait_for_monitor(session, "closing the hunt result picker")
+
+    # A needle that is not there says so rather than reporting the nearest
+    # thing it saw.
+    session.send_char("H")
+    wait_for_prompt(session, "Hunt AAAA-BBBB")
+    clear_prompt_field(session)
+    session.send_text(f"{base:04X}-{base + length - 1:04X},DE AD BE F0\r",
+                      "hunt a needle that is not there")
+    wait_for_screen_contains(session, "No matches")
+    session.send_key("ENTER")
+    wait_for_monitor(session, "dismissing the no-matches popup")
+
+
+def run_hunt_refuses_a_reversed_range_test(session: MonitorSession) -> None:
+    base = BYTE_COMMAND_BASE
+    session.send_char("H")
+    wait_for_prompt(session, "Hunt AAAA-BBBB")
+    clear_prompt_field(session)
+    session.send_text(f"{base + 0x10:04X}-{base:04X},DE AD\r",
+                      "hunt with the range reversed")
+    screen = wait_until(session, lambda snapshot: "?" in snapshot.text())
+    if "?" not in screen.text():
+        raise Failure(f"Hunt accepted a reversed range\n{screen.text()}")
+    session.send_key("ENTER")
+    wait_for_monitor(session, "dismissing the hunt range error")
+
+
 def assert_u2_footer_consistent(snapshot: Snapshot) -> int:
     """Return the U2 VIC bank after checking that its base address agrees."""
     line_index = find_u2_footer_line(snapshot)
@@ -3288,20 +3496,6 @@ def ui_freezes_machine(device_host: str, mode: str) -> bool:
     except Failure:
         return True  # no such setting, so the UI is the freezer
     return False
-
-
-def banked_ram_reason(is_u2: bool, frozen: bool) -> Optional[str]:
-    """Return the U2+L frozen-memory limitation for $1000-$3FFF, if applicable.
-
-    While the cartridge's freezer holds the machine, its own REST endpoint
-    reads freezer RAM banked into that range rather than the C64's; $0400 and
-    $C000-and-up are unaffected.
-    """
-    if is_u2 and frozen:
-        return ("U2+L: REST cannot reach $1000-$3FFF while the monitor holds "
-                "the machine (freezer RAM banked into that range; "
-                "$0400/$C000-and-up unaffected)")
-    return None
 
 
 def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
@@ -3420,13 +3614,7 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
 
     with check("ASCII and Screen mapping semantics"):
-        # This check's addresses ($3200-$3280) are in the banked range; see
-        # u2_freeze_banked_ram_reason.
-        skip_reason = banked_ram_reason(is_u2, frozen)
-        if skip_reason:
-            check_skip(skip_reason)
-        else:
-            run_character_mapping_test(session, rest_host)
+        run_character_mapping_test(session, rest_host)
 
     with check("HEX edit writes both nibbles"):
         session.goto("C000")
@@ -3552,6 +3740,36 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
             raise Failure(f"transfer wrote past the end of the range: "
                           f"${0xC304:04X} is ${copied[4]:02X}")
 
+    # The byte commands, over ranges long enough to catch one that stops early.
+    # Every check above uses four or five bytes, which is how a Transfer that
+    # landed only its first two bytes on a cartridge went unnoticed.
+    with check("FILL covers its whole range and nothing past it"):
+        run_fill_range_test(session, rest_host)
+
+    with check("FILL refuses a range that ends before it starts"):
+        run_fill_refuses_a_reversed_range_test(session)
+
+    with check("TRANSFER copies a 256-byte range in full"):
+        run_transfer_long_range_test(session, rest_host)
+
+    with check("TRANSFER of overlapping ranges copies what the source held"):
+        run_transfer_overlap_test(session, rest_host)
+
+    with check("TRANSFER refuses a range that ends before it starts"):
+        run_transfer_refuses_a_reversed_range_test(session)
+
+    with check("COMPARE walks a 256-byte range to its last byte"):
+        run_compare_long_range_test(session, rest_host)
+
+    with check("COMPARE refuses a range that ends before it starts"):
+        run_compare_refuses_a_reversed_range_test(session)
+
+    with check("HUNT finds a needle at the end of a 256-byte range"):
+        run_hunt_long_range_test(session, rest_host)
+
+    with check("HUNT refuses a range that ends before it starts"):
+        run_hunt_refuses_a_reversed_range_test(session)
+
     with check("leaving and re-entering the monitor keeps its place"):
         run_reentry_test(session)
 
@@ -3596,41 +3814,23 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
     with check("bookmarks recall, set, list, and label edit"):
         run_bookmark_test(session)
 
-    # The next four checks all seed their test data at $3xxx addresses, in
-    # the banked range described at u2_freeze_banked_ram_reason.
-    freeze_banked_skip = banked_ram_reason(is_u2, frozen)
-
     with check("memory bookmark jump restores width 16"):
-        if freeze_banked_skip:
-            check_skip(freeze_banked_skip)
-        else:
-            run_memory_bookmark_width_test(session, rest_host)
+        run_memory_bookmark_width_test(session, rest_host)
 
     with check("binary width cycling and bookmark jump restores width 4"):
-        # No banked-RAM skip here: this one seeds its fixture at $C400, which
-        # the freezer leaves alone.
         run_binary_bookmark_width_test(session, rest_host)
 
     with check("follow and return navigation"):
-        if freeze_banked_skip:
-            check_skip(freeze_banked_skip)
-        else:
-            run_follow_return_test(session, rest_host)
+        run_follow_return_test(session, rest_host)
 
     with check("assembly baselines survive scrolling up and back"):
         run_asm_backwards_navigation_test(session, rest_host)
 
     with check("asm edit mnemonic validation and Return advance"):
-        if freeze_banked_skip:
-            check_skip(freeze_banked_skip)
-        else:
-            run_asm_edit_validation_test(session, rest_host)
+        run_asm_edit_validation_test(session, rest_host)
 
     with check("number popup arithmetic"):
-        if freeze_banked_skip:
-            check_skip(freeze_banked_skip)
-        else:
-            run_number_arithmetic_test(session, rest_host)
+        run_number_arithmetic_test(session, rest_host)
 
     save_load_token = f"{int(time.time()) % 100000:05d}"
     with check("save/load round-trip to top-level /Temp file"):

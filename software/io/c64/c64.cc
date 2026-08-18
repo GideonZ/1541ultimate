@@ -654,6 +654,13 @@ uint8_t C64::peek(uint16_t address)
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
                 restore_mode = true;
+                // The mode write has to reach the machine before the read it
+                // was made for, and reading the register back does not achieve
+                // it: that read never becomes a C64 bus cycle. One discarded
+                // read through the aperture is that cycle, as
+                // dma_transfer_frozen takes for the same reason. This range
+                // never contains I/O, so it has no side effect.
+                (void)ram[address];
             }
         }
         value = ram[address];
@@ -693,10 +700,16 @@ void C64::poke(uint16_t address, uint8_t value)
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
                 restore_mode = true;
+                (void)ram[address];
             }
         }
         ram[address] = value;
         if (restore_mode) {
+            // A write does not stall for its bus cycle the way a read does, so
+            // it can still be on its way out when the mode goes back to
+            // Ultimax and nothing decodes this range any more. One discarded
+            // read holds the mode until the write has been taken.
+            (void)ram[address];
             C64_MODE = saved_mode;
         }
     }
@@ -747,6 +760,16 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 memcpy(buffer + pos, (const void *)(ram + addr), chunk);
             } else {
                 memcpy((void *)(ram + addr), buffer + pos, chunk);
+                // And one after, for the same reason in the other direction. A
+                // read through the aperture stalls until the C64 bus cycle
+                // answers, so the loop cannot outrun it; a write does not, so
+                // the last bytes can still be on their way out when the mode
+                // below is put back to Ultimax, where nothing decodes this
+                // range, and they are lost. One discarded read holds the mode
+                // until the write has been taken. Measured on an Ultimate II+L
+                // in a C64 Ultimate: without it, a monitor Transfer of any
+                // length landed its first two bytes and nothing after them.
+                (void)ram[addr];
             }
             C64_DMA_MEMONLY = 1;
             if (restore_mode) {

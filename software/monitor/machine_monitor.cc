@@ -1363,12 +1363,88 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
     } while (address++ != end);
 }
 
+// How much of a range one read_block or write_block call carries. A block is
+// one access as far as the backend is concerned, and an Ultimate II+L stops
+// the C64 for the whole of it (U2MemoryBackend::read_block/write_block), so
+// larger blocks mean fewer stops. It is bounded rather than the whole range
+// because the machine is held stopped for the length of one call.
+static const uint32_t TRANSFER_BLOCK = 4096;
+
+// Read a range into a buffer. Addresses wrap at $FFFF, which is what lets
+// $0000-$FFFF name the whole 64K.
+static void transfer_read_range(MemoryBackend *backend, uint16_t start, uint32_t length,
+                                uint8_t *buffer)
+{
+    uint32_t done = 0;
+
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > TRANSFER_BLOCK) ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+        backend->read_block((uint16_t)(start + done), buffer + done, chunk);
+        done += chunk;
+    }
+}
+
+static void transfer_write_range(MemoryBackend *backend, uint16_t start, uint32_t length,
+                                 const uint8_t *buffer)
+{
+    uint32_t done = 0;
+
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > TRANSFER_BLOCK) ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+        backend->write_block((uint16_t)(start + done), buffer + done, chunk);
+        done += chunk;
+    }
+}
+
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest)
 {
     // Both ends, as everywhere else a range is typed: "T C000-CFFF,2000"
     // copies the byte at $CFFF too. The 32-bit length is what lets
     // $0000-$FFFF be the whole 65536 bytes rather than none of them.
     uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint8_t *buffer = (uint8_t *)malloc(TRANSFER_BLOCK);
+    uint32_t done = 0;
+
+    // A chunk at a time, whole-chunk read then whole-chunk write. Each one is
+    // a single access as far as the backend is concerned, which is what an
+    // Ultimate II+L needs: reading and writing a byte at a time flips the
+    // frozen C64's bank around every access, and the copy then loses
+    // everything after its first couple of bytes.
+    //
+    // The buffer is one chunk rather than the whole range, so copying
+    // $0000-$FFFF asks for 4KB rather than 64KB and the allocation does not
+    // fail on a machine with little left. A chunk is read in full before any
+    // of it is written, so an overlap inside one chunk is safe; overlap across
+    // chunks is what the direction rule below handles.
+    if (buffer) {
+        if (dest > start && dest <= end) {
+            // Destination inside the source and above its start: the last
+            // chunk has to move first, or it is overwritten before it is read.
+            uint32_t remaining = length;
+            while (remaining) {
+                uint16_t chunk = (remaining > TRANSFER_BLOCK)
+                    ? (uint16_t)TRANSFER_BLOCK : (uint16_t)remaining;
+                remaining -= chunk;
+                backend->read_block((uint16_t)(start + remaining), buffer, chunk);
+                backend->write_block((uint16_t)(dest + remaining), buffer, chunk);
+            }
+        } else {
+            while (done < length) {
+                uint32_t left = length - done;
+                uint16_t chunk = (left > TRANSFER_BLOCK)
+                    ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+                backend->read_block((uint16_t)(start + done), buffer, chunk);
+                backend->write_block((uint16_t)(dest + done), buffer, chunk);
+                done += chunk;
+            }
+        }
+        free(buffer);
+        return;
+    }
+
+    // Out of memory: the byte-wise copy, which needs the direction rule back.
     if (dest > start && dest <= end) {
         while (length) {
             length--;
@@ -1431,8 +1507,20 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     uint32_t code_length = (uint32_t)(uint16_t)(code_end - code_start) + 1;
     uint32_t index = 0;
     int rewritten = 0;
+    // The copied range, held here for the whole scan. Every byte the scan
+    // needs from inside the copy comes out of this rather than off the
+    // machine, so a scan of a large range is one read and one write rather
+    // than three accesses per instruction. Patches to instructions inside the
+    // copy are made here and written back once at the end.
+    uint8_t *image = (uint8_t *)malloc(source_length);
+    bool image_changed = false;
 
-    monitor_transfer_memory(backend, start, end, dest);
+    if (image) {
+        transfer_read_range(backend, start, source_length, image);
+        transfer_write_range(backend, dest, source_length, image);
+    } else {
+        monitor_transfer_memory(backend, start, end, dest);
+    }
 
     while (index < code_length) {
         uint16_t address = (uint16_t)(code_start + index);
@@ -1442,7 +1530,14 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
         int i;
 
         for (i = 0; i < 3; i++) {
-            bytes[i] = transfer_read_code(backend, (uint16_t)(address + i), start, end, dest);
+            uint16_t at = (uint16_t)(address + i);
+            uint32_t at_offset = (uint32_t)(uint16_t)(at - start);
+
+            if (image && at_offset < source_length) {
+                bytes[i] = image[at_offset];
+            } else {
+                bytes[i] = transfer_read_code(backend, at, start, end, dest);
+            }
         }
         disassemble_6502(address, bytes, illegal_enabled, &decoded);
         step = (decoded.valid && decoded.length) ? decoded.length : 1;
@@ -1468,14 +1563,22 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
                 uint16_t moved = (uint16_t)(dest + operand_offset);
                 uint16_t at = transfer_mapped_address((uint16_t)(address + 1), start, end, dest);
                 uint8_t operand_bytes[2];
+                uint32_t operand_at_offset = (uint32_t)(uint16_t)((uint16_t)(address + 1) - start);
 
                 operand_bytes[0] = (uint8_t)(moved & 0xFF);
                 operand_bytes[1] = (uint8_t)((moved >> 8) & 0xFF);
-                // One block, so the low and high halves of an address cannot
-                // land apart. A pair that would run past $FFFF is written byte
-                // by byte, because write_block takes a length rather than a
-                // wrapping address.
-                if ((uint32_t)at + 2 <= 0x10000UL) {
+                if (image && inside_copy) {
+                    // Inside the copy, so it is the image that is being
+                    // relocated; the machine sees it when the image is written
+                    // back below.
+                    image[operand_at_offset] = operand_bytes[0];
+                    image[operand_at_offset + 1] = operand_bytes[1];
+                    image_changed = true;
+                } else if ((uint32_t)at + 2 <= 0x10000UL) {
+                    // One block, so the low and high halves of an address
+                    // cannot land apart. A pair that would run past $FFFF is
+                    // written byte by byte, because write_block takes a length
+                    // rather than a wrapping address.
                     backend->write_block(at, operand_bytes, 2);
                 } else {
                     backend->write(at, operand_bytes[0]);
@@ -1485,6 +1588,12 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
             }
         }
         index += step;
+    }
+    if (image) {
+        if (image_changed) {
+            transfer_write_range(backend, dest, source_length, image);
+        }
+        free(image);
     }
     return rewritten;
 }

@@ -536,9 +536,16 @@ static int test_opcode_metadata_consistency(void)
 struct RelocRecordingBackend : public FakeMemoryBackend
 {
     int block_writes;
+    int single_writes;
     uint16_t last_block_length;
 
-    RelocRecordingBackend() : block_writes(0), last_block_length(0) { }
+    RelocRecordingBackend() : block_writes(0), single_writes(0), last_block_length(0) { }
+
+    virtual void write(uint16_t address, uint8_t value)
+    {
+        single_writes++;
+        FakeMemoryBackend::write(address, value);
+    }
 
     virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len)
     {
@@ -671,6 +678,7 @@ static int test_transfer_relocate_moves_absolute_operands(void)
         0xEA,
     };
     reloc_poke(backend, 0xC000, code, sizeof(code));
+    int seeded_single_writes = backend.single_writes;
 
     int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC0FF, 0xC100,
                                                  0xC000, 0xC014, false);
@@ -700,10 +708,19 @@ static int test_transfer_relocate_moves_absolute_operands(void)
     if (expect(backend.read(0xC000) == 0xAD && backend.read(0xC001) == 0x08 &&
                backend.read(0xC002) == 0xC0,
                "A non-overlapping relocate must not rewrite the original.")) return 1;
-    // Each operand reached memory as one block, so its two halves cannot land
-    // apart.
-    if (expect(backend.block_writes == 3 && backend.last_block_length == 2,
-               "Each moved operand must be written as one two-byte block.")) return 1;
+    // No operand half reached memory on its own. The relocate holds the copied
+    // range in one buffer and writes it back as blocks, so an operand's low and
+    // high bytes cannot land apart, and nothing at all goes out a byte at a
+    // time. reloc_poke seeds through write(), so the count is measured from
+    // after the seeding.
+    if (expect(backend.single_writes == seeded_single_writes,
+               "A relocate must not write single bytes.")) {
+        printf("  %d single writes, %d before the relocate\n",
+               backend.single_writes, seeded_single_writes);
+        return 1;
+    }
+    if (expect(backend.block_writes > 0,
+               "The copy and its patches must reach memory as blocks.")) return 1;
     return 0;
 }
 
