@@ -3061,6 +3061,62 @@ def run_transfer_relocate_test(session: MonitorSession, rest_host: str) -> None:
                                 "a relocating Transfer")
 
 
+def run_transfer_relocate_outside_copy_test(session: MonitorSession, rest_host: str) -> None:
+    """The scan range may reach past the copy, and a pointer there is patched.
+
+    Reported from the bench as `?RANGE`: three instructions, the first two
+    copied, and a scan range covering all three. The third instruction is a
+    pointer at the block that does not move with it, and naming a longer scan
+    range is the only way to bring it along.
+
+      1180  EE 21 D0    INC $D021    outside the source, left alone
+      1183  4C 80 11    JMP $1180    inside the copy, moves with it
+      1186  4C 80 11    JMP $1180    outside the copy, patched where it stands
+
+    Two operands are moved, so the report says two, and the instruction that
+    stayed behind now names the destination.
+    """
+    source = 0x1180
+    dest = 0x11C0
+    program = bytes((
+        0xEE, 0x21, 0xD0,
+        0x4C, 0x80, 0x11,
+        0x4C, 0x80, 0x11,
+    ))
+    copy_end = source + 5          # only the first two instructions are copied
+    code_end = source + 8          # the scan covers the third one as well
+    copied = bytes((
+        0xEE, 0x21, 0xD0,
+        0x4C, 0xC0, 0x11,
+    ))
+    stationary = bytes((0x4C, 0xC0, 0x11))
+
+    write_rest_memory_confirmed(rest_host, source, program)
+    write_rest_memory_confirmed(rest_host, dest, b"\x00" * len(copied))
+
+    session.type_into_prompt(
+        "T", TRANSFER_PROMPT_TITLE,
+        f"{source:04X}-{copy_end:04X},{dest:04X},{source:04X}-{code_end:04X}",
+        retypes=PROMPT_RETYPES)
+    screen = session.send_key("ENTER", settle=True)
+
+    def reports_two(snapshot: Snapshot) -> bool:
+        return "2 OPERANDS RELOCATED" in snapshot.text()
+
+    screen = wait_until(session, reports_two)
+    if not reports_two(screen):
+        raise Failure(
+            "a Transfer whose scan range ran past the copy did not report "
+            f"moving two operands\n{screen.text()}")
+    session.send_key("ENTER", settle=True)
+    wait_for_monitor(session, "dismissing the relocation report")
+
+    assert_monitor_write_landed(rest_host, dest, copied,
+                                "a Transfer scanning past the copy")
+    assert_monitor_write_landed(rest_host, source + 6, stationary,
+                                "the pointer that stayed where it was")
+
+
 def run_back_is_data_in_text_views_test(session: MonitorSession, rest_host: str) -> None:
     """Where the left-arrow key is edit data it stays data; RUN/STOP still backs out."""
     for view_key, view, address, expected in (("I", "ASC ", 0xC010, 0x60),
@@ -3415,6 +3471,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("Transfer moves absolute operands when given a code range"):
         run_transfer_relocate_test(session, rest_host)
+
+    with check("Transfer scans for pointers past the end of the copy"):
+        run_transfer_relocate_outside_copy_test(session, rest_host)
 
     with check("Back leaves one interaction layer at a time"):
         run_back_navigation_test(session)

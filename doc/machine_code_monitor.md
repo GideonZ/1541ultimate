@@ -467,13 +467,21 @@ The monitor includes direct bulk memory commands:
 
 `Fill`, `Transfer`, `Compare`, `Hunt` and `Save` all treat `start-end` as inclusive of both ends, including the full `0000-FFFF` range.
 
-`Transfer` takes an optional fourth field naming the part of the source range that holds code:
+`Transfer` takes an optional fourth field naming the range to scan for pointers into the block being copied:
 
 ```text
 T C000-C0FF,C100,C000-C07F
 ```
 
 Absolute, absolute-indexed and indirect operands pointing inside the copied source range are then adjusted to the corresponding destination address. Relative branches, zero-page operands, references outside the copied range and incomplete instructions are left unchanged. Without the fourth field, `Transfer` copies the bytes and changes nothing.
+
+The scan range is independent of the range being copied. It may be shorter than the copy, longer than it, or somewhere else entirely, which is what lets a pointer that is not itself moving be brought with the block:
+
+```text
+T C000-C005,C010,C000-C008
+```
+
+Here the first two instructions are copied to `$C010` while the scan covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
 
 `Hunt` opens a result picker:
 

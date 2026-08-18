@@ -1277,11 +1277,10 @@ MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, 
     if (*code_end < *code_start) {
         return MONITOR_RANGE;
     }
-    // The code range names part of the source, so a range outside it is a typo
-    // rather than a request that would quietly relocate nothing.
-    if (*code_start < *start || *code_end > *end) {
-        return MONITOR_RANGE;
-    }
+    // The code range is where pointers into the copied block are looked for,
+    // not a part of the copy. It may lie inside the copy, outside it, or
+    // across it: a jump table that has to keep pointing at the block after the
+    // block moves lives outside, and naming it is the only way to reach it.
     skip_spaces(cursor);
     if (*cursor) {
         return MONITOR_SYNTAX;
@@ -1413,9 +1412,17 @@ static uint8_t transfer_read_code(MemoryBackend *backend, uint16_t address,
 // case. An operand pointing outside the source range is left alone too: it
 // names something this copy did not move.
 //
+// The code range is where the pointers are, and it is independent of the range
+// being copied. An instruction wholly inside the copy is read and rewritten in
+// the copy, because that is the version being relocated. An instruction wholly
+// outside it is read and rewritten where it stands, which is how a jump table
+// that has to keep pointing at the block is brought with it. An instruction
+// straddling the boundary is neither, and is left alone rather than half
+// written into the copy and half into the original.
+//
 // The scan is linear and steps by one byte over anything that does not decode,
-// which is what the fourth field exists to keep short: the user names the part
-// that is code.
+// which is what the fourth field exists to keep short: the user names where
+// the pointers are.
 int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
                                      uint16_t dest, uint16_t code_start, uint16_t code_end,
                                      bool illegal_enabled)
@@ -1444,11 +1451,20 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
             uint32_t instruction_offset = (uint32_t)(uint16_t)(address - start);
             uint16_t operand = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
             uint32_t operand_offset = (uint32_t)(uint16_t)(operand - start);
+            bool inside_copy = (instruction_offset + 3 <= source_length);
+            bool touches_copy = false;
 
-            // Both operand bytes have to be inside the copy, or there is
-            // nowhere in the destination to write the moved value that this
-            // copy owns.
-            if (instruction_offset + 3 <= source_length && operand_offset < source_length) {
+            for (i = 0; i < 3; i++) {
+                uint32_t byte_offset = (uint32_t)(uint16_t)((uint16_t)(address + i) - start);
+                if (byte_offset < source_length) {
+                    touches_copy = true;
+                }
+            }
+
+            // The operand has to name something this copy moved, and the
+            // instruction has to sit wholly on one side of the copy's edge so
+            // that the two bytes written land together.
+            if (operand_offset < source_length && (inside_copy || !touches_copy)) {
                 uint16_t moved = (uint16_t)(dest + operand_offset);
                 uint16_t at = transfer_mapped_address((uint16_t)(address + 1), start, end, dest);
                 uint8_t operand_bytes[2];

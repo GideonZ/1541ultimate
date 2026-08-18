@@ -591,13 +591,26 @@ static int test_transfer_relocate_parses_its_optional_range(void)
     if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C00F-C000", &start, &end, &dest,
                                                &relocate, &code_start, &code_end) == MONITOR_RANGE,
                "A code range ending below its start must be refused.")) return 1;
-    // The code range names part of the source, so one outside it is a typo.
+    // The code range says where the pointers are, not which part of the copy is
+    // code, so it is free of the source range and may lie on either side of it
+    // or across it.
     if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,BFF0-C00F", &start, &end, &dest,
-                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
-               "A code range starting below the source must be refused.")) return 1;
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xBFF0 && code_end == 0xC00F,
+               "A code range starting below the source must be accepted.")) return 1;
     if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C0F0-C100", &start, &end, &dest,
-                                               &relocate, &code_start, &code_end) == MONITOR_RANGE,
-               "A code range ending above the source must be refused.")) return 1;
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xC0F0 && code_end == 0xC100,
+               "A code range ending above the source must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C005,C010,C000-C008", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               start == 0xC000 && end == 0xC005 && dest == 0xC010 &&
+               code_start == 0xC000 && code_end == 0xC008,
+               "A code range longer than the copy must be accepted.")) return 1;
+    if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,D000-D00F", &start, &end, &dest,
+                                               &relocate, &code_start, &code_end) == MONITOR_OK &&
+               code_start == 0xD000 && code_end == 0xD00F,
+               "A code range wholly outside the source must be accepted.")) return 1;
     if (expect(monitor_parse_transfer_relocate("C000-C0FF,C100,C000-C00F,", &start, &end, &dest,
                                                &relocate, &code_start, &code_end) == MONITOR_SYNTAX,
                "Trailing text after the code range must be refused.")) return 1;
@@ -713,6 +726,80 @@ static int test_transfer_relocate_keeps_the_inclusive_range(void)
     // And the byte it points at was itself copied, which is the same rule.
     if (expect(backend.read(0xC10F) == 0x5A,
                "The last byte of the source must be copied too.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_patches_pointers_outside_the_copy(void)
+{
+    // Reported from the bench: three instructions at $C000, the first two
+    // copied to $C010, and the code range naming all three.
+    //
+    //   C000  EE 21 D0    INC $D021        outside the source, left alone
+    //   C003  4C 00 C0    JMP $C000        inside the copy, moves with it
+    //   C006  4C 00 C0    JMP $C000        outside the copy, patched in place
+    //
+    // "T C000-C005,C010,C000-C008" used to be refused with ?RANGE, because the
+    // code range ran past the end of the copy. The third instruction is the
+    // whole point of naming a longer range: it is a pointer at the block that
+    // stays where it is and has to follow the block.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = {
+        0xEE, 0x21, 0xD0,
+        0x4C, 0x00, 0xC0,
+        0x4C, 0x00, 0xC0,
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC005, 0xC010,
+                                                 0xC000, 0xC008, false);
+    if (expect(moved == 2,
+               "Both pointers into the copy must be moved, inside it and outside it.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    // The copy: INC $D021 keeps its operand, JMP $C000 now names the copy.
+    if (expect(backend.read(0xC010) == 0xEE && backend.read(0xC011) == 0x21 &&
+               backend.read(0xC012) == 0xD0,
+               "An operand outside the source must be left alone in the copy.")) return 1;
+    if (expect(backend.read(0xC013) == 0x4C && backend.read(0xC014) == 0x10 &&
+               backend.read(0xC015) == 0xC0,
+               "A pointer inside the copy must name the destination.")) return 1;
+    // The instruction that did not move is patched where it stands.
+    if (expect(backend.read(0xC006) == 0x4C && backend.read(0xC007) == 0x10 &&
+               backend.read(0xC008) == 0xC0,
+               "A pointer outside the copy must be patched in place.")) return 1;
+    // The original of the copied block is not rewritten by a non-overlapping
+    // copy, so the first JMP still names $C000.
+    if (expect(backend.read(0xC003) == 0x4C && backend.read(0xC004) == 0x00 &&
+               backend.read(0xC005) == 0xC0,
+               "The original of a non-overlapping copy must be left alone.")) return 1;
+    return 0;
+}
+
+static int test_transfer_relocate_leaves_an_instruction_across_the_edge(void)
+{
+    // An instruction whose three bytes straddle the end of the copy is neither
+    // moved nor stationary: writing its operand would put one byte in the copy
+    // and one in the original. It is left alone.
+    FakeMemoryBackend backend;
+    static const uint8_t code[] = {
+        0xEA,                    // C000  NOP
+        0x4C, 0x00, 0xC0,        // C001  JMP $C000, ends at C003
+    };
+    reloc_poke(backend, 0xC000, code, sizeof(code));
+
+    // The copy ends at $C002, so the JMP starts inside it and ends outside.
+    int moved = monitor_transfer_memory_relocate(&backend, 0xC000, 0xC002, 0xC100,
+                                                 0xC000, 0xC003, false);
+    if (expect(moved == 0,
+               "An instruction straddling the end of the copy must be left alone.")) {
+        printf("  reported %d\n", moved);
+        return 1;
+    }
+    if (expect(backend.read(0xC002) == 0x00 && backend.read(0xC003) == 0xC0,
+               "Its operand must be untouched where it stands.")) return 1;
+    if (expect(backend.read(0xC102) == 0x00,
+               "And untouched in the copy.")) return 1;
     return 0;
 }
 
@@ -9023,6 +9110,8 @@ int main()
     if (test_transfer_relocate_parses_its_optional_range()) return 1;
     if (test_transfer_relocate_moves_absolute_operands()) return 1;
     if (test_transfer_relocate_keeps_the_inclusive_range()) return 1;
+    if (test_transfer_relocate_patches_pointers_outside_the_copy()) return 1;
+    if (test_transfer_relocate_leaves_an_instruction_across_the_edge()) return 1;
     if (test_transfer_relocate_reads_the_copy_when_ranges_overlap()) return 1;
     if (test_transfer_relocate_handles_range_edges_and_data()) return 1;
     if (test_transfer_without_a_code_range_is_unchanged()) return 1;
