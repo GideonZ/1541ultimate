@@ -83,98 +83,75 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR HEX $0168                     |
-|0160 6400360500806A00 3605008070003605|
-|0170 0080760036050080 7C00360500808200|
-|0180 3605008088003605 00808E0036050080|
-|0190 9400360500809A00 36050080A0003605|
-|01A0 0080A60036050080 AC0036050080B200|
-|01B0 36050080B8003605 BC0036050080C200|
-|01C0 36050080C8003605 0080CE0036050080|
-|01D0 D40036050080DA00 36050080E0003605|
-|01E0 0080E600367DEA18 050E21DF7DEA0A00|
-|01F0 0022CFE5000A14E1 64A585A479A69CE3|
-|0200 0000000000000000 0000000000000000|
-|0210 0000000000000000 0000000000000000|
-|0220 0000000000000000 0000000000000000|
-|0230 0000000000000000 0000000000000000|
-|0240 0000000000000000 0000000000000000|
-|0250 0000000000000000 0000000000000000|
-|0260 0000000000000000 0000000000000000|
-|0270 0000000000000000 0000000000000000|
+|MONITOR HEX $00E0                     |
+|00E0 85 85 85 85 85 85 86 86 ........ |
+|00E8 86 86 86 86 86 87 87 87 ........ |
+|00F0 87 87 87 F0 D8 00 00 00 ........ |
+|00F8 00 00 00 00 00 00 00 20 .......  |
+|0100 33 38 39 31 31 00 30 30 38911.00 |
+|0108 30 30 0E 00 36 05 00 85 00..6... |
+|0110 14 00 36 05 00 85 1A 00 ..6..... |
+|0118 36 05 00 85 20 10 34 05 6... .4. |
+|0120 00 85 26 00 36 05 00 85 ..&.6... |
+|0128 2C 00 36 05 00 85 32 00 ,.6...2. |
+|0130 36 05 00 85 38 00 36 05 6...8.6. |
+|0138 00 85 3E 00 37 05 00 85 ..>.7... |
+|0140 44 00 36 05 00 85 4A 00 D.6...J. |
+|0148 36 05 00 85 50 00 36 05 6...P.6. |
+|0150 00 85 56 10 34 05 00 85 ..V.4... |
+|0158 5C 00 36 05 00 85 62 00 \.6...b. |
+|0160 36 05 00 85 68 00 36 05 6...h.6. |
+|0168 00 85 6E 00 36 05 00 85 ..n.6... |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+Each row shows the row address, then the bytes of the row in hexadecimal, then
+the same bytes as printable characters. A byte that has no printable character
+is shown as `.`.
+
+The row holds eight bytes by default. `W` switches the row to sixteen bytes,
+which uses the width the character preview occupies, so only the hexadecimal
+bytes are shown in that mode.
 
 ### Assembly View
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
 
-The source tag occupies three characters inside the brackets, so the column stays aligned across bank boundaries: `[RAM]`, `[BAS]`, `[CHR]`, `[I/O]`, `[KRN]`, and `[CPU]` for the memory currently visible to the CPU on an Ultimate II+.
+The source tag is three characters inside the brackets, so the column stays aligned across bank boundaries: `[RAM]`, `[BAS]`, `[CHR]`, `[I/O]`, `[KRN]`, and `[CPU]` for the memory currently visible to the CPU on an Ultimate II+.
 
-`$D000-$DFFF` is shown as `DATA` rows of two bytes each when either I/O or Character ROM is banked in. I/O reads live registers, so decoding it would change the instruction length, and with it the address of every row below, on each redraw. Character ROM is stable but holds character bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally: the rule follows the banked source, not the address range. On an Ultimate II+, `$D000-$DFFF` is always disassembled.
+`$D000-$DFFF` is shown as `DATA` rows of two bytes each while I/O or Character ROM is banked in. I/O reads live registers, so a decoded instruction length there would change on every redraw, and Character ROM holds character bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally, so the rule follows the banked source rather than the address range. On an Ultimate II+, `$D000-$DFFF` is always disassembled. `DATA` rows are grouped from the start of the region, so where a row begins does not depend on how the view arrived there.
 
-The rows are grouped from the start of the region, so where a `DATA` row begins does not depend on how the view arrived there. `$D000-$DFFF` is 4096 bytes and divides into 2048 rows of two; a region whose length is odd ends with a row of one byte.
-
-A `DATA` row is edited in Assembly view like any other row. `E` enters edit mode and the cursor sits on the first byte; each displayed byte is its own edit position, two hex digits complete one, and `LEFT`/`RIGHT` step from byte to byte and on into the row above or below. There is no opcode picker on a `DATA` row, because there is no mnemonic to pick, and a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write as it does everywhere else. Editing the same bytes in Memory view with `M` works as before.
-
-`DEL` clears a `DATA` row's bytes to `$00`. On a decoded instruction it still writes `NOP`, which is what keeps the code around it runnable; `NOP` means nothing in a region that is not code.
-
-A region shown as `DATA`:
+Example, spanning the boundary between banked-in I/O and KERNAL ROM:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $D000                     |
-|D000 00 00     DATA 00 00        [I/O]|
-|D002 00 00     DATA 00 00        [I/O]|
-|D004 00 00     DATA 00 00        [I/O]|
-|D006 00 00     DATA 00 00        [I/O]|
-|D008 00 00     DATA 00 00        [I/O]|
-|D00A 00 00     DATA 00 00        [I/O]|
-|D00C 00 00     DATA 00 00        [I/O]|
-|D00E 00 00     DATA 00 00        [I/O]|
-|D010 00 1B     DATA 00 1B        [I/O]|
-|D012 AF 5E     DATA AF 5E        [I/O]|
-|D014 9E 00     DATA 9E 00        [I/O]|
-|D016 C8 00     DATA C8 00        [I/O]|
-|D018 15 78     DATA 15 78        [I/O]|
-|D01A F0 00     DATA F0 00        [I/O]|
-|D01C 00 00     DATA 00 00        [I/O]|
-|D01E 00 00     DATA 00 00        [I/O]|
-|D020 FE F6     DATA FE F6        [I/O]|
-|D022 F1 F2     DATA F1 F2        [I/O]|
-|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
-+--------------------------------------+
-```
-
-The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
-
-Example:
-
-```text
-+--------------------------------------+
-|MONITOR ASM $E011                     |
+|MONITOR ASM $DFF6                     |
+|DFF6 00 8D     DATA 00 8D        [I/O]|
+|DFF8 02 92     DATA 02 92        [I/O]|
+|DFFA C6 F7     DATA C6 F7        [I/O]|
+|DFFC 00 A5     DATA 00 A5        [I/O]|
+|DFFE 00 A5     DATA 00 A5        [I/O]|
+|E000 85 56     STA $56           [KRN]|
+|E002 20 0F BC  JSR $BC0F         [KRN]|
+|E005 A5 61     LDA $61           [KRN]|
+|E007 C9 88     CMP #$88          [KRN]|
+|E009 90 03     BCC $E00E         [KRN]|
+|E00B 20 D4 BA  JSR $BAD4         [KRN]|
+|E00E 20 CC BC  JSR $BCCC         [KRN]|
 |E011 A5 07     LDA $07           [KRN]|
 |E013 18        CLC               [KRN]|
 |E014 69 81     ADC #$81          [KRN]|
 |E016 F0 F3     BEQ $E00B         [KRN]|
 |E018 38        SEC               [KRN]|
 |E019 E9 01     SBC #$01          [KRN]|
-|E01B 48        PHA               [KRN]|
-|E01C A2 05     LDX #$05          [KRN]|
-|E01E B5 69     LDA $69,X         [KRN]|
-|E020 B4 61     LDY $61,X         [KRN]|
-|E022 95 61     STA $61,X         [KRN]|
-|E024 94 69     STY $69,X         [KRN]|
-|E026 CA        DEX               [KRN]|
-|E027 10 F5     BPL $E01E         [KRN]|
-|E029 A5 56     LDA $56           [KRN]|
-|E02B 85 70     STA $70           [KRN]|
-|E02D 20 53 B8  JSR $B853         [KRN]|
-|E030 20 B4 BF  JSR $BFB4         [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `LEFT`/`RIGHT` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row, so a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write as it does everywhere else. `DEL` clears a `DATA` row's bytes to `$00`; on a decoded instruction it still writes `NOP`. The same bytes can also be edited in Memory view with `M`.
+
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
 ### Binary View
 
