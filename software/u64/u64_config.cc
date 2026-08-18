@@ -163,7 +163,9 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
-// 0x55..0x5E are taken by the USB HID settings, see usb_hid_config.h
+// 0x55..0x5E are used by the USB HID store (io/usb/usb_hid_config.h) and
+// 0x56..0x63 by the audio selection store (io/audio/audio_select.cc); both are
+// different stores, but kept clear here to keep the ids readable side by side
 #define CFG_POWERON_MODE      0x5F
 
 #define CFG_SCAN_MODE_TEST    0xA8
@@ -1384,12 +1386,19 @@ void U64Config :: pushPowerOnMode(void)
     }
     uint8_t mode = 0xFF;
     uint8_t last_state = 0xFF;
-    if (wifi_get_power_mode(&mode, &last_state) == 0) {
-        printf("Power on behavior of the control module: %d (machine was %s at the last transition)\n",
-               mode, last_state ? "on" : "off");
-        if (mode == (uint8_t)it->getValue()) {
-            return; // already in sync
-        }
+    if (wifi_get_power_mode(&mode, &last_state) != 0) {
+        // A control module that predates these commands answers "not
+        // implemented", and cannot store the setting either. Offering a choice
+        // that quietly does nothing is worse than offering none.
+        printf("Control module does not support the power on behavior; disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_POWERON_MODE);
+        return;
+    }
+    printf("Power on behavior of the control module: %d (machine was %s at the last transition)\n",
+           mode, last_state ? "on" : "off");
+    u64_configurator->cfg->enable(CFG_POWERON_MODE);
+    if (mode == (uint8_t)it->getValue()) {
+        return; // already in sync
     }
     setPowerOnMode(it);
 }
