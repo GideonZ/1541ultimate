@@ -262,6 +262,13 @@ SUITES: Sequence[Suite] = (
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
     Suite("e2e", "freeze-menu", "tests/e2e/io/c64/freeze_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # Manual: asserting what the machine does when its input power returns
+    # means actually removing mains, which the suite asks the operator to do
+    # unless it is given commands for a socket it can script. Two of its four
+    # scenarios end with the machine deliberately off, and only the power
+    # button can revive it, so no adapter support makes this unattended.
+    Suite("e2e", "power-cycle", "tests/e2e/u64ctrl/power_cycle_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
 
     # --------------------------------------------------------------- perf --
     Suite("perf", "temp-auto-cleanup-perf", "tests/perf/temp_auto_cleanup_perf_test.py",
