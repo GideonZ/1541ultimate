@@ -993,9 +993,8 @@ void UsbHidDriver :: install(UsbInterface *intf)
     if (keyboard && !keyboard_registered) {
         bool idle_accepted = false;
         if (set_idle_units != 0) {
-            // GET_IDLE for report id 0 returns one byte holding the stored duration
-            // in units of 4ms. The buffer is word aligned and four bytes long because
-            // the USB engine writes it by DMA.
+            // GET_IDLE, report id 0, one byte of duration. The buffer is a word
+            // because the USB engine writes it by DMA.
             uint8_t c_get_idle[] = { 0xA1, 0x02, 0x00, 0x00, 0xFF, 0x00, 0x01, 0x00 };
             uint32_t idle_readback = 0;
             c_get_idle[4] = interface->getInterfaceDescriptor()->interface_number;
@@ -1034,11 +1033,8 @@ void UsbHidDriver :: install(UsbInterface *intf)
     host->resume_input_pipe(irq_transaction);
 }
 
-// The idle registration follows the lifetime of the merged keyboard source rather
-// than that of the interrupt pipe. disable() runs from event context when a device
-// is unplugged, while the reports of that source stay in the merged report until
-// the cleanup task removes the source. Dropping the registration in disable() would
-// change the idle period while a held key of the removed source is still merged.
+// Released with the merged keyboard source, not in disable(): the unplugged
+// keyboard's report stays merged until the cleanup task removes the source.
 void UsbHidDriver :: unregisterKeyboardIdle()
 {
     if (!keyboard_registered) {
