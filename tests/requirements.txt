@@ -10,3 +10,4 @@
 Pillow          # e2e/api/input_test.py, e2e/io/printer/printer_test.py
 pyftpdlib       # e2e/filesystem/ftp_client_test.py
 pytesseract     # e2e/io/printer/printer_test.py, only under --stage verify
+mpremote        # soak/io/usb/usb_keyboard_repeat_soak_test.py --setup-pico

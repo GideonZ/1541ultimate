@@ -10,6 +10,7 @@ are not registered in `run-tests`.
 | --- | --- |
 | `network/connection_test.py` | Long-running soak and stress across ICMP, UDP/64 identity discovery, the TCP/64 DMA command channel, Telnet, FTP, REST, the optional modem listener, and audio/video UDP streams |
 | `network/listener_soak_test.py` | Short soak (about two minutes) that churns abandoned Telnet/FTP connections while REST stays in use, checking no session slot is lost and REST latency does not degrade |
+| `io/usb/usb_keyboard_repeat_soak_test.py` | Pico 2 W hardware regression soak for #797 / PR #796 USB keyboard repeat |
 
 `network/`'s `*_probe.py` modules, `stream_monitor.py` and
 `connection_runtime.py` are protocol drivers and shared runtime for
@@ -38,6 +39,40 @@ tests/soak/network/listener_soak_test.py -H u64 -p PASSWORD
 `--help` is authoritative for profiles, probes, protocol surfaces, correctness
 modes, ports, credentials and concurrency overrides. A run exits non-zero if
 any probe or stream reports `FAIL`.
+
+## USB keyboard repeat fixture
+
+`usb-keyboard-repeat` uses a Raspberry Pi Pico 2 W as a real USB boot keyboard,
+controlled over the local Wi-Fi network. It proves PR #796's `SET_IDLE(25)` /
+`GET_IDLE` negotiation (25 HID units = 100 ms), normal held-key repeat, a lost
+immediate release, and complete report silence. It tests the Ultimate menu,
+not the C64 matrix. Stress is about two minutes; soak is twelve hours.
+
+Put the Pico in BOOTSEL mode (hold BOOTSEL while connecting USB), then provision
+it from the Linux test host. The setup command flashes **only the Raspberry Pi
+Pico 2 W; it does not flash the Ultimate 64**. It downloads the pinned official
+MicroPython UF2 to the user's cache at setup time; no firmware binary or Wi-Fi
+credential is tracked.
+
+```sh
+PICO_WIFI_SSID='...' PICO_WIFI_PASSWORD='...' \
+  tests/soak/io/usb/usb_keyboard_repeat_soak_test.py --setup-pico
+```
+
+When setup says so, unplug the Pico from Linux and connect it to a rear U64 USB
+port, with both devices on the same network. The Pico must be the only USB
+keyboard attached to the U64, and the U64 must run firmware containing PR #796;
+the fixture reports `idle_rate: 0` otherwise. Then run:
+
+```sh
+./run-tests -H u64 --soak -s usb-keyboard-repeat
+```
+
+The suite always sends `release_all` and closes the menu on exit. Detailed
+options, including `--duration`, `--pico-host`, and `--profile soak`, are in
+`usb_keyboard_repeat_soak_test.py --help`.
+The complete Pico setup and operating guide is
+[`doc/usb-keyboard-repeat-pico.md`](doc/usb-keyboard-repeat-pico.md).
 
 Preserve timestamped output for diagnosis:
 
