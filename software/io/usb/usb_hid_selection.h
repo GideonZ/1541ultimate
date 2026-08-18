@@ -1,6 +1,8 @@
 #ifndef USB_HID_SELECTION_H
 #define USB_HID_SELECTION_H
 
+#include <stdint.h>
+
 class UsbDevice;
 
 struct t_usb_hid_interface_capabilities
@@ -63,6 +65,75 @@ static inline t_usb_hid_interface_selection usb_hid_select_interface(const t_usb
         selection.mouse = true;
     }
     return selection;
+}
+
+// SET_IDLE counts its duration in units of 4ms, so 25 asks a HID keyboard to
+// re-send its report every 100ms for as long as a key stays down. Keyboard_USB
+// needs those refreshes to tell a held key from a release report that went
+// missing; with the idle rate at 0 a keyboard reports only on change and there
+// is nothing to time out against. 100ms sits well inside the 320ms the menu
+// takes to start repeating, so a lost release is caught before the repeat can
+// emit anything, and it costs one extra 8 byte report per five polls of an
+// endpoint that is already polled at 50Hz. A shorter period would tighten that
+// margin further, but it multiplies the work done on the single USB event task
+// whose congestion is what delays a release report in the first place.
+static const uint8_t USB_HID_SET_IDLE_UNITS = 25;
+static const int USB_HID_SET_IDLE_PERIOD_MS = 4 * USB_HID_SET_IDLE_UNITS;
+
+// The SET_IDLE duration to request for an interface that was selected as the
+// given combination of keyboard and mouse. The request carries report id 0,
+// which addresses every input report of the interface, so a non-zero duration
+// on an interface that also delivers mouse reports would make a motionless
+// mouse send a report every period. The HID specification recommends an
+// infinite idle period, that is duration 0, for mice and joysticks, and the
+// extra traffic would land on the same USB event task whose congestion delays
+// the keyboard reports this feature depends on. Only a keyboard-only interface
+// is therefore asked for a periodic rate; a mouse-only or a composite
+// keyboard/mouse interface keeps the previous duration of 0.
+static inline uint8_t usb_hid_set_idle_units(bool keyboard, bool mouse)
+{
+    return (keyboard && !mouse) ? USB_HID_SET_IDLE_UNITS : 0;
+}
+
+// How many keyboard interfaces are currently delivering reports, and how many of
+// those accepted a non-zero SET_IDLE duration.
+struct t_usb_hid_keyboard_idle_state
+{
+    int interfaces;
+    int interfaces_periodic;
+};
+
+static inline void usb_hid_keyboard_idle_add(t_usb_hid_keyboard_idle_state& state, bool periodic)
+{
+    state.interfaces++;
+    if (periodic) {
+        state.interfaces_periodic++;
+    }
+}
+
+static inline void usb_hid_keyboard_idle_remove(t_usb_hid_keyboard_idle_state& state, bool periodic)
+{
+    if (state.interfaces > 0) {
+        state.interfaces--;
+    }
+    if (periodic && (state.interfaces_periodic > 0)) {
+        state.interfaces_periodic--;
+    }
+}
+
+// The idle period Keyboard_USB may time its repeat against. Every keyboard
+// interface feeds the same merged report stream, and Keyboard_USB cannot tell
+// which interface a report came from. With two keyboards attached, the periodic
+// reports of one keyboard keep the merged report looking fresh while the other
+// keyboard is silent, so a lost release on the silent keyboard would never reach
+// the staleness ceiling. A keyboard that ignored SET_IDLE is silent while a key
+// is held, and a ceiling would cut its auto-repeat off. The period is therefore
+// only passed on when exactly one keyboard interface is attached and that
+// interface accepted the periodic rate; in every other case the previous
+// unbounded repeat behaviour is kept.
+static inline int usb_hid_keyboard_idle_period_ms(const t_usb_hid_keyboard_idle_state& state)
+{
+    return ((state.interfaces == 1) && (state.interfaces_periodic == 1)) ? USB_HID_SET_IDLE_PERIOD_MS : 0;
 }
 
 #endif

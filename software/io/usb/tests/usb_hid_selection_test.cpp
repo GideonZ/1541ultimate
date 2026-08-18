@@ -104,3 +104,59 @@ TEST(HidVisibilitySelectionTest, DisconnectMatchesOnlyTheExactVisibleSource)
 	EXPECT_FALSE(usb_hid_source_matches(keychron, 1, keychron, 2));
 	EXPECT_FALSE(usb_hid_source_matches(keychron, 1, logitech, 1));
 }
+
+TEST(HidSetIdleTest, OnlyAKeyboardOnlyInterfaceIsAskedForAPeriodicRate)
+{
+	EXPECT_EQ(USB_HID_SET_IDLE_UNITS, usb_hid_set_idle_units(true, false));
+	// Report id 0 covers the mouse reports of these interfaces too, and the HID
+	// specification asks for an infinite idle period for a mouse.
+	EXPECT_EQ(0, usb_hid_set_idle_units(false, true));
+	EXPECT_EQ(0, usb_hid_set_idle_units(true, true));
+	EXPECT_EQ(0, usb_hid_set_idle_units(false, false));
+}
+
+TEST(HidKeyboardIdleStateTest, SingleKeyboardThatAcceptedSetIdleGetsThePeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	EXPECT_EQ(USB_HID_SET_IDLE_PERIOD_MS, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, SingleKeyboardWithoutAPeriodicRateGetsNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, false);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, NoKeyboardAttachedGetsNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+// Keyboard_USB sees one merged report stream, so the periodic reports of the
+// second keyboard would keep a stale key of the first keyboard looking fresh.
+TEST(HidKeyboardIdleStateTest, TwoPeriodicKeyboardsGetNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	usb_hid_keyboard_idle_add(state, true);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, PeriodReturnsWhenTheSecondKeyboardIsUnplugged)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	usb_hid_keyboard_idle_add(state, false);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+
+	usb_hid_keyboard_idle_remove(state, false);
+	EXPECT_EQ(USB_HID_SET_IDLE_PERIOD_MS, usb_hid_keyboard_idle_period_ms(state));
+
+	usb_hid_keyboard_idle_remove(state, true);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+	EXPECT_EQ(0, state.interfaces);
+	EXPECT_EQ(0, state.interfaces_periodic);
+}

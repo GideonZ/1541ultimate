@@ -54,32 +54,11 @@ static const int USB_HID_MENU_MAX_PENDING_VERTICAL_KEYS = 2;
 
 int usb_hid_active_mouse_interfaces = 0;
 
-// SET_IDLE counts its duration in units of 4ms, so 25 asks a HID keyboard to
-// re-send its report every 100ms for as long as a key stays down. Keyboard_USB
-// needs those refreshes to tell a held key from a release report that went
-// missing; with the idle rate at 0 a keyboard reports only on change and there
-// is nothing to time out against. 100ms sits well inside the 320ms the menu
-// takes to start repeating, so a lost release is caught before the repeat can
-// emit anything, and it costs one extra 8 byte report per five polls of an
-// endpoint that is already polled at 50Hz. A shorter period would tighten that
-// margin further, but it multiplies the work done on the single USB event task
-// whose congestion is what delays a release report in the first place.
-static const uint8_t USB_HID_SET_IDLE_UNITS = 25;
-static const int USB_HID_SET_IDLE_PERIOD_MS = 4 * USB_HID_SET_IDLE_UNITS;
+static t_usb_hid_keyboard_idle_state usb_hid_keyboard_idle_state = { 0, 0 };
 
-static int usb_hid_keyboard_interfaces = 0;
-static int usb_hid_keyboard_interfaces_idle = 0;
-
-// Every keyboard interface feeds the same merged report stream, so the staleness
-// ceiling is only safe while all of them re-report a held key. A keyboard that
-// stalled or ignored SET_IDLE stays silent while its key is down, and the ceiling
-// would cut its auto-repeat off. Leaving the ceiling out only keeps the existing
-// burst, so the conservative choice is to switch it off for all of them.
 static void usb_hid_update_keyboard_idle_period(void)
 {
-    bool all_periodic = (usb_hid_keyboard_interfaces > 0) &&
-                        (usb_hid_keyboard_interfaces_idle == usb_hid_keyboard_interfaces);
-    system_usb_keyboard.setReportIdlePeriod(all_periodic ? USB_HID_SET_IDLE_PERIOD_MS : 0);
+    system_usb_keyboard.setReportIdlePeriod(usb_hid_keyboard_idle_period_ms(usb_hid_keyboard_idle_state));
 }
 
 void usb_hid_set_joy1_output(uint8_t active_low_mask)
@@ -908,8 +887,9 @@ void UsbHidDriver :: install(UsbInterface *intf)
 	uint8_t *reportDescriptor = intf->getHidReportDescriptor(&len);
 
     // wValue of a SET_IDLE request is (duration << 8) | report id, and report id 0
-    // addresses every report the interface has.
-    uint8_t c_set_idle[]     = { 0x21, 0x0A, 0x00, USB_HID_SET_IDLE_UNITS, 0xFF, 0x00, 0x00, 0x00 };
+    // addresses every report the interface has. The duration is filled in below,
+    // once the interface has been selected as a keyboard, a mouse, or both.
+    uint8_t c_set_idle[]     = { 0x21, 0x0A, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
     uint8_t c_set_protocol[] = { 0x21, 0x0B, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
     c_set_idle[4] = interface->getInterfaceDescriptor()->interface_number;
     c_set_protocol[4] = interface->getInterfaceDescriptor()->interface_number;
@@ -1006,14 +986,13 @@ void UsbHidDriver :: install(UsbInterface *intf)
         c_set_protocol[2] = selection.use_report_protocol ? 1 : 0;
         host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
     }
+    uint8_t set_idle_units = usb_hid_set_idle_units(keyboard, mouse);
+    c_set_idle[3] = set_idle_units;
     int set_idle_result = host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
     if (keyboard && !keyboard_registered) {
         keyboard_registered = true;
-        keyboard_idle_accepted = (set_idle_result >= 0);
-        usb_hid_keyboard_interfaces++;
-        if (keyboard_idle_accepted) {
-            usb_hid_keyboard_interfaces_idle++;
-        }
+        keyboard_idle_accepted = (set_idle_units != 0) && (set_idle_result >= 0);
+        usb_hid_keyboard_idle_add(usb_hid_keyboard_idle_state, keyboard_idle_accepted);
         usb_hid_update_keyboard_idle_period();
     }
     if (mouse && !mouse_registered) {
@@ -1058,12 +1037,7 @@ void UsbHidDriver :: disable()
         usb_hid_apply_mouse_output_enable();
     }
     if (keyboard_registered) {
-        if (usb_hid_keyboard_interfaces > 0) {
-            usb_hid_keyboard_interfaces--;
-        }
-        if (keyboard_idle_accepted && (usb_hid_keyboard_interfaces_idle > 0)) {
-            usb_hid_keyboard_interfaces_idle--;
-        }
+        usb_hid_keyboard_idle_remove(usb_hid_keyboard_idle_state, keyboard_idle_accepted);
         keyboard_registered = false;
         keyboard_idle_accepted = false;
         usb_hid_update_keyboard_idle_period();

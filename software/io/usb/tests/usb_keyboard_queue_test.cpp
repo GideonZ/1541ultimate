@@ -372,3 +372,33 @@ TEST(KeyboardUsbRepeatTest, RepeatResumesWhenReportsComeBack)
 	EXPECT_TRUE(poll_ui(keyboard, 'a', 50, NULL) <= BOUNDED_REPEATS);
 	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, press) > UNCEILED_REPEATS);
 }
+
+TEST(KeyboardUsbRepeatTest, StaleRepeatStaysOffWhenTheMillisecondTimerWraps)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	// The report is taken just below the point where the 16-bit timer wraps.
+	const uint16_t last_report_time = 0xFFF0;
+	host_test_set_ms_timer(last_report_time);
+	keyboard.setReportIdlePeriod(USB_IDLE_PERIOD_MS);
+
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// The release report never arrives, so the repeat reaches the ceiling.
+	const int STALE_POLLS = 50;
+	EXPECT_TRUE(poll_ui(keyboard, 'a', STALE_POLLS, NULL) <= BOUNDED_REPEATS);
+
+	// The timer now runs a full 16-bit cycle back to the time of the last report.
+	// The difference between the two is zero again, so without the latched stale
+	// flag the ancient report would look like it had just arrived and the repeat
+	// would free run for another three idle periods on every wrap.
+	host_test_advance_ms_timer((uint16_t)(0x10000 - (STALE_POLLS * UI_POLL_MS)));
+	EXPECT_EQ(last_report_time, getMsTimer());
+	EXPECT_EQ(0, poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, NULL));
+
+	// A real report clears the latch, so the repeat still recovers after a wrap.
+	keyboard.process_data(press);
+	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, press) > UNCEILED_REPEATS);
+}

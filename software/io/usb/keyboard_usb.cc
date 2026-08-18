@@ -55,10 +55,12 @@ static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
 // A held key can only be told apart from a release report that never arrived
 // when the keyboard re-reports the key while it stays down, which is what the
 // HID driver asks for with a non-zero SET_IDLE duration. Three idle periods of
-// silence therefore mean the release was lost rather than the key still being
-// held. Three rather than one, because a periodic report still has to survive
-// the 20ms interrupt endpoint poll and the shared USB event task before it
-// reaches process_data().
+// silence do not prove that the release was lost. They mean the repeat state is
+// no longer trustworthy: either the release was lost, or the reports are delayed
+// much longer than their period. Both cases are handled the same way, by pausing
+// the repeat until reports return. Three periods rather than one, because a
+// periodic report still has to survive the 20ms interrupt endpoint poll and the
+// shared USB event task before it reaches process_data().
 static const int USB_REPEAT_STALE_IDLE_PERIODS = 3;
 
 }
@@ -511,8 +513,8 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 // The repeat engine is edge driven: one release report that never arrives leaves
 // num_keys at 1 and the repeat free runs. Where the HID driver negotiated a
 // non-zero USB idle rate, a held key re-reports itself every period, so a longer
-// silence identifies the lost release. Where it did not, no reports arrive at all
-// while a key is held, silence carries no information, and applying a ceiling
+// silence means the repeat can no longer be trusted. Where it did not, no reports
+// arrive at all while a key is held, silence carries no information, and a ceiling
 // would break auto-repeat instead. The result is latched until the next report so
 // that the 16-bit millisecond timer wrapping cannot make a stale report look fresh.
 bool Keyboard_USB :: repeatIsLive(void)
