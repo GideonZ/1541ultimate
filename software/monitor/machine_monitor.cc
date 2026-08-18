@@ -5084,8 +5084,12 @@ void MachineMonitor :: apply_logical_delete()
             break;
         case MONITOR_VIEW_ASM: {
             uint8_t len = disasm_length(state.current_addr);
+            // An instruction is deleted by replacing it with NOPs, which is
+            // what keeps the code around it running. A data row is not code
+            // and NOP means nothing in it, so its bytes are cleared instead.
+            uint8_t fill = address_is_data(state.current_addr) ? 0x00 : 0xEA;
             for (uint8_t i = 0; i < len; i++) {
-                canonical_write((uint16_t)(state.current_addr + i), 0xEA);
+                canonical_write((uint16_t)(state.current_addr + i), fill);
             }
             step_disassembly(1);
             break;

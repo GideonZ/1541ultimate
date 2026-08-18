@@ -9037,6 +9037,89 @@ static int test_assembly_data_rows_group_and_edit(void)
     return 0;
 }
 
+static int test_assembly_data_delete_clears_bytes(void)
+{
+    // DEL replaces an instruction with NOPs, which is what leaves the code
+    // around it runnable. A data row is not code, so NOP would be a value the
+    // user did not ask for; its bytes are cleared instead. Both the edit-mode
+    // DEL and the one outside edit mode go through the same delete, so both
+    // are checked.
+    const char *labels[2] = { "outside edit mode", "in edit mode" };
+    for (int in_edit = 0; in_edit < 2; in_edit++) {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeBankedMemoryBackend backend;
+        int keys[8];
+        int n = 0;
+
+        keys[n++] = 'J';
+        keys[n++] = 'A';
+        if (in_edit) {
+            keys[n++] = 'E';
+        }
+        keys[n++] = KEY_DELETE;
+        keys[n++] = KEY_BREAK;
+        keys[n++] = KEY_BREAK;
+        FakeKeyboard kb(keys, n);
+
+        backend.io[0x000] = 0x12;
+        backend.io[0x001] = 0x34;
+        backend.io[0x002] = 0x56;
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("D000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < (in_edit ? 4 : 3); i++) {
+            if (expect(mon.poll(0) == 0, "DATA delete: command failed.")) return 1;
+        }
+        if (expect(backend.io[0x000] == 0x00 && backend.io[0x001] == 0x00,
+                   "DEL on a DATA row must clear its bytes, not fill them with NOP.")) {
+            printf("  %s: $D000 is $%02X, $D001 is $%02X\n", labels[in_edit],
+                   backend.io[0x000], backend.io[0x001]);
+            return 1;
+        }
+        if (expect(backend.io[0x002] == 0x56,
+                   "DEL on a DATA row must not reach the row below it.")) {
+            printf("  %s: $D002 is $%02X\n", labels[in_edit], backend.io[0x002]);
+            return 1;
+        }
+        mon.deinit();
+    }
+
+    // An instruction still becomes NOPs: the rule is about data rows, not
+    // about the delete key.
+    {
+        TestUserInterface ui;
+        CaptureScreen screen;
+        FakeMemoryBackend backend;
+        const int keys[] = { 'J', 'A', KEY_DELETE, KEY_BREAK };
+        FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+
+        backend.write(0xC000, 0xA9);   // LDA #$12
+        backend.write(0xC001, 0x12);
+
+        ui.screen = &screen;
+        ui.keyboard = &kb;
+        ui.set_prompt("C000", 1);
+        monitor_reset_saved_state();
+
+        BackendMachineMonitor mon(&ui, &backend);
+        mon.init(&screen, &kb);
+        for (int i = 0; i < 3; i++) {
+            if (expect(mon.poll(0) == 0, "CODE delete: command failed.")) return 1;
+        }
+        if (expect(backend.read(0xC000) == 0xEA && backend.read(0xC001) == 0xEA,
+                   "DEL on an instruction must still replace it with NOPs.")) return 1;
+        if (expect(mon.poll(0) == 1, "CODE delete: exit failed.")) return 1;
+        mon.deinit();
+    }
+    return 0;
+}
+
 static int test_assembly_data_range_is_byte_addressable(void)
 {
     // A range anchored inside a DATA row takes the bytes it covers, not the
@@ -9576,6 +9659,7 @@ int main()
     if (test_io_region_is_data_not_code()) return 1;
     if (test_assembly_data_rows_group_and_edit()) return 1;
     if (test_assembly_data_range_is_byte_addressable()) return 1;
+    if (test_assembly_data_delete_clears_bytes()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
 
     puts("machine_monitor_test: OK");

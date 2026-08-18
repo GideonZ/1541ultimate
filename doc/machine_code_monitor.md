@@ -27,7 +27,7 @@ Two shortcuts act on the machine rather than the view, and both work from a memo
 | Key | Action |
 | --- | ------ |
 | `C=+R` | Reset the C64. This is the same action as the task menu's `Reset C64`, so the on-device menu closes with the machine's screen where the interface is drawn there. |
-| `C=+I` | Swap the interface between the freeze menu and the HDMI overlay, and close the menu. The setting takes effect the next time the menu opens. A target without that setting reports `INTERFACE SWAP UNAVAILABLE` and changes nothing. |
+| `C=+I` | Swap the interface between the freeze menu and the HDMI overlay, and close the menu. The setting takes effect the next time the menu opens. |
 
 Neither has a confirmation. A backend that cannot reach a reset reports `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
 
@@ -117,6 +117,8 @@ The source tag occupies three characters inside the brackets, so the column stay
 The rows are grouped from the start of the region, so where a `DATA` row begins does not depend on how the view arrived there. `$D000-$DFFF` is 4096 bytes and divides into 2048 rows of two; a region whose length is odd ends with a row of one byte.
 
 A `DATA` row is edited in Assembly view like any other row. `E` enters edit mode and the cursor sits on the first byte; each displayed byte is its own edit position, two hex digits complete one, and `LEFT`/`RIGHT` step from byte to byte and on into the row above or below. There is no opcode picker on a `DATA` row, because there is no mnemonic to pick, and a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write as it does everywhere else. Editing the same bytes in Memory view with `M` works as before.
+
+`DEL` clears a `DATA` row's bytes to `$00`. On a decoded instruction it still writes `NOP`, which is what keeps the code around it runnable; `NOP` means nothing in a region that is not code.
 
 The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
@@ -393,7 +395,7 @@ In edit mode, `Space` remains view-specific data entry and does not page.
 | Memory       | Writes `$00` and advances                       |
 | ASCII/Screen | Writes a space                                  |
 | Binary       | Clears the selected bit                         |
-| Assembly     | Replaces the current instruction with `NOP` bytes |
+| Assembly     | Replaces the current instruction with `NOP` bytes; clears a `DATA` row to `$00` |
 
 In Assembly view, if an inline edit is already active, `DEL` first cancels the current line edit state.
 
