@@ -5,6 +5,7 @@
  *      Author: gideon
  */
 #include "keyboard_usb.h"
+#include "itu.h"
 #include <string.h>
 #include "FreeRTOS.h"
 #include "task.h"
@@ -50,6 +51,15 @@ static const uint32_t WAIT_FREE_POLL_TICKS =
 static const uint8_t REST_TAP_GAP_TICKS = 2;
 static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
 static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
+
+// A held key can only be told apart from a release report that never arrived
+// when the keyboard re-reports the key while it stays down, which is what the
+// HID driver asks for with a non-zero SET_IDLE duration. Three idle periods of
+// silence therefore mean the release was lost rather than the key still being
+// held. Three rather than one, because a periodic report still has to survive
+// the 20ms interrupt endpoint poll and the shared USB event task before it
+// reaches process_data().
+static const int USB_REPEAT_STALE_IDLE_PERIODS = 3;
 
 }
 
@@ -173,6 +183,9 @@ Keyboard_USB :: Keyboard_USB()
     first_delay = 16;
     delay_count = first_delay;
     num_keys = 0;
+    report_idle_period_ms = 0;
+    last_report_time = 0;
+    repeat_stale = false;
 
 	memset(key_buffer, 0, USB_KEY_BUFFER_SIZE);
 	memset(injected_buffer, 0, USB_KEY_BUFFER_SIZE);
@@ -457,6 +470,7 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 {
 	usb2matrix(kbdata);
 
+	bool report_changed = (memcmp(last_data, kbdata, USB_DATA_SIZE) != 0);
 	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kbdata[i]) {
@@ -484,7 +498,42 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 	}
 
 	memcpy(last_data, kbdata, USB_DATA_SIZE);
-    delay_count = first_delay;
+	last_report_time = getMsTimer();
+	repeat_stale = false;
+	// A periodic idle report repeats the key set that is already down. Restarting
+	// the repeat delay on it would hold off the repeat forever, so only a report
+	// that changes the key set counts as a new key press.
+	if (report_changed) {
+		delay_count = first_delay;
+	}
+}
+
+// The repeat engine is edge driven: one release report that never arrives leaves
+// num_keys at 1 and the repeat free runs. Where the HID driver negotiated a
+// non-zero USB idle rate, a held key re-reports itself every period, so a longer
+// silence identifies the lost release. Where it did not, no reports arrive at all
+// while a key is held, silence carries no information, and applying a ceiling
+// would break auto-repeat instead. The result is latched until the next report so
+// that the 16-bit millisecond timer wrapping cannot make a stale report look fresh.
+bool Keyboard_USB :: repeatIsLive(void)
+{
+	if (report_idle_period_ms <= 0) {
+		return true;
+	}
+	if (repeat_stale) {
+		return false;
+	}
+	uint16_t age = (uint16_t)(getMsTimer() - last_report_time);
+	if (age > (uint16_t)(USB_REPEAT_STALE_IDLE_PERIODS * report_idle_period_ms)) {
+		repeat_stale = true;
+		return false;
+	}
+	return true;
+}
+
+void Keyboard_USB :: setReportIdlePeriod(int period_ms)
+{
+	report_idle_period_ms = (period_ms > 0) ? period_ms : 0;
 }
 
 // called from the user interface thread
@@ -497,7 +546,7 @@ int  Keyboard_USB :: getch(void)
 			applyMatrixState();
 		}
     }
-    if (num_keys == 1) { // implement repeat for one key pressed (other than the modifiers)
+    if ((num_keys == 1) && repeatIsLive()) { // implement repeat for one key pressed (other than the modifiers)
         if (delay_count == 0) {
             delay_count = repeat_speed;
 

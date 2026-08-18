@@ -283,3 +283,92 @@ TEST(KeyboardUsbQueueTest, RemoveInjectedKeyDropsPendingDirection)
 	EXPECT_EQ(KEY_UP, keyboard.getch());
 	EXPECT_EQ(-1, keyboard.getch());
 }
+
+// A menu UI object polls getch() every 20ms. first_delay of 16 polls holds the
+// repeat off for the first 320ms, and repeat_speed of 4 then produces one
+// repeated character every fifth poll, so about 97 over a ten second run.
+static const int UI_POLL_MS = 20;
+static const int UI_POLLS_PER_RUN = 500; // 10 seconds of polling
+static const int USB_IDLE_PERIOD_MS = 100;
+static const int UI_POLLS_PER_IDLE_PERIOD = USB_IDLE_PERIOD_MS / UI_POLL_MS;
+static const int UNCEILED_REPEATS = 90;
+// The ceiling is three idle periods, so it can let through at most a few repeats.
+static const int BOUNDED_REPEATS = 4;
+
+static int poll_ui(Keyboard_USB& keyboard, int key, int polls, const uint8_t *periodic_report)
+{
+	int received = 0;
+	for (int i = 0; i < polls; i++) {
+		host_test_advance_ms_timer(UI_POLL_MS);
+		if (periodic_report && ((i % UI_POLLS_PER_IDLE_PERIOD) == (UI_POLLS_PER_IDLE_PERIOD - 1))) {
+			keyboard.process_data(const_cast<uint8_t *>(periodic_report));
+		}
+		if (keyboard.getch() == key) {
+			received++;
+		}
+	}
+	return received;
+}
+
+TEST(KeyboardUsbRepeatTest, LostReleaseDoesNotFreeRunTheRepeat)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	host_test_set_ms_timer(0);
+	keyboard.setReportIdlePeriod(USB_IDLE_PERIOD_MS);
+
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// The release report never arrives, so num_keys stays at 1 forever.
+	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, NULL) <= BOUNDED_REPEATS);
+}
+
+TEST(KeyboardUsbRepeatTest, HeldKeyWithPeriodicReportsKeepsRepeating)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	host_test_set_ms_timer(0);
+	keyboard.setReportIdlePeriod(USB_IDLE_PERIOD_MS);
+
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// The negotiated idle rate re-reports the key every 100ms while it is held.
+	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, press) > UNCEILED_REPEATS);
+}
+
+TEST(KeyboardUsbRepeatTest, KeyboardWithoutAnIdleRateRepeatsAsBefore)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	host_test_set_ms_timer(0);
+	keyboard.setReportIdlePeriod(0); // SET_IDLE stalled or was ignored
+	EXPECT_EQ(0, keyboard.reportIdlePeriod());
+
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// No reports arrive while the key is held, so silence must not stop the repeat.
+	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, NULL) > UNCEILED_REPEATS);
+}
+
+TEST(KeyboardUsbRepeatTest, RepeatResumesWhenReportsComeBack)
+{
+	Keyboard_USB keyboard;
+	uint8_t press[USB_DATA_SIZE] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+	host_test_set_ms_timer(0);
+	keyboard.setReportIdlePeriod(USB_IDLE_PERIOD_MS);
+
+	keyboard.process_data(press);
+	EXPECT_EQ('a', keyboard.getch());
+
+	// A long enough gap in the periodic reports stops the repeat, but the key is
+	// still down and the reports come back, so the repeat has to come back too.
+	EXPECT_TRUE(poll_ui(keyboard, 'a', 50, NULL) <= BOUNDED_REPEATS);
+	EXPECT_TRUE(poll_ui(keyboard, 'a', UI_POLLS_PER_RUN, press) > UNCEILED_REPEATS);
+}
