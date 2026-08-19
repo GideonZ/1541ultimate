@@ -21,19 +21,37 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pacing
+import targets
 from report import Failure
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
 DRIVE_SLOTS = ("a", "b")
 MAX_ADDRESS = 0xFFFF
 MAX_READ_LENGTH = 65536
+# One request may carry 64 events, which is the API's own limit
+# (INPUT_API_MAX_EVENTS, software/api/input_api.h:10). A batch of exactly 64
+# used to lose its last key with the on-device menu up: the ring those keys
+# are pushed into keeps one slot empty to tell full from empty, so a 64-slot
+# ring held 63 keys. The ring is now USB_INJECTED_BUFFER_SIZE = 65
+# (keyboard_usb.h:21) and a full batch arrives complete. See
+# tests/e2e/doc/key-injection-rate.md.
 MAX_INPUT_EVENTS = 64
+# The device caps the request body as well as the event count:
+# INPUT_JSON_BODY_MAX_SIZE is 4096 bytes (software/api/route_input.cc:32) and a
+# longer body is refused with HTTP 400 "JSON body is too large." The two limits
+# are not interchangeable, because an event is not a fixed size: a tap of one
+# short key name is about 55 bytes and a tap of "inst_del" is 62, so 64
+# inst_del taps come to 4110 bytes and are refused although they are within the
+# event limit. A batch therefore has to be measured, which is what
+# input_batches below does.
+MAX_INPUT_BODY_BYTES = 4096
 # PUT /v1/machine:writemem takes at most this many bytes as a hex string;
 # anything longer has to go through the POST upload form.
 MAX_WRITEMEM_HEX_BYTES = 128
@@ -114,6 +132,43 @@ def _errors(payload: object, what: str) -> Dict[str, object]:
     if reported:
         raise Failure(f"{what} failed: {'; '.join(str(e) for e in reported)}")
     return payload
+
+
+def input_body_bytes(events: Sequence[Dict[str, object]]) -> int:
+    """How large the request body for these events is, as the device sees it.
+
+    The same serialisation the transport uses, so the number this returns is
+    the number the device measures against INPUT_JSON_BODY_MAX_SIZE.
+    """
+    return len(json.dumps({"events": list(events)}).encode("utf-8"))
+
+
+def input_batches(events: Sequence[Dict[str, object]]) -> List[List[Dict[str, object]]]:
+    """Split events into batches `machine:input` accepts, one request each.
+
+    Both device limits apply and neither implies the other: at most
+    MAX_INPUT_EVENTS events, and at most MAX_INPUT_BODY_BYTES of body. Counting
+    alone sent 64 backspaces as one request and was answered HTTP 400 "JSON
+    body is too large", because those events are 62 bytes each; measuring alone
+    would let a batch of short events past the event limit.
+
+    A single event larger than the body limit cannot be split further and is
+    returned as its own batch, so the device reports it rather than this
+    silently dropping it.
+    """
+    batches: List[List[Dict[str, object]]] = []
+    current: List[Dict[str, object]] = []
+    for event in events:
+        candidate = current + [event]
+        if current and (len(candidate) > MAX_INPUT_EVENTS
+                        or input_body_bytes(candidate) > MAX_INPUT_BODY_BYTES):
+            batches.append(current)
+            current = [event]
+        else:
+            current = candidate
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _hex_address(address: int) -> str:
@@ -335,6 +390,11 @@ class MachineApi:
     def send_input(self, events: Sequence[Dict[str, object]]) -> None:
         if not 0 < len(events) <= MAX_INPUT_EVENTS:
             raise Failure(f"an input batch holds 1..{MAX_INPUT_EVENTS} events, got {len(events)}")
+        body_bytes = input_body_bytes(events)
+        if body_bytes > MAX_INPUT_BODY_BYTES:
+            raise Failure(f"an input batch body holds at most {MAX_INPUT_BODY_BYTES} "
+                          f"bytes, got {body_bytes} for {len(events)} events; "
+                          f"split it with api.input_batches")
         for event in events:
             inputs = event.get("inputs") or []
             if event.get("kind") == "keyboard" and len(inputs) > MAX_KEYBOARD_INPUTS:
@@ -809,3 +869,79 @@ def _in_range(name: str, value: int, bounds: Tuple[int, int]) -> None:
     low, high = bounds
     if not low <= value <= high:
         raise Failure(f"{name} {value} is outside {low}..{high}")
+
+
+# What a cartridge target needs of the computer it is plugged into.
+#
+# The computer decides which of its resources the cartridge in its port owns
+# (software/io/c64/c64.cc, CFG_C64_CART_PREF and C64::setCartPref). On "Auto"
+# it hands the bus over only when it detects an external cartridge, and a
+# Commodore 64 Ultimate with an Ultimate II+ in its port does not always detect
+# one: the cartridge can then put bytes into the C64's memory while nothing it
+# starts ever runs, which reads as the launch failing rather than as the bus
+# never having been handed over. "External" forces the handover.
+#
+# The item lives in a store the U64-class builds compile in, which is what the
+# computer of a cartridge target always is, so a store or item that is not
+# there is worth reporting rather than passing over.
+CARTRIDGE_STORE = "C64 and Cartridge Settings"
+CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
+CARTRIDGE_PREFERENCE_EXTERNAL = "External"
+
+
+class CartridgePreferenceUnavailable(Failure):
+    """The computer could not be asked for the setting. The message says why.
+
+    Its own type because the two outcomes need different verdicts. A computer
+    that serves the setting and refuses the value has to stop the run, since
+    every launch after it fails for a reason that names neither. A computer
+    that cannot be asked at all - a loopback stand-in with no config store, a
+    machine that is not answering - is a reason to say so and carry on, because
+    the suites that need it report their own failures.
+    """
+
+
+def ensure_cartridge_preference(target, password: Optional[str] = None,
+                                timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """Make the computer of a cartridge target prefer the cartridge in its port.
+
+    Answers what it did, for a caller that reports it:
+
+      None            nothing to do - the target is its own computer, or the
+                      computer already prefers the external cartridge
+      a description   the value it changed, and from what
+
+    Raises `CartridgePreferenceUnavailable` when the computer cannot be asked,
+    and `Failure` when it serves the setting and will not take it.
+
+    The change is not saved to flash. It takes effect through the item's own
+    change hook, and leaving flash alone keeps a test run from deciding what a
+    machine boots with.
+    """
+    handle = targets.resolve(target)
+    if not handle.split:
+        return None
+    computer = UltimateApi(handle.computer, password, timeout)
+    try:
+        current = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    except Failure as exc:
+        # The URL is taken out of the reason rather than passed on. This
+        # message reaches the run's records and from there the generated
+        # report, where a link to a machine is an external reference the
+        # document must not carry; the host is already named beside it.
+        reason = re.sub(r"https?://\S+", "its config API", str(exc))
+        raise CartridgePreferenceUnavailable(
+            f"{handle.computer} did not answer for "
+            f"'{CARTRIDGE_PREFERENCE_ITEM}': {reason}") from exc
+    if current == CARTRIDGE_PREFERENCE_EXTERNAL:
+        return None
+    computer.configs.set(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM,
+                         CARTRIDGE_PREFERENCE_EXTERNAL)
+    now = computer.configs.current(CARTRIDGE_STORE, CARTRIDGE_PREFERENCE_ITEM)
+    if now != CARTRIDGE_PREFERENCE_EXTERNAL:
+        raise Failure(
+            f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
+            f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
+            f"cartridge in its port will not own the bus")
+    return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")

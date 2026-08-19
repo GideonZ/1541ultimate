@@ -18,7 +18,18 @@ Open the built-in help with `F3` or `?`.
 To close the monitor:
 
 - Press `C=+O` again.
-- Press `RUN/STOP` when no edit operation or popup is active.
+- Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit operation or popup is active.
+
+`RUN/STOP`, `ESC` and `←` are one Back action. Each press closes one active layer - help, a number expression, a popup, a command prompt, edit mode - and closes the monitor only once nothing is left. Where `←` is data, in ASCII and Screen editing and in the ASCII and Screen rows of the Number popup, use `RUN/STOP` or `ESC` instead.
+
+Two shortcuts act on the machine rather than the view, and both work from a memory view and from edit mode:
+
+| Key | Action |
+| --- | ------ |
+| `C=+R` | Reset the C64. This is the same action as the task menu's `Reset C64`, so the on-device menu closes with the machine's screen where the interface is drawn there. |
+| `C=+I` | Swap the interface between the freeze menu and the HDMI overlay, and close the menu. The setting takes effect the next time the menu opens. |
+
+Neither has a confirmation. A backend that cannot reach a reset reports `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
 
 ## Screen Layout
 
@@ -72,59 +83,75 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR HEX $0168                     |
+|MONITOR HEX $00E0                     |
 |00E0 85 85 85 85 85 85 86 86 ........ |
 |00E8 86 86 86 86 86 87 87 87 ........ |
-|00F0 87 87 87 F0 DB 00 00 00 ........ |
+|00F0 87 87 87 F0 D8 00 00 00 ........ |
 |00F8 00 00 00 00 00 00 00 20 .......  |
 |0100 33 38 39 31 31 00 30 30 38911.00 |
-|0108 30 30 00 00 10 10 35 02 00....5. |
-|0110 00 00 10 10 35 02 00 00 ....5... |
-|0118 1C 10 35 02 00 00 22 10 ..5...". |
-|0120 35 02 00 00 28 10 35 02 5...(.5. |
-|0128 00 10 35 02 00 00 32 10 ..5...2. |
-|0130 35 02 00 00 38 10 35 02 5...8.5. |
-|0138 00 00 3E 10 35 02 00 00 ..>.5... |
-|0140 44 10 35 02 00 00 44 10 D.5...D. |
-|0148 35 02 00 00 50 10 35 02 5...P.5. |
-|0150 00 00 56 10 35 02 00 00 ..V.5... |
-|0158 5C 10 35 02 00 00 62 10 \.5...b. |
-|0160 35 02 00 00 68 10 35 02 5...h.5. |
-|0168 00 00 6E 10 35 02 00 00 ..n.5... |
-|CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000  |
+|0108 30 30 0E 00 36 05 00 85 00..6... |
+|0110 14 00 36 05 00 85 1A 00 ..6..... |
+|0118 36 05 00 85 20 10 34 05 6... .4. |
+|0120 00 85 26 00 36 05 00 85 ..&.6... |
+|0128 2C 00 36 05 00 85 32 00 ,.6...2. |
+|0130 36 05 00 85 38 00 36 05 6...8.6. |
+|0138 00 85 3E 00 37 05 00 85 ..>.7... |
+|0140 44 00 36 05 00 85 4A 00 D.6...J. |
+|0148 36 05 00 85 50 00 36 05 6...P.6. |
+|0150 00 85 56 10 34 05 00 85 ..V.4... |
+|0158 5C 00 36 05 00 85 62 00 \.6...b. |
+|0160 36 05 00 85 68 00 36 05 6...h.6. |
+|0168 00 85 6E 00 36 05 00 85 ..n.6... |
+|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+Each row shows the row address, then the bytes of the row in hexadecimal, then
+the same bytes as printable characters. A byte that has no printable character
+is shown as `.`.
+
+The row holds eight bytes by default. `W` switches the row to sixteen bytes,
+which uses the width the character preview occupies, so only the hexadecimal
+bytes are shown in that mode.
 
 ### Assembly View
 
 Assembly view shows decoded 6510 instructions, their instruction bytes, and the memory source used for each row.
 
-Example:
+The source tag is three characters inside the brackets, so the column stays aligned across bank boundaries: `[RAM]`, `[BAS]`, `[CHR]`, `[I/O]`, `[KRN]`, and `[CPU]` for the memory currently visible to the CPU on an Ultimate II+.
+
+`$D000-$DFFF` is shown as `DATA` rows of two bytes each while I/O or Character ROM is banked in. I/O reads live registers, so a decoded instruction length there would change on every redraw, and Character ROM holds character bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally, so the rule follows the banked source rather than the address range. On an Ultimate II+, `$D000-$DFFF` is always disassembled. `DATA` rows are grouped from the start of the region, so where a row begins does not depend on how the view arrived there.
+
+Example, spanning the boundary between banked-in I/O and KERNAL ROM:
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011                     |
-|DFF9 FF           ???             [IO]|
-|DFFA 00           BRK             [IO]|
-|DFFB 00           BRK             [IO]|
-|DFFC FF           ???             [IO]|
-|DFFD 00           BRK             [IO]|
-|DFFE 00           BRK             [IO]|
-|DFFF 00           BRK             [IO]|
-|E000 85 56        STA $56     [KERNAL]|
-|E002 20 0F BC     JSR $BC0F   [KERNAL]|
-|E005 A5 61        LDA $61     [KERNAL]|
-|E007 C9 88        CMP #$88    [KERNAL]|
-|E009 90 03        BCC $E00E   [KERNAL]|
-|E00B 20 D4 BA     JSR $BAD4   [KERNAL]|
-|E00E 20 CC BC     JSR $BCCC   [KERNAL]|
-|E011 A5 07        LDA $07     [KERNAL]|
-|E013 18           CLC         [KERNAL]|
-|E014 69 81        ADC #$81    [KERNAL]|
-|E016 F0 F3        BEQ $E00B   [KERNAL]|
+|MONITOR ASM $DFF6                     |
+|DFF6 00 8D     DATA 00 8D        [I/O]|
+|DFF8 02 92     DATA 02 92        [I/O]|
+|DFFA C6 F7     DATA C6 F7        [I/O]|
+|DFFC 00 A5     DATA 00 A5        [I/O]|
+|DFFE 00 A5     DATA 00 A5        [I/O]|
+|E000 85 56     STA $56           [KRN]|
+|E002 20 0F BC  JSR $BC0F         [KRN]|
+|E005 A5 61     LDA $61           [KRN]|
+|E007 C9 88     CMP #$88          [KRN]|
+|E009 90 03     BCC $E00E         [KRN]|
+|E00B 20 D4 BA  JSR $BAD4         [KRN]|
+|E00E 20 CC BC  JSR $BCCC         [KRN]|
+|E011 A5 07     LDA $07           [KRN]|
+|E013 18        CLC               [KRN]|
+|E014 69 81     ADC #$81          [KRN]|
+|E016 F0 F3     BEQ $E00B         [KRN]|
+|E018 38        SEC               [KRN]|
+|E019 E9 01     SBC #$01          [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
+
+A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `LEFT`/`RIGHT` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row, so a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write as it does everywhere else. `DEL` clears a `DATA` row's bytes to `$00`; on a decoded instruction it still writes `NOP`. The same bytes can also be edited in Memory view with `M`.
+
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
 ### Binary View
 
@@ -139,24 +166,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR BIN $DC00/7                   |
-|DC00 ........ 00                      |
-|DC01 ******** FF                      |
-|DC02 ******** FF                      |
-|DC03 ........ 00                      |
-|DC04 *.*..*.* A5                      |
-|DC05 ...**.** 1B                      |
-|DC06 ******** FF                      |
-|DC07 ******** FF                      |
-|DC08 ........ 00                      |
-|DC09 ........ 00                      |
-|DC0A ........ 00                      |
-|DC0B *..*...* 91                      |
-|DC0C ........ 00                      |
-|DC0D *......* 81                      |
-|DC0E .......* 01                      |
-|DC0F ....*... 08                      |
-|DC10 ........ 00                      |
-|DC11 ******** FF                      |
+|DC00 .***********************........ |
+|DC04 **.**..*...**...**************** |
+|DC08 ........................*..*...* |
+|DC0C .......................*....*... |
+|DC10 .***********************........ |
+|DC14 ***.****....*.****************** |
+|DC18 ........................*..*...* |
+|DC1C .......................*....*... |
+|DC20 .***********************........ |
+|DC24 *.***.*..*.....***************** |
+|DC28 ........................*..*...* |
+|DC2C .......................*....*... |
+|DC30 .***********************........ |
+|DC34 .*.**.....**.*..**************** |
+|DC38 ........................*..*...* |
+|DC3C .......................*....*... |
+|DC40 .***********************........ |
+|DC44 **.***.*..*..**.**************** |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -177,21 +204,21 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASC $A000                     |
-|A000 .{.CBMBASIC0.A...................|
-|A020 P........:..J.,.g.U.d...#....... |
-|A040 U...j..}.....:Z.A.g.U.X...}...g. |
-|A060 ....d.k......|.e..............g  |
-|A080 yi.yR.{*.{...z.p..F..}...Z..d.EN |
-|A0A0 .FO.NEX.DATA.INPUT.DIM.REA.LE    |
+|A000 ..{.CBMBASIC0.A................. |
+|A020 p.'.......:...J.,.g.U.d...#..... |
+|A040 V...]...).....z.A.9...X...}...q. |
+|A060 ......d.k.......|.e.........,.7. |
+|A080 yi.yR.{*.{...z.P..F..}..Z..d..EN |
+|A0A0 .FO.NEX.DAT.INPUT.INPU.DI.REA.LE |
 |A0C0 .GOT.RU.I.RESTOR.GOSU.RETUR.RE.S |
-|A0E0 TO.O.WAI.LOA.SAVU.VERIF.DE.POK.PR|
-|A100 INT.PRIN.CON.LIS.CLR.CM.SY.OPE.CL|
+|A0E0 TO.O.WAI.LOA.SAV.VERIF.DE.POK.PR |
+|A100 INT.PRIN.CON.LIS.CL.CM.SY.OPE.CL |
 |A120 OS.GE.NE.TAB.T.F.SPC.THE.NO.STE. |
 |A140 .....AN.O....SG.IN.AB.US.FR.PO.S |
 |A160 Q.RN.LO.EX.CO.SI.TA.AT.PEE.LE.ST |
 |A180 R.VA.AS.CHR.LEFT.RIGHT.MID.G..TO |
-|A1A0 D.MANY FILE.FILE OPEN.FILE NOT OP|
-|A1C0 E.FILE NOT FOUND.DEVICE NOT PRESE|
+|A1A0 O MANY FILE.FILE OPE.FILE NOT OP |
+|A1C0 E.FILE NOT FOUN.DEVICE NOT PRESE |
 |A1E0 N.NOT INPUT FIL.NOT OUTPUT FIL.M |
 |A200 ISSING FILE NAM.ILLEGAL DEVICE N |
 |A220 UMBE.NEXT WITHOUT FO.SYNTA.RETUR |
@@ -229,14 +256,14 @@ Example:
 
 ```text
 +--------------------------------------+
-|MONITOR SCR U/G $0400                 |
-|0400 █                                |
-|0420           ***** COMMODORE 64 BA  |
-|0440 SIC V3 *****                     |
-|0460                         64K RAM  |
-|0480  SYSTEM 38911 BASIC BYTES FREE   |
+|MONITOR SCR L/U $0400                 |
+|0400                                  |
+|0420             **** commodore 64 ba |
+|0440 sic v2 ****                      |
+|0460                          64k ram |
+|0480  system  38911 basic bytes free  |
 |04A0                                  |
-|04C0             READY.               |
+|04C0         ready.                   |
 |04E0                                  |
 |0500                                  |
 |0520                                  |
@@ -343,6 +370,12 @@ In the normal no-cartridge configuration, the footer fields have these possible 
 
 Cartridges can further affect the CPU-visible memory map through the expansion-port `GAME` and `EXROM` lines.
 
+An Ultimate II+ has no monitor-selectable CPU bank, so its footer reports the VIC bank alone:
+
+```text
+CPU VIEW  VIC0 $0000
+```
+
 ## Editing
 
 All views support editing:
@@ -369,7 +402,7 @@ In edit mode, `Space` remains view-specific data entry and does not page.
 | Memory       | Writes `$00` and advances                       |
 | ASCII/Screen | Writes a space                                  |
 | Binary       | Clears the selected bit                         |
-| Assembly     | Replaces the current instruction with `NOP` bytes |
+| Assembly     | Replaces the current instruction with `NOP` bytes; clears a `DATA` row to `$00` |
 
 In Assembly view, if an inline edit is already active, `DEL` first cancels the current line edit state.
 
@@ -440,14 +473,34 @@ The monitor includes direct bulk memory commands:
 | Key | Command  | Syntax                                   | Result                                                                |
 | --- | -------- | ---------------------------------------- | --------------------------------------------------------------------- |
 | `F` | Fill     | `start-end,value`                        | Fill an inclusive range with one byte                                 |
-| `T` | Transfer | `start-end,dest`                         | Copy a range to a destination                                         |
+| `T` | Transfer | `start-end,dest[,code-start-code-end]`   | Copy a range to a destination, optionally relocating operands         |
 | `C` | Compare  | `start-end,dest`                         | Compare a range against another location and list differing addresses |
 | `H` | Hunt     | `start-end,bytes` or `start-end,"text"` | Search for a byte sequence or quoted ASCII string                     |
+
+`Fill`, `Transfer`, `Compare`, `Hunt` and `Save` all treat `start-end` as inclusive of both ends, including the full `0000-FFFF` range.
+
+`Transfer` takes an optional fourth field naming the range to scan for pointers into the block being copied:
+
+```text
+T C000-C0FF,C100,C000-C07F
+```
+
+Absolute, absolute-indexed and indirect operands pointing inside the copied source range are then adjusted to the corresponding destination address. Relative branches, zero-page operands, references outside the copied range and incomplete instructions are left unchanged. Without the fourth field, `Transfer` copies the bytes and changes nothing.
+
+The scan range is independent of the range being copied. It may be shorter than the copy, longer than it, or somewhere else entirely, which is what lets a pointer that is not itself moving be brought with the block:
+
+```text
+T C000-C005,C010,C000-C008
+```
+
+Here the first two instructions are copied to `$C010` while the scan covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
 
 `Hunt` opens a result picker:
 
 - `Return`: jump to the selected match.
 - `RUN/STOP`: close the picker.
+
+A command prompt accepts only characters that can occur in the command being entered; other keys are ignored. Parsing and validation still happen on `Return`.
 
 ## File I/O
 
@@ -549,16 +602,16 @@ Default slots are aimed at common C64 locations:
 +--------------------------------------+
 |BOOKMARKS                             |
 |                                      |
-|0 ZERO    $0000 HEX  8 CPU7 VIC0      |
-|1 SCREEN  $0400 SCR 32 CPU7 VIC0      |
-|2 BASIC   $0801 ASM    CPU7 VIC0      |
-|3 BASROM  $A000 ASM    CPU7 VIC0      |
-|4 HIRAM   $C000 ASM    CPU7 VIC0      |
-|5 VIC     $D000 HEX  8 CPU7 VIC0      |
-|6 SID     $D400 HEX  8 CPU7 VIC0      |
-|7 CIA1    $DC00 BIN  1 CPU7 VIC0      |
-|8 CIA2    $DD00 BIN  1 CPU7 VIC0      |
-|9 KERNAL  $E000 ASM    CPU7 VIC0      |
+|0 ZP     $0000 HEX  8 CPU7 VIC0       |
+|1 SCREEN $0400 SCR 32 CPU7 VIC0       |
+|2 BASIC  $0801 ASM    CPU7 VIC0       |
+|3 BASROM $A000 ASM    CPU7 VIC0       |
+|4 HIRAM  $C000 ASM    CPU7 VIC0       |
+|5 VIC    $D000 HEX  8 CPU7 VIC0       |
+|6 SID    $D400 HEX  8 CPU7 VIC0       |
+|7 CIA1   $DC00 BIN  1 CPU7 VIC0       |
+|8 CIA2   $DD00 BIN  1 CPU7 VIC0       |
+|9 KERNAL $E000 ASM    CPU7 VIC0       |
 |                                      |
 |0-9/RET Jmp  S Set  L Label  DEL Reset|
 +--------------------------------------+

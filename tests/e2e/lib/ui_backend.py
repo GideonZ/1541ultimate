@@ -44,6 +44,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import api as api_lib
 import interactions
 import machine as machine_lib
 import pacing
@@ -79,7 +80,8 @@ UI_STORE = "User Interface Settings"
 UI_ITEM = "Interface Type"
 OVERLAY_MODE = "Overlay on HDMI"
 
-INPUT_MAX_EVENTS = 60  # software/api/route_input.cc rejects a larger batch with HTTP 400.
+# How a run of events is split into requests: see api.input_batches, which
+# applies both of the device's limits, the event count and the body size.
 # How fast this facade drives the UI is not decided here; see tests/lib/pacing.py.
 POLL_INTERVAL_SECONDS = pacing.POLL_INTERVAL_SECONDS
 SETTLE_TIMEOUT_SECONDS = pacing.SETTLE_TIMEOUT_SECONDS
@@ -437,6 +439,17 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "CBM_B": ["commodore", "b"],
     "CBM_1": ["commodore", "1"],
     "CBM_9": ["commodore", "9"],
+    # The monitor's reset shortcut, and the code the shortcut used to have.
+    # Both resolve through Keyboard_C64's keymap_control
+    # (software/io/c64/keyboard_c64.cc), which the REST menu route reads with
+    # matrixToKeyCode: C=+R gives KEY_CTRL_R and C=+X gives $18, which is now
+    # bound to nothing.
+    "CBM_R": ["commodore", "r"],
+    "CBM_X": ["commodore", "x"],
+    # C=+I swaps the interface between the freeze menu and the HDMI overlay.
+    # Unlike C=+R it is not the monitor's alone: the file browser and the
+    # settings menu answer it too.
+    "CBM_I": ["commodore", "i"],
 }
 
 # A letter key alone types uppercase in the firmware's default character set;
@@ -1280,8 +1293,7 @@ class RestBackend(Backend):
 
     # -- input --
     def _post_events(self, events: List[dict]) -> None:
-        for start in range(0, len(events), INPUT_MAX_EVENTS):
-            batch = events[start:start + INPUT_MAX_EVENTS]
+        for batch in api_lib.input_batches(events):
             status, body = self._request("POST", INPUT_PATH, payload={"events": batch})
             if status != 200:
                 raise Failure(f"machine:input failed with HTTP {status}: {body[:160]!r}")
@@ -1308,11 +1320,12 @@ class RestBackend(Backend):
         if change_timeout is None:
             change_timeout = pacing.KEY_CHANGE_TIMEOUT_SECONDS
         started = time.monotonic()
-        self.last_key_changed = wait_screen_changes(
+        self.last_key_changed, body = wait_screen_changes(
             self._menu_screen_body, before, timeout=change_timeout,
             min_samples=pacing.KEY_CHANGE_MIN_SAMPLES,
             hard_timeout=SETTLE_TIMEOUT_SECONDS)
-        wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
+        _, body = wait_screen_settled(self._menu_screen_body,
+                                      timeout=SETTLE_TIMEOUT_SECONDS, known=body)
         # A batch is still draining through the matrix after the screen has
         # gone quiet once: a gap between two of its keystrokes looks exactly
         # like the end of it. Give the rest of the batch the time it needs to
@@ -1320,8 +1333,17 @@ class RestBackend(Backend):
         remaining = min_drain - (time.monotonic() - started)
         if remaining > 0:
             time.sleep(remaining)
-            wait_screen_settled(self._menu_screen_body, timeout=SETTLE_TIMEOUT_SECONDS)
-        return self.capture()
+            _, body = wait_screen_settled(self._menu_screen_body,
+                                          timeout=SETTLE_TIMEOUT_SECONDS)
+        # The screen the settle stopped on is the screen this returns. Reading
+        # it again would cost a further round trip to be told the same thing,
+        # and the settle has just proved it is not changing. A menu that closed
+        # under the caller leaves nothing to decode, which capture() reports as
+        # the failure it is.
+        if body is None:
+            return self.capture()
+        self._learn_cursor_colour(body, None)
+        return self._decode(body)
 
     def send_combo(self, matrix_keys: Sequence[str]) -> Snapshot:
         before = self._menu_screen_body()
@@ -1443,6 +1465,22 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "CBM_B": b"\x1bb",
     "CBM_1": b"\x1b1",
     "CBM_9": b"\x1b9",
+    # One keystroke, the same as on a USB keyboard: Ctrl+R is the byte $12,
+    # which keyboard_vt100.cc getch() maps to KEY_CTRL_R. It does not collide
+    # with the cursor, because a terminal's down arrow arrives as ESC [ B and
+    # is decoded separately; a bare $12 only comes from someone pressing
+    # Ctrl+R.
+    "CBM_R": b"\x12",
+    # C=+X used to be the reset shortcut and its code, $18, is plain ASCII, so
+    # the VT100 driver passes it through unchanged (getch(), e_esc_idle case).
+    # No monitor handler claims it now.
+    "CBM_X": b"\x18",
+    # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
+    "CBM_I": b"\x09",
+    # ESC is ESC followed by a byte the driver does not decode, which its
+    # e_esc_escape default returns as KEY_ESCAPE, dropping the second byte.
+    # 'x' is such a byte and stays one: CBM_R above ends in $12 rather than
+    # the letter 'r', so no letter is claimed by that case.
     "ESC": b"\x1bx",
     "ENTER": b"\r",
     # DEL and BACKSPACE are the same physical key (KEY_ALIASES maps both to

@@ -1682,7 +1682,12 @@ def every_transport_writes_to_the_interaction_log() -> str:
         with interaction_log(directory) as path:
             api = UltimateApi(double.target(), timeout=5.0)
             api.machine.readmem(0xD012, 1)
-            api.machine.reset(wait=False)
+            # force=True, because this case is about the transport recording a
+            # request rather than about when a reset is worth making. The
+            # runner exports U64_DEVICE_RESET between suites, which seeds a
+            # fresh client as already reset, and reset() then sends nothing at
+            # all for the log to carry.
+            api.machine.reset(wait=False, force=True)
             try:
                 ftp_lib.connect(double.target())
             except Exception:  # noqa: BLE001 - the double may serve no FTP

@@ -67,7 +67,16 @@ SIGNATURE_ADDRESS = 0xC000
 # "Could not obtain lock of subsystem" (software/infra/subsys.h). Transient by
 # definition, so a read that meets it waits and asks again.
 HTTP_LOCKED = 423
-LOCK_RETRY_SECONDS = 5.0
+# How long a read waits out the lock before calling it a failure.
+#
+# 5s is enough for a device that is its own computer and is not enough for a
+# cartridge. Measured on u2@c64u by polling `machine:readmem $C000` from the
+# moment the context menu's Run was invoked: the read answered 423 for 7.7s and
+# then returned normally.
+#
+# A budget that is not reached costs nothing, because the loop returns on the
+# first HTTP 200, so an Ultimate 64 does not pay for this.
+LOCK_RETRY_SECONDS = 20.0
 SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
@@ -434,8 +443,17 @@ class Machine:
                 # Shift+F7 is F8, the full UI-exit command. RUN/STOP may only
                 # hide a nested config/search stack, which then reappears when
                 # this independently selected suite opens the menu.
+                #
+                # Over Telnet that exit is not available at all. F8 closes the
+                # remote session itself and the socket breaks on the next
+                # keypress, wherever it is pressed and not only at the plain
+                # root the check above covers: arriving here with a context
+                # menu still open was enough to kill the session before this
+                # loop had read the screen a second time. Telnet peels one
+                # layer at a time with Back instead, which the root check
+                # above then stops, and the session it has to keep survives.
                 try:
-                    self.browser.press("F8")
+                    self.browser.press("RUNSTOP" if telnet else "F8")
                 except Failure:
                     return
         try:

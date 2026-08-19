@@ -1,6 +1,7 @@
 #ifndef TESTS_HOST_TEST_HOST_TEST_H
 #define TESTS_HOST_TEST_HOST_TEST_H
 
+#include <cstdio>
 #include <exception>
 #include <sstream>
 #include <stdexcept>
@@ -51,6 +52,7 @@ inline void record_failure(const std::string& message, bool fatal)
 		(*current_test_failures())++;
 	}
 	total_failures()++;
+	fprintf(stderr, "FAIL: %s\n", message.c_str());
 	if (fatal) {
 		throw TestFailure(message);
 	}

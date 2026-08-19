@@ -166,7 +166,14 @@ static const TickType_t REST_KEYBOARD_TAP_SETUP_TICKS = 0;
 static const TickType_t REST_KEYBOARD_TAP_HOLD_TICKS = (pdMS_TO_TICKS(60) > 0) ? pdMS_TO_TICKS(60) : 1;
 static const TickType_t REST_KEYBOARD_TAP_RELEASE_TICKS = 0;
 static const TickType_t REST_KEYBOARD_TAP_GAP_TICKS = (pdMS_TO_TICKS(40) > 0) ? pdMS_TO_TICKS(40) : 1;
-static const uint8_t REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS = 3;
+// How long a queued tap holds its keys down, in ticks of the 20ms REST input
+// timer (keyboard_usb.cc REST_INPUT_TIMER_TICKS). The C64 KERNAL scans the
+// keyboard once per video frame, so two ticks put the key in front of at least
+// two scans, and the one-tick gap that follows (REST_TAP_GAP_TICKS) puts the
+// release in front of at least one. Together they set the rate at which
+// batched keys cross the matrix: 3+2 ticks measured 100ms a key, 2+1 measured
+// 60.7ms a key with nothing lost. See tests/e2e/doc/key-injection-rate.md.
+static const uint8_t REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS = 2;
 static const int ROUTE_INPUT_MENU_MAX_PENDING_REPEAT_KEYS = 2;
 static const TickType_t ROUTE_INPUT_MENU_REPEAT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO_TICKS(20) : 1;
 static SemaphoreHandle_t rest_input_mutex = NULL;
