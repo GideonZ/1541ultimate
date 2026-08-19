@@ -7635,6 +7635,39 @@ static int test_restricted_backend_guards_platform_features(void)
     return 0;
 }
 
+struct FakeObservedCpuMemoryBackend : public FakeRestrictedMemoryBackend
+{
+    virtual bool live_cpu_port_known(void) const { return true; }
+    virtual uint8_t get_live_cpu_port(void) { return 0x07; }
+    virtual bool supports_vic_bank(void) const { return true; }
+    virtual uint8_t get_live_vic_bank(void) { return 0; }
+};
+
+static int test_observed_cpu_port_is_shown_without_a_selectable_view_bank(void)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeObservedCpuMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard kb(keys, sizeof(keys) / sizeof(keys[0]));
+    char status[39];
+
+    ui.screen = &screen;
+    ui.keyboard = &kb;
+    monitor_reset_saved_state();
+
+    BackendMachineMonitor mon(&ui, &backend);
+    mon.init(&screen, &kb);
+    screen.get_slice(1, 22, 38, status);
+    if (expect(strstr(status, "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000") == status,
+               "An observed live CPU port must be shown when the view bank cannot be selected.")) return 1;
+    if (expect(backend.set_monitor_cpu_port_calls == 0,
+               "Showing the observed CPU port must not select a view bank.")) return 1;
+    mon.deinit();
+    monitor_reset_saved_state();
+    return 0;
+}
+
 // Bug 1: invalid mnemonic text must be rejected before it mutates the opcode
 // picker's edit state. Valid prefixes/mnemonics are accepted; anything that is
 // not a prefix of (or an exact) supported mnemonic is refused without touching
@@ -9613,6 +9646,7 @@ int main()
     if (test_warning_popups_preserve_status_row()) return 1;
     if (test_asm_follow_and_return_navigation()) return 1;
     if (test_restricted_backend_guards_platform_features()) return 1;
+    if (test_observed_cpu_port_is_shown_without_a_selectable_view_bank()) return 1;
     if (test_back_closes_help_without_leaving_the_monitor()) return 1;
     if (test_back_leaves_one_layer_at_a_time()) return 1;
     if (test_back_in_number_popup_and_expression()) return 1;

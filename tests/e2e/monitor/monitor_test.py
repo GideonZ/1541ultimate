@@ -962,7 +962,7 @@ def run_bookmark_test(session: MonitorSession) -> None:
     screen = session.send_key("CTRL_B")
     screen.find_line_containing("BOOKMARKS")
     assert_line_contains_all(screen, ("1 SCREEN", "$C123", "HEX 16"))
-    screen.find_line_containing("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")
+    screen.find_line_containing("0-9/RET Jmp  S Set  L Label  DEL Reset")
 
     screen = session.send_key("DOWN")
     screen = session.send_char("L")

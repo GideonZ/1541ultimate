@@ -4309,8 +4309,12 @@ void MachineMonitor :: draw_status()
     if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
         strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
     } else if (backend && !backend->supports_cpu_banking()) {
-        sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
-                monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        if (backend->live_cpu_port_known()) {
+            monitor_format_status_line(line, backend->get_live_cpu_port(), current_vic_bank);
+        } else {
+            sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
+                    monitor_vic_bank_bases[current_vic_bank & 0x03]);
+        }
     } else if (backend && !backend->supports_vic_bank()) {
         sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
     } else {
