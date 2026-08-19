@@ -45,8 +45,13 @@ any probe or stream reports `FAIL`.
 `usb-keyboard-repeat` uses a Raspberry Pi Pico 2 W as a real USB boot keyboard,
 controlled over the local Wi-Fi network. It proves PR #796's `SET_IDLE(25)` /
 `GET_IDLE` negotiation (25 HID units = 100 ms), normal held-key repeat, a lost
-immediate release, and complete report silence. It tests the Ultimate menu,
-not the C64 matrix. Stress is about two minutes; soak is twelve hours.
+immediate release, and complete report silence -- both against a short tap and
+against a hold long enough that genuine repeats are already in flight when the
+release is lost. Detection reads the selected list row's exact number off the
+screen and compares it against a baseline calibrated on the live device, not a
+fixed guess, so it can tell one extra keystroke from several. It tests the
+Ultimate menu, not the C64 matrix. Stress is about two minutes; soak is twelve
+hours. Details: [`doc/usb-keyboard-repeat-pico.md`](doc/usb-keyboard-repeat-pico.md).
 
 Put the Pico in BOOTSEL mode (hold BOOTSEL while connecting USB), then provision
 it from the Linux test host. The setup command flashes **only the Raspberry Pi

@@ -108,10 +108,14 @@ tests/soak/io/usb/usb_keyboard_repeat_soak_test.py -H u64 --profile soak
 
 The root browser of the Ultimate menu holds six entries, so a held key reaches
 its end in a fraction of a second and further presses stop moving the
-selection. Before the checks run, the test creates a directory of 60 files on
-the volatile RAM disk over FTP and navigates into it, which gives a list deep
-enough that a held key never reaches the end. Nothing is written to flash or to
-attached storage, and the directory is removed on exit.
+selection. Before the checks run, the test creates a directory of 200 files
+named `row000.txt` .. `row199.txt` on the volatile RAM disk over FTP and
+navigates into it. The list is deep enough that even the longest mid-repeat
+hold below cannot reach either end, and a `recentre_if_needed` step keeps the
+live selection between rows 30 and 170 throughout the run so a real menu
+boundary clamp is never mistaken for the repeat bound failing to move the
+selection. Nothing is written to flash or to attached storage, and the
+directory is removed on exit.
 
 That navigation is done with menu keys injected over REST
 (`machine:input`), which reach the same on-screen menu as the USB keyboard.
@@ -119,31 +123,100 @@ The Telnet remote menu is a separate 60-column user interface instance and does
 not move the on-screen selection. In the on-screen menu, cursor left leaves a
 directory and `run_stop` closes the menu altogether.
 
+Because the list entries are numbered, the selected file's row number is read
+directly off the screen instead of comparing marker text: `parse_row_index`
+turns "row042.txt ..." into the integer 42, so every check gets an exact
+movement count rather than only "did the text change".
+
+## Fault design: forcing the bug, not guessing at it
+
+The fault durations and hold durations are chosen from the firmware's own
+timing, not swept blindly:
+
+- `first_delay` in `keyboard_usb.cc` (16 poll ticks) puts the first genuine
+  repeat at roughly 320 ms of real held-key time.
+- `USB_REPEAT_STALE_IDLE_PERIODS` (3) times the negotiated 100 ms `SET_IDLE`
+  period gives a 300 ms staleness cutoff: a held key whose reports go silent
+  longer than that must have its repeat bound engage.
+- Those two numbers sit only 20 ms apart. `MID_REPEAT_HOLD_DURATIONS_MS`
+  sweeps exactly that boundary (300, 310, 320, 330 ms, ...), in addition to
+  longer holds where several genuine repeats are already in flight when the
+  release is lost -- the scenario the original field bug actually reported,
+  not a fresh tap whose repeat never started.
+
+Each iteration picks one of two phases at random:
+
+- **pre-repeat**: a short tap (12-60 ms), well under the first-repeat delay.
+  The release is lost before any repeat could have fired, so exactly one
+  keystroke is the only correct outcome, checked with zero tolerance.
+- **mid-repeat**: a hold from `MID_REPEAT_HOLD_DURATIONS_MS`, long enough that
+  one or more genuine repeats have already fired by the time the release is
+  lost. What counts as "correct" here cannot be a fixed number, so it is
+  measured against this device's own calibrated baseline instead (below).
+
+Both `drop_release_once` and `silence_after_press` are used with either
+phase, and `FAULT_DURATIONS_MS` (400-1200 ms, the fixture protocol's own
+floor and ceiling) is randomised on top.
+
+## Calibrated baselines, not hand-derived constants
+
+A faulted mid-repeat hold cannot be compared against a fixed expected count,
+because how many genuine repeats a given hold duration produces depends on
+real USB polling and task-scheduling jitter that a constant would not track.
+Instead, `calibrate_repeat_counts` measures it directly on the live device
+before the soak begins, holding each duration in `MID_REPEAT_HOLD_DURATIONS_MS`
+with a normal, un-faulted release several times and recording the maximum
+repeat count observed.
+
+Two baselines are kept, because the two faults extend the "genuine" window
+differently:
+
+- `drop_release_once` keeps idle reports flowing straight through the fault,
+  so the true release reaches the firmware within about one idle period of
+  `duration_ms` regardless. Its allowed count is `hold_baseline[duration_ms] + 1`.
+- `silence_after_press` does not suppress idle reports until *after*
+  `duration_ms`, so the key was still being refreshed right up to that point
+  and stays legitimately "live" for `SILENCE_GRACE_MS` (400 ms) longer before
+  the staleness bound has to engage. Its baseline is calibrated at the longer,
+  effective duration (`duration_ms + SILENCE_GRACE_MS`) instead of at
+  `duration_ms` itself, and this is the difference an earlier version of this
+  fixture got wrong: comparing a silenced hold against the un-extended
+  baseline produced a reproducible false failure (delta 5 against an allowed
+  4, on a 560 ms hold with a 1200 ms silent fault) that a 15-trial repeat of
+  the same *genuine, unfaulted* hold showed was expected behaviour, not a
+  regression -- the accepted "one repeat decision" race applies on top of the
+  correct, extended baseline, not the nominal one.
+
+The one extra step added on top of either baseline is the single "a report
+landing mid-check can cost one repeat decision" race the firmware comments
+accept as a known, bounded cost (`keyboard_usb.cc`, `repeatIsLive`). Anything
+past that is the runaway repeat this fixture exists to catch.
+
 ## What the checks assert
 
 Before a soak begins, the test requires one keyboard HID interface, U64
 `SET_IDLE(25)` followed by `GET_IDLE(25)` (25 × 4 ms = 100 ms), an open and
 decodable menu, normal one-step navigation, genuine held-key repeat and stop,
-and both injected faults. The faults are a missing immediate release with idle
-reports still flowing, and complete report silence. Each must produce exactly
-one menu navigation action. `idle_rate != 25`, a lost Pico, or an unresponsive
-U64 is a failure, never a skip.
+both injected faults at a short pre-repeat duration, and the calibration pass
+above. `idle_rate != 25`, a lost Pico, or an unresponsive U64 is a failure,
+never a skip.
 
-Exactly one movement is the correct expectation for both faults, including the
-silent one, because the two timings do not overlap: the menu starts repeating
-after 320 ms (`first_delay` of 16 ticks in `keyboard_usb.cc`), while a stale key
-latches after three idle periods, or 300 ms
-(`USB_REPEAT_STALE_IDLE_PERIODS * 100 ms`). The key goes stale before the
-initial repeat delay expires, so no repeat is ever produced from a stale key.
+Detection does not take one before/after snapshot. The Pico executes a whole
+press/fault/release sequence synchronously before its control call returns,
+so nothing is observable mid-fault; from the moment the call returns,
+`watch_bounded` polls the settling screen and raises the instant a sample
+exceeds the allowed step count, rather than waiting for a fixed window to
+finish. That is what ends a run on the first sign of a runaway instead of
+only noticing it afterwards.
 
 Every fifth soak iteration runs a genuine held key as a positive control. It
 proves the firmware has not satisfied the fault cases by disabling auto-repeat
 altogether: a real hold must still produce more than one movement and must stop
 when the key is released.
 
-Menu reads are taken twice and must agree before a check uses them. A read that
-lands in the middle of a redraw would otherwise report the previous selection
-and fail a check the firmware passed.
+Menu reads that are expected to have settled are taken twice and must agree
+before a check uses them. A read that lands in the middle of a redraw would
+otherwise report the previous selection and fail a check the firmware passed.
 
 The runner uses `try/finally` to request `release_all`, verify the key state,
 and close the U64 menu. Preserve its output and the printed seed when reporting
