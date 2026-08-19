@@ -35,6 +35,9 @@ from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parents[1] / "lib"))
+
+from report import suite_fail, suite_ok  # noqa: E402
 
 import mcm6502 as ORC  # noqa: E402
 import mcm_rest as R  # noqa: E402
@@ -1021,4 +1024,9 @@ class FinalTeardownTest(unittest.TestCase):
 
 if __name__ == "__main__":
     # The runner may pass device options that these host-side checks ignore.
-    unittest.main(argv=[sys.argv[0]], verbosity=2)
+    result = unittest.main(argv=[sys.argv[0]], verbosity=2, exit=False)
+    if result.result.wasSuccessful():
+        suite_ok("machine-code-monitor-harness")
+        raise SystemExit(0)
+    suite_fail("machine-code-monitor-harness", "host checks failed")
+    raise SystemExit(1)

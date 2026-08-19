@@ -2062,8 +2062,7 @@ def make_backend(
         return TelnetBackend(targets.device_of(telnet_host or host), telnet_port,
                              password, timeout, width=telnet_width, height=telnet_height)
     if mode in _MODE_INTERFACE_TYPE:
-        return RestBackend(host, password, timeout,
-                           interface_type=_MODE_INTERFACE_TYPE[mode])
+        return RestBackend(host, password, timeout, interface_type=_MODE_INTERFACE_TYPE[mode])
     raise Failure(f"Unknown mode {mode!r}; expected one of {MODES}")
 
 

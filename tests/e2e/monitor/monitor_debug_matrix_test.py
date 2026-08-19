@@ -42,6 +42,8 @@ import monitor_debug_test as dbg  # noqa: E402
 import mcm_monitor_compat as mt  # noqa: E402
 import matrix_run_ledger as RUNLEDGER  # noqa: E402
 import overlay_lifecycle  # noqa: E402
+sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
+from report import suite_fail, suite_ok  # noqa: E402
 
 
 def machine_host(args: argparse.Namespace) -> str:
@@ -4357,4 +4359,8 @@ if __name__ == "__main__":
         raise
     finally:
         _run_final_teardown()
+    if _exit_code:
+        suite_fail("machine-code-monitor-matrix", "matrix scenario failed")
+    else:
+        suite_ok("machine-code-monitor-matrix")
     raise SystemExit(_exit_code)
