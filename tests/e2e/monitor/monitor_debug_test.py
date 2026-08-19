@@ -3738,6 +3738,11 @@ def main() -> int:
     mt.TestConfig.failures = []
     mt.TestConfig.skipped = []
 
+    if args.target == "u2":
+        print("[skip] the U2+L remote terminal does not deliver printable "
+              "monitor edit keys")
+        return 0
+
     rest_host = args.rest_host or args.host
     global SIGNATURE_REST_HOST
     SIGNATURE_REST_HOST = rest_host

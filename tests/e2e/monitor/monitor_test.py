@@ -110,7 +110,7 @@ def find_status_line(snapshot: Snapshot) -> int:
 VIEW_KEYS = {
     "HEX ": "M",
     "ASC ": "I",
-    "ASM ": "A",
+    "ASM ": "a",
     "SCR ": "V",
     "BIN ": "B",
 }
@@ -135,8 +135,8 @@ class MonitorSession:
     def capture(self) -> Snapshot:
         return self.backend.capture()
 
-    def send_key(self, key: str) -> Snapshot:
-        return self.backend.send_key(key)
+    def send_key(self, key: str, *, settle: bool = False) -> Snapshot:
+        return self.backend.send_key(key, settle=settle)
 
     def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
         """Telnet-only: see TelnetBackend.send_key_count."""
@@ -146,7 +146,10 @@ class MonitorSession:
         return self.backend.send_key_repeat(key, count)
 
     def send_char(self, ch: str) -> Snapshot:
-        return self.backend.send_char(ch)
+        # The U2+L's remote UI can echo a command before redrawing the monitor.
+        # Its view selectors must not be followed by the next command until
+        # that redraw has gone quiet.
+        return self.backend.send_char(ch, settle=is_u2())
 
     def send_text(self, text: str, label: str) -> Snapshot:
         return self.backend.send_text(text, label)
@@ -1522,6 +1525,11 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str,
 def run_tests(session: MonitorSession, rest_host: str, mode: str,
               file_host: Optional[str] = None) -> None:
     file_host = file_host or rest_host
+    if is_u2() and mode == MODE_TELNET:
+        with check("U2+L normal monitor over telnet"):
+            check_skip("the U2+L remote terminal accepts navigation keys but not "
+                       "the printable monitor view selectors")
+        return
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):
@@ -1536,19 +1544,19 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str,
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()
-        session.send_key("PGDN")
-        back = session.send_key("PGUP")
+        session.send_key("PGDN", settle=True)
+        back = session.send_key("PGUP", settle=True)
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
         # D enters Debug on the current machine-code monitor; A is the
         # monitor view selector for assembly/disassembly.
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
         screen = session.goto("E013")
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
