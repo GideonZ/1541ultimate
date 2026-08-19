@@ -34,11 +34,24 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
+import interactions
+import report
+import targets
 from report import Failure, format_exception
+
+# Re-exported so a suite building its own URLs has one name for it.
+INPUT_PATH = targets.INPUT_PATH
 
 DEFAULT_TIMEOUT = 10.0
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
+
+# How much of what a request carried, or of what the device said back, is kept
+# in one action record. Enough for the firmware's own error sentence and for a
+# key batch, short enough that a suite hammering a refusing endpoint does not
+# fill the run's JSONL with copies of one body. The password inside either is
+# masked by report.py, which does it once for every record shape.
+ACTION_TEXT_CHARS = 300
 
 Response = Tuple[int, Dict[str, str], bytes]
 
@@ -56,6 +69,131 @@ def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool
     return method.upper() == "GET" or idempotent
 
 
+def message_bytes(*parts) -> int:
+    """How many bytes of protocol message these amount to.
+
+    The whole message rather than its payload: a request is its line, its
+    headers and its body, and a reader comparing what a run put on the wire
+    with what the device sent back needs both counted the same way. Header
+    lines are counted with the two bytes that end them and the two that end
+    the block, which is what actually goes out.
+    """
+    total = 0
+    for part in parts:
+        if part is None:
+            continue
+        if isinstance(part, (bytes, bytearray)):
+            total += len(part)
+        elif isinstance(part, dict):
+            total += sum(len(str(name)) + len(str(value)) + 4
+                         for name, value in part.items()) + 2
+        else:
+            total += len(str(part).encode("utf-8", "replace")) + 2
+    return total
+
+
+def as_text(value: object) -> str:
+    """A request's query or body as a string a program can read back.
+
+    JSON rather than `str(dict)`. The three readers in the observability
+    design are a person, a program and an agent, and `{'address': '00A2'}` is
+    only the first one's format: it is Python's `repr`, so single quotes,
+    `True` and `None` make it neither JSON nor anything with a parser. The
+    same dictionary as `{"address": "00A2"}` is read by `json.loads` in every
+    language, and a person reads it just as well.
+
+    Keys are sorted so two records of the same call are the same string and
+    the collapse rule in tests/lib/interactions.py sees them as one
+    interaction. A value JSON cannot carry is rendered by `str` rather than
+    losing the record.
+    """
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def record_action(method: str, path: str, started: float, attempts: int,
+                  status: Optional[int], answer: Optional[bytes],
+                  exc: Optional[BaseException] = None,
+                  params: Optional[Dict[str, object]] = None,
+                  payload: Optional[object] = None,
+                  call=None, sent: int = 0, received: int = 0) -> None:
+    """Record what a request did to the device, when it is worth keeping.
+
+    Every request in the tree passes through one of the three entry points in
+    this module, so this is where the harness's own acts reach one timeline
+    whichever call made them. A run's reads are its bulk, so the rule is exact:
+    a GET that answered 200 first time is dropped, and everything else is kept.
+    A mutation changed the device, a retry says the device was busy, and a
+    request that did not answer 200 carries the device's own words, which a
+    suite that catches Failure and carries on otherwise destroys the only copy
+    of.
+
+    `started` is the start of the attempt that produced this outcome rather
+    than of the first one, so `ms` is what the device took and not what the
+    retry pauses did.
+
+    The exhaustive log of `tests/lib/interactions.py` is written from here too,
+    and keeps what this drops: it is the same event, recorded once for a reader
+    under the rule above and once for a program under no rule at all.
+    """
+    elapsed = round((time.monotonic() - started) * 1000.0, 1)
+    if path.endswith("machine:menu_screen") and method.upper() == "GET":
+        # The one call that answers whether the overlay menu is open: 200 with
+        # a screen, 404 without one. Every record after this carries it, which
+        # is what tells a key the device ignored from a key an open menu
+        # swallowed while answering 200.
+        interactions.note_menu(True if status == 200 else
+                               False if status == 404 else None)
+        # And what it answered with, so a record written after this says what
+        # the harness was looking at. Under `--mode overlay` this is the only
+        # place a screen is read at all.
+        interactions.note_screen(answer if status == 200 else None)
+    fields = dict(
+        ms=elapsed, status=status,
+        params=as_text(params) if params else None,
+        payload=as_text(payload) if payload is not None else None,
+        retries=attempts if attempts > 1 else None,
+        fault=interactions.fault_of(exc),
+        # One connection per request: `urllib` opens and closes one for every
+        # call, so nothing here is ever reused and a reader does not have to
+        # wonder whether a fault was on a fresh connection or an old one.
+        connection="new",
+        sent=sent or None, received=received or None,
+        error=format_exception(exc) if exc is not None else None,
+        body=answer)
+    if call is not None:
+        interactions.finish(call, **fields)
+    else:
+        interactions.record("rest", f"{method.upper()} {path}", **fields)
+    if not report.JSONL_PATH:
+        return
+    retried = attempts > 1
+    answered = status == 200
+    if method.upper() == "GET" and answered and not retried:
+        return
+    fields: Dict[str, object] = {"ms": elapsed}
+    carried = params if params else payload
+    if carried:
+        fields["params"] = as_text(carried)[:ACTION_TEXT_CHARS]
+    if status is not None:
+        fields["status"] = status
+    if retried:
+        fields["retries"] = attempts
+    if not answered:
+        if exc is not None:
+            fields["error"] = format_exception(exc)[:ACTION_TEXT_CHARS]
+        elif answer:
+            fields["error"] = answer.decode("utf-8", "replace")[:ACTION_TEXT_CHARS]
+    report.action(method.upper(), path, **fields)
+
+
+def path_of(url: str) -> str:
+    """The path a URL names, for a caller that built its own URL."""
+    return urllib.parse.urlsplit(url).path or url
+
+
 def retrying_urlopen(request: "urllib.request.Request", timeout: float,
                      idempotent: bool = False):
     """urlopen under the shared retry policy, for callers not using RestClient.
@@ -67,23 +205,32 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     Returns the open response, which the caller closes; HTTPError is left to
     propagate, because an HTTP status is an answer rather than a failure.
     """
+    method = request.get_method()
+    path = path_of(request.full_url)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
+        started = time.monotonic()
         try:
-            return urllib.request.urlopen(request, timeout=timeout)
-        except urllib.error.HTTPError:
+            answer = urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            record_action(method, path, started, attempt + 1, exc.code, None, None)
             raise
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             last_exc = exc
             sent = not isinstance(exc, urllib.error.URLError)
-            if may_retry(request.get_method(), sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+            if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                 time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                 continue
+            record_action(method, path, started, attempt + 1, None, None, exc)
             break
+        # The caller closes the response and reads the body itself, so the
+        # record carries the status and not what came back.
+        record_action(method, path, started, attempt + 1, answer.status, None)
+        return answer
     raise last_exc
 
 
-def retrying_http_request(host: str, method: str, path: str, *,
+def retrying_http_request(host: "str | targets.Target", method: str, path: str, *,
                           body: Optional[bytes] = None,
                           headers: Optional[Dict[str, str]] = None,
                           timeout: float = DEFAULT_TIMEOUT,
@@ -94,27 +241,54 @@ def retrying_http_request(host: str, method: str, path: str, *,
     done as its own step: a failure there cannot have been applied, whatever the
     request carries. Returns (status, headers, payload), with an HTTP status of
     any value returned rather than raised.
+
+    `host` may be a target token, so callers that hold whatever the runner gave
+    them do not each have to resolve it; see tests/lib/targets.py.
     """
+    target = targets.resolve(host)
+    host = target.host_for(path)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
-        connection = http.client.HTTPConnection(host, timeout=timeout)
+        connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
         sent = False
+        started = time.monotonic()
         try:
             connection.connect()
             sent = True
             connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
             payload = response.read()
-            return response.status, dict(response.getheaders()), payload
+            answer = (response.status, dict(response.getheaders()), payload)
         except (OSError, http.client.HTTPException) as exc:
             last_exc = exc
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
                 time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                 continue
+            record_action(method, path, started, attempt + 1, None, None, exc)
             raise
         finally:
             connection.close()
+        record_action(method, path, started, attempt + 1, answer[0], answer[2])
+        return answer
     raise last_exc
+
+
+def url_for(host: "str | targets.Target", path: str,
+            params: Optional[Dict[str, object]] = None) -> str:
+    """The URL for `path` on `host`, from the handle alone.
+
+    One builder, because a caller that assembles its own URL is a caller that
+    addresses port 80 of whatever it was given, and the handle is the thing
+    that knows where a device actually is. The port is written only when it is
+    not the default, so a URL against an ordinary device reads with no port in
+    it.
+    """
+    target = targets.resolve(host)
+    authority = target.host_for(path)
+    if target.rest_port != targets.REST_PORT:
+        authority = f"{authority}:{target.rest_port}"
+    query = "?" + urllib.parse.urlencode(params) if params else ""
+    return f"http://{authority}{path}{query}"
 
 
 def multipart_body(field: str, filename: str, payload: bytes) -> Tuple[bytes, str]:
@@ -190,10 +364,26 @@ class RestClient:
     all.
     """
 
-    def __init__(self, host: str, password: Optional[str] = None,
+    def __init__(self, host: "str | targets.Target", password: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
-        self.host = host
+        # `host` is a target rather than a bare name: "u2@c64u" resolves to a
+        # cartridge under test and the computer it is plugged into. See
+        # tests/lib/targets.py. Everything addresses the device except
+        # keyboard injection, which the cartridge does not implement and which
+        # therefore goes to the computer.
+        #
+        # A resolved handle is accepted as well as a token, which is what lets
+        # a caller point this client at a device serving on another port
+        # without every suite changing: the suites keep passing the token they
+        # parsed from their own -H.
+        target = targets.resolve(host)
+        self.target = target
+        self.host = target.device
+        self.input_host = target.input_host
         self.password = password or ""
+        # No artefact may carry it, and the record writer is the one place that
+        # can enforce that for every shape at once. See report.mask_secret.
+        report.mask_secret(self.password)
         self.timeout = timeout
         # Requests that could have changed the device, counted. A GET does
         # not: reading memory, the menu screen or a config value leaves the
@@ -204,8 +394,7 @@ class RestClient:
         self.mutations = 0
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
-        query = "?" + urllib.parse.urlencode(params) if params else ""
-        return f"http://{self.host}{path}{query}"
+        return url_for(self.target, path, params)
 
     def request(self, method: str, path: str,
                 params: Optional[Dict[str, object]] = None,
@@ -214,7 +403,16 @@ class RestClient:
                 headers: Optional[Dict[str, str]] = None,
                 use_password: bool = True,
                 idempotent: bool = False,
-                timeout: Optional[float] = None) -> Response:
+                timeout: Optional[float] = None,
+                retries: Optional[int] = None) -> Response:
+        """One request, with the transport's retry rule applied.
+
+        `retries` is for a caller that must bound how long one call can take
+        rather than get an answer: the recorder issues its requests from a
+        loop that has to keep draining sockets, so it asks for one attempt and
+        treats a failure as an answer. Everything else takes the default,
+        which is the transport rule the rest of the harness relies on.
+        """
         if payload is not None and body is not None:
             raise Failure("request takes payload or body, not both")
 
@@ -238,21 +436,48 @@ class RestClient:
         # writing them once.
         # Retryability is decided by may_retry, the one copy of that rule.
         last_exc: Optional[BaseException] = None
-        for attempt in range(TRANSPORT_RETRIES):
+        allowed = TRANSPORT_RETRIES if retries is None else max(1, retries)
+        # What this attempt puts on the wire, which is the request line, the
+        # headers and the body. Counted before it goes, so a call that is
+        # still in flight already says how much it sent.
+        outbound = message_bytes(f"{method.upper()} {target} HTTP/1.1",
+                                 sent_headers, body)
+        for attempt in range(allowed):
+            started = time.monotonic()
+            call = interactions.begin("rest", f"{method.upper()} {path}",
+                                      params=as_text(params) if params else None,
+                                      sent=outbound, connection="new")
             try:
                 with urllib.request.urlopen(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
-                    return response.status, dict(response.headers.items()), response.read()
+                    answer = (response.status, dict(response.headers.items()),
+                              response.read())
             except urllib.error.HTTPError as exc:
-                return exc.code, dict(exc.headers.items()), exc.read()
+                answer = (exc.code, dict(exc.headers.items()), exc.read())
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
-                sent = not isinstance(exc, urllib.error.URLError)
-                if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
+                went = not isinstance(exc, urllib.error.URLError)
+                if may_retry(method, went, idempotent) and attempt + 1 < allowed:
+                    interactions.finish(call, ms=0.0,
+                                        fault=interactions.fault_of(exc),
+                                        error=format_exception(exc),
+                                        sent=outbound, connection="new")
                     time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
                     continue
+                record_action(method, path, started, attempt + 1, None, None, exc,
+                              params=params, payload=payload, call=call,
+                              sent=outbound)
                 break
+            # Outside the response, so the record's file append is not part of
+            # the time this connection holds one of the device's four slots.
+            record_action(method, path, started, attempt + 1, answer[0], answer[2],
+                          params=params, payload=payload, call=call,
+                          sent=outbound,
+                          received=message_bytes(f"HTTP/1.1 {answer[0]}",
+                                                 answer[1], answer[2]))
+            return answer
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
+
 
     # -- shorthands for the shapes suites actually use --
 

@@ -25,6 +25,12 @@ public:
     void effectuate(void) { }
 	void at_open_config(void);
 	void at_close_config(void);
+
+	// The clock is not configuration: these items are the current date and
+	// time, read from the RTC when the menu opens. Writing them to a .cfg
+	// would capture the moment the file was saved, and loading it would set
+	// the clock back to then.
+	bool save_to_cfg_file(void) { return false; }
 };
 
 class Rtc

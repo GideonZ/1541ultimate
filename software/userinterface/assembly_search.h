@@ -11,8 +11,15 @@
 #include "action.h"
 #include "network_interface.h"
 
+class BrowsableQueryResults;
+
 class AssemblySearchForm: public TreeBrowserState
 {
+    // The results object built for the last query. The results view holds it as
+    // its node but never owns it, and TreeBrowserState does not delete nodes, so
+    // the form outlives the view and frees it.
+    BrowsableQueryResults *results;
+
     void send_query(void);
 public:
     AssemblySearchForm(Browsable *node, TreeBrowser *tb, int level);
@@ -215,7 +222,13 @@ public:
             }
         }
     }
-    ~BrowsableQueryResults() { }
+    ~BrowsableQueryResults()
+    {
+        for (int i = 0; i < items.get_elements(); i++) {
+            delete items[i];
+        }
+        items.clear_list();
+    }
 
     IndexedList<Browsable *> *getSubItems(int &error)
     {

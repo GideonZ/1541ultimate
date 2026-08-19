@@ -24,12 +24,17 @@ class MountPoint
     Path *path;
     File *file;
 	FileSystemInFile *emb;
+	uint32_t last_used;   // for LRU eviction; larger is more recent
 public:
 	MountPoint(SubPath *p, File *f, FileSystemInFile *e) {
 		path = p->get_new_path();
 	    file = f;
 		emb = e;
+		last_used = 0;
 	}
+
+	void touch(uint32_t seq) { last_used = seq; }
+	uint32_t get_last_used(void) { return last_used; }
 
 	~MountPoint() {
 	    delete path;
@@ -97,7 +102,7 @@ class FileManager
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), temp_auto_cleanup_enabled(true), temp_use_cache_subfolder_enabled(true), /*used_paths(8, NULL), */observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), managed_temp_entries(16, NULL), next_temp_seq(0), mount_use_seq(0), temp_auto_cleanup_enabled(true), temp_use_cache_subfolder_enabled(true), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -196,6 +201,14 @@ public:
 
     MountPoint *add_mount_point(SubPath *path, File *, FileSystemInFile *);
     MountPoint *find_mount_point(SubPath *path, FileInfo *info);
+
+    // Mount points are a cache: entering the same image twice costs nothing.
+    // Without a bound it is also a leak, because nothing releases them until
+    // the media goes away, so browsing a collection of images accumulates one
+    // open file each. Bounded here, least recently used first.
+    uint32_t mount_use_seq;
+    bool is_mount_evictable(MountPoint *mp);
+    void evict_mount_points(void);
 
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {

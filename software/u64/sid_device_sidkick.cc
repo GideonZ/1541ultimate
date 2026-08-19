@@ -49,6 +49,12 @@ SidDeviceSidKick::SidDeviceSidKick(int socket, volatile uint8_t *base, int subty
     config = new SidDeviceSidKick :: SidKickConfig(this, name, sidkick_config);
     ConfigManager::getConfigManager()->add_custom_store(config);
     config->set_sort_order(SORT_ORDER_CFG_SIDREP + socket);
+
+    // Take the mode the device is actually in, rather than leaving the item at
+    // its default. Saving a .cfg without having opened the SID menu first would
+    // otherwise record 6581 for everyone. ArmSid reads its parameters at this
+    // same point for the same reason.
+    config->at_open_config();
 }
 
 void SidDeviceSidKick :: SetSidType(int type)
@@ -60,6 +66,8 @@ void SidDeviceSidKick :: SetSidType(int type)
     base[0x1f] = 0xFF; // enter config mode
     base[0x1e] = 0x00; // choose profile to update
 //     base[0x1d] = 0xFC; // update and afterwards leave config mode
+
+    type--; // receive 1 = 6581, 2 = 8580 => map to 0 and 1
 
     // Set sid#2 to none for now
     if (type) { // 8580
@@ -89,24 +97,32 @@ SidDeviceSidKick::~SidDeviceSidKick()
     // TODO Auto-generated destructor stub
 }
 
-int SidDeviceSidKick::SidKickConfig:: S_cfg_pdsid_type(ConfigItem *it)
+void SidDeviceSidKick::SidKickConfig :: effectuate(void)
 {
-    SidDeviceSidKick *obj = (SidDeviceSidKick *)it->store->get_hook_object();
+    ConfigItem *i = find_item(CFG_KICKSID_TYPE);
+    if (!i) {
+        return;
+    }
 
-    volatile uint8_t *base = obj->pre();
-    obj->pre_mode = C64_MODE;
+    volatile uint8_t *base = parent->pre();
+    parent->pre_mode = C64_MODE;
     C64_MODE = MODE_ULTIMAX; // force I/O range on
 
     base[0x1f] = 0xFF; // enter config mode
     base[0x1e] = 0x00; // choose profile to update
-    base[0x1d] = it->getValue() & 3;
+    base[0x1d] = i->getValue() & 3;
     base[0x1f] = 0xfd; // leave config mode
 
     wait_ms(5);
 
     // Restore C64 mode
-    C64_MODE = obj->pre_mode;
-    obj->post();
+    C64_MODE = parent->pre_mode;
+    parent->post();
+}
+
+int SidDeviceSidKick::SidKickConfig:: S_cfg_pdsid_type(ConfigItem *it)
+{
+    ((SidKickConfig *)it->store)->effectuate();
     return 0;
 }
 

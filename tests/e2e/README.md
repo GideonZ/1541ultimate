@@ -5,6 +5,51 @@ device, driven through its public interfaces. A suite may cross REST, FTP,
 Telnet, the on-device UI, C64 memory, mounted media or physical-device services
 in one scenario. These are the hardware release gate.
 
+What a run records about itself, and why each artefact is the shape it is, is
+in [doc/observability-spec.md](doc/observability-spec.md).
+
+## Watching a recorded run
+
+`./run-tests --record -o DIR <target>` writes `DIR/<slug>/video.mp4`: the
+harness's screen on the left, the device's video on the right, the device's
+audio over both. The left pane is what the harness was looking at, which under
+`overlay` and `telnet` is not what the VIC stream carries.
+
+```sh
+mpv --sub-file=runs/u64/video.srt --scale=nearest runs/u64/video.mp4
+```
+
+`--scale=nearest` keeps 40-column text sharp when the window is larger than the
+frame; a smooth scale blurs the glyphs, which is the one thing the recording is
+for. The two panes do not share a clock: the right pane advances at the output
+frame rate and the left advances when the harness read a different screen.
+
+Three ways to find a test in it, and a reader who has the report needs none of
+the others:
+
+- the chapter list in the player, one per suite run and one per failing check,
+  titled with the same identity key the report prints;
+- `grep FAIL runs/u64/video.srt`, or grep for a suite name, which gives the
+  timecodes to seek to without opening the video;
+- the `mm:ss` the report prints beside every failing check.
+
+A PDF of the report, for sending a run to somebody with no access to the
+repository or the build page, is one command and is never run in CI:
+
+```sh
+pandoc runs/index.md -o runs/index.pdf --pdf-engine=weasyprint
+```
+
+`./run-tests -o DIR` keeps the run and `python3 tools/e2e_report.py DIR` turns
+it into one Markdown document; see [tests/README.md](../README.md).
+
+The gate runs in CI from [.github/workflows/e2e.yml](../../.github/workflows/e2e.yml),
+on a self-hosted runner carrying the `e2e` label. Until a runner carries that
+label the workflow is valid and never runs, which is the correct failure: the
+file lands and the devices decide when it does anything. What such a machine
+has to provide, and how the firmware under test gets onto the devices before a
+run, is in [doc/self-hosted-runner.md](doc/self-hosted-runner.md).
+
 ## Structure
 
 Folders name the primary firmware subsystem under test, not the protocol used
@@ -18,7 +63,7 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), and the UI-state gate (`ui_state.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
@@ -30,9 +75,56 @@ The repository-root runner is the supported entry point.
 
 ```sh
 ./run-tests --list
-./run-tests -H <host> -p <password>
-./run-tests -H <host> -s <suite>
-./run-tests -H <host> -m telnet
+./run-tests <target> -p <password>
+./run-tests <target> -s <suite>
+./run-tests <target> -m telnet
+./run-tests u64 u2@c64u
+```
+
+A target is a host, or `cartridge@computer` for a cartridge under test in the
+computer that supplies its C64 keyboard and video; see
+[tests/README.md](../README.md) and [`tests/lib/targets.py`](../lib/targets.py).
+Naming several runs one child process per target, scheduled so that two targets
+sharing a machine never run at the same time. `./run-tests u64 u2@c64u c64u`
+runs all three supported machines: `u64` proceeds throughout, while `u2@c64u`
+and `c64u` take turns because both need the C64 Ultimate.
+
+## How the machines differ
+
+Suites do not test for product names. [`tests/lib/machine.py`](../lib/machine.py)
+identifies the machine once from `/v1/info` and answers questions about it along
+two separate axes.
+
+**Capability** is what a machine is. A C64 Ultimate opens its menu on a launcher
+above the file browser, reaches the task menu with `F1` rather than `F5`, needs
+two Back presses to close its menu, and reserves `W`, `A`, `S` and `D` for
+browser navigation, so a quick-seek on a name starting with one of those letters
+would move the cursor instead of seeking. Ask `machine` for the property rather
+than branching on the product.
+
+**Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
+firmware line that lags the Ultimate 64, so a check can be correct and still be
+unrunnable there. `FIXES` in the same module names each outstanding gap after
+the behaviour a machine gains from it, and lists the machines that do not have
+it yet. A check declares its dependency in one line:
+
+```python
+if ctx.machine.skip_without_fix(machine.BROWSER_REFRESH_ON_DIRECTORY_CHANGE,
+                                label):
+    return
+```
+
+The check then reports SKIP with the machine and version in the reason, for
+example `needs the browser-refresh-on-directory-change fix, which C64 Ultimate
+1.2.0 does not have`.
+
+Those names are the amendment point. When a fix is backported, delete its `FIXES`
+entry and every check tagged with it runs again; nothing else changes. To confirm
+a backport before editing the table, run the tagged checks anyway:
+
+```sh
+./run-tests c64u --assume-fix browser-refresh-on-directory-change
+./run-tests c64u --assume-fix all
 ```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
@@ -44,12 +136,15 @@ Preserve combined stdout and stderr, keeping the runner's exit status:
 
 ```sh
 set -o pipefail
-./run-tests -H <host> 2>&1 | tee "run-tests-$(date +%Y%m%d-%H%M%S).log"
+./run-tests <target> 2>&1 | tee "run-tests-$(date +%Y%m%d-%H%M%S).log"
 ```
 
 ### Device requirements
 
 - Reachable REST API, an otherwise idle device, and a current firmware build.
+- A cartridge target needs both machines reachable: the cartridge serves its
+  own REST, and the computer takes the C64 keyboard injection the cartridge
+  answers with HTTP 501.
 - Commodore ROMs installed under `C64 and Cartridge Settings`:
   `kernal.901227-03.bin`, `basic.901226-01.bin`, `characters.901225-01.bin`.
   Several suites need the C64 to reach the BASIC prompt with KERNAL interrupts
@@ -88,7 +183,10 @@ fails the run.
 7. Reuse `lib/` for shared protocol decoding or screen models instead of
    copying it. Keep support code local until a second suite needs it.
 8. State supported targets and unusual dependencies in the suite docstring.
-   Keep this file structural; do not copy per-suite CLI help into it.
+   Keep this file structural; do not copy per-suite CLI help into it. A suite
+   that needs a host Python package adds it to [`tests/requirements.txt`](../requirements.txt)
+   and to the table in [`tests/README.md`](../README.md) in the same change, so
+   a fresh checkout can run the gate without guessing.
 9. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
    the duration `SLOW` in yellow, which is a prompt to look rather than a
    failure. The whole gate is run repeatedly by people waiting for it, so a

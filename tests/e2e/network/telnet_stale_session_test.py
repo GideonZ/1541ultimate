@@ -37,6 +37,8 @@ from pathlib import Path
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
+import rest as rest_lib
+import targets
 from report import detail, suite_fail, suite_ok, warn
 
 SUITE = "telnet_stale_session_test"
@@ -63,7 +65,7 @@ def reset_machine(host: str) -> None:
     for attempt in range(12):
         try:
             request = urllib.request.Request(
-                f"http://{host}/v1/machine:menu_screen", method="GET"
+                rest_lib.url_for(host, "/v1/machine:menu_screen"), method="GET"
             )
             with urllib.request.urlopen(request, timeout=5.0):
                 pass
@@ -78,7 +80,7 @@ def reset_machine(host: str) -> None:
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:input",
+            rest_lib.url_for(host, "/v1/machine:input"),
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -88,14 +90,15 @@ def reset_machine(host: str) -> None:
         time.sleep(0.25)
     else:
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:menu_button", data=b"", method="PUT"
+            rest_lib.url_for(host, "/v1/machine:menu_button"), data=b"",
+            method="PUT"
         )
         with urllib.request.urlopen(request, timeout=5.0):
             pass
         time.sleep(0.5)
 
     request = urllib.request.Request(
-        f"http://{host}/v1/machine:reset", data=b"", method="PUT"
+        rest_lib.url_for(host, "/v1/machine:reset"), data=b"", method="PUT"
     )
     with urllib.request.urlopen(request, timeout=5.0):
         pass
@@ -103,11 +106,18 @@ def reset_machine(host: str) -> None:
 
 
 def _connect(host: str, *, source_ip: str | None = None, timeout: float = 4.0) -> socket.socket:
+    """One Telnet session to the device under test.
+
+    `host` is whatever the runner passed, which for a cartridge is the token
+    `u2@c64u`. Telnet is served by the device under test, so the token is
+    resolved here rather than handed to connect(), which would try to resolve
+    it as a name. See tests/lib/targets.py.
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(timeout)
     if source_ip:
         s.bind((source_ip, 0))
-    s.connect((host, TELNET_PORT))
+    s.connect((targets.device_of(host), TELNET_PORT))
     return s
 
 
@@ -311,7 +321,7 @@ def main() -> int:
 
     # Preflight 2: work out which interface and address the vanishing peer should use.
     try:
-        device_ip = socket.gethostbyname(args.host)
+        device_ip = socket.gethostbyname(targets.device_of(args.host))
     except OSError as exc:
         suite_fail(SUITE, f"cannot resolve device host {args.host!r}: {exc}")
         return 2

@@ -1,7 +1,7 @@
 
 APP_SPACE = python3 tools/app_space.py
 
-.PHONY: all app_space app_space_test
+.PHONY: all app_space app_space_test observability_test host_tests
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -11,6 +11,19 @@ app_space:
 
 app_space_test:
 	@python3 tools/test_app_space.py
+
+# The observability harness: the report generator, the console capture, the
+# device double and everything else that watches a gate run. Needs no device
+# and no network beyond loopback, and is the same module the gate runs as its
+# `observability` suite.
+observability_test:
+	@python3 tests/lib/observability_test.py
+
+# Unit tests that run on the build host rather than on the device. Kept out of
+# the firmware targets deliberately: those build with a cross compiler, and
+# these need a host g++.
+host_tests:
+	@$(MAKE) -C target/pc/linux/configiotest test
 
 esp32: esp32_raw_u64 esp32_raw_c3 esp32_u64ctrl
 

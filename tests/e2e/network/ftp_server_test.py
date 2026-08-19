@@ -18,10 +18,15 @@ import os
 import sys
 from pathlib import Path
 
-# tests/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
+# the one REST helper that reads a device's product and firmware.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 import ftp as ftp_lib
+import machine as machine_lib
+import targets
+import ui_backend
 from report import (
     Failure, check, check_count, detail, format_exception, section, suite_fail, suite_ok)
 
@@ -51,6 +56,14 @@ class Server:
         self.host = host
         self.password = password
         self.timeout = timeout
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine serves this FTP, for the checks that need a fix."""
+        return machine_lib.identify(
+            targets.device_of(self.host),
+            lambda: ui_backend.fetch_product(self.host, self.password or None,
+                                             self.timeout))
 
     def connect(self) -> ftplib.FTP:
         return ftp_lib.connect(self.host, self.password, self.timeout, TEST_DIR)
@@ -87,6 +100,19 @@ def scenario_names_round_trip(server: Server) -> None:
             server.remove(client, server.listed(client, "ftpsrv_ctl_"))
             if ftp_lib.names(client, prefix="ftpsrv_ctl_"):
                 raise Failure("the entry survived DELE")
+
+        long_name_checks = [
+            f"a {len(regression)}-character name is listed unchanged",
+            "SIZE answers for the long name the listing reported",
+            "that file is removed by the name the listing reported",
+        ]
+        if any(server.machine.skip_without_fix(
+                machine_lib.FTP_LISTING_FULL_LENGTH, label)
+               for label in long_name_checks):
+            # The three below all read the name back from the listing, so a
+            # listing that truncates fails the first and makes the other two
+            # meaningless. Skipped together rather than one at a time.
+            return
 
         with check(f"a {len(regression)}-character name is listed unchanged"):
             server.store(client, regression)

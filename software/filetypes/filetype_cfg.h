@@ -7,8 +7,6 @@
 class FileTypeCfg : public FileType
 {
 	BrowsableDirEntry *node;
-    static SubsysResultCode_e execute_st(SubsysCommand *cmd);
-    SubsysResultCode_e execute(SubsysCommand *cmd);
 public:
     FileTypeCfg(BrowsableDirEntry *node);
     virtual ~FileTypeCfg();

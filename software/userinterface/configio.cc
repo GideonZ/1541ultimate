@@ -122,7 +122,7 @@ void ConfigIO :: S_write_to_file(File *f)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        if (s->get_page()) { // If the store doesn't have a flash page, we won't write it out either
+        if (s->save_to_cfg_file()) {
             S_write_store_to_file(s, f);
         }
     }
@@ -230,7 +230,8 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
     char line[128];
     uint32_t tr;
     bool allOK = true;
-    ConfigStore *store;
+    ConfigStore *store = NULL;
+    bool in_unknown_store = false;
     ConfigManager *cm = ConfigManager :: getConfigManager();
     int linenr = 0;
 
@@ -255,12 +256,19 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
             continue;
         }
         if (line[0] == '[') {
+            store = NULL;
+            in_unknown_store = false;
             for(int i=1;i<128;i++) {
                 if (line[i] == ']') {
                     line[i] = 0;
                     store = cm->find_store(line + 1);
                     if (!store) {
-                        log->format("Line %d: Store name '%s' not found.\n", linenr, line + 1);
+                        // A .cfg saved on a machine with hardware this one does
+                        // not have names stores that are missing here. Warn and
+                        // skip the section rather than failing the whole file.
+                        in_unknown_store = true;
+                        printf("Config: no store named '%s' on this machine; its settings are ignored.\n", line + 1);
+                        log->format("Line %d: Store name '%s' not found; section ignored.\n", linenr, line + 1);
                     }
                     break;
                 }
@@ -270,7 +278,14 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
         // trim line? well for now let's assume correct spacing
         if (strlen(line) > 0) {
             if (store) {
-                allOK &= S_read_store_element(store, line, linenr, log);
+                t_cfg_line_result result = S_read_store_element(store, line, linenr, log);
+                if (result == CFG_LINE_MALFORMED) {
+                    allOK = false;
+                }
+            } else if (in_unknown_store) {
+                // Already warned about the section; name the item too, so the
+                // log says exactly what was dropped.
+                printf("Config: '%s' ignored, its store is not on this machine.\n", line);
             } else {
                 log->format("Line %d: Not inside valid store.\n", linenr);
                 allOK = false;
@@ -280,7 +295,40 @@ bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
     return allOK;
 }
 
-bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
+// A .cfg written by this firmware never puts spaces around '=', so a file that
+// has been round-tripped is unaffected by any of this. A hand-edited one is
+// another matter, and enum labels make it worse: several are padded so the menu
+// can right align them ("  30", " ~45"), which means writing the obvious thing
+// by hand produces a value that used to be rejected outright.
+static const char *skip_leading_space(const char *s)
+{
+    while ((*s == ' ') || (*s == '\t')) {
+        s++;
+    }
+    return s;
+}
+
+static int length_without_trailing_space(const char *s)
+{
+    int n = (int)strlen(s);
+    while ((n > 0) && ((s[n - 1] == ' ') || (s[n - 1] == '\t'))) {
+        n--;
+    }
+    return n;
+}
+
+// Compares what is between the spaces, so " ~45" and "~45" are the same choice
+// while "12 kHz" keeps the space that belongs to it.
+static bool equal_ignoring_outer_space(const char *a, const char *b)
+{
+    a = skip_leading_space(a);
+    b = skip_leading_space(b);
+    int la = length_without_trailing_space(a);
+    int lb = length_without_trailing_space(b);
+    return (la == lb) && (strncasecmp(a, b, la) == 0);
+}
+
+t_cfg_line_result ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
     char itemname[40];
     const char *valuestr = 0;
@@ -295,19 +343,29 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
         }
         itemname[i] = line[i];
     }
-    if (strlen(itemname) == 0) {
+    // No config item is defined with padding around its name, so trimming the
+    // name can only help: it makes "Item = value" find the same item as
+    // "Item=value".
+    itemname[length_without_trailing_space(itemname)] = 0;
+    const char *name = skip_leading_space(itemname);
+    if (strlen(name) == 0) {
         log->format("Line %d: No item name.\n", linenr);
-        return false;
+        return CFG_LINE_MALFORMED;
     }
     if (!valuestr) {
-        log->format("Line %d: No value given for item '%s'.\n", linenr, itemname);
-        return false;
+        log->format("Line %d: No value given for item '%s'.\n", linenr, name);
+        return CFG_LINE_MALFORMED;
     }
     // now look for the store element with the itemname
-    ConfigItem *item = st->find_item(itemname);
+    ConfigItem *item = st->find_item(name);
     if (!item) {
-        log->format("Line %d: Item '%s' not found in this store [%s].\n", linenr, itemname, st->store_name.c_str());
-        return false;
+        // Not an error: a .cfg from a machine with other hardware, or from
+        // another firmware version, legitimately names items this one lacks.
+        // printf goes to the syslog when one is configured.
+        printf("Config: [%s] has no item '%s' (value '%s'); ignored.\n",
+               st->store_name.c_str(), name, valuestr);
+        log->format("Line %d: Item '%s' not found in this store [%s]; ignored.\n", linenr, name, st->store_name.c_str());
+        return CFG_LINE_UNKNOWN;
     }
 
     // now we know what item should be configured, and how to 'read' the string
@@ -321,6 +379,10 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
             st->staleFlash = true;
         }
     } else if ((item->definition->type == CFG_TYPE_STRING) || (item->definition->type == CFG_TYPE_STRFUNC) || (item->definition->type == CFG_TYPE_STRPASS)) {
+        // Taken exactly as written, unlike an enum choice: a space in a string
+        // value can be deliberate, and a password is a string. Trimming here
+        // would silently change data rather than accept a different spelling of
+        // the same choice.
         if (strncmp(item->string, valuestr, item->definition->max) != 0) {
             strncpy(item->string, valuestr, item->definition->max);
             st->staleEffect = true;
@@ -329,7 +391,7 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
     } else if (item->definition->type == CFG_TYPE_ENUM) {
         // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings
         for(int n = item->definition->min; n <= item->definition->max; n++) {
-            if (strcasecmp(valuestr, item->definition->items[n]) == 0) {
+            if (equal_ignoring_outer_space(valuestr, item->definition->items[n])) {
                 if (n != item->value) {
                     item->value = n;
                     st->staleEffect = true;
@@ -341,10 +403,82 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int lin
         }
         if (!found) {
             log->format("Line %d: Value '%s' is not a valid choice for item %s\n", linenr, valuestr, item->definition->item_text);
-            return false;
+            return CFG_LINE_MALFORMED;
         }
     }
-    return true;
+    return CFG_LINE_APPLIED;
+}
+
+SubsysResultCode_e ConfigIO :: S_load_and_effectuate(SubsysCommand *cmd)
+{
+	File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    StreamTextLog log(8192);
+
+    if(file) {
+        bool ok = ConfigIO :: S_read_from_file(file, &log);
+        fm->fclose(file);
+        if (cmd->user_interface && !cmd->mode) {  // set mode to 1 when popups should not be shown
+            if (ok) {
+                cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
+            } else {
+                cmd->user_interface->popup("There were errors.", BUTTON_OK);
+                cmd->user_interface->run_editor(log.getText(), log.getLength());
+            }
+        }
+        ConfigStore *s;
+        ConfigManager *cm = ConfigManager :: getConfigManager();
+        IndexedList<ConfigStore*> *stores = cm->getStores();
+        for(int n = 0; n < stores->get_elements();n++) {
+            s = (*stores)[n];
+            if (s->need_effectuate()) {
+                printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
+                s->effectuate();
+                s->set_effectuated();
+            } else {
+                printf("Store '%s' is clean after loading.\n", s->get_store_name());
+            }
+        }
+    } else {
+        if (!cmd->mode) { // set mode to 1 when popups should not be shown
+            printf("Error opening file.\n");
+            if (cmd->user_interface) {
+                cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+            }
+        }
+        return SSRET_CANNOT_OPEN_FILE;
+    }
+    return SSRET_OK;
+}
+
+SubsysResultCode_e ConfigIO :: S_load_associated_config(SubsysCommand *cmd)
+{
+    int size = 4 + cmd->filename.length();
+    char *cfg_name = new char[size];
+    strncpy(cfg_name, cmd->filename.c_str(), size);
+    set_extension(cfg_name, ".cfg", size);
+
+    SubsysCommand *temp = new SubsysCommand(cmd->user_interface, 0, 0, 1, cmd->path.c_str(), cfg_name);
+    SubsysResultCode_e res = S_load_and_effectuate(temp);
+    delete temp;
+    delete[] cfg_name;
+    return res;
+}
+
+SubsysResultCode_e ConfigIO :: S_load_associated_config_usr(SubsysCommand *cmd)
+{
+    int size = 4 + cmd->filename.length();
+    char *cfg_name = new char[size];
+    strncpy(cfg_name, cmd->filename.c_str(), size);
+    set_extension(cfg_name, ".usr", size);
+
+    SubsysCommand *temp = new SubsysCommand(cmd->user_interface, 0, 0, 1, cmd->path.c_str(), cfg_name);
+    SubsysResultCode_e res = S_load_and_effectuate(temp);
+    delete temp;
+    delete[] cfg_name;
+    return res;
 }
 
 ConfigIO config_io;

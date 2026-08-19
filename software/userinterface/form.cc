@@ -21,9 +21,12 @@
 
 
 FormUI :: FormUI(UserInterface *ui, int size_x, int size_y, const char *title, JSON_Object *fields)
-    : form(title, fields), size_x(size_x), size_y(size_y), TreeBrowser(ui, root)
+    : form(title, fields), size_x(size_x), size_y(size_y), TreeBrowser(ui, &form)
 {
-    state = new FormUIState(&form, this, 0);
+    // &form is passed to the base before form is constructed, which is fine:
+    // the base only stores the pointer. By the time anything dereferences it,
+    // here or in ~TreeBrowserState, the member exists.
+    replace_root_state(new FormUIState(&form, this, 0));
     state->reload();
 }
 

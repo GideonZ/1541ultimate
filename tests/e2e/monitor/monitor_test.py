@@ -21,7 +21,9 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import machine as machine_lib
 import rest as rest_lib
+import targets
 from api import UltimateApi
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
@@ -69,16 +71,6 @@ TARGET = "u64"
 
 def is_u2() -> bool:
     return TARGET == "u2"
-
-
-# In a split session the device running the monitor cannot accept REST keyboard
-# input, so keystrokes go to the machine it is plugged into. Everything else
-# (menus, configs, memory, files) stays on the device under test.
-MACHINE_HOST: Optional[str] = None
-
-
-def input_host(host: str) -> str:
-    return MACHINE_HOST or host
 
 
 # Skip reason shared by the checks whose subject is selecting a CPU bank. The
@@ -402,7 +394,9 @@ def find_memory_rows(snapshot: Snapshot) -> List[int]:
 
 
 def read_rest_memory(host: str, address: int, length: int) -> bytes:
-    url = f"http://{host}/v1/machine:readmem?address={address:04X}&length={length}"
+    url = rest_lib.url_for(
+        host, "/v1/machine:readmem",
+        {"address": f"{address:04X}", "length": length})
     # Transport and retry policy come from tests/lib/rest.py; see rest.may_retry.
     with rest_lib.retrying_urlopen(urllib.request.Request(url), 5.0) as response:
         return response.read()
@@ -475,7 +469,8 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
     for attempt in range(12):
         try:
             request = urllib.request.Request(
-                f"http://{host}/v1/machine:menu_screen", headers=headers, method="GET"
+                rest_lib.url_for(host, "/v1/machine:menu_screen"),
+                headers=headers, method="GET"
             )
             with rest_lib.retrying_urlopen(request, 5.0):
                 pass
@@ -490,7 +485,7 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             "events": [{"kind": "keyboard", "inputs": keys, "transition": "tap"}]
         }).encode("utf-8")
         request = urllib.request.Request(
-            f"http://{input_host(host)}/v1/machine:input",
+            rest_lib.url_for(host, "/v1/machine:input"),
             data=body,
             headers={**headers, "Content-Type": "application/json"},
             method="POST",
@@ -504,16 +499,21 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
         time.sleep(0.25)
     else:
         request = urllib.request.Request(
-            f"http://{host}/v1/machine:menu_button", data=b"", headers=headers, method="PUT"
+            rest_lib.url_for(host, "/v1/machine:menu_button"),
+            data=b"", headers=headers, method="PUT"
         )
         with rest_lib.retrying_urlopen(request, 5.0):
             pass
         time.sleep(0.5)
 
-    # Do not assume a successful reset request means the old 6510 program has
-    # stopped. The shared fixture waits for a fresh BASIC-ready screen, which
-    # is the required postcondition before writing the next test program.
-    UltimateApi(host, password, REST_TIMEOUT_SECONDS).machine.reset()
+    request = urllib.request.Request(
+        rest_lib.url_for(host, "/v1/machine:reset"),
+        data=b"", headers=headers, method="PUT"
+    )
+    # Resetting twice leaves the same machine as resetting once.
+    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
+        pass
+    time.sleep(1.0)
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -799,6 +799,51 @@ def machine_runs_behind_the_ui(mode: str) -> bool:
     opens, so nothing is running and there is nothing to stop.
     """
     return mode != MODE_FREEZE
+
+
+def stop_running_program(rest_host: str) -> None:
+    """Halt whatever the C64 is executing, without relying on a BRK.
+
+    A BRK placed in memory by DMA is not reliably honoured by the running
+    6510. A test that launches a program and then assumes it stopped at its
+    trailing BRK is therefore racing the machine: the program can still be
+    executing, and whatever the test writes next is overwritten by it.
+    Observed as "Memory at $2000 did not become $5A", with $2000 holding the
+    value the previous iteration's program writes, in one run out of three.
+
+    Pausing stops the machine outright, which is one of the three things that
+    reliably do: pause, reset, or having the BRK in memory before the program
+    is launched. Reset is not used here because the monitor holds the machine
+    while its UI is up, and releasing it from under the UI is what takes the
+    device off the network.
+
+    Only call this where machine_runs_behind_the_ui() is true, and always with
+    the matching resume_machine(). The rule being followed is the firmware's
+    own: C64_Subsys::dma_load_raw_buffer stops the C64 only when it finds it
+    running, and resumes it only if it was the one that stopped it. Under
+    Freeze this pair would break that rule and resume a machine the freeze
+    stopped. MENU_C64_PAUSE runs C64::stop(), which overwrites the raster and
+    VIC interrupt registers C64::freeze() saved for the eventual unfreeze, and
+    MENU_C64_RESUME runs C64::resume(), which sets C64_MODE back to
+    MODE_NORMAL and releases the CPU while isFrozen is still set and the UI's
+    own I/O is still installed.
+
+    Where it is called, it composes with the DMA path rather than fighting it:
+    dma_load_raw_buffer sees an already-stopped machine, so the writes that
+    follow leave it stopped instead of resuming it between them.
+    """
+    request = urllib.request.Request(
+        rest_lib.url_for(rest_host, "/v1/machine:pause"), data=b"", method="PUT")
+    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
+        pass
+
+
+def resume_machine(rest_host: str) -> None:
+    """Undo stop_running_program, so G starts from the normal running state."""
+    request = urllib.request.Request(
+        rest_lib.url_for(rest_host, "/v1/machine:resume"), data=b"", method="PUT")
+    with rest_lib.retrying_urlopen(request, REST_TIMEOUT_SECONDS, idempotent=True):
+        pass
 
 
 def run_go_repeat_test(session: MonitorSession, rest_host: str, mode: str) -> None:
@@ -1368,7 +1413,8 @@ def clear_prompt_field(session: MonitorSession, title: str) -> None:
 
 
 def rest_create_d64(host: str, path: str, diskname: str) -> None:
-    url = f"http://{host}/v1/files{path}:create_d64?diskname={diskname}"
+    url = rest_lib.url_for(host, f"/v1/files{path}:create_d64",
+                           {"diskname": diskname})
     request = urllib.request.Request(url, data=b"", method="PUT")
     # Creating the same image twice leaves the same image.
     with rest_lib.retrying_urlopen(request, 15.0, idempotent=True):
@@ -1378,7 +1424,8 @@ def rest_create_d64(host: str, path: str, diskname: str) -> None:
 def rest_file_exists(host: str, path: str) -> bool:
     try:
         with rest_lib.retrying_urlopen(
-                urllib.request.Request(f"http://{host}/v1/files{path}:info"), 5.0) as response:
+                urllib.request.Request(
+                    rest_lib.url_for(host, f"/v1/files{path}:info")), 5.0) as response:
             return response.status == 200
     except urllib.error.HTTPError:
         return False
@@ -1684,42 +1731,55 @@ def main() -> int:
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
-    parser.add_argument("--c64-host", default=os.environ.get("U64_C64_HOST"),
-                        help="Split session: the machine this device is plugged into. "
-                             "A U2+L cartridge renders its own overlay but cannot accept "
-                             "REST keyboard input, and the C64 memory it debugs belongs to "
-                             "the host, so keystrokes and the memory oracle go here while "
-                             "menu_screen/menu_button/configs stay on --host.")
-    parser.add_argument("--target", choices=("u64", "u2"),
-                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
-                        help="Target hardware. 'u2' skips checks for features the U2+L "
-                             "does not have (CPU banking view, VIC bank).")
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "overlay"))
     args = parser.parse_args()
 
-    global TARGET, MACHINE_HOST
-    TARGET = args.target
-    MACHINE_HOST = args.c64_host
+    # The target token, not a bare host name. `--host` carries whatever the
+    # runner was given, and for a cartridge that is `u2@c64u`, which names two
+    # machines. Every URL this suite builds goes through `rest_lib.url_for`,
+    # which sends each path to the machine that serves it: the keyboard to the
+    # computer, everything else to the cartridge. See tests/lib/targets.py.
+    #
+    # Both halves were measured against `u2@c64u`. Interpolating the token
+    # into a URL failed all three attempts with `<urlopen error [Errno -2]
+    # Name or service not known>` from `reset_rest_machine`, before a single
+    # check had run. Resolving the token to the cartridge alone got past that
+    # and then failed on the first keystroke with `HTTP 501: Keyboard and
+    # joystick injection require Ultimate 64-class hardware`.
+    rest_host = args.rest_host or args.host
+    global TARGET
+    TARGET = "u2" if targets.parse(rest_host).split else "u64"
 
-    ui_host = args.rest_host or args.host
-    # Only keystrokes are routed to --c64-host. The memory oracle stays on the
-    # device running the monitor: both devices sit on the same physical C64
-    # bus, but only the cartridge's own DMA is coordinated with the cartridge
-    # UI that is holding that bus, and a read issued from the other device
-    # while the cartridge holds DMA comes back as $FF.
-    rest_host = ui_host
+    # This suite drives one revision of the monitor throughout rather than in
+    # one place, so the whole of it is tagged rather than any single check.
+    # `tests/lib/machine.py` records which machines have that revision, and
+    # without this the suite ran against a monitor it was never written for
+    # and failed on a rendering difference: on a C64 Ultimate 1.2.0 it reached
+    # "ASCII view width and scrolling" and reported a highlight mismatch,
+    # three attempts running, which is a suite asserting the wrong thing
+    # rather than a device defect.
+    info = UltimateApi(rest_host, args.password or None,
+                       REST_TIMEOUT_SECONDS).info()
+    device = machine_lib.identify(
+        targets.device_of(rest_host),
+        lambda: (info.product, info.firmware_version))
+    if device.skip_without_fix(machine_lib.MONITOR_EXIT_AND_BACK_KEYS,
+                               "this machine runs the monitor revision this "
+                               "suite drives"):
+        suite_ok("monitor_test")
+        return 0
 
     reset_rest_machine(rest_host, args.password)
 
     session = None
     try:
         backend = make_backend(
-            args.mode, ui_host, args.password, args.timeout,
+            args.mode, rest_host, args.password, args.timeout,
             telnet_host=args.host, telnet_port=args.port,
-            machine_host=args.c64_host,
         )
         session = MonitorSession(backend)
-        run_tests(session, rest_host, args.mode, file_host=ui_host)
+        run_tests(session, rest_host, args.mode,
+                  file_host=targets.device_of(rest_host))
     except Failure as exc:
         suite_fail("monitor_test", str(exc))
         if session is not None:

@@ -94,6 +94,7 @@ const struct C64_CRT::t_cart C64_CRT::c_recognized_c64_carts[] = {
     { 84, 0xFF, CART_NOT_IMPL,  "Profi-DOS" },
     { 85, 0xFF, CART_NOT_IMPL,  "Magic Desk 16" },
     { 86, 0xFF, CART_MEGABYTER, "Protovision Megabyter" },
+    { 87, 0xFF, CART_TWOMEGABYTER, "Protovision TwoMegabyter" },
 
     { 0xFFFF, 0xFF, CART_NOT_IMPL, "" } };
 
@@ -332,7 +333,7 @@ SubsysResultCode_e C64_CRT::read_chip_packet(File *f, t_crt_chip_chunk *chunk)
 
 void C64_CRT::clear_cart_mem(void)
 {
-    memset(cart_memory, 0xff, 1024 * 1024); // clear all cart memory
+    memset(cart_memory, 0xff, max_cart); // clear the whole cartridge region
 }
 
 void C64_CRT::auto_mirror(void)
@@ -606,6 +607,10 @@ void C64_CRT::configure_cart(cart_def *def)
             break;
         case CART_MEGABYTER:
             cart_type = CART_TYPE_MEGABYTER;
+            prohibit = CART_PROHIBIT_DEXX;
+            break;
+        case CART_TWOMEGABYTER:
+            cart_type = CART_TYPE_MEGABYTER | VARIANT_1;
             prohibit = CART_PROHIBIT_DEXX;
             break;
         case CART_GMOD2:

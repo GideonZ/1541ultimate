@@ -25,6 +25,7 @@
 #define CTRL_CMD_DISK_A_POWER   0x34
 #define CTRL_CMD_DISK_B_POWER   0x35
 #define CTRL_CMD_GET_RAMDISKINFO   0x40
+#define CTRL_CMD_LOAD_CONFIG       0x50
 
 class ControlTarget : CommandTarget
 {
@@ -32,6 +33,7 @@ class ControlTarget : CommandTarget
     Message status_message;
     void decode_track(Message *command, Message **reply, Message **status);
     void save_u64_memory(Message *command);
+    void load_config(Message *command, Message **reply, Message **status);
 public:
     ControlTarget(int id);
     ~ControlTarget();

@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
 from menu_screen_test import Failure, MenuScreenInfo, RestSession, check
 import ftp as ftp_lib
+import machine as machine_lib
 import pacing
 from report import check_skip, detail, section, suite_fail, suite_ok
 from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, strip_frame
@@ -63,6 +64,10 @@ DISK_NAME = "DMATEST"
 LONG_NAME_LENGTH = 100
 
 SIGNATURE_ADDRESS = 0xC000
+# "Could not obtain lock of subsystem" (software/infra/subsys.h). Transient by
+# definition, so a read that meets it waits and asks again.
+HTTP_LOCKED = 423
+LOCK_RETRY_SECONDS = 5.0
 SIGNATURE = b"U64PRGOK"
 LOAD_ADDRESS = 0x0801
 MESSAGE = "U64 PRG TEST OK"
@@ -228,12 +233,23 @@ class Machine:
 
     # ---- REST helpers ---------------------------------------------------
     def readmem(self, address: int, length: int) -> bytes:
-        status, _, body = self.session.request(
-            "GET", "/v1/machine:readmem",
-            params={"address": f"{address:04X}", "length": length})
-        if status != 200:
-            raise Failure(f"readmem ${address:04X} failed with HTTP {status}")
-        return body
+        # HTTP 423 is the device saying it could not take the lock on the
+        # machine subsystem (subsys.h http_response_map), which is a request
+        # to come back rather than a result. It is answered, not raised, so
+        # the shared transport retry never sees it: that retries a request
+        # that did not arrive, and this one did. Measured on a C64 Ultimate,
+        # reading the signature straight after a PRG was started: the read
+        # raced whatever the launch still held, and one repeat was enough.
+        deadline = time.monotonic() + LOCK_RETRY_SECONDS
+        while True:
+            status, _, body = self.session.request(
+                "GET", "/v1/machine:readmem",
+                params={"address": f"{address:04X}", "length": length})
+            if status == 200:
+                return body
+            if status != HTTP_LOCKED or time.monotonic() >= deadline:
+                raise Failure(f"readmem ${address:04X} failed with HTTP {status}")
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
     def writemem(self, address: int, data: bytes) -> None:
         # Only ever used to blank a fixed block (the signature area, the load
@@ -1186,8 +1202,14 @@ def main() -> int:
 
         # Last on purpose: on firmware without the boot-cart name fix this one
         # takes the whole device down, which would mask every earlier result.
-        run_case("Run a PRG whose name is far longer than the boot-cart display",
-                 lambda: run_action_run(machine, fixtures, open_long_name_prg))
+        # It is also not merely failed there but skipped, because the device
+        # does not come back without a power cycle and every suite after it in
+        # the run would report an unreachable device.
+        long_name_label = "Run a PRG whose name is far longer than the boot-cart display"
+        if not machine.browser.backend.machine.skip_without_fix(
+                machine_lib.BOOTCART_LONG_NAME_SAFE, long_name_label):
+            run_case(long_name_label,
+                     lambda: run_action_run(machine, fixtures, open_long_name_prg))
 
         if failures:
             suite_fail("prg_context_menu_test", f"{len(failures)} of {total} actions")

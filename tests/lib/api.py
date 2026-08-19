@@ -122,6 +122,22 @@ def _hex_address(address: int) -> str:
     return f"{address:04X}"
 
 
+def _padded_label(value: object) -> bool:
+    """An enum label the firmware padded so the menu can right align it.
+
+    The inner space is part of the test: " 0 dB" is padded to the width of the
+    "-6 dB" beside it, and a caller that merely stripped all whitespace would
+    match neither.
+    """
+    return (isinstance(value, str) and value != value.strip()
+            and " " in value.strip())
+
+
+def _plain_label(value: object) -> bool:
+    """An enum label carrying no padding but still containing a space."""
+    return isinstance(value, str) and value == value.strip() and " " in value
+
+
 # ---------------------------------------------------------------------------
 # Endpoint groups
 # ---------------------------------------------------------------------------
@@ -273,9 +289,37 @@ class MachineApi:
             raise Failure(f"writemem ${address:04X} ({len(data)} bytes) returned "
                           f"HTTP {code}: {body[:160]!r}")
 
-    def menu_screen(self) -> Optional[bytes]:
-        """The rendered menu screen, or None when no menu is open (HTTP 404)."""
-        code, _, body = self._rest.request("GET", "/v1/machine:menu_screen")
+    def heap(self) -> Optional[Dict[str, int]]:
+        """Free, low-water and total FreeRTOS heap, or None on firmware without it.
+
+        `free` is the figure to diff. `min_ever_free` is the low-water mark
+        since boot and never recovers, so it says whether a run came close to
+        running out but cannot tell a leak from a transient peak. `total` is
+        configTOTAL_HEAP_SIZE and is constant.
+
+        None means the endpoint answered 404, which is firmware predating it.
+        A transport failure raises, because a caller deciding whether to skip
+        needs those two apart: one is a device that cannot answer this, and the
+        other is a device that is not answering.
+        """
+        code, _, body = self._rest.request("GET", "/v1/machine:heap")
+        if code == 404:
+            return None
+        if code != 200:
+            raise Failure(f"machine:heap returned HTTP {code}: {body[:160]!r}")
+        payload = _errors(_json(body, "machine:heap"), "machine:heap")
+        return {name: int(payload.get(name, 0))
+                for name in ("free", "min_ever_free", "total")}
+
+    def menu_screen(self, timeout: Optional[float] = None,
+                    retries: Optional[int] = None) -> Optional[bytes]:
+        """The rendered menu screen, or None when no menu is open (HTTP 404).
+
+        `timeout` and `retries` are for a caller that has to bound how long
+        the call can take; see rest.RestClient.request.
+        """
+        code, _, body = self._rest.request("GET", "/v1/machine:menu_screen",
+                                           timeout=timeout, retries=retries)
         if code == 404:
             return None
         if code != 200:
@@ -320,8 +364,16 @@ class MachineApi:
         wherever the firmware drew it.
         """
         body = self.menu_screen()
-        if body is None:
-            return []
+        return [] if body is None else self.rows_of(body)
+
+    @staticmethod
+    def rows_of(body: bytes) -> List[str]:
+        """The same decode, for a caller that already holds the payload.
+
+        Separate so that reading the screen and reading its text is one
+        request rather than two: the device serves about four concurrent HTTP
+        connections, and a caller that wants both was paying twice.
+        """
         chars = "".join(chr(c & 0x7F) if 0x20 <= (c & 0x7F) <= 0x7E else " "
                         for c in body[:SCREEN_CELLS])
         return [chars[r * SCREEN_COLS:(r + 1) * SCREEN_COLS] for r in range(SCREEN_ROWS)]
@@ -490,6 +542,47 @@ class ConfigsApi:
             raise Failure(f"configs/{category}/{item}: item missing from the answer")
         return entry
 
+    def find_padded_enum(self) -> Optional[Tuple[str, str]]:
+        """A store and enum item this machine serves whose labels are padded.
+
+        The three CFG suites all need one setting of the same shape: an enum
+        whose labels are right aligned, so one of its values carries leading
+        padding and another does not, and both have a space inside the label.
+        That is what makes a hand-edited .cfg a real case rather than a
+        contrived one, because nobody types "Vol Master= 0 dB" with the
+        leading space.
+
+        The volume ladders have that shape on every machine, but the store
+        holding them does not have the same name everywhere. Measured with GET
+        /v1/configs: an Ultimate 64 serves "Audio Mixer", while an Ultimate
+        II+L serves "Audio Output Settings" and has no Audio Mixer category at
+        all. Asking the machine which of its stores has such an item is what
+        lets one suite run on either, and costs one request per category plus
+        one for the first item that looks right.
+
+        Returns None when no store serves one, which is a reason for a suite
+        to skip rather than to fail.
+        """
+        names = self.categories().get("categories")
+        if not isinstance(names, list):
+            raise Failure(f"configs: no category list in the answer: {names!r}")
+        for category in names:
+            if not isinstance(category, str):
+                continue
+            for item, value in self.category(category).items():
+                # The category listing carries every item's current value, so
+                # the candidates can be spotted without a request each. An item
+                # whose current value is padded is an enum with padded labels.
+                if not _padded_label(value):
+                    continue
+                values = self.item(category, item).get("values")
+                if not isinstance(values, list):
+                    continue
+                if (any(_padded_label(v) for v in values)
+                        and any(_plain_label(v) for v in values)):
+                    return category, item
+        return None
+
     def current(self, category: str, item: str) -> str:
         """The item's current value, or "" when the device did not report one.
 
@@ -625,15 +718,19 @@ class StreamsApi:
     def __init__(self, rest: RestClient) -> None:
         self._rest = rest
 
-    def start(self, stream: str, **params: object) -> None:
+    def start(self, stream: str, timeout: Optional[float] = None,
+              retries: Optional[int] = None, **params: object) -> None:
         path = f"/v1/streams/{_quote(stream)}:start"
-        code, _, body = self._rest.request("PUT", path, params=params or None)
+        code, _, body = self._rest.request("PUT", path, params=params or None,
+                                           timeout=timeout, retries=retries)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
-    def stop(self, stream: str) -> None:
+    def stop(self, stream: str, timeout: Optional[float] = None,
+             retries: Optional[int] = None) -> None:
         path = f"/v1/streams/{_quote(stream)}:stop"
-        code, _, body = self._rest.request("PUT", path)
+        code, _, body = self._rest.request("PUT", path, timeout=timeout,
+                                           retries=retries)
         if code != 200:
             raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
 
@@ -645,8 +742,9 @@ class UltimateApi:
     itself rather than about what the device did.
     """
 
-    def __init__(self, host: str, password: Optional[str] = None,
+    def __init__(self, host, password: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT) -> None:
+        # `host` is a target token or a resolved handle; see tests/lib/targets.py.
         self.rest = RestClient(host, password, timeout)
         self.machine = MachineApi(self.rest)
         self.drives = DrivesApi(self.rest)
@@ -658,6 +756,13 @@ class UltimateApi:
     @property
     def host(self) -> str:
         return self.rest.host
+
+    @property
+    def target(self):
+        """The resolved handle this was built from, for a caller that needs
+        more of a target than its device's host name: which machine has the
+        VIC, where the streams are, which ports this device serves."""
+        return self.rest.target
 
     def version(self) -> str:
         return str(_errors(self.rest.json("/v1/version"), "version").get("version", ""))
