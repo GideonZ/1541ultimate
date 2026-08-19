@@ -546,7 +546,11 @@ def _ensure_breakpoint_at(session: "mt.MonitorSession", address: int,
     _assert_no_debug_modal(session, context)
     row = _disassembly_row(session.capture(), address)
     if "[BRK" not in row:
-        raise mt.Failure(f"{context}: breakpoint was not set at ${address:04X}: {row!r}")
+        target = f"${address:04X}"
+        slots = _breakpoint_slot_lines(session, context)
+        if not any(target in line for line in slots):
+            raise mt.Failure(
+                f"{context}: breakpoint was not set at ${address:04X}: {row!r}")
 
 
 def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
@@ -589,7 +593,7 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
                     f"{context}: DEL left the breakpoint popup unexpectedly:\n{snap.text()}")
         if slot < 9:
             session.send_key("DOWN")
-    session.send_key("ESC")
+    session.send_key("ESC", settle=mt.TestConfig.target == "u2")
     still_armed = [line for line in _breakpoint_slot_lines(session, context)
                    if target in line]
     if still_armed:
@@ -618,7 +622,7 @@ def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
         if slot < 9:
             session.send_key("DOWN")
 
-    session.send_key("ESC")
+    session.send_key("ESC", settle=mt.TestConfig.target == "u2")
 
 
 def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[str]:
@@ -642,7 +646,7 @@ def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[s
             raise mt.Failure(
                 f"{context}: slot {slot} missing from breakpoint popup:\n{snap.text()}")
         lines.append(line.strip())
-    session.send_key("ESC")
+    session.send_key("ESC", settle=mt.TestConfig.target == "u2")
     return lines
 
 
@@ -1184,15 +1188,15 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("M")
         session.send_char("E")
         header = _header_line(session)
-        if "Dbg" not in header or "Edit" not in header:
+        if "Dbg" not in header or "EDIT" not in header:
             raise mt.Failure(f"Header must show both Dbg and Edit: {header!r}")
         session.send_key("ESC")
         header = _header_line(session)
-        if "Dbg" not in header or "Edit" in header:
+        if "Dbg" not in header or "EDIT" in header:
             raise mt.Failure(f"ESC in Debug+Edit must keep Dbg and clear Edit: {header!r}")
         session.send_char("A")
         header = _header_line(session)
-        if "MONITOR ASM" not in header or "Dbg" not in header or "Edit" in header:
+        if "MONITOR ASM" not in header or "Dbg" not in header or "EDIT" in header:
             raise mt.Failure(f"Leaving Edit should keep Debug alive for ASM resume: {header!r}")
         session.send_char("D")
         parsed = _wait_for_pc(session, "C042")
@@ -1204,7 +1208,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("D")
         session.send_char("E")
         header = _header_line(session)
-        if "Dbg" not in header or "Edit" not in header:
+        if "Dbg" not in header or "EDIT" not in header:
             raise mt.Failure(f"Header must show both Dbg and Edit: {header!r}")
         # C=+D leaves both Debug and Edit so the next keystroke is a monitor
         # command again. This mirrors the authoritative host regression
@@ -1212,14 +1216,14 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         # debug+edit session with one key and immediately navigate/re-debug.
         _send_ctrl_d(session)
         header = _header_line(session)
-        if "Dbg" in header or "Edit" in header:
+        if "Dbg" in header or "EDIT" in header:
             raise mt.Failure(f"C=+D in Debug+Edit must clear both Dbg and Edit: {header!r}")
         # Prove Edit really cleared: J is consumed as a monitor jump command,
         # not as edit-mode text input.
         session.goto("C040")
         session.send_char("A")
         header = _header_line(session)
-        if "MONITOR ASM $C040" not in header or "Edit" in header:
+        if "MONITOR ASM $C040" not in header or "EDIT" in header:
             raise mt.Failure(f"After C=+D, J must act as a monitor jump command: {header!r}")
         # Re-enter Debug from the post-C=+D cursor and confirm a step runs.
         session.send_char("D")
@@ -1426,7 +1430,7 @@ def run_ram_edit_regression_tests(rest_host: str, session: "mt.MonitorSession") 
             raise mt.Failure(f"$2000 must be ordinary RAM before edit, got: {row!r}\n{snap.text()}")
 
         snap = session.send_char("E")
-        if "Edit" not in _header_line(session):
+        if "EDIT" not in _header_line(session):
             raise mt.Failure(f"$2000 ASM edit did not enter Edit mode:\n{snap.text()}")
 
         commands = (
@@ -1442,7 +1446,7 @@ def run_ram_edit_regression_tests(rest_host: str, session: "mt.MonitorSession") 
             _assert_no_debug_modal_snapshot(snap, f"$2000 ASM edit {label}")
 
         snap = session.send_key("ESC")
-        if "Edit" in _header_line(session):
+        if "EDIT" in _header_line(session):
             raise mt.Failure(f"$2000 ASM edit did not leave Edit mode:\n{snap.text()}")
 
         readback = mt.read_rest_memory(rest_host, base, len(program))
@@ -3730,18 +3734,13 @@ def main() -> int:
             print(name)
         return 0
 
-    mt.TestConfig.target = args.target
+    mt.set_target(args.target)
     # In U2 mode the REST API is typically unreachable; default to keep-going
     # so all failures land in the same console capture rather than stopping
     # at the first connection error.
     mt.TestConfig.keep_going = args.keep_going or args.target == "u2"
     mt.TestConfig.failures = []
     mt.TestConfig.skipped = []
-
-    if args.target == "u2":
-        print("[skip] the U2+L remote terminal does not deliver printable "
-              "monitor edit keys")
-        return 0
 
     rest_host = args.rest_host or args.host
     global SIGNATURE_REST_HOST

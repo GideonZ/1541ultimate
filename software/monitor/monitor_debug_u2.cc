@@ -30,17 +30,17 @@ namespace {
 
 class U2DebugSession : public BrkDebugSession
 {
-    // The boot cart clears page three, so the launch reloads $0314-$03FB: the
-    // KERNAL vectors plus the whole debugger stub area. The 14-byte launcher
-    // starts at the instruction trampoline ($0340) and runs into the NMI
-    // capture scratch above it. Neither is in use during a contextless launch,
-    // because there is no parked operation and no freeze in progress.
+    // A contextless launch installs $0314-$03FB atomically: the KERNAL vectors,
+    // debugger stub area, and a 14-byte launcher at $0340. The launcher runs
+    // into the NMI capture scratch above it, which is idle because there is no
+    // parked operation or captured register context.
     enum {
         CONTEXTLESS_RELOAD_START = 0x0314,
         CONTEXTLESS_RELOAD_END = 0x03FB,
         CONTEXTLESS_RELOAD_LENGTH =
             CONTEXTLESS_RELOAD_END - CONTEXTLESS_RELOAD_START + 1,
-        CONTEXTLESS_LAUNCHER = 0x0340
+        CONTEXTLESS_LAUNCHER = 0x0340,
+        CONTEXTLESS_NMI_VECTOR = 0x0318
     };
     U2MemoryBackend *backend;
     C64 *machine;
@@ -145,7 +145,7 @@ protected:
     {
         // Snapshot while the installed handler is still stopped/frozen, so the
         // run window can release the CPU without racing page-three changes
-        // into the image handed to the boot cart.
+        // into the image handed to the NMI launch.
         bool stopped_it = machine->begin_stopped_session();
         for (int i = 0; i < CONTEXTLESS_RELOAD_LENGTH; i++) {
             contextless_reload[i] = machine->peek(
@@ -153,16 +153,14 @@ protected:
         }
         machine->end_stopped_session(stopped_it);
 
-        // A trap taken during the short transition into the boot cart must not
+        // A trap taken during the short transition into the launcher must not
         // be replayed as the launch result.
         clear_run_result_markers(contextless_reload, CONTEXTLESS_RELOAD_START,
                                  CONTEXTLESS_RELOAD_LENGTH);
 
-        // start_cartridge() resets the C64 before the boot-cart DMA load. RAM
-        // under the KERNAL survives that, but the launcher reinstalls the hard
-        // IRQ/BRK vector anyway so a bootstrap that banks the KERNAL out
-        // (CPU0/4/5) reaches the hard BRK stub as reliably as a KERNAL-visible
-        // one reaches the soft $0316 vector.
+        // The launcher installs the hard IRQ/BRK vector so a bootstrap that
+        // banks the KERNAL out (CPU0/4/5) reaches the hard BRK stub as reliably
+        // as a KERNAL-visible one reaches the soft $0316 vector.
         const uint16_t stub = hard_brk_stub_address();
         const uint8_t launcher[] = {
             0x78,
@@ -179,12 +177,18 @@ protected:
     }
     virtual bool launch_contextless_with_breakpoints(uint16_t address)
     {
-        // The C64U does not forward the cartridge NMI. The boot cart clears
-        // $0300-$03FF during initialization, so reload the debugger's vectors
-        // and cassette-buffer handler in the same handoff before it jumps.
-        return monitor_io::jump_to_with_payload(
-            CONTEXTLESS_LAUNCHER, CONTEXTLESS_RELOAD_START, contextless_reload,
-            CONTEXTLESS_RELOAD_LENGTH);
+        (void)address;
+        bool stopped_it = machine->begin_stopped_session();
+        for (int i = 0; i < CONTEXTLESS_RELOAD_LENGTH; i++) {
+            machine->poke((uint16_t)(CONTEXTLESS_RELOAD_START + i),
+                          contextless_reload[i]);
+        }
+        machine->poke(CONTEXTLESS_NMI_VECTOR,
+                      (uint8_t)(CONTEXTLESS_LAUNCHER & 0xFF));
+        machine->poke((uint16_t)(CONTEXTLESS_NMI_VECTOR + 1),
+                      (uint8_t)(CONTEXTLESS_LAUNCHER >> 8));
+        machine->end_stopped_session_nmi(stopped_it);
+        return stopped_it;
     }
 
     virtual void on_cpu_run_window_open(void)

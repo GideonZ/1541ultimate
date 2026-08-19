@@ -93,9 +93,9 @@ U2_STEP_INTO_DEPTH = 8
 U2_STRAIGHT_CALLS = 8
 U2_TRACE_OPCODES = 20
 
-# Entering a visible-ROM breakpoint costs the firmware's full go() budget, so the
-# wait has to outlast it or a slow but successful entry reads as a failure.
-ROM_ENTRY_WAIT_S = 22.0
+# A contextless breakpoint entry can consume the firmware's full go() and
+# bounded relaunch budget, so the wait must outlast three 5-second windows.
+CONTEXTLESS_ENTRY_WAIT_S = 22.0
 OP_FIELDS = (
     "step_over",
     "step_into",
@@ -1345,7 +1345,8 @@ class TelnetDebugDriver(BaseDriver):
             self.set_breakpoint(address)
             self.goto(self.fixture.bootstrap_addr)
             self.send_key("G")
-            state = self.wait_pc(address, "entry breakpoint", timeout=ROM_ENTRY_WAIT_S)
+            state = self.wait_pc(address, "entry breakpoint",
+                                 timeout=CONTEXTLESS_ENTRY_WAIT_S)
             self.clear_breakpoint(address)
             self.select_bank(self.fixture.bank)
             self.goto(address)
@@ -1356,7 +1357,8 @@ class TelnetDebugDriver(BaseDriver):
             self.select_bank(7)
         self.goto(self.fixture.bootstrap_addr)
         self.send_key("G")
-        state = self.wait_pc(address, "entry breakpoint", timeout=12.0)
+        state = self.wait_pc(address, "entry breakpoint",
+                             timeout=CONTEXTLESS_ENTRY_WAIT_S)
         self.clear_breakpoint(address)
         self.select_bank(self.fixture.bank)
         self.goto(address)
@@ -1765,9 +1767,9 @@ class RestDebugDriver(BaseDriver):
         self.goto(self.fixture.bootstrap_addr)
         self.log_entry_opcode(address, "before launch")
         self.send_key("G")
-        entry_wait = ROM_ENTRY_WAIT_S if self.fixture.memory_mode == "rom" else 12.0
         try:
-            state = self.wait_pc(address, "entry breakpoint", timeout=entry_wait)
+            state = self.wait_pc(address, "entry breakpoint",
+                                 timeout=CONTEXTLESS_ENTRY_WAIT_S)
         except BaseException:
             self.log_entry_opcode(address, "entry FAILED")
             raise
@@ -4185,6 +4187,7 @@ def run_alert_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
 
 def main() -> int:
     args = parse_args()
+    mt.set_target(debug_suite_target(args))
     if not args.artifact_dir:
         args.artifact_dir = str(
             Path(tempfile.gettempdir())

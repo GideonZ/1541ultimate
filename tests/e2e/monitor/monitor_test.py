@@ -1525,11 +1525,6 @@ def run_save_load_d64_test(session: MonitorSession, rest_host: str, token: str,
 def run_tests(session: MonitorSession, rest_host: str, mode: str,
               file_host: Optional[str] = None) -> None:
     file_host = file_host or rest_host
-    if is_u2() and mode == MODE_TELNET:
-        with check("U2+L normal monitor over telnet"):
-            check_skip("the U2+L remote terminal accepts navigation keys but not "
-                       "the printable monitor view selectors")
-        return
     snapshots = load_snapshots()
 
     with check("initial CPU7/KERNAL monitor status"):

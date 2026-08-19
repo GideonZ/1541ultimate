@@ -56,6 +56,12 @@ TestConfig = _Config()
 CHECK_COUNT = 0
 
 
+def set_target(target: str) -> None:
+    """Keep the compatibility fixture and shared monitor session in sync."""
+    TestConfig.target = target
+    core.TARGET = target
+
+
 # Set by check() when the check it opened does not apply to the target, and
 # consumed by skip_unsupported() as the first statement of that check's body.
 #

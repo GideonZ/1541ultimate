@@ -48,10 +48,6 @@ const char *save_from_memory(UserInterface *ui, const char *path, const char *na
 // Start execution at `address` after the monitor and freezer have closed.
 // The NMI trampoline restores the system NMI vector before jumping.
 void jump_to(uint16_t address);
-// Cartridge boot-jump with one DMA-loaded memory image. The boot cartridge
-// loads `payload` at `load_address` immediately before jumping to `address`.
-bool jump_to_with_payload(uint16_t address, uint16_t load_address,
-                          const uint8_t *payload, uint16_t payload_length);
 void resume_to_context(const DebugContext &context);
 bool stage_jump_to(uint16_t address);
 bool stage_resume_to_context(const DebugContext &context);
