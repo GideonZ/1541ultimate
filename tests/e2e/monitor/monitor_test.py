@@ -372,6 +372,45 @@ def assert_highlight(snapshot: Snapshot, expected_cells: List[Tuple[int, int]], 
         )
 
 
+def wait_for_highlight(session: MonitorSession, snapshot: Snapshot,
+                       expected_cells: List[Tuple[int, int]], command: str,
+                       timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe a cursor move without resending the key that requested it."""
+    expected = sorted(expected_cells)
+    deadline = time.monotonic() + timeout
+    while sorted(snapshot.reverse_cells) != expected and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
+    assert_highlight(snapshot, expected_cells, command)
+    return snapshot
+
+
+def wait_for_line_contains(session: MonitorSession, snapshot: Snapshot,
+                           line_index: int, expected: str,
+                           timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe an expected redraw line without resending its command."""
+    deadline = time.monotonic() + timeout
+    while expected not in snapshot.line(line_index) and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
+    assert_contains(snapshot, line_index, expected)
+    return snapshot
+
+
+def wait_for_edit_closed(session: MonitorSession, snapshot: Snapshot,
+                         timeout: float = MONITOR_OPEN_TIMEOUT_SECONDS) -> Snapshot:
+    """Observe an edit commit before sending another monitor command."""
+    deadline = time.monotonic() + timeout
+    header = next((line for line in snapshot.lines if "MONITOR" in line), "")
+    while "EDIT" in header and time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL_SECONDS)
+        snapshot = session.capture()
+        header = next((line for line in snapshot.lines if "MONITOR" in line), "")
+    if "EDIT" in header:
+        raise Failure(f"Edit did not close after {snapshot.last_command}:\n{snapshot.text()}")
+    return snapshot
+
+
 def assert_line_lacks(snapshot: Snapshot, forbidden: str) -> None:
     for line in snapshot.lines:
         if forbidden in line:
@@ -650,6 +689,8 @@ def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
         return screen
 
     screen = session.send_char("U")
+    screen = wait_for_line_contains(
+        session, screen, header_row, expected)
     header_row = screen.find_line_containing("MONITOR SCR")
     if expected not in screen.line(header_row):
         raise Failure(
@@ -702,7 +743,8 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
     screen = session.send_char("E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = wait_for_edit_closed(
+        session, session.send_key("CTRL_E"))
     if read_rest_memory(rest_host, ascii_edit_addr, 4) != b"aA# ":
         raise Failure(
             f"ASCII edit mapping mismatch at ${ascii_edit_addr:04X}: "
@@ -744,7 +786,8 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
     screen = session.send_char("E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = wait_for_edit_closed(
+        session, session.send_key("CTRL_E"))
     if read_rest_memory(rest_host, screen_edit_ug_addr, 4) != bytes((0x01, 0x01, 0x23, 0x20)):
         raise Failure(
             f"Screen U/G edit mapping mismatch at ${screen_edit_ug_addr:04X}: "
@@ -756,7 +799,8 @@ def run_character_mapping_test(session: MonitorSession, rest_host: str) -> None:
     screen = session.send_char("E")
     for ch in "aA# ":
         screen = session.send_char(ch)
-    screen = session.send_key("CTRL_E")
+    screen = wait_for_edit_closed(
+        session, session.send_key("CTRL_E"))
     if read_rest_memory(rest_host, screen_edit_lu_addr, 4) != bytes((0x01, 0x41, 0x23, 0x20)):
         raise Failure(
             f"Screen L/U edit mapping mismatch at ${screen_edit_lu_addr:04X}: "
@@ -1598,20 +1642,26 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str,
         assert_view_bank_status(screen, status_text(snapshots, "status_cpu29"))
 
         screen = session.send_key("DOWN")
-        assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
+        screen = wait_for_highlight(
+            session, screen, [(6, first_content_row + 1)], "DOWN")
         assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
 
         screen = session.send_key("UP")
-        assert_highlight(screen, [(6, first_content_row)], "UP")
+        screen = wait_for_highlight(
+            session, screen, [(6, first_content_row)], "UP")
 
-        for _ in range(last_content_row - first_content_row):
+        for target_row in range(first_content_row + 1, last_content_row + 1):
             screen = session.send_key("DOWN")
-        assert_highlight(screen, [(6, last_content_row)], "DOWN to last row")
+            screen = wait_for_highlight(
+                session, screen, [(6, target_row)], "DOWN to last row")
         assert_contains(screen, first_content_row, snapshots["ascii_top_row"]["contains"]["4"])
 
         screen = session.send_key("DOWN")
-        assert_highlight(screen, [(6, last_content_row)], "DOWN past last row")
-        assert_contains(screen, first_content_row, snapshots["ascii_scrolled_top_row"]["contains"]["4"])
+        screen = wait_for_line_contains(
+            session, screen, first_content_row,
+            snapshots["ascii_scrolled_top_row"]["contains"]["4"])
+        screen = wait_for_highlight(
+            session, screen, [(6, last_content_row)], "DOWN past last row")
 
     with check("ASCII and Screen mapping semantics"):
         run_character_mapping_test(session, rest_host)

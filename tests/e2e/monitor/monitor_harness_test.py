@@ -44,6 +44,7 @@ import mcm_rest as R  # noqa: E402
 import mcm_split_rest as SR  # noqa: E402
 import monitor_debug_stress as stress  # noqa: E402
 import monitor_debug_matrix_test as gate  # noqa: E402
+import monitor_test as monitor  # noqa: E402
 
 # Gate harnesses whose green result must never depend on a hidden reset-retry.
 GATE_FILES = ("monitor_debug_test.py", "monitor_debug_matrix_test.py")
@@ -931,6 +932,49 @@ class DebugEntryWaitTest(unittest.TestCase):
                 session.enter_debug(timeout=0.3)
 
         self.assertIn("debug mode not entered", str(caught.exception))
+
+
+class MonitorHighlightWaitTest(unittest.TestCase):
+    """A delayed Telnet redraw is observed without resending its cursor key."""
+
+    def test_late_highlight_is_observed(self) -> None:
+        stale = monitor.Snapshot([""], [(6, 4)], "DOWN")
+        moved = monitor.Snapshot([""], [(6, 5)], "DOWN")
+        session = mock.Mock()
+        session.capture.side_effect = [stale, moved]
+
+        with mock.patch.object(monitor.time, "sleep"):
+            result = monitor.wait_for_highlight(
+                session, stale, [(6, 5)], "DOWN", timeout=1.0)
+
+        self.assertIs(result, moved)
+        self.assertEqual(session.capture.call_count, 2)
+
+    def test_late_viewport_scroll_is_observed(self) -> None:
+        stale = monitor.Snapshot(["", "C000 A"], [(6, 20)], "DOWN")
+        moved = monitor.Snapshot(["", "C020 B"], [(6, 20)], "DOWN")
+        session = mock.Mock()
+        session.capture.return_value = moved
+
+        with mock.patch.object(monitor.time, "sleep"):
+            result = monitor.wait_for_line_contains(
+                session, stale, 1, "C020 B", timeout=1.0)
+
+        self.assertIs(result, moved)
+        session.capture.assert_called_once_with()
+
+    def test_late_edit_commit_is_observed(self) -> None:
+        editing = monitor.Snapshot(["MONITOR ASC $3224 EDIT"], [], "CTRL_E")
+        committed = monitor.Snapshot(["MONITOR ASC $3224"], [], "CTRL_E")
+        session = mock.Mock()
+        session.capture.return_value = committed
+
+        with mock.patch.object(monitor.time, "sleep"):
+            result = monitor.wait_for_edit_closed(
+                session, editing, timeout=1.0)
+
+        self.assertIs(result, committed)
+        session.capture.assert_called_once_with()
 
 
 class BreakpointRowToggleTest(unittest.TestCase):
