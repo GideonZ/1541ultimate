@@ -47,7 +47,6 @@ static const uint32_t REST_INPUT_TIMER_TICKS = (pdMS_TO_TICKS(20) > 0) ? pdMS_TO
 static const uint32_t WAIT_FREE_POLL_TICKS =
 	(pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) > 0) ? pdMS_TO_TICKS(KEYBOARD_WAIT_FREE_POLL_MS) : 1;
 #endif
-static const uint8_t REST_TAP_GAP_TICKS = 2;
 static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
 static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
 
@@ -175,7 +174,7 @@ Keyboard_USB :: Keyboard_USB()
     num_keys = 0;
 
 	memset(key_buffer, 0, USB_KEY_BUFFER_SIZE);
-	memset(injected_buffer, 0, USB_KEY_BUFFER_SIZE);
+	memset(injected_buffer, 0, USB_INJECTED_BUFFER_SIZE);
 	memset(last_data, 0, USB_DATA_SIZE);
 }
 
@@ -526,7 +525,7 @@ int  Keyboard_USB :: getch(void)
     if (injected_head != injected_tail) {
 		injected_key = injected_buffer[injected_tail];
 		injected_tail ++;
-		if (injected_tail == USB_KEY_BUFFER_SIZE) {
+		if (injected_tail == USB_INJECTED_BUFFER_SIZE) {
 			injected_tail = 0;
 		}
     }
@@ -561,7 +560,7 @@ void Keyboard_USB :: push_head_repeat(int c, int repeat)
 	portENTER_CRITICAL();
 	while (repeat-- > 0) {
 		int next_head = injected_head + 1;
-		if (next_head == USB_KEY_BUFFER_SIZE) {
+		if (next_head == USB_INJECTED_BUFFER_SIZE) {
 			next_head = 0;
 		}
 		if (next_head == injected_tail) {
@@ -590,7 +589,7 @@ int Keyboard_USB :: count_injected_key(int c) const
 			count++;
 		}
 		index++;
-		if (index == USB_KEY_BUFFER_SIZE) {
+		if (index == USB_INJECTED_BUFFER_SIZE) {
 			index = 0;
 		}
 	}
@@ -607,7 +606,7 @@ void Keyboard_USB :: remove_injected_key(int c)
 		return;
 	}
 
-	uint8_t filtered[USB_KEY_BUFFER_SIZE];
+	uint8_t filtered[USB_INJECTED_BUFFER_SIZE];
 	int write_index = 0;
 	portENTER_CRITICAL();
 	for (int index = injected_tail; index != injected_head; ) {
@@ -616,7 +615,7 @@ void Keyboard_USB :: remove_injected_key(int c)
 			filtered[write_index++] = key;
 		}
 		index++;
-		if (index == USB_KEY_BUFFER_SIZE) {
+		if (index == USB_INJECTED_BUFFER_SIZE) {
 			index = 0;
 		}
 	}

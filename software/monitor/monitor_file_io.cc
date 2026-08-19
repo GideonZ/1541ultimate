@@ -18,7 +18,7 @@
 #ifndef RECOVERYAPP
 #ifndef UPDATER
 #include "c64.h"
-#include "subsys.h"
+#include "itu.h"
 #if defined(U64) && (U64)
 #include "u64_machine.h"
 #include "itu.h"
@@ -286,9 +286,7 @@ const char *monitor_io::load_into_memory(const char *path, const char *name,
         if (f->read(buf, want, &got) != FR_OK || got == 0) {
             break;
         }
-        for (uint32_t i = 0; i < got; i++) {
-            backend->write((uint16_t)(start_addr + mem_pos + i), buf[i]);
-        }
+        backend->write_block((uint16_t)(start_addr + mem_pos), buf, (uint16_t)got);
         mem_pos += got;
         remaining -= got;
     }
@@ -372,15 +370,32 @@ void monitor_io::jump_to(uint16_t address)
     };
     run_u64_nmi_trampoline(machine, body, sizeof(body));
 #else
-    uint8_t jump_buffer[2] = {
-        (uint8_t)(address & 0xFF),
-        (uint8_t)(address >> 8)
+    C64 *machine = C64::getMachine();
+    if (!machine) {
+        return;
+    }
+
+    bool stopped_it = machine->begin_stopped_session();
+    uint8_t old_nmi_lo = machine->peek(c_monitor_nmi_vector + 0);
+    uint8_t old_nmi_hi = machine->peek(c_monitor_nmi_vector + 1);
+    uint8_t trampoline[] = {
+        0xA9, old_nmi_lo,
+        0x8D, (uint8_t)(c_monitor_nmi_vector & 0xFF), (uint8_t)(c_monitor_nmi_vector >> 8),
+        0xA9, old_nmi_hi,
+        0x8D, (uint8_t)((c_monitor_nmi_vector + 1) & 0xFF), (uint8_t)((c_monitor_nmi_vector + 1) >> 8),
+        0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
     };
 
-    SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER,
-                                           RUNCODE_DMALOAD_JUMP,
-                                           jump_buffer, sizeof(jump_buffer));
-    cmd->execute();
+    for (unsigned i = 0; i < sizeof(trampoline); i++) {
+        machine->poke((uint16_t)(c_monitor_jump_trampoline + i), trampoline[i]);
+    }
+    machine->poke(c_monitor_nmi_vector + 0, (uint8_t)(c_monitor_jump_trampoline & 0xFF));
+    machine->poke(c_monitor_nmi_vector + 1, (uint8_t)(c_monitor_jump_trampoline >> 8));
+
+    machine->end_stopped_session(stopped_it);
+    C64_MODE = C64_MODE_NMI;
+    wait_ms(1);
+    C64_MODE = MODE_NORMAL;
 #endif
 #else
     (void)address;

@@ -44,6 +44,27 @@ TEST(KeyboardUsbQueueTest, ControlBookmarkDigitsStayDistinctFromRecall)
 	EXPECT_EQ(KEY_CTRL_R, keyboard.getch());
 }
 
+// HID usage 0x15 is R and 0x51 is the down arrow. R's ASCII control code is
+// 0x12, which is also KEY_DOWN, so if the control map carried that code the
+// monitor could not tell the reset shortcut from cursor-down. KEY_CTRL_R is
+// outside the ASCII range for that reason.
+TEST(KeyboardUsbQueueTest, ControlRIsDistinctFromCursorDown)
+{
+	Keyboard_USB keyboard;
+	uint8_t ctrl_r[USB_DATA_SIZE] = { 0x01, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t down[USB_DATA_SIZE] = { 0x00, 0x00, 0x51, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t release[USB_DATA_SIZE] = { 0x00 };
+
+	EXPECT_TRUE(KEY_CTRL_R != KEY_DOWN);
+
+	keyboard.process_data(ctrl_r);
+	EXPECT_EQ(KEY_CTRL_R, keyboard.getch());
+	keyboard.process_data(release);
+
+	keyboard.process_data(down);
+	EXPECT_EQ(KEY_DOWN, keyboard.getch());
+}
+
 TEST(KeyboardUsbQueueTest, CbmDigitDecodeRejectsInvalidKeys)
 {
 	EXPECT_TRUE(key_is_ctrl_digit(KEY_CTRL_0));
@@ -63,13 +84,36 @@ TEST(KeyboardUsbQueueTest, PushHeadRepeatIsBounded)
 	uint8_t release[USB_DATA_SIZE] = { 0x00 };
 
 	keyboard.process_data(report);
-	keyboard.push_head_repeat(KEY_UP, USB_KEY_BUFFER_SIZE + 8);
+	keyboard.push_head_repeat(KEY_UP, USB_INJECTED_BUFFER_SIZE + 8);
 	keyboard.process_data(release);
 
-	for (int i = 0; i < USB_KEY_BUFFER_SIZE - 1; i++) {
+	for (int i = 0; i < USB_INJECTED_BUFFER_SIZE - 1; i++) {
 		EXPECT_EQ(KEY_UP, keyboard.getch());
 	}
 	EXPECT_EQ('a', keyboard.getch());
+	EXPECT_EQ(-1, keyboard.getch());
+}
+
+// The input API accepts a batch of 64 keyboard events and the menu path pushes
+// each of them into the injected ring. The ring keeps one slot empty to tell a
+// full ring from an empty one, so a 64-entry ring held only 63 keys and dropped
+// the 64th without an error. The ring is one slot larger than the batch limit
+// so a full batch arrives complete.
+TEST(KeyboardUsbQueueTest, AFullInputApiBatchIsNotDropped)
+{
+	static const int INPUT_API_BATCH = 64;
+	Keyboard_USB keyboard;
+
+	EXPECT_TRUE(USB_INJECTED_BUFFER_SIZE > INPUT_API_BATCH);
+
+	for (int i = 0; i < INPUT_API_BATCH; i++) {
+		keyboard.push_head(KEY_UP);
+	}
+	EXPECT_EQ(INPUT_API_BATCH, keyboard.count_injected_key(KEY_UP));
+
+	for (int i = 0; i < INPUT_API_BATCH; i++) {
+		EXPECT_EQ(KEY_UP, keyboard.getch());
+	}
 	EXPECT_EQ(-1, keyboard.getch());
 }
 

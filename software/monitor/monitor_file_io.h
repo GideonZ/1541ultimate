@@ -45,9 +45,8 @@ const char *save_from_memory(UserInterface *ui, const char *path, const char *na
                              MemoryBackend *backend,
                              uint16_t start, uint16_t end);
 
-// Instruct the FPGA C64 to commence execution at `address` once the monitor
-// (and freezer) is left. U64 uses a KERNAL RAM NMI trampoline; cartridge
-// targets reuse the existing boot-cartridge DMA jump handoff.
+// Start execution at `address` after the monitor and freezer have closed.
+// The NMI trampoline restores the system NMI vector before jumping.
 void jump_to(uint16_t address);
 // Cartridge boot-jump with one DMA-loaded memory image. The boot cartridge
 // loads `payload` at `load_address` immediately before jumping to `address`.

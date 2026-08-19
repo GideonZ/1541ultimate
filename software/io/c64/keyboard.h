@@ -52,6 +52,13 @@ public:
 // hijacking cursor-down.
 #define KEY_CTRL_R 0xBA
 
+// Combinations that cannot use their ASCII control code, because that code is
+// already a discrete key here. C= plus a digit has no ASCII control code at
+// all; C=+R would produce 0x12, which is KEY_DOWN, so binding it to the ASCII
+// code would make the cursor-down key act as C=+R everywhere in the UI. Both
+// are therefore given synthetic codes above the ASCII range instead. Keep
+// KEY_CTRL_R outside KEY_CTRL_0..KEY_CTRL_9, which key_is_ctrl_digit() below
+// treats as a contiguous block.
 #define KEY_CTRL_0  0xB0
 #define KEY_CTRL_1  0xB1
 #define KEY_CTRL_2  0xB2
@@ -62,6 +69,7 @@ public:
 #define KEY_CTRL_7  0xB7
 #define KEY_CTRL_8  0xB8
 #define KEY_CTRL_9  0xB9
+#define KEY_CTRL_R  0xBA
 
 #define KEY_A      0x61
 #define KEY_S      0x73
