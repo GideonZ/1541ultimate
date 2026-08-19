@@ -506,14 +506,10 @@ def reset_rest_machine(host: str, password: Optional[str]) -> None:
             pass
         time.sleep(0.5)
 
-    request = urllib.request.Request(
-        rest_lib.url_for(host, "/v1/machine:reset"),
-        data=b"", headers=headers, method="PUT"
-    )
-    # Resetting twice leaves the same machine as resetting once.
-    with rest_lib.retrying_urlopen(request, 5.0, idempotent=True):
-        pass
-    time.sleep(1.0)
+    # A successful reset request only means the device accepted it. The shared
+    # fixture waits for the fresh BASIC-ready screen before it places the next
+    # program, which is required on the cartridge's reset-mediated G path.
+    UltimateApi(host, password, REST_TIMEOUT_SECONDS).machine.reset()
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
@@ -1651,15 +1647,27 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str,
         assert_contains(screen, 4, "C101")
 
     with check("G executes finite loop and returns to monitor"):
-        write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
-        write_rest_memory(rest_host, 0x0400, bytes([0x20]))
-        session.goto("1000")
-        session.goto_run("1000")
-        wait_for_rest_byte(rest_host, 0x0400, 0x01)
-        session.enter_monitor()
+        if is_u2():
+            # The previous COMPARE leaves its result popup up. The U64 G
+            # command dismisses it as part of opening its prompt; this target
+            # does not run that command, so leave the monitor in the same view.
+            session.send_key("RUNSTOP")
+            check_skip("the U2+L boot-cartridge G path resets this live-screen "
+                       "fixture and does not provide a SYS-like handoff")
+        else:
+            write_rest_memory(rest_host, 0x1000, bytes.fromhex("A9008D0004A9018D00044C0010"))
+            write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+            session.goto("1000")
+            session.goto_run("1000")
+            wait_for_rest_byte(rest_host, 0x0400, 0x01)
+            session.enter_monitor()
 
     with check("G repeated execution updates RAM sentinel"):
-        run_go_repeat_test(session, rest_host, mode)
+        if is_u2():
+            check_skip("the U2+L boot-cartridge G path resets the C64 and does "
+                       "not provide a SYS-like handoff")
+        else:
+            run_go_repeat_test(session, rest_host, mode)
 
     with check("G handoff preserves stable VIC state"):
         if mode != MODE_TELNET:
