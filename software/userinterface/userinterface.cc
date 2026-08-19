@@ -714,15 +714,8 @@ int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool 
 
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase)
 {
-    return string_box(msg, buffer, maxlen, template_mode, uppercase, 0);
-}
-
-int UserInterface :: string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
-                                const UIStringEditPolicy *policy)
-{
     UIStringBox *box = new UIStringBox(this, msg, buffer, maxlen, template_mode);
     box->set_uppercase(uppercase);
-    box->set_policy(policy);
     box->init();
     screen->cursor_visible(1);
     int ret = 0;
@@ -879,19 +872,6 @@ int UserInterface :: keymapper(int c, keymap_options_t map)
     case KEY_F6: c = KEY_SEARCH; break;
     }
     return c;
-}
-
-const char *UserInterface :: function_key_for(int action) const
-{
-    static const int keys[] = { KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8 };
-    static const char *const names[] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8" };
-
-    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-        if (const_cast<UserInterface *>(this)->keymapper(keys[i], e_keymap_default) == action) {
-            return names[i];
-        }
-    }
-    return "";
 }
 
 void UserInterface :: help()

@@ -95,10 +95,6 @@ enum {
     MONITOR_DISASM_ROW_CHARS = 38,
     MONITOR_DISASM_SOURCE_COL = 30,
     MONITOR_DISASM_TEXT_COL = 15,
-    // How many bytes one Assembly DATA row shows. Two rather than three: it
-    // divides the $D000-$DFFF region exactly, so the region has no short row
-    // at its end and every row holds the same number of editable bytes.
-    MONITOR_DATA_ROW_BYTES = 2,
     MONITOR_HUNT_NEEDLE_MAX = 80,
 };
 
@@ -124,10 +120,6 @@ struct Cursor {
 };
 
 const char *monitor_error_text(MonitorError error);
-
-// The name a trace line uses for a view. Exposed so the token set can be
-// pinned by a test rather than only by whoever reads the log next.
-const char *monitor_view_name(MachineMonitorView view);
 void monitor_reset_saved_state(void);
 void monitor_invalidate_saved_state(void);
 void monitor_reset_saved_cpu_view(void);
@@ -183,44 +175,6 @@ MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16
 MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
                                         uint32_t length, uint32_t *effective_len);
 
-// One structured command prompt: everything about how it is presented and what
-// it takes, in one place, so what a prompt shows and what it accepts cannot
-// drift apart. The vocabulary of `syntax` is documented beside the matcher in
-// machine_monitor.cc.
-struct MonitorCommandInput {
-    const char *title;      // shown above the field, and states the syntax
-    const char *syntax;     // the shape `accepts` is built from
-    bool (*accepts)(const char *candidate);
-    // Rewrites a typed key before it is validated, where case depends on
-    // position rather than on the field as a whole. NULL for most prompts.
-    int (*transform)(const char *buffer, int cursor, int key);
-    bool template_mode;     // pre-filled, and the first typed key replaces it
-    bool uppercase;         // typed letters are normalised to upper case
-};
-
-extern const MonitorCommandInput monitor_input_jump;
-extern const MonitorCommandInput monitor_input_go;
-extern const MonitorCommandInput monitor_input_fill;
-extern const MonitorCommandInput monitor_input_transfer;
-extern const MonitorCommandInput monitor_input_compare;
-extern const MonitorCommandInput monitor_input_hunt;
-extern const MonitorCommandInput monitor_input_load;
-extern const MonitorCommandInput monitor_input_save;
-
-// Whether `candidate` is still on its way to something `syntax` accepts: true
-// when it is already acceptable, and when further typing could still make it
-// so. Lexical only; the parsers above stay authoritative for meaning.
-bool monitor_syntax_accepts_prefix(const char *syntax, const char *candidate);
-
-// The C64's top-left left-arrow key, as Keyboard_C64 delivers it. Back
-// everywhere in the monitor except where it is edit data.
-extern const int monitor_key_arrow_left;
-
-// The built-in help text, NULL-terminated. One line may carry a single "%s"
-// conversion, filled with the key that opens help. A line is drawn as written,
-// so its own characters are what has to fit the window's width.
-extern const char *const monitor_help_lines[];
-
 class UserInterface;
 class Screen;
 class Keyboard;
@@ -262,12 +216,6 @@ class MachineMonitor : public UIObject
     bool help_visible;
     bool range_mode;
     uint16_t range_anchor;
-    // The instruction boundary the Assembly view disassembles from: the last
-    // address the view was sent to, by a jump, a Go, a bookmark, a hunt result
-    // or a follow/return. Scrolling does not move it, so the same bytes keep
-    // reading as the same instructions while the view is scrolled away from it
-    // and back. See MachineMonitor::decode_row.
-    uint16_t asm_baseline;
     bool number_picker_active;
     int number_selected;
     uint16_t number_preview_value;
@@ -377,7 +325,6 @@ class MachineMonitor : public UIObject
 
     uint8_t canonical_read(uint16_t address);
     void canonical_write(uint16_t address, uint8_t value);
-    void canonical_write_instruction(uint16_t address, const uint8_t *bytes, uint8_t length);
     void read_row(uint16_t address, uint8_t *dst, uint16_t len) const;
     uint8_t memory_byte_stride(void) const;
     uint8_t binary_byte_stride(void) const;
@@ -395,7 +342,6 @@ class MachineMonitor : public UIObject
     void draw_popup_overlays();
     void draw_bookmark_popup();
     void draw_number_picker();
-    void draw_popup_overlays();
     void refresh_popup_overlay();
     void refresh_opcode_overlay();
     void draw_hex();
@@ -454,14 +400,9 @@ class MachineMonitor : public UIObject
     void number_picker_expression_set_status(const char *status);
     MonitorError number_picker_evaluate_expression(uint16_t *value) const;
     int number_picker_handle_key(int key);
-    // A free-form monitor prompt: no syntax restriction, but the top-left
-    // left-arrow key leaves it, the same as RUN/STOP.
     bool prompt_command(const char *title, char *buffer, int max_len,
                         bool template_mode = false, bool uppercase = true);
-    // A structured monitor prompt: the descriptor supplies the title, the
-    // presentation, and the refusal of a character the command could never
-    // accept.
-    bool prompt_command(const MonitorCommandInput &input, char *buffer, int max_len);
+    bool prompt_hunt_command(const char *title, char *buffer, int max_len);
     void toggle_help();
     bool debug_active(void) const { return debug.is_active(); }
     bool debug_input_active(void) const { return debug.is_active() || breakpoint_popup_active; }
@@ -558,15 +499,11 @@ class MachineMonitor : public UIObject
     void asm_edit_history_reset(uint16_t anchor_addr);
     void asm_edit_history_push(uint16_t addr, uint8_t prev_byte, uint8_t prev_part, uint8_t prev_pending);
     bool asm_edit_history_pop();
-    int handle_reset_shortcut(void);
-    int handle_interface_shortcut(void);
     void exit_edit_mode();
     void reset_edit_blink();
     bool update_edit_blink();
     uint16_t next_poll_interval_ms(void);
     void reset_poll_deadline(void);
-    void decode_row(uint16_t address, uint8_t *row_bytes,
-                    struct Disassembled6502 *decoded) const;
     uint8_t disasm_length(uint16_t address) const;
     void disasm_lane_invalidate(void);
     void disasm_lane_reset(uint16_t address);

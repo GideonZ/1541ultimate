@@ -75,27 +75,6 @@ public:
     int  poll(int);
 };
 
-// Opt-in input policy for one string field. Every member is optional, and a
-// field that asks for no policy behaves exactly as it always has, so this
-// changes nothing for the many fields that do not want it.
-struct UIStringEditPolicy
-{
-    // Whether the buffer, as it would read after a printable key has been
-    // inserted at the cursor, may be typed. Returning false rejects the key
-    // outright: nothing is inserted, the cursor does not move, an untouched
-    // template is not cleared, and nothing is redrawn. NULL accepts every
-    // printable character, which is what an ordinary field wants.
-    bool (*accepts)(const char *candidate);
-    // Rewrites a printable key before it is validated and inserted, given the
-    // current buffer and the cursor position it would be inserted at. Used
-    // where the case of a character depends on where in the field it lands.
-    // NULL leaves the key alone.
-    int (*transform)(const char *buffer, int cursor, int key);
-    // One extra key that cancels the field, beside RUN/STOP and Escape.
-    // 0 for none.
-    int cancel_key;
-};
-
 class UIStringEdit
 {
 private:
@@ -114,9 +93,6 @@ private:
     bool  template_mode;
     bool  clear_template_on_input;
     bool  uppercase;
-    const UIStringEditPolicy *policy;
-
-    bool  candidate_allowed(int key);
 public:
     UIStringEdit(char *buf, int max, bool template_mode = false);
     ~UIStringEdit() { }
@@ -125,7 +101,6 @@ public:
     int  poll(int);
     int  get_max_len() { return max_len; }
     void set_uppercase(bool b) { uppercase = b; }
-    void set_policy(const UIStringEditPolicy *p) { policy = p; }
 };
 
 class UIStringBox : public UIObject
@@ -142,7 +117,6 @@ public:
     void deinit(void);
     int  poll(int a) { return edit.poll(a); }
     void set_uppercase(bool b) { edit.set_uppercase(b); }
-    void set_policy(const UIStringEditPolicy *p) { edit.set_policy(p); }
 };
 
 class UIStatusBox : public UIObject

@@ -296,7 +296,6 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d012;
     uint8_t frozen_mode;
     bool backupIsValid;
-    bool frozen_cia2_porta_changed;
 
     volatile bool buttonPushSeen;
     volatile bool available;

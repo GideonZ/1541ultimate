@@ -191,36 +191,6 @@ UIStringEdit :: UIStringEdit(char *buf, int max, bool template_edit_mode)
     template_mode = template_edit_mode;
     clear_template_on_input = template_edit_mode;
     uppercase = false;
-    policy = 0;
-}
-
-bool UIStringEdit :: candidate_allowed(int key)
-{
-    // An untouched template is replaced wholesale by the first printable key,
-    // so what the field would then hold is that key on its own.
-    if (clear_template_on_input) {
-        char candidate[2];
-        candidate[0] = (char)key;
-        candidate[1] = 0;
-        return policy->accepts(candidate);
-    }
-    if (len >= max_len) {
-        return true; // the key is dropped for length below either way
-    }
-    // Insert into the destination buffer, ask about the result, and put the
-    // buffer back. The caller owns max_len characters plus the terminator, so
-    // writing buffer[len+1] with len < max_len stays in bounds.
-    int i;
-    for (i = len; i >= cur; i--) {
-        buffer[i + 1] = buffer[i];
-    }
-    buffer[cur] = (char)key;
-    bool allowed = policy->accepts(buffer);
-    for (i = cur; i < len; i++) {
-        buffer[i] = buffer[i + 1];
-    }
-    buffer[len] = 0;
-    return allowed;
 }
 
 void UIStringBox :: init()
@@ -297,25 +267,6 @@ int UIStringEdit :: poll(int dummy)
 		return 0;
 	if (key == -2) // error
 		return -1;
-
-    if (policy && policy->cancel_key && (key == policy->cancel_key)) {
-        return -1; // cancel, exactly as RUN/STOP does below
-    }
-    if ((key >= 32) && (key < 127)) {
-        // Settle what this key would actually insert, then decide whether the
-        // field accepts it. Both happen here rather than at the insertion
-        // below, because the template clear that follows is already a visible
-        // effect: a rejected key must not reach it.
-        if (policy && policy->transform) {
-            key = policy->transform(buffer, cur, key);
-        }
-        if (uppercase && key >= 'a' && key <= 'z') {
-            key = key - 'a' + 'A';
-        }
-        if (policy && policy->accepts && !candidate_allowed(key)) {
-            return 0;
-        }
-    }
 
     if (clear_template_on_input) {
         if ((key >= 32) && (key < 127)) {
@@ -440,8 +391,9 @@ int UIStringEdit :: poll(int dummy)
             printf("Unhandled key: %d\n", key);
             break;
         }
-        // The key arrives here already transformed and case-normalised, and
-        // already accepted by the policy; see the top of this function.
+        if (uppercase && key >= 'a' && key <= 'z') {
+            key = key - 'a' + 'A';
+        }
         clear_template_on_input = false;
         if (len < max_len) {
             for(i=len; i>=cur; i--) { // insert if necessary
