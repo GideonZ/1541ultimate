@@ -228,9 +228,9 @@ def _send_ctrl_d(session: "mt.MonitorSession") -> None:
     session.sock.sendall(b"\x04")
 
 
-def _send_ctrl_x(session: "mt.MonitorSession") -> None:
-    session.last_command = "CTRL_X"
-    session.sock.sendall(b"\x18")
+def _send_ctrl_r(session: "mt.MonitorSession") -> None:
+    session.last_command = "CTRL_R"
+    session.sock.sendall(b"\x12")
 
 
 def _wait_for_screen_text(session: "mt.MonitorSession", needle: str,
@@ -572,8 +572,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
     """
     session.goto(f"{address:04X}")
     target = f"${address:04X}"
-    session.last_command = "CTRL_R_CLEAR_ONE"
-    session.sock.sendall(b"\x12")
+    session.last_command = "CTRL_L_CLEAR_ONE"
+    session.sock.sendall(b"\x0c")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -602,8 +602,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
 
 
 def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
-    session.last_command = "CTRL_R_CLEAR_ALL"
-    session.sock.sendall(b"\x12")
+    session.last_command = "CTRL_L_CLEAR_ALL"
+    session.sock.sendall(b"\x0c")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -632,8 +632,8 @@ def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[s
     monitor currently maps at a breakpoint's address, so both the clear helper
     and the hygiene assertion read the table through here.
     """
-    session.last_command = "CTRL_R_SLOTS"
-    session.sock.sendall(b"\x12")
+    session.last_command = "CTRL_L_SLOTS"
+    session.sock.sendall(b"\x0c")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -807,9 +807,9 @@ def _restore_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSe
 def _reset_monitor_and_c64(rest_host: str, session: "mt.MonitorSession",
                            timeout: float = 8.0) -> None:
     _reopen_monitor(session)
-    _send_ctrl_x(session)
+    _send_ctrl_r(session)
     _wait_for_c64_ready(rest_host, timeout)
-    # C=+X tears down the live Debug session, but the REST reset path is the
+    # C=+R tears down the live Debug session, but the REST reset path is the
     # deterministic core reset used by standalone hardware runs.
     _reset_c64_core(rest_host, timeout)
     try:
@@ -1054,7 +1054,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
                       "C=+B List", "D Step Over", "T Step Into", "U Step Out",
-                      "C=+R", "C=+D", "C=+X", "RSTOP"):
+                      "C=+L", "C=+D", "C=+R", "RSTOP"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")
         if "ESC" in joined:
@@ -1072,12 +1072,12 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if "BRK" in after_clear and "CLR" in after_clear and after_clear != after_set:
             raise mt.Failure("Second R must not show a redundant BRK CLR popup")
 
-    with mt.check("Debug: C=+R opens the breakpoint list popup"):
-        session.last_command = "CTRL_R"
-        session.sock.sendall(b"\x12")
+    with mt.check("Debug: C=+L opens the breakpoint list popup"):
+        session.last_command = "CTRL_L"
+        session.sock.sendall(b"\x0c")
         snap = session.capture()
         if not any("BREAKPOINTS" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("C=+R did not open the breakpoint list popup")
+            raise mt.Failure("C=+L did not open the breakpoint list popup")
         for ch in "DTOGR":
             session.send_char(ch)
             snap = session.capture()
@@ -1100,13 +1100,13 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         if not re.search(brk_source, row):
             raise mt.Failure(f"Breakpoint line must show [BRKx]{_ram_tag()}, got: {row!r}")
 
-    with mt.check("Debug: C=+R shows the live breakpoint list"):
-        session.last_command = "CTRL_R_WITH_BREAKPOINT"
-        session.sock.sendall(b"\x12")
+    with mt.check("Debug: C=+L shows the live breakpoint list"):
+        session.last_command = "CTRL_L_WITH_BREAKPOINT"
+        session.sock.sendall(b"\x0c")
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         if "BREAKPOINTS" not in joined:
-            raise mt.Failure(f"C=+R did not open breakpoint list:\n{joined}")
+            raise mt.Failure(f"C=+L did not open breakpoint list:\n{joined}")
         if "$C050" not in joined or "SET" not in joined:
             raise mt.Failure(f"Breakpoint list did not show the live breakpoint:\n{joined}")
         if "0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res" not in joined:
@@ -1255,7 +1255,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"Disassembly cursor did not return to $C063:\n{session.capture().text()}")
         _ensure_no_debug(session)
 
-    with mt.check("Debug: C=+X resets the machine and keeps Debug open with blank context"):
+    with mt.check("Debug: C=+R resets the machine and keeps Debug open with blank context"):
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC070, bytes([0xA9, 0x11, 0xEA]))
         session.goto("C070")
@@ -1263,7 +1263,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("D")
         session.send_char("D")
         _wait_for_pc(session, "C072")
-        _send_ctrl_x(session)
+        _send_ctrl_r(session)
         _wait_for_blank_debug_context(session)
 
     with mt.check("Debug: C=+B opens bookmarks in Debug mode"):
@@ -1829,29 +1829,27 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         session.send_key("ENTER")
         _ensure_no_debug(session)
 
-    with mt.check("Debug: undocumented NOP is decoded by Undc but not debug-stepped"):
+    with mt.check("Debug: undocumented NOP is decoded by Undoc but not debug-stepped"):
         session.goto("C243")
         session.send_char("A")
-        # The Undc display toggle is U OUTSIDE Debug only; inside Debug U is Step
-        # Out. Enable Undc here (before entering Debug) and verify $1A decodes as
-        # NOP, then enter Debug and confirm the undocumented opcode refuses to
-        # step regardless of the display flag.
-        if "Undc" not in _header_line(session):
+        # The Undoc display toggle is U OUTSIDE Debug only; inside Debug U is
+        # Step Out.
+        if "Undoc" not in _header_line(session):
             session.send_char("U")
         header = _header_line(session)
-        if "Undc" not in header:
-            raise mt.Failure(f"Undc flag must appear after U: {header!r}")
+        if "Undoc" not in header:
+            raise mt.Failure(f"Undoc flag must appear after U: {header!r}")
         row = _disassembly_row(session.capture(), 0xC243)
         if "NOP" not in row:
-            raise mt.Failure(f"Undc flag must decode $1A as NOP: {row!r}")
+            raise mt.Failure(f"Undoc flag must decode $1A as NOP: {row!r}")
         session.send_char("D")
         session.send_char("D")
         _wait_for_screen_text(session, "UNSUPPORTED OPCODE")
         session.send_key("ENTER")
         _wait_for_blank_debug_context(session)
         _ensure_no_debug(session)
-        # Restore the Undc display toggle off (outside Debug).
-        if "Undc" in _header_line(session):
+        # Restore the Undoc display toggle off (outside Debug).
+        if "Undoc" in _header_line(session):
             session.send_char("U")
 
     with mt.check("Debug: traced RTS lands on the caller continuation address"):
@@ -2392,8 +2390,8 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
 
             session.send_char("R")
             _assert_no_debug_modal(session, f"{name} ROM breakpoint clear")
-            session.last_command = f"CTRL_R_CLEAR_{name}"
-            session.sock.sendall(b"\x12")
+            session.last_command = f"CTRL_L_CLEAR_{name}"
+            session.sock.sendall(b"\x0c")
             text = session.capture().text()
             if f"SET ${target:04X}" in text:
                 raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
@@ -2632,8 +2630,8 @@ def _banked_kernal_out_program(base: int, ready_addr: int) -> bytes:
 
 
 def _open_breakpoint_popup(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
-    session.last_command = f"CTRL_R_{context}"
-    session.sock.sendall(b"\x12")
+    session.last_command = f"CTRL_L_{context}"
+    session.sock.sendall(b"\x0c")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")

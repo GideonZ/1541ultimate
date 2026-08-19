@@ -1260,18 +1260,10 @@ int U64Config :: setFilter(ConfigItem *it)
     return 0;
 }
 
-// The freezer silences the SIDs while it owns the machine, by writing the SID
-// master volume ($D418). That register also sets the DC offset of the SID
-// output, so the write steps the offset and is heard as a low click every time
-// the machine is taken and handed back. Measured on an Ultimate 64 over the
-// device's own audio stream: peak sample 19000 against a silent-machine floor
-// of 19.
-//
-// The FPGA audio mixer sits after the point where that offset is removed, so
-// closing it is itself silent, and while it is closed nothing the SID does can
-// be heard. The freezer therefore closes the mixer around its own SID writes
-// rather than instead of them: the $D418 mute stays, and stays portable, and
-// on this hardware it happens where it cannot be heard.
+// The freezer silences SIDs by writing $D418 (master volume), which also
+// steps the DC offset, heard as a click on take/hand-back (measured: peak
+// sample 19000 vs. silent-machine floor 19). The FPGA mixer sits after that
+// offset is removed, so closing it around the $D418 write is itself silent.
 //
 // The first eight bytes are the SID channels: UltiSID 1 and 2, socket 1 and 2,
 // right and left. SetMixerAutoSid zeroes the same eight to mute the SIDs while

@@ -72,14 +72,13 @@ public:
         }
     }
 
-    // Freeze / pause control. Backends that can hold the host machine in a
-    // stopped state across many reads/writes (so register/IO state is stable)
-    // override these. The monitor exposes a Z toggle to drive this. Default
-    // behaviour is a no-op so non-U64 backends remain unaffected.
-    // Whether the machine the monitor is looking at can be reset. The reset
-    // itself is performed by whoever owns the machine, because it has to let
-    // go of it first; see run_machine_monitor.cc. A backend that answers false
-    // makes the monitor say so rather than appear to have done something.
+    // Freeze/pause control: backends that can hold the host machine stopped
+    // across many reads/writes override these (default no-op). Monitor's Z
+    // toggle drives it.
+
+    // Whether the machine can be reset; the reset itself is performed by
+    // whoever owns the machine (see run_machine_monitor.cc). A backend
+    // answering false makes the monitor say so.
     virtual bool supports_reset(void) const { return false; }
     virtual bool reset_machine(void) { return false; }
 
@@ -134,13 +133,10 @@ public:
         set_monitor_cpu_port(saved_cpu_port);
     }
 
-    // Whether reads at this address are live I/O registers rather than memory.
-    // The disassembler needs to know: an I/O register answers differently from
-    // one read to the next, so decoding it as an opcode produces a different
-    // instruction, and a different instruction *length*, on every redraw, and
-    // every row below it moves. Derived from source_name so there is one rule
-    // for what lives where, and a backend that names its regions differently
-    // only has to override that one.
+    // Whether reads at this address are live I/O rather than memory. The
+    // disassembler needs this: a register that answers differently each read
+    // decodes to a different instruction/length on every redraw, shifting
+    // every row below. Derived from source_name, the one rule for what lives where.
     virtual bool reads_live_io(uint16_t address) const
     {
         const char *source = source_name(address);
@@ -148,26 +144,10 @@ public:
         return source && source[0] == 'I' && source[1] == 'O' && source[2] == 0;
     }
 
-    // Whether the Assembly view should show this address as data rather than
-    // decode it. Two sources qualify, for two unrelated reasons:
-    //
-    //   I/O   is volatile. See reads_live_io above: the bytes change between
-    //         reads, so the decoded instruction length changes with them and
-    //         every row below re-aligns while the user is only scrolling.
-    //
-    //   CHAR  is stable and has none of that problem. It is excluded because
-    //         it is character bitmap data and never was code, so decoding it
-    //         produces instructions that are meaningless whatever they say.
-    //
-    // Deliberately separate from reads_live_io rather than folded into it.
-    // That predicate answers what the address *reads*, character ROM is not
-    // I/O, and a test asserts it says so. This one answers how the view should
-    // *draw* the address, which is a different question with a different
-    // answer for CHAR.
-    //
-    // RAM at these addresses is unaffected and still disassembles, which is
-    // what makes the $D000-$DFFF rule about the banked source rather than
-    // about the address range.
+    // Whether to show this address as data instead of decoding it: true for
+    // volatile I/O (reads_live_io; a shifting instruction length would
+    // misalign every row below on scroll) and for CHAR (bitmap, never code).
+    // RAM at the same addresses is unaffected: this is about banked source.
     virtual bool shows_as_data(uint16_t address) const
     {
         const char *source = source_name(address);

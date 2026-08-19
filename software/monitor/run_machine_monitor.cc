@@ -26,15 +26,10 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         reopen_after_reset = false;
 #if !defined(RUNS_ON_PC)
         C64 *debug_render_machine = C64::getMachine();
-        // After a C=+X reset the C64 is running again, so the firmware
-        // overlay it was rendering into has lost ownership of screen RAM:
-        // the live BASIC start-up writes are clobbering everything the new
-        // monitor draws. Re-take ownership before init() so the firmware
-        // gets the screen back, then redraw the chrome (title bar + border
-        // separators) so the new monitor sees a clean canvas. The first-ever
-        // monitor entry from the freezer menu already has is_accessible()
-        // true, so this is a no-op there; non-C64-hosted UIs (telnet) skip
-        // it because host != machine.
+        // After a C=+R debug reset the running C64's BASIC start-up writes
+        // clobber the overlay's screen RAM; re-take ownership and redraw the
+        // chrome before init() so the new monitor gets a clean canvas. No-op
+        // on first entry (already accessible) or telnet (host != machine).
         if (debug_render_machine && host == debug_render_machine &&
                 !debug_render_machine->is_accessible()) {
             debug_render_machine->take_ownership(this);
@@ -69,15 +64,10 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             // the outer run_once() loop also tears the menu down, landing the
             // user back on the live machine instead of a dismissed-menu shell.
             if (!ret && pollMenuButtonPush()) {
-                // The menu button must work even while a debug session owns the
-                // CPU: on a cartridge target with no keyboard injection it is
-                // the only way out, and refusing it there leaves the machine
-                // held with no software escape. This leaves Debug mode so the
-                // monitor tears down from a consistent state; the parked CPU
-                // itself is handed back by the teardown that follows the break
-                // -- deinit()'s debug_cleanup_session(), or
-                // dispatch_deferred_debug_go() when a parked-context G is
-                // pending.
+                // Must work even mid-debug session: the only escape on a
+                // cartridge target with no keyboard injection. Leaves Debug
+                // first so the parked CPU is handed back by deinit()'s
+                // teardown, or by dispatch_deferred_debug_go() for a parked G.
                 if (monitor->is_debug_session_active()) {
                     monitor->leave_debug_for_exit();
                 }
@@ -85,12 +75,10 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             }
         }
         bool exit_ui = ret == MENU_EXIT;
-        // C=+I inside the monitor routes to swap_interface_type(), which toggles
-        // the persisted UI mode and returns MENU_HIDE. Unlike a normal monitor
-        // exit (which returns to the launching menu) the user expects the whole
-        // monitor + menu/browser UI to close so they land back on the live
-        // machine and the next monitor open uses the new mode. Escalate MENU_HIDE
-        // to a full UI teardown (mirrors the browser's own C=+I handler).
+        // C=+I's swap_interface_type() toggles the persisted UI mode and
+        // returns MENU_HIDE; unlike a normal exit, the user expects the whole
+        // UI to close onto the live machine, so escalate to a full teardown
+        // (mirrors the browser's own C=+I handler).
         bool swap_close = ret == MENU_HIDE;
         bool do_go = monitor->consume_pending_go(&go_address, &go_context,
                                                  &go_has_context);

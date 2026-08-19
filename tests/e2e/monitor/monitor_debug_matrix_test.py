@@ -1235,8 +1235,8 @@ class TelnetDebugDriver(BaseDriver):
     def send_key(self, key: str):
         if len(key) == 1:
             self._session().send_char(key.upper())
-        elif key == "C=+X":
-            dbg._send_ctrl_x(self._session())
+        elif key == "C=+R":
+            dbg._send_ctrl_r(self._session())
         elif key == "C=+D":
             dbg._send_ctrl_d(self._session())
         elif key == "RETURN":
@@ -1390,9 +1390,9 @@ class TelnetDebugDriver(BaseDriver):
         self.send_key("G")
 
     def reset_from_debug_ui(self):
-        self.send_key("C=+X")
+        self.send_key("C=+R")
         dbg._wait_for_c64_ready(machine_host(self.args), timeout=10.0)
-        self.event("reset_from_debug_ui", method="telnet C=+X")
+        self.event("reset_from_debug_ui", method="telnet C=+R")
 
 
 class RestDebugDriver(BaseDriver):
@@ -1482,7 +1482,7 @@ class RestDebugDriver(BaseDriver):
     def send_key(self, key: str):
         if len(key) == 1:
             self.rest.tap([key.lower()])
-        elif key == "C=+X":
+        elif key == "C=+R":
             self.rest.tap(["commodore", "x"])
         elif key == "C=+D":
             self.rest.tap(["commodore", "d"])
@@ -1810,18 +1810,18 @@ class RestDebugDriver(BaseDriver):
         time.sleep(1.5)
 
     def reset_from_debug_ui(self):
-        self.send_key("C=+X")
+        self.send_key("C=+R")
         try:
             overlay_lifecycle.wait_ready(self.rest, timeout=10.0)
-            self.event("reset_from_debug_ui", method=f"{self.row['interface']} C=+X")
+            self.event("reset_from_debug_ui", method=f"{self.row['interface']} C=+R")
             return
         except Exception as exc:
             self.event(
                 "reset_from_debug_ui_fallback",
-                attempted=f"{self.row['interface']} C=+X",
+                attempted=f"{self.row['interface']} C=+R",
                 error=str(exc),
                 reason=("Continue closes the local monitor/UI, so the post-Continue "
-                        "C=+X chord is not guaranteed to be consumed by Debug"))
+                        "C=+R chord is not guaranteed to be consumed by Debug"))
         self.rest.reset()
         overlay_lifecycle.wait_ready(self.rest, timeout=12.0)
         self.event("reset_from_debug_ui", method="REST /v1/machine:reset fallback")

@@ -436,17 +436,19 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "CTRL_B": ["ctrl", "b"],
     "CTRL_D": ["ctrl", "d"],
     "CTRL_E": ["ctrl", "e"],
+    "CTRL_L": ["ctrl", "l"],
     "CTRL_O": ["ctrl", "o"],
     "CTRL_R": ["ctrl", "r"],
     "CTRL_X": ["ctrl", "x"],
     "CBM_B": ["commodore", "b"],
     "CBM_1": ["commodore", "1"],
     "CBM_9": ["commodore", "9"],
-    # The monitor's reset shortcut, and the code the shortcut used to have.
-    # Both resolve through Keyboard_C64's keymap_control
+    # The monitor's breakpoint-popup and reset shortcuts, and the code reset
+    # used to have. All three resolve through Keyboard_C64's keymap_control
     # (software/io/c64/keyboard_c64.cc), which the REST menu route reads with
-    # matrixToKeyCode: C=+R gives KEY_CTRL_R and C=+X gives $18, which is now
-    # bound to nothing.
+    # matrixToKeyCode: C=+L gives KEY_CTRL_L, C=+R gives KEY_CTRL_R, and C=+X
+    # gives $18, which is bound to nothing.
+    "CBM_L": ["commodore", "l"],
     "CBM_R": ["commodore", "r"],
     "CBM_X": ["commodore", "x"],
     # C=+I swaps the interface between the freeze menu and the HDMI overlay.
@@ -1467,6 +1469,7 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "CTRL_B": b"\x02",
     "CTRL_D": b"\x04",
     "CTRL_E": b"\x05",
+    "CTRL_L": b"\x0c",
     "CTRL_O": b"\x0f",
     "CTRL_R": b"\x12",
     "CTRL_X": b"\x18",
@@ -1479,6 +1482,9 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     # is decoded separately; a bare $12 only comes from someone pressing
     # Ctrl+R.
     "CBM_R": b"\x12",
+    # Ctrl+L is the byte $0C (ASCII form feed), which the VT100 driver also
+    # passes through unchanged and keyboard_vt100.cc maps to KEY_CTRL_L.
+    "CBM_L": b"\x0c",
     # C=+X used to be the reset shortcut and its code, $18, is plain ASCII, so
     # the VT100 driver passes it through unchanged (getch(), e_esc_idle case).
     # No monitor handler claims it now.

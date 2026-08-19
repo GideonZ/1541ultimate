@@ -5,14 +5,10 @@
 #include "monitor_debug.h"
 #include "monitor_breakpoints.h"
 
-// Backend-provided executing layer for Debug mode. Implementations own the
-// BRK trampoline / vector hook lifecycle and are responsible for restoring
-// every patched byte and vector on success, failure, cancel, and destruction.
-//
-// MachineMonitor creates a session lazily on first Debug execution command
-// and destroys it on monitor close or debug-off. The session must remain a
-// thin orchestrator on top of the existing MemoryBackend; it does not own
-// keyboard or UI state.
+// Backend-provided executing layer for Debug mode: owns the BRK trampoline
+// /vector hook lifecycle, restoring every patched byte/vector on success,
+// failure, cancel, and destruction. Created lazily, destroyed on monitor
+// close/debug-off; a thin MemoryBackend orchestrator owning no keyboard/UI state.
 class DebugSession
 {
 public:
@@ -107,12 +103,9 @@ public:
         return step_out(from, ctx);
     }
 
-    // Resume execution honouring active breakpoints. Invalidates the context
-    // on the calling side. When `from.valid` is false (no prior capture),
-    // `start_pc` provides the address the CPU should jump to in order to
-    // start hitting breakpoints. Backends that can perform the start may
-    // honour it; a zero `start_pc` means "do not redirect" (the CPU keeps
-    // running wherever it is).
+    // Resume execution honouring active breakpoints; invalidates the caller's
+    // context. When `from.valid` is false, `start_pc` gives the address to
+    // jump to before hitting breakpoints; zero means don't redirect.
     virtual Result go(const DebugContext &from,
                       const MonitorBreakpoints *breakpoints,
                       uint16_t start_pc) = 0;
@@ -144,11 +137,10 @@ public:
         cleanup();
     }
 
-    // True only when the backend currently owns a parked debug context that can
-    // be handed back to live execution later via cleanup_to_context(). This lets
-    // the monitor defer a no-breakpoint Freeze-mode G handoff until after UI
-    // teardown and ownership release, while leaving overlay and non-parked
-    // backends on the existing immediate path.
+    // True only when the backend owns a parked debug context handoff-able via
+    // cleanup_to_context(); lets the monitor defer a no-breakpoint Freeze-mode
+    // G handoff until after UI teardown, leaving overlay/non-parked backends
+    // on the existing immediate path.
     virtual bool has_parked_context_handoff(void) const { return false; }
 
     // True while the live CPU sits parked in the backend's debug spin loop, so
@@ -172,11 +164,10 @@ public:
         return false;
     }
 
-    // Fetch instruction bytes for step prediction from the live execution
-    // domain the debug session controls. This lets ROM-capable backends decode
-    // BASIC/KERNAL/CHAR instructions without changing the monitor's normal
-    // memory-view semantics. Returns false when the backend has no special
-    // source and the caller should fall back to regular backend reads.
+    // Fetch instruction bytes for step prediction from the debug session's
+    // live execution domain, letting ROM-capable backends decode BASIC/KERNAL
+    // /CHAR without changing normal memory-view semantics. False means no
+    // special source; the caller falls back to regular backend reads.
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
     {
         (void)address; (void)dst; (void)len;
@@ -189,14 +180,10 @@ public:
     // Does not patch or run the machine; cleanup() still owns patch teardown.
     virtual void forget_context(void) { }
 
-    // Returns true when the most recent CPU-run window temporarily unfroze a
-    // frozen machine and subsequently refroze it. The firmware chrome rows (UI
-    // title and border lines) are overwritten by the live BASIC screen during
-    // the temporary unfreeze; callers that need a correct display must restore
-    // the chrome (e.g. via UserInterface::set_screen_title()) and redraw the
-    // monitor window before the user sees the result.
-    // Cleared at the start of the next CPU-run window. Always false in overlay
-    // mode because overlay sessions disable freeze/refreeze run windows.
+    // True when the last CPU-run window unfroze then refroze a frozen machine,
+    // so the firmware chrome (title/border rows) was overwritten by the live
+    // BASIC screen and callers must restore it before redrawing. Cleared at
+    // the next run window; always false in overlay mode (no freeze windows).
     virtual bool screen_render_target_invalidated(void) const { return false; }
 
     virtual bool claim_debug_ownership(bool remote) { (void)remote; return true; }

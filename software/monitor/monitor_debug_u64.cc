@@ -1,9 +1,5 @@
-// U64 Debug session.
-//
-// Thin subclass on top of BrkDebugSession. The shared base owns the BRK
-// capture engine, the cassette-buffer trampoline layout, breakpoint patch
-// tracking, and the sentinel polling loop. U64 only supplies hardware hooks
-// (stopped-session bracketing, peek/poke, reset, NMI pulse) and the
+// U64 Debug session: a thin BrkDebugSession subclass supplying hardware
+// hooks (stopped-session bracketing, peek/poke, reset, NMI pulse) and the
 // volatile-ROM patch override for BASIC/KERNAL/CHAR stepping.
 
 #include "monitor_debug_u64.h"
@@ -27,11 +23,10 @@ class U64DebugSession : public BrkDebugSession
     U64MemoryBackend *backend;
     U64Machine *machine;
 
-    // U64 BASIC/KERNAL/CHAR ROMs are served from volatile image buffers in
-    // U64_BASIC_BASE/U64_KERNAL_BASE/U64_CHARROM_BASE. Patch those buffers
-    // directly instead of copying ROMs into C64 RAM. No flash/config/file
-    // storage is touched, so a device reboot or ROM reload always restores
-    // the configured images even if a debug session dies before cleanup.
+    // U64 BASIC/KERNAL/CHAR ROMs are volatile image buffers at U64_BASIC_BASE
+    // /U64_KERNAL_BASE/U64_CHARROM_BASE; patch those directly rather than
+    // copying into C64 RAM. Untouched flash/config means a reboot always
+    // restores the configured images even if a session dies before cleanup.
     volatile uint8_t *rom_patch_ptr(uint16_t addr, uint8_t cpu_port)
     {
         cpu_port &= 0x07;
@@ -192,12 +187,10 @@ protected:
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
-            // While the freezer holds the machine, the live aperture serves
-            // the freezer cartridge's banking, not BASIC/KERNAL: a raw read
-            // returns garbage, and a patch "original" saved from it would be
-            // restored INTO the ROM image later (a trashed $FFFE vector was
-            // exactly the frozen-continue jiffy-death). The monitor ROM cache
-            // is the truthful frozen source.
+            // While frozen, the live aperture serves the freezer cartridge's
+            // banking, not BASIC/KERNAL, so a raw read is garbage and would
+            // restore a trashed "original" into the ROM image (this caused
+            // the frozen-continue jiffy-death via a trashed $FFFE vector).
             uint8_t cached = 0;
             if (machine_is_frozen() && backend &&
                     backend->read_monitor_rom_byte(addr, cpu_port, &cached)) {

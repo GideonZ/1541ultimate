@@ -241,11 +241,10 @@ class MachineMonitor : public UIObject
     bool help_visible;
     bool range_mode;
     uint16_t range_anchor;
-    // The instruction boundary the Assembly view disassembles from: the last
-    // address the view was sent to, by a jump, a Go, a bookmark, a hunt result
-    // or a follow/return. Scrolling does not move it, so the same bytes keep
-    // reading as the same instructions while the view is scrolled away from it
-    // and back. See MachineMonitor::decode_row.
+    // Instruction boundary the Assembly view disassembles from: the last
+    // address it was sent to (jump/Go/bookmark/hunt/follow/return).
+    // Scrolling doesn't move it, so bytes decode the same when scrolled
+    // away and back. See MachineMonitor::decode_row.
     uint16_t asm_baseline;
     bool number_picker_active;
     int number_selected;

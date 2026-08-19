@@ -26,20 +26,10 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>
 
-// Rendered by draw_help, one line per row. The line naming the key that opens
-// help carries the only "%s" here: that key comes from the application key
-// mapper rather than from this table, so the help cannot claim a mapping the
-// firmware does not have. Every line has to fit the 38 usable columns of the
-// monitor window on the physical 40-column screen, and the table as a whole has
-// to fit the shortest screen the monitor runs on, which is the 24-row telnet
-// terminal rather than the 25-row C64. A host test enforces both.
-// The primary grid's cells start at columns 1, 14 and 27 (1-based, excluding
-// the popup border); BOOKMARKS and CONTROL KEYS share a four-anchor grid at
-// 1, 12, 21 and 29. Every character is drawn in the body colour, so a line is
-// laid out exactly as it is written here. No leading blank row: "HELP", drawn
-// as the window title by draw_header rather than from this table, is this
-// page's own heading, and a heading is not followed by a blank row any more
-// than BOOKMARKS or CONTROL KEYS are below.
+// Rendered verbatim by draw_help, one line per row; must fit the 38 usable
+// columns and the 24-row telnet terminal (host-test enforced). The "%s" key
+// name comes from the application key mapper, not this table, so help can't
+// claim a mapping the firmware lacks.
 const char *const monitor_help_lines[] = {
     "M Memory     I ASCII      V Screen",
     "A Assembly   B Binary     U Undoc/Case",
@@ -136,13 +126,10 @@ static uint16_t monitor_last_go_addr = 0;
 static uint8_t monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
 static uint8_t monitor_binary_bytes_per_row = 1;
 
-// Trace lines for the monitor's non-debugger actions. They go to the same
-// console the device log collector reads, so the prefix is fixed at "MCM " and
-// every line is one action: an E2E run can tell from the log alone which view
-// was selected, where the cursor went, and what each range command was asked
-// to do. Volume is one line per action, which on the bank keys means one line
-// per keypress, and that is the point: a bank key that produced no line did
-// not reach the monitor.
+// Trace lines for the monitor's non-debugger actions, fixed-prefix "MCM " so
+// an E2E run can tell from the log alone which view/cursor/range action ran.
+// One line per keypress on the bank keys is deliberate: a bank key that
+// produced no line did not reach the monitor.
 static void monitor_log(const char *action)
 {
     printf("MCM %s\n", action);
@@ -168,12 +155,10 @@ static void monitor_log_range(const char *action, uint16_t start, uint16_t end)
     printf("MCM %s $%04x-$%04x\n", action, start, end);
 }
 
-// The three-character tag the Assembly view puts at the end of each row. The
-// source column is right-aligned, so a variable-width tag moves the column's
-// left edge whenever the cursor crosses a bank boundary and the rows below
-// appear to shift. Every name a backend can return maps to three characters,
-// so the column stays where it is. A name no backend currently returns is
-// passed through rather than hidden, and it is the caller that caps the width.
+// Three-character source tag for the Assembly view's right-aligned column.
+// Fixed width keeps the column from shifting when the cursor crosses a bank
+// boundary; an unrecognized backend name is passed through rather than
+// hidden, with width capping left to the caller.
 static const char *monitor_source_indicator(const char *source)
 {
     if (!source) {
@@ -1335,11 +1320,9 @@ MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t 
     return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
 }
 
-// `AAAA-BBBB,CCCC` copies, and the optional `,DDDD-EEEE` additionally names the
-// part of the source that is code, in source addresses, so absolute operands
-// pointing into the copied range can be moved with it. Without the fourth
-// field this is exactly monitor_parse_transfer and `relocate` comes back false,
-// which is what keeps the three-argument command unchanged.
+// `AAAA-BBBB,CCCC` copies; the optional `,DDDD-EEEE` names the code sub-range
+// (source addresses) so absolute operands pointing into it can be relocated.
+// Without it, this is monitor_parse_transfer and `relocate` comes back false.
 MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
                                              uint16_t *dest, bool *relocate,
                                              uint16_t *code_start, uint16_t *code_end)
@@ -1507,17 +1490,10 @@ void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t en
     uint8_t *buffer = (uint8_t *)malloc(TRANSFER_BLOCK);
     uint32_t done = 0;
 
-    // A chunk at a time, whole-chunk read then whole-chunk write. Each one is
-    // a single access as far as the backend is concerned, which is what an
-    // Ultimate II+L needs: reading and writing a byte at a time flips the
-    // frozen C64's bank around every access, and the copy then loses
-    // everything after its first couple of bytes.
-    //
-    // The buffer is one chunk rather than the whole range, so copying
-    // $0000-$FFFF asks for 4KB rather than 64KB and the allocation does not
-    // fail on a machine with little left. A chunk is read in full before any
-    // of it is written, so an overlap inside one chunk is safe; overlap across
-    // chunks is what the direction rule below handles.
+    // Whole-chunk read then whole-chunk write, one access per chunk: an
+    // Ultimate II+L flips the frozen C64's bank on every byte-at-a-time
+    // access, losing the copy past the first couple of bytes. A fixed chunk
+    // (not the whole range) keeps $0000-$FFFF's allocation to 4KB.
     if (buffer) {
         if (dest > start && dest <= end) {
             // Destination inside the source and above its start: the last
@@ -1578,27 +1554,10 @@ static uint8_t transfer_read_code(MemoryBackend *backend, uint16_t address,
     return backend->read(transfer_mapped_address(address, start, end, dest));
 }
 
-// Copy, then walk the code range and move absolute operands that point into
-// the copied source range. Returns how many operands were rewritten.
-//
-// Only a three-byte instruction with a two-byte operand qualifies, which is
-// absolute, absolute-indexed and indirect. Zero page cannot express a page
-// move, and a relative branch inside a block that moves as a unit is already
-// correct, so both are left alone by that condition rather than by a special
-// case. An operand pointing outside the source range is left alone too: it
-// names something this copy did not move.
-//
-// The code range is where the pointers are, and it is independent of the range
-// being copied. An instruction wholly inside the copy is read and rewritten in
-// the copy, because that is the version being relocated. An instruction wholly
-// outside it is read and rewritten where it stands, which is how a jump table
-// that has to keep pointing at the block is brought with it. An instruction
-// straddling the boundary is neither, and is left alone rather than half
-// written into the copy and half into the original.
-//
-// The scan is linear and steps by one byte over anything that does not decode,
-// which is what the fourth field exists to keep short: the user names where
-// the pointers are.
+// Copy, then walk the code range and relocate absolute operands (3-byte
+// instructions only) pointing into the copied source range: rewritten in the
+// copy if wholly inside it, in place if wholly outside (keeps a jump table
+// correct), left alone if straddling the boundary or pointing elsewhere.
 int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
                                      uint16_t dest, uint16_t code_start, uint16_t code_end,
                                      bool illegal_enabled)
@@ -1607,10 +1566,8 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     uint32_t code_length = (uint32_t)(uint16_t)(code_end - code_start) + 1;
     uint32_t index = 0;
     int rewritten = 0;
-    // The copied range, held here for the whole scan. Every byte the scan
-    // needs from inside the copy comes out of this rather than off the
-    // machine, so a scan of a large range is one read and one write rather
-    // than three accesses per instruction. Patches to instructions inside the
+    // Copied range held here for the whole scan: one read/write for a large
+    // range rather than three accesses per instruction. Patches inside the
     // copy are made here and written back once at the end.
     uint8_t *image = (uint8_t *)malloc(source_length);
     bool image_changed = false;
@@ -3861,19 +3818,10 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
     disassemble_6502(address, row_bytes, state.illegal_enabled, decoded);
     monitor_disasm_tail_cutover(address, decoded);
 
-    // Two sources are shown as data rather than decoded, for two different
-    // reasons. A live I/O register does not read the same twice, so decoding
-    // one gives an instruction length that changes between redraws, and with
-    // it the address of every row below, so the whole view re-aligns while the
-    // user is only scrolling. Character ROM is perfectly stable and has none
-    // of that problem; it is shown as data because it is character bitmaps and
-    // never was code, so any instruction decoded from it is meaningless.
-    //
-    // Two bytes per row keep the rows stable: an I/O row shows the registers
-    // as read now, and a CHAR row shows bitmap bytes instead of invented
-    // opcodes. RAM banked at the same addresses is still decoded, so the rule
-    // follows the banked source rather than the address range. The source
-    // column, [I/O], [CHR] or [RAM], keeps that distinction visible.
+    // I/O and CHAR ROM are shown as data, not decoded: a live I/O register's
+    // changing read would shift every row's length and address on redraw,
+    // and CHAR ROM is bitmaps, never code. RAM banked at the same addresses
+    // is still decoded, so the rule follows the banked source, not the range.
     if (address_is_data(address)) {
         uint8_t length = data_group_length(address);
         int pos;
@@ -3895,11 +3843,9 @@ void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
         return;
     }
 
-    // The address the view was last sent to is a known instruction boundary,
-    // so nothing above it may reach across it: an instruction read from the
-    // bytes in front of it would otherwise swallow it, and every row below
-    // would shift with it. The bytes that do not fit are shown as data, which
-    // is what they are in the stream the jump established.
+    // asm_baseline is a known instruction boundary; an instruction reaching
+    // across it from above would swallow it and shift every row below, so
+    // bytes that don't fit are shown as data instead.
     if ((address < asm_baseline) &&
         ((uint16_t)(address + decoded->length) > asm_baseline)) {
         decoded->valid = false;
@@ -3939,12 +3885,10 @@ bool MachineMonitor :: asm_is_branch(uint16_t address)
     return strncmp(operand_spec(templ), "rel", 3) == 0;
 }
 
-// Number of editable parts presented in the ASM edit cursor for the
-// instruction at `address`. Branch instructions are encoded as opcode +
-// 1-byte signed offset but are *displayed* as opcode + absolute 16-bit
-// target, so we expose three editable parts (mnemonic, target high, target
-// low) for branches and let the byte-edit path translate the typed target
-// back into a relative offset.
+// Editable-part count for the ASM edit cursor at `address`. Branches are
+// encoded as opcode + signed offset but displayed as opcode + absolute
+// target, so they get three parts (mnemonic, target high, target low); the
+// byte-edit path translates the typed target back into a relative offset.
 uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 {
     uint8_t len = disasm_length(address);
@@ -5374,11 +5318,9 @@ void MachineMonitor :: binary_apply_bit(uint8_t bit_value)
     reset_edit_blink();
 }
 
-// Unified DEL behaviour shared by edit and non-edit mode. ASC/SCR clear
-// the current cell to a space and step the cursor LEFT; HEX clears the
-// current byte to 0x00 and steps RIGHT; BINARY clears only the selected
-// bit to 0 and steps RIGHT by one bit; ASM replaces the current
-// instruction with NOP(s) and steps to the next disassembled line.
+// Unified DEL, shared by edit and non-edit mode: ASC/SCR clear+step LEFT,
+// HEX clears the byte+steps RIGHT, BINARY clears one bit+steps RIGHT, ASM
+// replaces the instruction with NOP(s)+steps to the next line.
 void MachineMonitor :: apply_logical_delete()
 {
     switch (state.view) {
@@ -5787,13 +5729,10 @@ int MachineMonitor :: handle_interface_shortcut(void)
         redraw_full();
         return 0;
     }
-    // Closing the monitor is not enough. The swapped Interface Type only takes
-    // effect when the menu is next opened, so leaving the file browser on
-    // screen would leave the user in the interface they just swapped away
-    // from, and the swap would appear not to have worked until they closed the
-    // browser by hand. The whole user interface has to go, which is what the
-    // file browser already does for this key by answering MENU_HIDE.
-    // run_machine_monitor consumes this and gives the same answer.
+    // The swap only takes effect on the next menu open, so the whole UI must
+    // go, not just the monitor, or the user stays in the old interface until
+    // they close the browser by hand. MENU_HIDE is the file browser's own
+    // answer for this key; run_machine_monitor gives the same one.
     interface_swap_pending = true;
     return 1;   // the monitor's own exit, the same value Back returns
 }
@@ -5915,7 +5854,11 @@ int MachineMonitor :: handle_key(int key)
     int needle_len;
     MonitorError error;
 
-    if (key == KEY_CTRL_X) {
+    // The debug reset-and-reopen escape hatch is checked here, ahead of every
+    // picker and popup, so it can blow through any of them: reset_machine_
+    // and_reopen() clears them itself. Outside Debug, C=+R falls through to
+    // the ordinary handle_reset_shortcut() below instead.
+    if (key == KEY_CTRL_R && debug.is_active()) {
         return reset_machine_and_reopen();
     }
     if (hunt_picker_active) {
@@ -5971,7 +5914,7 @@ int MachineMonitor :: handle_key(int key)
         }
         return 0;
     }
-    if (!edit_mode && key == KEY_CTRL_R && debug_has_breakpoint()) {
+    if (!edit_mode && key == KEY_CTRL_L && debug_has_breakpoint()) {
         debug_open_breakpoint_popup();
         draw();
         return 0;

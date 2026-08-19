@@ -9,20 +9,9 @@
 
 namespace {
 
-// Cassette-buffer debug scratch layout. All debug stubs/stores occupy a single
-// contiguous, top-aligned block ending at $03FB (the top of the C64 cassette
-// buffer $033C-$03FB). The 4 "unused" bytes $03FC-$03FF are deliberately
-// left free so programs that rely on them are not disturbed. The
-// literal-referenced register stores ($03F0-$03FB) stay put; the code stubs are
-// packed contiguously up to them, with the constant-referenced hard-vector
-// scratch bytes placed just below the store block. Layout:
-//   $035D-$0389  HANDLER       (45 bytes; ends with the spin JMP at $0387)
-//   $038A-$03AF  TRAMPOLINE    (38 bytes)
-//   $03B0-$03C7  NMI_TRAMPOLINE(24 bytes reserved)
-//   $03C8-$03EC  HARD_BRK_STUB (37 bytes; 35 bytes code + 2 bytes padding)
-//   $03ED        STORE_HARD_CPU_PORT
-//   $03EE-$03EF  HARD_BRK_ORIG_VECTOR (lo/hi)
-//   $03F0-$03FB  STORE_Y .. STORE_HARD_CPU_DDR
+// Debug stubs/stores occupy one contiguous, top-aligned block of the C64
+// cassette buffer ending at $03FB. $03FC-$03FF is deliberately left free so
+// programs that rely on those bytes are not disturbed.
 static const uint16_t HANDLER_ADDR    = 0x035D;
 static const uint16_t STORE_Y         = 0x03F0;
 static const uint16_t STORE_X         = 0x03F1;
@@ -220,17 +209,10 @@ BrkDebugSession :: BrkDebugSession()
 
 BrkDebugSession :: ~BrkDebugSession()
 {
-    // Do NOT call cleanup() here: by the time the abstract base destructor
-    // runs, the concrete subclass (and its hardware hooks) are already gone, so
-    // a virtual cleanup() would dispatch to pure-virtual hooks and abort. The
-    // monitor always calls cleanup() explicitly before deleting the session,
-    // and each concrete leaf calls cleanup() from its own destructor while its
-    // vtable is still valid.
-    //
-    // debug_owner is a file-static that outlives this object, so releasing it
-    // here is required: a token left pointing at freed memory either blocks the
-    // next claim forever or gets cleanup()ed through a dangling vtable.
-    // Non-virtual and touches only the static, so it is safe in this destructor.
+    // Do NOT call cleanup() here: the concrete subclass is already gone by now,
+    // so a virtual call would dispatch to pure-virtual hooks and abort (each
+    // leaf calls cleanup() itself first). release_debug_ownership() is
+    // non-virtual and only touches the outliving file-static debug_owner.
     release_debug_ownership();
 }
 
@@ -262,16 +244,10 @@ void BrkDebugSession :: set_run_window_refreeze_enabled(bool enabled)
 
 void BrkDebugSession :: request_reset_cancel(void)
 {
-    // If we are inside an active run-window the CPU is running freely and
-    // wait_for_sentinel() is blocking. On FreeRTOS single-core the calling
-    // task owns the CPU while the UI task is in vTaskDelay, so it is safe to
-    // tear down patches and handler here before the machine reset pulse fires.
-    // Do NOT call these when the CPU is parked in the spin loop
-    // (run_window_depth == 0): uninstall_handler() would overwrite the spin
-    // loop code the CPU is executing, corrupting the parked debug state. Any BRK
-    // left in the FPGA ROM image while parked is healed by C64::reset() (it
-    // restores the pristine ROM image whenever the monitor flagged it dirty), so
-    // a leaked ROM-image trap can no longer wedge the next boot.
+    // Safe only inside an active run-window (single-core FreeRTOS guarantees the
+    // UI task is blocked in wait_for_sentinel()). When parked instead
+    // (run_window_depth == 0), uninstall_handler() would overwrite the code the
+    // CPU is executing; skip it there, since a leaked ROM BRK self-heals on reset.
     if (run_window_depth > 0) {
         restore_patches();
         uninstall_handler();
@@ -347,13 +323,9 @@ void BrkDebugSession :: begin_run_window(void)
         // any more. A trap at the end of this window takes a fresh reading;
         // breakpoint placement for this window has already happened.
         on_cpu_run_window_open();
-        // run_window_refreeze_enabled is set (in run_machine_monitor) only when
-        // the monitor renders through the C64 freeze screen -- host == the C64
-        // and frozen at launch -- never on the telnet/overlay path. So re-taking
-        // freeze ownership at end_run_window() only ever re-freezes a machine
-        // that belongs frozen (even if isFrozen went stale/false mid-session);
+        // run_window_refreeze_enabled is set only for the C64-freeze-screen path,
+        // so end_run_window() only ever re-freezes a machine that belongs frozen;
         // C64::refreeze() is idempotent, so it never double-freezes a live one.
-        // This keeps menu_screen/input attached across the run window.
         run_window_unfroze = run_window_refreeze_enabled;
         if (run_window_refreeze_enabled && machine_is_frozen()) {
             unfreeze_if_accessible();
@@ -496,20 +468,10 @@ void BrkDebugSession :: save_and_install_visible_hard_vector(void)
              HARD_VECTOR_ROM_CPU_PORT);
     poke_cpu(HARD_VECTOR_HI, (uint8_t)(HARD_BRK_STUB_ADDR >> 8),
              HARD_VECTOR_ROM_CPU_PORT);
-    // Point the stub's forward vector at the KERNAL's own IRQ/BRK entry, which is
-    // what was just saved from the ROM image. The stub forwards any interrupt
-    // that is not one of our BRKs through $03EE/$03EF, and save_and_install_hard_
-    // vector() seeded that from RAM under the KERNAL - $0000 on any machine that
-    // never installed a vector there, which is the normal case. This ROM copy of
-    // the stub is only reachable with the KERNAL mapped, and while a visible-ROM
-    // breakpoint is armed the still running C64 takes an ordinary jiffy IRQ into
-    // it about sixty times a second. Forwarding those to $0000 made the CPU
-    // execute the 6510 port register as code and die, so the launch that followed
-    // found a 6510 that answered neither IRQ nor NMI: measured on an Ultimate 64
-    // Elite, a contextless KERNAL breakpoint entry hit 1 time in 10 before this
-    // and 10 times in 10 after. saved_hard_vector is left untouched, so a
-    // KERNAL-banked-out session keeps forwarding to the program's RAM vector and
-    // uninstall still restores the exact RAM bytes.
+    // Point the stub's forward vector ($03EE/$03EF) at the KERNAL's own IRQ/BRK
+    // entry, not the RAM default ($0000): the ~60x/sec jiffy IRQ hits this stub
+    // while armed, and forwarding to $0000 executed the 6510 port register as
+    // code and killed the CPU (measured: 1/10 breakpoint entries before, 10/10 after).
     poke_visible(HARD_BRK_ORIG_VECTOR_LO, saved_hard_rom_vector[0]);
     poke_visible((uint16_t)(HARD_BRK_ORIG_VECTOR_LO + 1), saved_hard_rom_vector[1]);
     end_stopped_session(stopped_it);
@@ -832,11 +794,9 @@ bool BrkDebugSession :: captured_at_installed_patch(uint16_t *captured_brk_pc)
 
 void BrkDebugSession :: reinstall_handler_bytes(void)
 {
-    // Re-write the BRK handler + restore trampoline scratch and the BRK soft
-    // vector WITHOUT re-saving the program's originals (handler_installed stays
-    // true; saved_* are preserved). Used only on the runaway-relaunch path to
-    // repair any cassette-buffer scratch a runaway may have overwritten before we
-    // re-park the CPU. A no-op-equivalent rewrite when the scratch is intact.
+    // Re-write the BRK handler/trampoline/vector WITHOUT re-saving the program's
+    // originals (handler_installed stays true; saved_* preserved). Used only on
+    // the runaway-relaunch path to repair scratch a runaway may have overwritten.
     bool stopped_it = begin_stopped_session();
     for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
         poke_visible((uint16_t)(HANDLER_ADDR + i), HANDLER_BYTES[i]);
@@ -851,18 +811,14 @@ void BrkDebugSession :: reinstall_handler_bytes(void)
 
 void BrkDebugSession :: repark_running_cpu(uint8_t cpu_port)
 {
-    // Bring a CPU that is either free-running (launch timed out) or parked at the
-    // wrong PC (stray-$00 runaway capture) back into the controlled spin loop, so
-    // a clean parked relaunch can be retried. The NMI redirect target is the RAM
-    // self-loop (SPIN_JMP), so there is no ROM-fetch coherency race on the redirect
-    // itself. nmi_redirect_to() rewrites the NMI trampoline + vector, so it is
-    // self-repairing if a runaway clobbered them.
+    // Bring a free-running or wrong-PC CPU back into the controlled spin loop
+    // for a clean relaunch retry. The redirect targets the RAM self-loop
+    // (SPIN_JMP), so there is no ROM-fetch coherency race, and nmi_redirect_to()
+    // self-repairs the NMI trampoline/vector if a runaway clobbered them.
     reinstall_handler_bytes();
-    // The spin JMP opcode itself is otherwise only written by
-    // resume_from_parked_context: a contextless first launch (or a runaway
-    // that scribbled the scratch) has no guarantee $0387 holds the JMP, and
-    // parking into a garbage byte free-runs the CPU instead. Install the
-    // complete self-loop before redirecting into it.
+    // resume_from_parked_context is the only other writer of the spin JMP
+    // opcode, so a contextless first launch has no guarantee $0387 holds it;
+    // install the complete self-loop before redirecting into it.
     bool stopped_it = begin_stopped_session();
     poke_visible(SPIN_JMP, 0x4C);
     end_stopped_session(stopped_it);
@@ -878,13 +834,10 @@ DebugSession::Result BrkDebugSession :: relaunch_on_breakpoint_runaway(
     bool nmi_launch_valid, uint16_t nmi_target, bool nmi_force_cpu_port,
     uint8_t cpu_port, int wait_ms)
 {
-    // Self-heal a launch that missed an installed BRK patch. A miss either never
-    // traps (timeout) or traps at an unrelated $00 (captured at the wrong PC).
-    // On detection, re-park the CPU and re-issue the launch. Context launches use
-    // the parked restore path so registers are preserved. No-context monitor
-    // starts cannot synthesize registers, so they repeat the NMI redirect.
-    // Normal launches return immediately because captured_at_installed_patch() is
-    // true, so RAM single-step precision is untouched.
+    // Self-heal a launch that missed an installed BRK patch (never traps, or
+    // traps at an unrelated $00): re-park and re-issue, via the parked restore
+    // path for context launches (registers preserved) or a repeated NMI
+    // redirect for no-context ones. A normal launch returns immediately.
     if ((!launch_ctx && !nmi_launch_valid) || !has_any_patch()) {
         return waited;
     }
@@ -1004,15 +957,10 @@ void BrkDebugSession :: drop_queued_execution_keys(void)
 
 DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
 {
-    // Measure real elapsed time. Counting delay_ms(5) steps under-measures the
-    // wait badly on Telnet: the cancel-key poll below blocks for the session
-    // socket's 200 ms receive timeout, so each nominal 5 ms iteration really
-    // costs ~205 ms. A 5000 ms budget then took over three minutes of wall
-    // clock, which is why a genuine visible-ROM entry miss never reported its
-    // timeout result within any sane test or user timeout.
-    // Only reached when the sentinel stays clear, so successful runs are
-    // unaffected. getMsTimer() is 16-bit, so timeout_ms must stay below 65535
-    // for the wrap-safe subtraction to hold; the callers use 900 and 5000.
+    // Measure real elapsed time: counting delay_ms(5) steps under-measures on
+    // Telnet, where the cancel-key poll below blocks for the session socket's
+    // 200 ms receive timeout. getMsTimer() is 16-bit, so timeout_ms must stay
+    // below 65535 for the wrap-safe subtraction (callers use 900 and 5000).
     const uint16_t start_ms = getMsTimer();
     while ((uint16_t)(getMsTimer() - start_ms) < (uint16_t)timeout_ms) {
         refresh_debug_ownership();
@@ -1036,7 +984,7 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
                 key == KEY_CTRL_D || key == KEY_CTRL_O) {
                 return DBG_CANCELLED;
             }
-            if (key == KEY_CTRL_X) {
+            if (key == KEY_CTRL_R) {
                 restore_patches();
                 uninstall_handler();
                 cpu_parked_in_spin = false;
@@ -1111,11 +1059,9 @@ void BrkDebugSession :: read_captured_context(DebugContext *ctx, uint8_t cpu_por
     fill_vectors(ctx, live_cpu_port);
     note_captured_cpu_port(live_cpu_port);
 
-    // Refresh the $00/$01 RAM mirror with the registers the capture stub read
-    // on the real CPU. The U64's FPGA 6510 never writes the port through to
-    // the RAM underneath, so DMA-side readers (the live-bank display and the
-    // breakpoint "not mapped now" check) would otherwise keep seeing whatever
-    // a DMA write last left there. On a real 6510 these bytes already match.
+    // The U64's FPGA 6510 never writes the port through to the $00/$01 RAM
+    // mirror, so DMA-side readers (live-bank display, "not mapped now" check)
+    // would otherwise see a stale DMA write; refresh it from the capture stub.
     poke_cpu(0x0000, ctx->cpu_ddr, live_cpu_port);
     poke_cpu(0x0001, ctx->cpu_port_latch, live_cpu_port);
 
@@ -1174,18 +1120,10 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     uint8_t resume_ddr = from.cpu_port_registers_valid ? from.cpu_ddr : 0x37;
     uint8_t resume_port = from.cpu_port_registers_valid ?
         from.cpu_port_latch : (uint8_t)(from.live_cpu_port & 0x07);
-    // Handing the CPU back to free-running operation must re-enable interrupts so
-    // the C64 returns to a LIVE runtime. The debugger single-steps with interrupts
-    // masked (I=1) so a step is not interrupted; that mask is faithfully captured
-    // into ctx->sr (a program's own CLI/SEI is preserved - verified), but for a
-    // program that never re-enables interrupts (e.g. BASIC's idle loop) it leaks
-    // into the resume and the cursor/keyboard/jiffy stay dead until a reset. Clear
-    // I here so leaving Debug/closing the monitor resumes a live machine.
-    //
-    // ONLY when KERNAL is mapped (HIRAM, $01 bit 1, set): a program running with
-    // KERNAL banked out has no IRQ handler at $FFFE and legitimately requires
-    // I=1, so re-enabling interrupts there would wedge it worse than the freeze.
-    // Use the DDR-resolved effective bank when available.
+    // Clear I on resume (only when KERNAL is mapped) so a program that never
+    // re-enables interrupts itself (e.g. BASIC's idle loop) does not leave the
+    // cursor/keyboard/jiffy dead until a reset; with KERNAL banked out there is
+    // no IRQ handler at $FFFE, so clearing I there would wedge it worse.
     uint8_t resume_effective_port = from.live_cpu_port_valid ?
         (uint8_t)(from.live_cpu_port & 0x07) : (uint8_t)(resume_port & 0x07);
     uint8_t resume_sr = from.sr;
@@ -1221,13 +1159,10 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
                                            (uint8_t)(HANDLER_ADDR & 0xFF));
     poke_visible_preserving_freeze_restore(SPIN_OPERAND_HI,
                                            (uint8_t)(HANDLER_ADDR >> 8));
-    // Restore the soft vectors the interrupted program needs once it resumes,
-    // inside this same stopped session so a live (overlay-mode) CPU sees them
-    // before it leaves the spin loop. The handler/trampoline scratch bytes in
-    // the cassette buffer are deliberately left in place: the CPU is about to
-    // execute the restore stub that lives there. Clearing handler_installed
-    // makes any later uninstall_handler() a no-op so it can never overwrite the
-    // stub the CPU may still be running.
+    // Restore the interrupted program's soft vectors inside this same stopped
+    // session so a live CPU sees them before leaving the spin loop. The
+    // cassette-buffer scratch stays in place (the CPU is about to run its
+    // restore stub); clearing handler_installed makes uninstall_handler() a no-op.
     if (handler_installed) {
         poke_visible_preserving_freeze_restore(BRK_VECTOR_LO,
                                                saved_brk_vector[0]);
@@ -1288,14 +1223,9 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
         nmi_trampoline_installed = true;
     }
 
-    // Taking the NMI pushes a 3-byte frame (PCH, PCL, SR) onto the stack.
-    // We resume with a JMP (not an RTI), so without discarding that frame
-    // the program's stack pointer would be left 3 bytes low for the rest of
-    // the run - every later push (e.g. a JSR return address) would then land
-    // 3 bytes below where an undebugged run puts it. Stepping stays
-    // self-consistent (a matching RTS still works) but the stack contents no
-    // longer match real execution. Pull the 3 frame bytes back off first so
-    // SP is exactly what it was before the NMI, then redirect to the target.
+    // The NMI pushes a 3-byte frame (PCH, PCL, SR); resuming via JMP rather
+    // than RTI would otherwise leave SP 3 bytes low for the rest of the run.
+    // Pull the frame back off first so SP matches pre-NMI, then redirect.
     bytes[len++] = 0x68;
     bytes[len++] = 0x68;
     bytes[len++] = 0x68;
@@ -1329,17 +1259,10 @@ void BrkDebugSession :: nmi_redirect_to(uint16_t target, uint8_t cpu_port,
     poke_visible(NMI_VECTOR_LO, (uint8_t)(NMI_TRAMPOLINE_ADDR & 0xFF));
     poke_visible(NMI_VECTOR_HI, (uint8_t)(NMI_TRAMPOLINE_ADDR >> 8));
     save_and_install_hard_nmi_vector(cpu_port);
-    // Clear the sentinel as the last act before releasing the CPU, while it is
-    // still stopped and therefore cannot set it. In freeze mode the run window
-    // unfreezes the whole machine, so between that unfreeze and this stopped
-    // session the live CPU free-runs from its frozen PC and - in a hot loop
-    // such as the BASIC FAC multiply at $B9A6 - can reach the BRK we already
-    // installed at the step target, fire the handler, and leave the sentinel
-    // set. Launching the controlled NMI run without clearing it first lets
-    // wait_for_sentinel() observe that stale $FF and return immediately with a
-    // context the engine never controlled, desyncing cpu_parked_in_spin from
-    // the real CPU state and producing the sporadic runaway-stepping loop.
-    // Clearing here guarantees the next sentinel comes only from this run.
+    // Clear the sentinel last, while the CPU is still stopped and cannot set
+    // it: between the freeze-mode unfreeze and this session, a hot loop (e.g.
+    // BASIC's FAC multiply at $B9A6) can free-run into the already-installed
+    // BRK and leave a stale sentinel, desyncing cpu_parked_in_spin.
     poke_visible(SENTINEL_ADDR, 0x00);
     poke_visible(STORE_TRAP_MODE, 0x00);
     poke_visible(STORE_HARD_CPU_DDR, 0x00);
@@ -1637,15 +1560,9 @@ static void alu_compare(uint8_t *sr, uint8_t reg, uint8_t m)
 
 } // namespace
 
-// Full documented-opcode interpreter for non-control-flow instructions,
-// executed while the CPU stays parked. Data accesses go through the DMA
-// peek/poke path (the same coherent path every monitor read/write uses), so
-// I/O reads and writes have the side effects the real instruction would have.
-// Together with emulate_control_flow_step this steps any documented
-// instruction without releasing the CPU, which is what makes stepping in
-// fetch-lagging banks (RAM under ROM, visible ROM, and everything under the
-// freezer) deterministic - and keeps parked_step_walk free of unfreeze/
-// refreeze cycles, which the freezer does not survive in rapid succession.
+// Documented-opcode interpreter for non-control-flow instructions, executed
+// while parked via the DMA peek/poke path (real I/O side effects) so stepping
+// in fetch-lagging banks stays deterministic without releasing the CPU.
 // Undocumented opcodes return DBG_NOT_SUPPORTED (trampoline fallback).
 DebugSession::Result BrkDebugSession :: interpret_simple_linear(
     const DebugContext *from, uint16_t start_pc,
@@ -1978,28 +1895,10 @@ static bool branch_taken_6502(uint8_t opcode, uint8_t sr)
     return (flag != 0) == ((opcode & 0x20) != 0);
 }
 
-// Complete a control-flow single step by computing its architectural effects
-// while the CPU stays parked in the debug spin loop, instead of releasing the
-// live CPU into a bank whose instruction fetches can lag DMA-committed bytes.
-//
-// Rationale: the U64 slot aperture serves fetches from a registered latch that
-// is not invalidated by firmware DMA writes, so a landing BRK freshly planted
-// in RAM-under-ROM (or in visible ROM during a short step window) is not
-// reliably observed on the first fetches after a release. JMP/branch/JSR/RTS/
-// RTI have exact architectural semantics - PC, SP, SR, and $01xx stack bytes
-// only - so with a parked context the step needs no live execution at all:
-// every resume path rebuilds the full register file including SP from the
-// context (TXS in the spin trampoline / resume stub), and the stack bytes are
-// written through the always-coherent DMA path the breakpoint engine already
-// relies on in low RAM. Flags are untouched by all of these except RTI, which
-// pulls SR from the stack, so no ALU emulation is involved.
-//
-// Applies only when the launch site or a landing address is in such a bank;
-// plain-RAM steps keep running the live CPU. Returns DBG_NOT_SUPPORTED when
-// not applicable so the caller falls through to the real-run path. A JSR
-// stepped over (not into) must really run its callee and stays on the
-// breakpoint+Go path, whose fall-through BRK is observed after a sustained
-// run.
+// Compute a control-flow step's architectural effect while parked, instead of
+// releasing the CPU into a bank where a freshly planted BRK is not reliably
+// observed on the first post-release fetches. JMP/branch/JSR/RTS/RTI only
+// touch PC/SP/SR/$01xx, all rebuilt from context on resume (plain-RAM steps run live).
 DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
     const DebugContext *from, uint16_t start_pc,
     const DebugPredictResult &pred, bool prefer_jsr_target,
@@ -2009,11 +1908,9 @@ DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
     if (!from || !from->valid || !out || !cpu_parked_in_spin) {
         return DBG_NOT_SUPPORTED;
     }
-    // Instruction and vector bytes must come through read_step_bytes: while
-    // the machine is held by the freezer, the live aperture (read_patch_byte
-    // -> peek_cpu) does not serve BASIC/KERNAL for ROM addresses, so a raw
-    // re-read returns freezer-cart garbage. read_step_bytes prefers the
-    // monitor ROM cache and stays truthful in every UI mode.
+    // Must use read_step_bytes: under the freezer, the live aperture
+    // (read_patch_byte -> peek_cpu) returns freezer-cart garbage for ROM
+    // addresses, while read_step_bytes stays truthful in every UI mode.
     uint8_t fetched[3];
     if (!insn_bytes) {
         if (!read_step_bytes(start_pc, fetched, 3)) {
@@ -2102,10 +1999,9 @@ DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
                 return DBG_NOT_SUPPORTED;
             }
             // Same active-frame guard as the real-run path: without a traced
-            // Step Into frame, reject stale/forged stack targets early. A
-            // forced walk executes stack truth like the real CPU (KERNAL and
-            // BASIC use push-address-then-RTS dispatch, which has no JSR at
-            // the caller side).
+            // Step Into frame, reject stale/forged stack targets early (a
+            // forced walk trusts stack truth, since push-address-then-RTS
+            // dispatch has no JSR at the caller side).
             uint16_t traced_target;
             if (!force && !peek_return_target(&traced_target)) {
                 uint16_t caller = (uint16_t)(ret - 2);
@@ -2154,10 +2050,9 @@ DebugSession::Result BrkDebugSession :: emulate_control_flow_step(
 }
 
 // True when a free-run leg (Step Over callee, Step Out unwind) would have to
-// launch or land in visible ROM. Those runs are unreliable on fetch-lagging
-// hardware: the freezer path cannot settle the ROM fetch at all, and the
-// overlay path intermittently derails on the first callee fetches. Plain-RAM
-// and RAM-under-ROM free runs stay on the (validated) live path.
+// launch or land in visible ROM, unreliable on fetch-lagging hardware (the
+// freezer can't settle the fetch; overlay intermittently derails on the
+// first callee fetches). Plain-RAM/RAM-under-ROM runs stay on the live path.
 bool BrkDebugSession :: frozen_rom_run_unreliable(uint16_t launch_pc,
                                                   uint16_t landing_pc,
                                                   bool landing_valid,
@@ -2166,13 +2061,10 @@ bool BrkDebugSession :: frozen_rom_run_unreliable(uint16_t launch_pc,
     if (!visible_rom_fetch_lags() || !cpu_parked_in_spin) {
         return false;
     }
-    // Only the freezer truly cannot free-run (and does not survive rapid
-    // unfreeze/refreeze cycles), so only a frozen machine routes Step Over
-    // of a JSR and Step Out through the parked walk. In the running UI
-    // modes breakpoint+Go is the proven-reliable primitive, and walking a
-    // large frame while parked would stop on the step budget mid-frame
-    // (an arbitrary PC deep inside BASIC/KERNAL) instead of reaching the
-    // return site.
+    // Only the freezer truly cannot free-run, so only a frozen machine routes
+    // Step Over/Out through the parked walk; other UI modes use the
+    // proven-reliable breakpoint+Go instead, since a parked walk of a large
+    // frame would stop on the step budget mid-frame rather than reach the return site.
     if (!machine_is_frozen()) {
         return false;
     }
@@ -2184,29 +2076,18 @@ bool BrkDebugSession :: frozen_rom_run_unreliable(uint16_t launch_pc,
         monitor_backing_store_for_cpu_port(landing_pc, cpu_port));
 }
 
-// Walk a parked context forward one instruction at a time until it reaches
-// stop_pc in the same stack frame (stop_sp), without ever free-running the
-// CPU through a fetch-lagging bank: control flow is completed architecturally
-// (emulate_control_flow_step, forced) and every other instruction executes for
-// real from the plain-RAM trampoline. This is the deterministic replacement
-// for the free-run legs of Step Over and Step Out when they would launch or
-// land in visible ROM.
-//
-// The walk stops early - reporting the truthful parked context, never a stale
-// one, because stack bytes and trampoline side effects are already committed -
-// when it reaches an enabled breakpoint, an unsteppable opcode (BRK/illegal),
-// a step primitive fails, or the budget runs out. The caller surfaces the
-// context wherever the walk stopped; the E2E oracles flag a wrong endpoint.
+// Walk a parked context one instruction at a time to stop_pc/stop_sp without
+// free-running the CPU through a fetch-lagging bank: the deterministic
+// replacement for Step Over/Out legs landing in visible ROM. Stops early on
+// an enabled breakpoint, an unsteppable opcode, a step failure, or budget exhaustion.
 DebugSession::Result BrkDebugSession :: parked_step_walk(
     const DebugContext &start, uint16_t stop_pc, uint8_t stop_sp,
     const MonitorBreakpoints *bps, uint16_t skip_breakpoint_address,
     bool skip_breakpoint_address_valid, DebugContext *out, uint8_t cpu_port)
 {
-    // Interpreted steps are a couple of DMA accesses each (~ms), so this
-    // covers real KERNAL/BASIC helpers - including state-dependent loops like
-    // the FAC normalize - within a few seconds. A callee that legitimately
-    // runs longer stops mid-way with the truthful walked context and can be
-    // continued with another Over/Out/Go.
+    // Interpreted steps are ~ms each, covering real KERNAL/BASIC helpers within
+    // a few seconds; a legitimately longer callee stops mid-way with the
+    // truthful walked context and can be continued with another Over/Out/Go.
     static const int PARKED_STEP_WALK_BUDGET = 8192;
     if (!out) {
         return DBG_REFUSED;
@@ -2274,15 +2155,10 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
     if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
         return DBG_REFUSED;
     }
-    // Fetch-lagging hardware (U64): a step whose launch site or landing BRK
-    // sits in visible ROM or in RAM under a ROM window must not depend on the
-    // live CPU fetching a freshly-committed byte right after a release. With a
-    // parked context, control-flow instructions are completed architecturally
-    // without running the CPU at all (see emulate_control_flow_step). Context
-    // mutation is safe ONLY while parked: every parked resume rebuilds the
-    // full register file including SP. A non-parked launch (NMI redirect)
-    // keeps the live registers, so a context-only simulation there would
-    // desync the live SP and a later RTS would mispull (DEBUG TIMEOUT).
+    // A step landing in visible ROM/RAM-under-ROM is simulated (not run live,
+    // which may not observe a freshly-committed byte on release). Safe ONLY
+    // while parked: a non-parked launch keeps live registers, so simulating
+    // there would desync SP and a later RTS would mispull (DEBUG TIMEOUT).
     if (out && visible_rom_fetch_lags()) {
         Result emulated = emulate_control_flow_step(from, start_pc, pred,
                                                     prefer_jsr_target, out,
@@ -2513,12 +2389,10 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     // use.
     bool live_is_frame = live != from.pc &&
                          read_patch_byte((uint16_t)(ret - 2), cpu_port) == 0x20;
-    // The traced frame is still live if the address JSR pushed for it is on the
-    // stack at or below the current SP. That is what settles a disagreement:
-    // the top two bytes are not necessarily a return address (a subroutine that
-    // pushes after its JSR puts its own data there, which can look like one), so
-    // a traced frame that is provably still on the stack outranks the live
-    // candidate. Only when the traced frame has gone is the live one preferred.
+    // The traced frame wins a disagreement if it is provably still on the
+    // stack (at or below current SP): the top two bytes are not necessarily a
+    // return address, since a callee that pushes after its JSR can leave data
+    // there that merely looks like one. The live candidate wins once it is gone.
     bool traced_on_stack = false;
     if (has_traced) {
         uint16_t pushed = (uint16_t)(traced - 1);
@@ -2552,11 +2426,8 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
         if (walked == DBG_OK && ctx->valid && ctx->pc == target) {
             pop_return_target(target);
         }
-        // An early stop (breakpoint hit, unsteppable opcode, budget) already
-        // advanced the real machine state - stack bytes and data side effects
-        // are committed - so the walked context is the truth and MUST be
-        // adopted; reporting a failure here would leave the monitor's cached
-        // context stale against the parked CPU.
+        // An early stop already committed real stack/data side effects, so the
+        // walked context MUST be adopted, or the monitor's cache goes stale.
         return walked;
     }
     // Run the real 6510 out to the caller (breakpoint at the return target)
@@ -2656,24 +2527,9 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         if (patches[i].used) { any_bp = true; break; }
     }
     if (!any_bp) {
-        // No breakpoints remain: hand the interrupted program back to free-
-        // running execution from its captured context. resume_from_parked
-        // _context() rebuilds a register-restore stub that the parked spin
-        // loop falls into and RTIs through, preserving the program's $0001
-        // banking, and restores the soft BRK vector, the direct hard BRK
-        // vector (the KERNAL-out path), and the NMI trampoline in the same
-        // stopped session. This must be used instead of the NMI jump_to()
-        // fallback below: that fallback vectors through the KERNAL NMI
-        // handler, which is absent when the program runs with KERNAL banked
-        // out ($01 != $07), so it would hang/not execute under-ROM code.
-        //
-        // A plain G issued after single-stepping passes no freshly captured
-        // context (resume_from->valid == false), but we ARE parked in the spin
-        // loop with a valid last_context. Mirror the breakpoint path below
-        // (which already handles cpu_parked_in_spin && has_last_context) so the
-        // banking-preserving stub is used in that case too, instead of the
-        // KERNAL-dependent jump_to() fallback that silently fails to execute a
-        // RAM-under-ROM program.
+        // No breakpoints remain: resume via the register-restore stub (preserves
+        // $0001 banking), not the NMI jump_to() fallback, which vectors through
+        // the KERNAL NMI handler and hangs when KERNAL is banked out.
         const DebugContext *parked_ctx = NULL;
         DebugContext start_context;
         if (cpu_parked_in_spin && resume_from->valid) {
@@ -2877,13 +2733,10 @@ void BrkDebugSession :: cleanup(void)
     bool resume_pending = cpu_parked_in_spin && has_last_context;
     restore_patches();
     if (resume_pending) {
-        // The CPU is parked in the spin loop: live and looping at SPIN_JMP in
-        // overlay mode, halted there in freeze mode. Hand it back to the
-        // interrupted program by redirecting the spin loop into the
-        // register-restore stub (and restoring the soft vectors) in a single
-        // stopped session. We must NOT run uninstall_handler() first: it would
-        // restore the original bytes under the spin loop and, in overlay mode,
-        // drop the live CPU straight into them before the resume stub is staged.
+        // Hand the parked CPU back by redirecting the spin loop into the
+        // register-restore stub in a single stopped session. Must NOT run
+        // uninstall_handler() first: in overlay mode that would drop the live
+        // CPU into the restored original bytes before the stub is staged.
         resume_context = last_context;
         has_resume_context = last_context.valid;
         resume_from_parked_context(last_context);
@@ -2938,11 +2791,10 @@ bool BrkDebugSession :: read_step_bytes(uint16_t address, uint8_t *dst, uint8_t 
 
 void BrkDebugSession :: forget_context(void)
 {
-    // Drop the cached CPU context so the next snapshot() reports "no context".
-    // The next execution command then starts from the monitor cursor rather
-    // than the previous session's PC. Keep resume_context hidden from snapshot();
-    // it is only a retry seed if a no-context launch with installed patches runs
-    // away. Patch/handler teardown is cleanup()'s job.
+    // Drop the cached CPU context so the next snapshot() reports "no context"
+    // and the next execution command starts from the monitor cursor.
+    // resume_context stays hidden: it is only a retry seed for a runaway
+    // no-context launch. Patch/handler teardown is cleanup()'s job.
     has_last_context = false;
     debug_context_reset(&last_context);
     clear_return_targets();

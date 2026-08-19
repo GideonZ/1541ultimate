@@ -453,11 +453,8 @@ public:
     // bracket multi-byte vector / trampoline installs so the live C64 sees a
     // single consistent transition. Default forwards to stop()/resume().
     virtual bool begin_stopped_session(void);
-    // Variant that, when it actually stops a running machine, uses a raster-synced
-    // stop (do_raster=true) instead of the forced DMA stop. The matching resume()
-    // then re-clocks the VIC/CPU the way the freeze path does, which the monitor
-    // debugger needs so freshly armed high-memory BRKs are reliably observed by
-    // the live 6510 fetch on release. No-ops the stop if already stopped.
+    // raster=true uses a raster-synced stop/resume (the freeze path's), which the
+    // debugger needs so a freshly armed BRK is reliably observed on release.
     virtual bool begin_stopped_session(bool raster);
     virtual void end_stopped_session(bool stopped_it);
     // Like end_stopped_session(), but un-stops the CPU with the cartridge NMI

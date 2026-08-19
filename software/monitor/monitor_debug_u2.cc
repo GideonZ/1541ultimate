@@ -1,17 +1,7 @@
-// U2 (cartridge) Debug session.
-//
-// Thin subclass on top of BrkDebugSession. The shared base owns the BRK
-// capture engine, the cassette-buffer trampoline layout, breakpoint patch
-// tracking, and the sentinel polling loop. U2 supplies hardware hooks that
-// drive the connected C64 through the cartridge:
-//   - begin/end stopped session bracket atomic vector/trampoline installs
-//     so the live C64 sees a single consistent transition
-//   - peek/poke use C64::peek / C64::poke (DMA into C64 RAM)
-//   - reset uses C64::reset
-//   - NMI pulse uses the cartridge C64_MODE_NMI register
-// U2 does NOT support visible ROM patching, so BASIC/KERNAL stepping is only
-// available when the code is actually executing from writable RAM (for
-// example after an explicit RAM shadow copy or with the ROM banked out).
+// U2 (cartridge) Debug session: a thin BrkDebugSession subclass supplying
+// hardware hooks (DMA peek/poke, C64::reset, cartridge C64_MODE_NMI pulse)
+// to drive the connected C64. No visible-ROM patching, so BASIC/KERNAL
+// stepping needs code actually in writable RAM (shadow copy or ROM banked out).
 
 #include "monitor_debug_u2.h"
 
@@ -110,21 +100,17 @@ protected:
     }
     virtual void request_staged_nmi(void)
     {
-        // Intentionally empty on U2. The redirect NMI is delivered in
-        // clear_staged_nmi(), after begin_run_window() has unfrozen the machine:
-        // the U2 6510 only takes the cartridge NMI edge as it un-stops from a
-        // stopped session, and a plain assert while frozen or free-running is
-        // never observed (verified on hardware).
+        // Intentionally empty on U2: the NMI is delivered in clear_staged_nmi()
+        // instead, since the U2 6510 only takes the cartridge NMI edge as it
+        // un-stops from a stopped session (a plain assert while frozen or
+        // free-running is never observed, verified on hardware).
     }
     virtual void clear_staged_nmi(void)
     {
-        // begin_run_window() has unfrozen the machine; the 6510 is free-running
-        // from its pre-freeze PC. Stop it and un-stop it with the NMI asserted so
-        // the CPU observes the edge as it resumes and vectors through the redirect
-        // trampoline installed by nmi_redirect_to(). The same mechanism carries
-        // C64::capture_cpu_port_via_nmi()'s stub on a U2+L in a C64U host, which
-        // reports the port back, so the edge does reach the host's 6510; see
-        // tests/e2e/monitor/U2_CARTRIDGE_NMI.md.
+        // Machine is free-running from its pre-freeze PC; stop/un-stop it with
+        // NMI asserted so it observes the edge on resume and vectors through
+        // the nmi_redirect_to() trampoline. Same mechanism carries
+        // capture_cpu_port_via_nmi() on U2+L/C64U; see U2_CARTRIDGE_NMI.md.
         bool stopped_it = machine->begin_stopped_session();
         machine->end_stopped_session_nmi(stopped_it);
     }

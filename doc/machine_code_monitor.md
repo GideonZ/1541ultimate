@@ -17,7 +17,7 @@ To open the monitor, first open the device menu, then use one of the following:
 
 Open the built-in help with `F3` or `?`.
 
-While the monitor is open, `C=+X` resets / breaks the machine from any monitor mode, including Help, Edit, Debug, and popups.
+While the monitor is open, `C=+R` resets / breaks the machine. In Debug mode this reaches through any monitor mode, including Help, Edit, and popups; outside Debug it works from the ordinary monitor and memory views.
 
 To close the monitor:
 
@@ -709,7 +709,7 @@ To end the session:
 | `C=+D`              | Leave Debug, stay in the monitor                                                                           |
 | `RUN/STOP` or `ESC` | Leave Debug, stay in the monitor. With Edit also active, the first press leaves Edit and the second Debug   |
 | `X` or `C=+O`       | Leave Debug and close the monitor                                                                          |
-| `C=+X`              | Reset the machine. Debug is re-entered afterwards with no captured context                                 |
+| `C=+R`              | Reset the machine. Debug is re-entered afterwards with no captured context                                 |
 
 Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug session can be active at a time across all front ends. If another front end already owns the debugger, entering Debug shows `DEBUG IN USE`. An owner that has not been seen for 3 seconds is cleaned up and its ownership taken over.
 
@@ -723,11 +723,11 @@ Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug ses
 | `G`           | Go / execute                             | Go                             |
 | `K`           | (unassigned)                             | Run to cursor                  |
 | `R`           | Range mode                               | Toggle breakpoint at the cursor |
-| `C=+R`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
+| `C=+L`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
 | `C=+D`        | (unassigned)                             | Leave Debug                    |
 | `RUN/STOP`    | Close the monitor                        | Leave Edit first, then Debug   |
 | `X`, `C=+O`   | Close the monitor                        | Close the monitor              |
-| `C=+X`        | Reset / break the machine                | Reset / break the machine      |
+| `C=+R`        | Reset / break the machine                | Reset / break the machine      |
 | `O`           | CPU bank cycle                           | CPU bank cycle                 |
 | `RETURN`      | Assembly follow / return                 | Assembly follow / return       |
 
@@ -778,7 +778,7 @@ There are 10 breakpoint slots, numbered `0` to `9`.
 - A breakpoint is an address plus a memory source, so `$E000 KRN` and `$E000 RAM` are distinct breakpoints and can coexist.
 - Rows with a breakpoint show `[BRKn]` immediately before the memory source tag, for example `[BRK0][BAS]`. A slot with a label shows the label instead, for example `[LOOP][BAS]`.
 - Only enabled breakpoints stop execution. `G`, `K`, Step Over, Step Into, and Step Out all honour them. A disabled slot is remembered but inert.
-- Breakpoints are held in volatile RAM. They survive a `C=+X` reset, leaving Debug, and closing and reopening the monitor. Powering the device off clears them.
+- Breakpoints are held in volatile RAM. They survive a `C=+R` reset, leaving Debug, and closing and reopening the monitor. Powering the device off clears them.
 - At most 16 breakpoint patches can be armed at once. That covers the 10 user slots plus the temporary landing patches a step installs.
 
 Two address ranges cannot hold a breakpoint:
@@ -794,7 +794,7 @@ A breakpoint can be valid but invisible to the CPU. Setting one where the live b
 
 On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched into the volatile U64 ROM image, so ROM code is step-capable without copying ROMs into C64 RAM or writing flash. The patched bytes are restored when the breakpoint is removed and when the session ends. RAM-under-KERNAL breakpoints work when KERNAL is banked out. On an Ultimate II cartridge, C64 ROM is read-only, and a breakpoint there is refused with `DEBUG NOT SUPPORTED`.
 
-`C=+R` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
+`C=+L` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
 
 | Key                  | Action                                              |
 | -------------------- | --------------------------------------------------- |
@@ -805,7 +805,7 @@ On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched 
 | `L`                  | Change the label, up to 4 chars (`Lbl`)             |
 | `E`                  | Toggle slot enable / disable (`Enbl`)               |
 | `DEL`                | Clear the selected slot (`Res`)                     |
-| `RUN/STOP` or `C=+R` | Close the popup                                     |
+| `RUN/STOP` or `C=+L` | Close the popup                                     |
 
 Jumping to a slot also restores the CPU view bank the breakpoint was set in.
 
@@ -823,7 +823,7 @@ All five follow the live CPU bank from `$0001`.
 
 `G` pressed while stopped on a breakpoint steps past that breakpoint first, so the same one does not fire again immediately. Other enabled breakpoints still apply.
 
-A run that does not reach a breakpoint gives up after 5 seconds and reports `DEBUG TIMEOUT`. The budget is 900 ms when a ROM-image patch is armed. While a run is in progress, `RUN/STOP`, `ESC`, `C=+D`, or `C=+O` abandons it with `DEBUG CANCELLED`, and `C=+X` resets the machine.
+A run that does not reach a breakpoint gives up after 5 seconds and reports `DEBUG TIMEOUT`. The budget is 900 ms when a ROM-image patch is armed. While a run is in progress, `RUN/STOP`, `ESC`, `C=+D`, or `C=+O` abandons it with `DEBUG CANCELLED`, and `C=+R` resets the machine.
 
 Step Out returns to the caller of the frame the CPU is really in, so it works both after a Step Into and after arriving inside a subroutine with `G` or `K`. Two sources describe that frame: the frames Step Into recorded, and the return address on the live `$0100` stack. The live stack is only trusted when a `JSR` really sits three bytes before what its top two bytes point at. When neither source yields an active frame, Step Out reports `NOT IN SUBROUTINE`. The disassembler still shows the live `RTS` target for that row, so you can set a breakpoint there and use `G` instead.
 
@@ -870,7 +870,7 @@ Messages fit within 38 characters. The two that offer guidance appear on the bot
 | `DEBUG CANCELLED`                   | A run was abandoned from the keyboard.                                                                                       |
 | `DEBUG NOT SUPPORTED`               | The hardware cannot do this, for example a visible-ROM patch on an Ultimate II cartridge.                                    |
 | `DEBUG IN USE`                      | Another front end owns the debugger. Close its session, or wait 3 seconds if it is unresponsive.                             |
-| `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `R` or from the `C=+R` list.                                                |
+| `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `R` or from the `C=+L` list.                                                |
 | `BRK <target>, CPU <current>; not mapped now` | The breakpoint is set in a memory source the live banking does not map. It only fires once the program banks `<target>` in. |
 
 ### Leaving Debug and interrupt state

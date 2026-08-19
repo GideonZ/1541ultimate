@@ -32,27 +32,10 @@ int Keyboard_VT100 :: getch()
 		if (charin == '\e')
 			escape_state = e_esc_escape;
 		else if (charin == 0x12)
-			// Ctrl+R, the monitor's reset shortcut, as one keystroke.
-			//
-			// 0x12 is also the value of KEY_DOWN, and passing it through
-			// unchanged is what made Ctrl+R move the cursor down on a Telnet
-			// session. The two are distinguishable here even though they are
-			// not further up: a terminal's down arrow arrives as ESC [ B and
-			// is decoded by the e_esc_bracket case below, so the only thing
-			// that produces a bare 0x12 is somebody actually holding Ctrl and
-			// pressing R. Mapping it to KEY_CTRL_R therefore costs the cursor
-			// nothing and gives this transport the same single keystroke the
-			// USB keyboard has.
-			//
-			// Flow control cannot reach this either. The bytes a terminal
-			// sends unprompted are DC1 at 0x11 and DC3 at 0x13, XON and XOFF.
-			// DC2 at 0x12 is not used that way.
-			//
-			// All three transports converge on KEY_CTRL_R, 0xBA, by the time
-			// the monitor sees the key: Telnet by this translation, the C64
-			// and USB keyboards by allocation in their keymaps. The keymaps
-			// cannot simply use 0x12, because there it would alias KEY_DOWN
-			// for every screen in the user interface.
+			// 0x12 is also KEY_DOWN's byte, but unambiguous here: a real down
+			// arrow arrives as ESC [ B (e_esc_bracket below), so a bare 0x12 can
+			// only be Ctrl+R. All three transports converge on KEY_CTRL_R (0xBA)
+			// by the time the monitor sees the key.
 			ret = KEY_CTRL_R;
 		else  // -1 is also else
 			ret = charin;

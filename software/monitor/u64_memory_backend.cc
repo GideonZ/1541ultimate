@@ -12,11 +12,10 @@ extern uint8_t _default_chars_bin_start[4096];
 
 namespace {
 
-// These buffers are filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page),
-// which writes 32-bit words and therefore requires 4-byte alignment. As plain uint8_t
-// arrays they were only byte-aligned; depending on .bss layout they could land on an
-// unaligned address, causing an unaligned 32-bit store trap on Nios2 when the KERNAL ROM
-// cache is loaded on monitor entry. Force word alignment to keep the DMA target valid.
+// S25FLxxxL_Flash::read_page fills these with 32-bit-word writes needing
+// 4-byte alignment; plain byte-aligned uint8_t arrays could land unaligned
+// depending on .bss layout, causing a Nios2 unaligned 32-bit store trap when
+// the KERNAL ROM cache loads on monitor entry.
 alignas(4) static uint8_t monitor_basic_rom[8192];
 alignas(4) static uint8_t monitor_kernal_rom[8192];
 alignas(4) static uint8_t monitor_char_rom[4096];
@@ -242,15 +241,10 @@ void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len
 
 uint8_t U64MemoryBackend :: get_live_cpu_port(void)
 {
-    // The cpu_port currently in effect for the live machine, in priority order:
-    //  1. the port captured at the last debug stop, while one is held;
-    //  2. when frozen, the monitor's view bank -- the freezer serves memory
-    //     through it and the 6510 is halted, so there is no live fetch and a
-    //     DMA $01 read would add nothing;
-    //  3. otherwise a live DMA read of $00/$01, whose bus access also settles
-    //     the visible-ROM fetch path before a single-step BRK is placed. A
-    //     running single step always lands here, because begin_run_window()
-    //     unfreezes before the step, so the bus-settle behaviour is preserved.
+    // Live cpu_port priority: (1) the port captured at the last debug stop;
+    // (2) when frozen, the monitor's view bank (6510 halted, no live fetch,
+    // so a DMA $01 read adds nothing); (3) else a live $00/$01 DMA read,
+    // which also settles the visible-ROM fetch path before a step's BRK.
     if (observed_live_cpu_port_valid) {
         return observed_live_cpu_port & 0x07;
     }

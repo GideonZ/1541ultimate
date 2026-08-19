@@ -41,15 +41,9 @@
 #endif
 
 #if U64
-// Pristine FPGA ROM-image snapshot + dirty flag. The machine-code monitor's debug
-// engine steps RAM-under-ROM and KERNAL/BASIC ROM by patching BRK traps into the
-// volatile FPGA ROM-image buffers (U64_*_BASE). No flash, firmware image, ROM
-// file, or configured cartridge storage is changed; a device cold boot reloads
-// those ROM images through init_system_roms(). The snapshot below is only a warm
-// C64-reset safety net: if a reset fires while a debug trap is still present, the
-// stale byte could otherwise be fetched by the next C64 boot attempt. We capture
-// the freshly loaded authoritative image and re-apply it during reset so warm
-// resets are self-healing too.
+// Pristine FPGA ROM-image snapshot + dirty flag: a warm-reset safety net so a
+// debug BRK trap left in the volatile ROM buffers (U64_*_BASE) can't survive
+// into the next boot. Re-applied during reset; unrelated to flash/firmware.
 namespace {
     uint8_t s_pristine_kernal[8192];
     uint8_t s_pristine_basic[8192];
@@ -81,12 +75,9 @@ static bool buffer_all_zero(const uint8_t *p, unsigned len)
 
 static void capture_pristine_rom_image(void)
 {
-    // Only BASIC and KERNAL are healed: a stale debug BRK in those is executed
-    // during boot and wedges the machine. The CHAR ROM is never executed, so a
-    // leaked CHAR patch is at worst a cosmetic glyph and is left to the normal
-    // per-session restore; we deliberately do NOT snapshot/rewrite the CHAR
-    // aperture on reset (its base differs and a bad snapshot would render every
-    // glyph as garbage).
+    // Only BASIC and KERNAL are healed: a stale debug BRK there executes during
+    // boot and wedges the machine. CHAR ROM is never executed, so a leaked CHAR
+    // patch is cosmetic and left to the normal per-session restore instead.
     copy_rom_aperture_in(s_pristine_basic,  (volatile uint8_t *)U64_BASIC_BASE,   sizeof(s_pristine_basic));
     copy_rom_aperture_in(s_pristine_kernal, (volatile uint8_t *)U64_KERNAL_BASE,  sizeof(s_pristine_kernal));
     // Only trust the snapshot if the KERNAL image actually read back (guards
@@ -99,11 +90,10 @@ static void restore_pristine_rom_image(void)
     if (!s_pristine_rom_valid) {
         return;
     }
-    // Compare rather than track a dirty flag: a byte that reaches the aperture
-    // by any path other than the debugger's own patch write would leave a flag
-    // saying clean while the KERNAL is not. A legitimate runtime ROM
-    // replacement is not clobbered, because enable_kernal() and
-    // init_system_roms() retake the snapshot when they load one.
+    // Compare rather than track a dirty flag: a flag could go stale if a byte
+    // reached the aperture by any path other than the debugger's own patch. A
+    // legitimate runtime ROM replacement isn't clobbered because enable_kernal()
+    // and init_system_roms() retake the snapshot when they load one.
     if (!rom_aperture_differs((volatile uint8_t *)U64_KERNAL_BASE, s_pristine_kernal,
                               sizeof(s_pristine_kernal)) &&
         !rom_aperture_differs((volatile uint8_t *)U64_BASIC_BASE, s_pristine_basic,
@@ -707,12 +697,8 @@ void C64::reset(void)
     // The 6510 comes out of reset with its port back at the default, so the
     // last capture stops describing the machine.
     invalidate_captured_cpu_port();
-    // Give the capture a fresh start too. A run of failures is usually the
-    // machine being somewhere the stub cannot run -- mid-reset, or a program
-    // that never returns from an interrupt -- not a host that cannot deliver
-    // the NMI at all. Without this the first such run disables the banking
-    // display for the rest of the firmware run, and only a power cycle brings
-    // it back.
+    // Give the capture a fresh start too, or one bad run (mid-reset, a stuck
+    // interrupt handler) permanently disables the banking display.
     cpu_port_capture_unavailable = false;
     cpu_port_capture_failures = 0;
 #if U64
@@ -727,13 +713,9 @@ void C64::reset(void)
     while (ioRead8(ITU_TIMER))
         ;
 #if U64
-    // The FPGA 6510 does not write CPU stores to $00/$01 through to the RAM
-    // underneath, so the RAM copy only ever changes by DMA and goes stale the
-    // moment anything (a debugged program, a test fixture) alters banking.
-    // A real 6510 leaves DDR=$2F/port=$37 after reset+KERNAL init; write the
-    // same defaults into the RAM mirror while the CPU is held in reset so
-    // every DMA-side reader of $00/$01 (the monitor's live-bank display and
-    // the breakpoint "not mapped now" check) sees the true post-reset state.
+    // The FPGA 6510 never writes $00/$01 through to RAM, so the DMA-side mirror
+    // (read by the monitor's bank display and breakpoint check) goes stale the
+    // moment banking changes; restore it to the real post-reset DDR=$2F/port=$37.
     C64_POKE(0x0000, 0x2F);
     C64_POKE(0x0001, 0x37);
 #endif
@@ -745,12 +727,10 @@ bool C64::is_in_reset(void)
     return (C64_MODE & C64_MODE_RESET);
 }
 
-// Addresses the freezer's own Ultimax cartridge hides from a DMA access.
-// stop()/backup_io() force Ultimax so the cartridge can reach the I/O space,
-// and Ultimax decodes only $0000-$0FFF, the I/O space and the cartridge's own
-// ROM windows: $1000-$7FFF and $A000-$CFFF have no device on the bus, and the
-// C64's ROMs at $8000/$A000/$E000 are replaced by the cartridge's. Reaching
-// any of them requires putting the C64 mode back to the frozen one first.
+// Addresses the freezer's own forced-Ultimax cartridge hides from DMA: Ultimax
+// decodes only $0000-$0FFF, I/O, and the cartridge's ROM windows, so the C64's
+// own ROMs at $8000/$A000/$E000 and $1000-$7FFF/$A000-$CFFF are unreachable
+// until the C64 mode is put back to the frozen one.
 #define ULTIMAX_HIDES_MEMORY(addr) \
     ((((addr) >= 0x1000) && ((addr) < 0xD000)) || ((addr) >= 0xE000))
 
@@ -843,20 +823,15 @@ void C64::end_stopped_session(bool stopped_it)
     }
 }
 
-// Unserialised, and known to be. The body leaves the freezer's Ultimax mode for
-// the duration of an access and puts it back, and two tasks reach it: the UI
-// task through C64::peek/poke, and the HTTP task on machine:readmem /
-// machine:writemem. Interleaved, the second caller reads the first caller's
-// already-restored mode as its own saved_mode and hands the bus back to Ultimax
-// mid-transfer. Read off the code; never observed, and not serialised here.
+// Unserialised, and known to be: two tasks reach this (UI via C64::peek/poke,
+// HTTP via machine:readmem/writemem), and an interleaved call can read the
+// other's already-restored mode and hand the bus back to Ultimax mid-transfer.
+// Never observed in practice; not serialised here.
 void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
     volatile uint8_t *ram = (volatile uint8_t *)C64_MEMORY_BASE;
-    // C64_DMA_MEMONLY exists only on the U64, where it makes the DMA channel
-    // bypass the CPU memory map. On a U2+L that address decodes to u2p_io
-    // register 3 (fpga/altera/u2p_io.vhd), whose write handler drives i2c_sda
-    // high regardless of the data - bit-banging the cartridge's own I2C bus
-    // and doing nothing for the transfer.
+    // U64-only: on a U2+L this address decodes to u2p_io register 3 instead,
+    // whose write handler bit-bangs the cartridge's I2C bus (u2p_io.vhd).
 #if U64
     uint8_t saved_memonly = C64_DMA_MEMONLY;
     C64_DMA_MEMONLY = 1;
@@ -893,11 +868,9 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 memcpy(buffer + pos, (const void *)(ram + addr), chunk);
             } else {
                 memcpy((void *)(ram + addr), buffer + pos, chunk);
-                // memcpy() drops the volatile qualifier, so the last store can
-                // still sit in the bridge to the cartridge port when the mode
-                // goes back below, and would then reach a bus with the
-                // freezer's Ultimax cart mapped in. A volatile read of the same
-                // region is ordered behind the stores and forces them out.
+                // memcpy() drops volatile, so the last store could still be
+                // in flight when the mode below flips Ultimax back in; a
+                // volatile read of the same region forces it out first.
                 (void)ram[addr];
             }
 #if U64
@@ -1141,13 +1114,9 @@ bool C64::capture_cpu_port_via_nmi(void)
         return false;
     }
 
-    // Both NMI vectors are redirected. With the KERNAL mapped the CPU reads
-    // $FFFA from ROM, which does JMP ($0318), so the RAM vector is the live
-    // one; with the KERNAL banked out $E000-$FFFF is RAM and the hardware
-    // vector is read directly. Patching both removes the need to guess the
-    // banking, which cannot be read reliably from here: a DMA peek of $FFFA
-    // follows the DMA-visible $00/$01 mirror, and that mirror is only refreshed
-    // at reset. Both are put back before the machine runs on.
+    // Both NMI vectors ($0318 RAM, $FFFA ROM) are patched, avoiding a banking
+    // guess: which one is live depends on KERNAL mapping, which can't be read
+    // reliably here since the DMA-visible $00/$01 mirror only refreshes at reset.
     static const uint16_t vectors[2] = { 0x0318, 0xFFFA };
 
     const uint8_t stub[NMI_CAP_STUB_LEN] = {
@@ -1168,11 +1137,9 @@ bool C64::capture_cpu_port_via_nmi(void)
     const uint8_t entry_mode = C64_MODE;
     bool stopped_it = begin_stopped_session();
     if (!stopped_it) {
-        // Someone else already holds the machine stopped, so this is not a live
-        // pre-freeze moment and resuming it here would not be ours to do. This
-        // test has to come before the first write: the restore below is skipped
-        // on this path, so a stub or vector written first would be left in the
-        // interrupted program for good.
+        // Someone else already holds the machine stopped; must check before the
+        // first write, or a stub/vector written here would leak into the
+        // interrupted program since the restore below is skipped on this path.
         end_stopped_session(stopped_it);
         C64_MODE = entry_mode;
         printf("CAP: skip already-stopped\n");
@@ -1221,11 +1188,9 @@ bool C64::capture_cpu_port_via_nmi(void)
     } else if (printf("CAP: stub did not run (fail %d)\n",
                       cpu_port_capture_failures + 1),
                ++cpu_port_capture_failures >= CPU_PORT_CAPTURE_MAX_FAILURES) {
-        // A host that does not deliver the cartridge NMI never will, so stop
-        // paying the wait on every later freeze. A single miss is not enough to
-        // conclude that: a program running with interrupts masked defers the
-        // NMI past the wait, and latching on that one sample would disable the
-        // capture for the rest of the firmware run.
+        // A host that never delivers the cartridge NMI never will; stop paying
+        // the wait. Requires repeated misses, since interrupts-masked code can
+        // legitimately defer the NMI past a single wait.
         cpu_port_capture_unavailable = true;
         printf("C64: cartridge NMI did not reach the 6510 in %d attempts; "
                "the CPU port cannot be captured on this host\n",
@@ -1259,12 +1224,10 @@ void C64::freeze(void)
         return;
 
 #if !U64
-    // Only backends without a readable 6510 port consume this. On the U64 the
-    // port register is read directly, so running the stub there would spend a
-    // stop/NMI/restore round trip on a value nothing reads, and would swallow
-    // an NMI edge belonging to the interrupted program.
-    // Dropped first: this freeze must show its own banking or none, never the
-    // banking the machine had at the previous one.
+    // Only backends without a readable 6510 port need this NMI stub; on the U64
+    // it would cost a stop/NMI/restore round trip and could swallow an NMI edge
+    // meant for the interrupted program. Dropped first, so this freeze shows
+    // its own banking or none, never the previous freeze's.
     invalidate_captured_cpu_port();
     capture_cpu_port_via_nmi();
 #endif

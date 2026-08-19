@@ -572,12 +572,9 @@ int C64_Subsys :: dma_load_raw(File *f)
 
 int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int length, int rw)
 {
-    // A raw DMA transfer is a pure memory access; while the freezer menu/monitor
-    // holds the machine (REST readmem/writemem can run while it is open) it must
-    // NOT release the host, or it would tear down the freeze monitor - so the
-    // host is only released when NOT frozen. The frozen path routes through
-    // dma_transfer_frozen, which honours the freezer's own mode/cart banking
-    // instead of blindly bypassing to raw RAM.
+    // Must not release the host while frozen, or it would tear down the freeze
+    // monitor; the frozen path instead routes through dma_transfer_frozen,
+    // which honours the freezer's own mode/cart banking.
     bool i_stopped_it = false;
     if (c64->client && !c64->isFrozen) {
         c64->client->release_host(); // disconnect from user interface
@@ -589,9 +586,6 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, uint8_t *buffer, int leng
     }
 
     if (c64->isFrozen) {
-        // The freezer menu may have its own mode/cart banked in, so route through
-        // dma_transfer_frozen, which restores the frozen C64 mode for ROM/cart
-        // ranges instead of blindly bypassing to raw RAM.
         c64->dma_transfer_frozen(offset, buffer, length, rw);
     } else {
         volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
@@ -614,10 +608,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 {
 	// prepare DMA load
     // Keep the client attached while a debug session owns the machine: a
-    // cartridge-target debug step launches its run through this boot cart and
-    // must come back to the same UI. Releasing it here skips the
-    // release_ownership() that unfreezes the C64, leaving the machine DMA-held
-    // after the monitor closes.
+    // cartridge-target debug step's run comes back through this boot cart, and
+    // releasing it here skips the release_ownership() unfreeze, leaving the
+    // machine DMA-held after the monitor closes.
     if(c64->client && !(machine_monitor_global_reset_sees_debug_session &&
                         machine_monitor_global_reset_sees_debug_session())) {
     	c64->client->release_host(); // disconnect from user interface

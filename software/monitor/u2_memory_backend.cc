@@ -11,17 +11,10 @@ uint8_t U2MemoryBackend :: read(uint16_t address)
     return machine->peek(address);
 }
 
-// dma_transfer_frozen puts the frozen C64 mode back and clears
-// C64_DMA_MEMONLY around the access, both of which change what the bus decodes
-// at the address being written. While the freezer holds the machine the 6510
-// is still executing the freezer's own code, so it is still driving that bus,
-// and a write issued into that window is intermittently lost: measured on an
-// Ultimate II+L in a C64 Ultimate, 5 of 45 single-byte Hex edits at addresses
-// of $1000 and above did not reach memory, while 18 of 18 below $1000, which
-// need nothing rebanked, all did. The C64's own DMA path stops the machine for
-// the same call for the same reason (C64_Subsys::executeCommand in
-// io/c64/c64_subsys.cc), and read_block below stops it through C64::peek.
-// Stopping it here makes the monitor's write path agree with both.
+// dma_transfer_frozen's bank-changing bus decode races the freezer's own
+// 6510 still driving that bus: measured 5 of 45 single-byte Hex edits at
+// $1000+ lost while 18 of 18 below $1000 (no rebanking) landed. Stop the
+// machine here, matching C64_Subsys::executeCommand and read_block/C64::peek.
 void U2MemoryBackend :: write(uint16_t address, uint8_t value)
 {
     if (!machine || !machine->exists()) {
@@ -83,11 +76,10 @@ bool U2MemoryBackend :: resolved_cpu_port(uint8_t *out) const
         if (out) *out = observed_cpu_port & 0x07;
         return true;
     }
-    // Otherwise the NMI capture, DDR-resolved: lines the direction register
-    // makes inputs read high, and that is what the PLA banks on. It is taken at
-    // every freeze and when the monitor opens, and lives until C64::unfreeze(),
-    // so while the machine is frozen it cannot go stale -- the 6510 is halted.
-    // On a machine left running it is what the port was when it was sampled.
+    // Otherwise the DDR-resolved NMI capture (input lines read high, what the
+    // PLA banks on), taken at every freeze/monitor-open and valid until
+    // C64::unfreeze() — cannot go stale while frozen (6510 halted); on a
+    // running machine it's the port as sampled.
     uint8_t port, ddr;
     if (machine && machine->get_captured_cpu_port(&port, &ddr)) {
         if (out) {
@@ -130,11 +122,10 @@ void U2MemoryBackend :: begin_session(void)
 
 void U2MemoryBackend :: invalidate_live_cpu_port_cache(void)
 {
-    // Only the BRK reading. The NMI sample has its own lifetime, ended by
-    // C64::unfreeze() or C64::reset() -- the two events after which the port
-    // can differ. Dropping it here as well would throw away the only reading
-    // there is whenever the debugger is left on a still-frozen machine, and
-    // while frozen another one cannot be taken.
+    // Only the BRK reading; the NMI sample has its own lifetime, ended by
+    // C64::unfreeze()/C64::reset(). Dropping it too would lose the only
+    // reading available when left on a still-frozen machine, which cannot
+    // take another one.
     observed_cpu_port_valid = false;
 }
 

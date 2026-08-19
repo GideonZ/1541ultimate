@@ -24,19 +24,16 @@ protected:
         poke_visible(address, byte);
     }
     virtual void unfreeze_if_accessible(void) = 0;
-    // Freeze-mode render-target preservation. A debug step must temporarily
-    // unfreeze the C64 to run the live CPU; if the machine was frozen, it must
-    // be re-frozen before control returns to the monitor so the monitor keeps
-    // rendering into the firmware/menu screen instead of the live C64 screen.
-    // Default no-op keeps backends without a freeze concept unaffected.
+    // A debug step must temporarily unfreeze the C64 to run the live CPU, then
+    // re-freeze it before returning, or the monitor renders the live C64
+    // screen instead of the firmware/menu screen. Default no-op below is for
+    // backends without a freeze concept.
     virtual bool machine_is_frozen(void) const { return false; }
     virtual void refreeze_machine(void) { }
     virtual bool reset_machine(void) = 0;
-    // Pulse NMI on the live CPU and release the stopped session. The pulse
-    // MUST occur while the CPU is still stopped so the request bit is
-    // observed when the CPU resumes; clearing the pulse only happens after
-    // the resume. Implementations therefore bracket the resume with the
-    // request/clear pair.
+    // Pulse NMI and release the stopped session. The request MUST be raised
+    // while still stopped so it is observed on resume; implementations
+    // bracket the resume with the request/clear pair.
     virtual void pulse_nmi_and_release(bool stopped_it) = 0;
     virtual void request_staged_nmi(void) { }
     virtual void clear_staged_nmi(void) { }

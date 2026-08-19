@@ -110,11 +110,9 @@ void MachineMonitor :: clear_pending_go(void)
 
 void MachineMonitor :: debug_full_restore_screen(void)
 {
-    // After a freeze-mode debug step, the firmware chrome rows (UI title and
-    // border lines) are overwritten by the live BASIC screen during the
-    // temporary C64 unfreeze. Re-establish the chrome and redraw the monitor
-    // window so the user sees a correct display. No-op in overlay mode because
-    // overlay sessions disable freeze/refreeze run windows.
+    // A freeze-mode debug step's temporary unfreeze overwrites the firmware
+    // chrome (title/border rows) with the live BASIC screen; redraw it. No-op
+    // in overlay mode, which has no freeze/refreeze run window.
     if (!debug_session || !debug_session->screen_render_target_invalidated()) {
         return;
     }
@@ -416,11 +414,10 @@ void MachineMonitor :: debug_cleanup_session()
         delete debug_session;
         debug_session = NULL;
     }
-    // Safety net. cleanup() restores the patches the session recorded; this
-    // catches a byte that reached the ROM image any other way, so a debug
-    // session can never hand the next one a modified KERNAL. It compares before
-    // writing, and the snapshot is retaken whenever the ROM is legitimately
-    // replaced, so an intentionally different ROM is left alone.
+    // Safety net beyond cleanup()'s own patch restore: catches a byte that
+    // reached the ROM image any other way, so a session never hands the next
+    // one a modified KERNAL. Compares before writing against a snapshot
+    // retaken on legitimate ROM replacement, so a real new ROM is left alone.
     if (u64_restore_pristine_rom_image) {
         u64_restore_pristine_rom_image();
     }
@@ -488,13 +485,10 @@ bool MachineMonitor :: debug_handle_terminal_result(DebugSession::Result result)
     }
     debug.invalidate_context();
     debug_cleanup_session();
-    // Direct render targets (Freeze/Overlay) draw into the live C64 screen via
-    // `screen`. reset_machine() has just unfrozen + reset the C64, so it now owns
-    // its screen RAM again: redrawing the monitor here would paint the monitor
-    // chrome onto the booting C64 screen. These modes exit + reopen, and the
-    // reopen re-takes ownership before repainting, so skip the redraw here.
-    // Non-direct hosts (e.g. Telnet) keep their own screen and stay open, so they
-    // still need the refresh.
+    // Direct targets (Freeze/Overlay) draw into the just-reset, now C64-owned
+    // `screen`; they exit+reopen instead, retaking ownership before repaint.
+    // Non-direct hosts (Telnet) keep their own screen and stay open, so they
+    // still need the redraw here.
     if (screen && !reset_exits_monitor) {
         redraw_full();
     }
@@ -558,19 +552,10 @@ DebugStepDecision debug_classify_step(DebugStepOp op, DebugStepSource src,
     d.alert = 0;
     d.reason = "direct_step";
 
-    // RAM-under-ROM and visible ROM are the banks whose instruction fetches
-    // can serve a stale byte in the first cycles after a release - and a
-    // contextless single step commits its BRK immediately before that
-    // release, so the fetch race is live in every UI mode (the
-    // recommit+settle levers narrow but do not close it). With a parked
-    // context the session never releases the CPU into those banks for a
-    // single step (control flow is completed architecturally while parked;
-    // linear ops run from a plain-RAM trampoline), so every step is an
-    // ordinary direct step. Without a parked context, Step Into - and Step
-    // Over of anything that is not a JSR, which is mechanically the same
-    // immediate-BRK step - stops with guidance. Step Over of a JSR stays
-    // available: its completion breakpoint at the caller-side fall-through
-    // is fetched only after the callee's sustained natural run.
+    // RAM-under-ROM/visible-ROM fetches can serve a stale byte right after a
+    // release, which a contextless step's immediate BRK races. A parked
+    // context avoids it (control flow completes while parked); otherwise only
+    // JSR Step Over is safe, its breakpoint fetching after the callee runs.
     bool unsafe_src = (src == DEBUG_SRC_RAM_UNDER_ROM) ||
                       (src == DEBUG_SRC_VISIBLE_ROM);
     (void)ui_freeze;
@@ -581,12 +566,10 @@ DebugStepDecision debug_classify_step(DebugStepOp op, DebugStepSource src,
             d.reason = "unsafe_step_into_no_context";
             return d;
         }
-        // A non-JSR Step Over is the same immediate fall-through BRK step as
-        // Step Into. In visible ROM that BRK is a ROM-image patch whose first
-        // fetch races the post-release window, so it is gated. RAM-under-ROM
-        // fall-through patches live in banked RAM and release through the
-        // raster-synced clean session - the long-proven RUR path - so
-        // contextless Step Over stays available there.
+        // A non-JSR Step Over is the same immediate fall-through BRK as Step
+        // Into, so it is gated in visible ROM (a racy ROM-image patch fetch)
+        // but not RAM-under-ROM, whose fall-through patches release through
+        // the raster-synced clean (RUR) session instead.
         if (op == DEBUG_OP_OVER && !over_runs_callee &&
                 src == DEBUG_SRC_VISIBLE_ROM) {
             d.plan = DEBUG_PLAN_STOP;
@@ -1118,7 +1101,7 @@ void MachineMonitor :: edit_breakpoint_label(uint8_t slot)
 
 int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_R) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_L) {
         debug_close_breakpoint_popup();
         redraw_full();
         return 0;
@@ -1294,9 +1277,6 @@ int MachineMonitor :: debug_handle_key(int key)
     if (breakpoint_popup_active) {
         return debug_breakpoint_popup_handle_key(key);
     }
-    if (key == KEY_CTRL_X) {
-        return reset_machine_and_reopen();
-    }
     // Exit Debug shortcuts. ESC / RUN/STOP drop Debug only once Edit has
     // already been left by the outer edit-mode handler.
     if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_D) {
@@ -1321,7 +1301,7 @@ int MachineMonitor :: debug_handle_key(int key)
         }
         return 0;
     }
-    if (key == KEY_CTRL_R) {
+    if (key == KEY_CTRL_L) {
         debug_open_breakpoint_popup();
         draw();
         return 0;
