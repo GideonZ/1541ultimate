@@ -15,6 +15,8 @@ void set_fake_ms_timer(uint16_t value);
 void advance_fake_ms_timer(uint16_t delta);
 
 extern int g_set_screen_title_call_count;
+extern int g_swap_interface_type_calls;
+extern int g_swap_interface_type_result;
 
 struct FakeMemoryBackend : public MemoryBackend
 {
@@ -100,14 +102,9 @@ class FakeKeyboard : public Keyboard
     const int *keys;
     int count;
     int index;
-    // Mirrors a real Keyboard: production code (the debug session's cancel path,
-    // cancel_keyboard->push_head) re-injects a key, which getch must return next.
-    bool pushed;
-    int pushed_key;
 public:
     FakeKeyboard(const int *k, int c);
     int getch(void);
-    void push_head(int key);
 };
 
 class CaptureScreen : public Screen
@@ -141,6 +138,11 @@ public:
     void repeat(char c, int rep);
     void output_fixed_length(const char *string, int, int width_to_write);
     void get_slice(int x, int y, int len, char *out) const;
+    // A shorter screen than the C64's 25 rows. Telnet sessions come in every
+    // height, and the monitor derives its window and every popup's placement
+    // from the screen, so a test that only ever sees 25 rows never meets the
+    // geometry where a popup and the status row want the same row.
+    void set_height(int rows);
     void reset_write_counts();
     int count_writes_outside_rect(int left, int top, int right, int bottom) const;
 };
@@ -151,12 +153,18 @@ class CaptureWindow : public Window
 public:
     int last_x;
     int last_y;
+    // Every write and cursor move the field made, so a test can assert that a
+    // rejected keystroke produced none of them.
+    int move_cursor_calls;
+    int output_calls;
+    int repeat_calls;
 
     CaptureWindow(Screen *screen, int width);
     void move_cursor(int x, int y);
     void output_length(const char *, int);
     void repeat(char, int);
     int get_size_x(void);
+    void reset_counts(void);
 };
 
 class TestUserInterface : public UserInterface
@@ -166,6 +174,10 @@ public:
     char last_popup[128];
     char last_prompt_message[128];
     int last_prompt_maxlen;
+    // Copied, not pointed at: the monitor builds its policy as a local, so a
+    // stored pointer would dangle by the time a test read it.
+    UIStringEditPolicy last_prompt_policy;
+    bool last_prompt_had_policy;
     char prompt_texts[8][64];
     int prompt_results[8];
     int prompt_count;
@@ -178,6 +190,8 @@ public:
     int string_box(const char *msg, char *buffer, int maxlen);
     int string_box(const char *msg, char *buffer, int maxlen, bool);
     int string_box(const char *msg, char *buffer, int maxlen, bool, bool);
+    int string_box(const char *msg, char *buffer, int maxlen, bool, bool,
+                   const UIStringEditPolicy *policy);
 };
 
 int fail(const char *message);

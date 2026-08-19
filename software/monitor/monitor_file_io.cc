@@ -21,7 +21,6 @@
 #include "itu.h"
 #if defined(U64) && (U64)
 #include "u64_machine.h"
-#include "itu.h"
 #endif
 #endif
 #endif
@@ -79,10 +78,11 @@ static void monitor_append_lda_sta_zp(uint8_t *bytes, unsigned *pos,
     bytes[(*pos)++] = address;
 }
 
-static bool run_u64_nmi_trampoline(U64Machine *machine,
-                                   const uint8_t *body, unsigned body_len,
-                                   const DebugContext *context = 0,
-                                   bool pulse_nmi = true)
+static bool run_u64_debug_nmi_trampoline(U64Machine *machine,
+                                         const uint8_t *body,
+                                         unsigned body_len,
+                                         const DebugContext *context = 0,
+                                         bool pulse_nmi = true)
 {
     if (!machine || !body) {
         return false;
@@ -365,10 +365,33 @@ void monitor_io::jump_to(uint16_t address)
 #if !defined(RECOVERYAPP) && !defined(UPDATER)
 #if defined(U64) && (U64)
     U64Machine *machine = static_cast<U64Machine *>(C64::getMachine());
-    const uint8_t body[] = {
+    if (!machine) {
+        return;
+    }
+
+    bool stopped_it = machine->begin_stopped_session();
+
+    uint8_t old_nmi_lo = machine->peek_visible(c_monitor_nmi_vector + 0);
+    uint8_t old_nmi_hi = machine->peek_visible(c_monitor_nmi_vector + 1);
+    // $033C is the KERNAL cassette buffer, so this avoids touching user code or
+    // the live VIC screen RAM while we restore NMINV and tail-jump to the target.
+    uint8_t trampoline[] = {
+        0xA9, old_nmi_lo,
+        0x8D, (uint8_t)(c_monitor_nmi_vector & 0xFF), (uint8_t)(c_monitor_nmi_vector >> 8),
+        0xA9, old_nmi_hi,
+        0x8D, (uint8_t)((c_monitor_nmi_vector + 1) & 0xFF), (uint8_t)((c_monitor_nmi_vector + 1) >> 8),
         0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
     };
-    run_u64_nmi_trampoline(machine, body, sizeof(body));
+
+    for (unsigned i = 0; i < sizeof(trampoline); i++) {
+        machine->poke_visible((uint16_t)(c_monitor_jump_trampoline + i), trampoline[i]);
+    }
+    machine->poke_visible(c_monitor_nmi_vector + 0, (uint8_t)(c_monitor_jump_trampoline & 0xFF));
+    machine->poke_visible(c_monitor_nmi_vector + 1, (uint8_t)(c_monitor_jump_trampoline >> 8));
+
+    C64_MODE = C64_MODE_NMI;
+    machine->end_stopped_session(stopped_it);
+    C64_MODE = MODE_NORMAL;
 #else
     C64 *machine = C64::getMachine();
     if (!machine) {
@@ -411,7 +434,7 @@ bool monitor_io::jump_to_with_payload(uint16_t address, uint16_t load_address,
         return false;
     }
     uint8_t *jump_buffer = new uint8_t[(uint32_t)payload_length + 4];
-    if (!jump_buffer) {     // built with -fno-exceptions, so new returns NULL
+    if (!jump_buffer) {
         return false;
     }
     jump_buffer[0] = (uint8_t)(address & 0xFF);
@@ -454,7 +477,7 @@ void monitor_io::resume_to_context(const DebugContext &context)
         0xA9, context.a,
         0x40
     };
-    run_u64_nmi_trampoline(machine, body, sizeof(body), &context);
+    run_u64_debug_nmi_trampoline(machine, body, sizeof(body), &context);
 #else
     jump_to(context.pc);
 #endif
@@ -470,7 +493,7 @@ bool monitor_io::stage_jump_to(uint16_t address)
     const uint8_t body[] = {
         0x4C, (uint8_t)(address & 0xFF), (uint8_t)(address >> 8)
     };
-    return run_u64_nmi_trampoline(machine, body, sizeof(body), 0, false);
+    return run_u64_debug_nmi_trampoline(machine, body, sizeof(body), 0, false);
 #else
     (void)address;
     return false;
@@ -495,8 +518,8 @@ bool monitor_io::stage_resume_to_context(const DebugContext &context)
         0xA9, context.a,
         0x40
     };
-    return run_u64_nmi_trampoline(machine, body, sizeof(body), &context,
-                                  false);
+    return run_u64_debug_nmi_trampoline(machine, body, sizeof(body), &context,
+                                         false);
 #else
     (void)context;
     return false;

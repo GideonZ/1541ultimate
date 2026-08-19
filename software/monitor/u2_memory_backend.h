@@ -21,6 +21,7 @@ public:
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
+    virtual void write_block(uint16_t address, const uint8_t *src, uint16_t len);
     // The view bank cannot be selected here: a DMA read of $0001 returns a
     // mirror that is only refreshed at reset, not the live 6510 port.
     virtual bool supports_cpu_banking(void) const { return false; }

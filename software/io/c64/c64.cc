@@ -241,6 +241,7 @@ C64::C64()
     cpu_port_capture_failures = 0;
     frozen_mode = MODE_NORMAL;
     backupIsValid = false;
+    frozen_cia2_porta_changed = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -958,6 +959,37 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
 #endif
 }
 
+#if U64 == 1
+extern void u64_mute_sids(void) __attribute__((weak));
+extern void u64_unmute_sids(void) __attribute__((weak));
+#endif
+
+static void freezer_mute_sids(void)
+{
+#if U64 == 1
+    if (u64_mute_sids) {
+        u64_mute_sids();
+        return;
+    }
+#endif
+    SID_VOLUME = 0;
+    SID2_VOLUME = 0;
+    SID3_VOLUME = 0;
+}
+
+static void freezer_unmute_sids(void)
+{
+#if U64 == 1
+    if (u64_unmute_sids) {
+        u64_unmute_sids();
+        return;
+    }
+#endif
+    SID_VOLUME = 15;
+    SID2_VOLUME = 15;
+    SID3_VOLUME = 15;
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
@@ -986,9 +1018,7 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-    SID_VOLUME = 0;
-    SID2_VOLUME = 0;
-    SID3_VOLUME = 0;
+    freezer_mute_sids();
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -1020,6 +1050,7 @@ void C64::backup_io(void)
     // backup CIA registers
     cia_backup[0] = CIA2_DDRA;
     cia_backup[1] = CIA2_DPA;
+    frozen_cia2_porta_changed = false;
     cia_backup[2] = CIA1_DDRA;
     cia_backup[3] = CIA1_DDRB;
     CIA1_DDRA = 0x00;
@@ -1283,6 +1314,9 @@ void C64::restore_io(void)
     }
 
     // restore the cia registers
+    if (frozen_cia2_porta_changed) {
+        CIA2_DPA = cia_backup[1];
+    }
     CIA2_DDRA = cia_backup[0];
 //    CIA2_DPA  = cia_backup[1]; // don't touch!
     CIA1_DDRA = cia_backup[2];
@@ -1302,9 +1336,7 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    freezer_unmute_sids();
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!

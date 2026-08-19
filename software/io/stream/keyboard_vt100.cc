@@ -29,9 +29,7 @@ int Keyboard_VT100 :: getch()
         } else {
 		    charin = stream->get_char();
         }
-		if (charin == 0x12) // Ctrl+R
-			ret = KEY_CTRL_R;
-		else if (charin == '\e')
+		if (charin == '\e')
 			escape_state = e_esc_escape;
 		else if (charin == 0x12)
 			// Ctrl+R, the monitor's reset shortcut, as one keystroke.
@@ -75,9 +73,6 @@ int Keyboard_VT100 :: getch()
 		} else if (charin == 'b' || charin == 'B') {
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
-		} else if (charin == 'r' || charin == 'R') {
-			escape_state = e_esc_idle;
-			ret = KEY_CTRL_R;
 		} else {
 			if (charin != '\e')
 				escape_state = e_esc_idle;

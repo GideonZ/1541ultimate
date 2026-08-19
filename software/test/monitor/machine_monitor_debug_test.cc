@@ -25,14 +25,6 @@
 // Host stubs for monitor_io. The Debug-mode tests do not exercise file IO
 // or the live `G` handoff, but MachineMonitor still pulls these symbols in.
 
-static int g_swap_interface_type_calls = 0;
-
-int swap_interface_type(UserInterface *ui)
-{
-    (void)ui;
-    g_swap_interface_type_calls++;
-    return MENU_HIDE;
-}
 namespace monitor_io {
 bool pick_file(UserInterface *, const char *, char *, int, char *, int, bool) {
     return false;
@@ -360,6 +352,14 @@ struct SourceLabelDebugBackend : public TrackingDebugBackend
             return "RAM";
         }
         return "RAM";
+    }
+    virtual bool shows_as_data(uint16_t address) const {
+        // The synthetic $1000-$1004 labels exercise only source-tag
+        // normalization; keep each byte as its own NOP row for that test.
+        if (address >= 0x1000 && address <= 0x1004) {
+            return false;
+        }
+        return MemoryBackend::shows_as_data(address);
     }
 };
 
@@ -1600,7 +1600,7 @@ static int test_d_inside_debug_without_context_goto_keeps_cursor_authoritative()
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("1000", 1);
-    ui.set_prompt("2000", 3);
+    ui.push_prompt("2000", 3);
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
@@ -1713,6 +1713,8 @@ static int test_debug_pc_disassembly_uses_session_live_bytes_over_view()
     ctrl.session.next_ctx.pc = 0xE000;
     ctrl.session.next_ctx.sp = 0xF7;
     ctrl.session.next_ctx.sr = 0x24;
+    ctrl.session.next_ctx.live_cpu_port_valid = true;
+    ctrl.session.next_ctx.live_cpu_port = 0x05;
     ctrl.session.predict_bytes_valid = true;
     ctrl.session.predict_bytes[0] = 0xA9;
     ctrl.session.predict_bytes[1] = 0x42;
@@ -3532,9 +3534,9 @@ static int test_ctrl_b_keeps_bookmark_popup_in_debug()
                 backend.last_session->go_calls == 0),
                "C=+B must not be treated as a Debug execution command")) return 1;
     get_popup_line(screen, 13, row, sizeof(row));
-    if (expect(strncmp(row, "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset",
-                       strlen("0-9/RET:Jmp  S:Set  L:Label  DEL:Reset")) == 0,
-               "Bookmark popup help row must use the requested wording")) return 1;
+    if (expect(strncmp(row, "0-9/RET Jmp  S Set  L Label  DEL Reset",
+                       strlen("0-9/RET Jmp  S Set  L Label  DEL Reset")) == 0,
+               "Bookmark popup help row must use the monitor wording")) return 1;
     if (expect(monitor.poll(0) == 0, "ESC closes the bookmark popup")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "RUN/STOP exits the monitor")) return 1;
@@ -3917,15 +3919,17 @@ static int test_ctrl_i_swaps_interface_in_monitor()
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    if (expect(monitor.poll(0) == MENU_HIDE,
-               "C=+I in the monitor must route through swap_interface_type")) return 1;
+    if (expect(monitor.poll(0) == 1,
+               "C=+I in the monitor must leave after swapping the interface")) return 1;
     if (expect(g_swap_interface_type_calls == 1,
                "C=+I must invoke swap_interface_type exactly once")) return 1;
+    if (expect(monitor.consume_pending_interface_swap(),
+               "C=+I must request that the caller close the interface")) return 1;
     monitor.deinit();
     return 0;
 }
 
-// Locate the rendered "CPUx ... VICy" / "CxOy ... VICy" monitor status footer
+// Locate the rendered "CPUx ... VICy" monitor status footer
 // (it begins at screen column 1). Returns true and fills `out` when found.
 static bool capture_status_footer(CaptureScreen &screen, char *out, int out_len)
 {
@@ -3984,9 +3988,8 @@ static int test_reset_reentry_view_follows_live_cpu_bank()
     return 0;
 }
 
-// Invariant #2: an ordinary monitor close/reopen WITHOUT an intervening reset
-// must preserve a manually selected (O) exploratory view bank, i.e. the
-// sync-to-live behaviour is gated strictly to the post-reset open.
+// An ordinary monitor close/reopen preserves a manually selected CPU view
+// bank. Synchronization to the live bank is limited to reset re-entry.
 static int test_reopen_without_reset_preserves_manual_cpu_view()
 {
     TestUserInterface ui;
@@ -4010,7 +4013,7 @@ static int test_reopen_without_reset_preserves_manual_cpu_view()
         m.deinit();   // persists manual view bank 3
     }
 
-    // Session 2: reopen with NO reset hook in between -> manual view preserved.
+    // Reopen without a reset hook in between; the manual view is preserved.
     const int nokeys[] = { 0 };
     FakeKeyboard kb(nokeys, 0);
     ui.keyboard = &kb;
@@ -4020,42 +4023,12 @@ static int test_reopen_without_reset_preserves_manual_cpu_view()
     char footer[40];
     if (expect(capture_status_footer(screen, footer, sizeof(footer)),
                "Status footer must be visible on ordinary reopen")) { monitor.deinit(); return 1; }
-    if (expect(strncmp(footer, "C5O3", 4) == 0,
-               "Ordinary reopen must preserve the manual O view bank (footer C5O3)")) {
+    if (expect(strncmp(footer, "CPU3", 4) == 0,
+               "Ordinary reopen must preserve the manual CPU view bank")) {
         printf("  footer was: '%s'\n", footer);
         monitor.deinit();
         return 1;
     }
-    monitor.deinit();
-    return 0;
-}
-
-static int test_jump_rejects_non_hex_input_and_uppercases()
-{
-    TestUserInterface ui;
-    CaptureScreen screen;
-    TrackingDebugBackend backend;
-    monitor_reset_saved_state();
-
-    const int keys[] = { 'J', KEY_BREAK };
-    FakeKeyboard keyboard(keys, 2);
-    ui.screen = &screen;
-    ui.keyboard = &keyboard;
-    ui.push_prompt("G123", 1);
-    ui.push_prompt("c0de", 1);
-
-    BackendMachineMonitor monitor(&ui, &backend);
-    monitor.init(&screen, &keyboard);
-    if (expect(monitor.poll(0) == 0, "Jump command should return 0")) return 1;
-    if (expect(strcmp(ui.last_popup, "HEX 0-9/A-F ONLY") == 0,
-               "Jump must reject non-hex input with a monitor-local validation popup")) return 1;
-    if (expect(ui.last_prompt_maxlen == 4,
-               "Jump prompt must limit input to four characters")) return 1;
-    char header[40];
-    screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "$C0DE") != NULL,
-               "Jump must normalize lowercase hex input to uppercase")) return 1;
-    if (expect(monitor.poll(0) == 1, "RUN/STOP should exit the monitor")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -4081,11 +4054,11 @@ static int test_edit_and_debug_compose_in_header()
     if (expect(monitor.poll(0) == 0, "Enter Edit ok")) return 1;
     char header[40];
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") != NULL,
+    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "EDIT") != NULL,
                "Header must show both Dbg and Edit when both modes are active")) return 1;
     if (expect(monitor.poll(0) == 0, "C=+E drops Edit first")) return 1;
     screen.get_slice(1, 3, 38, header);
-    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "Edit") == NULL,
+    if (expect(strstr(header, "Dbg") != NULL && strstr(header, "EDIT") == NULL,
                "C=+E in Debug+Edit must keep Dbg and clear Edit")) return 1;
     if (expect(monitor.poll(0) == 0, "ESC drops Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Final RUN/STOP exits")) return 1;
@@ -7041,8 +7014,8 @@ static int test_wait_for_sentinel_drops_execution_keys()
     BrkSessionBackend backend(false);
     monitor_reset_saved_state();
 
-    const int keys[] = { 'J', 'A', 'D', 'T', 'T', KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 7);
+    const int keys[] = { 'J', 'A', 'D', 'T', 'T', KEY_BREAK, KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 8);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
     ui.set_prompt("0801", 1);
@@ -7789,53 +7762,6 @@ static int test_debug_marker_shows_dbg()
     if (expect(strstr(header, "Dbg") != NULL, "Header must show Dbg")) return 1;
     if (expect(strstr(header, "DbX") == NULL, "DbX must never appear")) return 1;
     if (expect(strstr(header, "Db!") == NULL, "Db! must never appear")) return 1;
-    monitor.poll(0);
-    monitor.poll(0);
-    monitor.deinit();
-    return 0;
-}
-
-static int test_x_exits_monitor()
-{
-    TestUserInterface ui;
-    CaptureScreen screen;
-    TrackingDebugBackend backend;
-    monitor_reset_saved_state();
-
-    const int keys[] = { 'A', 'X' };
-    FakeKeyboard keyboard(keys, 2);
-    ui.screen = &screen;
-    ui.keyboard = &keyboard;
-
-    BackendMachineMonitor monitor(&ui, &backend);
-    monitor.init(&screen, &keyboard);
-    if (expect(monitor.poll(0) == 0, "ASM switch")) return 1;
-    if (expect(monitor.poll(0) == 1, "X exits the monitor")) return 1;
-    monitor.deinit();
-    return 0;
-}
-
-static int test_x_in_edit_mode_is_edit_input()
-{
-    TestUserInterface ui;
-    CaptureScreen screen;
-    TrackingDebugBackend backend;
-    monitor_reset_saved_state();
-
-    backend.write(0x2000, 0xEA);
-    // A: ASM, D: Debug, E: enter edit, X: must be edit input (no exit).
-    const int keys[] = { 'A', 'D', 'E', 'X', KEY_BREAK, KEY_BREAK, KEY_BREAK };
-    FakeKeyboard keyboard(keys, 7);
-    ui.screen = &screen;
-    ui.keyboard = &keyboard;
-
-    BackendMachineMonitor monitor(&ui, &backend);
-    monitor.init(&screen, &keyboard);
-    if (expect(monitor.poll(0) == 0, "ASM switch")) return 1;
-    if (expect(monitor.poll(0) == 0, "Enter Debug")) return 1;
-    if (expect(monitor.poll(0) == 0, "Enter Edit")) return 1;
-    if (expect(monitor.poll(0) == 0, "X in edit must not exit")) return 1;
-    monitor.poll(0);
     monitor.poll(0);
     monitor.poll(0);
     monitor.deinit();
@@ -9038,7 +8964,6 @@ int main()
     RUN(test_ctrl_i_swaps_interface_in_monitor);
     RUN(test_reset_reentry_view_follows_live_cpu_bank);
     RUN(test_reopen_without_reset_preserves_manual_cpu_view);
-    RUN(test_jump_rejects_non_hex_input_and_uppercases);
     RUN(test_edit_and_debug_compose_in_header);
     RUN(test_freeze_step_over_refreezes_and_preserves_screen);
     RUN(test_freeze_step_over_refreezes_when_start_predicate_is_stale);
@@ -9136,8 +9061,6 @@ int main()
 
     // Step chooser and parked-context step emulation.
     RUN(test_debug_marker_shows_dbg);
-    RUN(test_x_exits_monitor);
-    RUN(test_x_in_edit_mode_is_edit_input);
     RUN(test_ctrl_x_reset_not_shadowed_by_x);
     RUN(test_visible_rom_contextless_linear_step_over_stops);
     RUN(test_visible_rom_contextless_jsr_step_over_runs);

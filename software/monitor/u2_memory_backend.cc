@@ -11,9 +11,26 @@ uint8_t U2MemoryBackend :: read(uint16_t address)
     return machine->peek(address);
 }
 
+// dma_transfer_frozen puts the frozen C64 mode back and clears
+// C64_DMA_MEMONLY around the access, both of which change what the bus decodes
+// at the address being written. While the freezer holds the machine the 6510
+// is still executing the freezer's own code, so it is still driving that bus,
+// and a write issued into that window is intermittently lost: measured on an
+// Ultimate II+L in a C64 Ultimate, 5 of 45 single-byte Hex edits at addresses
+// of $1000 and above did not reach memory, while 18 of 18 below $1000, which
+// need nothing rebanked, all did. The C64's own DMA path stops the machine for
+// the same call for the same reason (C64_Subsys::executeCommand in
+// io/c64/c64_subsys.cc), and read_block below stops it through C64::peek.
+// Stopping it here makes the monitor's write path agree with both.
 void U2MemoryBackend :: write(uint16_t address, uint8_t value)
 {
     if (!machine || !machine->exists()) {
+        return;
+    }
+    if (machine->is_accessible()) {
+        bool stopped_it = machine->begin_stopped_session();
+        machine->dma_transfer_frozen(address, &value, 1, 0);
+        machine->end_stopped_session(stopped_it);
         return;
     }
     machine->poke(address, value);
@@ -28,13 +45,31 @@ void U2MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
         }
         return;
     }
-    // One stopped session for the whole block. Per-byte peek() would stop and
-    // resume a running machine hundreds of times per redraw, and C64::stop()
-    // ends in an unbounded wait once its two timed attempts fail, so a single
-    // unhonoured stop would hang the caller for good.
     bool stopped_it = machine->begin_stopped_session();
     while (len) {
         *dst++ = machine->peek(address++);
+        len--;
+    }
+    machine->end_stopped_session(stopped_it);
+}
+
+void U2MemoryBackend :: write_block(uint16_t address, const uint8_t *src, uint16_t len)
+{
+    if (!machine || !machine->exists()) {
+        return;
+    }
+    if (machine->is_accessible()) {
+        // Same reason as write() above, and the same stop covers the whole
+        // block, so the block is written while one CPU state holds for all of
+        // it rather than per byte.
+        bool stopped_it = machine->begin_stopped_session();
+        machine->dma_transfer_frozen(address, const_cast<uint8_t *>(src), len, 0);
+        machine->end_stopped_session(stopped_it);
+        return;
+    }
+    bool stopped_it = machine->begin_stopped_session();
+    while (len) {
+        machine->poke(address++, *src++);
         len--;
     }
     machine->end_stopped_session(stopped_it);
@@ -85,6 +120,12 @@ void U2MemoryBackend :: begin_session(void)
     if (machine) {
         machine->capture_cpu_port_via_nmi();
     }
+    if (!machine || !machine->exists() || machine->is_accessible()) {
+        return;
+    }
+    bool stopped_it = machine->begin_stopped_session();
+    cached_cia2_porta = machine->peek(0xDD00);
+    machine->end_stopped_session(stopped_it);
 }
 
 void U2MemoryBackend :: invalidate_live_cpu_port_cache(void)
@@ -97,25 +138,16 @@ void U2MemoryBackend :: invalidate_live_cpu_port_cache(void)
     observed_cpu_port_valid = false;
 }
 
-// CIA2 port A holds the VIC bank in its bottom two bits, inverted. While the
-// freezer menu is up those bits have been turned into inputs, so read them from
-// the value backup_io() captured instead of off the pins; see
-// C64::get_frozen_cia2_porta().
 uint8_t U2MemoryBackend :: read_cia2_porta(void)
 {
     if (!machine || !machine->exists()) {
-        return 0x03;    // bank 0 in the register's inverted encoding
+        return 0x03;
     }
-    if (machine->is_frozen()) {
+    if (machine->is_accessible()) {
         cached_cia2_porta = machine->get_frozen_cia2_porta();
     } else if (machine->is_stopped()) {
-        // Already stopped, so this read costs nothing extra.
         cached_cia2_porta = machine->peek(0xDD00);
     }
-    // Running and not frozen: deliberately do NOT read. poll() calls
-    // get_live_vic_bank() every idle iteration, and peek() stops and resumes a
-    // running machine per access, so reading here would stop the C64
-    // continuously. The row this feeds is only on screen while frozen.
     return cached_cia2_porta;
 }
 
@@ -129,30 +161,24 @@ void U2MemoryBackend :: set_live_vic_bank(uint8_t vic_bank)
     if (!machine || !machine->exists()) {
         return;
     }
-    uint8_t base;
-    if (machine->is_frozen() || machine->is_stopped()) {
-        base = read_cia2_porta();
+    if (machine->is_accessible()) {
+        uint8_t porta = read_cia2_porta();
+        porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
+        machine->set_frozen_cia2_porta(porta);
+        cached_cia2_porta = porta;
+        return;
+    }
+    uint8_t porta;
+    if (machine->is_stopped()) {
+        porta = read_cia2_porta();
     } else {
-        // The cache is only refreshed while frozen or stopped, so on a running
-        // machine it can still hold the power-on default. Writing that back
-        // would drive the other six bits of CIA2 port A -- IEC ATN, CLK and
-        // DATA out, and the RS-232 transmit line -- to zero, which corrupts a
-        // transfer in progress. One short stopped session reads what is
-        // actually there; this is a user bank selection, not a polled read.
         bool stopped_it = machine->begin_stopped_session();
-        base = machine->peek(0xDD00);
-        cached_cia2_porta = base;
+        porta = machine->peek(0xDD00);
         machine->end_stopped_session(stopped_it);
     }
-    uint8_t porta = (uint8_t)((base & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
-    // Write the register even while frozen: init_io()/restore_io() leave the
-    // data register alone, so the program sees the new bank once the data
-    // direction is handed back on unfreeze. The backup is updated too, or the
-    // next read here returns the pre-write bank.
+    porta = (uint8_t)((porta & 0xFC) | (uint8_t)(3 - (vic_bank & 0x03)));
     machine->poke(0xDD00, porta);
-    if (machine->is_frozen()) {
-        machine->set_frozen_cia2_porta(porta);
-    }
+    cached_cia2_porta = porta;
 }
 
 const char *U2MemoryBackend :: source_name(uint16_t address) const
@@ -172,7 +198,7 @@ const char *U2MemoryBackend :: source_name(uint16_t address) const
     const bool charen = (port & 0x04) != 0;
 
     if (address >= 0xA000 && address <= 0xBFFF) {
-        return (loram && hiram) ? "BAS" : "RAM";
+        return (loram && hiram) ? "BASIC" : "RAM";
     }
     if (address >= 0xD000 && address <= 0xDFFF) {
         // $D000 is RAM whenever both bank bits are clear; otherwise CHAREN
@@ -180,10 +206,10 @@ const char *U2MemoryBackend :: source_name(uint16_t address) const
         if (!loram && !hiram) {
             return "RAM";
         }
-        return charen ? "I/O" : "CHR";
+        return charen ? "IO" : "CHAR";
     }
     if (address >= 0xE000) {
-        return hiram ? "KRN" : "RAM";
+        return hiram ? "KERNAL" : "RAM";
     }
     return "RAM";
 }

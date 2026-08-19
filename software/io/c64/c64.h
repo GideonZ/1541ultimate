@@ -296,6 +296,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d012;
     uint8_t frozen_mode;
     bool backupIsValid;
+    bool frozen_cia2_porta_changed;
 
     volatile bool buttonPushSeen;
     volatile bool available;
@@ -407,11 +408,12 @@ public:
     // CIA2 port A as the frozen program left it; its bottom two bits select the
     // VIC bank. Taken from the backup, not a live $DD00 read: init_io() turns
     // those pins into inputs (CIA2_DDRA &= 0xFC), after which a read returns the
-    // floating state, measured as bank 0 whatever the program selected. Neither
-    // init_io() nor restore_io() touches the data register, so a value written
-    // here survives the unfreeze.
+    // floating state, measured as bank 0 whatever the program selected.
     uint8_t get_frozen_cia2_porta(void) const { return cia_backup[1]; }
-    void set_frozen_cia2_porta(uint8_t value) { cia_backup[1] = value; }
+    void set_frozen_cia2_porta(uint8_t value) {
+        cia_backup[1] = value;
+        frozen_cia2_porta_changed = true;
+    }
     
     void set_colors(int background, int border);
     Screen *getScreen(void);

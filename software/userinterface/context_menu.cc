@@ -63,14 +63,6 @@ int ContextMenu :: get_items(void)
 
 void ContextMenu :: init(Window *parwin, Keyboard *key)
 {
-    // A key handled between release_host() and take_host() reaches here with a
-    // NULL parent. Dereferencing it faults the Nios and takes the whole device
-    // down, so refuse the popup instead.
-    if(!parwin) {
-        keyb = key;
-        context_state = e_finished;
-        return;
-    }
 	Screen *scr = parwin->getScreen();
 	int len, max_len;
     int rows, size_y;

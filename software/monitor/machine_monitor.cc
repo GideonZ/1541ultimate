@@ -1,6 +1,11 @@
 #include "machine_monitor.h"
 #include "monitor_init.h"
 
+// Provided by the application's user interface. Weak, because the monitor's
+// host test binary links without it and must not require it: a build with no
+// interface to swap simply has nothing to do for C= plus I.
+int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+
 #include "assembler_6502.h"
 #include "disassembler_6502.h"
 #include "monitor_debug_predictor.h"
@@ -21,7 +26,66 @@ extern "C" {
 #include <string.h>
 #include <stdlib.h>
 
-int swap_interface_type(UserInterface *ui) __attribute__ ((weak));
+// Rendered by draw_help, one line per row. The line naming the key that opens
+// help carries the only "%s" here: that key comes from the application key
+// mapper rather than from this table, so the help cannot claim a mapping the
+// firmware does not have. Every line has to fit the 38 usable columns of the
+// monitor window on the physical 40-column screen, and the table as a whole has
+// to fit the shortest screen the monitor runs on, which is the 24-row telnet
+// terminal rather than the 25-row C64. A host test enforces both.
+// The primary grid's cells start at columns 1, 14 and 27 (1-based, excluding
+// the popup border); BOOKMARKS and CONTROL KEYS share a four-anchor grid at
+// 1, 12, 21 and 29. Every character is drawn in the body colour, so a line is
+// laid out exactly as it is written here. No leading blank row: "HELP", drawn
+// as the window title by draw_header rather than from this table, is this
+// page's own heading, and a heading is not followed by a blank row any more
+// than BOOKMARKS or CONTROL KEYS are below.
+const char *const monitor_help_lines[] = {
+    "M Memory     I ASCII      V Screen",
+    "A Assembly   B Binary     U Undoc/Case",
+    "J Jump       G Go",
+    // No blank row between the two halves of this grid: the page is one row
+    // from the shortest screen's budget, and a blank inside a single
+    // three-column grid is worth less than the machine row at the bottom.
+    "E Edit       F Fill       T Transfer",
+    "C Compare    H Hunt       N Number",
+    "W Width      R Range      P Poll",
+    "Z Freeze     O CPU Bank   SH+O VIC",
+    "L Load       S Save",
+    "",
+    "BOOKMARKS",
+    "C=+B       List     C=+0-9  Jump",
+    "",
+    "CONTROL KEYS",
+    // Interface row: the two major auxiliary interfaces.
+    "?/%s       Help     C=+O    Monitor",
+    // Editing row.
+    "C=+E       Edit off C=+C/V  Copy/Paste",
+    // Structural navigation row: back out, or follow/return within the level
+    // already open.
+    "RUNSTOP/<- Back     RETURN  Follow/Ret",
+    // Machine row: the two keys that act on the machine rather than the view,
+    // and both of which leave the monitor.
+    "C=+R       Reset    C=+I    Interface",
+    NULL
+    // Page Up/Down remains the window's own last row, drawn by draw_status:
+    // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
+};
+
+// The C64's top-left left-arrow key is delivered as '`' by Keyboard_C64.
+const int monitor_key_arrow_left = '`';
+
+const char *monitor_view_name(MachineMonitorView view)
+{
+    switch (view) {
+        case MONITOR_VIEW_HEX:    return "HEX";
+        case MONITOR_VIEW_ASM:    return "ASM";
+        case MONITOR_VIEW_ASCII:  return "ASCII";
+        case MONITOR_VIEW_SCREEN: return "SCREEN";
+        case MONITOR_VIEW_BINARY: return "BINARY";
+    }
+    return "?";
+}
 
 namespace {
 
@@ -30,31 +94,6 @@ static const uint8_t monitor_cursor_blink_idle_polls = 3;
 #else
 static const uint16_t monitor_cursor_blink_half_period_ms = 400;
 #endif
-
-static const char *const monitor_help_lines[] = {
-    "",
-    "M Memory     I ASCII      V Screen",
-    "A Assembly   B Binary     U Undoc/Case",
-    "J Jump       G Go         D Debug",
-    "",
-    "E Edit       F Fill       T Transfer",
-    "C Compare    H Hunt       N Number",
-    "W Width      R Range      P Poll",
-    "Z Freeze     O CPU Bank   SH+O VIC",
-    "L Load       S Save",
-    "",
-    "Bookmarks:   C=+B List    C=+0-9 Jump",
-    "",
-    "Open monitor:  C=+O",
-    "Close monitor: C=+O/RSTOP",
-    "Leave edit:    C=+E/RSTOP",
-    "Copy/Paste:    C=+C / C=+V",
-    "Reset/Follow:  C=+X Reset / RETURN",
-    NULL
-};
-
-static const char monitor_help_paging_line[] = "Page Up/Down:   F1/SH+SPACE / F7/SPACE";
-static const char monitor_debug_help_paging_line[] = "Page Up/Down:  F1/SH+SPACE / F7/SPACE";
 
 static bool monitor_saved_state_valid = false;
 static MachineMonitorState monitor_saved_state = {
@@ -70,45 +109,8 @@ static MachineMonitorState monitor_saved_state = {
 static bool monitor_reset_reopen_state_valid = false;
 static MachineMonitorState monitor_reset_reopen_state;
 static bool monitor_reset_reopen_debug_active = false;
-// Set on every C64 hardware reset (REST / C=+X / RESET button). The next fresh
-// monitor open syncs its view bank to the live CPU bank so re-entry decodes the
-// memory the CPU actually sees (e.g. RAM-under-ROM when $01 low bits are 5),
-// instead of carrying a stale exploratory view or a hardcoded ROM (bank 7) view.
-// This does NOT touch ordinary close/reopen (no intervening reset), so manual
-// O bank exploration still persists across those opens.
 static bool monitor_sync_view_to_live_on_open = false;
-
-// Process-lifetime breakpoint storage. Survives monitor close/reopen, the
-// C=+X reset reentry path, and Stop-Debugging cleanup, but is volatile RAM
-// so power-off clears it. The MachineMonitor constructor copies from this
-// into its local table; deinit() copies the local table back out.
 static MonitorBreakpoints monitor_saved_breakpoints;
-
-static const char *monitor_debug_result_name(DebugSession::Result result);
-static const char *monitor_view_name(MachineMonitorView view);
-static void monitor_log(const char *action);
-static void monitor_log_address(const char *action, uint16_t address);
-static void monitor_log_value(const char *action, uint16_t address, uint16_t value);
-static void monitor_log_byte(const char *action, uint16_t address, uint8_t value);
-static void monitor_log_range(const char *action, uint16_t start, uint16_t end);
-static void monitor_log_debug(const char *action, uint16_t pc, DebugSession::Result result);
-
-static MachineMonitorState monitor_reset_reentry_state(const MachineMonitorState &source)
-{
-    MachineMonitorState sanitized;
-    sanitized.view = source.view;
-    sanitized.current_addr = source.current_addr;
-    sanitized.base_addr = source.base_addr;
-    sanitized.disasm_offset = source.disasm_offset;
-    if (source.view == MONITOR_VIEW_ASM) {
-        sanitized.base_addr = source.current_addr;
-        sanitized.disasm_offset = 0;
-    }
-    sanitized.illegal_enabled = source.illegal_enabled;
-    sanitized.screen_charset = source.screen_charset;
-    sanitized.view_cpu_port = source.view_cpu_port;
-    return sanitized;
-}
 
 // Persistent LOAD/SAVE/GO state (across monitor invocations within a single
 // firmware run). Defaults match the spec: a "press L, RETURN, RETURN" sequence
@@ -133,6 +135,64 @@ static uint16_t monitor_last_go_addr = 0;
 // MONITOR_BINARY_SPRITE_MODE_MARKER (0xFE) and renders 3 bytes.
 static uint8_t monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
 static uint8_t monitor_binary_bytes_per_row = 1;
+
+// Trace lines for the monitor's non-debugger actions. They go to the same
+// console the device log collector reads, so the prefix is fixed at "MCM " and
+// every line is one action: an E2E run can tell from the log alone which view
+// was selected, where the cursor went, and what each range command was asked
+// to do. Volume is one line per action, which on the bank keys means one line
+// per keypress, and that is the point: a bank key that produced no line did
+// not reach the monitor.
+static void monitor_log(const char *action)
+{
+    printf("MCM %s\n", action);
+}
+
+static void monitor_log_address(const char *action, uint16_t address)
+{
+    printf("MCM %s $%04x\n", action, address);
+}
+
+static void monitor_log_value(const char *action, uint16_t address, uint16_t value)
+{
+    printf("MCM %s $%04x $%04x\n", action, address, value);
+}
+
+static void monitor_log_byte(const char *action, uint16_t address, uint8_t value)
+{
+    printf("MCM %s $%04x $%02x\n", action, address, value);
+}
+
+static void monitor_log_range(const char *action, uint16_t start, uint16_t end)
+{
+    printf("MCM %s $%04x-$%04x\n", action, start, end);
+}
+
+// The three-character tag the Assembly view puts at the end of each row. The
+// source column is right-aligned, so a variable-width tag moves the column's
+// left edge whenever the cursor crosses a bank boundary and the rows below
+// appear to shift. Every name a backend can return maps to three characters,
+// so the column stays where it is. A name no backend currently returns is
+// passed through rather than hidden, and it is the caller that caps the width.
+static const char *monitor_source_indicator(const char *source)
+{
+    if (!source) {
+        return "RAM";
+    }
+    if (!strcmp(source, "BASIC") || !strcmp(source, "BAS")) {
+        return "BAS";
+    }
+    if (!strcmp(source, "KERNAL") || !strcmp(source, "KRN")) {
+        return "KRN";
+    }
+    if (!strcmp(source, "CHAR") || !strcmp(source, "CHR")) {
+        return "CHR";
+    }
+    if (!strcmp(source, "I/O") || !strcmp(source, "IO")) {
+        return "I/O";
+    }
+    return source;
+}
 
 static inline uint8_t monitor_memory_byte_stride(uint8_t bytes_per_row)
 {
@@ -782,29 +842,6 @@ static void monitor_format_text_row_impl(uint16_t address, const uint8_t *bytes,
     out[MONITOR_TEXT_ROW_CHARS] = 0;
 }
 
-static const char *monitor_source_indicator(const char *source)
-{
-    if (!source) {
-        return "RAM";
-    }
-    if (!strcmp(source, "BASIC") || !strcmp(source, "BAS")) {
-        return "BAS";
-    }
-    if (!strcmp(source, "KERNAL") || !strcmp(source, "KRN")) {
-        return "KRN";
-    }
-    if (!strcmp(source, "CHAR") || !strcmp(source, "CHR")) {
-        return "CHR";
-    }
-    if (!strcmp(source, "I/O") || !strcmp(source, "IO")) {
-        return "I/O";
-    }
-    if (!strcmp(source, "RAM")) {
-        return "RAM";
-    }
-    return source;
-}
-
 static void draw_padded(Window *window, int y, const char *text, int len)
 {
     int width = window->get_size_x();
@@ -897,12 +934,8 @@ static void draw_with_style_mask(Window *window, int y, const char *text, int le
     bool reverse = false;
     int color = normal_color;
 
-    if (len > width) {
-        len = width;
-    }
-    if (len < 0) {
-        len = 0;
-    }
+    if (len > width) len = width;
+    if (len < 0) len = 0;
 
     window->move_cursor(0, y);
     window->set_color(normal_color);
@@ -920,9 +953,7 @@ static void draw_with_style_mask(Window *window, int y, const char *text, int le
         }
         window->output_length(text + i, 1);
     }
-    if (reverse) {
-        window->reverse_mode(0);
-    }
+    if (reverse) window->reverse_mode(0);
     window->set_color(normal_color);
     window->repeat(' ', width - len);
 }
@@ -930,14 +961,14 @@ static void draw_with_style_mask(Window *window, int y, const char *text, int le
 static bool monitor_debug_branch_taken(uint8_t opcode, uint8_t sr)
 {
     switch (opcode) {
-        case 0x10: return (sr & 0x80) == 0; // BPL
-        case 0x30: return (sr & 0x80) != 0; // BMI
-        case 0x50: return (sr & 0x40) == 0; // BVC
-        case 0x70: return (sr & 0x40) != 0; // BVS
-        case 0x90: return (sr & 0x01) == 0; // BCC
-        case 0xB0: return (sr & 0x01) != 0; // BCS
-        case 0xD0: return (sr & 0x02) == 0; // BNE
-        case 0xF0: return (sr & 0x02) != 0; // BEQ
+        case 0x10: return (sr & 0x80) == 0;
+        case 0x30: return (sr & 0x80) != 0;
+        case 0x50: return (sr & 0x40) == 0;
+        case 0x70: return (sr & 0x40) != 0;
+        case 0x90: return (sr & 0x01) == 0;
+        case 0xB0: return (sr & 0x01) != 0;
+        case 0xD0: return (sr & 0x02) == 0;
+        case 0xF0: return (sr & 0x02) != 0;
     }
     return false;
 }
@@ -945,21 +976,16 @@ static bool monitor_debug_branch_taken(uint8_t opcode, uint8_t sr)
 static bool monitor_find_target_span(const char *text, int text_len,
                                      int *span_start, int *span_len)
 {
-    if (!text || text_len <= 0 || !span_start || !span_len) {
-        return false;
-    }
+    if (!text || text_len <= 0 || !span_start || !span_len) return false;
     for (int i = 0; i < text_len; i++) {
-        if (text[i] != '$') {
-            continue;
-        }
+        if (text[i] != '$') continue;
         int hex_count = 0;
         while (i + 1 + hex_count < text_len) {
             char c = text[i + 1 + hex_count];
-            bool digit = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
+            bool digit = (c >= '0' && c <= '9') ||
+                         (c >= 'A' && c <= 'F') ||
                          (c >= 'a' && c <= 'f');
-            if (!digit) {
-                break;
-            }
+            if (!digit) break;
             hex_count++;
         }
         if (hex_count >= 4) {
@@ -969,29 +995,6 @@ static bool monitor_find_target_span(const char *text, int text_len,
         }
     }
     return false;
-}
-
-static bool monitor_normalize_jump_input(char *buffer)
-{
-    int len = 0;
-    if (!buffer) {
-        return false;
-    }
-    while (buffer[len]) {
-        char c = buffer[len];
-        if (c >= 'a' && c <= 'f') {
-            c = (char)(c - 'a' + 'A');
-            buffer[len] = c;
-        }
-        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {
-            return false;
-        }
-        len++;
-        if (len > 4) {
-            return false;
-        }
-    }
-    return len > 0;
 }
 
 struct MonitorCpuStatusFields {
@@ -1030,34 +1033,22 @@ static uint8_t normalize_cpu_mode(uint8_t cpu_port)
     return cpu_port & 0x07;
 }
 
-static void format_status_line_impl(char *line, uint8_t view_cpu_port,
-                                    uint8_t live_cpu_port, uint8_t vic_bank)
+static void format_status_line_impl(char *line, uint8_t port01, uint8_t vic_bank)
 {
-    uint8_t monitor_bank = view_cpu_port & 0x07;
-    uint8_t cpu_bank = live_cpu_port & 0x07;
-    const MonitorCpuStatusFields *fields = &monitor_cpu_status_fields[monitor_bank];
+    uint8_t cpu_bank = port01 & 0x07;
+    const MonitorCpuStatusFields *fields = &monitor_cpu_status_fields[cpu_bank];
     uint16_t vic_base;
     int pos;
 
     vic_bank &= 0x03;
     vic_base = monitor_vic_bank_bases[vic_bank];
 
-    if (cpu_bank == monitor_bank) {
-        sprintf(line, "CPU%c $A:%s $D:%s $E:%s VIC%c $",
-                (char)('0' + cpu_bank),
-                fields->a000,
-                fields->d000,
-                fields->e000,
-                (char)('0' + vic_bank));
-    } else {
-        sprintf(line, "C%cO%c $A:%s $D:%s $E:%s VIC%c $",
-                (char)('0' + cpu_bank),
-                (char)('0' + monitor_bank),
-                fields->a000,
-                fields->d000,
-                fields->e000,
-                (char)('0' + vic_bank));
-    }
+    sprintf(line, "CPU%c $A:%s $D:%s $E:%s VIC%c $",
+            (char)('0' + cpu_bank),
+            fields->a000,
+            fields->d000,
+            fields->e000,
+            (char)('0' + vic_bank));
     pos = strlen(line);
     dump_hex_word(line, pos, vic_base);
     line[pos + 4] = 0;
@@ -1094,6 +1085,7 @@ uint8_t monitor_screen_code_for_char(char c, uint8_t screen_charset)
 
     if (c == '@') return 0x00;
     if (c == ' ') return 0x20;
+    if (c == '`') return 0x1F;
     if (c >= '0' && c <= '9') return (uint8_t)c;
     if (c >= '!' && c <= '?') return (uint8_t)c;
     if (c >= 'a' && c <= 'z') return (uint8_t)(c - 'a' + 1);
@@ -1106,28 +1098,9 @@ uint8_t monitor_screen_code_for_char(char c, uint8_t screen_charset)
     return 0xFF;
 }
 
-void monitor_format_status_line(char *line, uint8_t view_cpu_port, uint8_t vic_bank)
+void monitor_format_status_line(char *line, uint8_t port01, uint8_t vic_bank)
 {
-    format_status_line_impl(line, view_cpu_port, view_cpu_port, vic_bank);
-}
-
-void monitor_format_status_line(char *line, uint8_t view_cpu_port,
-                                uint8_t live_cpu_port, uint8_t vic_bank)
-{
-    format_status_line_impl(line, view_cpu_port, live_cpu_port, vic_bank);
-}
-
-void monitor_format_breakpoint_mismatch(char *out, int out_len,
-                                        MonitorBackingStore target,
-                                        MonitorBackingStore current)
-{
-    if (!out || out_len <= 0) {
-        return;
-    }
-    snprintf(out, out_len, "BRK %s, CPU %s; not mapped now",
-             monitor_backing_store_tag(target),
-             monitor_backing_store_tag(current));
-    out[out_len - 1] = 0;
+    format_status_line_impl(line, port01, vic_bank);
 }
 
 const char *monitor_error_text(MonitorError error)
@@ -1153,9 +1126,7 @@ void monitor_reset_saved_state(void)
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = false;
     monitor_saved_state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
-    monitor_saved_state.view_cpu_port = 0x07;
-    monitor_reset_reopen_state_valid = false;
-    monitor_reset_reopen_debug_active = false;
+    monitor_saved_state.cpu_port = 0x07;
 
     monitor_last_load_use_prg = true;
     monitor_last_load_start = 0x0801;
@@ -1172,30 +1143,31 @@ void monitor_reset_saved_state(void)
 
     monitor_memory_bytes_per_row = MONITOR_HEX_BYTES_PER_ROW;
     monitor_binary_bytes_per_row = 1;
-
     monitor_saved_breakpoints.clear_all();
 }
 
 void monitor_invalidate_saved_state(void)
 {
     monitor_saved_state_valid = false;
-    monitor_reset_reopen_state_valid = false;
-    monitor_reset_reopen_debug_active = false;
 }
 
 void monitor_reset_saved_cpu_view(void)
 {
-    // Called on a C64 hardware reset. Rather than hardcoding CPU7 (which is only
-    // correct when the post-reset CPU actually banks ROM in, and otherwise leaves
-    // the monitor showing ROM while the live CPU runs RAM-under-ROM -> the C5O7
-    // footer mismatch), request that the next fresh monitor open sync its view
-    // bank to the live CPU bank. 0x07 is kept as the persisted fallback for the
-    // case where the next open cannot read a live CPU port.
-    monitor_saved_state.view_cpu_port = 0x07;
+    monitor_saved_state.cpu_port = 0x07;
     if (monitor_reset_reopen_state_valid) {
-        monitor_reset_reopen_state.view_cpu_port = 0x07;
+        monitor_reset_reopen_state.cpu_port = 0x07;
     }
     monitor_sync_view_to_live_on_open = true;
+}
+
+void monitor_format_breakpoint_mismatch(char *out, int out_len,
+                                        MonitorBackingStore target,
+                                        MonitorBackingStore current)
+{
+    if (!out || out_len <= 0) return;
+    sprintf(out, "BRK %s, CPU %s; not mapped now",
+            monitor_backing_store_tag(target), monitor_backing_store_tag(current));
+    out[out_len - 1] = 0;
 }
 
 void monitor_apply_go(MachineMonitorState *state, uint16_t address)
@@ -1265,6 +1237,22 @@ MonitorError monitor_parse_expression(const char *text, uint16_t *value)
     return parse_number_core(text, value);
 }
 
+MonitorError monitor_parse_byte_value(const char *text, uint8_t *value)
+{
+    const char *cursor = text;
+    uint16_t parsed = 0;
+    MonitorError error = parse_hex_digits(cursor, 1, 2, 0xFF, &parsed);
+    if (error != MONITOR_OK) {
+        return MONITOR_VALUE;
+    }
+    skip_spaces(cursor);
+    if (*cursor) {
+        return MONITOR_VALUE;
+    }
+    *value = (uint8_t)parsed;
+    return MONITOR_OK;
+}
+
 MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end, uint8_t *value)
 {
     const char *cursor = text;
@@ -1303,24 +1291,12 @@ MonitorError monitor_parse_fill(const char *text, uint16_t *start, uint16_t *end
     return MONITOR_OK;
 }
 
-MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
+// The three fields every Transfer has, leaving the cursor on whatever follows
+// so the optional fourth field can be read by the relocating form. Shared so
+// the two forms cannot disagree about the first three.
+static MonitorError parse_transfer_head(const char *&cursor, uint16_t *start,
+                                        uint16_t *end, uint16_t *dest)
 {
-    bool relocate;
-    uint16_t reloc_start;
-    uint16_t reloc_end;
-    MonitorError error = monitor_parse_transfer_relocate(text, start, end, dest,
-                                                         &relocate, &reloc_start, &reloc_end);
-    if (error != MONITOR_OK) {
-        return error;
-    }
-    return relocate ? MONITOR_SYNTAX : MONITOR_OK;
-}
-
-MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
-                                             uint16_t *dest, bool *relocate,
-                                             uint16_t *reloc_start, uint16_t *reloc_end)
-{
-    const char *cursor = text;
     MonitorError error = parse_hex_digits(cursor, 1, 4, 0xFFFF, start);
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
@@ -1333,7 +1309,8 @@ MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, 
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
     }
-    if (*end <= *start) {
+    // start == end is one byte, not none: the range includes both ends.
+    if (*end < *start) {
         return MONITOR_RANGE;
     }
     error = expect_separator(cursor, ',', MONITOR_SYNTAX);
@@ -1344,36 +1321,72 @@ MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, 
     if (error != MONITOR_OK) {
         return MONITOR_ADDR;
     }
+    return MONITOR_OK;
+}
+
+MonitorError monitor_parse_transfer(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
+{
+    const char *cursor = text;
+    MonitorError error = parse_transfer_head(cursor, start, end, dest);
+    if (error != MONITOR_OK) {
+        return error;
+    }
     skip_spaces(cursor);
-    if (*cursor == ',') {
-        cursor++;
-        error = parse_hex_digits(cursor, 1, 4, 0xFFFF, reloc_start);
-        if (error != MONITOR_OK) {
-            return MONITOR_ADDR;
-        }
-        error = expect_separator(cursor, '-', MONITOR_SYNTAX);
-        if (error != MONITOR_OK) {
-            return error;
-        }
-        error = parse_hex_digits(cursor, 1, 4, 0xFFFF, reloc_end);
-        if (error != MONITOR_OK) {
-            return MONITOR_ADDR;
-        }
-        if (*reloc_end <= *reloc_start) {
-            return MONITOR_RANGE;
-        }
-        skip_spaces(cursor);
-        *relocate = true;
-        return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
-    }
-    *relocate = false;
-    if (reloc_start) {
-        *reloc_start = 0;
-    }
-    if (reloc_end) {
-        *reloc_end = 0;
-    }
     return *cursor ? MONITOR_SYNTAX : MONITOR_OK;
+}
+
+// `AAAA-BBBB,CCCC` copies, and the optional `,DDDD-EEEE` additionally names the
+// part of the source that is code, in source addresses, so absolute operands
+// pointing into the copied range can be moved with it. Without the fourth
+// field this is exactly monitor_parse_transfer and `relocate` comes back false,
+// which is what keeps the three-argument command unchanged.
+MonitorError monitor_parse_transfer_relocate(const char *text, uint16_t *start, uint16_t *end,
+                                             uint16_t *dest, bool *relocate,
+                                             uint16_t *code_start, uint16_t *code_end)
+{
+    const char *cursor = text;
+    MonitorError error;
+
+    *relocate = false;
+    *code_start = 0;
+    *code_end = 0;
+    error = parse_transfer_head(cursor, start, end, dest);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    skip_spaces(cursor);
+    if (!*cursor) {
+        return MONITOR_OK;
+    }
+    error = expect_separator(cursor, ',', MONITOR_SYNTAX);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    error = parse_hex_digits(cursor, 1, 4, 0xFFFF, code_start);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    error = expect_separator(cursor, '-', MONITOR_SYNTAX);
+    if (error != MONITOR_OK) {
+        return error;
+    }
+    error = parse_hex_digits(cursor, 1, 4, 0xFFFF, code_end);
+    if (error != MONITOR_OK) {
+        return MONITOR_ADDR;
+    }
+    if (*code_end < *code_start) {
+        return MONITOR_RANGE;
+    }
+    // The code range is where pointers into the copied block are looked for,
+    // not a part of the copy. It may lie inside the copy, outside it, or
+    // across it: a jump table that has to keep pointing at the block after the
+    // block moves lives outside, and naming it is the only way to reach it.
+    skip_spaces(cursor);
+    if (*cursor) {
+        return MONITOR_SYNTAX;
+    }
+    *relocate = true;
+    return MONITOR_OK;
 }
 
 MonitorError monitor_parse_compare(const char *text, uint16_t *start, uint16_t *end, uint16_t *dest)
@@ -1450,13 +1463,89 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
     } while (address++ != end);
 }
 
+// How much of a range one read_block or write_block call carries. A block is
+// one access as far as the backend is concerned, and an Ultimate II+L stops
+// the C64 for the whole of it (U2MemoryBackend::read_block/write_block), so
+// larger blocks mean fewer stops. It is bounded rather than the whole range
+// because the machine is held stopped for the length of one call.
+static const uint32_t TRANSFER_BLOCK = 4096;
+
+// Read a range into a buffer. Addresses wrap at $FFFF, which is what lets
+// $0000-$FFFF name the whole 64K.
+static void transfer_read_range(MemoryBackend *backend, uint16_t start, uint32_t length,
+                                uint8_t *buffer)
+{
+    uint32_t done = 0;
+
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > TRANSFER_BLOCK) ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+        backend->read_block((uint16_t)(start + done), buffer + done, chunk);
+        done += chunk;
+    }
+}
+
+static void transfer_write_range(MemoryBackend *backend, uint16_t start, uint32_t length,
+                                 const uint8_t *buffer)
+{
+    uint32_t done = 0;
+
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > TRANSFER_BLOCK) ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+        backend->write_block((uint16_t)(start + done), buffer + done, chunk);
+        done += chunk;
+    }
+}
+
 void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest)
 {
-    uint32_t length = (uint16_t)(end - start);
-    if (length == 0) {
+    // Both ends, as everywhere else a range is typed: "T C000-CFFF,2000"
+    // copies the byte at $CFFF too. The 32-bit length is what lets
+    // $0000-$FFFF be the whole 65536 bytes rather than none of them.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint8_t *buffer = (uint8_t *)malloc(TRANSFER_BLOCK);
+    uint32_t done = 0;
+
+    // A chunk at a time, whole-chunk read then whole-chunk write. Each one is
+    // a single access as far as the backend is concerned, which is what an
+    // Ultimate II+L needs: reading and writing a byte at a time flips the
+    // frozen C64's bank around every access, and the copy then loses
+    // everything after its first couple of bytes.
+    //
+    // The buffer is one chunk rather than the whole range, so copying
+    // $0000-$FFFF asks for 4KB rather than 64KB and the allocation does not
+    // fail on a machine with little left. A chunk is read in full before any
+    // of it is written, so an overlap inside one chunk is safe; overlap across
+    // chunks is what the direction rule below handles.
+    if (buffer) {
+        if (dest > start && dest <= end) {
+            // Destination inside the source and above its start: the last
+            // chunk has to move first, or it is overwritten before it is read.
+            uint32_t remaining = length;
+            while (remaining) {
+                uint16_t chunk = (remaining > TRANSFER_BLOCK)
+                    ? (uint16_t)TRANSFER_BLOCK : (uint16_t)remaining;
+                remaining -= chunk;
+                backend->read_block((uint16_t)(start + remaining), buffer, chunk);
+                backend->write_block((uint16_t)(dest + remaining), buffer, chunk);
+            }
+        } else {
+            while (done < length) {
+                uint32_t left = length - done;
+                uint16_t chunk = (left > TRANSFER_BLOCK)
+                    ? (uint16_t)TRANSFER_BLOCK : (uint16_t)left;
+                backend->read_block((uint16_t)(start + done), buffer, chunk);
+                backend->write_block((uint16_t)(dest + done), buffer, chunk);
+                done += chunk;
+            }
+        }
+        free(buffer);
         return;
     }
-    if (dest > start && dest < end) {
+
+    // Out of memory: the byte-wise copy, which needs the direction rule back.
+    if (dest > start && dest <= end) {
         while (length) {
             length--;
             backend->write((uint16_t)(dest + length), backend->read((uint16_t)(start + length)));
@@ -1469,60 +1558,150 @@ void monitor_transfer_memory(MemoryBackend *backend, uint16_t start, uint16_t en
     }
 }
 
-static bool monitor_transfer_source_contains(uint16_t start, uint16_t end, uint16_t address)
+// Where a source address lives after the copy. Outside the copied range an
+// address is unchanged, because nothing moved it.
+static uint16_t transfer_mapped_address(uint16_t address, uint16_t start, uint16_t end,
+                                        uint16_t dest)
 {
-    return address >= start && address < end;
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint32_t offset = (uint32_t)(uint16_t)(address - start);
+
+    return (offset < length) ? (uint16_t)(dest + offset) : address;
 }
 
-static uint16_t monitor_transfer_mapped_address(uint16_t start, uint16_t end,
-                                                uint16_t dest, uint16_t address)
+// Read the copy rather than the original. When the ranges overlap the source
+// has already been partly overwritten by the copy, and it is the copy that is
+// being relocated.
+static uint8_t transfer_read_code(MemoryBackend *backend, uint16_t address,
+                                  uint16_t start, uint16_t end, uint16_t dest)
 {
-    if (monitor_transfer_source_contains(start, end, address)) {
-        return (uint16_t)(dest + (uint16_t)(address - start));
+    return backend->read(transfer_mapped_address(address, start, end, dest));
+}
+
+// Copy, then walk the code range and move absolute operands that point into
+// the copied source range. Returns how many operands were rewritten.
+//
+// Only a three-byte instruction with a two-byte operand qualifies, which is
+// absolute, absolute-indexed and indirect. Zero page cannot express a page
+// move, and a relative branch inside a block that moves as a unit is already
+// correct, so both are left alone by that condition rather than by a special
+// case. An operand pointing outside the source range is left alone too: it
+// names something this copy did not move.
+//
+// The code range is where the pointers are, and it is independent of the range
+// being copied. An instruction wholly inside the copy is read and rewritten in
+// the copy, because that is the version being relocated. An instruction wholly
+// outside it is read and rewritten where it stands, which is how a jump table
+// that has to keep pointing at the block is brought with it. An instruction
+// straddling the boundary is neither, and is left alone rather than half
+// written into the copy and half into the original.
+//
+// The scan is linear and steps by one byte over anything that does not decode,
+// which is what the fourth field exists to keep short: the user names where
+// the pointers are.
+int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
+                                     uint16_t dest, uint16_t code_start, uint16_t code_end,
+                                     bool illegal_enabled)
+{
+    uint32_t source_length = (uint32_t)(uint16_t)(end - start) + 1;
+    uint32_t code_length = (uint32_t)(uint16_t)(code_end - code_start) + 1;
+    uint32_t index = 0;
+    int rewritten = 0;
+    // The copied range, held here for the whole scan. Every byte the scan
+    // needs from inside the copy comes out of this rather than off the
+    // machine, so a scan of a large range is one read and one write rather
+    // than three accesses per instruction. Patches to instructions inside the
+    // copy are made here and written back once at the end.
+    uint8_t *image = (uint8_t *)malloc(source_length);
+    bool image_changed = false;
+
+    if (image) {
+        transfer_read_range(backend, start, source_length, image);
+        transfer_write_range(backend, dest, source_length, image);
+    } else {
+        monitor_transfer_memory(backend, start, end, dest);
     }
-    return address;
-}
 
-static uint8_t monitor_transfer_read_code(MemoryBackend *backend, uint16_t start, uint16_t end,
-                                          uint16_t dest, uint16_t address)
-{
-    return backend->read(monitor_transfer_mapped_address(start, end, dest, address));
-}
-
-void monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uint16_t end,
-                                      uint16_t dest, uint16_t reloc_start, uint16_t reloc_end)
-{
-    monitor_transfer_memory(backend, start, end, dest);
-
-    uint16_t address = reloc_start;
-    while (address < reloc_end) {
+    while (index < code_length) {
+        uint16_t address = (uint16_t)(code_start + index);
         uint8_t bytes[3];
         Disassembled6502 decoded;
-        uint8_t length;
+        uint8_t step;
+        int i;
 
-        bytes[0] = monitor_transfer_read_code(backend, start, end, dest, address);
-        bytes[1] = monitor_transfer_read_code(backend, start, end, dest, (uint16_t)(address + 1));
-        bytes[2] = monitor_transfer_read_code(backend, start, end, dest, (uint16_t)(address + 2));
-        disassemble_6502(address, bytes, true, &decoded);
-        length = decoded.valid && decoded.length ? decoded.length : 1;
+        for (i = 0; i < 3; i++) {
+            uint16_t at = (uint16_t)(address + i);
+            uint32_t at_offset = (uint32_t)(uint16_t)(at - start);
 
-        if (decoded.valid && decoded.length == 3 && decoded.operand_bytes == 2 &&
-                (uint16_t)(address + 2) < reloc_end) {
-            uint16_t operand = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
-            if (monitor_transfer_source_contains(start, end, operand)) {
-                uint16_t relocated = (uint16_t)(dest + (uint16_t)(operand - start));
-                uint16_t write_addr = monitor_transfer_mapped_address(start, end, dest, address);
-                backend->write((uint16_t)(write_addr + 1), (uint8_t)(relocated & 0xFF));
-                backend->write((uint16_t)(write_addr + 2), (uint8_t)(relocated >> 8));
+            if (image && at_offset < source_length) {
+                bytes[i] = image[at_offset];
+            } else {
+                bytes[i] = transfer_read_code(backend, at, start, end, dest);
             }
         }
-        address = (uint16_t)(address + length);
+        disassemble_6502(address, bytes, illegal_enabled, &decoded);
+        step = (decoded.valid && decoded.length) ? decoded.length : 1;
+
+        if (decoded.valid && decoded.length == 3 && decoded.operand_bytes == 2) {
+            uint32_t instruction_offset = (uint32_t)(uint16_t)(address - start);
+            uint16_t operand = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
+            uint32_t operand_offset = (uint32_t)(uint16_t)(operand - start);
+            bool inside_copy = (instruction_offset + 3 <= source_length);
+            bool touches_copy = false;
+
+            for (i = 0; i < 3; i++) {
+                uint32_t byte_offset = (uint32_t)(uint16_t)((uint16_t)(address + i) - start);
+                if (byte_offset < source_length) {
+                    touches_copy = true;
+                }
+            }
+
+            // The operand has to name something this copy moved, and the
+            // instruction has to sit wholly on one side of the copy's edge so
+            // that the two bytes written land together.
+            if (operand_offset < source_length && (inside_copy || !touches_copy)) {
+                uint16_t moved = (uint16_t)(dest + operand_offset);
+                uint16_t at = transfer_mapped_address((uint16_t)(address + 1), start, end, dest);
+                uint8_t operand_bytes[2];
+                uint32_t operand_at_offset = (uint32_t)(uint16_t)((uint16_t)(address + 1) - start);
+
+                operand_bytes[0] = (uint8_t)(moved & 0xFF);
+                operand_bytes[1] = (uint8_t)((moved >> 8) & 0xFF);
+                if (image && inside_copy) {
+                    // Inside the copy, so it is the image that is being
+                    // relocated; the machine sees it when the image is written
+                    // back below.
+                    image[operand_at_offset] = operand_bytes[0];
+                    image[operand_at_offset + 1] = operand_bytes[1];
+                    image_changed = true;
+                } else if ((uint32_t)at + 2 <= 0x10000UL) {
+                    // One block, so the low and high halves of an address
+                    // cannot land apart. A pair that would run past $FFFF is
+                    // written byte by byte, because write_block takes a length
+                    // rather than a wrapping address.
+                    backend->write_block(at, operand_bytes, 2);
+                } else {
+                    backend->write(at, operand_bytes[0]);
+                    backend->write((uint16_t)(at + 1), operand_bytes[1]);
+                }
+                rewritten++;
+            }
+        }
+        index += step;
     }
+    if (image) {
+        if (image_changed) {
+            transfer_write_range(backend, dest, source_length, image);
+        }
+        free(image);
+    }
+    return rewritten;
 }
 
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len)
 {
-    uint32_t length = (uint16_t)(end - start);
+    // Both ends, as Transfer, Fill, Hunt and Save all do.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
     uint32_t index;
     int count = 0;
     int pos = 0;
@@ -1542,7 +1721,8 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
 
 int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, uint16_t *out_addrs, int max_addrs)
 {
-    uint32_t length = (uint16_t)(end - start);
+    // Both ends, as Transfer, Fill, Hunt and Save all do.
+    uint32_t length = (uint32_t)(uint16_t)(end - start) + 1;
     uint32_t index;
     int count = 0;
 
@@ -1807,6 +1987,193 @@ MonitorError monitor_parse_save_params(const char *text, uint16_t *start, uint16
     return MONITOR_OK;
 }
 
+// ---------------------------------------------------------------------------
+// Command-input descriptors.
+//
+// A structured command prompt refuses a character that could not appear in any
+// command it would accept, before the character reaches the field: nothing is
+// inserted, the cursor does not move, the template is not cleared and nothing
+// is redrawn. One descriptor per prompt holds the title the prompt displays
+// and the shape of the input it takes, so the two cannot drift apart, and one
+// matcher below decides whether a candidate buffer is still on its way to
+// something the command's parser accepts.
+//
+// This is deliberately lexical, not a second parser. Whether a range is
+// backwards, a value too large or a length out of bounds is still the answer
+// of the parsers above, which run on RETURN and remain authoritative.
+//
+// Syntax vocabulary, one character per element:
+//   'A'  hex number: an optional '$' then one to four hex digits
+//   'a'  the same, but the field may also be left empty
+//   'P'  the keyword PRG, or an 'a' hex number
+//   'L'  the keyword AUTO, or an 'a' hex number of up to five digits
+//   'N'  a hunt needle: "quoted text", or hex bytes with optional '$'/spaces
+//   '-'  a literal '-'
+//   ','  a literal ','
+// Spaces are accepted around every element, matching skip_spaces above.
+namespace {
+
+enum {
+    MONITOR_SYNTAX_ADDRESS_DIGITS = 4,
+    MONITOR_SYNTAX_LENGTH_DIGITS = 5,
+};
+
+static void syntax_skip_spaces(const char *&cursor)
+{
+    while (*cursor && is_space_char(*cursor)) {
+        cursor++;
+    }
+}
+
+// How far `text` matches `keyword`. Returns -1 on a mismatch, the number of
+// characters consumed on a full match, and 0 when `text` ran out inside the
+// keyword, which is a valid thing to be part-way through typing.
+static int syntax_keyword_progress(const char *text, const char *keyword)
+{
+    int i;
+    for (i = 0; keyword[i]; i++) {
+        if (!text[i]) {
+            return 0;
+        }
+        if (to_upper_char(text[i]) != keyword[i]) {
+            return -1;
+        }
+    }
+    return i;
+}
+
+// A hex field. `required` rejects an empty one; `max_digits` is the parser's
+// own digit ceiling, so a digit past it is impossible rather than merely long.
+static bool syntax_take_number(const char *&cursor, bool required, int max_digits)
+{
+    if (*cursor == '$') {
+        cursor++;
+        if (!*cursor) {
+            return true;
+        }
+    }
+    int digits = 0;
+    while (is_hex_char(*cursor) && digits < max_digits) {
+        cursor++;
+        digits++;
+    }
+    return digits > 0 || !required || !*cursor;
+}
+
+// The hunt needle: either a quoted string, whose contents are free text and
+// after whose closing quote only spaces may follow, or a run of hex bytes
+// written with optional '$' prefixes and spaces.
+static bool syntax_take_needle(const char *cursor)
+{
+    if (*cursor == '"') {
+        cursor++;
+        while (*cursor && *cursor != '"') {
+            cursor++;
+        }
+        if (!*cursor) {
+            return true; // still inside the quotes
+        }
+        cursor++;
+        syntax_skip_spaces(cursor);
+        return *cursor == 0;
+    }
+    while (*cursor) {
+        if (!is_hex_char(*cursor) && !is_space_char(*cursor) && *cursor != '$') {
+            return false;
+        }
+        cursor++;
+    }
+    return true;
+}
+
+}
+
+bool monitor_syntax_accepts_prefix(const char *syntax, const char *candidate)
+{
+    const char *cursor = candidate;
+
+    for (const char *element = syntax; *element; element++) {
+        syntax_skip_spaces(cursor);
+        if (!*cursor) {
+            return true; // the rest is still to be typed
+        }
+        switch (*element) {
+            case '-':
+            case ',':
+                if (*cursor != *element) {
+                    return false;
+                }
+                cursor++;
+                break;
+            case 'A':
+            case 'a':
+                if (!syntax_take_number(cursor, *element == 'A', MONITOR_SYNTAX_ADDRESS_DIGITS)) {
+                    return false;
+                }
+                break;
+            case 'P':
+            case 'L': {
+                const char *keyword = (*element == 'P') ? "PRG" : "AUTO";
+                int consumed = syntax_keyword_progress(cursor, keyword);
+                if (consumed == 0) {
+                    return true; // part-way through the keyword
+                }
+                if (consumed > 0) {
+                    cursor += consumed;
+                    break;
+                }
+                if (!syntax_take_number(cursor, false,
+                                        (*element == 'L') ? MONITOR_SYNTAX_LENGTH_DIGITS
+                                                          : MONITOR_SYNTAX_ADDRESS_DIGITS)) {
+                    return false;
+                }
+                break;
+            }
+            case 'N':
+                return syntax_take_needle(cursor);
+            default:
+                return false;
+        }
+    }
+    syntax_skip_spaces(cursor);
+    return *cursor == 0;
+}
+
+namespace {
+
+static bool accepts_address(const char *candidate) { return monitor_syntax_accepts_prefix("A", candidate); }
+static bool accepts_range(const char *candidate) { return monitor_syntax_accepts_prefix("A-A", candidate); }
+static bool accepts_range_value(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,A", candidate); }
+// Transfer takes an optional fourth field. The matcher accepts a candidate
+// that stops before the end of the syntax, so one shape covers both the
+// three-argument and the relocating form.
+static bool accepts_transfer(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,A,A-A", candidate); }
+static bool accepts_hunt(const char *candidate) { return monitor_syntax_accepts_prefix("A-A,N", candidate); }
+static bool accepts_load(const char *candidate) { return monitor_syntax_accepts_prefix("P,a,L", candidate); }
+
+}
+
+const MonitorCommandInput monitor_input_jump =
+    { "Jump AAAA", "A", accepts_address, 0, true, true };
+const MonitorCommandInput monitor_input_go =
+    { "Go AAAA", "A", accepts_address, 0, true, true };
+const MonitorCommandInput monitor_input_fill =
+    { "Fill AAAA-BBBB,DD", "A-A,A", accepts_range_value, 0, true, true };
+const MonitorCommandInput monitor_input_transfer =
+    { "Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", "A-A,A,A-A", accepts_transfer, 0, true, true };
+const MonitorCommandInput monitor_input_compare =
+    { "Compare AAAA-BBBB,CCCC", "A-A,A", accepts_range_value, 0, true, true };
+// Hunt keeps its default range and takes the needle after it, so there is no
+// template to replace. Its case is decided per position by the transform:
+// hex outside quotes is uppercased, quoted text is left as typed.
+const MonitorCommandInput monitor_input_hunt =
+    { "Hunt AAAA-BBBB,BB/\"text\"", "A-A,N", accepts_hunt,
+      monitor_hunt_prompt_transform_key, false, false };
+const MonitorCommandInput monitor_input_load =
+    { "Load [PRG|AAAA],[Offs],[Len|AUTO]", "P,a,L", accepts_load, 0, true, true };
+const MonitorCommandInput monitor_input_save =
+    { "Save AAAA-BBBB", "A-A", accepts_range, 0, true, true };
+
 MonitorError monitor_validate_load_size(uint32_t file_size, uint32_t offset, bool length_auto,
                                         uint32_t length, uint32_t *effective_len)
 {
@@ -1843,14 +2210,15 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 {
     backend = mem_backend;
     restore_debug_after_reset = false;
+    data_region_start = 0;
+    data_region_end = 0;
+    data_region_valid = false;
     if (monitor_reset_reopen_state_valid) {
         state = monitor_reset_reopen_state;
         restore_debug_after_reset = monitor_reset_reopen_debug_active;
         monitor_saved_state = state;
         monitor_saved_state_valid = true;
         monitor_reset_reopen_state_valid = false;
-        // Consume the whole one-shot: a leftover debug half makes a later
-        // reopen restore a Debug session nobody asked for, parked on a stale PC.
         monitor_reset_reopen_debug_active = false;
     } else if (monitor_saved_state_valid) {
         state = monitor_saved_state;
@@ -1861,7 +2229,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
         state.disasm_offset = 0;
         state.illegal_enabled = false;
         state.screen_charset = MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS;
-        state.view_cpu_port = 0x07;
+        state.cpu_port = 0x07;
     }
     state.screen_charset = normalize_screen_charset(state.screen_charset);
     last_load_use_prg = monitor_last_load_use_prg;
@@ -1876,6 +2244,8 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     last_go_valid = monitor_last_go_valid;
     last_go_addr = monitor_last_go_addr;
     go_pending = false;
+    reset_pending = false;
+    interface_swap_pending = false;
     go_pending_addr = 0;
     go_pending_has_context = false;
     debug_context_reset(&go_pending_context);
@@ -1896,6 +2266,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     help_visible = false;
     range_mode = false;
     range_anchor = state.current_addr;
+    asm_baseline = state.current_addr;
     number_picker_active = false;
     number_selected = 0;
     number_preview_value = 0;
@@ -1921,14 +2292,6 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     hunt_picker_label = "Hunt results";
     asm_edit_part = 0;
     asm_edit_pending = 0;
-    asm_lane_valid = false;
-    asm_lane_view_cpu_port = 0;
-    asm_lane_illegal_enabled = false;
-    asm_lane_count = 0;
-    asm_lane_top = 0;
-    asm_lane_selected = 0;
-    memset((void *)asm_lane_lengths, 0, sizeof(asm_lane_lengths));
-    memset((void *)asm_lane_forced_bytes, 0, sizeof(asm_lane_forced_bytes));
     asm_edit_hist_len = 0;
     asm_edit_hist_anchor_addr = 0;
     opcode_picker_active = false;
@@ -1957,9 +2320,6 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     reopen_on_debug_reset = true;
     deferred_debug_go_pending = false;
     debug_context_reset(&deferred_debug_go_context);
-    // Restore breakpoints from process-lifetime storage so they survive a
-    // C=+X reset reentry and an ordinary monitor close/reopen. Power-off
-    // clears `monitor_saved_breakpoints` because it lives in volatile RAM.
     breakpoints = monitor_saved_breakpoints;
     breakpoint_popup_active = false;
     breakpoint_selected = 0;
@@ -1978,77 +2338,6 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
 #else
     edit_blink_ms = 0;
 #endif
-}
-
-void MachineMonitor :: set_debug_run_window_refreeze_enabled(bool enabled)
-{
-    debug_run_window_refreeze_enabled = enabled;
-    if (debug_session) {
-        debug_session->set_run_window_refreeze_enabled(enabled);
-    }
-}
-
-void MachineMonitor :: set_reset_exits_monitor(bool enabled)
-{
-    reset_exits_monitor = enabled;
-}
-
-bool MachineMonitor :: consume_release_host_after_exit(void)
-{
-    bool ret = release_host_after_exit;
-    release_host_after_exit = false;
-    return ret;
-}
-
-void MachineMonitor :: request_reopen_after_reset(void)
-{
-    monitor_reset_reopen_state = monitor_reset_reentry_state(state);
-    monitor_reset_reopen_state_valid = true;
-    monitor_reset_reopen_debug_active = debug.is_active();
-    reopen_after_reset = true;
-    reopen_on_debug_reset = true;
-    if (debug_session) {
-        debug_session->request_reset_cancel();
-    }
-}
-
-void MachineMonitor :: request_debug_reset_cancel(void)
-{
-    // Cancels any in-flight debug sentinel wait without scheduling a monitor
-    // reopen. Used by the REST reset path so the debug engine tears down its
-    // BRK patches and handler before the machine reset pulse fires, without
-    // treating the REST reset as a user-initiated "C=+X while in the monitor"
-    // event that would cause the monitor to reopen.
-    reopen_after_reset = false;
-    reopen_on_debug_reset = false;
-    monitor_reset_reopen_state_valid = false;
-    monitor_reset_reopen_debug_active = false;
-    reset_exit_pending = reset_exits_monitor;
-    if (debug_session) {
-        debug_session->request_reset_cancel();
-    }
-}
-
-void MachineMonitor :: invalidate_live_cpu_port_view(void)
-{
-    if (backend) {
-        backend->invalidate_live_cpu_port_cache();
-    }
-}
-
-bool MachineMonitor :: is_debug_session_active(void) const
-{
-    if (!debug_session) {
-        return false;
-    }
-    return debug_session->is_debug_session_active();
-}
-
-bool MachineMonitor :: consume_reopen_after_reset(void)
-{
-    bool ret = reopen_after_reset;
-    reopen_after_reset = false;
-    return ret;
 }
 
 uint8_t MachineMonitor :: memory_byte_stride(void) const
@@ -2078,8 +2367,15 @@ int MachineMonitor :: memory_hex_column(int byte_offset) const
 void MachineMonitor :: apply_go_local(uint16_t address)
 {
     uint16_t span = row_span();
+    if (address != state.current_addr) {
+        debug_cursor_override = true;
+    }
     state.current_addr = address;
-    debug_cursor_override = true;
+    // Every way of being sent to an address goes through here, so this is where
+    // the Assembly view learns which boundary it disassembles from. See
+    // decode_row: no row above it may reach across it, which is what keeps a
+    // jump's disassembly on screen while the view is scrolled away and back.
+    asm_baseline = address;
     if (state.view == MONITOR_VIEW_BINARY) {
         if (span == 0) span = 1;
         state.base_addr = (uint16_t)(address - (address % span));
@@ -2090,11 +2386,6 @@ void MachineMonitor :: apply_go_local(uint16_t address)
         state.base_addr = address;
     }
     state.disasm_offset = 0;
-    if (state.view == MONITOR_VIEW_ASM) {
-        disasm_lane_reset(address);
-    } else {
-        disasm_lane_invalidate();
-    }
 }
 
 bool MachineMonitor :: number_shortcut_allowed(void) const
@@ -2152,7 +2443,27 @@ uint8_t MachineMonitor :: canonical_read(uint16_t address)
 void MachineMonitor :: canonical_write(uint16_t address, uint8_t value)
 {
     backend->write(address, value);
-    monitor_log_byte("write", address, value);
+}
+
+// An assembled instruction is written as one block rather than as one write
+// per byte. On a backend that has to stop the machine to reach memory, one
+// block is one stop, so the opcode and its operand cannot end up on opposite
+// sides of a failure: either the instruction is written or it is not. A block
+// that would run past $FFFF is written byte by byte instead, because
+// write_block takes a length rather than a wrapping address.
+void MachineMonitor :: canonical_write_instruction(uint16_t address, const uint8_t *bytes,
+                                                   uint8_t length)
+{
+    if (length == 0) {
+        return;
+    }
+    if ((uint32_t)address + length <= 0x10000UL) {
+        backend->write_block(address, bytes, length);
+        return;
+    }
+    for (uint8_t i = 0; i < length; i++) {
+        backend->write((uint16_t)(address + i), bytes[i]);
+    }
 }
 
 void MachineMonitor :: read_row(uint16_t address, uint8_t *dst, uint16_t len) const
@@ -2175,6 +2486,18 @@ Cursor MachineMonitor :: active_cursor(void) const
     return cursor;
 }
 
+// How far a range reaches from one end of it. An instruction is taken whole,
+// because half of one is not a thing a range should carry; a data row is not,
+// because its two bytes are how the view groups them for display and a range
+// anchored on one of them means that byte.
+uint8_t MachineMonitor :: range_span(uint16_t address) const
+{
+    if (address_is_data(address)) {
+        return 1;
+    }
+    return disasm_length(address);
+}
+
 bool MachineMonitor :: range_contains(uint16_t address) const
 {
     if (!range_mode) {
@@ -2183,8 +2506,8 @@ bool MachineMonitor :: range_contains(uint16_t address) const
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
     if (state.view == MONITOR_VIEW_ASM) {
-        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
         if (state.current_addr < range_anchor) {
             start = state.current_addr;
             end = anchor_end;
@@ -2236,8 +2559,8 @@ bool MachineMonitor :: clipboard_copy_range(void)
     uint16_t start = range_anchor;
     uint16_t end = state.current_addr;
     if (state.view == MONITOR_VIEW_ASM) {
-        uint16_t anchor_end = (uint16_t)(range_anchor + disasm_length(range_anchor) - 1);
-        uint16_t current_end = (uint16_t)(state.current_addr + disasm_length(state.current_addr) - 1);
+        uint16_t anchor_end = (uint16_t)(range_anchor + range_span(range_anchor) - 1);
+        uint16_t current_end = (uint16_t)(state.current_addr + range_span(state.current_addr) - 1);
         if (state.current_addr < range_anchor) {
             start = state.current_addr;
             end = anchor_end;
@@ -2270,8 +2593,6 @@ bool MachineMonitor :: clipboard_copy_range(void)
 
 bool MachineMonitor :: clipboard_paste(void)
 {
-    uint16_t asm_top = state.base_addr;
-
     if (!clipboard.data || clipboard.length == 0) {
         return false;
     }
@@ -2281,14 +2602,6 @@ bool MachineMonitor :: clipboard_paste(void)
     state.current_addr = (uint16_t)(state.current_addr + clipboard.length);
     binary_bit_index = 7;
     if (state.view == MONITOR_VIEW_ASM) {
-        uint16_t addr = asm_top;
-        for (int row = 0; row < content_height; row++) {
-            if (addr == state.current_addr) {
-                state.disasm_offset = (uint8_t)row;
-                break;
-            }
-            addr = disasm_next_addr(addr);
-        }
         ensure_disasm_visible();
     } else {
         ensure_current_visible();
@@ -2305,7 +2618,6 @@ void MachineMonitor :: toggle_range_mode(void)
     if (!range_mode) {
         range_anchor = state.current_addr;
         range_mode = true;
-        monitor_log_address("range-start", range_anchor);
         return;
     }
     if (!clipboard_copy_range()) {
@@ -2314,7 +2626,6 @@ void MachineMonitor :: toggle_range_mode(void)
         return;
     }
     range_mode = false;
-    monitor_log_range("range-copy", range_anchor, state.current_addr);
 }
 
 void MachineMonitor :: open_number_picker(void)
@@ -2329,7 +2640,6 @@ void MachineMonitor :: open_number_picker(void)
 	    number_picker_refresh_preview_from_memory();
     number_picker_place_popup();
     number_picker_active = true;
-    monitor_log_address("number-picker open", number_picker_current_addr());
 }
 
 void MachineMonitor :: number_picker_resolve_target(void)
@@ -2345,9 +2655,7 @@ void MachineMonitor :: number_picker_resolve_target(void)
     uint8_t row_bytes[3];
     Disassembled6502 decoded;
 
-    read_row(state.current_addr, row_bytes, 3);
-    disassemble_6502(state.current_addr, row_bytes, state.illegal_enabled, &decoded);
-    monitor_disasm_tail_cutover(state.current_addr, &decoded);
+    decode_row(state.current_addr, row_bytes, &decoded);
     if (!decoded.valid) {
         return;
     }
@@ -2653,11 +2961,11 @@ void MachineMonitor :: number_picker_commit(void)
     uint8_t high = (uint8_t)((number_preview_value >> 8) & 0xFF);
     uint16_t target_addr = number_picker_current_addr();
 
+    monitor_log_value("number commit", target_addr, number_preview_value);
     canonical_write(target_addr, low);
     if (number_picker_current_bytes() == 2) {
         canonical_write((uint16_t)(target_addr + 1), high);
     }
-    monitor_log_value("number-picker commit", target_addr, number_preview_value);
     number_picker_refresh_preview_from_memory();
 }
 
@@ -2732,7 +3040,7 @@ MonitorError MachineMonitor :: number_picker_evaluate_expression(uint16_t *value
 int MachineMonitor :: number_picker_handle_key(int key)
 {
     if (number_expr_active) {
-        if (key == KEY_ESCAPE || key == KEY_BREAK) {
+        if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
             number_picker_close_expression();
             refresh_popup_overlay();
             return 0;
@@ -2778,7 +3086,13 @@ int MachineMonitor :: number_picker_handle_key(int key)
         return 0;
     }
 
-    if (key == KEY_ESCAPE || key == KEY_BREAK) {
+    // The left-arrow key is Back except on the two rows that take it as data:
+    // the ASCII and Screen rows type a character, exactly as the ASCII and
+    // Screen views do. RUN/STOP and Escape close the popup from any row.
+    bool arrow_is_data = (number_selected == MONITOR_NUMBER_ROW_ASCII ||
+                          number_selected == MONITOR_NUMBER_ROW_SCREEN);
+    if (key == KEY_ESCAPE || key == KEY_BREAK ||
+        (key == monitor_key_arrow_left && !arrow_is_data)) {
         number_picker_active = false;
         draw();
         return 0;
@@ -2884,13 +3198,15 @@ void MachineMonitor :: ensure_current_visible()
 
 void MachineMonitor :: set_view(MachineMonitorView view)
 {
+    if (view != state.view) {
+        printf("MCM view %s\n", monitor_view_name(view));
+    }
     state.view = view;
-    printf("MCM view %s\n", monitor_view_name(view));
     if (view == MONITOR_VIEW_ASM) {
         if (debug.is_active() && debug.has_context()) {
             debug_sync_cursor_to_context();
         } else {
-            disasm_lane_reset(state.current_addr);
+            ensure_disasm_visible();
         }
     } else {
         ensure_current_visible();
@@ -2914,7 +3230,7 @@ void MachineMonitor :: move_current(int delta)
     commit_pending_hex_nibble();
     state.current_addr = (uint16_t)(state.current_addr + delta);
     if (state.view == MONITOR_VIEW_ASM) {
-        disasm_lane_reset(state.current_addr);
+        ensure_disasm_visible();
     } else {
         ensure_current_visible();
     }
@@ -2985,207 +3301,19 @@ void MachineMonitor :: page_move(int lines)
 bool MachineMonitor :: prompt_command(const char *title, char *buffer, int max_len,
                                       bool template_mode, bool uppercase)
 {
-    return get_ui()->string_box(title, buffer, max_len, template_mode, uppercase) > 0;
+    // Back leaves a monitor prompt exactly as it leaves any other single
+    // interaction layer, so the top-left left-arrow key cancels here too.
+    static const UIStringEditPolicy free_form = { 0, 0, monitor_key_arrow_left };
+
+    return get_ui()->string_box(title, buffer, max_len, template_mode, uppercase, &free_form) > 0;
 }
 
-bool MachineMonitor :: prompt_hunt_command(const char *title, char *buffer, int max_len)
+bool MachineMonitor :: prompt_command(const MonitorCommandInput &input, char *buffer, int max_len)
 {
-    UserInterface *ui = get_ui();
-    Screen *screen = ui ? ui->get_screen() : NULL;
-    Keyboard *keyboard = ui ? ui->get_keyboard() : NULL;
-    Window *window = NULL;
-    int message_width = strlen(title);
-    int window_width = message_width;
-    int max_chars;
-    int x1;
-    int y1;
-    int x_m;
-    int len;
-    int cur;
-    int edit_offs = 0;
-    int key;
-    int i;
-    bool confirmed = false;
-    bool done = false;
+    UIStringEditPolicy policy = { input.accepts, input.transform, monitor_key_arrow_left };
 
-    if (!ui || !screen || !keyboard) {
-        return false;
-    }
-    if (max_len > message_width) {
-        window_width = max_len;
-    }
-    window_width += 3;
-    if (window_width >= screen->get_size_x()) {
-        window_width = screen->get_size_x();
-    }
-    max_chars = window_width - 2;
-    x1 = (screen->get_size_x() - window_width) / 2;
-    y1 = (screen->get_size_y() - 5) / 2;
-    x_m = (window_width - message_width) / 2;
-
-    cur = strlen(buffer);
-    if (cur > max_len) {
-        buffer[max_len] = 0;
-        cur = max_len;
-    }
-    len = cur;
-    if (len > (max_chars - 1)) {
-        edit_offs = 1 + len - max_chars;
-    }
-
-    screen->backup();
-    window = new Window(screen, x1, y1, window_width, 5);
-    window->clear();
-    window->draw_border();
-    window->move_cursor(x_m, 0);
-    window->output(title);
-    window->move_cursor(0, 2);
-    window->output_length(buffer + edit_offs, (len < max_chars) ? len : max_chars);
-    window->move_cursor(cur - edit_offs, 2);
-
-    keyboard->wait_free();
-    screen->cursor_visible(1);
-    while (!done && (!ui->host || ui->host->exists())) {
-        key = keyboard->getch();
-        if (key == -1) {
-            continue;
-        }
-        if (key == -2) {
-            done = true;
-            continue;
-        }
-
-        switch (key) {
-            case KEY_RETURN:
-                buffer[len] = 0;
-                confirmed = true;
-                done = true;
-                break;
-            case KEY_LEFT:
-                if (cur > 0) {
-                    cur--;
-                    if (cur - 5 < edit_offs) {
-                        edit_offs -= 5;
-                        if (edit_offs < 0) {
-                            edit_offs = 0;
-                        }
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_RIGHT:
-                if (cur < len) {
-                    cur++;
-                    if ((cur - edit_offs) > (max_chars - 1)) {
-                        edit_offs++;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_BACK:
-                if (cur > 0) {
-                    cur--;
-                    len--;
-                    for (i = cur; i < len; i++) {
-                        buffer[i] = buffer[i + 1];
-                    }
-                    buffer[i] = 0;
-                    if (cur - 5 < edit_offs) {
-                        edit_offs -= 5;
-                        if (edit_offs < 0) {
-                            edit_offs = 0;
-                        }
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                        window->move_cursor(cur - edit_offs, 2);
-                    } else {
-                        window->move_cursor(cur - edit_offs, 2);
-                        window->output_length(buffer + cur, max_chars + edit_offs - cur);
-                        window->move_cursor(cur - edit_offs, 2);
-                    }
-                }
-                break;
-            case KEY_CLEAR:
-                buffer[0] = 0;
-                len = 0;
-                cur = 0;
-                edit_offs = 0;
-                window->move_cursor(0, 2);
-                window->output_length(buffer, max_chars);
-                window->move_cursor(0, 2);
-                break;
-            case KEY_DELETE:
-                if (cur < len) {
-                    len--;
-                    for (i = cur; i < len; i++) {
-                        buffer[i] = buffer[i + 1];
-                    }
-                    buffer[i] = 0;
-                    window->move_cursor(cur - edit_offs, 2);
-                    window->output_length(buffer + cur, max_chars + edit_offs - cur);
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_HOME:
-            case KEY_UP:
-                cur = 0;
-                if (edit_offs) {
-                    edit_offs = 0;
-                    window->move_cursor(0, 2);
-                    window->output_length(buffer, max_chars);
-                }
-                window->move_cursor(0, 2);
-                break;
-            case KEY_DOWN:
-            case KEY_END:
-                if (cur != len) {
-                    cur = len;
-                    if (cur >= (max_chars - 1)) {
-                        edit_offs = 1 + cur - max_chars;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                    }
-                    window->move_cursor(cur - edit_offs, 2);
-                }
-                break;
-            case KEY_BREAK:
-            case KEY_ESCAPE:
-                done = true;
-                break;
-            default:
-                if ((key < 32) || (key >= 127)) {
-                    break;
-                }
-                key = monitor_hunt_prompt_transform_key(buffer, cur, key);
-                if (len < max_len) {
-                    for (i = len; i >= cur; i--) {
-                        buffer[i + 1] = buffer[i];
-                    }
-                    buffer[cur] = (char)key;
-                    cur++;
-                    len++;
-                    if (cur - edit_offs < max_chars) {
-                        window->output_length(buffer + cur - 1, max_chars + edit_offs - cur);
-                        window->move_cursor(cur - edit_offs, 2);
-                    } else {
-                        edit_offs++;
-                        window->move_cursor(0, 2);
-                        window->output_length(buffer + edit_offs, max_chars);
-                        window->move_cursor(cur - edit_offs, 2);
-                    }
-                }
-                break;
-        }
-    }
-
-    screen->cursor_visible(0);
-    window->getScreen()->restore();
-    delete window;
-    return confirmed;
+    return get_ui()->string_box(input.title, buffer, max_len,
+                                input.template_mode, input.uppercase, &policy) > 0;
 }
 
 void MachineMonitor :: commit_pending_hex_nibble(void)
@@ -3200,7 +3328,6 @@ void MachineMonitor :: commit_pending_hex_nibble(void)
 void MachineMonitor :: toggle_help()
 {
     help_visible = !help_visible;
-    monitor_log(help_visible ? "help on" : "help off");
 }
 
 void MachineMonitor :: dismiss_bookmark_status(void)
@@ -3273,7 +3400,7 @@ void MachineMonitor :: capture_bookmark(MonitorBookmarkSlot *bookmark) const
     cursor = active_cursor();
     bookmark->address = cursor.address;
     bookmark->view = (uint8_t)state.view;
-    bookmark->cpu_bank = (uint8_t)(state.view_cpu_port & 0x07);
+    bookmark->cpu_bank = (uint8_t)(state.cpu_port & 0x07);
     bookmark->vic_bank = (uint8_t)(current_vic_bank & 0x03);
     switch (state.view) {
         case MONITOR_VIEW_HEX:
@@ -3306,9 +3433,12 @@ bool MachineMonitor :: restore_location(const MonitorBookmarkSlot *bookmark)
     }
 
     if (backend && backend->supports_cpu_banking()) {
-        state.view_cpu_port = (uint8_t)(bookmark->cpu_bank & 0x07);
-        backend->set_monitor_cpu_port(state.view_cpu_port);
-    } else if ((state.view_cpu_port & 0x07) != (bookmark->cpu_bank & 0x07)) {
+        state.cpu_port = (uint8_t)(bookmark->cpu_bank & 0x07);
+        backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
+    } else if ((state.cpu_port & 0x07) != (bookmark->cpu_bank & 0x07)) {
         return false;
     }
 
@@ -3364,11 +3494,9 @@ bool MachineMonitor :: restore_bookmark(uint8_t slot)
     }
     if (!restore_location(bookmark)) {
         show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORE_FAILED);
-        printf("MCM bookmark restore F%u failed\n", (unsigned)slot);
         return false;
     }
     show_bookmark_status(slot, bookmark, MONITOR_BOOKMARK_STATUS_RESTORED);
-    printf("MCM bookmark restore F%u $%04X\n", (unsigned)slot, bookmark->address);
     return true;
 }
 
@@ -3402,16 +3530,17 @@ bool MachineMonitor :: return_stack_pop(ReturnStackEntry *entry, uint8_t *index)
     return true;
 }
 
-void MachineMonitor :: follow_to_target(uint16_t target)
+bool MachineMonitor :: target_visible(uint16_t target) const
 {
     int row = disasm_visible_row(target);
+    return row >= 0 && row < content_height;
+}
 
-    if (row >= 0 && row < content_height) {
-        state.disasm_offset = (uint8_t)row;
+void MachineMonitor :: follow_to_target(uint16_t target)
+{
+    if (target_visible(target)) {
         state.current_addr = target;
-        ensure_disasm_visible();
         asm_edit_history_reset(state.current_addr);
-        monitor_log_address("follow-visible", target);
         return;
     }
     apply_go_local(target);
@@ -3423,13 +3552,25 @@ bool MachineMonitor :: follow_target(uint16_t *target)
         return false;
     }
     {
+        uint16_t addr = state.base_addr;
         uint16_t insn_addr = state.current_addr;
         uint8_t bytes[3];
         Disassembled6502 decoded;
+        int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
-        read_row(insn_addr, bytes, 3);
-        disassemble_6502(insn_addr, bytes, state.illegal_enabled, &decoded);
-        monitor_disasm_tail_cutover(insn_addr, &decoded);
+        for (int row = 0; row < max_scan; row++) {
+            uint8_t len = disasm_length(addr);
+            if (len == 0) {
+                len = 1;
+            }
+            if (monitor_disasm_row_contains(addr, len, state.current_addr)) {
+                insn_addr = addr;
+                break;
+            }
+            addr = (uint16_t)(addr + len);
+        }
+
+        decode_row(insn_addr, bytes, &decoded);
         if (!decoded.valid) {
             return false;
         }
@@ -3476,7 +3617,6 @@ bool MachineMonitor :: follow_current(void)
     index = return_stack_push_current();
     follow_to_target(target);
     show_navigation_status(index, "JMP", target);
-    monitor_log_address("follow", target);
     return true;
 }
 
@@ -3492,7 +3632,6 @@ bool MachineMonitor :: return_current(void)
         return false;
     }
     show_navigation_status(index, "RET", entry.location.address);
-    monitor_log_address("return", entry.location.address);
     return true;
 }
 
@@ -3506,10 +3645,8 @@ void MachineMonitor :: set_bookmark(uint8_t slot)
     if (saved) {
         const MonitorBookmarkSlot *stored = bookmarks ? bookmarks->get(slot) : NULL;
         show_bookmark_status(slot, stored ? stored : &bookmark, MONITOR_BOOKMARK_STATUS_SET);
-        printf("MCM bookmark set F%u $%04X\n", (unsigned)slot, bookmark.address);
     } else {
         show_bookmark_status(slot, &bookmark, MONITOR_BOOKMARK_STATUS_SAVE_FAILED);
-        printf("MCM bookmark set F%u failed\n", (unsigned)slot);
     }
 }
 
@@ -3537,20 +3674,17 @@ void MachineMonitor :: edit_bookmark_label(uint8_t slot)
         bookmarks->set_label(slot, normalized);
         const MonitorBookmarkSlot *updated = bookmarks->get(slot);
         show_bookmark_status(slot, updated, MONITOR_BOOKMARK_STATUS_LABEL_SAVED);
-        printf("MCM bookmark label F%u\n", (unsigned)slot);
     } else {
         show_bookmark_status(slot, current, MONITOR_BOOKMARK_STATUS_LABEL_CANCEL);
-        printf("MCM bookmark label F%u cancelled\n", (unsigned)slot);
     }
     draw();
 }
 
 int MachineMonitor :: bookmark_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_HELP || key == KEY_F3 ||
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left || key == KEY_HELP || key == KEY_F3 ||
         key == '?' || monitor_key_is_bookmark_popup(key)) {
         bookmark_popup_active = false;
-        monitor_log("bookmark popup close");
         redraw_full();
         return 0;
     }
@@ -3587,11 +3721,10 @@ int MachineMonitor :: bookmark_popup_handle_key(int key)
     if (key == KEY_DELETE || key == KEY_BACK) {
         if (bookmarks) {
             bookmarks->reset_slot_to_default(bookmark_selected,
-                                             (uint8_t)(state.view_cpu_port & 0x07),
+                                             (uint8_t)(state.cpu_port & 0x07),
                                              (uint8_t)(current_vic_bank & 0x03));
             const MonitorBookmarkSlot *reset = bookmarks->get(bookmark_selected);
             show_bookmark_status(bookmark_selected, reset, MONITOR_BOOKMARK_STATUS_LABEL_RESET);
-            printf("MCM bookmark reset F%u\n", (unsigned)bookmark_selected);
         }
         refresh_popup_overlay();
         draw_status();
@@ -3647,297 +3780,148 @@ void MachineMonitor :: reset_poll_deadline(void)
     poll_deadline = (uint16_t)(getMsTimer() + next_poll_interval_ms());
 }
 
+// Whether the Assembly view shows this address as data rather than decoding it.
+bool MachineMonitor :: address_is_data(uint16_t address) const
+{
+    return backend && backend->shows_as_data(address);
+}
+
+// The run of addresses around `address` that are all shown as data. A data row
+// is grouped from the start of its own region and never reaches past its end,
+// so the grouping is a property of the region rather than of where the view
+// happens to be looking.
+//
+// The bounds are remembered because the rows of one redraw are all in the same
+// region: without that, every row would walk the region again.
+bool MachineMonitor :: data_region_bounds(uint16_t address, uint16_t *start,
+                                          uint16_t *end) const
+{
+    if (!address_is_data(address)) {
+        return false;
+    }
+    if (data_region_valid && address >= data_region_start && address <= data_region_end) {
+        *start = data_region_start;
+        *end = data_region_end;
+        return true;
+    }
+
+    uint16_t low = address;
+    uint16_t high = address;
+
+    while ((low > 0) && address_is_data((uint16_t)(low - 1))) {
+        low--;
+    }
+    while ((high < 0xFFFF) && address_is_data((uint16_t)(high + 1))) {
+        high++;
+    }
+
+    data_region_start = low;
+    data_region_end = high;
+    data_region_valid = true;
+    *start = low;
+    *end = high;
+    return true;
+}
+
+// How many bytes the data row starting at `address` covers:
+// MONITOR_DATA_ROW_BYTES, counted from the start of the region, and fewer
+// where the region ends first.
+//
+// Counting from the region start rather than from the row is what makes the
+// grouping the same whatever route the view took to get there. $D000-$DFFF is
+// 4096 bytes, so it is 2048 rows of two with none left over; a region of odd
+// length ends with a row of one.
+uint8_t MachineMonitor :: data_group_length(uint16_t address) const
+{
+    uint16_t start = 0;
+    uint16_t end = 0;
+
+    if (!data_region_bounds(address, &start, &end)) {
+        return 0;
+    }
+
+    uint8_t within = (uint8_t)(((uint32_t)(address - start)) % MONITOR_DATA_ROW_BYTES);
+    uint8_t length = (uint8_t)(MONITOR_DATA_ROW_BYTES - within);
+    uint32_t left = (uint32_t)(end - address) + 1;
+
+    if (length > left) {
+        length = (uint8_t)left;
+    }
+    return length ? length : 1;
+}
+
+// What one Assembly row at `address` is: the bytes it covers, and how they
+// decode. Every caller goes through here, so the length the view steps by, the
+// text it draws, the target it follows and the operand the number tool edits
+// can never disagree about the same address.
+void MachineMonitor :: decode_row(uint16_t address, uint8_t *row_bytes,
+                                  Disassembled6502 *decoded) const
+{
+    read_row(address, row_bytes, 3);
+    disassemble_6502(address, row_bytes, state.illegal_enabled, decoded);
+    monitor_disasm_tail_cutover(address, decoded);
+
+    // Two sources are shown as data rather than decoded, for two different
+    // reasons. A live I/O register does not read the same twice, so decoding
+    // one gives an instruction length that changes between redraws, and with
+    // it the address of every row below, so the whole view re-aligns while the
+    // user is only scrolling. Character ROM is perfectly stable and has none
+    // of that problem; it is shown as data because it is character bitmaps and
+    // never was code, so any instruction decoded from it is meaningless.
+    //
+    // Two bytes per row keep the rows stable: an I/O row shows the registers
+    // as read now, and a CHAR row shows bitmap bytes instead of invented
+    // opcodes. RAM banked at the same addresses is still decoded, so the rule
+    // follows the banked source rather than the address range. The source
+    // column, [I/O], [CHR] or [RAM], keeps that distinction visible.
+    if (address_is_data(address)) {
+        uint8_t length = data_group_length(address);
+        int pos;
+
+        decoded->valid = false;
+        decoded->illegal = false;
+        decoded->operand_bytes = 0;
+        decoded->has_target = false;
+        decoded->target = 0;
+        decoded->length = length;
+        strcpy(decoded->text, "DATA");
+        pos = 4;
+        for (uint8_t i = 0; i < length; i++) {
+            decoded->text[pos++] = ' ';
+            dump_hex_byte(decoded->text, pos, row_bytes[i]);
+            pos += 2;
+        }
+        decoded->text[pos] = 0;
+        return;
+    }
+
+    // The address the view was last sent to is a known instruction boundary,
+    // so nothing above it may reach across it: an instruction read from the
+    // bytes in front of it would otherwise swallow it, and every row below
+    // would shift with it. The bytes that do not fit are shown as data, which
+    // is what they are in the stream the jump established.
+    if ((address < asm_baseline) &&
+        ((uint16_t)(address + decoded->length) > asm_baseline)) {
+        decoded->valid = false;
+        decoded->illegal = false;
+        decoded->operand_bytes = 0;
+        decoded->has_target = false;
+        decoded->target = 0;
+        decoded->length = 1;
+        sprintf(decoded->text, ".BYTE $%02X", row_bytes[0]);
+    }
+}
+
 uint8_t MachineMonitor :: disasm_length(uint16_t address) const
 {
     Disassembled6502 decoded;
     uint8_t row_bytes[3];
 
-    read_row(address, row_bytes, 3);
-    disassemble_6502(address, row_bytes, state.illegal_enabled, &decoded);
-    monitor_disasm_tail_cutover(address, &decoded);
+    decode_row(address, row_bytes, &decoded);
     return decoded.length ? decoded.length : 1;
 }
 
-void MachineMonitor :: disasm_lane_invalidate(void)
-{
-    asm_lane_valid = false;
-    asm_lane_count = 0;
-    asm_lane_top = 0;
-    asm_lane_selected = 0;
-}
-
-void MachineMonitor :: disasm_lane_sync_state(void)
-{
-    if (!asm_lane_valid || asm_lane_count <= 0) {
-        return;
-    }
-    if (asm_lane_top < 0) asm_lane_top = 0;
-    if (asm_lane_top >= asm_lane_count) asm_lane_top = asm_lane_count - 1;
-    if (asm_lane_selected < 0) asm_lane_selected = 0;
-    if (asm_lane_selected >= asm_lane_count) asm_lane_selected = asm_lane_count - 1;
-    if (asm_lane_selected < asm_lane_top) asm_lane_top = asm_lane_selected;
-    if (content_height > 0 && asm_lane_selected >= asm_lane_top + content_height) {
-        asm_lane_top = asm_lane_selected - content_height + 1;
-    }
-    state.base_addr = asm_lane_rows[asm_lane_top];
-    state.current_addr = asm_lane_rows[asm_lane_selected];
-    state.disasm_offset = (uint8_t)(asm_lane_selected - asm_lane_top);
-}
-
-void MachineMonitor :: disasm_lane_reset(uint16_t address)
-{
-    asm_lane_valid = true;
-    asm_lane_view_cpu_port = (uint8_t)(state.view_cpu_port & 0x07);
-    asm_lane_illegal_enabled = state.illegal_enabled;
-    asm_lane_rows[0] = address;
-    asm_lane_lengths[0] = 0;
-    asm_lane_forced_bytes[0] = 0;
-    asm_lane_count = 1;
-    asm_lane_top = 0;
-    asm_lane_selected = 0;
-    disasm_lane_sync_state();
-}
-
-uint8_t MachineMonitor :: disasm_lane_length_at(int index) const
-{
-    uint8_t len;
-
-    if (index < 0 || index >= asm_lane_count) {
-        return 1;
-    }
-    len = asm_lane_lengths[index];
-    if (!len) {
-        len = disasm_length(asm_lane_rows[index]);
-    }
-    return len ? len : 1;
-}
-
-uint16_t MachineMonitor :: disasm_lane_next_addr_at(int index) const
-{
-    return (uint16_t)(asm_lane_rows[index] + disasm_lane_length_at(index));
-}
-
-void MachineMonitor :: disasm_lane_append(uint16_t address, uint8_t forced_length) const
-{
-    disasm_lane_ensure();
-    if (asm_lane_count < ASM_LANE_MAX_ROWS) {
-        asm_lane_rows[asm_lane_count] = address;
-        asm_lane_lengths[asm_lane_count] = forced_length;
-        if (forced_length) {
-            read_row(address, &asm_lane_forced_bytes[asm_lane_count], 1);
-        } else {
-            asm_lane_forced_bytes[asm_lane_count] = 0;
-        }
-        asm_lane_count++;
-        return;
-    }
-
-    for (int i = 0; i < ASM_LANE_MAX_ROWS - 1; i++) {
-        asm_lane_rows[i] = asm_lane_rows[i + 1];
-        asm_lane_lengths[i] = asm_lane_lengths[i + 1];
-        asm_lane_forced_bytes[i] = asm_lane_forced_bytes[i + 1];
-    }
-    asm_lane_rows[ASM_LANE_MAX_ROWS - 1] = address;
-    asm_lane_lengths[ASM_LANE_MAX_ROWS - 1] = forced_length;
-    if (forced_length) {
-        read_row(address, &asm_lane_forced_bytes[ASM_LANE_MAX_ROWS - 1], 1);
-    } else {
-        asm_lane_forced_bytes[ASM_LANE_MAX_ROWS - 1] = 0;
-    }
-    if (asm_lane_top > 0) asm_lane_top--;
-    if (asm_lane_selected > 0) asm_lane_selected--;
-}
-
-void MachineMonitor :: disasm_lane_extend_forward_to(int index) const
-{
-    if (index < 0) {
-        return;
-    }
-    if (index >= ASM_LANE_MAX_ROWS) {
-        index = ASM_LANE_MAX_ROWS - 1;
-    }
-    while (asm_lane_valid && asm_lane_count <= index && asm_lane_count < ASM_LANE_MAX_ROWS) {
-        disasm_lane_append(disasm_lane_next_addr_at(asm_lane_count - 1), 0);
-    }
-}
-
-void MachineMonitor :: disasm_lane_ensure(void) const
-{
-    if (asm_lane_valid &&
-        asm_lane_view_cpu_port == (uint8_t)(state.view_cpu_port & 0x07) &&
-        asm_lane_illegal_enabled == state.illegal_enabled &&
-        asm_lane_count > 0) {
-        return;
-    }
-
-    asm_lane_valid = true;
-    asm_lane_view_cpu_port = (uint8_t)(state.view_cpu_port & 0x07);
-    asm_lane_illegal_enabled = state.illegal_enabled;
-    asm_lane_rows[0] = state.base_addr;
-    asm_lane_lengths[0] = 0;
-    asm_lane_forced_bytes[0] = 0;
-    asm_lane_count = 1;
-    asm_lane_top = 0;
-    asm_lane_selected = 0;
-
-    int need = content_height;
-    if (need <= 0) need = 1;
-    if (state.disasm_offset + 1 > need) need = state.disasm_offset + 1;
-    if (need > ASM_LANE_MAX_ROWS) need = ASM_LANE_MAX_ROWS;
-    disasm_lane_extend_forward_to(need - 1);
-    for (int i = 0; i < asm_lane_count; i++) {
-        if (asm_lane_rows[i] == state.current_addr) {
-            asm_lane_selected = i;
-            return;
-        }
-    }
-    asm_lane_rows[0] = state.current_addr;
-    asm_lane_count = 1;
-    asm_lane_top = 0;
-    asm_lane_selected = 0;
-}
-
-void MachineMonitor :: disasm_lane_prepend(uint16_t address, uint8_t forced_length)
-{
-    disasm_lane_ensure();
-    if (asm_lane_count < ASM_LANE_MAX_ROWS) {
-        for (int i = asm_lane_count; i > 0; i--) {
-            asm_lane_rows[i] = asm_lane_rows[i - 1];
-            asm_lane_lengths[i] = asm_lane_lengths[i - 1];
-            asm_lane_forced_bytes[i] = asm_lane_forced_bytes[i - 1];
-        }
-        asm_lane_count++;
-    } else {
-        for (int i = ASM_LANE_MAX_ROWS - 1; i > 0; i--) {
-            asm_lane_rows[i] = asm_lane_rows[i - 1];
-            asm_lane_lengths[i] = asm_lane_lengths[i - 1];
-            asm_lane_forced_bytes[i] = asm_lane_forced_bytes[i - 1];
-        }
-    }
-    asm_lane_rows[0] = address;
-    asm_lane_lengths[0] = forced_length;
-    if (forced_length) {
-        read_row(address, &asm_lane_forced_bytes[0], 1);
-    } else {
-        asm_lane_forced_bytes[0] = 0;
-    }
-    if (asm_lane_top < ASM_LANE_MAX_ROWS - 1) asm_lane_top++;
-    if (asm_lane_selected < ASM_LANE_MAX_ROWS - 1) asm_lane_selected++;
-}
-
-bool MachineMonitor :: disasm_lane_prepend_previous(void)
-{
-    uint16_t current;
-    uint16_t prev;
-    uint8_t forced_length = 0;
-
-    disasm_lane_ensure();
-    current = asm_lane_rows[0];
-    if (!disasm_find_prev_addr(current, &prev)) {
-        if (current == 0x0000) {
-            return false;
-        }
-        prev = (uint16_t)(current - 1);
-        forced_length = 1;
-    }
-    disasm_lane_prepend(prev, forced_length);
-    return true;
-}
-
-void MachineMonitor :: disasm_lane_rebuild_suffix_from_current(void)
-{
-    disasm_lane_ensure();
-    for (int i = 0; i < asm_lane_count; i++) {
-        if (asm_lane_rows[i] == state.current_addr) {
-            asm_lane_selected = i;
-            asm_lane_count = i + 1;
-            if (asm_lane_top > asm_lane_selected) {
-                asm_lane_top = asm_lane_selected;
-            }
-            disasm_lane_sync_state();
-            return;
-        }
-    }
-    disasm_lane_reset(state.current_addr);
-}
-
-void MachineMonitor :: disasm_visible_addresses(uint16_t *rows, uint8_t *lengths, int count) const
-{
-    if (!rows || count <= 0) {
-        return;
-    }
-
-    disasm_lane_ensure();
-    disasm_lane_extend_forward_to(asm_lane_top + count - 1);
-    for (int row = 0; row < count; row++) {
-        int index = asm_lane_top + row;
-        if (index < asm_lane_count) {
-            rows[row] = asm_lane_rows[index];
-            if (lengths) lengths[row] = asm_lane_lengths[index];
-        } else {
-            uint16_t addr = asm_lane_rows[asm_lane_count - 1];
-            for (int i = asm_lane_count - 1; i < index && i < ASM_LANE_MAX_ROWS; i++) {
-                addr = disasm_lane_next_addr_at(i);
-            }
-            rows[row] = addr;
-            if (lengths) lengths[row] = 0;
-        }
-    }
-}
-
-bool MachineMonitor :: disasm_same_source(uint16_t a, uint16_t b) const
-{
-    const char *sa = backend ? backend->source_name(a) : "";
-    const char *sb = backend ? backend->source_name(b) : "";
-
-    return strcmp(sa ? sa : "", sb ? sb : "") == 0;
-}
-
-bool MachineMonitor :: disasm_crosses_source_boundary(uint16_t start, uint16_t end) const
-{
-    uint16_t addr = start;
-
-    while (addr != end) {
-        uint16_t next = (uint16_t)(addr + 1);
-        if (!disasm_same_source(addr, next)) {
-            return true;
-        }
-        addr = next;
-    }
-    return false;
-}
-
-bool MachineMonitor :: disasm_is_io_source(uint16_t address) const
-{
-    const char *source = backend ? backend->source_name(address) : "";
-
-    return strcmp(source ? source : "", "IO") == 0;
-}
-
-bool MachineMonitor :: disasm_explicitly_targets(uint16_t candidate, uint16_t address) const
-{
-    uint8_t bytes[3];
-
-    read_row(candidate, bytes, 3);
-    if (bytes[0] == 0x4C) {
-        uint16_t target = (uint16_t)(bytes[1] | ((uint16_t)bytes[2] << 8));
-        return target == address;
-    }
-    switch (bytes[0]) {
-        case 0x10: case 0x30: case 0x50: case 0x70:
-        case 0x90: case 0xB0: case 0xD0: case 0xF0:
-        {
-            int8_t rel = (int8_t)bytes[1];
-            uint16_t target = (uint16_t)(candidate + 2 + rel);
-            return target == address;
-        }
-        default:
-            break;
-    }
-    return false;
-}
-
-uint16_t MachineMonitor :: disasm_next_addr(uint16_t address) const
+uint16_t MachineMonitor :: disasm_next_addr(uint16_t address)
 {
     if (address == 0xFFFF) {
         return 0x0000;
@@ -3965,18 +3949,19 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 {
     uint8_t len = disasm_length(address);
     if (len == 0) len = 1;
+    // A data row has no mnemonic, so each of its bytes is a part of its own and
+    // the parts are the bytes in the order they are shown.
+    if (address_is_data(address)) {
+        return len;
+    }
     if (asm_is_branch(address) && len == 2) return 3;
     return len;
 }
 
-bool MachineMonitor :: disasm_find_prev_addr(uint16_t address, uint16_t *previous) const
+uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
-    uint16_t best = 0;
-    int best_score = -1;
-
     if (address == 0x0000) {
-        if (previous) *previous = 0xFFFF;
-        return true;
+        return 0xFFFF;
     }
     // Use a signed counter: a uint16_t loop variable would underflow from 0
     // back to 0xFFFF when the heuristic fails to find a matching instruction
@@ -3984,66 +3969,97 @@ bool MachineMonitor :: disasm_find_prev_addr(uint16_t address, uint16_t *previou
     for (int back = 3; back >= 1; back--) {
         uint16_t candidate = (uint16_t)(address - back);
         if (disasm_length(candidate) == (uint16_t)back) {
-            bool crosses_source = disasm_crosses_source_boundary(candidate,
-                                                                 address);
-            int score = 0;
-
-            if (crosses_source &&
-                    (disasm_is_io_source(candidate) || disasm_is_io_source(address)) &&
-                    !disasm_explicitly_targets(candidate, address)) {
-                continue;
-            }
-            if (disasm_same_source(candidate, address)) {
-                score += 8;
-            }
-            if (!crosses_source) {
-                score += 4;
-            }
-            if (!disasm_is_io_source(candidate)) {
-                score += 2;
-            }
-            if (score > best_score) {
-                best_score = score;
-                best = candidate;
-            }
+            return candidate;
         }
-    }
-    if (best_score < 0) {
-        return false;
-    }
-    if (previous) *previous = best;
-    return true;
-}
-
-uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address) const
-{
-    uint16_t previous;
-
-    if (disasm_find_prev_addr(address, &previous)) {
-        return previous;
     }
     return (uint16_t)(address - 1);
 }
 
+uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
+{
+    uint16_t addr = state.base_addr;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
+
+    for (int row = 0; (addr != address) && (row < max_scan); row++) {
+        uint16_t next = disasm_next_addr(addr);
+        if (next == address) {
+            return addr;
+        }
+        if (next == addr) {
+            break;
+        }
+        addr = next;
+    }
+    // Above the top row there is nothing on screen to read the boundary off,
+    // so it is measured the same way paging measures it.
+    return disasm_rewind_rows(address, 1);
+}
+
 int MachineMonitor :: disasm_visible_row(uint16_t address) const
 {
-    uint16_t rows[32];
-    int count = content_height;
+    uint16_t addr = state.base_addr;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
-    if (count <= 0) {
-        return -1;
-    }
-    if (count > (int)(sizeof(rows) / sizeof(rows[0]))) {
-        count = (int)(sizeof(rows) / sizeof(rows[0]));
-    }
-    disasm_visible_addresses(rows, NULL, count);
-
-    for (int row = 0; row < count; row++) {
-        if (rows[row] == address) {
+    for (int row = 0; row < max_scan; row++) {
+        uint8_t len = disasm_length(addr);
+        if (len == 0) {
+            len = 1;
+        }
+        if (monitor_disasm_row_contains(addr, len, address)) {
             return row;
         }
+        addr = (uint16_t)(addr + len);
     }
     return -1;
+}
+
+uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
+{
+    while (rows > 0) {
+        address = disasm_next_addr(address);
+        rows--;
+    }
+    return address;
+}
+
+// The row `rows` above `address`, chosen so that walking forward `rows` rows
+// from the answer arrives back at `address`.
+//
+// A 6502 instruction cannot be found by reading backwards: the byte in front of
+// an opcode may be an operand rather than an opcode. Guessing one boundary at a
+// time, which is what disasm_prev_addr does, can pick a boundary the forward
+// walk never uses, and paging up then stops undoing paging down. Disassembling
+// forward from further back than `rows` instructions can span, and counting the
+// rows that actually land on `address`, replaces the guess with a measurement.
+// The extra lead-in is what gives the stream room to re-synchronise before it
+// reaches the rows that will be shown.
+uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
+{
+    if (rows <= 0) {
+        return address;
+    }
+    for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
+        uint16_t start = (uint16_t)(address - lead_in);
+        uint16_t addr = start;
+        int rows_before = 0;
+
+        // Unsigned subtraction wraps once addr passes address, which ends the
+        // walk on a lead-in that disassembles straight over it.
+        while ((addr != address) && ((uint16_t)(address - addr) <= lead_in)) {
+            addr = disasm_next_addr(addr);
+            rows_before++;
+        }
+        if ((addr == address) && (rows_before >= rows)) {
+            return disasm_advance_rows(start, rows_before - rows);
+        }
+    }
+    // No lead-in landed on `address`, so there is nothing to measure; guess one
+    // instruction at a time, which at least moves the view `rows` rows up.
+    while (rows > 0) {
+        address = disasm_prev_addr(address);
+        rows--;
+    }
+    return address;
 }
 
 void MachineMonitor :: restore_disasm_cursor_row(int row)
@@ -4055,32 +4071,10 @@ void MachineMonitor :: restore_disasm_cursor_row(int row)
     if (content_height > 0 && row >= content_height) {
         row = content_height - 1;
     }
-    disasm_position_current_at_row(row);
+    // The top row is `row` rows above the cursor, measured the way paging
+    // measures it so that scrolling back down retraces the same boundaries.
+    state.base_addr = disasm_rewind_rows(state.current_addr, row);
     ensure_disasm_visible();
-}
-
-void MachineMonitor :: disasm_position_current_at_row(int row)
-{
-    if (content_height <= 0) {
-        disasm_lane_reset(state.current_addr);
-        return;
-    }
-    if (row < 0) {
-        row = 0;
-    }
-    if (row >= content_height) {
-        row = content_height - 1;
-    }
-
-    disasm_lane_reset(state.current_addr);
-    for (int i = 0; i < row; i++) {
-        if (!disasm_lane_prepend_previous()) {
-            break;
-        }
-        asm_lane_selected = i + 1;
-    }
-    asm_lane_top = 0;
-    disasm_lane_sync_state();
 }
 
 void MachineMonitor :: ensure_disasm_visible()
@@ -4088,74 +4082,50 @@ void MachineMonitor :: ensure_disasm_visible()
     if (state.view != MONITOR_VIEW_ASM) {
         return;
     }
-    if (content_height <= 0) {
-        disasm_lane_reset(state.current_addr);
+    if (state.current_addr < state.base_addr) {
+        state.base_addr = state.current_addr;
         return;
     }
-    disasm_lane_ensure();
-    for (int i = 0; i < asm_lane_count; i++) {
-        if (asm_lane_rows[i] == state.current_addr) {
-            asm_lane_selected = i;
-            if (asm_lane_selected < asm_lane_top) {
-                asm_lane_top = asm_lane_selected;
-            } else if (asm_lane_selected >= asm_lane_top + content_height) {
-                asm_lane_top = asm_lane_selected - content_height + 1;
-            }
-            disasm_lane_sync_state();
-            return;
+    uint16_t a = state.base_addr;
+    int rows = 0;
+    int max_scan = (content_height > 0 ? content_height : 1) + 64;
+    while (a != state.current_addr && rows < max_scan) {
+        a = disasm_next_addr(a);
+        rows++;
+    }
+    if (a != state.current_addr) {
+        state.base_addr = state.current_addr;
+        return;
+    }
+    if (content_height > 0 && rows >= content_height) {
+        int n = rows - (content_height - 1);
+        for (int i = 0; i < n; i++) {
+            state.base_addr = disasm_next_addr(state.base_addr);
         }
     }
-    disasm_lane_reset(state.current_addr);
 }
 
 void MachineMonitor :: step_disassembly(int lines)
 {
-    disasm_lane_ensure();
     while (lines < 0) {
-        if (asm_lane_selected > 0) {
-            asm_lane_selected--;
-            if (asm_lane_selected < asm_lane_top) {
-                asm_lane_top = asm_lane_selected;
-            }
-        } else {
-            uint16_t current = asm_lane_rows[0];
-            uint16_t prev;
-            bool have_prev = disasm_find_prev_addr(current, &prev);
-            if (have_prev && prev > current) {
-                state.current_addr = prev;
-                disasm_position_current_at_row((content_height > 0) ? (content_height - 1) : 0);
-            } else {
-                if (!disasm_lane_prepend_previous()) {
-                    break;
-                }
-                asm_lane_selected = 0;
-                asm_lane_top = 0;
-            }
+        uint16_t current = state.current_addr;
+        uint16_t prev = disasm_prev_visible_addr(current);
+        state.current_addr = prev;
+        if (prev > current) {
+            restore_disasm_cursor_row((content_height > 0) ? (content_height - 1) : 0);
         }
         lines++;
     }
     while (lines > 0) {
-        uint16_t current = asm_lane_rows[asm_lane_selected];
-        uint16_t next = disasm_lane_next_addr_at(asm_lane_selected);
+        uint16_t current = state.current_addr;
+        uint16_t next = disasm_next_addr(current);
+        state.current_addr = next;
         if (next < current) {
-            disasm_lane_reset(next);
-            lines--;
-            continue;
-        }
-        if (asm_lane_selected + 1 >= asm_lane_count) {
-            disasm_lane_append(disasm_lane_next_addr_at(asm_lane_selected), 0);
-        } else {
-            disasm_lane_extend_forward_to(asm_lane_selected + 1);
-        }
-        if (asm_lane_selected + 1 < asm_lane_count) {
-            asm_lane_selected++;
-        }
-        if (content_height > 0 && asm_lane_selected >= asm_lane_top + content_height) {
-            asm_lane_top = asm_lane_selected - content_height + 1;
+            state.base_addr = state.current_addr;
         }
         lines--;
     }
-    disasm_lane_sync_state();
+    ensure_disasm_visible();
     pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
@@ -4164,37 +4134,20 @@ void MachineMonitor :: step_disassembly(int lines)
 
 void MachineMonitor :: page_disassembly(int lines)
 {
-    int selected_row;
+    int row = disasm_visible_row(state.current_addr);
 
-    disasm_lane_ensure();
-    selected_row = asm_lane_selected - asm_lane_top;
-    if (lines > 0) {
-        while (lines > 0) {
-            if (asm_lane_selected + 1 >= asm_lane_count) {
-                disasm_lane_append(disasm_lane_next_addr_at(asm_lane_selected), 0);
-            } else {
-                disasm_lane_extend_forward_to(asm_lane_selected + 1);
-            }
-            if (asm_lane_selected + 1 < asm_lane_count) {
-                asm_lane_selected++;
-            }
-            lines--;
-        }
-    } else if (lines < 0) {
-        while (asm_lane_selected + lines < 0) {
-            if (!disasm_lane_prepend_previous()) {
-                break;
-            }
-        }
-        asm_lane_selected += lines;
-        if (asm_lane_selected < 0) {
-            asm_lane_selected = 0;
-        }
+    if (row < 0) {
+        step_disassembly(lines);
+        return;
     }
 
-    asm_lane_top = asm_lane_selected - selected_row;
-    if (asm_lane_top < 0) asm_lane_top = 0;
-    disasm_lane_sync_state();
+    if (lines > 0) {
+        state.base_addr = disasm_advance_rows(state.base_addr, lines);
+    } else if (lines < 0) {
+        state.base_addr = disasm_rewind_rows(state.base_addr, -lines);
+    }
+
+    state.current_addr = disasm_advance_rows(state.base_addr, row);
     pending_hex_nibble = -1;
     if (edit_mode) {
         reset_edit_blink();
@@ -4240,9 +4193,6 @@ void MachineMonitor :: draw_header()
         if (hunt_picker_active) right = "ENTER jumps RSTOP exits";
         else if (edit_mode) right = "Edit";
     }
-    bool show_dbg = debug.is_active();
-    int dbg_slot = width - 8;
-    int edit_slot = width - 4;
     if (right && (help_visible || hunt_picker_active)) {
         int rlen = strlen(right);
         int cur = strlen(line);
@@ -4260,23 +4210,21 @@ void MachineMonitor :: draw_header()
     } else if (!help_visible && !hunt_picker_active) {
         char fixed[64];
         int first_slot = width;
-        int flag_slot = width - 20;
-        int freeze_slot = width - 15;
-        int poll_slot = width - 11;
-        const char *undoc_label = "Undc";
-        int undoc_label_len = 4;
-        const char *poll_label = "Pl";
-        int poll_label_len = 2;
+        int flag_slot = width - 19;
+        int freeze_slot = width - 13;
+        int poll_slot = width - 9;
+        int debug_slot = width - 8;
+        int edit_slot = width - 4;
         bool show_undoc = state.illegal_enabled && state.view == MONITOR_VIEW_ASM;
         if (flag_slot < 0) flag_slot = width;
         if (freeze_slot < 0) freeze_slot = width;
         if (poll_slot < 0) poll_slot = width;
-        if (dbg_slot < 0) dbg_slot = width;
+        if (debug_slot < 0) debug_slot = width;
         if (edit_slot < 0) edit_slot = width;
         if ((range_mode || show_undoc) && flag_slot < first_slot) first_slot = flag_slot;
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot < first_slot) first_slot = freeze_slot;
         if (poll_mode && poll_slot < first_slot) first_slot = poll_slot;
-        if (show_dbg && dbg_slot < first_slot) first_slot = dbg_slot;
+        if (debug.is_active() && debug_slot < first_slot) first_slot = debug_slot;
         if (edit_mode && edit_slot < first_slot) first_slot = edit_slot;
 
         memset(fixed, ' ', width);
@@ -4289,68 +4237,41 @@ void MachineMonitor :: draw_header()
             left_len = 0;
         }
         memcpy(fixed, line, left_len);
-        if (show_undoc && flag_slot + undoc_label_len <= width) {
-            memcpy(fixed + flag_slot, undoc_label, undoc_label_len);
+        if (show_undoc && flag_slot + 5 <= width) {
+            memcpy(fixed + flag_slot, "Undoc", 5);
         } else if (range_mode && flag_slot + 5 <= width) {
             memcpy(fixed + flag_slot, "Range", 5);
         }
         if (backend && backend->supports_freeze() && backend->is_frozen() && freeze_slot + 3 <= width) {
             memcpy(fixed + freeze_slot, "Frz", 3);
         }
-        if (poll_mode && poll_slot + poll_label_len <= width) {
-            memcpy(fixed + poll_slot, poll_label, poll_label_len);
+        if (poll_mode && poll_slot + 4 <= width) {
+            memcpy(fixed + poll_slot, "Poll", 4);
         }
-        if (show_dbg && dbg_slot + 3 <= width) {
-            memcpy(fixed + dbg_slot, "Dbg", 3);
+        if (debug.is_active() && debug_slot + 3 <= width) {
+            memcpy(fixed + debug_slot, "Dbg", 3);
         }
         memcpy(line, fixed, width + 1);
     }
     draw_padded(window, 0, line, strlen(line));
-    if (!help_visible && !hunt_picker_active) {
-        if (strncmp(line, "MONITOR ", 8) == 0) {
-            window->set_color(get_ui()->color_fg);
-            window->move_cursor(8, 0);
-            window->output_length(line + 8, 3);
-            const char *dollar = strchr(line, '$');
-            if (dollar) {
-                int ax = (int)(dollar - line);
-                window->move_cursor(ax, 0);
-                window->output_length(dollar, 5); // "$" + 4 hex digits
-            }
-            window->set_color(get_ui()->color_fg);
-        }
-        if (debug.is_active()) {
-            if (dbg_slot < 0) dbg_slot = 0;
-            window->move_cursor(dbg_slot, 0);
-            window->set_color(MONITOR_UI_ACCENT_COLOR);
-            window->output_length("Dbg", 3);
-            window->set_color(get_ui()->color_fg);
-        }
-        if (edit_mode) {
-            if (edit_slot < 0) {
-                edit_slot = 0;
-            }
-            window->move_cursor(edit_slot, 0);
-            window->set_color(MONITOR_UI_ACCENT_COLOR);
-            window->output_length("Edit", 4);
-            window->set_color(get_ui()->color_fg);
-        }
+    if (!help_visible && !hunt_picker_active && debug.is_active()) {
+        int debug_slot = width - 8;
+        if (debug_slot < 0) debug_slot = 0;
+        window->move_cursor(debug_slot, 0);
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        window->output_length("Dbg", 3);
+        window->set_color(get_ui()->color_fg);
     }
-}
-
-static bool monitor_step_bank_is_ram_under_rom(MemoryBackend *backend,
-                                               uint16_t pc, uint8_t cpu_port)
-{
-    if (!backend || !backend->supports_cpu_banking()) {
-        return false;
+    if (!help_visible && !hunt_picker_active && edit_mode) {
+        int edit_slot = width - 4;
+        if (edit_slot < 0) {
+            edit_slot = 0;
+        }
+        window->move_cursor(edit_slot, 0);
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        window->output_length("EDIT", 4);
+        window->set_color(get_ui()->color_fg);
     }
-    cpu_port &= 0x07;
-    if (cpu_port == 0x07) {
-        return false;   // all ROMs visible: nothing banked in under ROM
-    }
-    MonitorBackingStore here = backend->backing_store_for_cpu_port(pc, cpu_port);
-    MonitorBackingStore rom_view = backend->backing_store_for_cpu_port(pc, 0x07);
-    return (here == MONITOR_BACKING_RAM) && (rom_view != MONITOR_BACKING_RAM);
 }
 
 void MachineMonitor :: draw_status()
@@ -4358,25 +4279,26 @@ void MachineMonitor :: draw_status()
     char line[40];
 
     if (help_visible) {
-        const char *paging_line = debug.is_active() ?
-            monitor_debug_help_paging_line : monitor_help_paging_line;
+        char paging_line[64];
+        const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
+        const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
+        if (debug.is_active()) {
+            sprintf(paging_line, "Page Up/Down:  %s/SH+SPACE / %s/SPACE",
+                    page_up, page_down);
+            draw_padded(window, window->get_size_y() - 1, paging_line,
+                        (int)strlen(paging_line));
+            return;
+        }
+        // Same grid as BOOKMARKS and CONTROL KEYS above it: left key at
+        // column 1, left action at 12, right key at 21, right action at 29.
+        sprintf(paging_line, "%s/SH+SP   Page up  %s/SP   Page down",
+                page_up, page_down);
         draw_padded(window, window->get_size_y() - 1, paging_line,
                     (int)strlen(paging_line));
         return;
     }
 
-    // A transient one-line Debug status/alert (refusal, note) takes the bottom
-    // row while it is showing, ahead of the banking detail. It is single-line
-    // and within the 38-column alert budget.
-    if (debug.is_active() && debug_status_visible) {
-        window->set_color(MONITOR_UI_ACCENT_COLOR);
-        draw_padded(window, window->get_size_y() - 1, debug_status_text,
-                    (int)strlen(debug_status_text));
-        window->set_color(get_ui()->color_fg);
-        return;
-    }
-
-    if (!debug.is_active() && bookmark_status_visible) {
+    if (bookmark_status_visible) {
         window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
         draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
                     (int)strlen(bookmark_status_text));
@@ -4387,193 +4309,47 @@ void MachineMonitor :: draw_status()
     if (backend && !backend->supports_cpu_banking() && !backend->supports_vic_bank()) {
         strcpy(line, "CPU VIEW  CPU BANK N/A  VIC N/A");
     } else if (backend && !backend->supports_cpu_banking()) {
-        if (backend->live_cpu_port_known()) {
-            // The bank can only be observed here, not selected, so the view and
-            // the live value are the same and the row never shows an override
-            // the user did not ask for.
-            uint8_t live_cpu_port = backend->get_live_cpu_port();
-            monitor_format_status_line(line, live_cpu_port, live_cpu_port,
-                                       current_vic_bank);
-        } else {
-            sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
-                    monitor_vic_bank_bases[current_vic_bank & 0x03]);
-        }
+        sprintf(line, "CPU VIEW  VIC%d $%04X", current_vic_bank & 0x03,
+                monitor_vic_bank_bases[current_vic_bank & 0x03]);
     } else if (backend && !backend->supports_vic_bank()) {
-        uint8_t live_cpu_port = backend ? backend->get_live_cpu_port() : state.view_cpu_port;
-        if ((state.view_cpu_port & 0x07) == (live_cpu_port & 0x07)) {
-            sprintf(line, "CPU%d  VIC N/A", state.view_cpu_port & 0x07);
-        } else {
-            bool accent_mask[40];
-            sprintf(line, "C%dO%d  VIC N/A", live_cpu_port & 0x07,
-                    state.view_cpu_port & 0x07);
-            memset(accent_mask, 0, sizeof(accent_mask));
-            accent_mask[1] = true;
-            accent_mask[3] = true;
-            draw_with_style_mask(window, window->get_size_y() - 1, line, strlen(line),
-                                 NULL, accent_mask,
-                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
-            return;
-        }
+        sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
     } else {
-        uint8_t live_cpu_port = backend ? backend->get_live_cpu_port() : state.view_cpu_port;
-        bool accent_mask[40];
-        monitor_format_status_line(line, state.view_cpu_port, live_cpu_port, current_vic_bank);
-        if ((state.view_cpu_port & 0x07) != (live_cpu_port & 0x07)) {
-            memset(accent_mask, 0, sizeof(accent_mask));
-            accent_mask[1] = true;
-            accent_mask[3] = true;
-            draw_with_style_mask(window, window->get_size_y() - 1, line, strlen(line),
-                                 NULL, accent_mask,
-                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
-            return;
-        }
+        monitor_format_status_line(line, state.cpu_port, current_vic_bank);
     }
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
 
-void MachineMonitor :: debug_full_restore_screen(void)
-{
-    // After a freeze-mode debug step, the firmware chrome rows (UI title and
-    // border lines) are overwritten by the live BASIC screen during the
-    // temporary C64 unfreeze. Re-establish the chrome and redraw the monitor
-    // window so the user sees a correct display. No-op in overlay mode because
-    // overlay sessions disable freeze/refreeze run windows.
-    if (!debug_session || !debug_session->screen_render_target_invalidated()) {
-        return;
-    }
-    if (screen) {
-        get_ui()->set_screen_title();
-        restore_underlying_status_row();
-    }
-    redraw_full();
-}
-
-void MachineMonitor :: restore_underlying_status_row(void)
-{
-    if (!screen || !get_ui()) {
-        return;
-    }
-    UIObject *root = get_ui()->get_root_object();
-    if (root) {
-        root->redraw();
-    }
-    const char *help = "F3=HELP";
-    int width = screen->get_size_x();
-    int height = screen->get_size_y();
-    int x = width - (int)strlen(help) - 1;
-    if (x < 0) {
-        x = 0;
-    }
-    screen->move_cursor(x, height - 1);
-    screen->output("\eA");
-    screen->output(help);
-    screen->output("\eO");
-}
-
-void MachineMonitor :: draw_debug_footer()
-{
-    char header_row[40];
-    char value_row[40];
-    int width;
-    int draw_len;
-    bool header_accent[MonitorDebug::FOOTER_WIDTH];
-    bool value_accent[MonitorDebug::FOOTER_WIDTH];
-    const DebugContext &ctx = debug.context();
-    const char *flags = "NV-BDIZC";
-
-    if (!window) {
-        return;
-    }
-    MonitorDebug::format_footer_header(header_row, sizeof(header_row));
-    MonitorDebug::format_footer_values(debug.context(), value_row, sizeof(value_row));
-    memset(header_accent, 0, sizeof(header_accent));
-    memset(value_accent, 0, sizeof(value_accent));
-    header_accent[MonitorDebug::FOOTER_POS_PC + 0] = true;
-    header_accent[MonitorDebug::FOOTER_POS_PC + 1] = true;
-    header_accent[MonitorDebug::FOOTER_POS_AC + 0] = true;
-    header_accent[MonitorDebug::FOOTER_POS_XR + 0] = true;
-    header_accent[MonitorDebug::FOOTER_POS_YR + 0] = true;
-    header_accent[MonitorDebug::FOOTER_POS_SP + 0] = true;
-    if (ctx.valid) {
-        for (int i = 0; i < 4; i++) {
-            value_accent[MonitorDebug::FOOTER_POS_PC + i] = true;
-        }
-        for (int i = 0; i < 2; i++) {
-            value_accent[MonitorDebug::FOOTER_POS_AC + i] = true;
-            value_accent[MonitorDebug::FOOTER_POS_XR + i] = true;
-            value_accent[MonitorDebug::FOOTER_POS_YR + i] = true;
-            value_accent[MonitorDebug::FOOTER_POS_SP + i] = true;
-        }
-        for (int i = 0; i < 8; i++) {
-            value_accent[MonitorDebug::FOOTER_POS_FLAGS + i] = true;
-        }
-        for (int i = 0; i < 8; i++) {
-            if (flags[i] == '-') {
-                continue;
-            }
-            if ((ctx.sr & (1 << (7 - i))) != 0) {
-                header_accent[MonitorDebug::FOOTER_POS_FLAGS + i] = true;
-            }
-        }
-    }
-    width = window->get_size_x();
-    draw_len = width;
-    if (draw_len > MonitorDebug::FOOTER_WIDTH) {
-        draw_len = MonitorDebug::FOOTER_WIDTH;
-    }
-    window->set_color(get_ui()->color_fg);
-    draw_with_style_mask(window, window->get_size_y() - 3, header_row, draw_len,
-                         0, header_accent, get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
-    draw_with_style_mask(window, window->get_size_y() - 2, value_row, draw_len,
-                         0, value_accent, get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
-    window->set_color(get_ui()->color_fg);
-}
-
 void MachineMonitor :: draw_help()
 {
-    int help_rows = window ? window->get_size_y() - 2 : content_height;
-    if (help_rows < 1) help_rows = 1;
+    char formatted[64];
+
     if (debug.is_active()) {
-        // Debug help takes precedence in Debug mode (DBG-HELP-001). Defer the
-        // text definition to MonitorDebug so the help reflects the actual
-        // debug command model in one place.
-        const char *dbg_lines[20];
-        int n = MonitorDebug::format_help_lines(dbg_lines, 20);
-        for (int line_idx = 0; line_idx < help_rows; line_idx++) {
-            if (line_idx >= n) {
-                draw_padded(window, line_idx + 1, "", 0);
-            } else {
-                draw_padded(window, line_idx + 1, dbg_lines[line_idx],
-                            (int)strlen(dbg_lines[line_idx]));
-            }
+        const char *lines[20];
+        int count = MonitorDebug::format_help_lines(lines, 20);
+        int help_height = window->get_size_y() - 2;
+        for (int line_idx = 0; line_idx < help_height; line_idx++) {
+            const char *text = line_idx < count ? lines[line_idx] : "";
+            draw_padded(window, line_idx + 1, text, (int)strlen(text));
         }
         return;
     }
-    for (int line_idx = 0; line_idx < help_rows; line_idx++) {
+
+    for (int line_idx = 0; line_idx < content_height; line_idx++) {
         const char *text = monitor_help_lines[line_idx];
         if (!text) {
-            for (int blank = line_idx; blank < help_rows; blank++) {
+            for (int blank = line_idx; blank < content_height; blank++) {
                 draw_padded(window, blank + 1, "", 0);
             }
             break;
         }
-        draw_padded(window, line_idx + 1, text, strlen(text));
-    }
-}
-
-void MachineMonitor :: draw_popup_overlays()
-{
-    if (opcode_picker_active) {
-        draw_opcode_picker();
-    }
-    if (number_picker_active) {
-        draw_number_picker();
-    }
-    if (bookmark_popup_active) {
-        draw_bookmark_popup();
-    }
-    if (breakpoint_popup_active) {
-        debug_render_breakpoint_popup();
+        // One line names the key that opens help, which is the application key
+        // mapper's answer rather than this table's. It is the only line with a
+        // conversion in it.
+        if (strchr(text, '%')) {
+            sprintf(formatted, text, get_ui()->function_key_for(KEY_HELP));
+            text = formatted;
+        }
+        draw_padded(window, line_idx + 1, text, (int)strlen(text));
     }
 }
 
@@ -4605,7 +4381,7 @@ void MachineMonitor :: draw_bookmark_popup()
                                            bookmarks ? bookmarks->get((uint8_t)i) : NULL);
     }
     strcpy(popup_lines[MONITOR_BOOKMARK_POPUP_HELP_ROW],
-           "0-9/RET:Jmp  S:Set  L:Label  DEL:Reset");
+           "0-9/RET Jmp  S Set  L Label  DEL Reset");
 
     window->getOffsets(screen_x, screen_y);
     popup_x = screen_x + ((window->get_size_x() - MONITOR_BOOKMARK_POPUP_INNER_WIDTH) / 2);
@@ -4628,7 +4404,6 @@ void MachineMonitor :: draw_bookmark_popup()
                  MONITOR_BOOKMARK_POPUP_INNER_HEIGHT + 2);
     popup.set_color(get_ui()->color_fg);
     popup.draw_border();
-    popup.set_color(get_ui()->color_fg);
 
     for (int row = 0; row < MONITOR_BOOKMARK_POPUP_INNER_HEIGHT; row++) {
         char line[MONITOR_BOOKMARK_POPUP_INNER_WIDTH + 1];
@@ -4749,9 +4524,7 @@ void MachineMonitor :: refresh_popup_overlay()
         draw();
         return;
     }
-    if (!help_visible && !hunt_picker_active) {
-        draw_popup_overlays();
-    }
+    draw_popup_overlays();
     screen->sync();
 }
 
@@ -5028,25 +4801,12 @@ void MachineMonitor :: redraw_full()
 
 void MachineMonitor :: draw_disassembly()
 {
-    uint16_t row_addrs[32];
-    uint8_t row_lengths[32];
-    int row_count = content_height;
+    uint16_t addr = state.base_addr;
     int line_idx;
-
-    if (row_count > (int)(sizeof(row_addrs) / sizeof(row_addrs[0]))) {
-        row_count = (int)(sizeof(row_addrs) / sizeof(row_addrs[0]));
-    }
-    disasm_visible_addresses(row_addrs, row_lengths, row_count);
-    if (row_count > 0) {
-        state.base_addr = row_addrs[0];
-    }
-
     for (line_idx = 0; line_idx < content_height; line_idx++) {
         Disassembled6502 decoded;
         char line[MONITOR_DISASM_ROW_CHARS + 1];
         uint8_t row_bytes[3];
-        uint16_t addr = (line_idx < row_count) ? row_addrs[line_idx] : state.current_addr;
-        uint8_t row_len = (line_idx < row_count) ? row_lengths[line_idx] : 0;
         int highlight = -1;
         int text_limit;
         int text_len;
@@ -5054,95 +4814,71 @@ void MachineMonitor :: draw_disassembly()
         int source_len;
         int source_pos;
         int bp_slot;
-        bool bp_enabled = false;
         int bp_len = 0;
-        const char *bp_label = NULL;
-        int indicator_start;
         int brk_pos = -1;
+        int indicator_start;
+        const char *bp_label = NULL;
+        bool bp_enabled = false;
         bool reverse_mask[MONITOR_DISASM_ROW_CHARS];
         bool accent_mask[MONITOR_DISASM_ROW_CHARS];
-        bool debug_next_row = debug.is_active() && debug.has_context() &&
-                              debug.context().valid && addr == debug.context().pc;
+        bool debug_pc_row = debug.is_active() && debug.has_context() &&
+            debug.context().pc == addr;
+        bool live_debug_pc = debug_pc_row && debug_session &&
+            debug_session->read_step_bytes(addr, row_bytes, 3);
 
-        if (debug_next_row && debug_session &&
-                debug_session->read_step_bytes(addr, row_bytes, 3)) {
-            // Execution-facing PC row: use the live $0001 mapping, not the
-            // monitor view selected by O.
-            row_len = 0;
-        } else if (row_len) {
-            int lane_index = asm_lane_top + line_idx;
-            memset(row_bytes, 0, sizeof(row_bytes));
-            if (lane_index >= 0 && lane_index < asm_lane_count) {
-                row_bytes[0] = asm_lane_forced_bytes[lane_index];
-            }
+        if (live_debug_pc) {
+            disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
+            monitor_disasm_tail_cutover(addr, &decoded);
         } else {
-            read_row(addr, row_bytes, 3);
+            decode_row(addr, row_bytes, &decoded);
         }
-        memset(line, ' ', sizeof(line));
-        line[MONITOR_DISASM_ROW_CHARS] = 0;
-        disassemble_6502(addr, row_bytes, state.illegal_enabled, &decoded);
-        monitor_disasm_tail_cutover(addr, &decoded);
-        if (row_len && decoded.length != row_len) {
-            decoded.valid = false;
-            decoded.illegal = false;
-            decoded.operand_bytes = 0;
-            decoded.has_target = false;
-            decoded.target = 0;
-            decoded.length = row_len;
-            strcpy(decoded.text, "???");
-        }
-        if (!row_len) {
-            row_len = decoded.length ? decoded.length : 1;
-        }
-        // The next-to-execute instruction (the captured debug PC) is decorated
-        // independently of the movable cursor, so the user can scroll/move the
-        // cursor while still seeing what will run next.
-        debug_next_row = debug_next_row && row_len != 0;
-        // For an RTS on the debug PC row, render the return address inferred
-        // from the stack as "$XXXX" so it can be highlighted just like a
-        // JMP/JSR/branch target. rts_target_col is the column of the '$' within
-        // decoded.text, or -1 when this row is not such an RTS.
+
         int rts_target_col = -1;
-        if (debug_next_row && decoded.valid && row_bytes[0] == 0x60 &&
+        if (debug_pc_row && decoded.valid && row_bytes[0] == 0x60 &&
                 decoded.length == 1 && strcmp(decoded.text, "RTS") == 0) {
             uint8_t sp = debug.context().sp;
-            char tgt[8];
+            char target[8];
             if (sp == 0xFF) {
-                // Stack empty: no return address to infer.
-                strcpy(tgt, "$????");
+                strcpy(target, "$????");
             } else {
                 uint16_t lo = (uint16_t)(0x0100 + ((sp + 1) & 0xFF));
                 uint16_t hi = (uint16_t)(0x0100 + ((sp + 2) & 0xFF));
                 uint16_t ret = (uint16_t)(backend->read(lo) | (backend->read(hi) << 8));
-                // RTS pulls the return address and resumes at address + 1.
-                sprintf(tgt, "$%04x", (uint16_t)(ret + 1));
+                sprintf(target, "$%04x", (uint16_t)(ret + 1));
             }
-            rts_target_col = 4; // strlen("RTS ")
-            sprintf(decoded.text, "RTS %s", tgt);
+            rts_target_col = 4;
+            sprintf(decoded.text, "RTS %s", target);
         }
+
+        memset(line, ' ', sizeof(line));
+        line[MONITOR_DISASM_ROW_CHARS] = 0;
         dump_hex_word(line, 0, addr);
         line[4] = ' ';
         dump_hex_byte(line, 5, row_bytes[0]);
-        if (row_len >= 2) {
+        if (decoded.length >= 2) {
             dump_hex_byte(line, 8, row_bytes[1]);
         }
-        if (row_len >= 3) {
+        if (decoded.length >= 3) {
             dump_hex_byte(line, 11, row_bytes[2]);
         }
         line[13] = ' ';
         line[14] = ' ';
 
-        MonitorBackingStore row_target = debug_next_row ?
-            breakpoint_target_for_live_cpu(addr) : breakpoint_target_for_view(addr);
-        bp_slot = breakpoints.find_at(addr, row_target);
-        source = debug_next_row ?
-            monitor_source_indicator(monitor_backing_store_source_name(row_target)) :
-            monitor_source_indicator(backend->source_name(addr));
-        source_len = (int)strlen(source);
-        if (source_len > 3) {
-            source_len = 3;
+        if (debug_pc_row && debug.context().live_cpu_port_valid) {
+            source = monitor_backing_store_tag(backend->backing_store_for_cpu_port(
+                addr, debug.context().live_cpu_port));
+        } else {
+            source = monitor_source_indicator(backend->source_name(addr));
         }
+        source_len = (int)strlen(source);
+        if (source_len > 3) source_len = 3;
         source_pos = MONITOR_DISASM_ROW_CHARS - source_len - 2;
+
+        MonitorBackingStore row_target = debug_pc_row &&
+                debug.context().live_cpu_port_valid ?
+            backend->backing_store_for_cpu_port(addr, debug.context().live_cpu_port) :
+            breakpoint_target_for_view(addr);
+        bp_slot = breakpoints.find_at(addr, row_target);
         if (bp_slot >= 0) {
             const MonitorBreakpointSlot *bp = breakpoints.get(bp_slot);
             bp_enabled = bp && bp->enabled;
@@ -5155,7 +4891,7 @@ void MachineMonitor :: draw_disassembly()
             } else {
                 bp_len = 4;
             }
-            brk_pos = source_pos - (bp_len + 2);
+            brk_pos = source_pos - bp_len - 2;
             if (brk_pos < MONITOR_DISASM_TEXT_COL) {
                 brk_pos = MONITOR_DISASM_TEXT_COL;
             }
@@ -5165,14 +4901,21 @@ void MachineMonitor :: draw_disassembly()
         }
 
         text_limit = indicator_start - 1 - MONITOR_DISASM_TEXT_COL;
-        if (text_limit < 0) {
-            text_limit = 0;
-        }
+        if (text_limit < 0) text_limit = 0;
         text_len = (int)strlen(decoded.text);
-        if (text_len > text_limit) {
-            text_len = text_limit;
-        }
+        if (text_len > text_limit) text_len = text_limit;
         memcpy(line + MONITOR_DISASM_TEXT_COL, decoded.text, text_len);
+
+        if (debug_pc_row) {
+            if (MONITOR_DISASM_TEXT_COL >= 1 &&
+                    line[MONITOR_DISASM_TEXT_COL - 1] == ' ') {
+                line[MONITOR_DISASM_TEXT_COL - 1] = '>';
+            }
+            int close_col = MONITOR_DISASM_TEXT_COL + text_len;
+            if (close_col < MONITOR_DISASM_ROW_CHARS && line[close_col] == ' ') {
+                line[close_col] = '<';
+            }
+        }
 
         if (bp_slot >= 0) {
             line[brk_pos] = '[';
@@ -5188,11 +4931,11 @@ void MachineMonitor :: draw_disassembly()
         memcpy(line + source_pos + 1, source, source_len);
         line[source_pos + 1 + source_len] = ']';
 
-        if (line_idx == state.disasm_offset && addr == state.current_addr) {
+        if (monitor_disasm_row_contains(addr, decoded.length, state.current_addr)) {
             highlight = 0;
         }
         if (range_mode) {
-            uint8_t len = row_len ? row_len : 1;
+            uint8_t len = decoded.length ? decoded.length : 1;
             for (uint8_t i = 0; i < len; i++) {
                 if (range_contains((uint16_t)(addr + i))) {
                     highlight = 0;
@@ -5210,7 +4953,12 @@ void MachineMonitor :: draw_disassembly()
             if (part >= part_count) part = 0;
             // All asm-edit highlights live inside the decoded text region
             // (never on the raw byte columns to the left).
-            if (part == 0) {
+            if (address_is_data(addr)) {
+                // "DATA xx yy zz": the parts are the byte pairs, so the cursor
+                // sits on one pair rather than on a mnemonic or an operand.
+                hl_x = MONITOR_DISASM_TEXT_COL + 5 + (part * 3);
+                hl_len = 2;
+            } else if (part == 0) {
                 int mnem_len = 0;
                 while (mnem_len < text_len && decoded.text[mnem_len] != ' ') mnem_len++;
                 if (mnem_len == 0) mnem_len = (text_len > 0) ? text_len : 1;
@@ -5252,12 +5000,10 @@ void MachineMonitor :: draw_disassembly()
                 }
             }
         }
+
         if (highlight >= 0 && hl_len > 0) {
-            int reverse_start = hl_x;
+            int reverse_start = hl_x < 0 ? 0 : hl_x;
             int reverse_end = hl_x + hl_len;
-            if (reverse_start < 0) {
-                reverse_start = 0;
-            }
             if (reverse_end > MONITOR_DISASM_ROW_CHARS) {
                 reverse_end = MONITOR_DISASM_ROW_CHARS;
             }
@@ -5265,23 +5011,22 @@ void MachineMonitor :: draw_disassembly()
                 reverse_mask[i] = true;
             }
         }
-        if (debug_next_row) {
+
+        if (debug_pc_row) {
             int target_start = -1;
             int target_len = 0;
             if (rts_target_col >= 0) {
-                // RTS: highlight the inferred "$XXXX"/"$????" we appended above.
                 target_start = rts_target_col;
                 target_len = 5;
             } else {
                 DebugPredictResult pred;
                 debug_predict(addr, row_bytes, state.illegal_enabled, &pred);
-                bool target_highlight = false;
-                if (pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) {
-                    target_highlight = pred.has_target;
-                } else if (pred.kind == DBG_PREDICT_BRANCH && pred.has_target) {
-                    target_highlight = monitor_debug_branch_taken(row_bytes[0], debug.context().sr);
-                }
-                if (target_highlight) {
+                bool highlight_target =
+                    ((pred.kind == DBG_PREDICT_JSR || pred.kind == DBG_PREDICT_JMP_ABS) &&
+                     pred.has_target) ||
+                    (pred.kind == DBG_PREDICT_BRANCH && pred.has_target &&
+                     monitor_debug_branch_taken(row_bytes[0], debug.context().sr));
+                if (highlight_target) {
                     monitor_find_target_span(decoded.text, text_len, &target_start, &target_len);
                 }
             }
@@ -5291,33 +5036,16 @@ void MachineMonitor :: draw_disassembly()
                 }
                 int accent_start = MONITOR_DISASM_TEXT_COL + target_start;
                 int accent_end = accent_start + target_len;
-                if (accent_start < MONITOR_DISASM_ROW_CHARS) {
-                    if (accent_end > MONITOR_DISASM_ROW_CHARS) {
-                        accent_end = MONITOR_DISASM_ROW_CHARS;
-                    }
-                    for (int i = accent_start; i < accent_end; i++) {
-                        accent_mask[i] = true;
-                    }
+                if (accent_end > MONITOR_DISASM_ROW_CHARS) {
+                    accent_end = MONITOR_DISASM_ROW_CHARS;
+                }
+                for (int i = accent_start; i < accent_end; i++) {
+                    accent_mask[i] = true;
                 }
             }
-            // Bracket the next-to-execute instruction with > ... < placed in the
-            // whitespace immediately before the mnemonic and after the operand.
-            if (MONITOR_DISASM_TEXT_COL >= 1 &&
-                    line[MONITOR_DISASM_TEXT_COL - 1] == ' ') {
-                line[MONITOR_DISASM_TEXT_COL - 1] = '>';
-            }
-            int close_col = MONITOR_DISASM_TEXT_COL + text_len;
-            if (close_col < MONITOR_DISASM_ROW_CHARS && line[close_col] == ' ') {
-                line[close_col] = '<';
-            }
         }
-        // Enabled breakpoints render in the same accent color as the Dbg /
-        // Edit header flags - but only while Debug mode is active. Disabled
-        // breakpoints, and any breakpoint shown when Debug is off, stay in
-        // the regular foreground color so the row reads as "armed and live"
-        // vs "remembered but quiet".
-        bool bp_accent = bp_slot >= 0 && bp_enabled && debug.is_active();
-        if (bp_accent && brk_pos >= 0) {
+
+        if (bp_slot >= 0 && bp_enabled && debug.is_active()) {
             int accent_end = brk_pos + bp_len + 2;
             if (accent_end > MONITOR_DISASM_ROW_CHARS) {
                 accent_end = MONITOR_DISASM_ROW_CHARS;
@@ -5329,6 +5057,7 @@ void MachineMonitor :: draw_disassembly()
         draw_with_style_mask(window, line_idx + 1, line, MONITOR_DISASM_ROW_CHARS,
                              reverse_mask, accent_mask,
                              get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+        addr = (uint16_t)(addr + decoded.length);
     }
 }
 
@@ -5378,9 +5107,15 @@ void MachineMonitor :: draw_opcode_picker()
     // disassembly view; if not visible, fall back to the top row.
     int anchor_row = 1;
     {
-        int visible_row = disasm_visible_row(state.current_addr);
-        if (visible_row >= 0) {
-            anchor_row = visible_row + 1;
+        uint16_t addr = state.base_addr;
+        for (int i = 0; i < content_height; i++) {
+            uint8_t l = disasm_length(addr);
+            if (l == 0) l = 1;
+            if (monitor_disasm_row_contains(addr, l, state.current_addr)) {
+                anchor_row = i + 1;
+                break;
+            }
+            addr = (uint16_t)(addr + l);
         }
     }
     // Box width: 18 chars (template up to 13 + small margin). Try to right-align
@@ -5485,14 +5220,14 @@ void MachineMonitor :: hunt_picker_open_labeled(int count, const char *label)
     hunt_selected = 0;
     hunt_top = 0;
     hunt_picker_label = label ? label : "Results";
+    printf("MCM picker open %s %d\n", hunt_picker_label, hunt_count);
     hunt_picker_active = true;
-    printf("MCM results open %s %d\n", hunt_picker_label ? hunt_picker_label : "Results", hunt_count);
 }
 
 void MachineMonitor :: hunt_picker_close()
 {
     if (hunt_picker_active) {
-        monitor_log("results close");
+        monitor_log("picker close");
     }
     hunt_picker_active = false;
 }
@@ -5503,13 +5238,12 @@ void MachineMonitor :: hunt_picker_jump()
         return;
     }
     apply_go_local(hunt_addrs[hunt_selected]);
-    monitor_log_address("results jump", hunt_addrs[hunt_selected]);
     hunt_picker_close();
 }
 
 int MachineMonitor :: hunt_picker_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_O) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left || key == KEY_CTRL_O) {
         hunt_picker_close();
         draw();
         return (key == KEY_CTRL_O) ? 1 : 0;
@@ -5540,8 +5274,6 @@ int MachineMonitor :: hunt_picker_handle_key(int key)
 
 void MachineMonitor :: draw()
 {
-    bool draw_overlays = !help_visible && !hunt_picker_active;
-
     draw_header();
     if (help_visible) {
         draw_help();
@@ -5570,11 +5302,34 @@ void MachineMonitor :: draw()
         draw_debug_footer();
     }
     draw_status();
-    if (draw_overlays) {
-        draw_popup_overlays();
-    }
+    // After the status row, not before it. draw_status pads the window's last
+    // row to the full window width, so a popup that reaches that row would
+    // lose it. The popup is the thing the user is looking at, so it wins.
+    draw_popup_overlays();
     if (screen) {
         screen->sync();
+    }
+}
+
+void MachineMonitor :: draw_popup_overlays()
+{
+    // The one place that decides which popups are drawn and in what order.
+    // draw() and refresh_popup_overlay() both come here, so the two paths
+    // cannot disagree about it.
+    if (help_visible || hunt_picker_active) {
+        return;
+    }
+    if (opcode_picker_active) {
+        draw_opcode_picker();
+    }
+    if (number_picker_active) {
+        draw_number_picker();
+    }
+    if (bookmark_popup_active) {
+        draw_bookmark_popup();
+    }
+    if (breakpoint_popup_active) {
+        debug_render_breakpoint_popup();
     }
 }
 
@@ -5644,10 +5399,13 @@ void MachineMonitor :: apply_logical_delete()
             break;
         case MONITOR_VIEW_ASM: {
             uint8_t len = disasm_length(state.current_addr);
+            // An instruction is deleted by replacing it with NOPs, which is
+            // what keeps the code around it running. A data row is not code
+            // and NOP means nothing in it, so its bytes are cleared instead.
+            uint8_t fill = address_is_data(state.current_addr) ? 0x00 : 0xEA;
             for (uint8_t i = 0; i < len; i++) {
-                canonical_write((uint16_t)(state.current_addr + i), 0xEA);
+                canonical_write((uint16_t)(state.current_addr + i), fill);
             }
-            disasm_lane_rebuild_suffix_from_current();
             step_disassembly(1);
             break;
         }
@@ -5732,7 +5490,6 @@ bool MachineMonitor :: opcode_picker_open(char seed)
     }
 
     opcode_picker_active = true;
-    monitor_log_address("opcode-picker open", state.current_addr);
     opcode_drawn_rows = 0;
     opcode_prefix_len = 0;
     opcode_prefix[0] = 0;
@@ -5751,9 +5508,6 @@ bool MachineMonitor :: opcode_picker_open(char seed)
 
 void MachineMonitor :: opcode_picker_close()
 {
-    if (opcode_picker_active) {
-        monitor_log("opcode-picker close");
-    }
     opcode_picker_active = false;
     opcode_drawn_rows = 0;
     opcode_prefix_len = 0;
@@ -5785,13 +5539,13 @@ void MachineMonitor :: opcode_picker_commit()
     uint8_t op = opcode_candidates[opcode_selected];
     // Capture the entire previous instruction (up to 3 bytes) so DEL can
     // restore the original line wholesale. Push in reverse memory order so
-    // popping replays the bytes back in low->high order, but order of
+    // popping replays the bytes back in low->high order — but order of
     // restoration does not matter since each entry is independent.
     uint8_t prev_len = disasm_length(state.current_addr);
     if (prev_len == 0) prev_len = 1;
     if (prev_len > 3) prev_len = 3;
     // Snapshot anchor part/pending only on the first entry; all subsequent
-    // bytes are tagged with part 0 / pending 0; they're just memory restores
+    // bytes are tagged with part 0 / pending 0 — they're just memory restores
     // and the cursor state will be set by the LAST popped (i.e., FIRST pushed)
     // entry, which is the highest-offset byte. To keep it simple: only the
     // first push (the opcode byte) carries the pre-commit cursor state.
@@ -5801,7 +5555,6 @@ void MachineMonitor :: opcode_picker_commit()
         asm_edit_history_push(a, canonical_read(a), 0, 0);
     }
     canonical_write(state.current_addr, op);
-    monitor_log_byte("opcode-picker commit", state.current_addr, op);
     uint8_t new_len = disasm_length(state.current_addr);
     if (new_len == 0) new_len = 1;
     opcode_picker_close();
@@ -5812,7 +5565,6 @@ void MachineMonitor :: opcode_picker_commit()
         asm_edit_pending = 0;
     } else {
         // No operand: advance to next instruction.
-        disasm_lane_rebuild_suffix_from_current();
         step_disassembly(1);
         asm_edit_part = 0;
         asm_edit_pending = 0;
@@ -5823,7 +5575,7 @@ void MachineMonitor :: opcode_picker_commit()
 
 int MachineMonitor :: opcode_picker_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == monitor_key_arrow_left) {
         opcode_picker_close();
         draw();
         return 0;
@@ -5972,13 +5724,14 @@ bool MachineMonitor :: opcode_picker_commit_typed()
         asm_edit_history_push(a, canonical_read(a), 0, 0);
     }
 
-    for (uint8_t i = 0; i < insn.length; i++) {
-        canonical_write((uint16_t)(state.current_addr + i), insn.bytes[i]);
-    }
-    printf("MCM opcode-typed commit $%04X len %u\n", state.current_addr, (unsigned)insn.length);
+    canonical_write_instruction(state.current_addr, insn.bytes, insn.length);
+    // Assembling a line says an instruction starts here, which is exactly what
+    // a baseline is, so this becomes the new one. Without it, a line assembled
+    // above the old baseline and reaching across it would be shown as the data
+    // it displaced rather than as the instruction just typed.
+    asm_baseline = state.current_addr;
 
     opcode_picker_close();
-    disasm_lane_rebuild_suffix_from_current();
     step_disassembly(1);
     asm_edit_part = 0;
     asm_edit_pending = 0;
@@ -5987,11 +5740,69 @@ bool MachineMonitor :: opcode_picker_commit_typed()
     return true;
 }
 
+// C= plus R resets the machine the monitor is looking at, then leaves: after a
+// reset the address, the bytes and the CPU state on screen describe a machine
+// that no longer exists, and on a cartridge the freezer's hold on it is over.
+// Leaving is the only state that is true on every target.
+int MachineMonitor :: handle_reset_shortcut(void)
+{
+    // Nothing is disturbed when the reset cannot happen: the monitor says so
+    // and stays exactly as it was, edit mode included.
+    if (!backend || !backend->supports_reset()) {
+        get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return 0;
+    }
+    // The reset itself is left to the caller that owns the machine, exactly as
+    // Go is: resetting a machine the menu is still holding does nothing
+    // visible, because the freezer keeps the CPU stopped and the KERNAL never
+    // runs. run_machine_monitor releases the host and unfreezes first, which
+    // is the same order C64_Subsys uses for MENU_C64_RESET.
+    reset_pending = true;
+    return 1;   // the monitor's own exit, the same value Back returns
+}
+
+bool MachineMonitor :: consume_pending_reset(void)
+{
+    bool wanted = reset_pending;
+    reset_pending = false;
+    return wanted;
+}
+
+// C= plus I swaps the user interface between the freeze menu and the overlay.
+// The monitor closes with it, because the mode it was drawn in is the one that
+// is being changed and the new one only takes effect on the next open.
+int MachineMonitor :: handle_interface_shortcut(void)
+{
+    // As with the reset above: a swap that cannot happen leaves the monitor
+    // exactly as it was. A machine without the Interface Type setting, which
+    // is every cartridge, answers MENU_NOP and nothing was changed, so there
+    // is no reason to close.
+    if (!swap_interface_type || swap_interface_type(get_ui()) == MENU_NOP) {
+        get_ui()->popup("INTERFACE SWAP UNAVAILABLE", BUTTON_OK);
+        redraw_full();
+        return 0;
+    }
+    // Closing the monitor is not enough. The swapped Interface Type only takes
+    // effect when the menu is next opened, so leaving the file browser on
+    // screen would leave the user in the interface they just swapped away
+    // from, and the swap would appear not to have worked until they closed the
+    // browser by hand. The whole user interface has to go, which is what the
+    // file browser already does for this key by answering MENU_HIDE.
+    // run_machine_monitor consumes this and gives the same answer.
+    interface_swap_pending = true;
+    return 1;   // the monitor's own exit, the same value Back returns
+}
+
+bool MachineMonitor :: consume_pending_interface_swap(void)
+{
+    bool wanted = interface_swap_pending;
+    interface_swap_pending = false;
+    return wanted;
+}
+
 void MachineMonitor :: exit_edit_mode()
 {
-    if (edit_mode) {
-        monitor_log_address("edit exit", state.current_addr);
-    }
     edit_mode = false;
     edit_cursor_visible = true;
     pending_hex_nibble = -1;
@@ -6004,1294 +5815,11 @@ void MachineMonitor :: enter_edit_mode()
 {
     help_visible = false;
     edit_mode = true;
-    monitor_log_address("edit enter", state.current_addr);
     pending_hex_nibble = -1;
     asm_edit_part = 0;
     asm_edit_pending = 0;
     asm_edit_history_reset(state.current_addr);
     reset_edit_blink();
-}
-
-bool MachineMonitor :: debug_enter()
-{
-    if (debug.is_active()) {
-        return true;
-    }
-    monitor_log_address("debug enter", state.current_addr);
-    help_visible = false;
-    debug_entry_addr = state.current_addr;
-    DebugSession *session = ensure_debug_session();
-    if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
-        get_ui()->popup("DEBUG IN USE", BUTTON_OK);
-        redraw_full();
-        return false;
-    }
-    debug.invalidate_context();
-    debug.enter();
-    if (restore_debug_after_reset) {
-        debug_cursor_override = true;
-    }
-    // Debug mode reserves two rows above the normal status footer for the CPU
-    // table. Recompute so all view drawers shrink uniformly.
-    if (window) {
-        content_height = window->get_size_y() - 4;
-        if (content_height < 1) content_height = 1;
-    }
-    // Best-effort capture: ask the backend for an immediate snapshot if it
-    // knows how. Keep an explicitly selected cursor address authoritative:
-    // the first execution command should run where the user navigated, not
-    // silently switch to an unrelated live PC snapshot.
-    DebugContext captured;
-    debug_entry_context_valid = false;
-    debug_context_reset(&debug_entry_context);
-    if (debug_cursor_override) {
-        debug.invalidate_context();
-    }
-    bool skip_capture = debug_cursor_override && backend &&
-        disassembler_6502_is_illegal(backend->read(state.current_addr));
-    if (!restore_debug_after_reset && !skip_capture && debug_capture_context(&captured)) {
-        debug_entry_context = captured;
-        debug_entry_context_valid = captured.valid;
-        if (!debug_cursor_override) {
-            debug.set_context(captured);
-            debug_sync_cursor_to_context();
-        }
-    }
-    return true;
-}
-
-void MachineMonitor :: debug_leave()
-{
-    if (!debug.is_active()) {
-        return;
-    }
-    monitor_log("debug leave");
-    clear_pending_go();
-    debug_clear_status();
-    debug.leave();
-    if (backend) {
-        // Leaving Debug returns the CPU to the interrupted program, which may
-        // rewrite $01 before the monitor is looked at again. Dropping the
-        // captured port makes the status row fall back to what is still
-        // measurable, and lets the next freeze take a fresh reading.
-        backend->invalidate_live_cpu_port_cache();
-    }
-    if (restore_debug_after_reset) {
-        debug.invalidate_context();
-        debug_entry_context_valid = false;
-        debug_context_reset(&debug_entry_context);
-    }
-    if (!restore_debug_after_reset) {
-        debug_cursor_override = false;
-    }
-    breakpoint_popup_active = false;
-    if (window) {
-        content_height = window->get_size_y() - 2;
-        if (content_height < 1) content_height = 1;
-    }
-    // Restore any patched BRKs / vectors but keep the session object alive
-    // for the rest of the monitor lifetime. The session destructor in
-    // deinit() takes care of final teardown.
-    if (debug_session) {
-        DebugContext cleanup_context;
-        const DebugContext *cleanup_target = NULL;
-        debug_context_reset(&cleanup_context);
-        if (debug.has_context()) {
-            cleanup_context = debug.context();
-            cleanup_target = &cleanup_context;
-        } else if (debug_entry_context_valid) {
-            cleanup_target = &debug_entry_context;
-        }
-        debug_session->cleanup_to_context(cleanup_target);
-        debug_session->release_debug_ownership();
-        debug_full_restore_screen();
-        // Forget the cached PC so re-entering Debug starts from the monitor
-        // cursor (where the user navigated) instead of resuming the previous
-        // session's program counter.
-        debug_session->forget_context();
-    }
-    // Drop the displayed register context too; re-entry recaptures only if the
-    // backend can snapshot afresh, otherwise the cursor position drives the
-    // first step.
-    debug.invalidate_context();
-    debug_entry_context_valid = false;
-    debug_context_reset(&debug_entry_context);
-}
-
-void MachineMonitor :: debug_sync_cursor_to_context(void)
-{
-    uint16_t old_addr;
-    uint16_t pc;
-
-    if (!debug.is_active() || !debug.has_context()) {
-        return;
-    }
-    if (backend && backend->supports_cpu_banking() &&
-            debug.context().live_cpu_port_valid) {
-        uint8_t cpu_bank = (uint8_t)(debug.context().live_cpu_port & 0x07);
-        if ((uint8_t)(state.view_cpu_port & 0x07) != cpu_bank) {
-            state.view_cpu_port = cpu_bank;
-            backend->set_monitor_cpu_port(cpu_bank);
-        }
-    }
-    old_addr = state.current_addr;
-    pc = debug.context().pc;
-    if (state.view == MONITOR_VIEW_ASM) {
-        if (debug_entry_context_valid && pc == disasm_next_addr(debug_entry_context.pc)) {
-            int entry_row = disasm_visible_row(debug_entry_context.pc);
-            state.current_addr = pc;
-            if (entry_row >= 0 && content_height > 0) {
-                entry_row++;
-                if (entry_row >= content_height) {
-                    entry_row = content_height - 1;
-                }
-                state.disasm_offset = (uint8_t)entry_row;
-            }
-            ensure_disasm_visible();
-            return;
-        }
-        if (pc == disasm_next_addr(old_addr)) {
-            state.current_addr = pc;
-            if (content_height > 0 && state.disasm_offset < (uint8_t)(content_height - 1)) {
-                state.disasm_offset++;
-            }
-            ensure_disasm_visible();
-            return;
-        }
-        if (pc == disasm_prev_addr(old_addr)) {
-            state.current_addr = pc;
-            if (state.disasm_offset > 0) {
-                state.disasm_offset--;
-            }
-            ensure_disasm_visible();
-            return;
-        }
-        state.current_addr = pc;
-        ensure_debug_pc_visible();
-    } else {
-        state.current_addr = pc;
-        ensure_current_visible();
-    }
-}
-
-void MachineMonitor :: restore_debug_mode_after_reset(void)
-{
-    if (!restore_debug_after_reset || debug.is_active()) {
-        return;
-    }
-    monitor_log_address("debug restore-after-reset", state.current_addr);
-    help_visible = false;
-    debug_entry_addr = state.current_addr;
-    DebugSession *session = ensure_debug_session();
-    if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
-        restore_debug_after_reset = false;
-        get_ui()->popup("DEBUG IN USE", BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    debug.enter();
-    debug.invalidate_context();
-    debug_cursor_override = true;
-    if (window) {
-        content_height = window->get_size_y() - 4;
-        if (content_height < 1) content_height = 1;
-    }
-}
-
-DebugSession *MachineMonitor :: ensure_debug_session()
-{
-    if (debug_session) {
-        return debug_session;
-    }
-    if (!backend) {
-        return NULL;
-    }
-    debug_session = backend->create_debug_session();
-    if (debug_session) {
-        debug_session->set_cancel_keyboard(keyboard);
-        debug_session->set_run_window_refreeze_enabled(debug_run_window_refreeze_enabled);
-    }
-    return debug_session;
-}
-
-void MachineMonitor :: debug_cleanup_session()
-{
-    if (debug_session) {
-        debug_session->cleanup();
-        debug_session->release_debug_ownership();
-        delete debug_session;
-        debug_session = NULL;
-    }
-    // Safety net. cleanup() restores the patches the session recorded; this
-    // catches a byte that reached the ROM image any other way, so a debug
-    // session can never hand the next one a modified KERNAL. It compares before
-    // writing, and the snapshot is retaken whenever the ROM is legitimately
-    // replaced, so an intentionally different ROM is left alone.
-    if (u64_restore_pristine_rom_image) {
-        u64_restore_pristine_rom_image();
-    }
-}
-
-void MachineMonitor :: dispatch_deferred_debug_go(void)
-{
-    if (!deferred_debug_go_pending) {
-        return;
-    }
-    deferred_debug_go_pending = false;
-    if (debug_session) {
-        debug_session->cleanup_to_context(
-            deferred_debug_go_context.valid ? &deferred_debug_go_context : 0);
-        delete debug_session;
-        debug_session = NULL;
-    }
-    debug_context_reset(&deferred_debug_go_context);
-    // Same safety net as debug_cleanup_session(). This path is the one where it
-    // matters most: the C64 is handed back and starts executing immediately, so
-    // a ROM byte that escaped cleanup_to_context() would be run, not merely
-    // left in place.
-    if (u64_restore_pristine_rom_image) {
-        u64_restore_pristine_rom_image();
-    }
-    if (backend) {
-        // The CPU runs on from here, free to rewrite $01, so the port read at
-        // the last debug stop stops describing it.
-        backend->invalidate_live_cpu_port_cache();
-        backend->end_session();
-    }
-}
-
-bool MachineMonitor :: debug_capture_context(DebugContext *out)
-{
-    if (!out) {
-        return false;
-    }
-    debug_context_reset(out);
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        return false;
-    }
-    DebugSession::Result r = session->snapshot(out);
-    return r == DebugSession::DBG_OK;
-}
-
-bool MachineMonitor :: debug_handle_terminal_result(DebugSession::Result result)
-{
-    if (result != DebugSession::DBG_RESET) {
-        return false;
-    }
-    monitor_log("debug reset-result");
-    if (reopen_on_debug_reset) {
-        request_reopen_after_reset();
-    } else {
-        reopen_after_reset = false;
-        monitor_reset_reopen_state_valid = false;
-        monitor_reset_reopen_debug_active = false;
-    }
-    clear_pending_go();
-    restore_debug_after_reset = reopen_on_debug_reset && debug.is_active();
-    if (restore_debug_after_reset) {
-        debug_cursor_override = true;
-    }
-    debug.invalidate_context();
-    debug_cleanup_session();
-    // Direct render targets (Freeze/Overlay) draw into the live C64 screen via
-    // `screen`. reset_machine() has just unfrozen + reset the C64, so it now owns
-    // its screen RAM again: redrawing the monitor here would paint the monitor
-    // chrome onto the booting C64 screen. These modes exit + reopen, and the
-    // reopen re-takes ownership before repainting, so skip the redraw here.
-    // Non-direct hosts (e.g. Telnet) keep their own screen and stay open, so they
-    // still need the refresh.
-    if (screen && !reset_exits_monitor) {
-        get_ui()->set_screen_title();
-        redraw_full();
-    }
-    reset_exit_pending = reopen_on_debug_reset ? reset_exits_monitor : true;
-    reopen_on_debug_reset = true;
-    return true;
-}
-
-int MachineMonitor :: handle_reset_shortcut(void)
-{
-    monitor_log("reset shortcut");
-    request_reopen_after_reset();
-    clear_pending_go();
-    help_visible = false;
-    hunt_picker_active = false;
-    opcode_picker_active = false;
-    number_picker_active = false;
-    bookmark_popup_active = false;
-    breakpoint_popup_active = false;
-    exit_edit_mode();
-    restore_debug_after_reset = debug.is_active();
-    if (restore_debug_after_reset) {
-        debug_cursor_override = true;
-    }
-    if (debug.is_active()) {
-        debug.invalidate_context();
-    }
-    debug_cleanup_session();
-    if (!backend || !backend->supports_reset() || !backend->reset_machine()) {
-        reopen_after_reset = false;
-        monitor_reset_reopen_state_valid = false;
-        get_ui()->popup("RESET UNAVAILABLE", BUTTON_OK);
-        redraw_full();
-        return 0;
-    }
-    // See debug_handle_terminal_result(): for direct render targets the C64 owns
-    // its screen again immediately after reset_machine(), so a redraw here would
-    // smear the monitor onto the booting C64 screen. The exit + reopen repaints
-    // with ownership re-taken; only non-direct hosts (Telnet) need this refresh.
-    if (screen && !reset_exits_monitor) {
-        get_ui()->set_screen_title();
-        redraw_full();
-    }
-    reset_exit_pending = reset_exits_monitor;
-    return reset_exits_monitor ? MENU_EXIT : 0;
-}
-
-namespace {
-static const char *const monitor_debug_session_refused = "DEBUG NOT SUPPORTED";
-static const char *const monitor_debug_session_unsafe = "UNSAFE TARGET";
-static const char *const monitor_debug_session_unsupported_opcode = "UNSUPPORTED OPCODE";
-static const char *const monitor_debug_session_not_in_subroutine = "NOT IN SUBROUTINE";
-static const char *const monitor_debug_session_return_not_reached = "RETURN NOT REACHED";
-static const char *const monitor_debug_session_timeout = "DEBUG TIMEOUT";
-static const char *const monitor_debug_session_patch = "PATCH FAILED";
-// Address-bearing: the address is what lets a user clear the breakpoint from
-// the R popup.
-static const char *const monitor_debug_blocking_breakpoint_fmt =
-    "BRK $%04X IN ROM BLOCKS DEBUG";
-static const char *const monitor_debug_blocking_breakpoint_plain =
-    "A BRK IN ROM BLOCKS DEBUG";
-static const char *monitor_debug_result_name(DebugSession::Result result)
-{
-    switch (result) {
-        case DebugSession::DBG_OK: return "OK";
-        case DebugSession::DBG_NOT_SUPPORTED: return "NOT_SUPPORTED";
-        case DebugSession::DBG_REFUSED: return "UNSAFE_TARGET";
-        case DebugSession::DBG_UNSUPPORTED_OPCODE: return "UNSUPPORTED_OPCODE";
-        case DebugSession::DBG_NOT_IN_SUBROUTINE: return "NOT_IN_SUBROUTINE";
-        case DebugSession::DBG_RETURN_NOT_REACHED: return "RETURN_NOT_REACHED";
-        case DebugSession::DBG_TIMEOUT: return "TIMEOUT";
-        case DebugSession::DBG_CANCELLED: return "CANCELLED";
-        case DebugSession::DBG_RESET: return "RESET";
-        case DebugSession::DBG_PATCH_FAILED: return "PATCH_FAILED";
-        case DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE:
-            return "BREAKPOINT_NOT_INSTALLABLE";
-    }
-    return "UNKNOWN";
-}
-
-static const char *monitor_view_name(MachineMonitorView view)
-{
-    switch (view) {
-        case MONITOR_VIEW_HEX: return "HEX";
-        case MONITOR_VIEW_ASM: return "ASM";
-        case MONITOR_VIEW_ASCII: return "ASCII";
-        case MONITOR_VIEW_SCREEN: return "SCREEN";
-        case MONITOR_VIEW_BINARY: return "BINARY";
-    }
-    return "UNKNOWN";
-}
-
-static void monitor_log(const char *action)
-{
-    printf("MCM %s\n", action);
-}
-
-static void monitor_log_address(const char *action, uint16_t address)
-{
-    printf("MCM %s $%04X\n", action, address);
-}
-
-static void monitor_log_value(const char *action, uint16_t address, uint16_t value)
-{
-    printf("MCM %s $%04X=$%04X\n", action, address, value);
-}
-
-static void monitor_log_byte(const char *action, uint16_t address, uint8_t value)
-{
-    printf("MCM %s $%04X=$%02X\n", action, address, value);
-}
-
-static void monitor_log_range(const char *action, uint16_t start, uint16_t end)
-{
-    printf("MCM %s $%04X-$%04X\n", action, start, end);
-}
-
-static void monitor_log_debug(const char *action, uint16_t pc, DebugSession::Result result)
-{
-    printf("MCM debug %s $%04X %s\n", action, pc, monitor_debug_result_name(result));
-}
-
-static void monitor_read_predict_bytes(DebugSession *session, MemoryBackend *backend,
-                                       uint16_t start_pc, uint8_t *bytes)
-{
-    if (!bytes) {
-        return;
-    }
-    bytes[0] = 0;
-    bytes[1] = 0;
-    bytes[2] = 0;
-    if (session && session->read_step_bytes(start_pc, bytes, 3)) {
-        return;
-    }
-    if (backend) {
-        for (int i = 0; i < 3; i++) {
-            bytes[i] = backend->read((uint16_t)(start_pc + i));
-        }
-    }
-}
-
-const char *monitor_debug_result_message(int result)
-{
-    switch (result) {
-        case DebugSession::DBG_NOT_SUPPORTED: return monitor_debug_session_refused;
-        case DebugSession::DBG_REFUSED:       return monitor_debug_session_unsafe;
-        case DebugSession::DBG_UNSUPPORTED_OPCODE: return monitor_debug_session_unsupported_opcode;
-        case DebugSession::DBG_NOT_IN_SUBROUTINE: return monitor_debug_session_not_in_subroutine;
-        case DebugSession::DBG_RETURN_NOT_REACHED: return monitor_debug_session_return_not_reached;
-        case DebugSession::DBG_TIMEOUT:       return monitor_debug_session_timeout;
-        case DebugSession::DBG_CANCELLED:     return "DEBUG CANCELLED";
-        case DebugSession::DBG_RESET:         return NULL;
-        case DebugSession::DBG_PATCH_FAILED:  return monitor_debug_session_patch;
-        // DBG_BREAKPOINT_NOT_INSTALLABLE is absent: its message carries the
-        // blocking address and is built in debug_popup_result(), which can
-        // reach the session.
-        default: return NULL;
-    }
-}
-}
-
-DebugStepDecision debug_classify_step(DebugStepOp op, DebugStepSource src,
-                                      bool ui_freeze, bool have_parked_context,
-                                      bool over_runs_callee)
-{
-    DebugStepDecision d;
-    d.plan = DEBUG_PLAN_DIRECT;
-    d.alert = 0;
-    d.reason = "direct_step";
-
-    // RAM-under-ROM and visible ROM are the banks whose instruction fetches
-    // can serve a stale byte in the first cycles after a release - and a
-    // contextless single step commits its BRK immediately before that
-    // release, so the fetch race is live in every UI mode (the
-    // recommit+settle levers narrow but do not close it). With a parked
-    // context the session never releases the CPU into those banks for a
-    // single step (control flow is completed architecturally while parked;
-    // linear ops run from a plain-RAM trampoline), so every step is an
-    // ordinary direct step. Without a parked context, Step Into - and Step
-    // Over of anything that is not a JSR, which is mechanically the same
-    // immediate-BRK step - stops with guidance. Step Over of a JSR stays
-    // available: its completion breakpoint at the caller-side fall-through
-    // is fetched only after the callee's sustained natural run.
-    bool unsafe_src = (src == DEBUG_SRC_RAM_UNDER_ROM) ||
-                      (src == DEBUG_SRC_VISIBLE_ROM);
-    (void)ui_freeze;
-    if (unsafe_src && !have_parked_context) {
-        if (op == DEBUG_OP_TRACE) {
-            d.plan = DEBUG_PLAN_STOP;
-            d.alert = "Step Into: run to a breakpoint 1st";
-            d.reason = "unsafe_step_into_no_context";
-            return d;
-        }
-        // A non-JSR Step Over is the same immediate fall-through BRK step as
-        // Step Into. In visible ROM that BRK is a ROM-image patch whose first
-        // fetch races the post-release window, so it is gated. RAM-under-ROM
-        // fall-through patches live in banked RAM and release through the
-        // raster-synced clean session - the long-proven RUR path - so
-        // contextless Step Over stays available there.
-        if (op == DEBUG_OP_OVER && !over_runs_callee &&
-                src == DEBUG_SRC_VISIBLE_ROM) {
-            d.plan = DEBUG_PLAN_STOP;
-            d.alert = "Step Over: run to a breakpoint 1st";
-            d.reason = "unsafe_step_over_no_context";
-            return d;
-        }
-    }
-
-    return d;
-}
-
-uint8_t MachineMonitor :: debug_exec_cpu_port(const DebugContext *from) const
-{
-    // Mirror draw_status()'s RAM-under-ROM banking choice so the step chooser
-    // gates exactly when the footer shows the matching banking: prefer the live
-    // captured CPU port, and fall back to the monitor view bank (not a raw $01
-    // read) when there is no valid context yet.
-    if (from && from->valid && from->live_cpu_port_valid) {
-        return (uint8_t)(from->live_cpu_port & 0x07);
-    }
-    return (uint8_t)(state.view_cpu_port & 0x07);
-}
-
-DebugStepSource MachineMonitor :: debug_step_source(uint16_t pc, uint8_t cpu_port) const
-{
-    if (!backend) {
-        return DEBUG_SRC_RAM;
-    }
-    if (monitor_step_bank_is_ram_under_rom(backend, pc, cpu_port)) {
-        return DEBUG_SRC_RAM_UNDER_ROM;
-    }
-    MonitorBackingStore bs = backend->backing_store_for_cpu_port(pc, cpu_port & 0x07);
-    if (monitor_backing_store_is_visible_rom(bs)) {
-        return DEBUG_SRC_VISIBLE_ROM;
-    }
-    if (bs == MONITOR_BACKING_IO) {
-        return DEBUG_SRC_IO;
-    }
-    return DEBUG_SRC_RAM;
-}
-
-void MachineMonitor :: debug_show_status(const char *message)
-{
-    if (!message) {
-        debug_clear_status();
-        return;
-    }
-    strncpy(debug_status_text, message, sizeof(debug_status_text) - 1);
-    debug_status_text[sizeof(debug_status_text) - 1] = 0;
-    debug_status_visible = true;
-}
-
-void MachineMonitor :: debug_clear_status(void)
-{
-    debug_status_visible = false;
-    debug_status_text[0] = 0;
-}
-
-bool MachineMonitor :: debug_resolve_step(DebugStepOp op, uint16_t start_pc,
-                                          DebugContext *from,
-                                          bool over_runs_callee)
-{
-    uint8_t exec_port = debug_exec_cpu_port(from);
-    DebugStepSource src = debug_step_source(start_pc, exec_port);
-    bool ui_freeze = debug_run_window_refreeze_enabled;
-    bool have_parked_context = from && from->valid && debug_session &&
-        debug_session->has_parked_context();
-    DebugStepDecision dec = debug_classify_step(op, src, ui_freeze,
-                                                have_parked_context,
-                                                over_runs_callee);
-    const char *op_name = "step";
-    switch (op) {
-        case DEBUG_OP_OVER:   op_name = "over"; break;
-        case DEBUG_OP_TRACE:  op_name = "trace"; break;
-        case DEBUG_OP_OUT:    op_name = "out"; break;
-        case DEBUG_OP_GO:     op_name = "go"; break;
-        case DEBUG_OP_CURSOR: op_name = "cursor"; break;
-    }
-
-    if (dec.plan == DEBUG_PLAN_STOP) {
-        if (dec.alert) {
-            debug_show_status(dec.alert);
-        }
-        printf("MCM debug %s $%04X stop reason=%s\n", op_name, start_pc,
-               dec.reason ? dec.reason : "");
-        return false;
-    }
-    return true;
-}
-
-void MachineMonitor :: debug_request_over()
-{
-    debug_clear_status();
-    DebugContext from = debug.context();
-    bool have_context = from.valid;
-    uint16_t start_pc = have_context ? from.pc : state.current_addr;
-    if (!have_context && debug_cursor_override && backend &&
-            disassembler_6502_is_illegal(backend->read(start_pc))) {
-        monitor_log_debug("over", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        monitor_log_debug("over", state.current_addr, DebugSession::DBG_NOT_SUPPORTED);
-        get_ui()->popup(monitor_debug_session_refused, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    // Decode the current instruction so the session knows what to patch.
-    uint8_t bytes[3] = { 0, 0, 0 };
-    monitor_read_predict_bytes(session, backend, start_pc, bytes);
-    if (disassembler_6502_is_illegal(bytes[0])) {
-        monitor_log_debug("over", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
-        get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugPredictResult pred;
-    debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
-    if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
-        monitor_log_debug("over", start_pc, DebugSession::DBG_REFUSED);
-        get_ui()->popup(monitor_debug_session_unsafe, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    if (!debug_resolve_step(DEBUG_OP_OVER, start_pc, &from,
-                            pred.kind == DBG_PREDICT_JSR)) {
-        draw();
-        return;
-    }
-    DebugContext next;
-    DebugSession::Result r = have_context ? session->over(from, pred, &breakpoints, &next)
-                                          : session->over_at(start_pc, pred, &breakpoints, &next);
-    monitor_log_debug("over", start_pc, r);
-    debug_full_restore_screen();
-    if (r == DebugSession::DBG_OK) {
-        if (state.view == MONITOR_VIEW_ASM) {
-            state.current_addr = start_pc;
-        }
-        debug.set_context(next);
-        debug_sync_cursor_to_context();
-    } else {
-        if (debug_handle_terminal_result(r)) {
-            return;
-        }
-        debug_popup_result(r);
-    }
-}
-
-void MachineMonitor :: debug_request_trace()
-{
-    debug_clear_status();
-    DebugContext from = debug.context();
-    bool have_context = from.valid;
-    uint16_t start_pc = have_context ? from.pc : state.current_addr;
-    if (!have_context && debug_cursor_override && backend &&
-            disassembler_6502_is_illegal(backend->read(start_pc))) {
-        monitor_log_debug("trace", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        monitor_log_debug("trace", state.current_addr, DebugSession::DBG_NOT_SUPPORTED);
-        get_ui()->popup(monitor_debug_session_refused, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    uint8_t bytes[3] = { 0, 0, 0 };
-    monitor_read_predict_bytes(session, backend, start_pc, bytes);
-    if (disassembler_6502_is_illegal(bytes[0])) {
-        monitor_log_debug("trace", start_pc, DebugSession::DBG_UNSUPPORTED_OPCODE);
-        debug.invalidate_context();
-        debug_cleanup_session();
-        get_ui()->popup(monitor_debug_session_unsupported_opcode, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugPredictResult pred;
-    debug_predict(start_pc, bytes, state.illegal_enabled, &pred);
-    if (pred.kind == DBG_PREDICT_UNSAFE || pred.kind == DBG_PREDICT_BRK) {
-        monitor_log_debug("trace", start_pc, DebugSession::DBG_REFUSED);
-        get_ui()->popup(monitor_debug_session_unsafe, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    if (!debug_resolve_step(DEBUG_OP_TRACE, start_pc, &from)) {
-        draw();
-        return;
-    }
-    DebugContext next;
-    DebugSession::Result r = have_context ? session->trace(from, pred, &next)
-                                          : session->trace_at(start_pc, pred, &next);
-    monitor_log_debug("trace", start_pc, r);
-    debug_full_restore_screen();
-    if (r == DebugSession::DBG_OK) {
-        if (state.view == MONITOR_VIEW_ASM) {
-            state.current_addr = start_pc;
-        }
-        debug.set_context(next);
-        debug_sync_cursor_to_context();
-    } else {
-        if (debug_handle_terminal_result(r)) {
-            return;
-        }
-        debug_popup_result(r);
-    }
-}
-
-void MachineMonitor :: debug_request_out()
-{
-    debug_clear_status();
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        monitor_log_debug("out", state.current_addr, DebugSession::DBG_NOT_SUPPORTED);
-        get_ui()->popup(monitor_debug_session_refused, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugContext from = debug.context();
-    if (!from.valid) {
-        monitor_log_debug("out", state.current_addr, DebugSession::DBG_NOT_IN_SUBROUTINE);
-        get_ui()->popup(monitor_debug_session_not_in_subroutine, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    DebugContext next;
-    DebugSession::Result r = session->step_out(from, &breakpoints, &next);
-    monitor_log_debug("out", from.pc, r);
-    debug_full_restore_screen();
-    if (r == DebugSession::DBG_OK) {
-        if (state.view == MONITOR_VIEW_ASM) {
-            state.current_addr = from.pc;
-        }
-        debug.set_context(next);
-        debug_sync_cursor_to_context();
-    } else {
-        if (debug_handle_terminal_result(r)) {
-            return;
-        }
-        debug_popup_result(r);
-    }
-}
-
-void MachineMonitor :: debug_request_go()
-{
-    debug_clear_status();
-    DebugContext from = debug.context();
-    if (debug_cursor_override) {
-        debug_context_reset(&from);
-    }
-    if (!from.valid && !debug_cursor_override) {
-        DebugContext snap;
-        if (debug_capture_context(&snap)) {
-            debug.set_context(snap);
-            from = snap;
-        }
-    }
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        // Backend has no native debug session - fall back to the existing
-        // non-debug `G` semantics (release/jump) so users with a non-stepping
-        // backend can still resume from the captured / cursor address.
-        last_go_addr = from.valid ? from.pc : state.current_addr;
-        last_go_valid = true;
-        go_pending = true;
-        go_pending_addr = last_go_addr;
-        go_pending_has_context = false;
-        debug.invalidate_context();
-        monitor_log_address("debug go fallback", last_go_addr);
-        return;
-    }
-    // Start PC for a fresh Go is the Assembly view cursor: this is what the
-    // user is looking at and where they expect execution to begin. If a
-    // captured context is already in hand, the session prefers `from.pc`
-    // and ignores this fallback.
-    uint16_t start_pc = state.current_addr;
-    if (debug_run_window_refreeze_enabled &&
-            !debug_has_enabled_breakpoint() &&
-            session->has_parked_context_handoff()) {
-        // Freeze-mode parked-context G must let the monitor fully tear down
-        // and release ownership before the BRK session hands execution back to
-        // the live machine. Defer that handoff to run_machine_monitor(), which
-        // calls cleanup_to_context() after deinit() and ownership release.
-        last_go_addr = from.valid ? from.pc : start_pc;
-        last_go_valid = true;
-        deferred_debug_go_pending = true;
-        if (from.valid) {
-            deferred_debug_go_context = from;
-        } else {
-            debug_context_reset(&deferred_debug_go_context);
-        }
-        release_host_after_exit = true;
-        clear_pending_go();
-        debug.invalidate_context();
-        monitor_log_address("debug go deferred", last_go_addr);
-        return;
-    }
-    if ((debug_run_window_refreeze_enabled || reset_exits_monitor) &&
-            !debug_has_enabled_breakpoint()) {
-        // Direct UI no-breakpoint Go uses the debug session's own parked-spin
-        // release path, then unwinds through run_machine_monitor() so Freeze
-        // releases freezer ownership and Overlay disables the render owner
-        // before execution continues at full speed.
-        last_go_addr = from.valid ? from.pc : start_pc;
-        last_go_valid = true;
-        DebugSession::Result result = session->go(from, &breakpoints, start_pc);
-        if (debug_handle_terminal_result(result)) {
-            return;
-        }
-        if (result != DebugSession::DBG_OK) {
-            printf("MCM debug go $%04X %s\n", last_go_addr,
-                   monitor_debug_result_name(result));
-            return;
-        }
-        release_host_after_exit = true;
-        clear_pending_go();
-        debug.invalidate_context();
-        monitor_log_address("debug go handoff", last_go_addr);
-        return;
-    }
-    // Invalidate up-front; G discards the captured context per the spec.
-    debug.invalidate_context();
-    DebugSession::Result r = session->go(from, &breakpoints, start_pc);
-    monitor_log_debug("go", start_pc, r);
-    debug_full_restore_screen();
-    if (r == DebugSession::DBG_OK) {
-        // If the session captured a fresh context (BRK fired during this
-        // Go), `snapshot` now returns it. Pull it back so the footer shows
-        // the real post-stop state on the next draw.
-        DebugContext captured;
-        if (session->snapshot(&captured) == DebugSession::DBG_OK &&
-            captured.valid) {
-            debug.set_context(captured);
-            debug_cursor_override = false;
-            debug_sync_cursor_to_context();
-        }
-    } else {
-        if (debug_handle_terminal_result(r)) {
-            return;
-        }
-        debug_popup_result(r);
-    }
-}
-
-void MachineMonitor :: debug_request_cursor()
-{
-    debug_clear_status();
-    DebugContext from = debug.context();
-    if (!from.valid) {
-        DebugContext snap;
-        if (debug_capture_context(&snap)) {
-            debug.set_context(snap);
-            from = snap;
-        }
-    }
-    DebugSession *session = ensure_debug_session();
-    if (!session) {
-        monitor_log_debug("cursor", state.current_addr, DebugSession::DBG_NOT_SUPPORTED);
-        get_ui()->popup(monitor_debug_session_refused, BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    uint16_t start_pc = from.valid ? from.pc : debug_entry_addr;
-    DebugContext next;
-    DebugSession::Result r = session->run_to(from, state.current_addr, &breakpoints,
-                                             start_pc, &next);
-    monitor_log_debug("cursor", state.current_addr, r);
-    debug_full_restore_screen();
-    if (r == DebugSession::DBG_OK) {
-        debug.set_context(next);
-        debug_sync_cursor_to_context();
-    } else {
-        if (debug_handle_terminal_result(r)) {
-            return;
-        }
-        debug_popup_result(r);
-    }
-}
-
-bool MachineMonitor :: debug_has_breakpoint(void) const
-{
-    for (int i = 0; i < breakpoints.slot_count(); i++) {
-        const MonitorBreakpointSlot *bp = breakpoints.get(i);
-        if (bp && bp->used) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool MachineMonitor :: debug_has_enabled_breakpoint(void) const
-{
-    for (int i = 0; i < breakpoints.slot_count(); i++) {
-        const MonitorBreakpointSlot *bp = breakpoints.get(i);
-        if (bp && bp->used && bp->enabled) {
-            return true;
-        }
-    }
-    return false;
-}
-
-MonitorBackingStore MachineMonitor :: breakpoint_target_for_view(uint16_t address) const
-{
-    uint8_t view_cpu_port = state.view_cpu_port & 0x07;
-
-    return backend ? backend->backing_store_for_cpu_port(address, view_cpu_port) :
-        monitor_backing_store_for_cpu_port(address, view_cpu_port);
-}
-
-MonitorBackingStore MachineMonitor :: breakpoint_target_for_live_cpu(uint16_t address) const
-{
-    uint8_t live_cpu_port = backend ? backend->get_live_cpu_port() : state.view_cpu_port;
-
-    return backend ? backend->backing_store_for_cpu_port(address, live_cpu_port) :
-        monitor_backing_store_for_cpu_port(address, live_cpu_port);
-}
-
-bool MachineMonitor :: live_cpu_port_known(void) const
-{
-    return backend && backend->live_cpu_port_known();
-}
-
-bool MachineMonitor :: debug_observed_cpu_port_held(void) const
-{
-    return backend && backend->has_debug_observed_cpu_port();
-}
-
-void MachineMonitor :: debug_popup_result(int result)
-{
-    char blocking_msg[40];
-    const char *msg = monitor_debug_result_message(result);
-
-    if (result == DebugSession::DBG_BREAKPOINT_NOT_INSTALLABLE) {
-        uint16_t blocking = 0;
-        if (debug_session && debug_session->blocking_breakpoint(&blocking)) {
-            sprintf(blocking_msg, monitor_debug_blocking_breakpoint_fmt, blocking);
-            msg = blocking_msg;
-        } else {
-            msg = monitor_debug_blocking_breakpoint_plain;
-        }
-    }
-    if (msg) {
-        get_ui()->popup(msg, BUTTON_OK);
-        redraw_full();
-    }
-}
-
-void MachineMonitor :: show_breakpoint_mapping_note(uint16_t address,
-                                                    MonitorBackingStore target)
-{
-    MonitorBackingStore current = breakpoint_target_for_live_cpu(address);
-
-    if (target == current) {
-        return;
-    }
-    char msg[40];
-    monitor_format_breakpoint_mismatch(msg, sizeof(msg), target, current);
-    get_ui()->popup(msg, BUTTON_OK);
-    redraw_full();
-}
-
-void MachineMonitor :: debug_toggle_breakpoint()
-{
-    uint16_t target = state.current_addr;
-    MonitorBackingStore backing_store = breakpoint_target_for_view(target);
-    int existing = breakpoints.find_at(target, backing_store);
-    if (existing >= 0) {
-        breakpoints.clear_slot(existing);
-        printf("MCM breakpoint clear %d $%04X\n", existing, target);
-        return;
-    }
-    int slot = breakpoints.allocate(target, (uint8_t)(state.view_cpu_port & 0x07),
-                                    backing_store);
-    if (slot < 0) {
-        get_ui()->popup("NO FREE BRK SLOT", BUTTON_OK);
-        redraw_full();
-        return;
-    }
-    printf("MCM breakpoint set %d $%04X %s\n", slot, target,
-           monitor_backing_store_tag(backing_store));
-    show_breakpoint_mapping_note(target, backing_store);
-}
-
-void MachineMonitor :: debug_open_breakpoint_popup()
-{
-    breakpoint_popup_active = true;
-    monitor_log("breakpoint popup open");
-    if (breakpoint_selected >= breakpoints.slot_count()) {
-        breakpoint_selected = 0;
-    }
-}
-
-void MachineMonitor :: debug_close_breakpoint_popup()
-{
-    breakpoint_popup_active = false;
-    monitor_log("breakpoint popup close");
-}
-
-void MachineMonitor :: edit_breakpoint_label(uint8_t slot)
-{
-    const MonitorBreakpointSlot *bp = breakpoints.get(slot);
-    char buffer[MONITOR_BREAKPOINT_LABEL_STORAGE];
-    char normalized[MONITOR_BREAKPOINT_LABEL_STORAGE];
-    char title[16];
-
-    if (!bp || !bp->used) {
-        return;
-    }
-    strncpy(buffer, bp->label, sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = 0;
-    sprintf(title, "Label BP%u", (unsigned)slot);
-    if (prompt_command(title, buffer, MONITOR_BREAKPOINT_LABEL_MAX, false, true)) {
-        MonitorBreakpoints::normalize_label(normalized, sizeof(normalized), buffer);
-        breakpoints.set_label(slot, normalized);
-        printf("MCM breakpoint label %u %s\n", (unsigned)slot, normalized);
-    } else {
-        printf("MCM breakpoint label %u cancelled\n", (unsigned)slot);
-    }
-}
-
-int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
-{
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_R) {
-        debug_close_breakpoint_popup();
-        redraw_full();
-        return 0;
-    }
-    if (key == KEY_CTRL_O) {
-        debug_close_breakpoint_popup();
-        return 1;
-    }
-    if (key == KEY_UP) {
-        if (breakpoint_selected > 0) breakpoint_selected--;
-        refresh_popup_overlay();
-        return 0;
-    }
-    if (key == KEY_DOWN) {
-        if (breakpoint_selected + 1 < (uint8_t)breakpoints.slot_count()) breakpoint_selected++;
-        refresh_popup_overlay();
-        return 0;
-    }
-    if (key >= '0' && key <= '9') {
-        breakpoint_selected = (uint8_t)(key - '0');
-        const MonitorBreakpointSlot *bp = breakpoints.get(breakpoint_selected);
-        if (bp && bp->used) {
-            state.view_cpu_port = (uint8_t)(bp->view_cpu_port & 0x07);
-            if (backend && backend->supports_cpu_banking()) {
-                backend->set_monitor_cpu_port(state.view_cpu_port);
-            }
-            apply_go_local(bp->address);
-            printf("MCM breakpoint jump %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
-            debug_close_breakpoint_popup();
-            redraw_full();
-        } else {
-            refresh_popup_overlay();
-        }
-        return 0;
-    }
-    if (key == KEY_RETURN) {
-        const MonitorBreakpointSlot *bp = breakpoints.get(breakpoint_selected);
-        if (bp && bp->used) {
-            state.view_cpu_port = (uint8_t)(bp->view_cpu_port & 0x07);
-            if (backend && backend->supports_cpu_banking()) {
-                backend->set_monitor_cpu_port(state.view_cpu_port);
-            }
-            state.current_addr = bp->address;
-            apply_go_local(bp->address);
-            printf("MCM breakpoint jump %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
-        }
-        debug_close_breakpoint_popup();
-        redraw_full();
-        return 0;
-    }
-    if (key == 's' || key == 'S') {
-        MonitorBackingStore backing_store = breakpoint_target_for_view(state.current_addr);
-        breakpoints.store_slot(breakpoint_selected, state.current_addr,
-                               (uint8_t)(state.view_cpu_port & 0x07),
-                               backing_store);
-        printf("MCM breakpoint store %u $%04X %s\n",
-               (unsigned)breakpoint_selected, state.current_addr,
-               monitor_backing_store_tag(backing_store));
-        show_breakpoint_mapping_note(state.current_addr, backing_store);
-        refresh_popup_overlay();
-        return 0;
-    }
-    if (key == 'l' || key == 'L') {
-        edit_breakpoint_label(breakpoint_selected);
-        refresh_popup_overlay();
-        return 0;
-    }
-    if (key == 'e' || key == 'E') {
-        const MonitorBreakpointSlot *bp = breakpoints.get(breakpoint_selected);
-        if (bp && bp->used) {
-            bool new_enabled = !bp->enabled;
-            breakpoints.set_enabled(breakpoint_selected, new_enabled);
-            printf("MCM breakpoint %s %u $%04X\n", new_enabled ? "enable" : "disable",
-                   (unsigned)breakpoint_selected, bp->address);
-        }
-        refresh_popup_overlay();
-        return 0;
-    }
-    if (key == KEY_DELETE || key == KEY_BACK) {
-        const MonitorBreakpointSlot *bp = breakpoints.get(breakpoint_selected);
-        if (bp && bp->used) {
-            printf("MCM breakpoint clear %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
-        }
-        breakpoints.clear_slot(breakpoint_selected);
-        refresh_popup_overlay();
-        return 0;
-    }
-    return 0;
-}
-
-void MachineMonitor :: debug_render_breakpoint_popup()
-{
-    enum {
-        BRK_POPUP_INNER_WIDTH = 38,
-        BRK_POPUP_INNER_HEIGHT = 14,
-        BRK_POPUP_SLOT_FIRST_ROW = 2,
-        BRK_POPUP_HELP_ROW = 13
-    };
-    if (!window || !screen) {
-        return;
-    }
-    char popup_lines[BRK_POPUP_INNER_HEIGHT][BRK_POPUP_INNER_WIDTH + 1];
-    memset(popup_lines, 0, sizeof(popup_lines));
-    strcpy(popup_lines[0], "BREAKPOINTS");
-    for (int i = 0; i < breakpoints.slot_count(); i++) {
-        MonitorBreakpoints::format_popup_row(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i],
-                                             sizeof(popup_lines[BRK_POPUP_SLOT_FIRST_ROW + i]),
-                                             i,
-                                             breakpoints.get(i));
-    }
-    strcpy(popup_lines[BRK_POPUP_HELP_ROW],
-           "0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res");
-    int screen_x, screen_y;
-    window->getOffsets(screen_x, screen_y);
-    int popup_x = screen_x + ((window->get_size_x() - BRK_POPUP_INNER_WIDTH) / 2);
-    int popup_y = screen_y + ((window->get_size_y() - BRK_POPUP_INNER_HEIGHT) / 2);
-    if (popup_x + (BRK_POPUP_INNER_WIDTH + 2) > 40) {
-        popup_x = 40 - (BRK_POPUP_INNER_WIDTH + 2);
-    }
-    if (popup_x < 0) popup_x = 0;
-    if (popup_y < screen_y) popup_y = screen_y;
-    Window popup(screen, popup_x, popup_y,
-                 BRK_POPUP_INNER_WIDTH + 2, BRK_POPUP_INNER_HEIGHT + 2);
-    popup.set_color(get_ui()->color_fg);
-    popup.draw_border();
-    popup.set_color(get_ui()->color_fg);
-    for (int row = 0; row < BRK_POPUP_INNER_HEIGHT; row++) {
-        char line[BRK_POPUP_INNER_WIDTH + 1];
-        int len = (int)strlen(popup_lines[row]);
-        int slot_row = row - BRK_POPUP_SLOT_FIRST_ROW;
-        bool selected = (slot_row >= 0 && slot_row < breakpoints.slot_count() &&
-                         slot_row == (int)breakpoint_selected);
-
-        if (len > BRK_POPUP_INNER_WIDTH) len = BRK_POPUP_INNER_WIDTH;
-        memset(line, ' ', BRK_POPUP_INNER_WIDTH);
-        if (len > 0) {
-            memcpy(line, popup_lines[row], (size_t)len);
-        }
-        line[BRK_POPUP_INNER_WIDTH] = 0;
-        if (selected) {
-            draw_with_highlight(&popup, row, line, BRK_POPUP_INNER_WIDTH,
-                                0, BRK_POPUP_INNER_WIDTH);
-        } else {
-            popup.move_cursor(0, row);
-            popup.output_length(line, BRK_POPUP_INNER_WIDTH);
-        }
-    }
-}
-
-void MachineMonitor :: ensure_debug_pc_visible(void)
-{
-    enum { DEBUG_PC_MARGIN = 3 };
-    int rows = content_height;
-    int margin = DEBUG_PC_MARGIN;
-
-    if (state.view != MONITOR_VIEW_ASM) {
-        return;
-    }
-    if (rows <= 1) {
-        state.base_addr = state.current_addr;
-        state.disasm_offset = 0;
-        return;
-    }
-    if (margin * 2 >= rows) {
-        margin = (rows - 1) / 2;
-    }
-    state.disasm_offset = (uint8_t)margin;
-    ensure_disasm_visible();
-}
-
-int MachineMonitor :: debug_handle_key(int key)
-{
-    if (breakpoint_popup_active) {
-        return debug_breakpoint_popup_handle_key(key);
-    }
-    // Exit Debug shortcuts. ESC / RUN/STOP drop Debug only once Edit has
-    // already been left by the outer edit-mode handler.
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_D) {
-        debug_leave();
-        draw();
-        return 0;
-    }
-    if (key == KEY_CTRL_O) {
-        // Leaving the monitor. debug_leave() -> session cleanup() hands the
-        // parked CPU back to the interrupted program (overlay: resumed live;
-        // freeze: staged for when the freezer menu unfreezes). No deferred
-        // go-handoff is scheduled, so the C64 is never left spinning.
-        debug_leave();
-        return 1;
-    }
-    // RETURN remains Assembly subroutine navigation. We handle it here only
-    // to forward to the existing follow_current/return_current logic; the
-    // outer dispatcher will not see this key.
-    if (key == KEY_RETURN && state.view == MONITOR_VIEW_ASM && !edit_mode) {
-        if (follow_current() || return_current()) {
-            draw();
-        }
-        return 0;
-    }
-    if (key == KEY_CTRL_R) {
-        debug_open_breakpoint_popup();
-        draw();
-        return 0;
-    }
-    if (key == 'r' || key == 'R') {
-        debug_toggle_breakpoint();
-        draw();
-        return 0;
-    }
-    if (key == 'd' || key == 'D') {
-        debug_request_over();
-        if (reset_exit_pending) {
-            return MENU_EXIT;
-        }
-        draw();
-        return 0;
-    }
-    if (key == 't' || key == 'T') {
-        debug_request_trace();
-        if (reset_exit_pending) {
-            return MENU_EXIT;
-        }
-        draw();
-        return 0;
-    }
-    if (key == 'u' || key == 'U') {
-        // Debug-mode Step Out. This deliberately overrides the Assembly-view
-        // undocumented-opcode toggle that 'U' performs outside Debug. 'O'/'o'
-        // are left to fall through to the normal dispatcher so the monitor
-        // view CPU bank can still be cycled while Debug is active.
-        debug_request_out();
-        if (reset_exit_pending) {
-            return MENU_EXIT;
-        }
-        draw();
-        return 0;
-    }
-    if (key == 'g' || key == 'G') {
-        debug_request_go();
-        if (reset_exit_pending) {
-            return MENU_EXIT;
-        }
-        if (go_pending || release_host_after_exit) {
-            return 1;
-        }
-        draw();
-        return 0;
-    }
-    if (key == 'k' || key == 'K') {
-        debug_request_cursor();
-        if (reset_exit_pending) {
-            return MENU_EXIT;
-        }
-        draw();
-        return 0;
-    }
-    // Any other key falls through to the normal monitor dispatcher so the
-    // user can still navigate, switch views, edit, etc. while Debug is on.
-    return -1;
 }
 
 void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
@@ -7310,25 +5838,23 @@ void MachineMonitor :: init(Screen *scr, Keyboard *keyb)
     window->set_color(get_ui()->color_fg);
     content_height = window->get_size_y() - 2;
     backend->begin_session();
-    // After a C64 hardware reset, the next fresh open follows the live CPU bank so
-    // the user re-enters at the memory the CPU actually sees (RAM-under-ROM when
-    // $01 low bits are 5), not a stale/forced view -> fixes the C5O7 mismatch.
-    // Skipped when restoring an in-flight debug session, whose carried view bank
-    // is the authoritative debug-context bank.
     if (monitor_sync_view_to_live_on_open) {
         monitor_sync_view_to_live_on_open = false;
         if (!restore_debug_after_reset && backend->supports_cpu_banking()) {
             backend->invalidate_live_cpu_port_cache();
-            state.view_cpu_port = (uint8_t)(backend->get_live_cpu_port() & 0x07);
+            state.cpu_port = (uint8_t)(backend->get_live_cpu_port() & 0x07);
         }
     }
-    state.view_cpu_port = normalize_cpu_mode(state.view_cpu_port);
+    state.cpu_port = normalize_cpu_mode(state.cpu_port);
     if (backend->supports_cpu_banking()) {
-        backend->set_monitor_cpu_port(state.view_cpu_port);
+        backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
     }
     current_vic_bank = backend->supports_vic_bank() ? backend->get_live_vic_bank() : 0;
     if (bookmarks) {
-        bookmarks->ensure_loaded((uint8_t)(state.view_cpu_port & 0x07), (uint8_t)(current_vic_bank & 0x03));
+        bookmarks->ensure_loaded((uint8_t)(state.cpu_port & 0x07), (uint8_t)(current_vic_bank & 0x03));
     }
     last_live_vic_bank = current_vic_bank;
     vic_bank_override = false;
@@ -7346,7 +5872,7 @@ void MachineMonitor :: deinit(void)
     monitor_saved_state.disasm_offset = 0;
     monitor_saved_state.illegal_enabled = state.illegal_enabled;
     monitor_saved_state.screen_charset = normalize_screen_charset(state.screen_charset);
-    monitor_saved_state.view_cpu_port = state.view_cpu_port;
+    monitor_saved_state.cpu_port = state.cpu_port;
     monitor_saved_state_valid = true;
     monitor_last_load_use_prg = last_load_use_prg;
     monitor_last_load_start = last_load_start;
@@ -7361,17 +5887,8 @@ void MachineMonitor :: deinit(void)
     monitor_last_go_addr = last_go_addr;
     monitor_memory_bytes_per_row = memory_bytes_per_row;
     monitor_binary_bytes_per_row = binary_bytes_per_row;
-    // Persist breakpoints to process-lifetime storage so the next monitor
-    // open (including the C=+X reset reentry) recovers the same table.
-    // Power-off discards this because the storage is volatile RAM.
     monitor_saved_breakpoints = breakpoints;
-    // Restore every patched byte / vector / trampoline before the backend
-    // session ends. Cleanup is idempotent so this is safe even if the user
-    // never used Debug mode.
-    if (!deferred_debug_go_pending) {
-        debug_cleanup_session();
-        backend->end_session();
-    }
+    backend->end_session();
     if (clipboard.data) {
         free(clipboard.data);
         clipboard.data = NULL;
@@ -7395,12 +5912,8 @@ int MachineMonitor :: handle_key(int key)
     MonitorError error;
 
     if (key == KEY_CTRL_X) {
-        return handle_reset_shortcut();
+        return reset_machine_and_reopen();
     }
-    if (key == KEY_CTRL_I) {
-        return swap_interface_type ? swap_interface_type(get_ui()) : MENU_NOP;
-    }
-
     if (hunt_picker_active) {
         return hunt_picker_handle_key(key);
     }
@@ -7429,26 +5942,23 @@ int MachineMonitor :: handle_key(int key)
         // execute as a normal monitor command (so e.g. pressing H from the
         // help screen actually launches Hunt instead of leaving help open).
         help_visible = false;
-        if (key == KEY_ESCAPE || monitor_key_is_bookmark_action(key)) {
+        // Back closes exactly one layer, and help is a layer: RUN/STOP and the
+        // left-arrow key close it without also leaving the monitor. '?' is the
+        // other way in, so it is also the way out; without this it would fall
+        // through to toggle_help() below and reopen what was just closed.
+        if (key == KEY_BREAK || key == KEY_ESCAPE || key == monitor_key_arrow_left ||
+            key == '?' || monitor_key_is_bookmark_action(key)) {
             draw();
             return 0;
         }
     }
 
-    // Debug mode owns the D/T/O/G/R/C=+R/C=+D/ESC keys when active. RETURN
-    // routes through the debug controller too so subroutine navigation is
-    // preserved as documented. Anything the debug controller does not handle
-    // returns -1 so the main dispatcher can still service navigation /
-    // view-switch / file commands while Debug is on.
     if (debug.is_active() && !edit_mode) {
-        int r = debug_handle_key(key);
-        if (r != -1) {
-            return r;
+        int result = debug_handle_key(key);
+        if (result != -1) {
+            return result;
         }
     } else if (!edit_mode && (key == 'd' || key == 'D')) {
-        // D outside Debug mode enters Debug. In edit mode 'D' is a hex digit
-        // or part of an assembly mnemonic, so the gate above keeps edit-mode
-        // semantics intact.
         if (state.view != MONITOR_VIEW_ASM) {
             set_view(MONITOR_VIEW_ASM);
         }
@@ -7463,6 +5973,18 @@ int MachineMonitor :: handle_key(int key)
         return 0;
     }
 
+    // Two shortcuts that act on the machine rather than on the view. They are
+    // deliberately here rather than at the top of this function: a popup, a
+    // command prompt and every picker are polled before it or dispatched above
+    // it, so none of them can reach a destructive action while a text field
+    // has the keyboard. From a memory view and from edit mode they both work.
+    if (key == KEY_CTRL_R) {
+        return handle_reset_shortcut();
+    }
+    if (key == KEY_CTRL_I) {
+        return handle_interface_shortcut();
+    }
+
     if (bookmark_shortcut_allowed()) {
         if (monitor_bookmark_main_slot_for_key(key) >= 0) {
             restore_bookmark((uint8_t)monitor_bookmark_main_slot_for_key(key));
@@ -7475,7 +5997,6 @@ int MachineMonitor :: handle_key(int key)
     if (bookmark_set_shortcut_allowed() && monitor_key_is_bookmark_popup(key)) {
         bookmark_popup_active = true;
         bookmark_selected = 0;
-        monitor_log("bookmark popup open");
         draw();
         return 0;
     }
@@ -7549,6 +6070,17 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         }
+        if (key == monitor_key_arrow_left && state.view != MONITOR_VIEW_ASCII &&
+            state.view != MONITOR_VIEW_SCREEN) {
+            exit_edit_mode();
+            draw();
+            return 0;
+        }
+        // Edit mode leaves by the shared Back action: RUN/STOP, a USB
+        // keyboard's Escape, and the left-arrow key handled above wherever
+        // left-arrow is not itself edit data. Ctrl+E stays a separate binding
+        // on top of that, so edit mode can be left without also unwinding
+        // whatever other layer the monitor is in.
         if (key == KEY_BREAK || key == KEY_ESCAPE || key == KEY_CTRL_E) {
             exit_edit_mode();
             draw();
@@ -7682,6 +6214,38 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
+            if (address_is_data(state.current_addr) && is_hex_char((char)key)) {
+                // A data row is edited as the bytes it shows: part N is the
+                // Nth byte of the row, including the first, which on an
+                // instruction row is the mnemonic instead. Writing goes through
+                // canonical_write like every other edit, so a read-only source
+                // such as character ROM refuses it there rather than here.
+                uint8_t nib = (key >= '0' && key <= '9') ? (uint8_t)(key - '0')
+                                                        : (uint8_t)(to_upper_char((char)key) - 'A' + 10);
+                uint16_t byte_addr = (uint16_t)(state.current_addr + asm_edit_part);
+                uint8_t prev_byte = canonical_read(byte_addr);
+                uint8_t prev_part = asm_edit_part;
+                uint8_t prev_pending = asm_edit_pending;
+
+                if (asm_edit_pending == 0) {
+                    canonical_write(byte_addr, (uint8_t)((nib << 4) | (prev_byte & 0x0F)));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 1;
+                } else {
+                    canonical_write(byte_addr, (uint8_t)((prev_byte & 0xF0) | nib));
+                    asm_edit_history_push(byte_addr, prev_byte, prev_part, prev_pending);
+                    asm_edit_pending = 0;
+                    if (asm_edit_part + 1 < part_count) {
+                        asm_edit_part++;
+                    } else {
+                        step_disassembly(1);
+                        asm_edit_part = 0;
+                        asm_edit_history_reset(state.current_addr);
+                    }
+                }
+                draw();
+                return 0;
+            }
             if (asm_edit_part > 0 && is_hex_char((char)key)) {
                 uint8_t nib = (key >= '0' && key <= '9') ? (uint8_t)(key - '0')
                                                         : (uint8_t)(to_upper_char((char)key) - 'A' + 10);
@@ -7759,7 +6323,11 @@ int MachineMonitor :: handle_key(int key)
                 draw();
                 return 0;
             }
-            if (asm_edit_part == 0 && ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
+            if (asm_edit_part == 0 && !address_is_data(state.current_addr) &&
+                ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z'))) {
+                // A data row has no mnemonic to pick, so a letter there is a
+                // no-op rather than an opcode the view would then have to
+                // decode out of I/O or character ROM.
                 // Opening the picker also validates the first mnemonic letter.
                 // An invalid first letter (no supported mnemonic starts with it)
                 // is rejected: the picker stays closed and the key is a no-op.
@@ -7771,11 +6339,15 @@ int MachineMonitor :: handle_key(int key)
         }
     }
 
+    if (!edit_mode && key == monitor_key_arrow_left) {
+        return 1;
+    }
+
     if (!edit_mode) {
         if (key == KEY_SPACE) {
-            key = KEY_F7;
+            key = KEY_PAGEDOWN;
         } else if (key == KEY_SHIFT_SP) {
-            key = KEY_F1;
+            key = KEY_PAGEUP;
         }
     }
 
@@ -7820,7 +6392,6 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_PAGEUP:
-        case KEY_F1:
         case KEY_F2:
         case KEY_CONFIG:
             if (state.view == MONITOR_VIEW_DISASM) {
@@ -7832,7 +6403,6 @@ int MachineMonitor :: handle_key(int key)
             draw();
             return 0;
         case KEY_PAGEDOWN:
-        case KEY_F7:
             if (state.view == MONITOR_VIEW_DISASM) {
                 page_disassembly(content_height);
                 draw();
@@ -7854,6 +6424,11 @@ int MachineMonitor :: handle_key(int key)
             help_visible = false;
             set_view(MONITOR_VIEW_ASCII);
             break;
+        // `A` is the only key that opens the Assembly view. `D` is not bound
+        // to anything here and must stay that way: it is reserved for a future
+        // Debug mode. The manual does not mention it, so
+        // test_d_is_reserved_and_a_opens_assembly is what defends the
+        // reservation, and an E2E check asserts the same on hardware.
         case 'a': case 'A':
             help_visible = false;
             set_view(MONITOR_VIEW_ASM);
@@ -7880,8 +6455,9 @@ int MachineMonitor :: handle_key(int key)
         case 'z': case 'Z':
             help_visible = false;
             if (backend && backend->freeze_available()) {
-                backend->set_frozen(!backend->is_frozen());
-                printf("MCM freeze %s\n", backend->is_frozen() ? "on" : "off");
+                bool want_frozen = !backend->is_frozen();
+                monitor_log(want_frozen ? "freeze on" : "freeze off");
+                backend->set_frozen(want_frozen);
             } else {
                 get_ui()->popup((backend && backend->supports_freeze()) ?
                                 "FREEZE ONLY IN OVERLAY MODE" : "FREEZE UNAVAILABLE", BUTTON_OK);
@@ -7895,9 +6471,12 @@ int MachineMonitor :: handle_key(int key)
                 redraw_full();
                 break;
             }
-            state.view_cpu_port = next_cpu_mode(state.view_cpu_port);
-            backend->set_monitor_cpu_port(state.view_cpu_port);
-            printf("MCM cpu-bank $%02X\n", state.view_cpu_port);
+            state.cpu_port = next_cpu_mode(state.cpu_port);
+            printf("MCM cpu bank %d\n", (int)(state.cpu_port & 0x07));
+            backend->set_monitor_cpu_port(state.cpu_port);
+        // Which addresses read as I/O or character ROM moves with the bank, so
+        // the remembered data region cannot outlive a change of it.
+        data_region_valid = false;
             if (state.view == MONITOR_VIEW_ASM) {
                 restore_disasm_cursor_row(asm_row);
             }
@@ -7913,23 +6492,21 @@ int MachineMonitor :: handle_key(int key)
                 redraw_full();
                 break;
             }
+            printf("MCM vic bank %d\n", (int)(requested_vic_bank & 0x03));
             backend->set_live_vic_bank(requested_vic_bank);
             live_vic_bank = backend->get_live_vic_bank();
             current_vic_bank = requested_vic_bank;
             last_live_vic_bank = live_vic_bank;
             vic_bank_override = (live_vic_bank != requested_vic_bank);
-            printf("MCM vic-bank %u live %u\n", (unsigned)requested_vic_bank, (unsigned)live_vic_bank);
             break;
         }
         case 'u': case 'U':
             if (state.view == MONITOR_VIEW_ASM) {
                 state.illegal_enabled = !state.illegal_enabled;
-                printf("MCM undoc %s\n", state.illegal_enabled ? "on" : "off");
             } else if (state.view == MONITOR_VIEW_SCREEN) {
                 state.screen_charset = (state.screen_charset == MONITOR_SCREEN_CHARSET_LOWER_UPPER) ?
                     MONITOR_SCREEN_CHARSET_UPPER_GRAPHICS :
                     MONITOR_SCREEN_CHARSET_LOWER_UPPER;
-                printf("MCM screen-charset %u\n", (unsigned)state.screen_charset);
             } else {
                 get_ui()->popup("UNDOC IN ASM, CASE IN SCR", BUTTON_OK);
                 redraw_full();
@@ -7938,29 +6515,24 @@ int MachineMonitor :: handle_key(int key)
         case '?':
             toggle_help();
             break;
-        case 'x': case 'X':
         case KEY_CTRL_O:
         case KEY_BREAK:
         case KEY_ESCAPE:
             return 1;
         case 'j': case 'J':
         {
-            char jump_buffer[5];
+            // Every prompt buffer holds max_len characters plus the
+            // terminator, which is what UIStringEdit writes.
+            char jump_buffer[6];
             strcpy(jump_buffer, "AAAA");
-            while (prompt_command("Jump AAAA", jump_buffer, 4, true)) {
-                if (!monitor_normalize_jump_input(jump_buffer)) {
-                    get_ui()->popup("HEX 0-9/A-F ONLY", BUTTON_OK);
-                    redraw_full();
-                    continue;
-                }
+            if (prompt_command(monitor_input_jump, jump_buffer, sizeof(jump_buffer) - 1)) {
                 error = monitor_parse_address(jump_buffer, &address);
                 if (error == MONITOR_OK) {
-                    apply_go_local(address);
                     monitor_log_address("jump", address);
+                    apply_go_local(address);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
                 }
-                break;
             }
             break;
         }
@@ -7971,13 +6543,13 @@ int MachineMonitor :: handle_key(int key)
             break;
         case 'f': case 'F':
         {
-            char fill_buffer[13];
+            char fill_buffer[14];
             strcpy(fill_buffer, "AAAA-BBBB,DD");
-            if (prompt_command("Fill AAAA-BBBB,DD", fill_buffer, sizeof(fill_buffer), true)) {
+            if (prompt_command(monitor_input_fill, fill_buffer, sizeof(fill_buffer) - 1)) {
                 error = monitor_parse_fill(fill_buffer, &start, &end, &byte_value);
                 if (error == MONITOR_OK) {
                     monitor_log_range("fill", start, end);
-                    printf("MCM fill-value $%02X\n", byte_value);
+                    monitor_log_byte("fill value", start, byte_value);
                     monitor_fill_memory(backend, start, end, byte_value);
                 } else {
                     get_ui()->popup(monitor_error_text(error), BUTTON_OK);
@@ -7987,19 +6559,31 @@ int MachineMonitor :: handle_key(int key)
         }
         case 't': case 'T':
         {
+            // "AAAA-BBBB,CCCC,DDDD-EEEE" is 24 characters plus the terminator.
             char transfer_buffer[25];
             bool relocate = false;
-            uint16_t reloc_start = 0;
-            uint16_t reloc_end = 0;
+            uint16_t code_start = 0;
+            uint16_t code_end = 0;
             strcpy(transfer_buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Transfer AAAA-BBBB,CCCC[,DDDD-EEEE]", transfer_buffer, sizeof(transfer_buffer), true)) {
+            if (prompt_command(monitor_input_transfer, transfer_buffer, sizeof(transfer_buffer) - 1)) {
                 error = monitor_parse_transfer_relocate(transfer_buffer, &start, &end, &dest,
-                                                        &relocate, &reloc_start, &reloc_end);
+                                                        &relocate, &code_start, &code_end);
                 if (error == MONITOR_OK) {
-                    printf("MCM transfer $%04X-$%04X->$%04X\n", start, end, dest);
+                    monitor_log_range("transfer", start, end);
+                    monitor_log_address("transfer dest", dest);
                     if (relocate) {
-                        printf("MCM transfer-relocate $%04X-$%04X\n", reloc_start, reloc_end);
-                        monitor_transfer_memory_relocate(backend, start, end, dest, reloc_start, reloc_end);
+                        monitor_log_range("relocate", code_start, code_end);
+                        // The only command that changes bytes the user did not
+                        // type, so it says how many it changed. A count that
+                        // does not match what was expected is a linear scan
+                        // that lost instruction alignment, visible at once.
+                        char message[40];
+                        int moved = monitor_transfer_memory_relocate(backend, start, end, dest,
+                                                                     code_start, code_end,
+                                                                     state.illegal_enabled);
+                        sprintf(message, "%d OPERAND%s RELOCATED", moved, (moved == 1) ? "" : "S");
+                        get_ui()->popup(message, BUTTON_OK);
+                        redraw_full();
                     } else {
                         monitor_transfer_memory(backend, start, end, dest);
                     }
@@ -8011,14 +6595,15 @@ int MachineMonitor :: handle_key(int key)
         }
         case 'c': case 'C':
         {
-            char compare_buffer[15];
+            char compare_buffer[16];
             strcpy(compare_buffer, "AAAA-BBBB,CCCC");
-            if (prompt_command("Compare AAAA-BBBB,CCCC", compare_buffer, sizeof(compare_buffer), true)) {
+            if (prompt_command(monitor_input_compare, compare_buffer, sizeof(compare_buffer) - 1)) {
                 error = monitor_parse_compare(compare_buffer, &start, &end, &dest);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("compare", start, end);
+                    monitor_log_address("compare dest", dest);
                     int found = monitor_compare_collect(backend, start, end, dest,
                                                        hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
-                    printf("MCM compare $%04X-$%04X->$%04X found %d\n", start, end, dest, found);
                     if (found <= 0) {
                         get_ui()->popup("No differences", BUTTON_OK);
                     } else {
@@ -8034,12 +6619,12 @@ int MachineMonitor :: handle_key(int key)
         {
             char hunt_buffer[36];
             strcpy(hunt_buffer, "0000-FFFF, ");
-            if (prompt_hunt_command("Hunt AAAA-BBBB,...", hunt_buffer, sizeof(hunt_buffer) - 1)) {
+            if (prompt_command(monitor_input_hunt, hunt_buffer, sizeof(hunt_buffer) - 1)) {
                 error = monitor_parse_hunt(hunt_buffer, &start, &end, needle, &needle_len);
                 if (error == MONITOR_OK) {
+                    monitor_log_range("hunt", start, end);
                     int found = monitor_hunt_collect(backend, start, end, needle, needle_len,
                                                     hunt_addrs, (int)(sizeof(hunt_addrs) / sizeof(hunt_addrs[0])));
-                    printf("MCM hunt $%04X-$%04X len %d found %d\n", start, end, needle_len, found);
                     if (found <= 0) {
                         get_ui()->popup("No matches", BUTTON_OK);
                     } else {
@@ -8157,7 +6742,7 @@ void MachineMonitor::handle_load_command()
         sprintf(tail, "%X", (unsigned)last_load_length);
         strcat(buffer, tail);
     }
-    if (!prompt_command("Load [PRG|AAAA],[Offs],[Len|AUTO]", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command(monitor_input_load, buffer, sizeof(buffer) - 1)) {
         redraw_full();
         return;
     }
@@ -8183,8 +6768,6 @@ void MachineMonitor::handle_load_command()
     last_load_offset = offset;
     last_load_length_auto = length_auto;
     last_load_length = length;
-    printf("MCM load %s start $%04X offset $%04X len %u\n",
-           use_prg ? "PRG" : "RAW", start_addr, offset, (unsigned)length);
 
     const char *err = monitor_io::load_into_memory(path_buf, name_buf, backend,
                                                    start_addr, use_prg,
@@ -8192,12 +6775,10 @@ void MachineMonitor::handle_load_command()
                                                    &start_addr, &length);
     redraw_full();
     if (err) {
-        printf("MCM load failed %s\n", err);
         get_ui()->popup(err, BUTTON_OK);
         redraw_full();
         return;
     }
-    printf("MCM load ok $%04X len %u\n", start_addr, (unsigned)length);
     show_io_confirmation("LOAD", name_buf, start_addr, length);
     redraw_full();
 }
@@ -8209,7 +6790,7 @@ void MachineMonitor::handle_save_command()
     // before opening the picker on an obviously invalid range.
     char range_buf[16];
     sprintf(range_buf, "%04X-%04X", last_save_start, last_save_end);
-    if (!prompt_command("Save AAAA-BBBB", range_buf, sizeof(range_buf) - 1, true)) {
+    if (!prompt_command(monitor_input_save, range_buf, sizeof(range_buf) - 1)) {
         return;
     }
     uint16_t start = 0;
@@ -8222,7 +6803,6 @@ void MachineMonitor::handle_save_command()
     }
     last_save_start = start;
     last_save_end = end;
-    monitor_log_range("save range", start, end);
 
     char path_buf[256] = "";
     char name_buf[36] = "";
@@ -8254,13 +6834,11 @@ void MachineMonitor::handle_save_command()
     const char *err = monitor_io::save_from_memory(get_ui(), path_buf, name_buf, backend, start, end);
     redraw_full();
     if (err) {
-        printf("MCM save failed %s\n", err);
         get_ui()->popup(err, BUTTON_OK);
         redraw_full();
         return;
     }
     uint32_t bytes = (uint32_t)end - (uint32_t)start + 1;
-    printf("MCM save ok $%04X-$%04X len %u\n", start, end, (unsigned)bytes);
     show_io_confirmation("SAVE", name_buf, start, bytes);
     redraw_full();
 }
@@ -8285,7 +6863,6 @@ void MachineMonitor::handle_width_command()
     if (state.view == MONITOR_VIEW_HEX) {
         memory_bytes_per_row = (memory_byte_stride() == MONITOR_MEMORY_MIN_BYTES_PER_ROW) ?
             MONITOR_MEMORY_MAX_BYTES_PER_ROW : MONITOR_MEMORY_MIN_BYTES_PER_ROW;
-        printf("MCM width memory %u\n", (unsigned)memory_bytes_per_row);
         ensure_current_visible();
         draw();
         return;
@@ -8315,7 +6892,6 @@ void MachineMonitor::handle_width_command()
     }
 
     binary_bit_index = 7;
-    printf("MCM width binary %u\n", (unsigned)binary_bytes_per_row);
     ensure_current_visible();
     draw();
 }
@@ -8339,14 +6915,6 @@ bool MachineMonitor :: consume_pending_go(uint16_t *address, DebugContext *conte
     return true;
 }
 
-void MachineMonitor :: clear_pending_go(void)
-{
-    go_pending = false;
-    go_pending_addr = 0;
-    go_pending_has_context = false;
-    debug_context_reset(&go_pending_context);
-}
-
 bool MachineMonitor::handle_go_command()
 {
     char buffer[8];
@@ -8357,7 +6925,7 @@ bool MachineMonitor::handle_go_command()
         return false;
     }
     sprintf(buffer, "%04X", default_addr);
-    if (!prompt_command("Go AAAA", buffer, sizeof(buffer) - 1, true)) {
+    if (!prompt_command(monitor_input_go, buffer, sizeof(buffer) - 1)) {
         return false;
     }
     uint16_t address = 0;
@@ -8373,6 +6941,7 @@ bool MachineMonitor::handle_go_command()
     apply_go_local(address);
     go_pending = true;
     go_pending_addr = address;
-    monitor_log_address("go", address);
     return true;
 }
+
+#include "machine_monitor_debug_impl.inc"

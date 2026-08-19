@@ -12,10 +12,11 @@ extern uint8_t _default_chars_bin_start[4096];
 
 namespace {
 
-// Filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page) via
-// 32-bit word stores, so the buffers must stay 4-byte aligned. As plain byte
-// arrays they could land unaligned in .bss and trap the Nios2 on the first
-// 32-bit store when the ROM cache loads on monitor entry. Keep alignas(4).
+// These buffers are filled by the flash/filesystem read path (S25FLxxxL_Flash::read_page),
+// which writes 32-bit words and therefore requires 4-byte alignment. As plain uint8_t
+// arrays they were only byte-aligned; depending on .bss layout they could land on an
+// unaligned address, causing an unaligned 32-bit store trap on Nios2 when the KERNAL ROM
+// cache is loaded on monitor entry. Force word alignment to keep the DMA target valid.
 alignas(4) static uint8_t monitor_basic_rom[8192];
 alignas(4) static uint8_t monitor_kernal_rom[8192];
 alignas(4) static uint8_t monitor_char_rom[4096];
@@ -110,6 +111,11 @@ static CpuRegionMapping cpu_region_mapping(uint16_t address, uint8_t cpu_port)
     return MAP_RAM;
 }
 
+static bool uses_live_mapping_for_address(uint16_t address, uint8_t live_cpu_port, uint8_t monitor_cpu_port)
+{
+    return cpu_region_mapping(address, live_cpu_port) == cpu_region_mapping(address, monitor_cpu_port);
+}
+
 bool U64MemoryBackend :: freeze_available(void) const
 {
     return machine && !machine->is_accessible();
@@ -189,15 +195,21 @@ uint8_t U64MemoryBackend :: read(uint16_t address)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
+    uint8_t live_cpu_port = machine->get_cpu_port();
     uint8_t rom_value = 0;
+    bool use_cached_rom = machine->is_accessible() || is_frozen() ||
+            !uses_live_mapping_for_address(address, live_cpu_port, cpu_port);
 
-    if (read_monitor_rom_byte(address, cpu_port, &rom_value)) {
+    if (read_monitor_rom_byte(address, cpu_port, &rom_value) && use_cached_rom) {
         return rom_value;
     }
-    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
-        return machine->peek_visible(address);
+    if (machine->is_accessible()) {
+        return machine->peek_cpu(address, cpu_port);
     }
-    return machine->peek_raw(address);
+    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
+        return machine->peek_cpu(address, cpu_port);
+    }
+    return machine->peek(address);
 }
 
 void U64MemoryBackend :: write(uint16_t address, uint8_t value)
@@ -207,12 +219,17 @@ void U64MemoryBackend :: write(uint16_t address, uint8_t value)
     }
 
     uint8_t cpu_port = get_monitor_cpu_port();
+    uint8_t live_cpu_port = machine->get_cpu_port();
 
-    if (cpu_region_mapping(address, cpu_port) == MAP_IO) {
-        machine->poke_visible(address, value);
+    if (machine->is_accessible()) {
+        machine->poke_cpu(address, value, cpu_port);
         return;
     }
-    machine->poke_raw(address, value);
+    if (!uses_live_mapping_for_address(address, live_cpu_port, cpu_port)) {
+        machine->poke_cpu(address, value, cpu_port);
+        return;
+    }
+    machine->poke(address, value);
 }
 
 void U64MemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
@@ -260,7 +277,7 @@ uint8_t U64MemoryBackend :: get_live_vic_bank(void)
         return 0;
     }
 
-    uint8_t dd00 = machine->peek_visible(0xDD00);
+    uint8_t dd00 = machine->peek_cpu(0xDD00, 0x07);
     return (uint8_t)(3 - (dd00 & 0x03));
 }
 

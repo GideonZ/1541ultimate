@@ -70,6 +70,7 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
 
+    void set_screen_title(void);
     void set_available(bool enable);
     int  pollFocussed(void);
     bool pollMenuButtonPush(void);
@@ -80,11 +81,6 @@ private:
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
-    // Clears the screen and draws the title and chrome rows (title bar, border
-    // lines). Called on initial UI bring-up and may be called by UI objects
-    // that need to restore the chrome after temporarily clobbering it (e.g.
-    // after a freeze-mode debug step that restored the live C64 screen).
-    void set_screen_title(void);
 
     int config_save, filename_overflow_squeeze, navmode;
     bool logo;
@@ -112,6 +108,10 @@ public:
     virtual int  string_edit(char *buffer, int maxlen, Window *w, int x, int y, int max_chars=0);
     virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode); // blocking
     virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase); // blocking
+    // The same blocking string box, with an opt-in input policy: see
+    // UIStringEditPolicy. A NULL policy is the ordinary field above.
+    virtual int  string_box(const char *msg, char *buffer, int maxlen, bool template_mode, bool uppercase,
+                            const UIStringEditPolicy *policy); // blocking
     virtual void show_progress(const char *msg, int steps); // not blocking
     virtual void update_progress(const char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
@@ -123,6 +123,7 @@ public:
     Keyboard *get_keyboard() { return keyboard; }
 
     int keymapper(int c, keymap_options_t map);
+    const char *function_key_for(int action) const;
 
     int  activate_uiobject(UIObject *obj);
     int  uiobject_modal(UIObject *obj);
@@ -134,7 +135,6 @@ public:
     void run_machine_monitor(MemoryBackend *backend);
     void swapDisk(void);
     void send_keystroke(int key);
-    bool handle_global_reset_shortcut(void);
     static bool anyMenuActive(void);
     enum {
         ACTIVE_SCREEN_MATRIX_WIDTH = 40,

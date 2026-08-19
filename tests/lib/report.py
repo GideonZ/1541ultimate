@@ -299,9 +299,6 @@ def _record(**fields) -> None:
         pass
 
 
-_line_open = False
-
-
 def check_count() -> int:
     """How many checks have been reported, for a suite's closing line."""
     return _count
@@ -342,7 +339,6 @@ def check_start(label: str) -> None:
     _depth += 1
     if _depth > 1:
         return
-    _line_open = True
     _count += 1
     _last_label = label
     _check_started = time.monotonic()
@@ -360,7 +356,6 @@ def step_start(label: str) -> None:
     _depth += 1
     if _depth > 1:
         return
-    _line_open = True
     _last_label = label
     _check_started = time.monotonic()
     _line_open = True
@@ -368,17 +363,14 @@ def step_start(label: str) -> None:
 
 
 def _close(verdict: str, extra: str = "") -> None:
-    """Print the verdict for the open check line and close it.
-
-    A check body that reports its own verdict (`check_skip` on a platform the
-    check does not apply to) leaves no line open, yet the `check` context
-    manager still calls `check_ok` on the way out. `_line_open` makes that
-    second call a no-op; without it the skipped check also prints a verdict on
-    its own line and is counted as a pass.
-    """
     global _depth, _line_open
     _depth = max(0, _depth - 1)
-    if _depth or not _line_open:
+    if _depth:
+        return
+    if not _line_open:
+        # Already answered by the block itself. Closing again would print a
+        # second verdict for one check and record a second, contradictory one:
+        # a skipped check was written as SKIP and then as OK.
         return
     _line_open = False
     elapsed = time.monotonic() - _check_started

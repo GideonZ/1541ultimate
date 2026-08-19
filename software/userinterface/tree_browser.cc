@@ -120,12 +120,6 @@ void TreeBrowser :: context(int initial)
 	if(!state->under_cursor)
 		return;
 
-    // Between release_host() and take_host() this browser has no window, and a
-    // key arriving in that gap still reaches handle_key(). Nothing to anchor a
-    // popup to.
-    if(!window)
-        return;
-
     //printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
@@ -139,9 +133,6 @@ void TreeBrowser :: task_menu(void)
 {
 	if(!state->node)
 		return;
-    // Same deinitialised-browser window as in context(), above.
-    if(!window)
-        return;
     //printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
