@@ -21,40 +21,19 @@ jobs:
         run: echo "GIT_VERSION=$(git describe --tags --always)" >>$GITHUB_ENV
 
       # The harness that watches an E2E gate run, checked on every push. It
-      # needs no device and no network beyond loopback, so it has no ordering
-      # dependency on the FPGA/ESP32 dependency step below: run both
-      # containers at once and fail if either does. Each container's output
-      # is captured to its own file and printed as one contiguous block once
-      # both finish, so the log stays in step order instead of interleaving
-      # two containers' output line by line.
-      - name: Check Observability Harness & Determine FPGA/ESP32 dependencies
+      # needs no device and no network beyond loopback, and it runs before the
+      # firmware builds because it costs seconds and a broken report generator
+      # is better reported now than after an hour of building.
+      - name: Check Observability Harness
         run: |
           docker run --rm \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test" \
-          >observability.log 2>&1 &
-          observability_pid=$!
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
 
+      - name: Determine FPGA & ESP32 dependencies
+        run: |
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends" \
-          >deps.log 2>&1 &
-          deps_pid=$!
-
-          status=0
-          wait "$observability_pid" || status=$?
-          wait "$deps_pid" || status=$?
-
-          echo "::group::Check Observability Harness"
-          cat observability.log
-          echo "::endgroup::"
-          rm -f observability.log
-
-          echo "::group::Determine FPGA & ESP32 dependencies"
-          cat deps.log
-          echo "::endgroup::"
-          rm -f deps.log
-
-          exit $status
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends"
 
       - name: Cache U2 FPGA
         id: cache-u2
