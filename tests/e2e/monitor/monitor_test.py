@@ -1132,7 +1132,7 @@ def run_edit_visibility_test(session: MonitorSession, rest_host: str) -> None:
             f"Paste is not on screen without a further keypress: {row!r}")
 
     # The same rule for a fill, which is the other way a range changes at once.
-    session.fill(f"{dest:04X} {dest + 1:04X} 3C")
+    session.fill(f"{dest:04X}-{dest + 1:04X},3C")
     filled = read_rest_memory(rest_host, dest, 2)
     if filled != bytes([0x3C, 0x3C]):
         raise Failure(

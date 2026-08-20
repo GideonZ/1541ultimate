@@ -2040,6 +2040,41 @@ _MODE_INTERFACE_TYPE = {
 }
 
 
+# Computers already configured in this process; see _ensure_cartridge_host.
+_CARTRIDGE_HOSTS_READY: set = set()
+
+
+def _ensure_cartridge_host(host: str, telnet_host: Optional[str],
+                           password: Optional[str], timeout: float) -> None:
+    """Give a cartridge's computer the setting the cartridge needs to be driven.
+
+    Applied once per process: the value does not change under a run, and a suite
+    that opens several sessions should not ask its computer again each time.
+    """
+    for candidate in (host, telnet_host):
+        if not candidate:
+            continue
+        try:
+            handle = targets.resolve(candidate)
+        except Exception:                                     # noqa: BLE001
+            continue
+        if not handle.split or handle.computer in _CARTRIDGE_HOSTS_READY:
+            continue
+        _CARTRIDGE_HOSTS_READY.add(handle.computer)
+        try:
+            changed = api_lib.ensure_cartridge_preference(
+                handle, password, max(5.0, timeout))
+        except Exception as exc:                              # noqa: BLE001
+            # A computer that cannot be asked is not one that can be fixed
+            # here. The suite reports what it actually sees, which is a better
+            # failure than one invented by this preflight.
+            print(f"[info] could not confirm the cartridge preference on "
+                  f"{handle.computer}: {exc}", flush=True)
+            continue
+        if changed:
+            print(f"[info] {changed}", flush=True)
+
+
 def make_backend(
     mode: str,
     host: str,
@@ -2060,7 +2095,16 @@ def make_backend(
     passes telnet_width/telnet_height to render wider than REST/Overlay.
 
     Either host may be a target such as "u2@c64u"; see tests/lib/targets.py.
+
+    A cartridge target's computer is configured here before any transport is
+    built. `run-tests` does the same thing before its first suite, but a suite
+    started on its own does not go through it, and the failure that follows is
+    silent rather than loud: with the computer set to prefer its own cartridge
+    port, a Debug step leaves the program counter where it was and the monitor
+    reports no error at all. Doing it here means both routes reach a machine
+    that can be driven, and a bench that is already set up is left alone.
     """
+    _ensure_cartridge_host(host, telnet_host, password, timeout)
     if mode == MODE_TELNET:
         # Telnet is a session on the device itself, so a cartridge target
         # connects to the cartridge; only keyboard injection over REST needs

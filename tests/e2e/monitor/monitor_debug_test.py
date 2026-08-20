@@ -744,7 +744,7 @@ def _wait_for_blank_debug_context(session: "mt.MonitorSession",
     raise mt.Failure(f"Debug footer did not clear after reset:\n{session.capture().text()}")
 
 
-def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
+def _reset_c64_core(rest_host: str, timeout: float = 20.0) -> None:
     # Two attempts, because the request and the proof are separate things. A
     # reset issued while the firmware is finishing debugger cleanup can be taken
     # late or not at all, and the only evidence either way is whether the KERNAL
@@ -790,7 +790,8 @@ def _chunk_boundary_recovery(rest_host: str, context: str, cooldown: float,
 
 
 def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
-    deadline = time.time() + timeout
+    started = time.time()
+    deadline = started + timeout
     stable_since = 0.0
     while time.time() < deadline:
         screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
@@ -799,6 +800,12 @@ def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
             if stable_since == 0.0:
                 stable_since = now
             elif now - stable_since >= 0.75:
+                waited = now - started
+                if waited > 3.0:
+                    # A boot that takes this long is worth naming: the budget is
+                    # the thing that decides whether a slow return is reported as
+                    # a machine that never came back.
+                    print(f"[info] C64 reached READY after {waited:.1f}s", flush=True)
                 return
         else:
             stable_since = 0.0
@@ -1707,8 +1714,16 @@ def _classify_execution_failure(session: "mt.MonitorSession", pc_before: str) ->
     except Exception:                                       # noqa: BLE001
         pc_now = ""
     if not alive:
+        if pc_now:
+            # The debugger holds the CPU while it is parked at a stop, so the
+            # jiffy stopping is what a held machine looks like, not a wedge.
+            # Measured on a U2+L: a Trace into a JSR parks at the target with the
+            # jiffy stopped, and the machine runs again the moment Debug is left.
+            return (f"PARKED: the debugger holds a context at {pc_now} and the "
+                    f"jiffy is stopped because of it, which is not a wedge")
         return (f"NOT-HOST-NMI: the 6510 is wedged (jiffy stuck at ${first:02X}) "
-                f"- a wedge is a defect, not the host limitation")
+                f"with no debug context held - a wedge is a defect, not the host "
+                f"limitation")
     if pc_now != pc_before:
         return (f"NOT-HOST-NMI: 6510 alive and the debug PC DID move "
                 f"({pc_before or '(none)'} -> {pc_now or '(none)'}) - an ordinary "
@@ -1730,9 +1745,23 @@ def _classify_execution_failure(session: "mt.MonitorSession", pc_before: str) ->
             f"to enter; needs the target's own sentinel to confirm")
 
 
+def _pc_wait_budget() -> float:
+    """How long a step is given to land its new PC in the footer.
+
+    Measured on a U2+L in a C64 Ultimate: a Trace into a JSR reaches the target
+    and draws the footer, but it takes longer than the U64 does. A budget that
+    fits the U64 reports the cartridge's slower but correct step as a failure to
+    step at all, which is what four checks in the side-effect and step-out
+    groups were reporting.
+    """
+    return 20.0 if mt.TestConfig.target == "u2" else 6.0
+
+
 def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
-                 timeout: float = 6.0) -> dict:
+                 timeout: float = 0.0) -> dict:
     """Poll the debug footer until PC matches `expected_pc`."""
+    if timeout <= 0.0:
+        timeout = _pc_wait_budget()
     deadline = time.time() + timeout
     try:
         pc_before = _parse_footer_values(
@@ -1756,8 +1785,10 @@ def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
 
 def _wait_for_pc_register(session: "mt.MonitorSession", expected_pc: str,
                           register: str, expected_value: str,
-                          timeout: float = 6.0) -> dict:
+                          timeout: float = 0.0) -> dict:
     """Poll until the footer reaches PC with a register value from the new stop."""
+    if timeout <= 0.0:
+        timeout = _pc_wait_budget()
     deadline = time.time() + timeout
     try:
         pc_before = _parse_footer_values(
@@ -3925,7 +3956,7 @@ def run_edit_visibility_tests(rest_host: str, session: "mt.MonitorSession") -> N
         load_fixtures()
         mt.ensure_hex_width(session, 8)
         session.goto(f"{data_cell:04X}")
-        session.fill(f"{data_cell:04X} {data_cell:04X} A3")
+        session.fill(f"{data_cell:04X}-{data_cell:04X},A3")
         _header_line(session, timeout=2.0)
         filled = mt.read_rest_memory(rest_host, data_cell, 1)
         if filled != bytes([0xA3]):

@@ -83,6 +83,13 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         bool do_go = monitor->consume_pending_go(&go_address, &go_context,
                                                  &go_has_context);
         bool release_after_exit = monitor->consume_release_host_after_exit();
+        // C=+R outside Debug does not reset the machine itself: handle_reset_
+        // shortcut() records the request and leaves the monitor, because a
+        // machine the user interface is still holding cannot come back to a
+        // KERNAL prompt. The reset is performed here, after the monitor has
+        // gone. Inside Debug the key takes reset_machine_and_reopen() instead,
+        // which is why that path never reaches this flag.
+        bool do_reset = monitor->consume_pending_reset();
         bool deferred_debug_go = monitor->has_deferred_debug_go();
         reopen_after_reset = monitor->consume_reopen_after_reset();
         monitor->deinit();
@@ -145,6 +152,23 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
                     monitor_io::jump_to(go_address);
                 }
             }
+        }
+        if (do_reset) {
+#if !defined(RUNS_ON_PC) && !defined(RECOVERYAPP)
+            // The same order C64_Subsys uses for MENU_C64_RESET: let go of the
+            // machine first, then reset it. Resetting one the user interface is
+            // still holding does nothing visible, because the freezer keeps the
+            // CPU stopped and the KERNAL never runs.
+            C64 *machine = C64::getMachine();
+            if (machine) {
+                if (machine->is_accessible()) {
+                    release_host();
+                    torn_down_host = true;
+                    machine->release_ownership();
+                }
+                machine->reset();
+            }
+#endif
         }
         if (release_after_exit) {
 #if defined(U64) && (U64) && !defined(RUNS_ON_PC)
