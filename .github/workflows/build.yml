@@ -22,23 +22,38 @@ jobs:
 
       # The harness that watches an E2E gate run, checked on every push. It
       # needs no device and no network beyond loopback, so it has no ordering
-      # dependency on the firmware build below: run both containers at once
-      # and fail if either does. A broken report generator is still reported
-      # before an hour of building elapses, at no cost to the total run time.
+      # dependency on the FPGA/ESP32 dependency step below: run both
+      # containers at once and fail if either does. Each container's output
+      # is captured to its own file and printed as one contiguous block once
+      # both finish, so the log stays in step order instead of interleaving
+      # two containers' output line by line.
       - name: Check Observability Harness & Determine FPGA/ESP32 dependencies
         run: |
           docker run --rm \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test" &
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test" \
+          >observability.log 2>&1 &
           observability_pid=$!
 
           docker run --rm \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends" &
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make fpga_depends && make esp_depends" \
+          >deps.log 2>&1 &
           deps_pid=$!
 
           status=0
           wait "$observability_pid" || status=$?
           wait "$deps_pid" || status=$?
+
+          echo "::group::Check Observability Harness"
+          cat observability.log
+          echo "::endgroup::"
+          rm -f observability.log
+
+          echo "::group::Determine FPGA & ESP32 dependencies"
+          cat deps.log
+          echo "::endgroup::"
+          rm -f deps.log
+
           exit $status
 
       - name: Cache U2 FPGA
@@ -98,61 +113,61 @@ jobs:
         run: |
           docker run --rm --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) esp32"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make esp32"
 
       - if: steps.cache-u2.outputs.cache-hit != 'true'
         name: Build U2 including FPGAs
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2_rv && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2.outputs.cache-hit == 'true'
         name: Build U2 using cached FPGAs
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2_rv_swonly && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2_rv_swonly && mv update.u2r update_${{ env.GIT_VERSION }}.u2r"
 
       - if: steps.cache-u2p.outputs.cache-hit != 'true'
         name: Build U2+ including FPGAs
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2plus && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2p.outputs.cache-hit == 'true'
         name: Build U2+ using cached FPGAs
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2plus_swonly && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2plus_swonly && mv update.u2p update_${{ env.GIT_VERSION }}.u2p"
 
       - if: steps.cache-u2pl.outputs.cache-hit != 'true'
         name: Build U2+L including FPGA
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2pl_no_esp && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_no_esp && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - if: steps.cache-u2pl.outputs.cache-hit == 'true'
         name: Build U2+L using cached FPGAs
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u2pl_swonly && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u2pl_swonly && mv update.u2l update_${{ env.GIT_VERSION }}.u2l"
 
       - name: Build U64 Software
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u64_no_esp && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64_no_esp && mv update.u64 update_${{ env.GIT_VERSION }}.u64"
 
       - name: Build U64-II Software
         run: |
           docker run --rm -e GITHUB_ACTIONS --net=custom_network --mac-address=4c:cc:6a:06:b3:79 \
           -v /opt/build-tools:/mnt/build-tools:ro \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make -j\$(nproc) u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make u64ii_no_esp && mv update.ue2 update_${{ env.GIT_VERSION }}.ue2 && mv update.cfw update_${{ env.GIT_VERSION }}.cfw"
 
       - name: Check Firmware Application Space
         if: always()
