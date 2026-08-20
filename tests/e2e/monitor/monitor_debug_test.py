@@ -25,6 +25,7 @@ from pathlib import Path
 # Reuse the existing telnet session helpers so both suites stay in lockstep.
 sys.path.insert(0, str(Path(__file__).parent))
 import mcm_monitor_compat as mt  # noqa: E402
+import targets  # noqa: E402
 from report import suite_fail, suite_ok  # noqa: E402
 from ui_backend import add_mode_argument  # noqa: E402
 
@@ -572,8 +573,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
     """
     session.goto(f"{address:04X}")
     target = f"${address:04X}"
+    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
     session.last_command = "CTRL_P_CLEAR_ONE"
-    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -602,8 +603,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
 
 
 def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
+    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
     session.last_command = "CTRL_P_CLEAR_ALL"
-    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -632,8 +633,8 @@ def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[s
     monitor currently maps at a breakpoint's address, so both the clear helper
     and the hygiene assertion read the table through here.
     """
+    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
     session.last_command = "CTRL_P_SLOTS"
-    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -1119,8 +1120,8 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         # session, the same way "P toggles a breakpoint" above does.
 
     with mt.check("Debug: C=+P opens the breakpoint list popup"):
+        session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
         session.last_command = "CTRL_P"
-        session.sock.sendall(b"\x10")
         snap = session.capture()
         if not any("BREAKPOINTS" in snap.line(y) for y in range(mt.HEIGHT)):
             raise mt.Failure("C=+P did not open the breakpoint list popup")
@@ -1147,8 +1148,8 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"Breakpoint line must show [BRKx]{_ram_tag()}, got: {row!r}")
 
     with mt.check("Debug: C=+P shows the live breakpoint list"):
+        session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
         session.last_command = "CTRL_P_WITH_BREAKPOINT"
-        session.sock.sendall(b"\x10")
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         if "BREAKPOINTS" not in joined:
@@ -2436,8 +2437,8 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
 
             session.send_char("P")
             _assert_no_debug_modal(session, f"{name} ROM breakpoint clear")
+            session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
             session.last_command = f"CTRL_P_CLEAR_{name}"
-            session.sock.sendall(b"\x10")
             text = session.capture().text()
             if f"SET ${target:04X}" in text:
                 raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
@@ -2676,8 +2677,8 @@ def _banked_kernal_out_program(base: int, ready_addr: int) -> bytes:
 
 
 def _open_breakpoint_popup(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
+    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
     session.last_command = f"CTRL_P_{context}"
-    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -3752,9 +3753,11 @@ def main() -> int:
     add_mode_argument(parser, default=os.environ.get("U64_MODE", "telnet"),
                       choices=("telnet",))
     parser.add_argument("--target", choices=("u64", "u2"),
-                        default=os.environ.get("U64_MONITOR_TARGET", "u64"),
+                        default=os.environ.get("U64_MONITOR_TARGET"),
                         help="Target hardware. 'u2' skips U64-only features (REST API, "
-                             "BASIC/KERNAL ROM stepping, CPU bank cycling, VIC bank).")
+                             "BASIC/KERNAL ROM stepping, CPU bank cycling, VIC bank). "
+                             "Defaults to auto-detecting from --host, the same as "
+                             "monitor_test.py, since run-tests never passes this flag.")
     parser.add_argument("--keep-going", action="store_true",
                         default=os.environ.get("U64_MONITOR_KEEP_GOING", "").lower() in ("1", "true", "yes"),
                         help="Continue after a check fails, logging verbose context per failure.")
@@ -3778,6 +3781,11 @@ def main() -> int:
             print(name)
         return 0
 
+    if args.target is None:
+        # run-tests never passes --target; derive it the same way
+        # monitor_test.py does, from whether @HOST@ is a split token
+        # (cartridge@computer) rather than always defaulting to u64.
+        args.target = "u2" if targets.parse(args.host).split else "u64"
     mt.set_target(args.target)
     # In U2 mode the REST API is typically unreachable; default to keep-going
     # so all failures land in the same console capture rather than stopping
