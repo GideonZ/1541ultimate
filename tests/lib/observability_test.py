@@ -37,11 +37,13 @@ tests/lib/README.md says is not negotiable.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
 import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -76,6 +78,10 @@ FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 EXPECTED = os.path.join(FIXTURES, "e2e-run.expected.md")
 FIXTURE: Optional[str] = None
 _FIXTURE_PROBLEM: Optional[str] = None
+# Guards building FIXTURE: several golden cases call require_fixture()
+# concurrently, and only the first should pay for the real scripted run that
+# builds it - the rest just wait and then read what it built.
+_FIXTURE_LOCK = threading.Lock()
 
 # The port overrides a case must not inherit from whoever ran it. Two cases
 # assert the built-in defaults, and a developer who has exported one of these
@@ -96,23 +102,37 @@ class Case:
     label: str
     requirements: Tuple[str, ...]
     run: Callable[[], object]
+    exclusive: bool = False
 
 
 CASES: List[Case] = []
 
 
-def case(tier: int, *requirements: str, label: str = ""):
+def case(tier: int, *requirements: str, label: str = "", exclusive: bool = False):
     """Register one case, naming the requirements it holds.
 
     The requirement numbers are on the case rather than only in a docstring so
     the registry check of OBS-16.7 can read them, and so a reviewer can read a
     list of requirement numbers with a test each instead of reading the
     specification against the code.
+
+    `exclusive=True` marks a case that must not run at the same time as any
+    other case's own reporting, or that touches state outside its own tempdir
+    in a way another case running at the same time could observe. That covers
+    a case that mutates process-global state directly (an os.environ entry,
+    a module-level path like interactions.LOG_PATH), one that calls report.py
+    itself - directly (report.detail(), for a coverage note) or by calling a
+    run-tests function in-process that does (report.warn(), for instance) -
+    instead of only returning its one-line summary, and one that edits a real
+    file this checkout tracks rather than one under tempfile.TemporaryDirectory.
+    Cases run concurrently by default; an exclusive one runs on the main
+    thread instead, in its normal place in registration order, so it is never
+    running at the same time as anything else that touches that same state.
     """
 
     def register(function: Callable[[], object]) -> Callable[[], object]:
         CASES.append(Case(tier, label or function.__name__.replace("_", " "),
-                          tuple(requirements), function))
+                          tuple(requirements), function, exclusive))
         return function
 
     return register
@@ -169,7 +189,7 @@ def without_port_overrides():
 # ---------------------------------------------------------------------------
 
 
-@case(1, "OBS-15.13", "OBS-8.14", "OBS-7.18")
+@case(1, "OBS-15.13", "OBS-8.14", "OBS-7.18", exclusive=True)
 def target_carries_every_port() -> str:
     """A parsed target answers where each of the device's surfaces is."""
     with without_port_overrides():
@@ -195,7 +215,7 @@ def target_carries_every_port() -> str:
     return "4 ports, and which machine is which"
 
 
-@case(1, "OBS-15.13", "OBS-15.14")
+@case(1, "OBS-15.13", "OBS-15.14", exclusive=True)
 def rest_port_environment_override() -> str:
     """U64_REST_PORT moves the REST port the way U64_TELNET_PORT moves Telnet."""
     with without_port_overrides():
@@ -207,7 +227,7 @@ def rest_port_environment_override() -> str:
     return "8080"
 
 
-@case(1, "OBS-15.14")
+@case(1, "OBS-15.14", exclusive=True)
 def rest_url_names_the_port_only_when_it_moved() -> str:
     """A URL against a real device reads exactly as it does with no port field."""
     import rest as rest_lib
@@ -313,7 +333,7 @@ def a_device_that_stops_answering_raises_rather_than_hangs() -> str:
     return "offline then back"
 
 
-@case(2, "OBS-1.1", "OBS-1.2", "OBS-16.6")
+@case(2, "OBS-1.1", "OBS-1.2", "OBS-16.6", exclusive=True)
 def an_unwritable_output_directory_does_not_end_the_run() -> str:
     """Where a run records itself is not part of what the run is testing.
 
@@ -527,7 +547,7 @@ def the_report_says_who_sent_the_lines_nobody_claimed() -> str:
     return "two senders, each with its count and its reason"
 
 
-@case(3, "OBS-16.6", "OBS-1.1")
+@case(3, "OBS-16.6", "OBS-1.1", exclusive=True)
 def a_scripted_run_does_not_inherit_the_gate_state() -> str:
     """This suite runs inside the gate, and a run of its own is not a child of it.
 
@@ -1363,7 +1383,7 @@ def runner_variables() -> "set":
 KEPT_VARIABLES: "set" = set()
 
 
-@case(1, "OBS-2.20")
+@case(1, "OBS-2.20", exclusive=True)
 def a_harness_edited_mid_run_is_reported() -> str:
     """A run whose own files change under it says so on its record.
 
@@ -1595,7 +1615,7 @@ def logged_interactions(path):
         return [json.loads(line) for line in handle if line.strip()]
 
 
-@case(1, "OBS-2.17")
+@case(1, "OBS-2.17", exclusive=True)
 def identical_interactions_collapse_and_bodies_are_kept_once() -> str:
     """An exhaustive log is only affordable if repetition costs nothing.
 
@@ -1638,7 +1658,7 @@ def identical_interactions_collapse_and_bodies_are_kept_once() -> str:
     return "34 interactions, 3 records, 1 body"
 
 
-@case(1, "OBS-2.17")
+@case(1, "OBS-2.17", exclusive=True)
 def a_short_answer_is_in_the_record_itself() -> str:
     """A reader should not have to open a file to see a 30-character error."""
     import interactions
@@ -1665,7 +1685,7 @@ def a_short_answer_is_in_the_record_itself() -> str:
     return "inline under the threshold, as text and as hex"
 
 
-@case(2, "OBS-2.17", "OBS-15.13")
+@case(2, "OBS-2.17", "OBS-15.13", exclusive=True)
 def every_transport_writes_to_the_interaction_log() -> str:
     """REST, Telnet and FTP all reach the log without a suite asking them to.
 
@@ -2045,7 +2065,7 @@ def a_frame_the_decoder_cannot_read_is_counted_rather_than_dropped() -> str:
     return "two refusals counted, one screen written"
 
 
-@case(1, "OBS-2.17")
+@case(1, "OBS-2.17", exclusive=True)
 def the_transcript_and_the_records_share_one_sequence() -> str:
     """One line a person reads, one record a program reads, one number joining.
 
@@ -2126,7 +2146,7 @@ def the_interaction_log_never_ends_a_run() -> str:
     return "an unwritable path and an undescribable object, both survived"
 
 
-@case(1, "OBS-7.7")
+@case(1, "OBS-7.7", exclusive=True)
 def a_device_pointed_at_another_port_is_named() -> str:
     """A run that will collect nothing says so before it collects nothing.
 
@@ -3043,7 +3063,7 @@ def the_screen_spool_is_not_a_suite() -> str:
     return "one suite, not two"
 
 
-@case(1, "OBS-7.5", "OBS-7.6")
+@case(1, "OBS-7.5", "OBS-7.6", exclusive=True)
 def a_second_interface_can_be_declared() -> str:
     """A device logs from whichever interface the route picked.
 
@@ -3584,7 +3604,7 @@ def the_band_shows_what_the_run_is_doing_and_counts_the_rest() -> str:
     return counters.strip()
 
 
-@case(1, "OBS-2.17", "OBS-8.40")
+@case(1, "OBS-2.17", "OBS-8.40", exclusive=True)
 def sent_and_received_are_byte_counts_on_every_transport() -> str:
     """One meaning per field name, across REST and Telnet.
 
@@ -5850,18 +5870,43 @@ def require_fixture() -> None:
         raise Failure(_FIXTURE_PROBLEM)
     if FIXTURE is not None:
         return
-    try:
-        made = build_fixture()
-        for _attempt in range(2):
-            if _fixture_is_well_formed(made):
-                break
+    with _FIXTURE_LOCK:
+        # Checked again with the lock held: another case may have built it, or
+        # learned it cannot be built, while this one was waiting for the lock.
+        if _FIXTURE_PROBLEM is not None:
+            raise Failure(_FIXTURE_PROBLEM)
+        if FIXTURE is not None:
+            return
+        try:
             made = build_fixture()
-        FIXTURE = made.directory
+            for _attempt in range(2):
+                if _fixture_is_well_formed(made):
+                    break
+                made = build_fixture()
+            FIXTURE = made.directory
+        except Failure:
+            raise
+        except Exception as error:  # noqa: BLE001
+            _FIXTURE_PROBLEM = f"the fixture could not be built: {error}"
+            raise Failure(_FIXTURE_PROBLEM) from error
+
+
+def prewarm_fixture() -> None:
+    """Build FIXTURE, if needed, before tier 4's cases run concurrently.
+
+    build_fixture() drives a real scripted run, so its own content - a retry
+    count among the things it can carry - depends on whatever else the
+    machine is doing while it runs. `require_fixture()`'s lock keeps two
+    golden cases from building it at once, but a case that already holds the
+    lock still has roughly twenty others doing their own real work beside it.
+    Called here instead, before that tier's pool exists, the build has the
+    same quiet machine a sequential run would have given the first case that
+    needed it.
+    """
+    try:
+        require_fixture()
     except Failure:
-        raise
-    except Exception as error:  # noqa: BLE001
-        _FIXTURE_PROBLEM = f"the fixture could not be built: {error}"
-        raise Failure(_FIXTURE_PROBLEM) from error
+        pass  # Each case that needs FIXTURE raises this again on its own line.
 
 
 def record_fixture() -> int:
@@ -6553,7 +6598,7 @@ def specified_requirements() -> "dict":
     return found
 
 
-@case(1, "OBS-16.7")
+@case(1, "OBS-16.7", exclusive=True)
 def every_requirement_with_logic_has_a_test() -> str:
     """Report which requirements no case names, and why, rather than failing.
 
@@ -7095,7 +7140,7 @@ def the_report_shows_the_device_log_around_a_failure() -> str:
     return "one slice, one restart"
 
 
-@case(4, "OBS-4.1", "OBS-1.7")
+@case(4, "OBS-4.1", "OBS-1.7", exclusive=True)
 def the_job_summary_is_a_copy_of_part_of_the_report() -> str:
     """The summary is the report's own bytes, plus at most the two lines.
 
@@ -7147,7 +7192,7 @@ def the_job_summary_is_a_copy_of_part_of_the_report() -> str:
     return f"{len(wanted.splitlines())} lines copied"
 
 
-@case(1, "OBS-4.1", "OBS-4.3")
+@case(1, "OBS-4.1", "OBS-4.3", exclusive=True)
 def the_job_summary_stays_inside_its_limits() -> str:
     """No marker copies the whole file; an oversized one truncates and says so."""
     import tempfile
@@ -7186,7 +7231,7 @@ def the_job_summary_stays_inside_its_limits() -> str:
     return f"{len(cut.encode()) // 1024} KiB after truncation"
 
 
-@case(1, "OBS-4.1")
+@case(1, "OBS-4.1", exclusive=True)
 def the_job_summary_step_does_nothing_outside_ci() -> str:
     """With no GITHUB_STEP_SUMMARY the step exits zero and writes nothing."""
     import tempfile
@@ -7284,6 +7329,71 @@ def run_case(entry: Case) -> str:
     return report.OK
 
 
+@dataclass
+class _Outcome:
+    """A non-exclusive case's result, computed on a worker thread."""
+    verdict: str
+    message: str
+    elapsed: float
+
+
+def _execute_case(entry: Case) -> _Outcome:
+    """Run a non-exclusive case's body on a worker thread and time it.
+
+    Never raises: a case must not end the suite. Calls nothing in report.py -
+    only an exclusive case does that (report.detail(), for a coverage note),
+    which is exactly why a case that does is marked exclusive and runs through
+    `run_case` instead, never through here.
+    """
+    started = time.monotonic()
+    try:
+        extra = entry.run() or ""
+    except Skipped as exc:
+        return _Outcome(report.SKIP, str(exc), time.monotonic() - started)
+    except Failure as exc:
+        return _Outcome(report.FAIL, str(exc), time.monotonic() - started)
+    except Exception as exc:  # noqa: BLE001 - a case must not end the suite
+        return _Outcome(report.FAIL,
+                        f"{type(exc).__name__}: {report.format_exception(exc)}",
+                        time.monotonic() - started)
+    return _Outcome(report.OK, str(extra), time.monotonic() - started)
+
+
+def _report_outcome(entry: Case, outcome: _Outcome) -> str:
+    """Print one non-exclusive case's already-computed outcome as its check line."""
+    report.check_start(entry.label)
+    if outcome.verdict == report.SKIP:
+        report.check_skip(outcome.message, elapsed=outcome.elapsed)
+    elif outcome.verdict == report.FAIL:
+        report.check_fail(outcome.message, elapsed=outcome.elapsed)
+    else:
+        report.check_ok(outcome.message, elapsed=outcome.elapsed)
+    return outcome.verdict
+
+
+def run_cases(cases: List[Case]) -> List[str]:
+    """Run a tier's cases, its non-exclusive ones concurrently, in registration order.
+
+    A non-exclusive case runs on a worker thread from a pool, all submitted up
+    front so they run concurrently; its result is reported here on the main
+    thread once its future resolves. An exclusive case runs the plain
+    sequential way instead, through `run_case`, right here in its normal place
+    in the order: check_start before its body runs and its verdict after,
+    exactly as when every case ran one at a time. That is what a case mutating
+    shared state (os.environ, a module-level path) needs to never overlap
+    another case touching the same state, and what the one case that calls
+    report.detail() itself needs for that call to queue under its own check
+    rather than print out of place - report.detail() only holds a line back
+    for the check it belongs to if that check's line is already open.
+    """
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        futures = [None if entry.exclusive else pool.submit(_execute_case, entry)
+                  for entry in cases]
+        return [run_case(entry) if future is None
+                else _report_outcome(entry, future.result())
+                for entry, future in zip(cases, futures)]
+
+
 def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tier", action="append", type=int, default=[],
@@ -7306,7 +7416,9 @@ def main(argv: List[str]) -> int:
         if not cases:
             continue
         report.section(f"tier {tier}: {title}")
-        verdicts += [run_case(entry) for entry in cases]
+        if tier == 4:
+            prewarm_fixture()
+        verdicts += run_cases(cases)
 
     failed = verdicts.count(report.FAIL)
     skipped = verdicts.count(report.SKIP)
