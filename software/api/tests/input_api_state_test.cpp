@@ -234,17 +234,24 @@ TEST(RestKeyboardStateTest, QueuedTapPreservesChordAndOrder)
     EXPECT_TRUE(key_active(matrix, "a"));
     EXPECT_FALSE(key_active(matrix, "b"));
 
+    // The tick that releases the first tap also starts the gap and spends its
+    // first tick, so REST_TAP_GAP_TICKS - 1 further idle ticks follow before
+    // the queued "b" may start. Ticked from the constant rather than from a
+    // number written out again, so changing the rate cannot silently change
+    // what this proves.
     keyboard.tickRestOverlays();
     keyboard.restSnapshot(matrix, restore);
     EXPECT_FALSE(key_active(matrix, "left_shift"));
     EXPECT_FALSE(key_active(matrix, "a"));
     EXPECT_FALSE(key_active(matrix, "b"));
 
-    keyboard.tickRestOverlays();
-    keyboard.restSnapshot(matrix, restore);
-    EXPECT_FALSE(key_active(matrix, "b"));
-    EXPECT_FALSE(key_active(matrix, "left_shift"));
-    EXPECT_FALSE(key_active(matrix, "a"));
+    for (int gap = 1; gap < REST_TAP_GAP_TICKS; gap++) {
+        keyboard.tickRestOverlays();
+        keyboard.restSnapshot(matrix, restore);
+        EXPECT_FALSE(key_active(matrix, "left_shift"));
+        EXPECT_FALSE(key_active(matrix, "a"));
+        EXPECT_FALSE(key_active(matrix, "b"));
+    }
 
     keyboard.tickRestOverlays();
     keyboard.restSnapshot(matrix, restore);
@@ -370,7 +377,16 @@ TEST(KeyboardC64StateTest, MatrixLookupTranslatesUiKeyCodes)
         { "f1", 0x01, KEY_F2 },
         { "a", 0x00, 'a' },
         { "a", 0x01, 'A' },
+        // C=+R and Ctrl+R are the monitor's reset shortcut. They must not
+        // resolve to KEY_DOWN, which is what the ASCII control code for R
+        // (0x12) is: the monitor tests the reset shortcut before it reaches
+        // its cursor-key handling, so a shared code would make cursor-down
+        // reset the machine. 0x02 is the C= modifier flag and 0x04 is Ctrl.
+        { "r", 0x00, 'r' },
+        { "r", 0x02, KEY_CTRL_R },
+        { "r", 0x04, KEY_CTRL_R },
     };
+    EXPECT_TRUE(KEY_CTRL_R != KEY_DOWN);
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         const InputKeyboardMapEntry *entry = find_keyboard_entry(cases[i].name);

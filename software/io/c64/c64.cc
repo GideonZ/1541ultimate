@@ -149,6 +149,7 @@ C64::C64()
     isFrozen = false;
     frozen_mode = MODE_NORMAL;
     backupIsValid = false;
+    frozen_cia2_porta_changed = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -592,6 +593,22 @@ void C64::resume(void)
     }
 }
 
+bool C64::begin_stopped_session(void)
+{
+    bool wasStopped = is_stopped();
+    if (!wasStopped) {
+        stop(false);
+    }
+    return !wasStopped;
+}
+
+void C64::end_stopped_session(bool stopped_it)
+{
+    if (stopped_it) {
+        resume();
+    }
+}
+
 void C64::reset(void)
 {
     C64_MODE = MODE_NORMAL;
@@ -627,11 +644,23 @@ uint8_t C64::peek(uint16_t address)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         value = ((uint8_t *)color_backup)[address - 0xD800];
     } else {
-        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+        // The freezer's own Ultimax cart, banked in to give it bus access while
+        // frozen, decodes only $0000-$0FFF, the I/O space and its own ROM
+        // windows: $1000-$7FFF and $A000-$CFFF have no device on the bus under
+        // it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of them needs
+        // the C64 mode put back to the one it was frozen in first.
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
                 restore_mode = true;
+                // The mode write has to reach the machine before the read it
+                // was made for, and reading the register back does not achieve
+                // it: that read never becomes a C64 bus cycle. One discarded
+                // read through the aperture is that cycle, as
+                // dma_transfer_frozen takes for the same reason. This range
+                // never contains I/O, so it has no side effect.
+                (void)ram[address];
             }
         }
         value = ram[address];
@@ -665,15 +694,22 @@ void C64::poke(uint16_t address, uint8_t value)
     } else if (isFrozen && address >= 0xD800 && address < 0xDC00) {
         ((uint8_t *)color_backup)[address - 0xD800] = value;
     } else {
-        if (isFrozen && address >= 0x8000 && (address < 0xD000 || address >= 0xE000)) {
+        // See the matching branch in peek().
+        if (isFrozen && address >= 0x1000 && (address < 0xD000 || address >= 0xE000)) {
             saved_mode = C64_MODE;
             if ((saved_mode & C64_MODE_ULTIMAX) && (saved_mode != frozen_mode)) {
                 C64_MODE = frozen_mode;
                 restore_mode = true;
+                (void)ram[address];
             }
         }
         ram[address] = value;
         if (restore_mode) {
+            // A write does not stall for its bus cycle the way a read does, so
+            // it can still be on its way out when the mode goes back to
+            // Ultimax and nothing decodes this range any more. One discarded
+            // read holds the mode until the write has been taken.
+            (void)ram[address];
             C64_MODE = saved_mode;
         }
     }
@@ -695,9 +731,13 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
         int remaining = length - pos;
         int chunk = remaining;
 
-        if ((addr >= 0x8000) && ((addr < 0xD000) || (addr >= 0xE000))) {
-            // ROM/cart range: the freezer menu may have its own ultimax cart banked
-            // in, so temporarily restore the C64 mode it had when frozen.
+        if ((addr >= 0x1000) && ((addr < 0xD000) || (addr >= 0xE000))) {
+            // The freezer's own Ultimax cart, banked in to give it bus access
+            // while frozen, decodes only $0000-$0FFF, the I/O space and its own
+            // ROM windows: $1000-$7FFF and $A000-$CFFF have no device on the bus
+            // under it, same as $8000-$9FFF and $E000-$FFFF. Reaching any of
+            // them needs the C64 mode temporarily put back to the one it was
+            // frozen in.
             int region_end = (addr < 0xD000) ? 0xD000 : 0x10000;
             if ((region_end - addr) < chunk) {
                 chunk = region_end - addr;
@@ -708,10 +748,28 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 C64_MODE = frozen_mode;
             }
             C64_DMA_MEMONLY = 0;
+            // Both registers above re-decode the C64 bus, and that has to
+            // reach the machine before the transfer is issued. Reading the
+            // registers back does not achieve it: they are on this side and
+            // the read never becomes a C64 bus cycle. One discarded read
+            // through the C64 memory aperture is that cycle. resume() takes
+            // the same kind of dummy cycle after its own C64_MODE write. This
+            // range never contains I/O, so the read has no side effect.
+            (void)ram[addr];
             if (rw) {
                 memcpy(buffer + pos, (const void *)(ram + addr), chunk);
             } else {
                 memcpy((void *)(ram + addr), buffer + pos, chunk);
+                // And one after, for the same reason in the other direction. A
+                // read through the aperture stalls until the C64 bus cycle
+                // answers, so the loop cannot outrun it; a write does not, so
+                // the last bytes can still be on their way out when the mode
+                // below is put back to Ultimax, where nothing decodes this
+                // range, and they are lost. One discarded read holds the mode
+                // until the write has been taken. Measured on an Ultimate II+L
+                // in a C64 Ultimate: without it, a monitor Transfer of any
+                // length landed its first two bytes and nothing after them.
+                (void)ram[addr];
             }
             C64_DMA_MEMONLY = 1;
             if (restore_mode) {
@@ -767,6 +825,45 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
     C64_DMA_MEMONLY = saved_memonly;
 }
 
+#if U64 == 1
+// Defined in u64_config.cc, which owns the FPGA audio mixer and the settings
+// it is programmed from. Weak because the updater application links this file
+// without that one; there the SID writes below stand on their own.
+extern void u64_mute_sids(void) __attribute__((weak));
+extern void u64_unmute_sids(void) __attribute__((weak));
+#endif
+
+// Silence the SIDs while the freezer owns the machine. The SID master volume
+// is what does it, on every target. Where an FPGA mixer is available it is
+// closed around those writes, so the click they make is not heard; see
+// u64_mute_sids().
+static void freezer_mute_sids(void)
+{
+#if U64 == 1
+    if (u64_mute_sids) {
+        u64_mute_sids();
+        return;
+    }
+#endif
+    SID_VOLUME = 0;
+    SID2_VOLUME = 0;
+    SID3_VOLUME = 0;
+}
+
+static void freezer_unmute_sids(void)
+{
+#if U64 == 1
+    if (u64_unmute_sids) {
+        u64_unmute_sids();
+        return;
+    }
+#endif
+    // turn on volume. Unfortunately we could not know what it was set to.
+    SID_VOLUME = 15;
+    SID2_VOLUME = 15;
+    SID3_VOLUME = 15;
+}
+
 /*
  -------------------------------------------------------------------------------
  freeze (split in subfunctions)
@@ -795,9 +892,7 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-    SID_VOLUME = 0;
-    SID2_VOLUME = 0;
-    SID3_VOLUME = 0;
+    freezer_mute_sids();
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -829,6 +924,7 @@ void C64::backup_io(void)
     // backup CIA registers
     cia_backup[0] = CIA2_DDRA;
     cia_backup[1] = CIA2_DPA;
+    frozen_cia2_porta_changed = false;
     cia_backup[2] = CIA1_DDRA;
     cia_backup[3] = CIA1_DDRB;
     CIA1_DDRA = 0x00;
@@ -934,6 +1030,9 @@ void C64::restore_io(void)
     }
 
     // restore the cia registers
+    if (frozen_cia2_porta_changed) {
+        CIA2_DPA = cia_backup[1];
+    }
     CIA2_DDRA = cia_backup[0];
 //    CIA2_DPA  = cia_backup[1]; // don't touch!
     CIA1_DDRA = cia_backup[2];
@@ -953,9 +1052,7 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    freezer_unmute_sids();
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!

@@ -131,6 +131,9 @@ public:
     static U64Config *getConfigurator() { return u64_configurator; }
 
     void ResetHandler();
+    // Reprogram the audio mixer from the stored settings; see
+    // u64_unmute_sids().
+    void restoreMixer(void) { mixercfg.effectuate_settings(); }
     void create_task_items(void);
     void update_task_items(bool writablePath);
     SubsysResultCode_e executeCommand(SubsysCommand *cmd);

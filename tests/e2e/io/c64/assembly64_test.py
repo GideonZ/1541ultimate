@@ -337,6 +337,7 @@ def unwind_to_root(device: Device, what: str) -> None:
             # at the root it is a genuine no-op: screen_changed() below would
             # never see a change and would misread that as a popup blocking
             # the view, sending RETURN into whatever entry is selected.
+            prime_selection_marker(device)
             return
         device.send_key("RUNSTOP")
         if device.screen() is None:
@@ -429,6 +430,35 @@ def _box_interior_bounds(text: str) -> Optional[Tuple[int, int]]:
     return left + 1, right
 
 
+def no_cursor_reason(device: Device) -> str:
+    """Why cursor_row() answered None, which is two different faults."""
+    if device.mode == MODE_TELNET and device.backend.selected_sgr is None:
+        return ("the colour that marks a selection was never measured, so no "
+                "row can be read; see prime_selection_marker")
+    return "the menu closed while moving the cursor"
+
+
+def prime_selection_marker(device: Device) -> None:
+    """Teach the Telnet backend which colour marks a selected row.
+
+    TelnetBackend measures that colour the first time it is asked for a
+    selected row, and this suite never asks: for the form it reads
+    telnet_field_row instead, because the form's fields are indented past the
+    first two columns TelnetBackend scans. So the colour was never measured,
+    telnet_field_row found none, and every cursor_row() answered None as
+    though the menu had closed.
+
+    The root browser is the screen the backend can measure, so it is measured
+    here while that screen is still up and before a form covers it.
+    """
+    if device.mode != MODE_TELNET or device.backend.selected_sgr is not None:
+        return
+    try:
+        device.backend.selected_row(device.entry_rows)
+    except Failure:
+        pass
+
+
 def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]:
     """Telnet equivalent of Backend.selected_row(), scoped to this form.
 
@@ -480,7 +510,7 @@ def select_row(device: Device, target: int, what: str) -> None:
     for _ in range(2):
         current = device.cursor_row()
         if current is None:
-            raise Failure(f"{what}: the menu closed while moving the cursor")
+            raise Failure(f"{what}: {no_cursor_reason(device)}")
         if current == target:
             return
         device.send_key_repeat("DOWN" if current < target else "UP",
@@ -490,7 +520,7 @@ def select_row(device: Device, target: int, what: str) -> None:
     for _ in range(FIELD_WALK_LIMIT):
         current = device.cursor_row()
         if current is None:
-            raise Failure(f"{what}: the menu closed while moving the cursor")
+            raise Failure(f"{what}: {no_cursor_reason(device)}")
         if current == target:
             return
         device.send_key("DOWN" if current < target else "UP")

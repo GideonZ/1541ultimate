@@ -42,6 +42,7 @@ import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import pacing  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
+import api as api_lib  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -171,6 +172,12 @@ SUITES: Sequence[Suite] = (
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
     Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", ""),
+    # Needs no device either: machine:input has an event limit and a body-size
+    # limit, and a request that breaks either is refused. Splitting on the
+    # count alone sent a 64-keypress field clear as one 4110-byte request and
+    # failed every context-menu action that types into a field, with a message
+    # about the request rather than about the keys.
+    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", ""),
     # Also needs no device: it checks the two decisions this runner makes when
     # a run goes wrong - when the recovery command may fire, and what status the
     # run exits with. Both only show themselves on a run that has already gone
@@ -257,6 +264,14 @@ SUITES: Sequence[Suite] = (
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Measures the keystroke injection every other suite depends on: a lost key
+    # fails whichever check was typing at the time and names no rate, so this
+    # names one. One batch of the largest size the input API accepts, which is
+    # the size that used to lose its last key to a ring one slot too small; the
+    # rates are in tests/e2e/doc/key-injection-rate.md, and larger runs are a
+    # soak.
+    Suite("e2e", "key-injection", "tests/e2e/io/c64/key_injection_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --keys 64 --batch 64"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
@@ -2978,6 +2993,26 @@ def main(argv: List[str]) -> int:
     before_syslog = check_syslog_setting(device, "at the start of the run") \
         if args.syslog else ""
     recording = start_recorder(args, target, device)
+
+    # Before any suite, because a cartridge whose computer has not handed its
+    # bus over fails later in ways that name neither the setting nor the
+    # computer. A no-op on a target that is its own computer.
+    if target.split:
+        report.step_start("cartridge: the computer prefers its external cartridge")
+        try:
+            changed = api_lib.ensure_cartridge_preference(
+                target, options.password, float(options.timeout))
+        except api_lib.CartridgePreferenceUnavailable as exc:
+            # Not a reason to end the run: a computer that cannot be asked is
+            # either not one that has the setting, such as the loopback
+            # stand-in the observability fixture runs against, or one whose
+            # own suites will report it.
+            report.check_warn(str(exc))
+        except DEVICE_ERRORS as exc:
+            report.check_fail(str(exc))
+            return EXIT_SUITE_FAILED
+        else:
+            report.check_ok(changed or "already set")
 
     try:
         results: List[Result] = []

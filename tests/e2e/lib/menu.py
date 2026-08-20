@@ -19,16 +19,14 @@ adopt this without restructuring its session class.
 import os
 import sys
 import time
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence, Tuple
 
 # tests/lib holds the pacing every suite shares; see tests/lib/pacing.py for
 # why these are not constants of this module any more.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", "lib"))
-import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-
-# software/api/route_input.cc rejects a larger batch with HTTP 400.
-INPUT_MAX_EVENTS = 60
+import api  # noqa: E402  (needs tests/lib on sys.path first)
+import pacing  # noqa: E402
 
 # Kept as names so callers read the same way; the values live in tests/lib/pacing.py.
 KEY_SETTLE_SECONDS = pacing.KEY_SETTLE_SECONDS
@@ -40,9 +38,12 @@ def tap_event(keys: Sequence[str]) -> dict:
 
 
 def tap_batches(keys_list: Sequence[Sequence[str]]) -> List[List[dict]]:
-    """Split a run of taps into batches the firmware will accept."""
-    events = [tap_event(k) for k in keys_list]
-    return [events[i:i + INPUT_MAX_EVENTS] for i in range(0, len(events), INPUT_MAX_EVENTS)]
+    """Split a run of taps into batches the firmware will accept.
+
+    Both device limits decide that, the event count and the request body size;
+    see api.input_batches.
+    """
+    return api.input_batches([tap_event(k) for k in keys_list])
 
 
 def send_taps(post_events: Callable[[List[dict]], None], keys_list: Sequence[Sequence[str]]) -> None:
@@ -100,16 +101,28 @@ def toggle_menu(press_button: Callable[[], None], menu_is_open: Callable[[], boo
 
 
 def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
-                        stable_samples: Optional[int] = None) -> bool:
+                        stable_samples: Optional[int] = None,
+                        known: Optional[bytes] = None
+                        ) -> Tuple[bool, Optional[bytes]]:
     """Wait until the menu screen stops changing.
 
     A batch is accepted by REST immediately but drains through the C64 matrix
     over time, so the caller must not act until it has been consumed. Watching
     the screen go quiet measures that directly.
+
+    `known` is a screen the caller has already read, used as the first sample
+    instead of reading the same screen again. wait_screen_changes returns the
+    screen it stopped on, so the settle that follows it starts from that read
+    rather than paying for another one. The stability rule is unchanged: this
+    still requires `stable_samples` further reads that match.
+
+    Returns whether the screen settled and the last screen read, so a caller
+    that wants the settled screen does not have to re-read it either. The
+    screen is None only where the menu closed under the caller.
     """
     if stable_samples is None:
         stable_samples = pacing.SETTLE_STABLE_SAMPLES
-    last = screen()
+    last = known if known is not None else screen()
     stable = 0
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -118,16 +131,17 @@ def wait_screen_settled(screen: Callable[[], Optional[bytes]], timeout: float,
         if current == last:
             stable += 1
             if stable >= stable_samples:
-                return True
+                return True, current
         else:
             stable = 0
             last = current
-    return False
+    return False, last
 
 
 def wait_screen_changes(screen: Callable[[], Optional[bytes]], before: Optional[bytes],
                         timeout: float, min_samples: int = 1,
-                        hard_timeout: Optional[float] = None) -> bool:
+                        hard_timeout: Optional[float] = None
+                        ) -> Tuple[bool, Optional[bytes]]:
     """Wait for the menu screen to differ from 'before'.
 
     Drawing takes longer than a key tap, and acting before it finishes loses the
@@ -152,18 +166,34 @@ def wait_screen_changes(screen: Callable[[], Optional[bytes]], before: Optional[
     `min_samples` doing the work of surviving a slow transport, there is
     nothing to be gained from that, and it costs about 0.1s per keypress that
     changes nothing.
+
+    The pause between reads is shortened where a full-length one would push the
+    last of the `min_samples` reads past the budget. Both conditions above are
+    unchanged, so a wait still ends only once the budget has elapsed and the
+    reads have been taken; what this removes is the overshoot. Measured on an
+    Ultimate 64 with 6 samples, a 0.3s budget and an 18ms read: a keypress that
+    changes nothing took 408ms, of which 108ms was the reads and 250ms was five
+    full-length pauses. On a device slow enough for the reads alone to exceed
+    the budget the pause goes to zero and the wait is exactly as long as it was.
+
+    Returns whether the screen changed and the last screen read, so the settle
+    that usually follows can start from that read instead of taking its own.
     """
     if hard_timeout is None:
         hard_timeout = max(timeout, MENU_TOGGLE_TIMEOUT_SECONDS)
     started = time.monotonic()
     samples = 0
     while True:
-        if screen() != before:
-            return True
+        current = screen()
+        if current != before:
+            return True, current
         samples += 1
         elapsed = time.monotonic() - started
         if elapsed >= hard_timeout:
-            return False
+            return False, current
         if samples >= min_samples and elapsed >= timeout:
-            return False
-        time.sleep(pacing.POLL_INTERVAL_SECONDS)
+            return False, current
+        remaining_reads = max(1, min_samples - samples)
+        remaining_budget = max(0.0, timeout - elapsed)
+        time.sleep(min(pacing.POLL_INTERVAL_SECONDS,
+                       remaining_budget / remaining_reads))
