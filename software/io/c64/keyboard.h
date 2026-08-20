@@ -42,6 +42,7 @@ public:
 #define KEY_CTRL_L 0x0C
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_O 0x0F
+#define KEY_CTRL_P 0x10
 #define KEY_CTRL_V 0x16
 
 // Synthetic codes above the ASCII range: C= plus a digit has no ASCII control

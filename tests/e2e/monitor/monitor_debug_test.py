@@ -542,7 +542,7 @@ def _ensure_breakpoint_at(session: "mt.MonitorSession", address: int,
     row = _disassembly_row(session.capture(), address)
     if "[BRK" in row:
         return
-    session.send_char("R")
+    session.send_char("P")
     _assert_no_debug_modal(session, context)
     row = _disassembly_row(session.capture(), address)
     if "[BRK" not in row:
@@ -572,8 +572,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
     """
     session.goto(f"{address:04X}")
     target = f"${address:04X}"
-    session.last_command = "CTRL_L_CLEAR_ONE"
-    session.sock.sendall(b"\x0c")
+    session.last_command = "CTRL_P_CLEAR_ONE"
+    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -602,8 +602,8 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
 
 
 def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
-    session.last_command = "CTRL_L_CLEAR_ALL"
-    session.sock.sendall(b"\x0c")
+    session.last_command = "CTRL_P_CLEAR_ALL"
+    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -632,8 +632,8 @@ def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[s
     monitor currently maps at a breakpoint's address, so both the clear helper
     and the hygiene assertion read the table through here.
     """
-    session.last_command = "CTRL_L_SLOTS"
-    session.sock.sendall(b"\x0c")
+    session.last_command = "CTRL_P_SLOTS"
+    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -1008,7 +1008,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             _ensure_breakpoint_at(session, address, f"slot fill ${address:04X}")
         overflow = base + 10
         session.goto(f"{overflow:04X}")
-        session.send_char("R")
+        session.send_char("P")
         _dismiss_modal_if_present(session)
         row = _disassembly_row(session.capture(), overflow)
         if "[BRK" in row:
@@ -1054,30 +1054,76 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
                       "C=+B List", "D Step Over", "T Step Into", "U Step Out",
-                      "C=+L", "C=+D", "C=+R", "RSTOP"):
+                      "C=+P", "C=+D", "C=+R", "RSTOP"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")
         if "ESC" in joined:
             raise mt.Failure(f"Debug help must show RSTOP, not ESC:\n{joined}")
         session.send_key("ESC")
 
-    with mt.check("Debug: R toggles a breakpoint (set + clear)"):
+    with mt.check("Debug: P toggles a breakpoint (set + clear)"):
         before = session.capture().text()
-        session.send_char("R")
+        session.send_char("P")
         after_set = session.capture().text()
         if "BRK" in after_set and "SET" in after_set and after_set != before:
-            raise mt.Failure("R must not show a redundant BRK SET popup")
-        session.send_char("R")
+            raise mt.Failure("P must not show a redundant BRK SET popup")
+        session.send_char("P")
         after_clear = session.capture().text()
         if "BRK" in after_clear and "CLR" in after_clear and after_clear != after_set:
-            raise mt.Failure("Second R must not show a redundant BRK CLR popup")
+            raise mt.Failure("Second P must not show a redundant BRK CLR popup")
 
-    with mt.check("Debug: C=+L opens the breakpoint list popup"):
-        session.last_command = "CTRL_L"
-        session.sock.sendall(b"\x0c")
+    with mt.check("Debug: R falls through to Range mode without disturbing the session"):
+        # 4 NOPs: safe to both step over (Debug) and copy byte-for-byte (Range),
+        # so the same fixture proves both without conflating code and data.
+        program = bytes([0xEA, 0xEA, 0xEA, 0xEA])
+        mt.write_rest_memory(rest_host, 0xC080, program)
+        mt.write_rest_memory(rest_host, 0xC090, bytes([0x00, 0x00, 0x00, 0x00]))
+        session.goto("C080")
+        session.send_char("A")
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
+        session.send_char("P")
+        armed = _disassembly_row(session.capture(), 0xC080)
+        if "[BRK" not in armed:
+            raise mt.Failure(f"Breakpoint must be armed at $C080 before the Range interlude: {armed!r}")
+
+        session.send_char("R")
+        header = _header_line(session, expect="Range")
+        if "Dbg" not in header:
+            raise mt.Failure(f"Debug must stay active while Range mode is active: {header!r}")
+        session.send_key_repeat("DOWN", 3)
+        session.send_key("COPY")
+        header = _header_line(session)
+        if "Range" in header:
+            raise mt.Failure(f"Range flag must clear after the copy: {header!r}")
+        if "Dbg" not in header:
+            raise mt.Failure(f"Debug must remain active after the Range copy: {header!r}")
+
+        row = _disassembly_row(session.capture(), 0xC080)
+        if "[BRK" not in row:
+            raise mt.Failure(f"Breakpoint must survive the Range copy: {row!r}")
+
+        session.goto("C090")
+        session.send_key("PASTE")
+        pasted = mt.read_rest_memory(rest_host, 0xC090, len(program))
+        if pasted != program:
+            raise mt.Failure(
+                f"Range copy taken during Debug must paste the real bytes: "
+                f"expected {program.hex()}, got {pasted.hex()}")
+
+        session.goto("C080")
+        _step_and_assert_pc(session, "D", 0xC081,
+                            "Stepping must still work after the Range interlude")
+        _clear_breakpoint_at(session, 0xC080, "Range-interlude breakpoint clear")
+        # Debug is left active: the checks that follow assume a continuous
+        # session, the same way "P toggles a breakpoint" above does.
+
+    with mt.check("Debug: C=+P opens the breakpoint list popup"):
+        session.last_command = "CTRL_P"
+        session.sock.sendall(b"\x10")
         snap = session.capture()
         if not any("BREAKPOINTS" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("C=+L did not open the breakpoint list popup")
+            raise mt.Failure("C=+P did not open the breakpoint list popup")
         for ch in "DTOGR":
             session.send_char(ch)
             snap = session.capture()
@@ -1093,20 +1139,20 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             session.send_char("D")
         _clear_breakpoint_at(session, 0xC050, "$C050 stale breakpoint clear")
         session.goto("C050")
-        session.send_char("R")
+        session.send_char("P")
         brk_source = _brk_source_re()
         row = _await_row(session, "|C050 ",
                          lambda r: re.search(brk_source, r) is not None)
         if not re.search(brk_source, row):
             raise mt.Failure(f"Breakpoint line must show [BRKx]{_ram_tag()}, got: {row!r}")
 
-    with mt.check("Debug: C=+L shows the live breakpoint list"):
-        session.last_command = "CTRL_L_WITH_BREAKPOINT"
-        session.sock.sendall(b"\x0c")
+    with mt.check("Debug: C=+P shows the live breakpoint list"):
+        session.last_command = "CTRL_P_WITH_BREAKPOINT"
+        session.sock.sendall(b"\x10")
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         if "BREAKPOINTS" not in joined:
-            raise mt.Failure(f"C=+L did not open breakpoint list:\n{joined}")
+            raise mt.Failure(f"C=+P did not open breakpoint list:\n{joined}")
         if "$C050" not in joined or "SET" not in joined:
             raise mt.Failure(f"Breakpoint list did not show the live breakpoint:\n{joined}")
         if "0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res" not in joined:
@@ -1132,7 +1178,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"Labelled breakpoint line must show {label_tag}, got: {row!r}")
         if re.search(r"\[BRK\d\]", row):
             raise mt.Failure(f"Labelled breakpoint line must not also show [BRKx], got: {row!r}")
-        session.send_char("R")
+        session.send_char("P")
 
     with mt.check("Debug: visible memory source indicators are 3 chars"):
         _ensure_no_debug(session)
@@ -2388,10 +2434,10 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
                 raise mt.Failure(f"{name} ROM breakpoint did not hit target: {parsed!r}")
             _address_row_context(session, target, f"{name} ROM breakpoint hit")
 
-            session.send_char("R")
+            session.send_char("P")
             _assert_no_debug_modal(session, f"{name} ROM breakpoint clear")
-            session.last_command = f"CTRL_L_CLEAR_{name}"
-            session.sock.sendall(b"\x0c")
+            session.last_command = f"CTRL_P_CLEAR_{name}"
+            session.sock.sendall(b"\x10")
             text = session.capture().text()
             if f"SET ${target:04X}" in text:
                 raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
@@ -2630,8 +2676,8 @@ def _banked_kernal_out_program(base: int, ready_addr: int) -> bytes:
 
 
 def _open_breakpoint_popup(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
-    session.last_command = f"CTRL_L_{context}"
-    session.sock.sendall(b"\x0c")
+    session.last_command = f"CTRL_P_{context}"
+    session.sock.sendall(b"\x10")
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
         raise mt.Failure(f"{context}: breakpoint popup did not open:\n{snap.text()}")
@@ -2748,7 +2794,7 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         header = _header_line(session)
         if "Dbg" not in header:
             session.send_char("D")
-        session.send_char("R")
+        session.send_char("P")
         _wait_for_screen_text(session, "BRK KRN, CPU RAM; not mapped now")
         session.send_key("ENTER")
 
@@ -2761,7 +2807,7 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         if not _shows_ram(row) or "INC $D020" not in row:
             raise mt.Failure(f"Monitor O5 view must browse hidden RAM payload at $E000: {row!r}")
         session.send_char("D")
-        session.send_char("R")
+        session.send_char("P")
         _assert_no_debug_modal(session, "$E000 RAM breakpoint set")
 
         snap = _assert_breakpoint_popup_contains(
@@ -2871,7 +2917,7 @@ def _arm_loop_breakpoint_and_hit(session: "mt.MonitorSession", loop_addr: int,
         session.send_char("D")
     row = _disassembly_row(session.capture(), loop_addr)
     if "[BRK" not in row:
-        session.send_char("R")
+        session.send_char("P")
         snap = session.capture()
         if "not mapped now" in snap.text():
             session.send_key("ENTER")
@@ -3033,7 +3079,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         # This is expected; dismiss it. The breakpoint is still armed in RAM.
         row = _disassembly_row(session.capture(), payload)
         if "[BRK" not in row:
-            snap = session.send_char("R")
+            snap = session.send_char("P")
             if "not mapped now" in snap.text():
                 session.send_key("ENTER")
             else:
@@ -3209,7 +3255,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         session.goto("E003")
         session.send_char("A")
         session.send_char("D")
-        session.send_char("R")
+        session.send_char("P")
         _wait_for_screen_text(session, "BRK RAM, CPU KRN; not mapped now")
         session.send_key("ENTER")
         row = _disassembly_row(session.capture(), 0xE003)

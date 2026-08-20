@@ -146,7 +146,7 @@ class _LegacySocket:
 
     _KEYS = {
         b"\x04": "CTRL_D",
-        b"\x0c": "CTRL_L",
+        b"\x10": "CTRL_P",
         b"\x12": "CTRL_R",
         b"\x18": "CTRL_X",
         b"\x1bB": "CBM_B",

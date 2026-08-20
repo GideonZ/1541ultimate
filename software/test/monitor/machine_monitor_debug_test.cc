@@ -2639,8 +2639,8 @@ static int test_breakpoints_survive_ctrl_r_reset_reentry()
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0xC000, 0xEA);
 
-    // J $A000 -> A (asm) -> D (debug on) -> R (BP at A000) -> C=+R (reset).
-    const int keys[] = { 'J', 'A', 'D', 'R', KEY_CTRL_R };
+    // J $A000 -> A (asm) -> D (debug on) -> P (BP at A000) -> C=+R (reset).
+    const int keys[] = { 'J', 'A', 'D', 'P', KEY_CTRL_R };
     FakeKeyboard keyboard(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -2691,8 +2691,8 @@ static int test_breakpoints_survive_normal_close_reopen()
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0xA000, 0xEA);
 
-    // J $A000 -> A -> D -> R -> BREAK (leave Debug) -> BREAK (exit monitor).
-    const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    // J $A000 -> A -> D -> P -> BREAK (leave Debug) -> BREAK (exit monitor).
+    const int keys[] = { 'J', 'A', 'D', 'P', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -2736,7 +2736,7 @@ static int test_monitor_reset_saved_state_clears_breakpoints()
         backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
         backend.write(0xA000, 0xEA);
 
-        const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+        const int keys[] = { 'J', 'A', 'D', 'P', KEY_BREAK, KEY_BREAK };
         FakeKeyboard keyboard(keys, 6);
         ui.screen = &screen;
         ui.keyboard = &keyboard;
@@ -2791,7 +2791,7 @@ static int test_breakpoint_toggle_via_r()
     monitor_reset_saved_state();
 
     // RUN/STOP first leaves Debug, then a second RUN/STOP exits the monitor.
-    const int keys[] = { 'A', 'D', 'R', 'R', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'P', 'P', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -2830,7 +2830,7 @@ static int test_breakpoint_mismatch_message_uses_view_target_and_live_cpu()
         keys[n++] = 'o'; // monitor view CPU7 -> CPU5, RAM under KERNAL
     }
     keys[n++] = 'D';
-    keys[n++] = 'R';
+    keys[n++] = 'P';
     keys[n++] = KEY_BREAK;
     keys[n++] = KEY_BREAK;
     FakeKeyboard keyboard(keys, n);
@@ -2860,7 +2860,7 @@ static int test_breakpoint_mismatch_message_uses_view_target_and_live_cpu()
     matched_backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     matched_backend.write(0x0001, 0x07);
     matched_backend.write(0xE000, 0xEA);
-    const int matched_keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    const int matched_keys[] = { 'J', 'A', 'D', 'P', KEY_BREAK, KEY_BREAK };
     FakeKeyboard matched_keyboard(matched_keys, 6);
     matched_ui.screen = &matched_screen;
     matched_ui.keyboard = &matched_keyboard;
@@ -2909,8 +2909,8 @@ static int test_breakpoint_popup_store_reuses_selected_slot()
     backend.write(0x1100, 0xEA);
 
     const int keys[] = {
-        'J', 'A', 'D', 'R',
-        'J', KEY_CTRL_L, 'S', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+        'J', 'A', 'D', 'P',
+        'J', KEY_CTRL_P, 'S', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 10);
     ui.screen = &screen;
@@ -2953,9 +2953,9 @@ static int test_breakpoint_popup_digit_jumps_to_slot()
     backend.write(0x1200, 0xEA);
 
     const int keys[] = {
-        'J', 'A', 'D', 'R',
-        'J', 'R',
-        'J', KEY_CTRL_L, '1',
+        'J', 'A', 'D', 'P',
+        'J', 'P',
+        'J', KEY_CTRL_P, '1',
         KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 11);
@@ -2994,7 +2994,7 @@ static int test_breakpoint_row_indicator_and_color()
     backend.write(0xC001, 0x34);
     backend.write(0xC002, 0x12);
 
-    const int keys[] = { 'J', 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'J', 'A', 'D', 'P', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -3046,10 +3046,10 @@ static int test_disabled_breakpoint_row_uses_regular_color()
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0xA000, 0xEA);
 
-    // J A000 -> A (asm) -> D (debug on) -> R (toggle BP on) -> C=+L (open popup)
+    // J A000 -> A (asm) -> D (debug on) -> P (toggle BP on) -> C=+P (open popup)
     // -> E (disable selected slot) -> ESC (close popup) -> BREAK -> BREAK
     const int keys[] = {
-        'J', 'A', 'D', 'R', KEY_CTRL_L, 'E', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+        'J', 'A', 'D', 'P', KEY_CTRL_P, 'E', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
@@ -3090,7 +3090,7 @@ static int test_breakpoint_label_replaces_row_indicator()
     backend.write(0xC000, 0xEA);
 
     const int keys[] = {
-        'J', 'A', 'D', 'R', KEY_CTRL_L, 'L', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+        'J', 'A', 'D', 'P', KEY_CTRL_P, 'L', KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 9);
     ui.screen = &screen;
@@ -3122,6 +3122,68 @@ static int test_breakpoint_label_replaces_row_indicator()
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_range_mode_falls_through_during_debug()
+{
+    // R is no longer a Debug shortcut (P owns breakpoint toggle/list now), so
+    // it must reach the outer Range mode handler instead of being swallowed,
+    // and a Range copy in the middle of a Debug session must not disturb it.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xC000, 0xEA);
+    backend.write(0xC001, 0xEA);
+    backend.write(0xC002, 0xEA);
+
+    const int keys[] = {
+        'J', 'A', 'D', 'P',
+        'R', KEY_DOWN, KEY_DOWN, KEY_CTRL_C,
+        KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 10);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.push_prompt("C000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 4; i++) {
+        if (expect(monitor.poll(0) == 0, "Range/Debug setup should stay in monitor")) return 1;
+    }
+
+    char row[40];
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strstr(row, "[BRK0]") != NULL, "Breakpoint must be armed at $C000")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "R must enter Range mode, not toggle a breakpoint")) return 1;
+    char header[40];
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Range") != NULL,
+               "Header must show Range while Range mode is active during Debug")) return 1;
+    if (expect(strstr(header, "Dbg") != NULL,
+               "Debug must stay active while Range mode is active")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "Range cursor move 1 ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "Range cursor move 2 ok")) return 1;
+    if (expect(monitor.poll(0) == 0, "CTRL+C copy exits Range mode")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Range") == NULL,
+               "Range flag must clear after the copy")) return 1;
+    if (expect(strstr(header, "Dbg") != NULL,
+               "Debug must remain active after the Range copy")) return 1;
+
+    screen.get_slice(1, 4, 38, row);
+    if (expect(strstr(row, "[BRK0]") != NULL,
+               "Breakpoint must survive an intervening Range copy")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug after the Range interlude")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits monitor")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -3164,14 +3226,14 @@ static int test_source_indicators_are_three_chars()
     return 0;
 }
 
-static int test_ctrl_l_opens_breakpoint_popup()
+static int test_ctrl_p_opens_breakpoint_popup()
 {
     TestUserInterface ui;
     CaptureScreen screen;
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
-    const int keys[] = { 'A', 'D', KEY_CTRL_L, KEY_ESCAPE, KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'A', 'D', KEY_CTRL_P, KEY_ESCAPE, KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 6);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -3181,7 +3243,7 @@ static int test_ctrl_l_opens_breakpoint_popup()
     for (int i = 0; i < 3; i++) {
         if (expect(monitor.poll(0) == 0, "Setup polls should return 0")) return 1;
     }
-    // After C=+L the breakpoint popup should be visible somewhere on the
+    // After C=+P the breakpoint popup should be visible somewhere on the
     // screen: the title "BREAKPOINTS" appears in the popup body.
     char row[42];
     bool found = false;
@@ -3189,7 +3251,7 @@ static int test_ctrl_l_opens_breakpoint_popup()
         screen.get_slice(0, y, 40, row);
         if (strstr(row, "BREAKPOINTS") != NULL) { found = true; }
     }
-    if (expect(found, "C=+L must open the breakpoint list popup")) return 1;
+    if (expect(found, "C=+P must open the breakpoint list popup")) return 1;
     int left = 0, top = 0, right = 0, bottom = 0;
     if (expect(find_popup_rect(screen, &left, &top, &right, &bottom),
                "Breakpoint popup must draw a complete border")) return 1;
@@ -3228,14 +3290,14 @@ static int test_ctrl_l_opens_breakpoint_popup()
     return 0;
 }
 
-static int test_ctrl_l_opens_breakpoint_popup_outside_debug()
+static int test_ctrl_p_opens_breakpoint_popup_outside_debug()
 {
     TestUserInterface ui;
     CaptureScreen screen;
     TrackingDebugBackend backend;
     monitor_reset_saved_state();
 
-    const int keys[] = { 'A', 'D', 'R', KEY_BREAK, KEY_CTRL_L, KEY_ESCAPE, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'P', KEY_BREAK, KEY_CTRL_P, KEY_ESCAPE, KEY_BREAK };
     FakeKeyboard keyboard(keys, 7);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -3246,7 +3308,7 @@ static int test_ctrl_l_opens_breakpoint_popup_outside_debug()
     if (expect(monitor.poll(0) == 0, "Debug entry should return 0")) return 1;
     if (expect(monitor.poll(0) == 0, "Breakpoint toggle should return 0")) return 1;
     if (expect(monitor.poll(0) == 0, "RUN/STOP should leave Debug")) return 1;
-    if (expect(monitor.poll(0) == 0, "C=+L outside Debug should stay in monitor")) return 1;
+    if (expect(monitor.poll(0) == 0, "C=+P outside Debug should stay in monitor")) return 1;
 
     char row[42];
     bool found = false;
@@ -3256,7 +3318,7 @@ static int test_ctrl_l_opens_breakpoint_popup_outside_debug()
             found = true;
         }
     }
-    if (expect(found, "C=+L outside Debug must open the breakpoint popup when breakpoints exist")) return 1;
+    if (expect(found, "C=+P outside Debug must open the breakpoint popup when breakpoints exist")) return 1;
     get_popup_line(screen, 13, row, sizeof(row));
     if (expect(strncmp(row, "0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res",
                        strlen("0-9/RET:Jmp S:Set L:Lbl E:Enbl DEL:Res")) == 0,
@@ -3275,7 +3337,7 @@ static int test_breakpoint_popup_navigation_redraws_only_popup()
     monitor_reset_saved_state();
 
     const int keys[] = {
-        'A', 'D', KEY_CTRL_L, KEY_DOWN, KEY_ESCAPE, KEY_BREAK, KEY_BREAK
+        'A', 'D', KEY_CTRL_P, KEY_DOWN, KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 7);
     ui.screen = &screen;
@@ -3368,7 +3430,7 @@ static int test_breakpoint_popup_blocks_debug_execution_keys()
     monitor_reset_saved_state();
 
     const int keys[] = {
-        'A', 'D', KEY_CTRL_L, 'D', 'T', 'U', 'G', 'R',
+        'A', 'D', KEY_CTRL_P, 'D', 'T', 'U', 'G', 'P',
         KEY_ESCAPE, KEY_BREAK, KEY_BREAK
     };
     FakeKeyboard keyboard(keys, 11);
@@ -3724,7 +3786,7 @@ static int test_help_screen_shows_debug_commands()
         "",
         "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
-        "R Breakpt    C=+L Brkpts  C=+R Reset",
+        "P Breakpt    C=+P Brkpts  C=+R Reset",
         "",
         "M Memory     I ASCII      V Screen",
         "A Assembly   B Binary     O CPU Bank",
@@ -3773,10 +3835,10 @@ static int test_help_screen_shows_debug_commands()
         "G Continue must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "K Cont Crsr",
         "K Cont Crsr must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "R Breakpt",
-        "R Breakpt must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "C=+L Brkpts",
-        "C=+L Brkpts must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "P Breakpt",
+        "P Breakpt must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "C=+P Brkpts",
+        "C=+P Brkpts must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "C=+R Reset",
         "C=+R Reset must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "RET Follow",
@@ -6948,7 +7010,7 @@ static int test_freeze_go_with_breakpoint_still_uses_session_go()
     backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
     backend.write(0x0801, 0xEA);
 
-    const int keys[] = { 'A', 'D', 'R', 'G' };
+    const int keys[] = { 'A', 'D', 'P', 'G' };
     FakeKeyboard keyboard(keys, 4);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -7132,7 +7194,7 @@ static int test_cursor_row_highlights_jsr_target()
     backend.canned_snapshot.y = 0x00;
     backend.canned_snapshot.sr = 0x20;
 
-    const int keys[] = { 'A', 'D', 'R', KEY_BREAK, KEY_BREAK };
+    const int keys[] = { 'A', 'D', 'P', KEY_BREAK, KEY_BREAK };
     FakeKeyboard keyboard(keys, 5);
     ui.screen = &screen;
     ui.keyboard = &keyboard;
@@ -8905,9 +8967,10 @@ int main()
     RUN(test_breakpoint_row_indicator_and_color);
     RUN(test_disabled_breakpoint_row_uses_regular_color);
     RUN(test_breakpoint_label_replaces_row_indicator);
+    RUN(test_range_mode_falls_through_during_debug);
     RUN(test_source_indicators_are_three_chars);
-    RUN(test_ctrl_l_opens_breakpoint_popup);
-    RUN(test_ctrl_l_opens_breakpoint_popup_outside_debug);
+    RUN(test_ctrl_p_opens_breakpoint_popup);
+    RUN(test_ctrl_p_opens_breakpoint_popup_outside_debug);
     RUN(test_breakpoint_popup_navigation_redraws_only_popup);
     RUN(test_debug_pc_viewport_keeps_context_margin);
     RUN(test_breakpoint_popup_blocks_debug_execution_keys);

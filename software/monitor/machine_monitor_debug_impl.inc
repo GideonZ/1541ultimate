@@ -1101,7 +1101,7 @@ void MachineMonitor :: edit_breakpoint_label(uint8_t slot)
 
 int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
 {
-    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_L) {
+    if (key == KEY_ESCAPE || key == KEY_BREAK || key == KEY_CTRL_P) {
         debug_close_breakpoint_popup();
         redraw_full();
         return 0;
@@ -1301,12 +1301,12 @@ int MachineMonitor :: debug_handle_key(int key)
         }
         return 0;
     }
-    if (key == KEY_CTRL_L) {
+    if (key == KEY_CTRL_P) {
         debug_open_breakpoint_popup();
         draw();
         return 0;
     }
-    if (key == 'r' || key == 'R') {
+    if (key == 'p' || key == 'P') {
         debug_toggle_breakpoint();
         draw();
         return 0;

@@ -722,8 +722,9 @@ Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug ses
 | `U`           | Undoc / Case toggle                      | Step Out                       |
 | `G`           | Go / execute                             | Go                             |
 | `K`           | (unassigned)                             | Run to cursor                  |
-| `R`           | Range mode                               | Toggle breakpoint at the cursor |
-| `C=+L`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
+| `R`           | Range mode                               | Range mode                     |
+| `P`           | Poll                                     | Toggle breakpoint at the cursor |
+| `C=+P`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
 | `C=+D`        | (unassigned)                             | Leave Debug                    |
 | `RUN/STOP`    | Close the monitor                        | Leave Edit first, then Debug   |
 | `X`, `C=+O`   | Close the monitor                        | Close the monitor              |
@@ -774,7 +775,7 @@ Unknown values render as blank spaces in their reserved fixed-width columns. The
 
 There are 10 breakpoint slots, numbered `0` to `9`.
 
-- `R` toggles a breakpoint at the Assembly cursor address, in the memory source selected with `O`. With all 10 slots in use, `R` reports `NO FREE BRK SLOT`.
+- `P` toggles a breakpoint at the Assembly cursor address, in the memory source selected with `O`. With all 10 slots in use, `P` reports `NO FREE BRK SLOT`.
 - A breakpoint is an address plus a memory source, so `$E000 KRN` and `$E000 RAM` are distinct breakpoints and can coexist.
 - Rows with a breakpoint show `[BRKn]` immediately before the memory source tag, for example `[BRK0][BAS]`. A slot with a label shows the label instead, for example `[LOOP][BAS]`.
 - Only enabled breakpoints stop execution. `G`, `K`, Step Over, Step Into, and Step Out all honour them. A disabled slot is remembered but inert.
@@ -794,7 +795,7 @@ A breakpoint can be valid but invisible to the CPU. Setting one where the live b
 
 On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched into the volatile U64 ROM image, so ROM code is step-capable without copying ROMs into C64 RAM or writing flash. The patched bytes are restored when the breakpoint is removed and when the session ends. RAM-under-KERNAL breakpoints work when KERNAL is banked out. On an Ultimate II cartridge, C64 ROM is read-only, and a breakpoint there is refused with `DEBUG NOT SUPPORTED`.
 
-`C=+L` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
+`C=+P` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
 
 | Key                  | Action                                              |
 | -------------------- | --------------------------------------------------- |
@@ -805,7 +806,7 @@ On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched 
 | `L`                  | Change the label, up to 4 chars (`Lbl`)             |
 | `E`                  | Toggle slot enable / disable (`Enbl`)               |
 | `DEL`                | Clear the selected slot (`Res`)                     |
-| `RUN/STOP` or `C=+L` | Close the popup                                     |
+| `RUN/STOP` or `C=+P` | Close the popup                                     |
 
 Jumping to a slot also restores the CPU view bank the breakpoint was set in.
 
@@ -870,7 +871,7 @@ Messages fit within 38 characters. The two that offer guidance appear on the bot
 | `DEBUG CANCELLED`                   | A run was abandoned from the keyboard.                                                                                       |
 | `DEBUG NOT SUPPORTED`               | The hardware cannot do this, for example a visible-ROM patch on an Ultimate II cartridge.                                    |
 | `DEBUG IN USE`                      | Another front end owns the debugger. Close its session, or wait 3 seconds if it is unresponsive.                             |
-| `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `R` or from the `C=+L` list.                                                |
+| `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `P` or from the `C=+P` list.                                                |
 | `BRK <target>, CPU <current>; not mapped now` | The breakpoint is set in a memory source the live banking does not map. It only fires once the program banks `<target>` in. |
 
 ### Leaving Debug and interrupt state

@@ -163,7 +163,7 @@ int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
         "",
         "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
-        "R Breakpt    C=+L Brkpts  C=+R Reset",
+        "P Breakpt    C=+P Brkpts  C=+R Reset",
         "",
         "M Memory     I ASCII      V Screen",
         "A Assembly   B Binary     O CPU Bank",

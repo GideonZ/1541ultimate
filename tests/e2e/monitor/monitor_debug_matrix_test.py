@@ -1318,7 +1318,7 @@ class TelnetDebugDriver(BaseDriver):
         if (self.fixture is not None and self.fixture.memory_mode == "ram-under-rom"
                 and 0xA000 <= address <= 0xFFFF):
             self.goto(address)
-            self._session().send_char("R")
+            self._session().send_char("P")
             snap = self._session().capture()
             if "not mapped now" in snap.text():
                 self._session().send_key("ENTER")
@@ -1658,7 +1658,7 @@ class RestDebugDriver(BaseDriver):
         ensure/clear_breakpoint_at (which selects a bank and matches [RAM]/[KRN])
         do not apply. Returns the target row after the toggle."""
         self.goto(address)
-        self.send_key("R")
+        self.send_key("P")
         text = self.rest.screen_text()
         if "not mapped now" in text:
             self.send_key("RETURN")
@@ -1681,7 +1681,7 @@ class RestDebugDriver(BaseDriver):
             return
         if self.fixture.memory_mode == "ram-under-rom" and 0xA000 <= address <= 0xFFFF:
             self.goto(address)
-            self.send_key("R")
+            self.send_key("P")
             text = self.rest.screen_text()
             if "not mapped now" in text:
                 self.send_key("RETURN")

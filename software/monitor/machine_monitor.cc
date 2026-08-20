@@ -5914,7 +5914,7 @@ int MachineMonitor :: handle_key(int key)
         }
         return 0;
     }
-    if (!edit_mode && key == KEY_CTRL_L && debug_has_breakpoint()) {
+    if (!edit_mode && key == KEY_CTRL_P && debug_has_breakpoint()) {
         debug_open_breakpoint_popup();
         draw();
         return 0;
