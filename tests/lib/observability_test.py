@@ -5644,6 +5644,34 @@ def the_spool_is_off_when_a_run_says_so() -> str:
     return "no spool"
 
 
+@case(3, "OBS-3.1")
+def the_documented_command_line_writes_the_document() -> str:
+    """The generator is run the way its documentation says to run it.
+
+    Every other case here imports the module, and an import defines every
+    function in the file whatever order they are written in. Running it as a
+    program does not: a name defined below the `__main__` guard does not exist
+    by the time the guard calls into it, and only a subprocess sees that.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    require_fixture()
+    with tempfile.TemporaryDirectory() as workspace:
+        tree = os.path.join(workspace, "run")
+        shutil.copytree(FIXTURE, tree)
+        finished = subprocess.run(
+            [sys.executable, REPORT_TOOL, tree],
+            capture_output=True, text=True, timeout=120)
+    if finished.returncode != 0:
+        raise Failure(f"exit {finished.returncode}: "
+                      f"{finished.stderr.strip().splitlines()[-1:]}")
+    expect("the path it printed", finished.stdout.strip(),
+           os.path.join(tree, "index.md"))
+    return "written by the command in the documentation"
+
+
 # ---------------------------------------------------------------------------
 # Tier 4: the golden document, and the fixture behind it
 # ---------------------------------------------------------------------------
@@ -6492,34 +6520,6 @@ def a_report_is_generated_from_a_run_the_runner_just_wrote() -> str:
     if "127.0.0.1/overlay/broken/1/1" not in document:
         raise Failure("the failing check is not named by its identity key")
     return status
-
-
-@case(1, "OBS-3.1")
-def the_documented_command_line_writes_the_document() -> str:
-    """The generator is run the way its documentation says to run it.
-
-    Every other case here imports the module, and an import defines every
-    function in the file whatever order they are written in. Running it as a
-    program does not: a name defined below the `__main__` guard does not exist
-    by the time the guard calls into it, and only a subprocess sees that.
-    """
-    import shutil
-    import subprocess
-    import tempfile
-
-    require_fixture()
-    with tempfile.TemporaryDirectory() as workspace:
-        tree = os.path.join(workspace, "run")
-        shutil.copytree(FIXTURE, tree)
-        finished = subprocess.run(
-            [sys.executable, REPORT_TOOL, tree],
-            capture_output=True, text=True, timeout=120)
-    if finished.returncode != 0:
-        raise Failure(f"exit {finished.returncode}: "
-                      f"{finished.stderr.strip().splitlines()[-1:]}")
-    expect("the path it printed", finished.stdout.strip(),
-           os.path.join(tree, "index.md"))
-    return "written by the command in the documentation"
 
 
 # Requirements this suite deliberately does not name a test for, and why. A
