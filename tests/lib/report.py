@@ -362,7 +362,7 @@ def step_start(label: str) -> None:
     print(f"{label} ... ", end="", flush=True)
 
 
-def _close(verdict: str, extra: str = "") -> None:
+def _close(verdict: str, extra: str = "", *, elapsed: Optional[float] = None) -> None:
     global _depth, _line_open
     _depth = max(0, _depth - 1)
     if _depth:
@@ -373,7 +373,13 @@ def _close(verdict: str, extra: str = "") -> None:
         # a skipped check was written as SKIP and then as OK.
         return
     _line_open = False
-    elapsed = time.monotonic() - _check_started
+    # A caller that measured its own check's duration (a case run on a worker
+    # thread, reported afterwards on the main thread once the future resolves)
+    # passes it explicitly, because time.monotonic() - _check_started would
+    # otherwise measure from this call's check_start rather than from when the
+    # work actually started.
+    if elapsed is None:
+        elapsed = time.monotonic() - _check_started
     parts = [extra] if extra else []
     duration = format_duration(elapsed)
     if elapsed >= SLOW_CHECK_SECONDS:
@@ -396,20 +402,20 @@ def _close(verdict: str, extra: str = "") -> None:
             scenario=_scenario["title"] if _scenario else None)
 
 
-def check_ok(extra: str = "") -> None:
-    _close(OK, extra)
+def check_ok(extra: str = "", *, elapsed: Optional[float] = None) -> None:
+    _close(OK, extra, elapsed=elapsed)
 
 
-def check_fail(reason: str = "") -> None:
-    _close(FAIL, reason)
+def check_fail(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+    _close(FAIL, reason, elapsed=elapsed)
 
 
-def check_warn(reason: str = "") -> None:
-    _close(WARN, reason)
+def check_warn(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+    _close(WARN, reason, elapsed=elapsed)
 
 
-def check_skip(reason: str = "") -> None:
-    _close(SKIP, reason)
+def check_skip(reason: str = "", *, elapsed: Optional[float] = None) -> None:
+    _close(SKIP, reason, elapsed=elapsed)
 
 
 @contextmanager
