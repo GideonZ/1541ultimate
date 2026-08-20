@@ -135,7 +135,15 @@ class MonitorSession:
     def capture(self) -> Snapshot:
         return self.backend.capture()
 
-    def send_key(self, key: str, *, settle: bool = False) -> Snapshot:
+    def send_key(self, key: str, *, settle: Optional[bool] = None) -> Snapshot:
+        # The same U2+L redraw lag send_char compensates for below: the remote
+        # UI can echo a named key before the monitor has redrawn, so a capture
+        # taken straight after reads the previous screen. Named keys default to
+        # settling on that target for the same reason single characters do; a
+        # caller that means to measure the un-settled transport passes settle
+        # explicitly.
+        if settle is None:
+            settle = is_u2()
         return self.backend.send_key(key, settle=settle)
 
     def send_key_count(self, key: str) -> Tuple[Snapshot, int]:
@@ -975,6 +983,166 @@ def run_go_visible_state_test(session: MonitorSession, rest_host: str) -> None:
     session.enter_monitor()
 
 
+# The firmware's own chrome on the overlay screen: the centred product title on
+# row 0, and the horizontal rules on row 1 and on the bottom row, all written by
+# UserInterface::set_screen_title().
+CHROME_TITLE_ROW = 0
+CHROME_RULE_ROW = 1
+
+
+def overlay_chrome_rows(rest_host: str) -> Tuple[str, bytes]:
+    """The overlay's title row as text, and the rule row below it as raw bytes.
+
+    machine:menu_screen answers with the 40x25 character grid the firmware is
+    drawing, so it reports what the chrome rows actually hold rather than what
+    the monitor window below them holds.
+    """
+    payload = rest_api(rest_host).machine.menu_screen()
+    if payload is None:
+        raise Failure(
+            "machine:menu_screen reports no menu open, so the freeze-mode "
+            "monitor is not on screen")
+    data = bytes(payload)
+    rows = [data[y * 40:(y + 1) * 40] for y in range(25)]
+    title = rows[CHROME_TITLE_ROW].decode("latin-1")
+    return title, rows[CHROME_RULE_ROW]
+
+
+def assert_overlay_chrome(rest_host: str, context: str) -> None:
+    title, rule = overlay_chrome_rows(rest_host)
+    if "Ultimate" not in title:
+        raise Failure(
+            f"{context}: the overlay title row must still name the product, "
+            f"got {title!r}")
+    if len(set(rule)) != 1 or rule[0:1] == b" ":
+        raise Failure(
+            f"{context}: the rule row below the title must be one repeated "
+            f"glyph, got {rule.hex().upper()}")
+
+
+def freeze_frame_has_chrome(rest_host: str, context: str) -> None:
+    """The same assertion again, taken from the video stream.
+
+    menu_screen reads the firmware's character grid; the VIC stream is what the
+    machine actually puts on screen. Both are checked, because a chrome row can
+    be present in one and not the other: the grid is what the firmware believes
+    it drew.
+    """
+    import vic_video
+
+    api = rest_api(rest_host)
+    api.streams.start("video",
+                      ip=f"{vic_video.MULTICAST_GROUP}:{vic_video.VIDEO_PORT}")
+    try:
+        # A frame is only handed over when every one of its packets arrived, so
+        # a single dropped datagram costs a whole attempt. The picture is static
+        # here, so any complete frame answers the question.
+        image = None
+        last_error: Optional[Exception] = None
+        for _ in range(6):
+            capture = vic_video.VicStreamCapture()
+            try:
+                image = capture.capture_image()
+                break
+            except Failure as exc:
+                last_error = exc
+            finally:
+                capture.close()
+        if image is None:
+            raise Failure(f"{context}: no complete VIC frame arrived: {last_error}")
+    finally:
+        api.streams.stop("video")
+
+    # The title occupies the first text row. A blanked chrome row is one
+    # background colour across its whole height, which is what this measures;
+    # the rows are 8 pixels tall and the picture is centred in the border.
+    width, height = image.size
+    top = (height - 200) // 2
+    band = [image.getpixel((x, y))
+            for y in range(top, top + 8) for x in range(width)]
+    if len(set(band)) <= 1:
+        raise Failure(
+            f"{context}: the title row is blank in the VIC picture "
+            f"({width}x{height}, band at y={top})")
+
+
+def run_freeze_debug_chrome_test(session: MonitorSession, rest_host: str) -> None:
+    """A freeze-mode debug step must leave the firmware chrome on screen.
+
+    A step unfreezes the machine to execute the instruction and re-freezes it
+    afterwards. The live C64 screen is visible for that window and overwrites
+    the title and rule rows, so the monitor has to redraw them. Where it does
+    not, the title row and both rules stay blank for the rest of the session.
+    """
+    program = bytes([0xEA, 0xEA, 0xEA, 0xEA])
+    write_rest_memory(rest_host, 0xC000, program)
+
+    session.goto("C000")
+    session.send_char("A")
+    if "Dbg" not in session.capture().text():
+        session.send_char("D")
+    if "Dbg" not in session.capture().text():
+        raise Failure("Debug mode did not open at $C000")
+    assert_overlay_chrome(rest_host, "before the first step")
+
+    try:
+        session.send_char("T")
+        assert_overlay_chrome(rest_host, "after a Step Into")
+        freeze_frame_has_chrome(rest_host, "after a Step Into")
+    finally:
+        session.send_key("CTRL_D")
+
+
+def run_edit_visibility_test(session: MonitorSession, rest_host: str) -> None:
+    """Outside Debug, an edit has to be in the machine and on screen at once.
+
+    The monitor draws from its own read of memory, and it writes through the
+    backend. Either side can go stale: a write that has not reached the machine
+    yet, or a view still showing what was there before. Both are checked
+    immediately after the edit, with no extra keypress in between, because a
+    redraw provoked by the test would hide exactly the fault being looked for.
+    """
+    source = 0xC700
+    dest = 0xC710
+    payload = bytes([0x5A, 0xA5])
+
+    write_rest_memory(rest_host, source, payload)
+    write_rest_memory(rest_host, dest, bytes([0x00, 0x00]))
+
+    ensure_view(session, "HEX ")
+    session.goto(f"{source:04X}")
+    session.send_char("R")
+    session.send_key("RIGHT")
+    session.send_key("COPY")
+    session.goto(f"{dest:04X}")
+    snap = session.send_key("PASTE")
+
+    landed = read_rest_memory(rest_host, dest, len(payload))
+    if landed != payload:
+        raise Failure(
+            f"Paste is not in the machine: ${dest:04X} holds {landed.hex().upper()}, "
+            f"expected {payload.hex().upper()}")
+
+    row = next((line for line in snap.lines if line.startswith(f"|{dest:04X} ")), "")
+    if not row:
+        row = next((line for line in session.capture().lines
+                    if line.startswith(f"|{dest:04X} ")), "")
+    if "5a a5" not in row.lower():
+        raise Failure(
+            f"Paste is not on screen without a further keypress: {row!r}")
+
+    # The same rule for a fill, which is the other way a range changes at once.
+    session.fill(f"{dest:04X} {dest + 1:04X} 3C")
+    filled = read_rest_memory(rest_host, dest, 2)
+    if filled != bytes([0x3C, 0x3C]):
+        raise Failure(
+            f"Fill is not in the machine: ${dest:04X} holds {filled.hex().upper()}")
+    row = next((line for line in session.capture().lines
+                if line.startswith(f"|{dest:04X} ")), "")
+    if "3c 3c" not in row.lower():
+        raise Failure(f"Fill is not on screen without a further keypress: {row!r}")
+
+
 def run_bookmark_test(session: MonitorSession) -> None:
     screen = ensure_view(session, "HEX ")
 
@@ -1738,6 +1906,18 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str,
             check_skip("the on-device UI owns the VIC while it is up; only comparable over telnet")
         else:
             run_go_visible_state_test(session, rest_host)
+
+    with check("freeze debug step keeps the firmware title and rule rows"):
+        if mode != MODE_FREEZE:
+            check_skip(f"the chrome rows only exist on the device's own screen, "
+                       f"running under {mode}")
+        elif is_u2():
+            check_skip("the cartridge has no freeze-mode debugger screen of its own")
+        else:
+            run_freeze_debug_chrome_test(session, rest_host)
+
+    with check("an edit is in the machine and on screen at once"):
+        run_edit_visibility_test(session, rest_host)
 
     with check("bookmarks recall, set, list, and label edit"):
         run_bookmark_test(session)

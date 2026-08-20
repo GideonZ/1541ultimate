@@ -1255,8 +1255,8 @@ static int test_monitor_bookmark_status_dismissal(void)
                "Bookmark restore status message should appear immediately.")) return 1;
     if (expect(monitor.poll(0) == 0, "Next user action should dismiss bookmark status.")) return 1;
     get_monitor_status(screen, status);
-    if (expect(strstr(status, "CPU7") == status,
-               "Next user action should restore the normal bottom status row.")) return 1;
+    if (expect(strstr(status, "C0O7") == status,
+               "Next user action should restore the bank row, which reads C0O7 here: view 7, live $0001 zero.")) return 1;
     monitor.deinit();
     return 0;
 }

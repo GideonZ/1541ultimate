@@ -70,7 +70,6 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     UIStatusBox *status_box;
 
-    void set_screen_title(void);
     void set_available(bool enable);
     int  pollFocussed(void);
     bool pollMenuButtonPush(void);
@@ -79,6 +78,13 @@ private:
     bool buttonDownFor(uint32_t ms);
     void run_editor(Editor *);
 public:
+    // Draws the firmware's chrome: the product title on the top row, and
+    // the horizontal rules under it and at the bottom of the screen. Public
+    // because a screen something else has written over has to be able to ask
+    // for it back; the machine code monitor does after a freeze-mode debug
+    // step, where the live C64 screen was on display while the machine ran.
+    void set_screen_title(void);
+
     int color_border, color_bg, color_fg, color_sel, color_sel_bg, reverse_sel;
     int color_status, color_inactive;
 

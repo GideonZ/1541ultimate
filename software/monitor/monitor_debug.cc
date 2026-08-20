@@ -159,24 +159,32 @@ void MonitorDebug :: format_footer_values(const DebugContext &ctx,
 
 int MonitorDebug :: format_help_lines(const char *lines[], int max_lines)
 {
+    // The table has the same 17-line and 38-column budget as the main help.
     static const char *const text[] = {
-        "",
+        // Same three-block layout as monitor_help_lines, with the Debug
+        // commands as the first block: Debug commands, the monitor commands
+        // that still reach a handler while Debug is active, then the keys that
+        // need C= or a named key. One blank row separates the blocks; there
+        // are no headings. Only keys that reach a handler here are listed, so
+        // P is Breakpt rather than Poll, and T, U, G and D are the execution
+        // commands rather than Transfer, Undoc, Go and the Debug-entry key.
+        // The "%s" key name comes from the application key mapper.
         "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
         "P Breakpt    C=+P Brkpts  C=+R Reset",
         "",
         "M Memory     I ASCII      V Screen",
         "A Assembly   B Binary     O CPU Bank",
-        "J Jump       P Poll       N Number",
-        "E Edit       F Fill       W Width",
+        "W Width      SH+O VIC     R Range",
+        "E Edit       F Fill       N Number",
         "C Compare    H Hunt       Z Freeze",
-        "L Load       S Save",
+        "L Load       S Save       J Jump",
         "",
-        "Bookmarks:     C=+B List  C=+0-9 Jump",
-        "Monitor:       C=+O Open/Close",
-        "Leave debug:   C=+D/RSTOP",
-        "Leave edit:    C=+E/RSTOP",
-        "Copy/Paste:    C=+C / C=+V"
+        "C=+B      Bkmrks   C=+0-9   Bkmrk Jmp",
+        "?/%s      Help     C=+O     Monitor",
+        "C=+E      Edit off C=+C/V   Copy/Paste",
+        "C=+D      Dbg off  C=+I     Interface",
+        "RSTOP/<-  Back"
     };
     int n = (int)(sizeof(text) / sizeof(text[0]));
     if (n > max_lines) {

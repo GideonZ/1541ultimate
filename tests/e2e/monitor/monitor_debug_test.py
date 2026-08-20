@@ -147,6 +147,49 @@ def _await_snapshot(session: "mt.MonitorSession", predicate,
     return snap
 
 
+def _press_until(session: "mt.MonitorSession", key: str, predicate,
+                 context: str, attempts: int = 4) -> str:
+    """Send `key` until the header satisfies `predicate`, then return it.
+
+    A keystroke injected into a C64 Ultimate host for its cartridge is
+    occasionally dropped, and a check whose subject is the state after the key
+    cannot tell that from the firmware ignoring it. Resending is only safe where
+    the predicate proves the key has not been acted on yet, which is why the
+    caller supplies it rather than a plain retry count.
+    """
+    header = _wait_header(session, predicate)
+    for _ in range(attempts):
+        if predicate(header):
+            return header
+        session.send_key(key)
+        header = _wait_header(session, predicate)
+    raise mt.Failure(f"{context}: {key} had no effect after {attempts} attempts: {header!r}")
+
+
+def _wait_header(session: "mt.MonitorSession", predicate,
+                 timeout: float = STATE_SETTLE_TIMEOUT_SECONDS) -> str:
+    """The header row, re-read until `predicate` accepts it.
+
+    `_header_line(expect=...)` covers waiting for something to appear. This
+    covers the other direction, waiting for something to go away, which is what
+    a check that presses a key to leave a mode needs on a target whose redraw
+    lags the keypress.
+    """
+    def ready(snap) -> bool:
+        for y in range(mt.HEIGHT):
+            line = snap.line(y)
+            if "MONITOR" in line:
+                return bool(predicate(line))
+        return False
+
+    snap = _await_snapshot(session, ready, timeout)
+    for y in range(mt.HEIGHT):
+        line = snap.line(y)
+        if "MONITOR" in line:
+            return line
+    raise mt.Failure("monitor header line not found")
+
+
 def _header_line(session: "mt.MonitorSession", expect: str = "",
                  timeout: float = STATE_SETTLE_TIMEOUT_SECONDS) -> str:
     """The monitor's header row, waited for if `expect` has to appear in it.
@@ -401,10 +444,20 @@ def _enter_rom_debug_at(session: "mt.MonitorSession", address: int, marker: str,
 
 def _assert_step_alert(session: "mt.MonitorSession", key: str, alert: str,
                        context: str) -> None:
-    """Press a step key and require the one-line gated-stop alert."""
-    snap = session.send_char(key)
+    """Press a step key and require the one-line gated-stop alert.
+
+    The alert has no deadline in the firmware: debug_show_status() leaves it on
+    the status row until the next command replaces it. A screen without it is
+    therefore either read before the redraw, or the answer to a keystroke that
+    never arrived. Polling covers the first. One resend covers the second, and
+    is safe here because this alert is the answer to a refused step: the program
+    counter has not moved and nothing has been executed.
+    """
+    session.send_char(key)
+    snap = _await_snapshot(session, lambda s: alert in s.text())
     if alert not in snap.text():
-        snap = session.capture()
+        session.send_char(key)
+        snap = _await_snapshot(session, lambda s: alert in s.text())
     if alert not in snap.text():
         raise mt.Failure(f"{context}: expected alert {alert!r}:\n{snap.text()}")
 
@@ -484,7 +537,7 @@ def _acquire_rom_context_at(rest_host: str, session: "mt.MonitorSession",
 def _assert_debug_pc(session: "mt.MonitorSession", expected_pc: int, context: str) -> dict:
     expected = f"{expected_pc:04X}"
     parsed = _wait_for_pc(session, expected)
-    header = _header_line(session)
+    header = _header_line(session, expect=f"ASM ${expected}")
     if f"MONITOR ASM ${expected}" not in header:
         raise mt.Failure(f"{context}: header did not follow PC ${expected}: {header!r}")
     snap = session.capture()
@@ -526,7 +579,7 @@ def _contextless_visible_jsr_step_over(rest_host: str, session: "mt.MonitorSessi
     _assert_no_debug_modal_snapshot(snap, step_ctx)
     # Wait out the full firmware run budget; one attempt, no reset-retry.
     _wait_rom_entry_outcome(session, expected_pc, step_ctx)
-    header = _header_line(session)
+    header = _header_line(session, expect=f"ASM ${expected_pc:04X}")
     if f"MONITOR ASM ${expected_pc:04X}" not in header:
         raise mt.Failure(f"{step_ctx}: header did not follow PC ${expected_pc:04X}: {header!r}")
     _disassembly_row(session.capture(), expected_pc)
@@ -573,7 +626,7 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
     """
     session.goto(f"{address:04X}")
     target = f"${address:04X}"
-    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+    session.send_key("CTRL_P")
     session.last_command = "CTRL_P_CLEAR_ONE"
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
@@ -603,7 +656,7 @@ def _clear_breakpoint_at(session: "mt.MonitorSession", address: int,
 
 
 def _clear_all_breakpoints(session: "mt.MonitorSession", context: str) -> None:
-    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+    session.send_key("CTRL_P")
     session.last_command = "CTRL_P_CLEAR_ALL"
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
@@ -633,7 +686,7 @@ def _breakpoint_slot_lines(session: "mt.MonitorSession", context: str) -> list[s
     monitor currently maps at a breakpoint's address, so both the clear helper
     and the hygiene assertion read the table through here.
     """
-    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+    session.send_key("CTRL_P")
     session.last_command = "CTRL_P_SLOTS"
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
@@ -692,15 +745,28 @@ def _wait_for_blank_debug_context(session: "mt.MonitorSession",
 
 
 def _reset_c64_core(rest_host: str, timeout: float = 8.0) -> None:
-    try:
-        mt.rest_api(rest_host, timeout=max(5.0, timeout)).machine.reset(
-            force=True, wait=False)
-    except mt.Failure as exc:
-        # The firmware may reset the C64 and briefly starve the REST response path
-        # before the HTTP request is completed. Treat the response timeout as
-        # recoverable only if the deterministic READY proof below succeeds.
-        print(f"[info] reset response timed out, verifying READY anyway: {exc}", flush=True)
-    _wait_for_c64_ready(rest_host, timeout)
+    # Two attempts, because the request and the proof are separate things. A
+    # reset issued while the firmware is finishing debugger cleanup can be taken
+    # late or not at all, and the only evidence either way is whether the KERNAL
+    # reached its READY prompt. One resend distinguishes a reset that was missed
+    # from a machine that cannot come back, and the second failure says which.
+    for attempt in (1, 2):
+        try:
+            mt.rest_api(rest_host, timeout=max(5.0, timeout)).machine.reset(
+                force=True, wait=False)
+        except mt.Failure as exc:
+            # The firmware may reset the C64 and briefly starve the REST response
+            # path before the HTTP request is completed. Treat the response
+            # timeout as recoverable only if the READY proof below succeeds.
+            print(f"[info] reset response timed out, verifying READY anyway: {exc}",
+                  flush=True)
+        try:
+            _wait_for_c64_ready(rest_host, timeout)
+            break
+        except mt.Failure:
+            if attempt == 2:
+                raise
+            print("[info] reset did not reach READY; resending it once", flush=True)
     time.sleep(3.0)
 
 
@@ -737,7 +803,12 @@ def _wait_for_c64_ready(rest_host: str, timeout: float = 8.0) -> None:
         else:
             stable_since = 0.0
         time.sleep(0.1)
-    raise mt.Failure("C64 core reset did not reach READY prompt")
+    # Say what the screen held instead, so a machine that came back to something
+    # else is not reported the same way as one that never came back at all.
+    tail = mt.read_rest_memory(rest_host, 0x0400, 40)
+    raise mt.Failure(
+        f"C64 core reset did not reach READY prompt; screen row 0 was "
+        f"{tail.hex().upper()}")
 
 
 def _live_cpu_bank_from_status(status: str) -> int:
@@ -972,13 +1043,13 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
 
     with mt.check("Debug: setup at $C000"):
         session.goto("C000")
-        header = _header_line(session)
+        header = _header_line(session, expect="$C000")
         if "$C000" not in header:
             raise mt.Failure(f"goto $C000 did not update header: {header!r}")
 
     with mt.check("Debug: A switches to Assembly view"):
         session.send_char("A")
-        header = _header_line(session)
+        header = _header_line(session, expect="ASM")
         if "ASM" not in header:
             raise mt.Failure(f"A did not switch to ASM view: {header!r}")
         if "Dbg" in header:
@@ -1054,8 +1125,9 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         snap = session.capture()
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         for token in ("M Memory", "A Assembly", "L Load", "S Save",
-                      "C=+B List", "D Step Over", "T Step Into", "U Step Out",
-                      "C=+P", "C=+D", "C=+R", "RSTOP"):
+                      "C=+B      Bkmrks", "D Step Over", "T Step Into",
+                      "U Step Out", "C=+P", "C=+D", "C=+R", "RSTOP",
+                      "F1/SH+SPC Page Up"):
             if token not in joined:
                 raise mt.Failure(f"Debug help missing {token!r}:\n{joined}")
         if "ESC" in joined:
@@ -1083,17 +1155,20 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("A")
         if "Dbg" not in _header_line(session):
             session.send_char("D")
-        session.send_char("P")
-        armed = _disassembly_row(session.capture(), 0xC080)
-        if "[BRK" not in armed:
-            raise mt.Failure(f"Breakpoint must be armed at $C080 before the Range interlude: {armed!r}")
+        _ensure_breakpoint_at(session, 0xC080, "Range-interlude breakpoint set")
 
         session.send_char("R")
         header = _header_line(session, expect="Range")
         if "Dbg" not in header:
             raise mt.Failure(f"Debug must stay active while Range mode is active: {header!r}")
         session.send_key_repeat("DOWN", 3)
-        session.send_key("COPY")
+        # The span has to be the whole four bytes before the copy: a dropped
+        # cursor key would otherwise copy three and the paste below would
+        # compare the wrong length.
+        _press_until(session, "DOWN", lambda line: "$C083" in line,
+                     "Range interlude cursor")
+        _press_until(session, "COPY", lambda line: "Range" not in line,
+                     "Range interlude copy")
         header = _header_line(session)
         if "Range" in header:
             raise mt.Failure(f"Range flag must clear after the copy: {header!r}")
@@ -1120,16 +1195,19 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         # session, the same way "P toggles a breakpoint" above does.
 
     with mt.check("Debug: C=+P opens the breakpoint list popup"):
-        session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+        session.send_key("CTRL_P")
         session.last_command = "CTRL_P"
-        snap = session.capture()
+        # The popup is waited for rather than read once: the cartridge draws it
+        # after the transport has already gone quiet, which the other C=+P call
+        # sites in this file wait out the same way.
+        snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
         if not any("BREAKPOINTS" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("C=+P did not open the breakpoint list popup")
+            raise mt.Failure(f"C=+P did not open the breakpoint list popup:\n{snap.text()}")
         for ch in "DTOGR":
             session.send_char(ch)
-            snap = session.capture()
+            snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
             if not any("BREAKPOINTS" in snap.line(y) for y in range(mt.HEIGHT)):
-                raise mt.Failure(f"Breakpoint popup did not block Debug key {ch!r}")
+                raise mt.Failure(f"Breakpoint popup did not block Debug key {ch!r}:\n{snap.text()}")
         session.send_key("ESC")
 
     with mt.check("Debug: breakpoint opcode line shows [BRKx] before 3-char source"):
@@ -1148,9 +1226,9 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
             raise mt.Failure(f"Breakpoint line must show [BRKx]{_ram_tag()}, got: {row!r}")
 
     with mt.check("Debug: C=+P shows the live breakpoint list"):
-        session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+        session.send_key("CTRL_P")
         session.last_command = "CTRL_P_WITH_BREAKPOINT"
-        snap = session.capture()
+        snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
         joined = "\n".join(snap.line(y) for y in range(mt.HEIGHT))
         if "BREAKPOINTS" not in joined:
             raise mt.Failure(f"C=+P did not open breakpoint list:\n{joined}")
@@ -1173,15 +1251,20 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_key("ESC")
 
     with mt.check("Debug: breakpoint label replaces [BRKx] on the ASM page"):
-        label_tag = f"[READ]{_ram_tag()}"
-        row = _await_row(session, "|C050 ", lambda r: label_tag in r)
-        if label_tag not in row:
-            raise mt.Failure(f"Labelled breakpoint line must show {label_tag}, got: {row!r}")
+        label_re = re.escape("[READ]") + _ram_tag_re()
+        row = _await_row(session, "|C050 ",
+                         lambda r: re.search(label_re, r) is not None)
+        if not re.search(label_re, row):
+            raise mt.Failure(
+                f"Labelled breakpoint line must show [READ]{_ram_tag()}, got: {row!r}")
         if re.search(r"\[BRK\d\]", row):
             raise mt.Failure(f"Labelled breakpoint line must not also show [BRKx], got: {row!r}")
         session.send_char("P")
 
-    with mt.check("Debug: visible memory source indicators are 3 chars"):
+    with mt.check("Debug: visible memory source indicators are 3 chars", u2=False,
+                  u2_reason="the cartridge reads the CPU-visible aperture and tags "
+                            "every row [CPU], so it has no per-source tag to check"):
+        mt.skip_unsupported()
         _ensure_no_debug(session)
         mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
         session.send_char("D")
@@ -1206,7 +1289,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         # simply verify the monitor stays in Debug mode and ASM view; the
         # follow/return semantics are already exercised in monitor_test.py.
         session.send_key("ENTER")
-        header = _header_line(session)
+        header = _header_line(session, expect="ASM")
         if "MONITOR ASM" not in header or "Dbg" not in header:
             raise mt.Failure(f"RETURN must keep ASM + Dbg state: {header!r}")
 
@@ -1234,15 +1317,15 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("D")
         session.send_char("M")
         session.send_char("E")
-        header = _header_line(session)
+        header = _header_line(session, expect="EDIT")
         if "Dbg" not in header or "EDIT" not in header:
             raise mt.Failure(f"Header must show both Dbg and Edit: {header!r}")
         session.send_key("ESC")
-        header = _header_line(session)
+        header = _wait_header(session, lambda line: "EDIT" not in line)
         if "Dbg" not in header or "EDIT" in header:
             raise mt.Failure(f"ESC in Debug+Edit must keep Dbg and clear Edit: {header!r}")
         session.send_char("A")
-        header = _header_line(session)
+        header = _header_line(session, expect="ASM")
         if "MONITOR ASM" not in header or "Dbg" not in header or "EDIT" in header:
             raise mt.Failure(f"Leaving Edit should keep Debug alive for ASM resume: {header!r}")
         session.send_char("D")
@@ -1254,7 +1337,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     with mt.check("Debug: C=+D from Debug+Edit clears both and allows re-debug"):
         session.send_char("D")
         session.send_char("E")
-        header = _header_line(session)
+        header = _header_line(session, expect="EDIT")
         if "Dbg" not in header or "EDIT" not in header:
             raise mt.Failure(f"Header must show both Dbg and Edit: {header!r}")
         # C=+D leaves both Debug and Edit so the next keystroke is a monitor
@@ -1262,14 +1345,15 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         # test_ctrl_d_from_edit_clears_edit_for_redebug: the user can leave a
         # debug+edit session with one key and immediately navigate/re-debug.
         _send_ctrl_d(session)
-        header = _header_line(session)
+        header = _wait_header(
+            session, lambda line: "Dbg" not in line and "EDIT" not in line)
         if "Dbg" in header or "EDIT" in header:
             raise mt.Failure(f"C=+D in Debug+Edit must clear both Dbg and Edit: {header!r}")
         # Prove Edit really cleared: J is consumed as a monitor jump command,
         # not as edit-mode text input.
         session.goto("C040")
         session.send_char("A")
-        header = _header_line(session)
+        header = _header_line(session, expect="ASM $C040")
         if "MONITOR ASM $C040" not in header or "EDIT" in header:
             raise mt.Failure(f"After C=+D, J must act as a monitor jump command: {header!r}")
         # Re-enter Debug from the post-C=+D cursor and confirm a step runs.
@@ -1293,7 +1377,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         session.send_char("D")
         _wait_for_pc(session, "C063")
         session.send_char("A")
-        header = _header_line(session)
+        header = _header_line(session, expect="ASM $C063")
         if "MONITOR ASM $C063" not in header:
             raise mt.Failure(f"ASM view must snap back to the current debug PC: {header!r}")
         lines = _capture_lines(session)
@@ -1316,23 +1400,24 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     with mt.check("Debug: C=+B opens bookmarks in Debug mode"):
         session.last_command = "CBM_B"
         session.sock.sendall(b"\x1bB")
-        snap = session.capture()
+        snap = _await_snapshot(session, lambda s: "BOOKMARKS" in s.text())
         if not any("BOOKMARKS" in snap.line(y) for y in range(mt.HEIGHT)):
-            raise mt.Failure("C=+B must open bookmark popup while Debug is active")
+            raise mt.Failure(
+                f"C=+B must open bookmark popup while Debug is active:\n{snap.text()}")
         session.send_key("ESC")
-        header = _header_line(session)
+        header = _wait_header(session, lambda line: "BOOKMARKS" not in line)
         if "Dbg" not in header:
             raise mt.Failure(f"Closing C=+B popup must keep Debug active: {header!r}")
 
     with mt.check("Debug: ESC leaves Debug mode"):
         session.send_key("ESC")
-        header = _header_line(session)
+        header = _wait_header(session, lambda line: "Dbg" not in line)
         if "Dbg" in header:
             raise mt.Failure(f"ESC must clear Dbg: {header!r}")
 
     with mt.check("Debug: B retains Binary view (not stolen by breakpoint)"):
         session.send_char("B")
-        header = _header_line(session)
+        header = _header_line(session, expect="BIN")
         if "BIN" not in header:
             raise mt.Failure(f"B must switch to Binary view: {header!r}")
         # Restore to ASM for any subsequent tests
@@ -1341,7 +1426,7 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
     with mt.check("Debug: C=+D leaves Debug mode"):
         session.send_char("D")
         _send_ctrl_d(session)
-        header = _header_line(session)
+        header = _wait_header(session, lambda line: "Dbg" not in line)
         if "Dbg" in header:
             raise mt.Failure(f"C=+D must clear Dbg: {header!r}")
 
@@ -1374,15 +1459,26 @@ def _ensure_no_debug(session: "mt.MonitorSession") -> None:
         # No inner poll: this loop already owns the budget, and when the monitor
         # is closed the header never appears, so a polling read would spend the
         # whole of it on the first pass.
-        header = _header_line(session, timeout=0.0)
+        snap = session.capture()
+        header = ""
+        for y in range(mt.HEIGHT):
+            line = snap.line(y)
+            if "MONITOR" in line:
+                header = line
+                break
         if "Dbg" not in header:
             if last_sent:
                 time.sleep(0.2)
             return
+        text = snap.text()
+        if "BREAKPOINTS" in text or "BOOKMARKS" in text:
+            # A popup owns the keyboard, so C=+D would be consumed by it and the
+            # loop would spend its whole budget deciding Debug will not close.
+            session.send_key("ESC")
+            continue
         if time.time() - last_sent > 4.0:
             _send_ctrl_d(session)
             last_sent = time.time()
-        session.capture()
         time.sleep(0.1)
     raise mt.Failure("Could not leave Debug mode")
 
@@ -1390,15 +1486,28 @@ def _ensure_no_debug(session: "mt.MonitorSession") -> None:
 def _ram_tag() -> str:
     """The source tag this target's backend draws for ordinary RAM.
 
-    Exact per target rather than a union across targets: a pattern that accepts
-    either spelling on both would let a U64 regression that started reporting the
-    wrong source pass unnoticed."""
+    Used in failure messages. For matching, use _ram_tag_re(): on the cartridge
+    the spelling depends on debugger state, which the caller does not control."""
     return "[CPU]" if mt.TestConfig.target == "u2" else "[RAM]"
+
+
+def _ram_tag_re() -> str:
+    """A pattern for this target's RAM source tag.
+
+    The U64 spelling is exact, so a regression that started reporting the wrong
+    source there still fails. U2MemoryBackend::source_name() answers "CPU" for
+    every address while no debug context is captured, because it reads the
+    CPU-visible aperture and keeps no ROM shadow to compare against, and "RAM"
+    once one is: both are correct on that target, and which one a row carries
+    depends on whether an earlier check left a context behind."""
+    if mt.TestConfig.target == "u2":
+        return r"\[(?:CPU|RAM)\]"
+    return r"\[RAM\]"
 
 
 def _brk_source_re() -> str:
     """A breakpoint marker followed by this target's RAM source tag."""
-    return r"\[BRK\d\]" + re.escape(_ram_tag())
+    return r"\[BRK\d\]" + _ram_tag_re()
 
 
 def _await_row(session: "mt.MonitorSession", prefix: str, predicate,
@@ -1470,14 +1579,21 @@ def run_ram_edit_regression_tests(rest_host: str, session: "mt.MonitorSession") 
             raise mt.Failure(f"$2000 seed did not round-trip before edit: {seeded.hex().upper()}")
 
         snap = session.goto(f"{base:04X}")
-        snap = session.send_char("A")
+        session.send_char("A")
+        # Read the rows only once the header says the Assembly view is the one
+        # on screen. The snapshot send_char returns can still be the Hex view on
+        # a target whose redraw lags the echo, and a Hex row is not a
+        # disassembly row: the failure it produces names the memory source
+        # rather than the view, which is what it looked like the first time.
+        _header_line(session, expect="ASM")
+        snap = session.capture()
         _assert_no_debug_modal_snapshot(snap, "$2000 RAM edit setup")
         row = _disassembly_row(snap, base)
         if not _shows_ram(row) or "[KRN]" in row or "[BAS]" in row or "[I/O]" in row:
             raise mt.Failure(f"$2000 must be ordinary RAM before edit, got: {row!r}\n{snap.text()}")
 
         snap = session.send_char("E")
-        if "EDIT" not in _header_line(session):
+        if "EDIT" not in _header_line(session, expect="EDIT"):
             raise mt.Failure(f"$2000 ASM edit did not enter Edit mode:\n{snap.text()}")
 
         commands = (
@@ -1493,7 +1609,7 @@ def run_ram_edit_regression_tests(rest_host: str, session: "mt.MonitorSession") 
             _assert_no_debug_modal_snapshot(snap, f"$2000 ASM edit {label}")
 
         snap = session.send_key("ESC")
-        if "EDIT" in _header_line(session):
+        if "EDIT" in _wait_header(session, lambda line: "EDIT" not in line):
             raise mt.Failure(f"$2000 ASM edit did not leave Edit mode:\n{snap.text()}")
 
         readback = mt.read_rest_memory(rest_host, base, len(program))
@@ -1505,7 +1621,9 @@ def run_ram_edit_regression_tests(rest_host: str, session: "mt.MonitorSession") 
                 f"{snap.text()}")
 
         snap = session.goto(f"{base:04X}")
-        snap = session.send_char("A")
+        session.send_char("A")
+        _header_line(session, expect="ASM")
+        snap = session.capture()
         _assert_no_debug_modal_snapshot(snap, "$2000 ASM edit ASM readback")
         expected_rows = (
             (0x2000, "A9 01", "LDA #$01"),
@@ -1876,6 +1994,21 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         session.send_key("ENTER")
         _ensure_no_debug(session)
 
+    # The fixture above sets SP to $FC and stacks a return address that points
+    # into uninitialised RAM. Leaving Debug hands the CPU back at the RTS, which
+    # then returns into that RAM and stops the running program: the KERNAL jiffy
+    # clock freezes and every later trap wait in this group would time out with
+    # DEBUG TIMEOUT. Reset the machine and restore the fixtures the remaining
+    # checks execute.
+    _reset_c64_core(rest_host)
+    mt.write_rest_memory(rest_host, 0xC240, unsafe_program)
+    mt.write_rest_memory(rest_host, 0xC25F, bytes([0xEA]))
+    mt.write_rest_memory(rest_host, 0xC260, rts_caller)
+    mt.write_rest_memory(rest_host, 0xC270, rts_subroutine)
+    mt.write_rest_memory(rest_host, 0xC280, rti_setup)
+    mt.write_rest_memory(rest_host, 0xC290, rti_target)
+    _reopen_monitor(session)
+
     with mt.check("Debug: undocumented NOP is decoded by Undoc but not debug-stepped"):
         session.goto("C243")
         session.send_char("A")
@@ -1883,7 +2016,7 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
         # Step Out.
         if "Undoc" not in _header_line(session):
             session.send_char("U")
-        header = _header_line(session)
+        header = _header_line(session, expect="Undoc")
         if "Undoc" not in header:
             raise mt.Failure(f"Undoc flag must appear after U: {header!r}")
         row = _disassembly_row(session.capture(), 0xC243)
@@ -2140,7 +2273,7 @@ def prove_stop_debug_exit_resumes_current_context(rest_host: str,
     before_exit = mt.read_rest_memory(rest_host, 0xD021, 1)[0]
     snap = session.send_key("ESC")
     _assert_no_debug_modal_snapshot(snap, context)
-    if "Dbg" in _header_line(session):
+    if "Dbg" in _wait_header(session, lambda line: "Dbg" not in line):
         raise mt.Failure(f"{context}: ESC did not leave Debug before monitor exit")
     session.send_key("CTRL_O")
 
@@ -2437,9 +2570,14 @@ def run_rom_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") -> No
 
             session.send_char("P")
             _assert_no_debug_modal(session, f"{name} ROM breakpoint clear")
-            session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+            session.send_key("CTRL_P")
             session.last_command = f"CTRL_P_CLEAR_{name}"
-            text = session.capture().text()
+            # Wait for the popup itself: a screen read before it is drawn holds
+            # no slot lines at all, which would pass this check for the wrong
+            # reason.
+            text = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text()).text()
+            if "BREAKPOINTS" not in text:
+                raise mt.Failure(f"{name} breakpoint list did not open:\n{text}")
             if f"SET ${target:04X}" in text:
                 raise mt.Failure(f"{name} breakpoint remained in list after R clear:\n{text}")
             session.send_key("ESC")
@@ -2677,7 +2815,7 @@ def _banked_kernal_out_program(base: int, ready_addr: int) -> bytes:
 
 
 def _open_breakpoint_popup(session: "mt.MonitorSession", context: str) -> mt.Snapshot:
-    session.send_key("CTRL_P", settle=mt.TestConfig.target == "u2")
+    session.send_key("CTRL_P")
     session.last_command = f"CTRL_P_{context}"
     snap = _await_snapshot(session, lambda s: "BREAKPOINTS" in s.text())
     if "BREAKPOINTS" not in snap.text():
@@ -2939,7 +3077,7 @@ def _repeat_cancel_redebug_cycles(rest_host: str, session: "mt.MonitorSession",
     for cycle in range(1, cycles + 1):
         _send_ctrl_d(session)
         snap = session.capture()
-        if "Dbg" in _header_line(session):
+        if "Dbg" in _wait_header(session, lambda line: "Dbg" not in line):
             raise mt.Failure(f"{label} cycle {cycle}: Ctrl-D did not leave Debug\n{snap.text()}")
         _assert_rest_region_keeps_changing(
             rest_host, evidence_addr, evidence_len,
@@ -2975,7 +3113,7 @@ def _cancel_repeat_debug_and_reset(rest_host: str, session: "mt.MonitorSession",
                                    evidence_len: int) -> None:
     _send_ctrl_d(session)
     snap = session.capture()
-    if "Dbg" in _header_line(session):
+    if "Dbg" in _wait_header(session, lambda line: "Dbg" not in line):
         raise mt.Failure(f"{label}: Ctrl-D did not leave Debug\n{snap.text()}")
     _assert_rest_region_keeps_changing(
         rest_host, evidence_addr, evidence_len,
@@ -3701,6 +3839,124 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
         _ensure_no_debug(session)
 
 
+def run_edit_visibility_tests(rest_host: str, session: "mt.MonitorSession") -> None:
+    """An edit to memory must be what the machine executes and reads next.
+
+    Every way the monitor changes memory is covered, because they share the
+    hazard rather than the code: a write that reaches a cache, a shadow copy or
+    a stale view instead of the machine leaves the monitor showing one thing
+    while the 6510 does another. The proof is the CPU itself. Each check edits
+    memory and then steps, and reads the accumulator out of the debug footer:
+    an edited opcode has to be the instruction that runs, and edited data has to
+    be the byte the instruction loads.
+    """
+
+    code_at = 0xC600          # LDA #$11 / STA $C6F1 / JMP $C600
+    code_src = 0xC610         # the two bytes copied over the LDA
+    data_reader = 0xC620      # LDA $C6F0 / STA $C6F1 / JMP $C620
+    data_src = 0xC630         # the byte copied into the data cell
+    data_cell = 0xC6F0
+
+    def load_fixtures() -> None:
+        mt.write_rest_memory(rest_host, code_at,
+                             bytes([0xA9, 0x11, 0x8D, 0xF1, 0xC6, 0x4C, 0x00, 0xC6]))
+        mt.write_rest_memory(rest_host, code_src, bytes([0xA9, 0x22]))
+        mt.write_rest_memory(rest_host, data_reader,
+                             bytes([0xAD, 0xF0, 0xC6, 0x8D, 0xF1, 0xC6, 0x4C, 0x20, 0xC6]))
+        mt.write_rest_memory(rest_host, data_src, bytes([0x5A]))
+        mt.write_rest_memory(rest_host, data_cell, bytes([0x00]))
+
+    def copy_bytes(source: int, count: int, context: str) -> None:
+        """Copy `count` bytes from `source` with the monitor's own range copy."""
+        mt.ensure_hex_width(session, 8)
+        session.goto(f"{source:04X}")
+        session.send_char("R")
+        _header_line(session, expect="Range")
+        for _ in range(count - 1):
+            session.send_key("RIGHT")
+        _press_until(session, "RIGHT",
+                     lambda line: f"${source + count - 1:04X}" in line,
+                     f"{context}: extend the range")
+        _press_until(session, "COPY", lambda line: "Range" not in line,
+                     f"{context}: copy the range")
+
+    def paste_at(dest: int, context: str) -> None:
+        session.goto(f"{dest:04X}")
+        session.send_key("PASTE")
+        _header_line(session, timeout=2.0)
+
+    def step_and_read_accumulator(address: int, context: str) -> str:
+        """Enter Debug at `address`, step once, and answer with the footer's AC."""
+        _ensure_no_debug(session)
+        session.goto(f"{address:04X}")
+        session.send_char("A")
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
+        if "Dbg" not in _header_line(session, expect="Dbg"):
+            raise mt.Failure(f"{context}: Debug did not open at ${address:04X}")
+        session.send_char("D")
+        parsed = _wait_for_pc(session, f"{address + (3 if address == data_reader else 2):04X}")
+        _ensure_no_debug(session)
+        return parsed["ac"]
+
+    with mt.check("Edit visibility: pasted instruction is the one the next step executes"):
+        load_fixtures()
+        copy_bytes(code_src, 2, "pasted instruction")
+        paste_at(code_at, "pasted instruction")
+        pasted = mt.read_rest_memory(rest_host, code_at, 2)
+        if pasted != bytes([0xA9, 0x22]):
+            raise mt.Failure(
+                f"Paste did not reach memory: ${code_at:04X} holds {pasted.hex().upper()}")
+        ac = step_and_read_accumulator(code_at, "pasted instruction")
+        if ac != "22":
+            raise mt.Failure(
+                f"The step executed the pre-paste instruction: AC={ac!r}, expected 22")
+
+    with mt.check("Edit visibility: pasted data is what the next step loads"):
+        load_fixtures()
+        copy_bytes(data_src, 1, "pasted data")
+        paste_at(data_cell, "pasted data")
+        ac = step_and_read_accumulator(data_reader, "pasted data")
+        if ac != "5A":
+            raise mt.Failure(
+                f"The step loaded the pre-paste data: AC={ac!r}, expected 5A")
+
+    with mt.check("Edit visibility: filled data is what the next step loads"):
+        load_fixtures()
+        mt.ensure_hex_width(session, 8)
+        session.goto(f"{data_cell:04X}")
+        session.fill(f"{data_cell:04X} {data_cell:04X} A3")
+        _header_line(session, timeout=2.0)
+        filled = mt.read_rest_memory(rest_host, data_cell, 1)
+        if filled != bytes([0xA3]):
+            raise mt.Failure(
+                f"Fill did not reach memory: ${data_cell:04X} holds {filled.hex().upper()}")
+        ac = step_and_read_accumulator(data_reader, "filled data")
+        if ac != "A3":
+            raise mt.Failure(
+                f"The step loaded the pre-fill data: AC={ac!r}, expected A3")
+
+    with mt.check("Edit visibility: hex-edited data is what the next step loads"):
+        load_fixtures()
+        mt.ensure_hex_width(session, 8)
+        session.goto(f"{data_cell:04X}")
+        session.send_char("E")
+        _header_line(session, expect="EDIT")
+        session.send_char("7")
+        session.send_char("E")
+        session.send_key("CTRL_E")
+        _wait_header(session, lambda line: "EDIT" not in line)
+        edited = mt.read_rest_memory(rest_host, data_cell, 1)
+        if edited != bytes([0x7E]):
+            raise mt.Failure(
+                f"Hex edit did not reach memory: ${data_cell:04X} holds "
+                f"{edited.hex().upper()}")
+        ac = step_and_read_accumulator(data_reader, "hex-edited data")
+        if ac != "7E":
+            raise mt.Failure(
+                f"The step loaded the pre-edit data: AC={ac!r}, expected 7E")
+
+
 TEST_GROUPS = (
     ("exit-liveness-reentry", run_exit_liveness_reentry_tests),
     ("jsr-runcursor-rts", run_jsr_runcursor_rts_tests),
@@ -3720,6 +3976,7 @@ TEST_GROUPS = (
     ("banked-continue-no-breakpoints", run_banked_continue_no_breakpoints_tests),
     ("brk-orchestrator", run_brk_orchestrator_tests),
     ("side-effect-step", run_side_effect_step_tests),
+    ("edit-visibility", run_edit_visibility_tests),
     ("cleanup-exit", run_cleanup_exit_tests),
     ("breakpoint-reentry", run_breakpoint_reentry_tests),
 )

@@ -653,20 +653,35 @@ FakeMemoryBackend :: FakeMemoryBackend()
     memset(memory, 0, sizeof(memory));
     session_begin_count = 0;
     session_end_count = 0;
+    single_write_count = 0;
+    block_write_count = 0;
+    single_read_count = 0;
+    block_read_count = 0;
 }
 
 uint8_t FakeMemoryBackend :: read(uint16_t address)
 {
+    single_read_count++;
     return memory[address];
 }
 
 void FakeMemoryBackend :: write(uint16_t address, uint8_t value)
 {
+    single_write_count++;
     memory[address] = value;
+}
+
+void FakeMemoryBackend :: write_block(uint16_t address, const uint8_t *src, uint16_t len)
+{
+    block_write_count++;
+    for (uint16_t i = 0; i < len; i++) {
+        memory[(uint16_t)(address + i)] = src[i];
+    }
 }
 
 void FakeMemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
 {
+    block_read_count++;
     for (uint16_t i = 0; i < len; i++) {
         dst[i] = memory[(uint16_t)(address + i)];
     }

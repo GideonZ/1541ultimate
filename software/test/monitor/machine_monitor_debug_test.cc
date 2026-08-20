@@ -42,6 +42,10 @@ void jump_to(uint16_t) { }
 void resume_to_context(const DebugContext &) { }
 }
 
+// Counts UserInterface::set_screen_title() calls; defined in
+// machine_monitor_test_support.cc, which stubs the firmware's own drawing.
+extern int g_set_screen_title_call_count;
+
 namespace {
 
 struct StubDebugSession : public DebugSession
@@ -81,6 +85,10 @@ struct StubDebugSession : public DebugSession
     bool go_produces_snapshot;
     bool parked_context_handoff_supported;
     bool parked_context;
+    // What a freeze-mode session reports after a run window: the live C64
+    // screen was on display while the machine ran, so the firmware's own
+    // chrome rows have to be redrawn.
+    bool render_target_invalidated;
 
     StubDebugSession()
         : over_calls(0), over_at_calls(0),
@@ -99,7 +107,8 @@ struct StubDebugSession : public DebugSession
           snapshot_result(DBG_OK), claim_allowed(true),
           go_produces_snapshot(false),
           parked_context_handoff_supported(false),
-          parked_context(false)
+          parked_context(false),
+          render_target_invalidated(false)
     {
         debug_context_reset(&cleanup_target_ctx);
         debug_context_reset(&next_ctx);
@@ -119,6 +128,9 @@ struct StubDebugSession : public DebugSession
         predict_bytes[2] = 0;
     }
 
+    virtual bool screen_render_target_invalidated(void) const {
+        return render_target_invalidated;
+    }
     virtual Result snapshot(DebugContext *ctx) {
         snapshot_calls++;
         if (snapshot_result == DBG_OK && ctx) {
@@ -295,6 +307,9 @@ struct TrackingDebugBackend : public FakeMemoryBackend
     bool session_claim_allowed;
     bool go_produces_snapshot;
     bool parked_context_handoff_supported;
+    // Freeze mode only: what the session reports after a run window; see
+    // StubDebugSession::render_target_invalidated.
+    bool render_target_invalidated;
 
     TrackingDebugBackend() : last_session(NULL), session_creations(0),
                              refuse_session(false), reset_calls(0),
@@ -302,7 +317,8 @@ struct TrackingDebugBackend : public FakeMemoryBackend
                              snapshot_result(DebugSession::DBG_OK),
                              session_claim_allowed(true),
                              go_produces_snapshot(false),
-                             parked_context_handoff_supported(false)
+                             parked_context_handoff_supported(false),
+                             render_target_invalidated(false)
     {
         debug_context_reset(&canned_snapshot);
     }
@@ -320,6 +336,7 @@ struct TrackingDebugBackend : public FakeMemoryBackend
         last_session->claim_allowed = session_claim_allowed;
         last_session->go_produces_snapshot = go_produces_snapshot;
         last_session->parked_context_handoff_supported = parked_context_handoff_supported;
+        last_session->render_target_invalidated = render_target_invalidated;
         return last_session;
     }
 
@@ -1458,6 +1475,94 @@ static int test_debug_footer_sits_above_normal_status()
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+// Regression: in freeze mode a step lets the machine run, so the live C64
+// screen is on display for that window and overwrites the firmware's own
+// chrome: the product title on row 0, the rule row under it, and the rule row
+// at the bottom of the screen. The session reports this through
+// screen_render_target_invalidated(), and the redraw that follows the step is
+// what has to put the chrome back. Redrawing only the object under the monitor
+// and the status row leaves the title row and both rules blank for the rest of
+// the session, which is what UserInterface::set_screen_title() draws.
+
+static int test_freeze_step_repaints_firmware_chrome()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    backend.render_target_invalidated = true;
+    monitor_reset_saved_state();
+
+    // A real instruction under the cursor, so the step is executed rather than
+    // refused: the debug context the stub hands back has PC $C003.
+    backend.write(0xC003, 0xA9);
+    backend.write(0xC004, 0x00);
+    backend.write(0xC005, 0xEA);
+
+    const int keys[] = { 'A', 'D', 'T', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Switch to ASM view should succeed")) return 1;
+    if (expect(monitor.poll(0) == 0, "D should enter Debug mode")) return 1;
+
+    g_set_screen_title_call_count = 0;
+    if (expect(monitor.poll(0) == 0, "T should step into and not exit")) return 1;
+    if (expect(backend.last_session != NULL && backend.last_session->trace_calls > 0,
+               "T must reach the session's trace")) return 1;
+    if (expect(g_set_screen_title_call_count == 1,
+               "a freeze-mode step must repaint the firmware chrome exactly once")) {
+        printf("  set_screen_title calls: %d\n", g_set_screen_title_call_count);
+        return 1;
+    }
+
+    monitor.poll(0);
+    monitor.poll(0);
+    monitor.deinit();
+    return 0;
+}
+
+// The same redraw must not repaint the chrome where nothing clobbered it:
+// overlay and telnet sessions never unfreeze the machine, so the title row is
+// still on screen and a repaint would clear the rows the monitor draws over.
+static int test_step_without_invalidated_target_leaves_chrome_alone()
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    backend.render_target_invalidated = false;
+    monitor_reset_saved_state();
+
+    backend.write(0xC003, 0xA9);
+    backend.write(0xC004, 0x00);
+    backend.write(0xC005, 0xEA);
+
+    const int keys[] = { 'A', 'D', 'T', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 5);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    if (expect(monitor.poll(0) == 0, "Switch to ASM view should succeed")) return 1;
+    if (expect(monitor.poll(0) == 0, "D should enter Debug mode")) return 1;
+
+    g_set_screen_title_call_count = 0;
+    if (expect(monitor.poll(0) == 0, "T should step into and not exit")) return 1;
+    if (expect(g_set_screen_title_call_count == 0,
+               "a step that did not unfreeze the machine must not repaint the chrome")) {
+        printf("  set_screen_title calls: %d\n", g_set_screen_title_call_count);
+        return 1;
+    }
+
+    monitor.poll(0);
+    monitor.poll(0);
     monitor.deinit();
     return 0;
 }
@@ -3783,23 +3888,27 @@ static int test_help_screen_shows_debug_commands()
     const char *lines[20];
     int n = MonitorDebug::format_help_lines(lines, 20);
     static const char *expected_lines[] = {
-        "",
         "D Step Over  T Step Into  U Step Out",
         "G Continue   K Cont Crsr  RET Follow",
         "P Breakpt    C=+P Brkpts  C=+R Reset",
         "",
         "M Memory     I ASCII      V Screen",
         "A Assembly   B Binary     O CPU Bank",
-        "J Jump       P Poll       N Number",
-        "E Edit       F Fill       W Width",
+        "W Width      SH+O VIC     R Range",
+        "E Edit       F Fill       N Number",
         "C Compare    H Hunt       Z Freeze",
-        "L Load       S Save",
+        "L Load       S Save       J Jump",
         "",
-        "Bookmarks:     C=+B List  C=+0-9 Jump",
-        "Monitor:       C=+O Open/Close",
-        "Leave debug:   C=+D/RSTOP",
-        "Leave edit:    C=+E/RSTOP",
-        "Copy/Paste:    C=+C / C=+V",
+        "C=+B      Bkmrks   C=+0-9   Bkmrk Jmp",
+        "?/%s      Help     C=+O     Monitor",
+        "C=+E      Edit off C=+C/V   Copy/Paste",
+        "C=+D      Dbg off  C=+I     Interface",
+        "RSTOP/<-  Back",
+    };
+    // Keys Debug takes over must not be advertised with their outside-Debug
+    // meaning: P is Breakpt, not Poll, and T, U and G are execution commands.
+    static const char *const unreachable_tokens[] = {
+        "P Poll", "T Transfer", "U Undoc", "G Go"
     };
     if (expect(n == (int)(sizeof(expected_lines) / sizeof(expected_lines[0])),
                "Debug help line count must match the requested layout")) return 1;
@@ -3808,22 +3917,44 @@ static int test_help_screen_shows_debug_commands()
                    "Debug help text did not match the requested layout")) return 1;
         if (expect((int)strlen(lines[i]) <= 38,
                    "Debug help line must fit within 38 columns")) return 1;
-        if (expect(strstr(lines[i], "SH+O") == NULL,
-                   "Debug help must not show SH+O")) return 1;
         if (expect(strstr(lines[i], "ESC") == NULL,
                    "Debug help must show RSTOP rather than ESC")) return 1;
+        for (int t = 0; t < (int)(sizeof(unreachable_tokens) /
+                                  sizeof(unreachable_tokens[0])); t++) {
+            if (expect(strstr(lines[i], unreachable_tokens[t]) == NULL,
+                       "Debug help must not list a key Debug has taken over")) {
+                printf("  %s\n", unreachable_tokens[t]);
+                return 1;
+            }
+        }
+    }
+    // The Debug help shares the main help's budget: it must not be longer than
+    // the shortest screen draws, which is what would silently clip its last
+    // rows over telnet.
+    if (expect(n <= 24 - 7, "Debug help is longer than the shortest screen draws")) {
+        printf("  %d lines\n", n);
+        return 1;
     }
     char row[40];
     screen.get_slice(1, 3, 38, row);
     if (expect(strstr(row, "HELP ASM DEBUG") == row,
                "Debug help header must identify the ASM debug help screen")) return 1;
     for (int i = 0; i < n; i++) {
+        char expected[64];
+        const char *text = expected_lines[i];
+        if (strchr(text, '%')) {
+            sprintf(expected, text, ui.function_key_for(KEY_HELP));
+            text = expected;
+        }
         screen.get_slice(1, 4 + i, 38, row);
-        if (expect(strncmp(row, expected_lines[i], strlen(expected_lines[i])) == 0,
-                   "Rendered debug help text did not match the requested layout")) return 1;
+        if (expect(strncmp(row, text, strlen(text)) == 0,
+                   "Rendered debug help text did not match the requested layout")) {
+            printf("  %s\n  %s\n", text, row);
+            return 1;
+        }
     }
     screen.get_slice(1, 22, 38, row);
-    if (expect(strstr(row, "Page Up/Down:  F1/SH+SPACE / F7/SPACE") == row,
+    if (expect(strstr(row, "F1/SH+SPC Page Up  F7/SPACE Page Down") == row,
                "Debug help must show the requested paging footer")) return 1;
     if (expect_help_token_not_accented(screen, "D Step Over",
         "D Step Over must not use a distinct debug help colour")) return 1;
@@ -3843,8 +3974,10 @@ static int test_help_screen_shows_debug_commands()
         "C=+R Reset must not use a distinct debug help colour")) return 1;
     if (expect_help_token_not_accented(screen, "RET Follow",
         "RET Follow must not use a distinct debug help colour")) return 1;
-    if (expect_help_token_not_accented(screen, "C=+D/RSTOP",
-        "C=+D/RSTOP must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "C=+D",
+        "C=+D must not use a distinct debug help colour")) return 1;
+    if (expect_help_token_not_accented(screen, "RSTOP/<-",
+        "RSTOP/<- must not use a distinct debug help colour")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: ESC should close help")) return 1;
     if (expect(monitor.poll(0) == 0, "help test: RUN/STOP should leave Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "help test: final RUN/STOP should exit")) return 1;
@@ -4046,8 +4179,8 @@ static int test_reopen_without_reset_preserves_manual_cpu_view()
     char footer[40];
     if (expect(capture_status_footer(screen, footer, sizeof(footer)),
                "Status footer must be visible on ordinary reopen")) { monitor.deinit(); return 1; }
-    if (expect(strncmp(footer, "CPU3", 4) == 0,
-               "Ordinary reopen must preserve the manual CPU view bank")) {
+    if (expect(strncmp(footer, "C5O3", 4) == 0,
+               "Ordinary reopen must preserve the manual view bank 3 beside the live bank 5")) {
         printf("  footer was: '%s'\n", footer);
         monitor.deinit();
         return 1;
@@ -7849,6 +7982,18 @@ static int test_visible_rom_contextless_linear_step_over_stops()
     if (expect(strcmp(monitor.debug_status_message(),
                       "Step Over: run to a breakpoint 1st") == 0,
                "Contextless linear ROM Step Over stops with guidance")) return 1;
+    // The guidance has to be on the screen, not only in the monitor's state:
+    // it is the only thing that tells the user what to do instead, and it is
+    // drawn on the bottom row by draw_status().
+    {
+        char status_row[40];
+        screen.get_slice(1, 22, 38, status_row);
+        if (expect(strstr(status_row, "Step Over: run to a breakpoint 1st") == status_row,
+                   "The Debug guidance must be drawn on the status row")) {
+            printf("  %s\n", status_row);
+            return 1;
+        }
+    }
     monitor.poll(0);
     monitor.poll(0);
     monitor.deinit();
@@ -8929,6 +9074,8 @@ int main()
     RUN(test_breakpoint_slots_allocate_clear_and_format);
     RUN(test_footer_layout_blanks_unknown_fields);
     RUN(test_debug_footer_sits_above_normal_status);
+    RUN(test_freeze_step_repaints_firmware_chrome);
+    RUN(test_step_without_invalidated_target_leaves_chrome_alone);
     RUN(test_d_enters_debug_without_executing);
     RUN(test_d_inside_debug_performs_over);
     RUN(test_d_inside_debug_without_context_overs_from_cursor);

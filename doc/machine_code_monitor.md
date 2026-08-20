@@ -15,7 +15,26 @@ To open the monitor, first open the device menu, then use one of the following:
 - Press `C=+O`.
 - Press `F5`, open `Developer`, then select `Machine Code Monitor`.
 
-Open the built-in help with `F3` or `?`.
+Open the built-in help with `F3` or `?`. It is laid out in three blocks separated by one blank row: the views and what modifies them, the commands that act on memory, and the keys that need `C=` or a named key. `F1`/`SH+SPACE` and `F7`/`SPACE` page it.
+
+```text
+M Memory     I ASCII      V Screen
+A Assembly   B Binary     U Undoc/Case
+W Width      O CPU Bank   SH+O VIC
+
+E Edit       F Fill       T Transfer
+C Compare    H Hunt       N Number
+R Range      Z Freeze     P Poll
+L Load       S Save       J Jump
+G Go         D Debug
+
+C=+B      Bkmrks   C=+0-9   Bkmrk Jmp
+?/F3      Help     C=+O     Monitor
+C=+E      Edit off C=+C/V   Copy/Paste
+RSTOP/<-  Back     RETURN   Follow/Ret
+C=+R      Reset    C=+I     Interface
+F1/SH+SPC Page Up  F7/SPACE Page Down
+```
 
 While the monitor is open, `C=+R` resets / breaks the machine. In Debug mode this reaches through any monitor mode, including Help, Edit, and popups; outside Debug it works from the ordinary monitor and memory views.
 
@@ -889,7 +908,31 @@ There is one boundary worth knowing. A program that runs with KERNAL mapped and 
 
 `F3` or `?` shows the Debug help screen while Debug is active.
 
-It keeps the normal help layout, replaces the keys Debug owns with Debug actions, and highlights those Debug shortcuts with the same accent color used for the `Dbg` and `Edit` header flags.
+It uses the same layout as the ordinary help screen: three blocks separated by one blank row, with no headings. The Debug commands come first, then the monitor commands that still reach a handler while Debug is active, then the keys that need `C=` or a named key. The paging row is the window's own last row and sits on the same columns as the block above it.
+
+```text
+D Step Over  T Step Into  U Step Out
+G Continue   K Cont Crsr  RET Follow
+P Breakpt    C=+P Brkpts  C=+R Reset
+
+M Memory     I ASCII      V Screen
+A Assembly   B Binary     O CPU Bank
+W Width      SH+O VIC     R Range
+E Edit       F Fill       N Number
+C Compare    H Hunt       Z Freeze
+L Load       S Save       J Jump
+
+C=+B      Bkmrks   C=+0-9   Bkmrk Jmp
+?/F3      Help     C=+O     Monitor
+C=+E      Edit off C=+C/V   Copy/Paste
+C=+D      Dbg off  C=+I     Interface
+RSTOP/<-  Back
+F1/SH+SPC Page Up  F7/SPACE Page Down
+```
+
+The screen lists only keys that reach a handler while Debug is active. `D`, `T`, `U`, `G` and `P` are shown as the Debug commands they run in this mode, not as the Debug-entry key, Transfer, the undocumented-opcode toggle, Go and Poll that the same keys run outside Debug. The rest of the grid is the commands that still fall through to the ordinary monitor.
+
+The whole page is one header row, at most 17 text rows and the paging row, which is what the 24-row Telnet session can draw without clipping. No line exceeds the window's 38 usable columns. The two grids are fixed: command cells start at columns 0, 13 and 26, and the lower block puts its key at 0, its action at 10, its second key at 19 and its second action at 28.
 
 ### Hardware support
 

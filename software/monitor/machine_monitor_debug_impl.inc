@@ -127,6 +127,14 @@ void MachineMonitor :: restore_underlying_status_row(void)
     if (!screen || !get_ui()) {
         return;
     }
+    // The firmware's own chrome goes first: the product title on the top row
+    // and the horizontal rules under it and along the bottom. The live C64
+    // screen was on display while the machine ran, so those rows hold whatever
+    // the C64 had there. UserInterface draws them, and nothing else repaints
+    // them, so they stay blank for the rest of the session if this is skipped.
+    // set_screen_title() clears the screen, which is why it runs before the
+    // object below and the monitor's own redraw_full().
+    get_ui()->set_screen_title();
     UIObject *root = get_ui()->get_root_object();
     if (root) {
         root->redraw();

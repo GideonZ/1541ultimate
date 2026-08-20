@@ -31,32 +31,30 @@ extern "C" {
 // name comes from the application key mapper, not this table, so help can't
 // claim a mapping the firmware lacks.
 const char *const monitor_help_lines[] = {
+    // Three blocks, separated by one blank row: the views and what modifies
+    // them, the commands that act on memory, and every key that needs C= or a
+    // named key. The blocks carry no headings; the blank row is what separates
+    // them, which is one row cheaper than a heading and says the same thing.
+    // The Debug help (MonitorDebug::format_help_lines) is laid out the same
+    // way, so the two screens read as one page in two modes.
     "M Memory     I ASCII      V Screen",
     "A Assembly   B Binary     U Undoc/Case",
-    "J Jump       G Go",
-    // No blank row between the two halves of this grid: the page is one row
-    // from the shortest screen's budget, and a blank inside a single
-    // three-column grid is worth less than the machine row at the bottom.
+    "W Width      O CPU Bank   SH+O VIC",
+    "",
     "E Edit       F Fill       T Transfer",
     "C Compare    H Hunt       N Number",
-    "W Width      R Range      P Poll",
-    "Z Freeze     O CPU Bank   SH+O VIC",
-    "L Load       S Save",
+    "R Range      Z Freeze     P Poll",
+    "L Load       S Save       J Jump",
+    "G Go         D Debug",
     "",
-    "BOOKMARKS",
-    "C=+B       List     C=+0-9  Jump",
-    "",
-    "CONTROL KEYS",
-    // Interface row: the two major auxiliary interfaces.
-    "?/%s       Help     C=+O    Monitor",
-    // Editing row.
-    "C=+E       Edit off C=+C/V  Copy/Paste",
-    // Structural navigation row: back out, or follow/return within the level
-    // already open.
-    "RUNSTOP/<- Back     RETURN  Follow/Ret",
-    // Machine row: the two keys that act on the machine rather than the view,
-    // and both of which leave the monitor.
-    "C=+R       Reset    C=+I    Interface",
+    // Lower grid: key at column 0, action at 10, second key at 19, second
+    // action at 28. draw_status puts the paging row on the same columns, so
+    // all four read as straight lines down the page.
+    "C=+B      Bkmrks   C=+0-9   Bkmrk Jmp",
+    "?/%s      Help     C=+O     Monitor",
+    "C=+E      Edit off C=+C/V   Copy/Paste",
+    "RSTOP/<-  Back     RETURN   Follow/Ret",
+    "C=+R      Reset    C=+I     Interface",
     NULL
     // Page Up/Down remains the window's own last row, drawn by draw_status:
     // MONITOR_HELP_LINES_ON_SHORTEST_SCREEN counts only this table.
@@ -1086,6 +1084,25 @@ uint8_t monitor_screen_code_for_char(char c, uint8_t screen_charset)
 void monitor_format_status_line(char *line, uint8_t port01, uint8_t vic_bank)
 {
     format_status_line_impl(line, port01, vic_bank);
+}
+
+void monitor_format_status_line_banks(char *line, uint8_t view_cpu_port,
+                                      uint8_t live_cpu_port, uint8_t vic_bank)
+{
+    uint8_t monitor_bank = view_cpu_port & 0x07;
+    uint8_t cpu_bank = live_cpu_port & 0x07;
+
+    // The regions named in the row are what the monitor's own view maps, so
+    // they follow the view bank. Only the leading field distinguishes the two:
+    // "CPUn" where the view and the live execution bank agree, "CxOy" where
+    // they differ, with x the live bank and y the view bank selected with O.
+    format_status_line_impl(line, monitor_bank, vic_bank);
+    if (cpu_bank != monitor_bank) {
+        line[0] = 'C';
+        line[1] = (char)('0' + cpu_bank);
+        line[2] = 'O';
+        line[3] = (char)('0' + monitor_bank);
+    }
 }
 
 const char *monitor_error_text(MonitorError error)
@@ -2537,9 +2554,12 @@ bool MachineMonitor :: clipboard_copy_range(void)
     if (!data) {
         return false;
     }
-    for (uint32_t i = 0; i < length; i++) {
-        data[i] = canonical_read((uint16_t)(start + i));
-    }
+    // Read the span as blocks, for the reason the paste writes as blocks: a
+    // backend that has to stop the C64 to reach memory stops it once per call,
+    // so a byte at a time is both slow and a longer sequence of stop and resume
+    // cycles. The span cannot wrap here, because start and end were ordered
+    // above, so one range covers it.
+    transfer_read_range(backend, start, length, data);
     if (clipboard.data) {
         free(clipboard.data);
     }
@@ -2553,8 +2573,25 @@ bool MachineMonitor :: clipboard_paste(void)
     if (!clipboard.data || clipboard.length == 0) {
         return false;
     }
-    for (size_t i = 0; i < clipboard.length; i++) {
-        canonical_write((uint16_t)(state.current_addr + i), clipboard.data[i]);
+    // One block rather than one write per byte, for the reason
+    // canonical_write_instruction() gives: a backend that has to stop the C64
+    // to reach memory stops it once for a block and once per byte otherwise,
+    // and each of those stop and resume cycles is a chance to lose the write.
+    // Measured on an Ultimate II+L in a C64 Ultimate: a four byte paste landed
+    // as EA EA 00 EA in one run out of two, losing a byte in the middle rather
+    // than at either end. The same clipboard pasted as a block lands whole.
+    // Addresses wrap at $FFFF here, which write_block cannot express, so a
+    // clipboard that would run past the top of memory is split at the wrap.
+    {
+        uint32_t length = (uint32_t)clipboard.length;
+        uint32_t first = length;
+        if ((uint32_t)state.current_addr + length > 0x10000UL) {
+            first = 0x10000UL - (uint32_t)state.current_addr;
+        }
+        transfer_write_range(backend, state.current_addr, first, clipboard.data);
+        if (first < length) {
+            transfer_write_range(backend, 0, length - first, clipboard.data + first);
+        }
     }
     state.current_addr = (uint16_t)(state.current_addr + clipboard.length);
     binary_bit_index = 7;
@@ -4224,24 +4261,35 @@ void MachineMonitor :: draw_status()
 
     if (help_visible) {
         char paging_line[64];
-        const char *page_up = get_ui()->function_key_for(KEY_PAGEUP);
-        const char *page_down = get_ui()->function_key_for(KEY_PAGEDOWN);
-        if (debug.is_active()) {
-            sprintf(paging_line, "Page Up/Down:  %s/SH+SPACE / %s/SPACE",
-                    page_up, page_down);
-            draw_padded(window, window->get_size_y() - 1, paging_line,
-                        (int)strlen(paging_line));
-            return;
-        }
-        // Same grid as BOOKMARKS and CONTROL KEYS above it: left key at
-        // column 1, left action at 12, right key at 21, right action at 29.
-        sprintf(paging_line, "%s/SH+SP   Page up  %s/SP   Page down",
-                page_up, page_down);
+        char up_key[16];
+        char down_key[16];
+        // The same row on both help screens, on the same columns as the block
+        // of C= keys above it: key at 0, action at 10, second key at 19,
+        // second action at 28.
+        sprintf(up_key, "%s/SH+SPC", get_ui()->function_key_for(KEY_PAGEUP));
+        sprintf(down_key, "%s/SPACE", get_ui()->function_key_for(KEY_PAGEDOWN));
+        sprintf(paging_line, "%-10s%-9s%-9s%s", up_key, "Page Up",
+                down_key, "Page Down");
         draw_padded(window, window->get_size_y() - 1, paging_line,
                     (int)strlen(paging_line));
         return;
     }
 
+    // The one-line Debug alert (a refused step, and what to do instead) takes
+    // the bottom row while Debug is active, ahead of the banking detail and
+    // ahead of a bookmark note. debug_show_status() sets it and the next debug
+    // command clears it, so it stays on screen until it has been read.
+    if (debug.is_active() && debug_status_visible) {
+        window->set_color(MONITOR_UI_ACCENT_COLOR);
+        draw_padded(window, window->get_size_y() - 1, debug_status_text,
+                    (int)strlen(debug_status_text));
+        window->set_color(get_ui()->color_fg);
+        return;
+    }
+
+    // No debug gate here: a bookmark note raised while Debug is active is still
+    // that row's content once the alert above has been cleared, which is what
+    // the bookmark suite's set/jump notes assert.
     if (bookmark_status_visible) {
         window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
         draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
@@ -4260,9 +4308,39 @@ void MachineMonitor :: draw_status()
                     monitor_vic_bank_bases[current_vic_bank & 0x03]);
         }
     } else if (backend && !backend->supports_vic_bank()) {
-        sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
+        uint8_t live_cpu_port = backend->get_live_cpu_port();
+        if ((state.cpu_port & 0x07) == (live_cpu_port & 0x07)) {
+            sprintf(line, "CPU%d  VIC N/A", state.cpu_port & 0x07);
+        } else {
+            bool accent_mask[40];
+            sprintf(line, "C%dO%d  VIC N/A", live_cpu_port & 0x07,
+                    state.cpu_port & 0x07);
+            memset(accent_mask, 0, sizeof(accent_mask));
+            accent_mask[1] = true;
+            accent_mask[3] = true;
+            draw_with_style_mask(window, window->get_size_y() - 1, line,
+                                 (int)strlen(line), NULL, accent_mask,
+                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+            return;
+        }
     } else {
-        monitor_format_status_line(line, state.cpu_port, current_vic_bank);
+        uint8_t live_cpu_port = backend ? backend->get_live_cpu_port()
+                                        : state.cpu_port;
+        monitor_format_status_line_banks(line, state.cpu_port, live_cpu_port,
+                                         current_vic_bank);
+        if ((state.cpu_port & 0x07) != (live_cpu_port & 0x07)) {
+            // Both bank digits are accented, so a row that is reporting two
+            // different banks says so at a glance rather than only in its
+            // spelling.
+            bool accent_mask[40];
+            memset(accent_mask, 0, sizeof(accent_mask));
+            accent_mask[1] = true;
+            accent_mask[3] = true;
+            draw_with_style_mask(window, window->get_size_y() - 1, line,
+                                 (int)strlen(line), NULL, accent_mask,
+                                 get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+            return;
+        }
     }
     draw_padded(window, window->get_size_y() - 1, line, strlen(line));
 }
@@ -4277,6 +4355,12 @@ void MachineMonitor :: draw_help()
         int help_height = window->get_size_y() - 2;
         for (int line_idx = 0; line_idx < help_height; line_idx++) {
             const char *text = line_idx < count ? lines[line_idx] : "";
+            // Same substitution the main table gets: the key that opens help
+            // is the application key mapper's answer, not the table's.
+            if (strchr(text, '%')) {
+                sprintf(formatted, text, get_ui()->function_key_for(KEY_HELP));
+                text = formatted;
+            }
             draw_padded(window, line_idx + 1, text, (int)strlen(text));
         }
         return;

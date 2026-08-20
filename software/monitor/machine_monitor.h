@@ -103,6 +103,10 @@ void monitor_apply_go(MachineMonitorState *state, uint16_t address);
 void monitor_format_hex_row(uint16_t address, const uint8_t *bytes, char *out);
 void monitor_format_text_row(uint16_t address, const uint8_t *bytes, int count, bool screen_codes, char *out);
 void monitor_format_status_line(char *out, uint8_t port01, uint8_t vic_bank);
+// The same row where the monitor's view bank and the live execution bank can
+// differ: "CPUn" while they agree, "CxOy" while they do not, x live and y view.
+void monitor_format_status_line_banks(char *out, uint8_t view_cpu_port,
+                                      uint8_t live_cpu_port, uint8_t vic_bank);
 
 MonitorError monitor_parse_address(const char *text, uint16_t *address);
 MonitorError monitor_parse_expression(const char *text, uint16_t *value);
