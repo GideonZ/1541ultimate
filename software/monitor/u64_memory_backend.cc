@@ -137,6 +137,11 @@ bool U64MemoryBackend :: read_monitor_rom_byte(uint16_t address, uint8_t cpu_por
     }
 }
 
+bool U64MemoryBackend :: live_mapping_serves(uint16_t address, uint8_t cpu_port)
+{
+    return uses_live_mapping_for_address(address, get_live_cpu_port(), cpu_port);
+}
+
 void U64MemoryBackend :: begin_session(void)
 {
     // Do NOT freeze the C64 by default — per-access DMA stops handle the

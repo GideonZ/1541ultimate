@@ -20,6 +20,13 @@ public:
     // Used by the debug session whenever the live aperture cannot serve
     // BASIC/KERNAL (the freezer's cartridge banking owns it).
     bool read_monitor_rom_byte(uint16_t address, uint8_t cpu_port, uint8_t *value) const;
+    // Whether the live 6510 banking maps `address` to the same store that
+    // `cpu_port` names. The port passed to a CPU-mapped read cannot re-bank
+    // the aperture on this hardware - RAM $00/$01 is a DMA-only mirror - so a
+    // read of the KERNAL taken while the running program has it banked out
+    // answers from the RAM underneath. A caller that needs the ROM itself asks
+    // this first and reads the monitor's ROM cache instead.
+    bool live_mapping_serves(uint16_t address, uint8_t cpu_port);
     explicit U64MemoryBackend(U64Machine *machine)
         : machine(machine), stopped_machine_for_session(false),
           observed_live_cpu_port_valid(false), observed_live_cpu_port(0x07) { }

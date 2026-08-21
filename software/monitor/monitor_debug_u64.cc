@@ -187,17 +187,30 @@ protected:
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
-            // While frozen, the live aperture serves the freezer cartridge's
-            // banking, not BASIC/KERNAL, so a raw read is garbage and would
-            // restore a trashed "original" into the ROM image (this caused
-            // the frozen-continue jiffy-death via a trashed $FFFE vector).
+            // Two cases where the live aperture cannot answer for the store
+            // this patch belongs to, and the monitor's ROM cache has to:
+            //
+            // - frozen: the aperture serves the freezer cartridge's banking,
+            //   not BASIC/KERNAL, so a raw read is garbage and would restore a
+            //   trashed "original" into the ROM image (this caused the
+            //   frozen-continue jiffy-death via a trashed $FFFE vector).
+            // - the running program has this ROM banked out: `cpu_port` cannot
+            //   re-bank the aperture, because RAM $00/$01 on this hardware is a
+            //   DMA-only mirror of the 6510's port. A breakpoint armed in the
+            //   KERNAL store while the program runs at $01=$35 would save the
+            //   RAM byte underneath as its original and write that byte into
+            //   the KERNAL image when it was removed. Measured on hardware:
+            //   after the banked-breakpoint scenario, $E000 in the image read
+            //   $EE, the first byte of the RAM payload, and stayed wrong until
+            //   the firmware restarted and reloaded the ROMs.
             uint8_t cached = 0;
-            if (machine_is_frozen() && backend &&
+            if (backend && (machine_is_frozen() ||
+                            !backend->live_mapping_serves(addr, cpu_port)) &&
                     backend->read_monitor_rom_byte(addr, cpu_port, &cached)) {
                 return cached;
             }
-            // Keep reads aligned with actual 6510 fetches. The volatile ROM
-            // image pointer remains the write target only.
+            // Otherwise keep reads aligned with actual 6510 fetches. The
+            // volatile ROM image pointer remains the write target only.
             return machine->peek_cpu(addr, cpu_port);
         }
         if (monitor_backing_store_for_cpu_port(addr, cpu_port) == MONITOR_BACKING_IO) {
