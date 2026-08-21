@@ -34,7 +34,16 @@ window.onload = function () {
         dom_id: "#swagger-ui",
         deepLinking: true,
         presets: [SwaggerUIBundle.presets.apis],
-        layout: "BaseLayout"
+        layout: "BaseLayout",
+        // Try it out talks to the device this page came from, whatever the
+        // server variable in the document says.
+        requestInterceptor: function (request) {
+            var target = new URL(request.url, window.location.href);
+            target.protocol = window.location.protocol;
+            target.host = window.location.host;
+            request.url = target.toString();
+            return request;
+        }
     });
 };
 </script>
