@@ -1,0 +1,77 @@
+"""A deterministic block-style YAML writer, so generating a document needs nothing installed."""
+
+import re
+
+_PLAIN = re.compile(r"^[A-Za-z_/$][A-Za-z0-9_ ./,()$+=-]*$")
+_NUMBER = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
+_RESERVED = {"true", "false", "null", "yes", "no", "on", "off", "~"}
+
+INDENT = 2
+
+
+def dump(node):
+    return _render(node, 0)
+
+
+def _quoted(text):
+    return "'%s'" % text.replace("'", "''")
+
+
+def _needs_quotes(text):
+    return (
+        text == ""
+        or text != text.strip()
+        or text.lower() in _RESERVED
+        or bool(_NUMBER.match(text))
+        or not _PLAIN.match(text)
+    )
+
+
+def _scalar(value, indent):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if "\n" in text:
+        padding = " " * (indent + INDENT)
+        lines = [line.rstrip() for line in text.rstrip("\n").split("\n")]
+        block = "\n".join(padding + line if line else "" for line in lines)
+        return ("|\n" if text.endswith("\n") else "|-\n") + block
+    return _quoted(text) if _needs_quotes(text) else text
+
+
+def _key(name):
+    text = str(name)
+    return _quoted(text) if _needs_quotes(text) else text
+
+
+def _empty(value):
+    return "{}" if isinstance(value, dict) else "[]"
+
+
+def _render(node, indent):
+    padding = " " * indent
+    if isinstance(node, dict):
+        if not node:
+            return padding + "{}\n"
+        out = []
+        for key, value in node.items():
+            if isinstance(value, (dict, list)):
+                if value:
+                    out.append("%s%s:\n%s" % (padding, _key(key), _render(value, indent + INDENT)))
+                else:
+                    out.append("%s%s: %s\n" % (padding, _key(key), _empty(value)))
+            else:
+                out.append("%s%s: %s\n" % (padding, _key(key), _scalar(value, indent)))
+        return "".join(out)
+    if isinstance(node, list):
+        out = []
+        for item in node:
+            if isinstance(item, (dict, list)) and item:
+                rendered = _render(item, indent + INDENT)
+                out.append(padding + "- " + rendered[indent + INDENT:])
+            else:
+                out.append("%s- %s\n" % (padding, _scalar(item, indent)))
+        return "".join(out)
+    return padding + _scalar(node, indent) + "\n"

@@ -5,6 +5,19 @@
 #include "blockdev_file.h"
 #include "filesystem_d64.h"
 
+API_DOC(GET, files, info,
+    TAG("Files")
+    SUMMARY("Read file information")
+    DESCRIPTION("Reports the long file name, the size in bytes and the extension of one file. The "
+                "path is everything between the route and the command, so a file in a "
+                "subdirectory is written out in full.")
+    PATH("/v1/files/{path}:info", "getFileInfo", "")
+    PATH_PARAM("path", "string", "Path of the file on the device. It contains slashes and must be URL encoded.", "/Usb0/games/disk.d64")
+    RESPONSE("200", "application/json", "FileInfoResponse", "What is known about the file.", "")
+    RESPONSE_EXAMPLE("200", "A disk image", "{\n  \"files\" : {\n    \"path\" : \"Usb0/games/disk.d64\",\n    \"filename\" : \"disk.d64\",\n    \"size\" : 174848,\n    \"extension\" : \"D64\"\n  },\n  \"errors\" : []\n}", "")
+    RESPONSE_ERROR("404", "FILE DOESN'T EXIST", "")
+    RESPONSE_ERROR("404", "PATH DOESN'T EXIST", "")
+)
 API_CALL(GET, files, info, NULL, ARRAY({ }))
 {
     FileManager *fm = FileManager::getFileManager();
@@ -69,6 +82,23 @@ static void enforce_diskname(ArgsURI &args)
     }
 }
 
+API_DOC(PUT, files, create_d64,
+    TAG("Files")
+    SUMMARY("Create an empty D64 image")
+    DESCRIPTION("Creates a file at the given path, fills it with zeros and formats it as a 1541 "
+                "disk, so the result can be mounted straight away.\n"
+                "\n"
+                "`tracks` is 35 by default and may go up to 41; anything past 35 is the extended "
+                "area that not every program can read. `diskname` is what goes in the directory "
+                "header and defaults to the file name without its extension.")
+    PATH("/v1/files/{path}:create_d64", "createD64", "")
+    PATH_PARAM("path", "string", "Path of the file on the device. It contains slashes and must be URL encoded.", "/Usb0/games/disk.d64")
+    PARAM("tracks", "integer(35..41)", "Number of tracks to format.", "35", "40")
+    PARAM("diskname", "string", "Name in the directory header. Defaults to the file name without its extension.", "", "MY DISK")
+    RESPONSE("200", "application/json", "DiskImageResponse", "The image was created and formatted.", "")
+    RESPONSE_ERROR("400", "Track count should be between 35 and 41.", "")
+    RESPONSE_ERROR("500", "FILE EXISTS", "")
+)
 API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "diskname", P_OPTIONAL } } ))
 {
     int tracks = args.get_int("tracks", 35);
@@ -102,6 +132,17 @@ API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "dis
     } 
 }
 
+API_DOC(PUT, files, create_d71,
+    TAG("Files")
+    SUMMARY("Create an empty D71 image")
+    DESCRIPTION("Creates a file at the given path and formats it as a 1571 disk, which is the "
+                "double sided 70 track layout. The track count is fixed.")
+    PATH("/v1/files/{path}:create_d71", "createD71", "")
+    PATH_PARAM("path", "string", "Path of the file on the device. It contains slashes and must be URL encoded.", "/Usb0/games/disk.d64")
+    PARAM("diskname", "string", "Name in the directory header. Defaults to the file name without its extension.", "", "MY DISK")
+    RESPONSE("200", "application/json", "DiskImageResponse", "The image was created and formatted.", "")
+    RESPONSE_ERROR("500", "FILE EXISTS", "")
+)
 API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 {
     int tracks = 70;
@@ -129,6 +170,17 @@ API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
     } 
 }
 
+API_DOC(PUT, files, create_d81,
+    TAG("Files")
+    SUMMARY("Create an empty D81 image")
+    DESCRIPTION("Creates a file at the given path and formats it as a 1581 disk, 3200 blocks of "
+                "256 bytes. The size is fixed.")
+    PATH("/v1/files/{path}:create_d81", "createD81", "")
+    PATH_PARAM("path", "string", "Path of the file on the device. It contains slashes and must be URL encoded.", "/Usb0/games/disk.d64")
+    PARAM("diskname", "string", "Name in the directory header. Defaults to the file name without its extension.", "", "MY DISK")
+    RESPONSE("200", "application/json", "DiskImageResponse", "The image was created and formatted.", "")
+    RESPONSE_ERROR("500", "FILE EXISTS", "")
+)
 API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 {
     resp->json->add("path", args.get_full_path());
@@ -153,6 +205,20 @@ API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
     } 
 }
 
+API_DOC(PUT, files, create_dnp,
+    TAG("Files")
+    SUMMARY("Create an empty DNP image")
+    DESCRIPTION("Creates a native partition image and formats it. Each track is 64 KB, so the "
+                "largest image, 255 tracks, is just under 16 MB. Unlike the other three, `tracks` "
+                "has to be given here because there is no conventional size.")
+    PATH("/v1/files/{path}:create_dnp", "createDnp", "")
+    PATH_PARAM("path", "string", "Path of the file on the device. It contains slashes and must be URL encoded.", "/Usb0/games/disk.d64")
+    PARAM("tracks", "integer(1..255)", "Number of 64 KB tracks.", "", "64")
+    PARAM("diskname", "string", "Name in the directory header. Defaults to the file name without its extension.", "", "MY DISK")
+    RESPONSE("200", "application/json", "DiskImageResponse", "The image was created and formatted.", "")
+    RESPONSE_ERROR("400", "Invalid number of tracks (1-255).", "")
+    RESPONSE_ERROR("500", "FILE EXISTS", "")
+)
 API_CALL(PUT, files, create_dnp, NULL, ARRAY( { { "tracks", P_REQUIRED }, { "diskname", P_OPTIONAL } } ))
 {
     int tracks = args.get_int("tracks", 0);

@@ -1,9 +1,10 @@
 
 APP_SPACE = python3 tools/app_space.py
+OPENAPI = python3 tools/openapi/generate.py
 
-.PHONY: all app_space app_space_test observability_test host_tests
+.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test
 
-all: esp32 u2_rv u2plus u2pl u64 u64ii
+all: esp32 u2_rv u2plus u2pl u64 u64ii openapi_check
 	@$(APP_SPACE) report
 
 app_space:
@@ -18,6 +19,18 @@ app_space_test:
 # `observability` suite.
 observability_test:
 	@python3 tests/lib/observability_test.py
+
+# The OpenAPI documents of the REST API, one per product family. `openapi_check`
+# is the gate: it rebuilds them in memory and fails when the committed copies
+# differ.
+openapi:
+	@$(OPENAPI) generate
+
+openapi_check:
+	@$(OPENAPI) check
+
+openapi_test:
+	@python3 -m unittest discover -s tools/openapi -p "test_*.py"
 
 # Unit tests that run on the build host rather than on the device. Kept out of
 # the firmware targets deliberately: those build with a cross compiler, and

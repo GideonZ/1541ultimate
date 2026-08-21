@@ -29,6 +29,13 @@ jobs:
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
 
+      # Also the gate that catches an endpoint whose documentation was not
+      # updated with it. Runs before the firmware builds because it costs seconds.
+      - name: Check OpenAPI Specification
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make openapi_test && make openapi_check"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \
@@ -167,6 +174,14 @@ jobs:
             update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
             update_${{ env.GIT_VERSION }}.cfw
+
+      - name: Upload OpenAPI Specification
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi_${{ env.GIT_VERSION }}
+          path: |
+            doc/api/rest_api_openapi_u2.yaml
+            doc/api/rest_api_openapi_u64.yaml
 
       - name: Upload Factory Artifacts U2+L
         uses: actions/upload-artifact@v7
