@@ -149,18 +149,33 @@ API_CALL(PUT, machine, resume, NULL, ARRAY( {  }))
     resp->json_response(SubsysCommand::http_response_map(retval.status));
 }
 
+// Split the same way the subsystem is: MENU_C64_POWEROFF reaches the power
+// register on an Ultimate 64 and returns SSRET_NOT_IMPLEMENTED on a cartridge,
+// so on a cartridge this call can only ever refuse.
+#if U64
 API_DOC(PUT, machine, poweroff,
     TAG("Machine")
     SUMMARY("Power the machine off")
-    DESCRIPTION("Turns the C64 off. This is an Ultimate 64 command: the board is what is being "
-                "switched off. A cartridge has no control over the power of the machine it is "
-                "plugged into and reports that the command is not supported there.")
+    DESCRIPTION("Turns the C64 off. The Ultimate 64 writes its power register directly; the "
+                "Ultimate 64 Elite II asks the controller that owns the power rail. The "
+                "machine can only be turned back on at the machine.")
     PATH("/v1/machine:poweroff", "powerOffMachine", "")
     RESPONSE("200", "application/json", "ErrorResponse", "The machine is powering down.", "")
-    RESPONSE_ERROR("501", "This command is not supported on this architecture", "")
     RESPONSE_ERROR("423", "Could not obtain lock of subsystem", "")
     RESPONSE_ERROR("503", "SubSystem does not exist", "")
 )
+#else
+API_DOC(PUT, machine, poweroff,
+    TAG("Machine")
+    SUMMARY("Power the machine off")
+    DESCRIPTION("Not implemented on this product. The call is registered so that a client "
+                "is told why, rather than being left to read a 404 as a wrong URL, and it "
+                "always answers 501 here. The Ultimate 64 document describes what it does "
+                "on hardware that has it.")
+    PATH("/v1/machine:poweroff", "powerOffMachine", "")
+    RESPONSE_ERROR("501", "This command is not supported on this architecture", "")
+)
+#endif
 API_CALL(PUT, machine, poweroff, NULL, ARRAY( {  }))
 {
     SubsysCommand *cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_POWEROFF, 0);

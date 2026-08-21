@@ -601,6 +601,17 @@ paths:
                       - 'Invalid Drive ''c'''
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Cannot open file:
+                  value:
+                    errors:
+                      - Cannot open file
         '412':
           description: Precondition failed
           content:
@@ -672,6 +683,17 @@ paths:
                       - 'Invalid Drive ''c'''
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Cannot open file:
+                  value:
+                    errors:
+                      - Cannot open file
         '412':
           description: Precondition failed
           content:
@@ -1622,46 +1644,11 @@ paths:
       tags:
         - Input
       summary: Read the keyboard and joystick state
-      description: |2-
-        Returns every key and joystick input that is currently held, both the ones this API is holding and the ones the Ultimate menu is holding, so the answer matches what the machine sees.
-
-        Keyboard and joystick injection needs the Ultimate 64 hardware that drives those lines. The cartridges register the call so that clients get a clear answer, but it always reports 501 there.
+      description: Not implemented on this product. Keyboard and joystick injection needs the hardware that drives those lines, which a cartridge does not have. The call is registered so that a client is told why rather than reading a 404 as a wrong URL, and it always answers 501 here. The Ultimate 64 document describes what it does on hardware that has it.
       operationId: getInputState
       responses:
-        '200':
-          description: What is being held right now.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InputStateResponse'
-              examples:
-                Shift and fire:
-                  value:
-                    keyboard:
-                      inputs:
-                        - left_shift
-                        - a
-                    joysticks:
-                      - port: 1
-                        inputs:
-                          - up
-                          - fire
-                      - port: 2
-                        inputs: []
-                    errors: []
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                Could not create REST input mutex.:
-                  value:
-                    errors:
-                      - Could not create REST input mutex.
         '501':
           description: Not implemented
           content:
@@ -1677,14 +1664,7 @@ paths:
       tags:
         - Input
       summary: Apply keyboard and joystick events
-      description: |2-
-        Applies up to 64 input events in the order they are given and returns the state that results. The whole batch is validated before any of it is applied, so a batch that is rejected changes nothing.
-
-        `press` holds an input down until something releases it, `release` lets it go, and `tap` does both, which is what typing needs. A `release_all` event drops everything this API is holding, and a machine reset does the same.
-
-        `restore` is not part of the keyboard matrix; it is wired to NMI. It has to appear on its own and only with transition `tap`.
-
-        The request must be `application/json` and the body must be under 4096 bytes. Ultimate 64 hardware only; the cartridges answer 501.
+      description: Not implemented on this product. Keyboard and joystick injection needs the hardware that drives those lines, which a cartridge does not have. The call is registered so that a client is told why rather than reading a 404 as a wrong URL, and it always answers 501 here. The Ultimate 64 document describes what it does on hardware that has it.
       operationId: applyInputEvents
       requestBody:
         required: true
@@ -1694,46 +1674,6 @@ paths:
             schema:
               $ref: '#/components/schemas/InputBatch'
       responses:
-        '200':
-          description: What is held after the batch was applied.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InputStateResponse'
-              examples:
-                After typing LOAD:
-                  value:
-                    keyboard:
-                      inputs: []
-                    joysticks:
-                      - port: 1
-                        inputs: []
-                      - port: 2
-                        inputs: []
-                    errors: []
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                'Content type should be ''application/json''.':
-                  value:
-                    errors:
-                      - 'Content type should be ''application/json''.'
-                '`events` must contain 1..64 entries.':
-                  value:
-                    errors:
-                      - '`events` must contain 1..64 entries.'
-                JSON body is too large.:
-                  value:
-                    errors:
-                      - JSON body is too large.
-                'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.':
-                  value:
-                    errors:
-                      - 'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.'
         '403':
           $ref: '#/components/responses/Forbidden'
         '412':
@@ -1915,28 +1855,11 @@ paths:
       tags:
         - Machine
       summary: Power the machine off
-      description: 'Turns the C64 off. This is an Ultimate 64 command: the board is what is being switched off. A cartridge has no control over the power of the machine it is plugged into and reports that the command is not supported there.'
+      description: Not implemented on this product. The call is registered so that a client is told why, rather than being left to read a 404 as a wrong URL, and it always answers 501 here. The Ultimate 64 document describes what it does on hardware that has it.
       operationId: powerOffMachine
       responses:
-        '200':
-          description: The machine is powering down.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '423':
-          description: Locked
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                Could not obtain lock of subsystem:
-                  value:
-                    errors:
-                      - Could not obtain lock of subsystem
         '501':
           description: Not implemented
           content:
@@ -1948,17 +1871,6 @@ paths:
                   value:
                     errors:
                       - This command is not supported on this architecture
-        '503':
-          description: Service unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                SubSystem does not exist:
-                  value:
-                    errors:
-                      - SubSystem does not exist
   '/v1/machine:readmem':
     get:
       tags:
@@ -3211,35 +3123,6 @@ components:
         - $ref: '#/components/schemas/KeyboardEvent'
         - $ref: '#/components/schemas/JoystickEvent'
         - $ref: '#/components/schemas/ReleaseAllEvent'
-    InputStateResponse:
-      allOf:
-        - $ref: '#/components/schemas/ErrorResponse'
-        - type: object
-          properties:
-            keyboard:
-              type: object
-              properties:
-                inputs:
-                  type: array
-                  description: Every key currently held, by the same names the request uses.
-                  items:
-                    type: string
-            joysticks:
-              type: array
-              description: One entry per port, always both ports, in order.
-              items:
-                type: object
-                properties:
-                  port:
-                    type: integer
-                    enum:
-                      - 1
-                      - 2
-                  inputs:
-                    type: array
-                    description: Every direction or button currently held.
-                    items:
-                      type: string
     InputTransition:
       type: string
       enum:

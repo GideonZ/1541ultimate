@@ -10,6 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import document
 import fixture
 import generate
 import routes
@@ -77,16 +78,16 @@ class CommittedDocumentTest(unittest.TestCase):
         self.assertEqual(generate.stale(), [])
 
 
-@unittest.skipUnless(yaml, "PyYAML is not installed")
 class FirmwareTest(unittest.TestCase):
-    """The real tree. These fail when the firmware and the committed documents disagree."""
+    """The real tree. These fail when the firmware and the documents disagree.
+
+    Built in memory rather than parsed back from the committed files, so they run
+    where PyYAML is not installed, which includes the firmware CI container.
+    """
 
     @classmethod
     def setUpClass(cls):
-        cls.documents = {
-            profile: yaml.safe_load(generate.output_path(profile).read_text())
-            for profile in schemas.PROFILES
-        }
+        cls.documents = document.build_all(generate.REPO_ROOT)
 
     def paths_of(self, profile):
         return set(self.documents[profile]["paths"])
@@ -109,6 +110,30 @@ class FirmwareTest(unittest.TestCase):
     def test_the_streams_route_belongs_to_the_ultimate_64_only(self):
         self.assertTrue(any(p.startswith("/v1/streams/") for p in self.paths_of("u64")))
         self.assertFalse(any(p.startswith("/v1/streams/") for p in self.paths_of("u2")))
+
+    def test_a_call_that_can_only_refuse_declares_no_success(self):
+        """Pinned, because getting this wrong is invisible until a client is generated.
+
+        A call whose handler compiles down to a refusal on one product must not
+        promise a success there. Adding a product conditional to a handler
+        without splitting its API_DOC block the same way lands here.
+        """
+        expected = {
+            "u2": {
+                ("get", "/v1/machine:input"),
+                ("post", "/v1/machine:input"),
+                ("put", "/v1/machine:poweroff"),
+            },
+            "u64": set(),
+        }
+        for profile, document in self.documents.items():
+            refusing = {
+                (method, template)
+                for template, item in document["paths"].items()
+                for method, operation in item.items()
+                if not any(code.startswith("2") for code in operation["responses"])
+            }
+            self.assertEqual(refusing, expected[profile], profile)
 
     def test_calls_the_hand_written_specifications_missed_are_present(self):
         for path in ("/v1/help", "/v1/machine:measure", "/v1/machine:heap",
