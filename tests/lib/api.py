@@ -887,6 +887,10 @@ def _in_range(name: str, value: int, bounds: Tuple[int, int]) -> None:
 CARTRIDGE_STORE = "C64 and Cartridge Settings"
 CARTRIDGE_PREFERENCE_ITEM = "Cartridge Preference"
 CARTRIDGE_PREFERENCE_EXTERNAL = "External"
+# A computer rebooting into BASIC after its cartridge is re-initialised.
+# Measured at about 8s on a C64 Ultimate; the margin covers a boot that
+# takes longer without making a genuinely dead machine wait a whole minute.
+CARTRIDGE_REBOOT_TIMEOUT_SECONDS = 30.0
 
 
 class CartridgePreferenceUnavailable(Failure):
@@ -914,9 +918,17 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
     Raises `CartridgePreferenceUnavailable` when the computer cannot be asked,
     and `Failure` when it serves the setting and will not take it.
 
-    The change is not saved to flash. It takes effect through the item's own
-    change hook, and leaving flash alone keeps a test run from deciding what a
-    machine boots with.
+    The change is not saved to flash, which keeps a test run from deciding what
+    a machine boots with. It does not take effect on the running bus either:
+    the computer routes the cartridge port when it initialises its cartridge,
+    which it does when it boots. Measured on a C64 Ultimate with a U2+L in its
+    port: with the setting changed but the computer not rebooted, DMA through
+    the cartridge worked, the freezer NMI worked, and the cartridge's own NMI
+    never reached the 6510, so the monitor's status row showed 'CPU VIEW' with
+    no banking and every debug step stopped with no captured context. One
+    machine:reboot on the computer put the banking back on the status row. So a
+    change here is followed by a reboot of the computer, and the caller is told
+    that is what happened.
     """
     handle = targets.resolve(target)
     if not handle.split:
@@ -943,5 +955,15 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
             f"{handle.computer} kept '{CARTRIDGE_PREFERENCE_ITEM}' at {now!r} "
             f"after it was set to {CARTRIDGE_PREFERENCE_EXTERNAL!r}; the "
             f"cartridge in its port will not own the bus")
+    # The reboot is what makes the new value reach the bus; see above. The wait
+    # is for the BASIC prompt the computer prints on its way back, so the
+    # caller's first request meets a machine that is running rather than one
+    # still starting.
+    computer.machine.reboot()
+    ready = computer.machine.wait_until_ready(CARTRIDGE_REBOOT_TIMEOUT_SECONDS)
+    reached = "reached the BASIC prompt" if ready else (
+        f"did not reach the BASIC prompt within "
+        f"{CARTRIDGE_REBOOT_TIMEOUT_SECONDS:.0f}s")
     return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
-            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+            f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}, "
+            f"then rebooted so the cartridge owns the bus ({reached})")

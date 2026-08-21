@@ -752,6 +752,20 @@ def ensure_hex_width(session: MonitorSession, expected_width: int) -> Snapshot:
 
     if (expected_width == 16) != is_width_16:
         screen = session.send_char("W")
+        # The width the caller asked for has to be on screen before the caller
+        # reads a row from it. On a cartridge the screen the keypress returns is
+        # still the previous width, and the row the caller wants is not on it:
+        # a $2008 row exists at width 8 and not at width 16.
+        wanted_16 = expected_width == 16
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            rows = find_memory_rows(screen)
+            if rows:
+                text = screen.line(rows[0]).strip().strip("|").strip()
+                if (MEMORY_ROW_16_RE.match(text) is not None) == wanted_16:
+                    break
+            time.sleep(0.2)
+            screen = session.capture()
     return screen
 
 
@@ -1924,12 +1938,20 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str,
     with check("initial CPU7/KERNAL monitor status"):
         ensure_status(session, status_text(snapshots, "status_cpu31"))
 
-    with check("KERNAL $E000 hex view and REST match"):
+    with check("KERNAL $E000 hex view matches the KERNAL"):
         ensure_hex_width(session, 8)
         screen = session.goto("E000")
         for row, expected in snapshots["kernal_hex_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
-        assert_rest_matches_row(screen, 4, 0xE000, rest_host)
+        # No REST cross-check at this address: with the KERNAL mapped the
+        # monitor shows the ROM image, while readmem answers from the RAM
+        # underneath it, so the two read different stores and agree only while
+        # that RAM happens to be untouched. Measured under run-tests, where the
+        # debugger suite runs first and leaves a program at $E000: the monitor
+        # read 85 56 20 0F BC, the KERNAL, and REST read EE 56 20 0F BC, that
+        # program. The monitor was right. The REST cross-check belongs at an
+        # address where both name the same store, which is what the RAM checks
+        # above already do.
 
     with check("paging away and back keeps memory view stable"):
         initial_snapshot = screen.text()

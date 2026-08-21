@@ -3080,6 +3080,35 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         _reopen_monitor(session)
 
 
+# What $E000 held before a suite wrote a RAM-under-KERNAL fixture over it.
+_KERNAL_E000_ORIGINAL: "bytes | None" = None
+
+
+def _write_ram_under_kernal(rest_host: str, address: int, payload: bytes) -> None:
+    """Place a RAM-under-KERNAL fixture, remembering what it displaced.
+
+    A writemem at $E000 with the KERNAL mapped reaches the aperture's KERNAL
+    window, so the fixture is what the monitor and REST read there afterwards.
+    That is fine inside this suite, which is asking about RAM under the KERNAL,
+    and wrong for whatever runs next: the monitor suite reads $E000 expecting
+    the KERNAL and finds this program. The bytes are kept so the suite can put
+    them back; see _restore_ram_under_kernal().
+    """
+    global _KERNAL_E000_ORIGINAL
+    if address == 0xE000 and _KERNAL_E000_ORIGINAL is None:
+        _KERNAL_E000_ORIGINAL = mt.read_rest_memory(rest_host, 0xE000, 32)
+    mt.write_rest_memory(rest_host, address, payload)
+
+
+def _restore_ram_under_kernal(rest_host: str) -> None:
+    """Put back what the RAM-under-KERNAL fixtures displaced at $E000."""
+    global _KERNAL_E000_ORIGINAL
+    if _KERNAL_E000_ORIGINAL is None:
+        return
+    mt.write_rest_memory(rest_host, 0xE000, _KERNAL_E000_ORIGINAL)
+    _KERNAL_E000_ORIGINAL = None
+
+
 def _load_repeat_redebug_fixtures(rest_host: str) -> None:
     hidden_bootstrap = bytes([
         0x78,                   # SEI
@@ -3107,7 +3136,7 @@ def _load_repeat_redebug_fixtures(rest_host: str) -> None:
     ])
     mt.write_rest_memory(rest_host, 0x0400, bytes([0x00]) * 0x3E8)
     mt.write_rest_memory(rest_host, 0xC000, hidden_bootstrap)
-    mt.write_rest_memory(rest_host, 0xE000, hidden_payload)
+    _write_ram_under_kernal(rest_host, 0xE000, hidden_payload)
     mt.write_rest_memory(rest_host, 0xC300, ordinary_loop)
 
 
@@ -3271,7 +3300,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         _clear_all_breakpoints(session, "continue-no-bp setup cleanup")
         _ensure_no_debug(session)
         # Write payload directly to RAM-under-KERNAL and the bootstrap (raw REST).
-        mt.write_rest_memory(rest_host, payload, pay)
+        _write_ram_under_kernal(rest_host, payload, pay)
         mt.write_rest_memory(rest_host, bootstrap, boot)
         # Monitor view 5 maps $E000 -> RAM, so the breakpoint targets RAM. The
         # live execution bank will be 0, so the footer must show a C0O5 mismatch.
@@ -3450,7 +3479,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         _clear_all_breakpoints(session, "continue-with-bp setup cleanup")
         _ensure_no_debug(session)
         _select_monitor_view(session, 5, "select RAM view for continue-with-bp entry")
-        mt.write_rest_memory(rest_host, payload, pay)
+        _write_ram_under_kernal(rest_host, payload, pay)
         mt.write_rest_memory(rest_host, bootstrap_addr, boot)
         session.goto("E000")
         row = _disassembly_row(session.capture(), payload)
@@ -4165,6 +4194,18 @@ def main() -> int:
                 session.send_char("D")
                 _assert_no_breakpoints_remain(session, "post-suite breakpoint hygiene")
                 _ensure_no_debug(session)
+
+            with mt.check("Debug: the KERNAL this suite wrote over is put back"):
+                # The RAM-under-KERNAL fixtures land in the aperture's KERNAL
+                # window, so leaving them there hands the next suite a monitor
+                # that reads a test program where the KERNAL should be. Put back
+                # exactly what was displaced, and prove it.
+                _restore_ram_under_kernal(rest_host)
+                restored = mt.read_rest_memory(rest_host, 0xE000, 8)
+                if restored[0] == 0xEE:
+                    raise mt.Failure(
+                        f"$E000 still holds a fixture after the suite: "
+                        f"{restored.hex().upper()}")
     except mt.Failure as exc:
         aborted = True
         print(exc, file=sys.stderr)
