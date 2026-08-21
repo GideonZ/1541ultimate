@@ -1,5 +1,6 @@
 """Turns the documented call table of one product family into an OpenAPI 3.1 document."""
 
+import json
 import re
 
 import routes
@@ -53,8 +54,23 @@ def _as_declared(type_name, text):
     return text
 
 
-def _error_body(message):
-    return '{\n  "errors": [ "%s" ]\n}' % message
+def _example_value(payload, where):
+    try:
+        return json.loads(payload)
+    except ValueError as error:
+        raise OpenApiError("%s: example is not valid JSON: %s" % (where, error))
+
+
+def _add_example(responses, code, name, value):
+    entry = responses.setdefault(code, {"description": HTTP_REASON.get(code, "Error")})
+    media = entry.setdefault("content", {}).setdefault(
+        "application/json", {"schema": _reference("ErrorResponse")}
+    )
+    media.setdefault("examples", {})[name] = {"value": value}
+
+
+def _add_error_example(responses, code, message):
+    _add_example(responses, code, message, {"errors": [message]})
 
 
 def _template_problem(call, template):
@@ -136,7 +152,7 @@ def _request_body(doc):
     }
 
 
-def _responses(doc, operation_id):
+def _responses(call, doc, operation_id):
     def mine(directive):
         return [values for values in doc.values(directive) if values[-1] in ("", operation_id)]
 
@@ -151,17 +167,24 @@ def _responses(doc, operation_id):
             raise OpenApiError(
                 "%s: RESPONSE_EXAMPLE for %s, which has no response with content" % (doc.where, code)
             )
-        next(iter(out[code]["content"].values())).setdefault("examples", {})[name] = {"value": payload}
-    for code, message, _ in mine("RESPONSE_ERROR"):
-        entry = out.setdefault(code, {
-            "description": HTTP_REASON.get(code, "Error"),
-            "content": {"application/json": {"schema": _reference("ErrorResponse")}},
-        })
-        entry["content"]["application/json"].setdefault("examples", {})[message] = {
-            "value": _error_body(message)
+        media = out[code]["content"].get("application/json") or next(iter(out[code]["content"].values()))
+        media.setdefault("examples", {})[name] = {
+            "value": _example_value(payload, doc.where)
         }
+    for code, message, _ in mine("RESPONSE_ERROR"):
+        _add_error_example(out, code, message)
     if not out:
         raise OpenApiError("%s: no RESPONSE applies to operation %r" % (doc.where, operation_id))
+
+    # The firmware checks the network password before it dispatches, and refuses a
+    # POST whose body never arrived, so both apply to every matching call and are
+    # added here rather than repeated in every block.
+    if "403" in out:
+        _add_error_example(out, "403", "Forbidden.")
+    else:
+        out["403"] = {"$ref": "#/components/responses/Forbidden"}
+    if call.takes_body:
+        _add_error_example(out, "412", "Expected Body, but got none.")
     return dict(sorted(out.items()))
 
 
@@ -178,7 +201,7 @@ def _operation(call, doc, template, operation_id, summary):
     body = _request_body(doc)
     if body:
         operation["requestBody"] = body
-    operation["responses"] = _responses(doc, operation_id)
+    operation["responses"] = _responses(call, doc, operation_id)
     return operation
 
 
@@ -235,17 +258,19 @@ def _paths(profile, repo_root):
     return {template: dict(sorted(out[template].items())) for template in sorted(out)}
 
 
-def _referenced_schemas(paths, defined):
-    used = set()
+def _referenced(paths, components):
+    """The component names the paths reach, following references between components."""
+    used = {kind: set() for kind in components}
 
     def walk(node):
         if isinstance(node, dict):
             reference = node.get("$ref")
             if isinstance(reference, str):
-                name = reference.rsplit("/", 1)[-1]
-                if not reference.startswith("#/components/schemas/") or name not in defined:
+                parts = reference.split("/")
+                kind, name = (parts[2], parts[3]) if len(parts) == 4 else ("", "")
+                if parts[:2] != ["#", "components"] or name not in components.get(kind, {}):
                     raise OpenApiError("unresolved reference %r" % reference)
-                used.add(name)
+                used[kind].add(name)
             for value in node.values():
                 walk(value)
         elif isinstance(node, list):
@@ -253,11 +278,14 @@ def _referenced_schemas(paths, defined):
                 walk(value)
 
     walk(paths)
-    pending = list(used)
+    pending = [(kind, name) for kind, names in used.items() for name in names]
     while pending:
-        before = set(used)
-        walk(defined[pending.pop()])
-        pending.extend(used - before)
+        kind, name = pending.pop()
+        before = {k: set(v) for k, v in used.items()}
+        walk(components[kind][name])
+        pending.extend(
+            (k, n) for k, names in used.items() for n in names - before[k]
+        )
     return used
 
 
@@ -272,7 +300,8 @@ def _tags(paths):
 def build(name, repo_root):
     profile = schemas.PROFILES[name]
     paths = _paths(profile, repo_root)
-    used = _referenced_schemas(paths, schemas.SCHEMAS)
+    defined = {"schemas": schemas.SCHEMAS, "responses": schemas.RESPONSES}
+    used = _referenced(paths, defined)
     return {
         "openapi": "3.1.0",
         "info": {
@@ -280,10 +309,14 @@ def build(name, repo_root):
             "version": schemas.API_VERSION,
             "summary": "REST interface of the Ultimate firmware on %s." % profile["products"],
             "description": schemas.DESCRIPTION.format(products=profile["products"]),
+            "contact": schemas.CONTACT,
+            "license": schemas.LICENSE,
         },
+        # The path keys carry the /v1 prefix themselves, so the server URL must
+        # not repeat it: a generated client joins the two.
         "servers": [
             {
-                "url": "http://{host}/v1",
+                "url": "http://{host}",
                 "description": "An Ultimate device on the local network.",
                 "variables": {
                     "host": {
@@ -294,19 +327,24 @@ def build(name, repo_root):
             }
         ],
         "tags": _tags(paths),
+        "externalDocs": schemas.EXTERNAL_DOCS,
         "security": [{"NetworkPassword": []}],
         "paths": paths,
         "components": {
             "securitySchemes": schemas.SECURITY_SCHEMES,
-            "schemas": {name: schemas.SCHEMAS[name] for name in sorted(used)},
+            "responses": {key: schemas.RESPONSES[key] for key in sorted(used["responses"])},
+            "schemas": {key: schemas.SCHEMAS[key] for key in sorted(used["schemas"])},
         },
     }
 
 
 def build_all(repo_root):
     documents = {name: build(name, repo_root) for name in sorted(schemas.PROFILES)}
-    described = set().union(*(d["components"]["schemas"] for d in documents.values()))
-    unused = set(schemas.SCHEMAS) - described
-    if unused:
-        raise OpenApiError("schemas.py defines schemas no product refers to: %s" % ", ".join(sorted(unused)))
+    for kind, defined in (("schemas", schemas.SCHEMAS), ("responses", schemas.RESPONSES)):
+        used = set().union(*(document["components"][kind] for document in documents.values()))
+        unused = set(defined) - used
+        if unused:
+            raise OpenApiError(
+                "schemas.py defines %s no product refers to: %s" % (kind, ", ".join(sorted(unused)))
+            )
     return documents

@@ -376,14 +376,15 @@ API_CALL(GET, machine, readmem, NULL, ARRAY( { {"address", P_REQUIRED}, {"length
 API_DOC(GET, machine, menu_screen,
     TAG("Machine")
     SUMMARY("Read the Ultimate menu screen")
-    DESCRIPTION("Returns what the Ultimate menu is drawing, as a binary attachment: the character "
-                "matrix followed by the colour matrix for the same cells, in reading order. This "
-                "is the screen the menu owns, not the screen of the running C64 program.\n"
+    DESCRIPTION("Returns what the Ultimate menu is drawing, as a binary attachment of exactly "
+                "2000 bytes: 1000 screen codes for a 40 by 25 screen in reading order, followed "
+                "by the 1000 colour values for the same cells. This is the screen the menu owns, "
+                "not the screen of the running C64 program.\n"
                 "\n"
                 "When the menu is not on screen there is nothing to return and the call answers "
                 "404, which is also the cheapest way to ask whether the menu is open.")
     PATH("/v1/machine:menu_screen", "getMenuScreen", "")
-    RESPONSE("200", "application/octet-stream", "", "The character matrix followed by the colour matrix.", "")
+    RESPONSE("200", "application/octet-stream", "", "2000 bytes: 1000 screen codes followed by 1000 colour values.", "")
     RESPONSE_ERROR("404", "Menu screen unavailable.", "")
 )
 API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))

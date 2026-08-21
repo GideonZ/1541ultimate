@@ -136,6 +136,18 @@ static FRESULT write_html_file(const char *name, const char *data, int length)
     return fres;
 }
 
+extern const char _api_html_start[];
+extern const char _api_html_end[1];
+
+// The API explorer and the OpenAPI document it reads, written next to index.html
+// so the device serves its own contract at /openapi.yaml. The document differs per
+// product family, so the caller passes the one this updater carries.
+static FRESULT write_api_files(const char *spec_start, const char *spec_end)
+{
+    write_html_file("api.html", _api_html_start, (int)_api_html_end - (int)_api_html_start);
+    return write_html_file("openapi.yaml", spec_start, (int)spec_end - (int)spec_start);
+}
+
 static void copy_flash_binary(Flash *flash, uint32_t addr, uint32_t len, const char *fn)
 {
     uint8_t *buffer = new uint8_t[len];

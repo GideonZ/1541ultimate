@@ -40,12 +40,12 @@ API_CALL(PUT, runners, sidplay, NULL, ARRAY( { { "file", P_REQUIRED }, { "songnr
 API_DOC(POST, runners, sidplay,
     TAG("Runners")
     SUMMARY("Upload and play a SID tune")
-    DESCRIPTION("The same as the PUT form, with the tune in the request body. A request that "
-                "carries a second file part hands that one to the player as well, which is how a "
-                "tune that needs its own player binary is started.")
+    DESCRIPTION("The same as the PUT form, with the tune in the request body. A second file "
+                "part, if the request carries one, is taken as the matching `.ssl` song length "
+                "file, which the player uses to move on at the end of a subtune.")
     PATH("/v1/runners:sidplay", "uploadAndPlaySid", "")
     PARAM("songnr", "integer", "Subtune to play, counting from 1. 0 uses the start song of the file.", "0", "2")
-    BODY("multipart/form-data", "FileUpload", "The tune to play, and optionally a second file for the player.")
+    BODY("multipart/form-data", "FileUpload", "The tune to play, and optionally its song length file.")
     BODY("application/octet-stream", "", "The tune to play, sent raw.")
     RESPONSE("200", "application/json", "ErrorResponse", "The tune is playing.", "")
     RESPONSE_ERROR("400", "Upload of file failed.", "")

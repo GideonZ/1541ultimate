@@ -9,6 +9,7 @@ VPATH +=	$(PATH_SW)/chan_fat/ff14/source
 VPATH +=	.
 VPATH :=    $(PATH_SW)/chan_fat/pc $(VPATH)
 VPATH +=    $(PATH_SW)/../html
+VPATH +=    $(PATH_SW)/../doc/api
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -63,7 +64,8 @@ SRCS_BIN =  1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin \
 			iec_config.bin
 SRCS_IEC = 
 SRCS_NANO = 
-SRCS_HTML = index.html
+SRCS_HTML = index.html api.html
+SRCS_YAML = rest_api_openapi_u64.yaml
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -DUSE_FILEMANAGER -DU64=2 -DMHS_PORT=1 -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args

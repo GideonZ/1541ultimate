@@ -44,10 +44,13 @@ class ScalarTest(unittest.TestCase):
 
 class BlockTest(unittest.TestCase):
     def test_multiple_lines_become_a_literal_block(self):
-        self.assertEqual(yaml_writer.dump({"a": "one\n\ntwo"}), "a: |-\n  one\n\n  two\n")
+        self.assertEqual(yaml_writer.dump({"a": "one\n\ntwo"}), "a: |2-\n  one\n\n  two\n")
 
     def test_a_trailing_newline_is_kept_by_the_clip_indicator(self):
-        self.assertEqual(yaml_writer.dump({"a": "one\n"}), "a: |\n  one\n")
+        self.assertEqual(yaml_writer.dump({"a": "one\n"}), "a: |2\n  one\n")
+
+    def test_a_block_whose_first_line_is_indented_survives(self):
+        self.assertEqual(yaml_writer.dump({"a": "  one\ntwo"}), "a: |2-\n    one\n  two\n")
 
     def test_empty_containers_are_written_inline(self):
         self.assertEqual(yaml_writer.dump({"a": {}, "b": []}), "a: {}\nb: []\n")
@@ -70,6 +73,7 @@ class RoundTripTest(unittest.TestCase):
             "200": "OK",
             "version": "0.1",
             "note": "line one\nline two",
+            "indented": "  leading spaces\nsecond line",
             "quote": "it's \"quoted\"",
             "empty": "",
             "hash": "#1",

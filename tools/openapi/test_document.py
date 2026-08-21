@@ -66,8 +66,7 @@ class ShapeTest(unittest.TestCase):
 
     def test_a_documented_error_becomes_an_example_of_the_errors_array(self):
         example = self.poke["responses"]["400"]["content"]["application/json"]["examples"]
-        self.assertIn("Invalid slot", example)
-        self.assertIn('"errors": [ "Invalid slot" ]', example["Invalid slot"]["value"])
+        self.assertEqual(example["Invalid slot"]["value"], {"errors": ["Invalid slot"]})
 
     def test_a_body_handler_produces_a_request_body(self):
         upload = self.built["paths"]["/v1/extra:upload"]["post"]["requestBody"]
@@ -77,9 +76,65 @@ class ShapeTest(unittest.TestCase):
             {"type": "string", "format": "binary"},
         )
 
+    def test_the_server_url_does_not_repeat_the_path_prefix(self):
+        # The path keys carry /v1 themselves; a client joins server and path.
+        self.assertEqual(self.built["servers"][0]["url"], "http://{host}")
+        self.assertTrue(all(path.startswith("/v1") for path in self.built["paths"]))
+
+    def test_the_document_names_who_publishes_it(self):
+        self.assertIn("url", self.built["info"]["contact"])
+        self.assertIn("name", self.built["info"]["license"])
+        self.assertIn("url", self.built["externalDocs"])
+
+    def test_every_example_is_a_value_rather_than_a_string_of_json(self):
+        for item in self.built["paths"].values():
+            for operation in item.values():
+                for code, response in operation["responses"].items():
+                    if "$ref" in response:
+                        continue
+                    for media in (response.get("content") or {}).values():
+                        for name, example in (media.get("examples") or {}).items():
+                            self.assertIsInstance(example["value"], (dict, list), name)
+
+    def test_an_example_that_is_not_json_is_refused(self):
+        refuses(self, "not valid JSON",
+                replacements=[('    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+                               '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+                               '    RESPONSE_EXAMPLE("200", "broken", "{not json}", "")\n')])
+
     def test_only_the_schemas_and_tags_in_use_are_carried(self):
         self.assertEqual(sorted(self.built["components"]["schemas"]), ["DemoResponse", "ErrorResponse"])
         self.assertEqual([tag["name"] for tag in self.built["tags"]], ["Demo"])
+
+
+class SharedResponseTest(unittest.TestCase):
+    """The firmware answers 403 for every call and 412 for every unfed body."""
+
+    def setUp(self):
+        self.built = build("large")
+
+    def test_every_operation_declares_the_password_refusal(self):
+        for template, item in self.built["paths"].items():
+            for method, operation in item.items():
+                self.assertIn("403", operation["responses"], "%s %s" % (method, template))
+
+    def test_a_call_with_no_403_of_its_own_refers_to_the_shared_response(self):
+        listing = self.built["paths"]["/v1/demo"]["get"]
+        self.assertEqual(listing["responses"]["403"],
+                         {"$ref": "#/components/responses/Forbidden"})
+        self.assertIn("Forbidden", self.built["components"]["responses"])
+
+    def test_a_call_that_documents_its_own_403_keeps_it_and_gains_the_refusal(self):
+        poke = self.built["paths"]["/v1/demo/{slot}:poke"]["put"]
+        examples = poke["responses"]["403"]["content"]["application/json"]["examples"]
+        self.assertIn("Slot is write protected", examples)
+        self.assertIn("Forbidden.", examples)
+
+    def test_only_a_call_that_takes_a_body_declares_the_missing_body(self):
+        upload = self.built["paths"]["/v1/extra:upload"]["post"]
+        examples = upload["responses"]["412"]["content"]["application/json"]["examples"]
+        self.assertIn("Expected Body, but got none.", examples)
+        self.assertNotIn("412", self.built["paths"]["/v1/demo"]["get"]["responses"])
 
 
 class ProductTest(unittest.TestCase):

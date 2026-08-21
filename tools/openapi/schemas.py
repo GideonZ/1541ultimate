@@ -70,6 +70,18 @@ the header, or with the wrong value, is answered with `403 Forbidden`. While no
 password is configured the header is ignored.
 """
 
+CONTACT = {
+    "name": "1541 Ultimate firmware",
+    "url": "https://github.com/GideonZ/1541ultimate",
+}
+
+LICENSE = {"name": "GPL-3.0-or-later", "identifier": "GPL-3.0-or-later"}
+
+EXTERNAL_DOCS = {
+    "description": "Ultimate firmware documentation",
+    "url": "https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html",
+}
+
 TAGS = [
     ("About", "Firmware, FPGA and product identification."),
     ("Configuration", "Read and write the settings the menu also exposes."),
@@ -94,20 +106,36 @@ SECURITY_SCHEMES = {
     }
 }
 
-SCHEMAS = {
-    "ErrorResponse": {
-        "type": "object",
+# The one response every call shares: the firmware checks the network password
+# before it dispatches, so any endpoint can answer 403.
+RESPONSES = {
+    "Forbidden": {
         "description": (
-            "Present on every JSON response. The array is empty when the call succeeded."
+            "A network password is configured on the device and the request did not carry "
+            "it in an X-Password header, or carried the wrong value."
         ),
-        "required": ["errors"],
-        "properties": {
-            "errors": {
-                "type": "array",
-                "description": "One entry per problem the firmware reported.",
-                "items": {"type": "string"},
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/ErrorResponse"},
+                "examples": {"Forbidden.": {"value": {"errors": ["Forbidden."]}}},
             }
         },
+    }
+}
+
+SCHEMAS = {
+    "Errors": {
+        "type": "array",
+        "description": (
+            "One entry per problem the firmware reported. Empty when the call succeeded."
+        ),
+        "items": {"type": "string"},
+    },
+    "ErrorResponse": {
+        "type": "object",
+        "description": "Present on every JSON response.",
+        "required": ["errors"],
+        "properties": {"errors": {"$ref": "#/components/schemas/Errors"}},
     },
     "VersionResponse": {
         "allOf": [
@@ -221,39 +249,34 @@ SCHEMAS = {
             },
         ]
     },
+    # These two carry a property per matching category alongside `errors`, so the
+    # errors array has to be named here: additionalProperties applies to every
+    # property a schema does not name itself, and does not see across an allOf.
     "ConfigValuesResponse": {
-        "allOf": [
-            {"$ref": "#/components/schemas/ErrorResponse"},
-            {
-                "type": "object",
-                "description": (
-                    "One property per matching category, each holding one property per "
-                    "matching item whose value is the current setting."
-                ),
-                "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "oneOf": [{"type": "string"}, {"type": "integer"}]
-                    },
-                },
-            },
-        ]
+        "type": "object",
+        "description": (
+            "One property per matching category, each holding one property per matching "
+            "item whose value is the current setting."
+        ),
+        "required": ["errors"],
+        "properties": {"errors": {"$ref": "#/components/schemas/Errors"}},
+        "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+        },
     },
     "ConfigItemsResponse": {
-        "allOf": [
-            {"$ref": "#/components/schemas/ErrorResponse"},
-            {
-                "type": "object",
-                "description": (
-                    "One property per matching category, each holding one property per "
-                    "matching item described in full."
-                ),
-                "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {"$ref": "#/components/schemas/ConfigItem"},
-                },
-            },
-        ]
+        "type": "object",
+        "description": (
+            "One property per matching category, each holding one property per matching "
+            "item described in full."
+        ),
+        "required": ["errors"],
+        "properties": {"errors": {"$ref": "#/components/schemas/Errors"}},
+        "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {"$ref": "#/components/schemas/ConfigItem"},
+        },
     },
     "ConfigItem": {
         "type": "object",

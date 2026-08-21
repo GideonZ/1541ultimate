@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ultimate REST API</title>
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<style>
+    body { margin: 0; font-family: sans-serif; }
+    #notice { margin: 2em; color: #444; }
+    #notice code { background: #eee; padding: 0 0.3em; }
+</style>
+</head>
+<body>
+<div id="notice">
+    <h1>Ultimate REST API</h1>
+    <p>Loading Swagger UI from <code>unpkg.com</code>. If this page stays as it is, this
+       browser has no route to the internet; the specification itself is served by this
+       device at <a href="openapi.yaml">openapi.yaml</a> and can be opened in any
+       OpenAPI viewer.</p>
+    <p>The specification describes only the calls this product serves, and is generated
+       from the firmware it is shipped with.</p>
+</div>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+<script>
+window.onload = function () {
+    if (typeof SwaggerUIBundle === "undefined") {
+        return;
+    }
+    document.getElementById("notice").style.display = "none";
+    window.ui = SwaggerUIBundle({
+        url: "openapi.yaml",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: "BaseLayout"
+    });
+};
+</script>
+</body>
+</html>

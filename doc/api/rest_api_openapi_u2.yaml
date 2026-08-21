@@ -6,7 +6,7 @@ info:
   title: Ultimate II REST API
   version: '0.1'
   summary: REST interface of the Ultimate firmware on the Ultimate II, Ultimate II+ and Ultimate II+L.
-  description: |
+  description: |2
     The HTTP interface of the Ultimate firmware, available since release 3.11.
 
     It covers the Ultimate II, Ultimate II+ and Ultimate II+L. There is a separate document for the other family,
@@ -38,8 +38,14 @@ info:
     is set, every request must carry it in an `X-Password` header. A request without
     the header, or with the wrong value, is answered with `403 Forbidden`. While no
     password is configured the header is ignored.
+  contact:
+    name: '1541 Ultimate firmware'
+    url: 'https://github.com/GideonZ/1541ultimate'
+  license:
+    name: GPL-3.0-or-later
+    identifier: GPL-3.0-or-later
 servers:
-  - url: 'http://{host}/v1'
+  - url: 'http://{host}'
     description: An Ultimate device on the local network.
     variables:
       host:
@@ -62,6 +68,9 @@ tags:
     description: Inspect files and create empty disk images.
   - name: Diagnostics
     description: Bus timing capture and heap accounting.
+externalDocs:
+  description: Ultimate firmware documentation
+  url: 'https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html'
 security:
   - NetworkPassword: []
 paths:
@@ -70,7 +79,7 @@ paths:
       tags:
         - Configuration
       summary: List the configuration categories
-      description: |-
+      description: |2-
         Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
@@ -86,16 +95,19 @@ paths:
                 $ref: '#/components/schemas/ConfigCategoriesResponse'
               examples:
                 Categories:
-                  value: |-
-                    {
-                      "categories" : [ "Drive A Settings", "Network Settings", "User Interface Settings" ],
-                      "errors" : []
-                    }
+                  value:
+                    categories:
+                      - Drive A Settings
+                      - Network Settings
+                      - User Interface Settings
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags:
         - Configuration
       summary: Change several settings at once
-      description: |-
+      description: |2-
         Applies a JSON object of categories to items to values in a single request, which is how a full configuration is restored without one call per setting.
 
         Names are matched exactly here, not as patterns. Every item in the body is attempted whatever happens to the others, so a body with one bad name still applies the rest and the response says which ones failed. Like the PUT form, this changes memory only until `configs:save_to_flash` is called.
@@ -124,10 +136,22 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 One bad item name:
-                  value: |-
-                    {
-                      "errors" : [ "'Drive Speed' is not a valid item name in category 'Drive A Settings'." ]
-                    }
+                  value:
+                    errors:
+                      - '''Drive Speed'' is not a valid item name in category ''Drive A Settings''.'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '500':
           description: Internal server error
           content:
@@ -136,16 +160,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not buffer attachment.:
-                  value: |-
-                    {
-                      "errors": [ "Could not buffer attachment." ]
-                    }
+                  value:
+                    errors:
+                      - Could not buffer attachment.
   '/v1/configs/{category}':
     get:
       tags:
         - Configuration
       summary: Read the values in a category
-      description: |-
+      description: |2-
         Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
@@ -169,21 +192,20 @@ paths:
                 $ref: '#/components/schemas/ConfigValuesResponse'
               examples:
                 Drive A:
-                  value: |-
-                    {
-                      "Drive A Settings" : {
-                        "Drive" : "Enabled",
-                        "Drive Type" : "1541",
-                        "Drive Bus ID" : 8
-                      },
-                      "errors" : []
-                    }
+                  value:
+                    Drive A Settings:
+                      Drive: Enabled
+                      Drive Type: '1541'
+                      Drive Bus ID: 8
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs/{category}/{item}':
     get:
       tags:
         - Configuration
       summary: Read a setting in full
-      description: |-
+      description: |2-
         Reads the same settings the menu shows, at one of three levels of detail. With no path it lists the category names. With a category it gives the current value of every item in it. With a category and an item it describes each matching item in full: the current value, the default, and either the accepted values of an enumeration or the range and format of a number.
 
         Both path elements are patterns, so `drive*` selects every category whose name starts with `drive` and `*bus*` selects every item with `bus` in its name. Category and item names contain spaces and must be URL encoded.
@@ -214,24 +236,22 @@ paths:
                 $ref: '#/components/schemas/ConfigItemsResponse'
               examples:
                 One item:
-                  value: |-
-                    {
-                      "Drive A Settings" : {
-                        "Drive Bus ID" : {
-                          "current" : 8,
-                          "min" : 8,
-                          "max" : 11,
-                          "format" : "%d",
-                          "default" : 8
-                        }
-                      },
-                      "errors" : []
-                    }
+                  value:
+                    Drive A Settings:
+                      Drive Bus ID:
+                        current: 8
+                        min: 8
+                        max: 11
+                        format: '%d'
+                        default: 8
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
     put:
       tags:
         - Configuration
       summary: Change a setting
-      description: |-
+      description: |2-
         Sets one setting. The path names the category and the item, both matched as patterns, and the first match wins, so a pattern that matches more than one item sets whichever comes first.
 
         The change takes effect at once but lives only in memory. It survives until the device reboots, and no longer, unless `configs:save_to_flash` writes it.
@@ -273,15 +293,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Value 12 is outside of the allowable range (8-11):
-                  value: |-
-                    {
-                      "errors": [ "Value 12 is outside of the allowable range (8-11)" ]
-                    }
+                  value:
+                    errors:
+                      - Value 12 is outside of the allowable range (8-11)
                 'Value ''Maybe'' is not a valid choice for item Drive':
-                  value: |-
-                    {
-                      "errors": [ "Value 'Maybe' is not a valid choice for item Drive" ]
-                    }
+                  value:
+                    errors:
+                      - 'Value ''Maybe'' is not a valid choice for item Drive'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -290,15 +310,13 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'There is no config category that matches ''drive c*''':
-                  value: |-
-                    {
-                      "errors": [ "There is no config category that matches 'drive c*'" ]
-                    }
+                  value:
+                    errors:
+                      - 'There is no config category that matches ''drive c*'''
                 'Item ''speed'' not found in this configuration category [Drive A Settings].':
-                  value: |-
-                    {
-                      "errors": [ "Item 'speed' not found in this configuration category [Drive A Settings]." ]
-                    }
+                  value:
+                    errors:
+                      - 'Item ''speed'' not found in this configuration category [Drive A Settings].'
   '/v1/configs/{category}:load_from_flash':
     put:
       tags:
@@ -329,10 +347,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs/{category}:reset_to_default':
     put:
       tags:
@@ -363,16 +382,17 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs/{category}:save_to_flash':
     put:
       tags:
         - Configuration
       summary: Save matching categories
-      description: |-
+      description: |2-
         Writes the settings that have changed since the last save into flash, so that they survive a power cycle. Only categories that are actually stale are written, and the response lists which ones those were, so an empty list means there was nothing to do.
 
         Take care when the device has booted into safe mode: the settings in memory are defaults then, and saving replaces the stored values with them.
@@ -394,11 +414,10 @@ paths:
                 $ref: '#/components/schemas/ConfigStoreListResponse'
               examples:
                 One category written:
-                  value: |-
-                    {
-                      "written" : [ "Drive A Settings" ],
-                      "errors" : []
-                    }
+                  value:
+                    written:
+                      - Drive A Settings
+                    errors: []
         '400':
           description: Bad request
           content:
@@ -407,10 +426,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs:load_from_flash':
     put:
       tags:
@@ -433,10 +453,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs:reset_to_default':
     put:
       tags:
@@ -459,16 +480,17 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/configs:save_to_flash':
     put:
       tags:
         - Configuration
       summary: Save every stale category
-      description: |-
+      description: |2-
         Writes the settings that have changed since the last save into flash, so that they survive a power cycle. Only categories that are actually stale are written, and the response lists which ones those were, so an empty list means there was nothing to do.
 
         Take care when the device has booted into safe mode: the settings in memory are defaults then, and saving replaces the stored values with them.
@@ -482,11 +504,10 @@ paths:
                 $ref: '#/components/schemas/ConfigStoreListResponse'
               examples:
                 One category written:
-                  value: |-
-                    {
-                      "written" : [ "Drive A Settings" ],
-                      "errors" : []
-                    }
+                  value:
+                    written:
+                      - Drive A Settings
+                    errors: []
         '400':
           description: Bad request
           content:
@@ -495,10 +516,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Path depth exceeds 1.:
-                  value: |-
-                    {
-                      "errors": [ "Path depth exceeds 1." ]
-                    }
+                  value:
+                    errors:
+                      - Path depth exceeds 1.
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /v1/drives:
     get:
       tags:
@@ -515,20 +537,18 @@ paths:
                 $ref: '#/components/schemas/DrivesResponse'
               examples:
                 One drive with a disk:
-                  value: |-
-                    {
-                      "drives" : [
-                        { "a" : {
-                            "enabled" : true,
-                            "bus_id" : 8,
-                            "type" : "1541",
-                            "rom" : "1541.rom",
-                            "image_file" : "disk.d64",
-                            "image_path" : "/Usb0/games"
-                        } }
-                      ],
-                      "errors" : []
-                    }
+                  value:
+                    drives:
+                      - a:
+                          enabled: true
+                          bus_id: 8
+                          type: '1541'
+                          rom: '1541.rom'
+                          image_file: disk.d64
+                          image_path: /Usb0/games
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/drives/{drive}:load_rom':
     post:
       tags:
@@ -574,15 +594,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Upload of file failed.:
-                  value: |-
-                    {
-                      "errors": [ "Upload of file failed." ]
-                    }
+                  value:
+                    errors:
+                      - Upload of file failed.
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '412':
           description: Precondition failed
           content:
@@ -591,10 +611,13 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Drive ROM is invalid:
-                  value: |-
-                    {
-                      "errors": [ "Drive ROM is invalid" ]
-                    }
+                  value:
+                    errors:
+                      - Drive ROM is invalid
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '423':
           description: Locked
           content:
@@ -603,10 +626,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
     put:
       tags:
         - Drives
@@ -647,10 +669,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '412':
           description: Precondition failed
           content:
@@ -659,20 +682,17 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Drive ROM not found:
-                  value: |-
-                    {
-                      "errors": [ "Drive ROM not found" ]
-                    }
+                  value:
+                    errors:
+                      - Drive ROM not found
                 Drive ROM is invalid:
-                  value: |-
-                    {
-                      "errors": [ "Drive ROM is invalid" ]
-                    }
+                  value:
+                    errors:
+                      - Drive ROM is invalid
                 ROM image is too large:
-                  value: |-
-                    {
-                      "errors": [ "ROM image is too large" ]
-                    }
+                  value:
+                    errors:
+                      - ROM image is too large
         '423':
           description: Locked
           content:
@@ -681,10 +701,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:mount':
     post:
       tags:
@@ -755,15 +774,26 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Upload of file failed.:
-                  value: |-
-                    {
-                      "errors": [ "Upload of file failed." ]
-                    }
+                  value:
+                    errors:
+                      - Upload of file failed.
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '423':
           description: Locked
           content:
@@ -772,15 +802,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
     put:
       tags:
         - Drives
       summary: Mount a disk image
-      description: |-
+      description: |2-
         Mounts an image that is already on the device.
 
         `type` decides how the image is read and defaults to the extension of the file name, so it only has to be given when the extension is missing or wrong. `mode` decides what happens to writes: `readwrite` puts them in the file, `readonly` write protects the disk so the drive refuses them, and `unlinked` accepts them in memory but never writes them back.
@@ -844,15 +873,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Type ''xyz''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Type 'xyz'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Type ''xyz'''
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -861,10 +890,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Cannot open file:
-                  value: |-
-                    {
-                      "errors": [ "Cannot open file" ]
-                    }
+                  value:
+                    errors:
+                      - Cannot open file
         '415':
           description: Unsupported media type
           content:
@@ -873,10 +901,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Error detected in file format:
-                  value: |-
-                    {
-                      "errors": [ "Error detected in file format" ]
-                    }
+                  value:
+                    errors:
+                      - Error detected in file format
         '423':
           description: Locked
           content:
@@ -885,10 +912,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:off':
     put:
       tags:
@@ -923,10 +949,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -935,10 +962,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:on':
     put:
       tags:
@@ -973,10 +999,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -985,10 +1012,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:remove':
     put:
       tags:
@@ -1023,10 +1049,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
         '403':
           description: Forbidden
           content:
@@ -1035,10 +1060,13 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Disk has been modified, save first:
-                  value: |-
-                    {
-                      "errors": [ "Disk has been modified, save first" ]
-                    }
+                  value:
+                    errors:
+                      - Disk has been modified, save first
+                Forbidden.:
+                  value:
+                    errors:
+                      - Forbidden.
         '423':
           description: Locked
           content:
@@ -1047,10 +1075,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:reset':
     put:
       tags:
@@ -1085,10 +1112,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -1097,10 +1125,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:set_mode':
     put:
       tags:
@@ -1146,15 +1173,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive Type ''1581''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive Type '1581'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive Type ''1581'''
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '405':
           description: Method not allowed
           content:
@@ -1163,10 +1190,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 This hardware only supports 1541:
-                  value: |-
-                    {
-                      "errors": [ "This hardware only supports 1541" ]
-                    }
+                  value:
+                    errors:
+                      - This hardware only supports 1541
         '415':
           description: Unsupported media type
           content:
@@ -1175,10 +1201,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Drive is in the wrong mode:
-                  value: |-
-                    {
-                      "errors": [ "Drive is in the wrong mode" ]
-                    }
+                  value:
+                    errors:
+                      - Drive is in the wrong mode
         '423':
           description: Locked
           content:
@@ -1187,10 +1212,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/drives/{drive}:unlink':
     put:
       tags:
@@ -1225,10 +1249,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Invalid Drive ''c''':
-                  value: |-
-                    {
-                      "errors": [ "Invalid Drive 'c'" ]
-                    }
+                  value:
+                    errors:
+                      - 'Invalid Drive ''c'''
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -1237,16 +1262,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
   '/v1/files/{path}:create_d64':
     put:
       tags:
         - Files
       summary: Create an empty D64 image
-      description: |-
+      description: |2-
         Creates a file at the given path, fills it with zeros and formats it as a 1541 disk, so the result can be mounted straight away.
 
         `tracks` is 35 by default and may go up to 41; anything past 35 is the extended area that not every program can read. `diskname` is what goes in the directory header and defaults to the file name without its extension.
@@ -1291,10 +1315,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Track count should be between 35 and 41.:
-                  value: |-
-                    {
-                      "errors": [ "Track count should be between 35 and 41." ]
-                    }
+                  value:
+                    errors:
+                      - Track count should be between 35 and 41.
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1303,10 +1328,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 FILE EXISTS:
-                  value: |-
-                    {
-                      "errors": [ "FILE EXISTS" ]
-                    }
+                  value:
+                    errors:
+                      - FILE EXISTS
   '/v1/files/{path}:create_d71':
     put:
       tags:
@@ -1336,6 +1360,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiskImageResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1344,10 +1370,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 FILE EXISTS:
-                  value: |-
-                    {
-                      "errors": [ "FILE EXISTS" ]
-                    }
+                  value:
+                    errors:
+                      - FILE EXISTS
   '/v1/files/{path}:create_d81':
     put:
       tags:
@@ -1377,6 +1402,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiskImageResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1385,10 +1412,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 FILE EXISTS:
-                  value: |-
-                    {
-                      "errors": [ "FILE EXISTS" ]
-                    }
+                  value:
+                    errors:
+                      - FILE EXISTS
   '/v1/files/{path}:create_dnp':
     put:
       tags:
@@ -1435,10 +1461,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Invalid number of tracks (1-255).:
-                  value: |-
-                    {
-                      "errors": [ "Invalid number of tracks (1-255)." ]
-                    }
+                  value:
+                    errors:
+                      - Invalid number of tracks (1-255).
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1447,10 +1474,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 FILE EXISTS:
-                  value: |-
-                    {
-                      "errors": [ "FILE EXISTS" ]
-                    }
+                  value:
+                    errors:
+                      - FILE EXISTS
   '/v1/files/{path}:info':
     get:
       tags:
@@ -1475,16 +1501,15 @@ paths:
                 $ref: '#/components/schemas/FileInfoResponse'
               examples:
                 A disk image:
-                  value: |-
-                    {
-                      "files" : {
-                        "path" : "Usb0/games/disk.d64",
-                        "filename" : "disk.d64",
-                        "size" : 174848,
-                        "extension" : "D64"
-                      },
-                      "errors" : []
-                    }
+                  value:
+                    files:
+                      path: Usb0/games/disk.d64
+                      filename: disk.d64
+                      size: 174848
+                      extension: D64
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -1493,15 +1518,13 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'FILE DOESN''T EXIST':
-                  value: |-
-                    {
-                      "errors": [ "FILE DOESN'T EXIST" ]
-                    }
+                  value:
+                    errors:
+                      - 'FILE DOESN''T EXIST'
                 'PATH DOESN''T EXIST':
-                  value: |-
-                    {
-                      "errors": [ "PATH DOESN'T EXIST" ]
-                    }
+                  value:
+                    errors:
+                      - 'PATH DOESN''T EXIST'
   /v1/help:
     get:
       tags:
@@ -1532,12 +1555,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /v1/info:
     get:
       tags:
         - About
       summary: Product and version information
-      description: |-
+      description: |2-
         Identifies the device: product name, firmware version, FPGA build number, host name and unique id. `core_version` is the version of the C64 core and is present on Ultimate 64 hardware only. `unique_id` is left out when the device has none configured.
 
         The same information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
@@ -1551,31 +1576,29 @@ paths:
                 $ref: '#/components/schemas/InfoResponse'
               examples:
                 Ultimate 64 Elite:
-                  value: |-
-                    {
-                      "product" : "Ultimate 64 Elite (V1.49) 3.14d",
-                      "firmware_version" : "3.14d",
-                      "fpga_version" : "122",
-                      "core_version" : "1.49",
-                      "hostname" : "Ultimate-64-Elite-C89085",
-                      "unique_id" : "D09B96",
-                      "errors" : []
-                    }
+                  value:
+                    product: Ultimate 64 Elite (V1.49) 3.14d
+                    firmware_version: '3.14d'
+                    fpga_version: '122'
+                    core_version: '1.49'
+                    hostname: Ultimate-64-Elite-C89085
+                    unique_id: D09B96
+                    errors: []
                 Ultimate II+:
-                  value: |-
-                    {
-                      "product" : "1541 Ultimate II+ 3.14d",
-                      "firmware_version" : "3.14d",
-                      "fpga_version" : "11f",
-                      "hostname" : "Ultimate-II-Plus",
-                      "errors" : []
-                    }
+                  value:
+                    product: '1541 Ultimate II+ 3.14d'
+                    firmware_version: '3.14d'
+                    fpga_version: '11f'
+                    hostname: Ultimate-II-Plus
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/machine:heap':
     get:
       tags:
         - Diagnostics
       summary: Read heap statistics
-      description: |-
+      description: |2-
         Reports the FreeRTOS heap. Every dynamic allocation in the firmware ends up there, `new` and `malloc` alike, so one free figure accounts for all of it.
 
         `free` is the number to diff: sample it, do a body of work, sample it again, and a difference that does not come back is a leak. `min_ever_free` is the low water mark since boot. It never recovers, so it shows how much headroom there has ever been but cannot tell a leak from a transient peak.
@@ -1589,19 +1612,19 @@ paths:
                 $ref: '#/components/schemas/HeapResponse'
               examples:
                 Heap:
-                  value: |-
-                    {
-                      "free" : 1583280,
-                      "min_ever_free" : 1502864,
-                      "total" : 2097152,
-                      "errors" : []
-                    }
+                  value:
+                    free: 1583280
+                    min_ever_free: 1502864
+                    total: 2097152
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/machine:input':
     get:
       tags:
         - Input
       summary: Read the keyboard and joystick state
-      description: |-
+      description: |2-
         Returns every key and joystick input that is currently held, both the ones this API is holding and the ones the Ultimate menu is holding, so the answer matches what the machine sees.
 
         Keyboard and joystick injection needs the Ultimate 64 hardware that drives those lines. The cartridges register the call so that clients get a clear answer, but it always reports 501 there.
@@ -1615,15 +1638,21 @@ paths:
                 $ref: '#/components/schemas/InputStateResponse'
               examples:
                 Shift and fire:
-                  value: |-
-                    {
-                      "keyboard" : { "inputs" : [ "left_shift", "a" ] },
-                      "joysticks" : [
-                        { "port" : 1, "inputs" : [ "up", "fire" ] },
-                        { "port" : 2, "inputs" : [] }
-                      ],
-                      "errors" : []
-                    }
+                  value:
+                    keyboard:
+                      inputs:
+                        - left_shift
+                        - a
+                    joysticks:
+                      - port: 1
+                        inputs:
+                          - up
+                          - fire
+                      - port: 2
+                        inputs: []
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1632,10 +1661,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not create REST input mutex.:
-                  value: |-
-                    {
-                      "errors": [ "Could not create REST input mutex." ]
-                    }
+                  value:
+                    errors:
+                      - Could not create REST input mutex.
         '501':
           description: Not implemented
           content:
@@ -1644,15 +1672,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Keyboard and joystick injection require Ultimate 64-class hardware.:
-                  value: |-
-                    {
-                      "errors": [ "Keyboard and joystick injection require Ultimate 64-class hardware." ]
-                    }
+                  value:
+                    errors:
+                      - Keyboard and joystick injection require Ultimate 64-class hardware.
     post:
       tags:
         - Input
       summary: Apply keyboard and joystick events
-      description: |-
+      description: |2-
         Applies up to 64 input events in the order they are given and returns the state that results. The whole batch is validated before any of it is applied, so a batch that is rejected changes nothing.
 
         `press` holds an input down until something releases it, `release` lets it go, and `tap` does both, which is what typing needs. A `release_all` event drops everything this API is holding, and a machine reset does the same.
@@ -1677,15 +1704,15 @@ paths:
                 $ref: '#/components/schemas/InputStateResponse'
               examples:
                 After typing LOAD:
-                  value: |-
-                    {
-                      "keyboard" : { "inputs" : [] },
-                      "joysticks" : [
-                        { "port" : 1, "inputs" : [] },
-                        { "port" : 2, "inputs" : [] }
-                      ],
-                      "errors" : []
-                    }
+                  value:
+                    keyboard:
+                      inputs: []
+                    joysticks:
+                      - port: 1
+                        inputs: []
+                      - port: 2
+                        inputs: []
+                    errors: []
         '400':
           description: Bad request
           content:
@@ -1694,25 +1721,34 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'Content type should be ''application/json''.':
-                  value: |-
-                    {
-                      "errors": [ "Content type should be 'application/json'." ]
-                    }
+                  value:
+                    errors:
+                      - 'Content type should be ''application/json''.'
                 '`events` must contain 1..64 entries.':
-                  value: |-
-                    {
-                      "errors": [ "`events` must contain 1..64 entries." ]
-                    }
+                  value:
+                    errors:
+                      - '`events` must contain 1..64 entries.'
                 JSON body is too large.:
-                  value: |-
-                    {
-                      "errors": [ "JSON body is too large." ]
-                    }
+                  value:
+                    errors:
+                      - JSON body is too large.
                 'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.':
-                  value: |-
-                    {
-                      "errors": [ "events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`." ]
-                    }
+                  value:
+                    errors:
+                      - 'events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '501':
           description: Not implemented
           content:
@@ -1721,16 +1757,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Keyboard and joystick injection require Ultimate 64-class hardware.:
-                  value: |-
-                    {
-                      "errors": [ "Keyboard and joystick injection require Ultimate 64-class hardware." ]
-                    }
+                  value:
+                    errors:
+                      - Keyboard and joystick injection require Ultimate 64-class hardware.
   '/v1/machine:measure':
     get:
       tags:
         - Diagnostics
       summary: Capture cartridge bus timing
-      description: |-
+      description: |2-
         Samples the cartridge bus and returns the capture as a VCD file, which any waveform viewer opens. The traces are the dot clock, PHI2 and the copy the FPGA recovers from it, the address and data buses, the read/write line and the tri-state controls. The sample interval follows the FPGA clock of the product, so it is 20 ns, 16 ns or 15 ns depending on which one this is.
 
         The measurement block is an optional part of the FPGA build. Where it is absent, and it usually is on the cartridges, the call answers 501.
@@ -1743,6 +1778,8 @@ paths:
               schema:
                 type: string
                 format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1751,10 +1788,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Out of memory:
-                  value: |-
-                    {
-                      "errors": [ "Out of memory" ]
-                    }
+                  value:
+                    errors:
+                      - Out of memory
         '501':
           description: Not implemented
           content:
@@ -1763,16 +1799,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 The current FPGA build does not support timing measurement of the cartridge bus.:
-                  value: |-
-                    {
-                      "errors": [ "The current FPGA build does not support timing measurement of the cartridge bus." ]
-                    }
+                  value:
+                    errors:
+                      - The current FPGA build does not support timing measurement of the cartridge bus.
   '/v1/machine:menu_button':
     put:
       tags:
         - Machine
       summary: Press the menu button
-      description: |-
+      description: |2-
         Acts as if the menu button on the device had been pressed, which opens the Ultimate menu or closes it again. There is no way to ask whether the menu is open; `GET /v1/machine:menu_screen` answers 404 while it is not.
 
         While the menu is open it takes the keyboard, so keys injected through `POST /v1/machine:input` reach the menu rather than the running program.
@@ -1784,6 +1819,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -1792,10 +1829,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -1804,28 +1840,29 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:menu_screen':
     get:
       tags:
         - Machine
       summary: Read the Ultimate menu screen
-      description: |-
-        Returns what the Ultimate menu is drawing, as a binary attachment: the character matrix followed by the colour matrix for the same cells, in reading order. This is the screen the menu owns, not the screen of the running C64 program.
+      description: |2-
+        Returns what the Ultimate menu is drawing, as a binary attachment of exactly 2000 bytes: 1000 screen codes for a 40 by 25 screen in reading order, followed by the 1000 colour values for the same cells. This is the screen the menu owns, not the screen of the running C64 program.
 
         When the menu is not on screen there is nothing to return and the call answers 404, which is also the cheapest way to ask whether the menu is open.
       operationId: getMenuScreen
       responses:
         '200':
-          description: The character matrix followed by the colour matrix.
+          description: '2000 bytes: 1000 screen codes followed by 1000 colour values.'
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -1834,10 +1871,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Menu screen unavailable.:
-                  value: |-
-                    {
-                      "errors": [ "Menu screen unavailable." ]
-                    }
+                  value:
+                    errors:
+                      - Menu screen unavailable.
   '/v1/machine:pause':
     put:
       tags:
@@ -1852,6 +1888,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -1860,10 +1898,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -1872,10 +1909,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:poweroff':
     put:
       tags:
@@ -1890,6 +1926,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -1898,10 +1936,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '501':
           description: Not implemented
           content:
@@ -1910,10 +1947,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 This command is not supported on this architecture:
-                  value: |-
-                    {
-                      "errors": [ "This command is not supported on this architecture" ]
-                    }
+                  value:
+                    errors:
+                      - This command is not supported on this architecture
         '503':
           description: Service unavailable
           content:
@@ -1922,16 +1958,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:readmem':
     get:
       tags:
         - Machine
       summary: Read C64 memory
-      description: |-
+      description: |2-
         Performs a DMA read on the cartridge bus and returns the bytes as a binary attachment. The read may not pass $FFFF.
 
         What comes back for an address that a ROM or an I/O register also occupies depends on the bank configuration at the moment of the read, so a read at $E000 returns the KERNAL or the RAM underneath it depending on the processor port. Pause the machine first if the values have to be consistent with each other.
@@ -1970,20 +2005,19 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Invalid address:
-                  value: |-
-                    {
-                      "errors": [ "Invalid address" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid address
                 Invalid length:
-                  value: |-
-                    {
-                      "errors": [ "Invalid length" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid length
                 Memory read exceeds location $FFFF:
-                  value: |-
-                    {
-                      "errors": [ "Memory read exceeds location $FFFF" ]
-                    }
+                  value:
+                    errors:
+                      - Memory read exceeds location $FFFF
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Internal server error
           content:
@@ -1992,16 +2026,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Out of memory:
-                  value: |-
-                    {
-                      "errors": [ "Out of memory" ]
-                    }
+                  value:
+                    errors:
+                      - Out of memory
   '/v1/machine:reboot':
     put:
       tags:
         - Machine
       summary: Reboot the machine
-      description: |-
+      description: |2-
         Resets the C64 and re-initialises the cartridge with it, which is what the Reboot entry in the menu does. Use this rather than `machine:reset` when a cartridge has to start from scratch.
 
         On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot.
@@ -2013,6 +2046,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -2021,10 +2056,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2033,16 +2067,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:reset':
     put:
       tags:
         - Machine
       summary: Reset the machine
-      description: |-
+      description: |2-
         Pulls reset on the C64. The machine restarts with whatever cartridge is active, which is not the same as starting from cold; use `machine:reboot` for that.
 
         On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, so a reset cannot leave an injected key stuck down.
@@ -2054,6 +2087,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -2062,10 +2097,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2074,10 +2108,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:resume':
     put:
       tags:
@@ -2092,6 +2125,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '423':
           description: Locked
           content:
@@ -2100,10 +2135,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2112,10 +2146,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/machine:writemem':
     post:
       tags:
@@ -2157,15 +2190,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Invalid address:
-                  value: |-
-                    {
-                      "errors": [ "Invalid address" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid address
                 Memory write exceeds location $FFFF:
-                  value: |-
-                    {
-                      "errors": [ "Memory write exceeds location $FFFF" ]
-                    }
+                  value:
+                    errors:
+                      - Memory write exceeds location $FFFF
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2174,10 +2207,20 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not read data from attachment:
-                  value: |-
-                    {
-                      "errors": [ "Could not read data from attachment" ]
-                    }
+                  value:
+                    errors:
+                      - Could not read data from attachment
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '500':
           description: Internal server error
           content:
@@ -2186,15 +2229,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Out of memory:
-                  value: |-
-                    {
-                      "errors": [ "Out of memory" ]
-                    }
+                  value:
+                    errors:
+                      - Out of memory
     put:
       tags:
         - Machine
       summary: Write bytes to C64 memory
-      description: |-
+      description: |2-
         Performs a DMA write on the cartridge bus. `data` carries the bytes as hexadecimal, two characters per byte, and at most 128 bytes fit here; use the POST form for more. The write may not pass $FFFF.
 
         The write is decoded through the bank configuration that is in force at the time, the same way a write by the CPU would be, so a write to $D020 reaches the VIC register while I/O is mapped in.
@@ -2223,11 +2265,9 @@ paths:
                 $ref: '#/components/schemas/MemoryWriteResponse'
               examples:
                 Border and background:
-                  value: |-
-                    {
-                      "address" : "d020-d021",
-                      "errors" : []
-                    }
+                  value:
+                    address: d020-d021
+                    errors: []
         '400':
           description: Bad request
           content:
@@ -2236,25 +2276,23 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Invalid address:
-                  value: |-
-                    {
-                      "errors": [ "Invalid address" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid address
                 Maximum length of 128 bytes exceeded. Consider using POST method with attachment.:
-                  value: |-
-                    {
-                      "errors": [ "Maximum length of 128 bytes exceeded. Consider using POST method with attachment." ]
-                    }
+                  value:
+                    errors:
+                      - Maximum length of 128 bytes exceeded. Consider using POST method with attachment.
                 'Use this API call to write at least one byte!':
-                  value: |-
-                    {
-                      "errors": [ "Use this API call to write at least one byte!" ]
-                    }
+                  value:
+                    errors:
+                      - 'Use this API call to write at least one byte!'
                 Memory write exceeds location $FFFF:
-                  value: |-
-                    {
-                      "errors": [ "Memory write exceeds location $FFFF" ]
-                    }
+                  value:
+                    errors:
+                      - Memory write exceeds location $FFFF
+        '403':
+          $ref: '#/components/responses/Forbidden'
   '/v1/runners:load_prg':
     post:
       tags:
@@ -2280,6 +2318,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '423':
           description: Locked
           content:
@@ -2288,10 +2339,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2300,10 +2350,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
     put:
       tags:
         - Runners
@@ -2325,6 +2374,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2333,10 +2384,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Cannot open file:
-                  value: |-
-                    {
-                      "errors": [ "Cannot open file" ]
-                    }
+                  value:
+                    errors:
+                      - Cannot open file
         '423':
           description: Locked
           content:
@@ -2345,10 +2395,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2357,10 +2406,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/runners:modplay':
     post:
       tags:
@@ -2386,6 +2434,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '501':
           description: Not implemented
           content:
@@ -2394,15 +2455,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Sampler module not available:
-                  value: |-
-                    {
-                      "errors": [ "Sampler module not available" ]
-                    }
+                  value:
+                    errors:
+                      - Sampler module not available
     put:
       tags:
         - Runners
       summary: Play an Amiga MOD file
-      description: |-
+      description: |2-
         Loads a MOD file from the device into the REU memory and starts the module player, which plays it through the sampler rather than through the SID.
 
         The sampler is an optional part of the FPGA build. Where it is absent the call answers 501. Loading the module overwrites whatever the REU held.
@@ -2422,6 +2482,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2430,10 +2492,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 'FILE DOESN''T EXIST':
-                  value: |-
-                    {
-                      "errors": [ "FILE DOESN'T EXIST" ]
-                    }
+                  value:
+                    errors:
+                      - 'FILE DOESN''T EXIST'
         '501':
           description: Not implemented
           content:
@@ -2442,10 +2503,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Sampler module not available:
-                  value: |-
-                    {
-                      "errors": [ "Sampler module not available" ]
-                    }
+                  value:
+                    errors:
+                      - Sampler module not available
   '/v1/runners:run_crt':
     post:
       tags:
@@ -2471,6 +2531,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '415':
           description: Unsupported media type
           content:
@@ -2479,10 +2552,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Error detected in file format:
-                  value: |-
-                    {
-                      "errors": [ "Error detected in file format" ]
-                    }
+                  value:
+                    errors:
+                      - Error detected in file format
         '423':
           description: Locked
           content:
@@ -2491,10 +2563,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2503,10 +2574,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
     put:
       tags:
         - Runners
@@ -2528,6 +2598,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2536,10 +2608,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Cannot open file:
-                  value: |-
-                    {
-                      "errors": [ "Cannot open file" ]
-                    }
+                  value:
+                    errors:
+                      - Cannot open file
         '415':
           description: Unsupported media type
           content:
@@ -2548,10 +2619,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Error detected in file format:
-                  value: |-
-                    {
-                      "errors": [ "Error detected in file format" ]
-                    }
+                  value:
+                    errors:
+                      - Error detected in file format
         '423':
           description: Locked
           content:
@@ -2560,10 +2630,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2572,10 +2641,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/runners:run_prg':
     post:
       tags:
@@ -2601,6 +2669,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
         '423':
           description: Locked
           content:
@@ -2609,10 +2690,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2621,10 +2701,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
     put:
       tags:
         - Runners
@@ -2646,6 +2725,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2654,10 +2735,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Cannot open file:
-                  value: |-
-                    {
-                      "errors": [ "Cannot open file" ]
-                    }
+                  value:
+                    errors:
+                      - Cannot open file
         '423':
           description: Locked
           content:
@@ -2666,10 +2746,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Could not obtain lock of subsystem:
-                  value: |-
-                    {
-                      "errors": [ "Could not obtain lock of subsystem" ]
-                    }
+                  value:
+                    errors:
+                      - Could not obtain lock of subsystem
         '503':
           description: Service unavailable
           content:
@@ -2678,16 +2757,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SubSystem does not exist:
-                  value: |-
-                    {
-                      "errors": [ "SubSystem does not exist" ]
-                    }
+                  value:
+                    errors:
+                      - SubSystem does not exist
   '/v1/runners:sidplay':
     post:
       tags:
         - Runners
       summary: Upload and play a SID tune
-      description: The same as the PUT form, with the tune in the request body. A request that carries a second file part hands that one to the player as well, which is how a tune that needs its own player binary is started.
+      description: 'The same as the PUT form, with the tune in the request body. A second file part, if the request carries one, is taken as the matching `.ssl` song length file, which the player uses to move on at the end of a subtune.'
       operationId: uploadAndPlaySid
       parameters:
         - name: songnr
@@ -2700,7 +2778,7 @@ paths:
           example: 2
       requestBody:
         required: true
-        description: The tune to play, and optionally a second file for the player.
+        description: The tune to play, and optionally its song length file.
         content:
           application/octet-stream:
             schema:
@@ -2724,20 +2802,31 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Upload of file failed.:
-                  value: |-
-                    {
-                      "errors": [ "Upload of file failed." ]
-                    }
+                  value:
+                    errors:
+                      - Upload of file failed.
                 Invalid Song Number Requested:
-                  value: |-
-                    {
-                      "errors": [ "Invalid Song Number Requested" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid Song Number Requested
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Expected Body, but got none.:
+                  value:
+                    errors:
+                      - Expected Body, but got none.
     put:
       tags:
         - Runners
       summary: Play a SID tune
-      description: |-
+      description: |2-
         Loads a SID file from the device and starts it. The player takes over the machine, so whatever was running stops.
 
         `songnr` selects a subtune, counting from 1. Leaving it out, or passing 0, plays the start song the file itself names.
@@ -2773,10 +2862,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Invalid Song Number Requested:
-                  value: |-
-                    {
-                      "errors": [ "Invalid Song Number Requested" ]
-                    }
+                  value:
+                    errors:
+                      - Invalid Song Number Requested
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           description: Not found
           content:
@@ -2785,10 +2875,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 Cannot open file:
-                  value: |-
-                    {
-                      "errors": [ "Cannot open file" ]
-                    }
+                  value:
+                    errors:
+                      - Cannot open file
         '415':
           description: Unsupported media type
           content:
@@ -2797,10 +2886,9 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 SID File Memory Rollover:
-                  value: |-
-                    {
-                      "errors": [ "SID File Memory Rollover" ]
-                    }
+                  value:
+                    errors:
+                      - SID File Memory Rollover
   /v1/version:
     get:
       tags:
@@ -2817,11 +2905,11 @@ paths:
                 $ref: '#/components/schemas/VersionResponse'
               examples:
                 Version:
-                  value: |-
-                    {
-                      "version" : "0.1",
-                      "errors" : []
-                    }
+                  value:
+                    version: '0.1'
+                    errors: []
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     NetworkPassword:
@@ -2829,6 +2917,18 @@ components:
       in: header
       name: X-Password
       description: 'The network password configured on the device, sent on every request. Required only while a password is configured; ignored otherwise.'
+  responses:
+    Forbidden:
+      description: A network password is configured on the device and the request did not carry it in an X-Password header, or carried the wrong value.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            Forbidden.:
+              value:
+                errors:
+                  - Forbidden.
   schemas:
     ConfigCategoriesResponse:
       allOf:
@@ -2876,14 +2976,17 @@ components:
           type: string
           description: printf style format the menu renders a numeric setting with.
     ConfigItemsResponse:
-      allOf:
-        - $ref: '#/components/schemas/ErrorResponse'
-        - type: object
-          description: One property per matching category, each holding one property per matching item described in full.
-          additionalProperties:
-            type: object
-            additionalProperties:
-              $ref: '#/components/schemas/ConfigItem'
+      type: object
+      description: One property per matching category, each holding one property per matching item described in full.
+      required:
+        - errors
+      properties:
+        errors:
+          $ref: '#/components/schemas/Errors'
+      additionalProperties:
+        type: object
+        additionalProperties:
+          $ref: '#/components/schemas/ConfigItem'
     ConfigStoreListResponse:
       allOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -2912,16 +3015,19 @@ components:
             - type: string
             - type: integer
     ConfigValuesResponse:
-      allOf:
-        - $ref: '#/components/schemas/ErrorResponse'
-        - type: object
-          description: One property per matching category, each holding one property per matching item whose value is the current setting.
-          additionalProperties:
-            type: object
-            additionalProperties:
-              oneOf:
-                - type: string
-                - type: integer
+      type: object
+      description: One property per matching category, each holding one property per matching item whose value is the current setting.
+      required:
+        - errors
+      properties:
+        errors:
+          $ref: '#/components/schemas/Errors'
+      additionalProperties:
+        type: object
+        additionalProperties:
+          oneOf:
+            - type: string
+            - type: integer
     DiskImageResponse:
       allOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -3017,15 +3123,17 @@ components:
                   $ref: '#/components/schemas/DriveInfo'
     ErrorResponse:
       type: object
-      description: Present on every JSON response. The array is empty when the call succeeded.
+      description: Present on every JSON response.
       required:
         - errors
       properties:
         errors:
-          type: array
-          description: One entry per problem the firmware reported.
-          items:
-            type: string
+          $ref: '#/components/schemas/Errors'
+    Errors:
+      type: array
+      description: One entry per problem the firmware reported. Empty when the call succeeded.
+      items:
+        type: string
     FileInfoResponse:
       allOf:
         - $ref: '#/components/schemas/ErrorResponse'

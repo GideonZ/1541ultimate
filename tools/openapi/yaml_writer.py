@@ -37,7 +37,9 @@ def _scalar(value, indent):
         padding = " " * (indent + INDENT)
         lines = [line.rstrip() for line in text.rstrip("\n").split("\n")]
         block = "\n".join(padding + line if line else "" for line in lines)
-        return ("|\n" if text.endswith("\n") else "|-\n") + block
+        # The explicit indentation indicator keeps a first line that starts with a
+        # space from being read as extra indentation.
+        return ("|%d\n" % INDENT if text.endswith("\n") else "|%d-\n" % INDENT) + block
     return _quoted(text) if _needs_quotes(text) else text
 
 

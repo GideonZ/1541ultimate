@@ -97,6 +97,17 @@ class InvocationsTest(unittest.TestCase):
             list(cpp.invocations("API_CALL(a, b", "API_CALL"))
 
 
+class CallsTest(unittest.TestCase):
+    def test_reports_every_top_level_call_and_not_the_nested_ones(self):
+        found = [(name, args) for _, name, args in cpp.calls('TAG("a") PARAM(f(1), 2)')]
+        self.assertEqual(found, [("TAG", '"a"'), ("PARAM", "f(1), 2")])
+
+    def test_a_call_written_inside_a_string_is_not_one(self):
+        # DESCRIPTION("Returns HTTP(S) ...") must not read as an HTTP directive.
+        found = [name for _, name, _ in cpp.calls('DESCRIPTION("Returns HTTP(S) text")')]
+        self.assertEqual(found, ["DESCRIPTION"])
+
+
 class SplitArgumentsTest(unittest.TestCase):
     def test_splits_only_at_the_top_level(self):
         self.assertEqual(cpp.split_arguments("a, f(b, c), { d, e }"), ["a", "f(b, c)", "{ d, e }"])

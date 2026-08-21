@@ -195,12 +195,34 @@ def closing_parenthesis(text, start):
     raise OpenApiError("unbalanced parentheses")
 
 
+def _scan(text, opening):
+    """Walks `text`, yielding what `opening` matches outside literals and nested calls."""
+    i = 0
+    while i < len(text):
+        if text[i] in "\"'":
+            i = _skip_literal(text, i)
+            continue
+        match = opening.match(text, i)
+        if match and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            end = closing_parenthesis(text, match.end())
+            yield text.count("\n", 0, i) + 1, match, text[match.end():end]
+            i = end + 1
+            continue
+        i += 1
+
+
 def invocations(text, macro):
     """Yields (line number, argument text) for every call of `macro`."""
-    opening = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(macro) + r"\s*\(")
-    for match in opening.finditer(text):
-        end = closing_parenthesis(text, match.end())
-        yield text.count("\n", 0, match.start()) + 1, text[match.end():end]
+    opening = re.compile(re.escape(macro) + r"\s*\(")
+    for line, _, arguments in _scan(text, opening):
+        yield line, arguments
+
+
+def calls(text):
+    """Yields (line number, name, argument text) for every call that is not nested in another."""
+    opening = re.compile(r"([A-Za-z_]\w*)\s*\(")
+    for line, match, arguments in _scan(text, opening):
+        yield line, match.group(1), arguments
 
 
 def split_arguments(text):

@@ -25,7 +25,6 @@ DIRECTIVE_ARITY = {
 
 _REGISTERS_A_CALL = re.compile(r"(?<![A-Za-z0-9_])API_CALL\s*\(")
 _DECLARED_PARAM = re.compile(r'\{\s*"([^"]+)"\s*,\s*([^}]*?)\s*\}')
-_DIRECTIVE = re.compile(r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]*)\s*\(")
 
 
 class Entry:
@@ -93,12 +92,10 @@ def _parse_calls(origin, text):
 
 def _parse_directives(origin, line, text):
     directives = []
-    for match in _DIRECTIVE.finditer(text):
-        name = match.group(1)
+    for _, name, body in cpp.calls(text):
         if name not in DIRECTIVE_ARITY:
             raise OpenApiError("%s:%d: unknown API_DOC directive %s" % (origin, line, name))
-        end = cpp.closing_parenthesis(text, match.end())
-        arguments = [cpp.string_literal(part) for part in cpp.split_arguments(text[match.end():end])]
+        arguments = [cpp.string_literal(part) for part in cpp.split_arguments(body)]
         if len(arguments) != DIRECTIVE_ARITY[name]:
             raise OpenApiError(
                 "%s:%d: %s takes %d arguments, found %d"

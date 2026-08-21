@@ -32,6 +32,7 @@ API_DOC(PUT, demo, poke,
     PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")
     RESPONSE("200", "application/json", "DemoResponse", "The byte was written.", "")
     RESPONSE_ERROR("400", "Invalid slot", "")
+    RESPONSE_ERROR("403", "Slot is write protected", "")
 )
 API_CALL(PUT, demo, poke, NULL, ARRAY( { { "value", P_REQUIRED } }))
 {
