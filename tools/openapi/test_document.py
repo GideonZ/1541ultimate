@@ -137,6 +137,64 @@ class SharedResponseTest(unittest.TestCase):
         self.assertNotIn("412", self.built["paths"]["/v1/demo"]["get"]["responses"])
 
 
+class CautionTest(unittest.TestCase):
+    """What a call does beyond answering, for a reader and for a caller."""
+
+    CAUTION = ('    SUMMARY("List demos")\n',
+               '    SUMMARY("List demos")\n'
+               '    CAUTION("destructive,persistent", "Throws the demos away.")\n')
+    DEPRECATED = ('    SUMMARY("List demos")\n',
+                  '    SUMMARY("List demos")\n'
+                  '    DEPRECATED("Never implemented.")\n')
+
+    def listing(self, built):
+        return built["paths"]["/v1/demo"]["get"]
+
+    def test_a_caution_reaches_the_reader_and_the_caller(self):
+        listing = self.listing(build(replacements=[self.CAUTION]))
+        self.assertEqual(listing["x-ultimate-caution"],
+                         {"hints": ["destructive", "persistent"],
+                          "note": "Throws the demos away."})
+        self.assertIn("**Caution (destructive, persistent):** Throws the demos away.",
+                      listing["description"])
+
+    def test_the_vocabulary_is_explained_in_the_document_that_uses_it(self):
+        built = build(replacements=[self.CAUTION])
+        self.assertIn("## Calls that need care", built["info"]["description"])
+        self.assertIn("`destructive`", built["info"]["description"])
+        self.assertNotIn("`power`", built["info"]["description"])
+
+    def test_a_document_with_no_cautions_explains_nothing(self):
+        self.assertNotIn("## Calls that need care", build()["info"]["description"])
+
+    def test_a_hint_outside_the_vocabulary_is_refused(self):
+        refuses(self, "which is not one of",
+                replacements=[('    SUMMARY("List demos")\n',
+                               '    SUMMARY("List demos")\n'
+                               '    CAUTION("scary", "Boo.")\n')])
+
+    def test_a_caution_that_names_no_hint_is_refused(self):
+        refuses(self, "names no hint",
+                replacements=[('    SUMMARY("List demos")\n',
+                               '    SUMMARY("List demos")\n'
+                               '    CAUTION("", "Boo.")\n')])
+
+    def test_two_cautions_are_refused(self):
+        refuses(self, "at most one CAUTION",
+                replacements=[('    SUMMARY("List demos")\n',
+                               '    SUMMARY("List demos")\n'
+                               '    CAUTION("destructive", "One.")\n'
+                               '    CAUTION("persistent", "Two.")\n')])
+
+    def test_a_deprecated_call_says_so_and_says_why(self):
+        listing = self.listing(build(replacements=[self.DEPRECATED]))
+        self.assertTrue(listing["deprecated"])
+        self.assertIn("Deprecated: Never implemented.", listing["description"])
+
+    def test_a_call_that_is_not_deprecated_carries_no_flag(self):
+        self.assertNotIn("deprecated", self.listing(build()))
+
+
 class ProductTest(unittest.TestCase):
     def test_each_product_describes_only_what_it_serves(self):
         self.assertNotIn("/v1/demo/{slot}:poke", build("small")["paths"])

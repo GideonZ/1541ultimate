@@ -31,6 +31,9 @@
  *   TAG(name)                                    exactly one
  *   SUMMARY(text)                                exactly one
  *   DESCRIPTION(text)                            exactly one
+ *   DEPRECATED(reason)                           optional, marks the operation
+ *   CAUTION("hint,hint", note)                   optional, says what the call
+ *                                                does beyond answering
  *   PATH(template, operation_id, summary)        one or more; summary "" keeps
  *                                                the SUMMARY above
  *   PATH_PARAM(name, type, description, example) one per {placeholder}
@@ -47,6 +50,11 @@
  * A type is "string", "integer", "boolean", or "integer(low..high)". A schema is
  * a name from tools/openapi/schemas.py. A scope is the operation_id the response
  * belongs to, or "" for all of them.
+ *
+ * CAUTION hints come from a closed set, also in tools/openapi/schemas.py, so
+ * that a caller can act on them without reading English: destructive,
+ * machine-state, persistent, power, diagnostic, idempotent. They reach the
+ * document as an `x-ultimate-caution` field on the operation.
  */
 
 #define API_DOC(...)

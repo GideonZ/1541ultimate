@@ -347,6 +347,7 @@ API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
 API_DOC(PUT, configs, load_from_flash,
     TAG("Configuration")
     SUMMARY("Reload settings from flash")
+    CAUTION("destructive", "Settings changed since the last save are discarded.")
     DESCRIPTION("Throws away the settings in memory and reads them back from flash, undoing every "
                 "change that has not been saved. With a category in the path only that category "
                 "is reloaded and the response lists what was touched.")
@@ -389,6 +390,7 @@ API_CALL(PUT, configs, load_from_flash, NULL, ARRAY ( {  } ))
 API_DOC(PUT, configs, save_to_flash,
     TAG("Configuration")
     SUMMARY("Save settings to flash")
+    CAUTION("persistent", "Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.")
     DESCRIPTION("Writes the settings that have changed since the last save into flash, so that "
                 "they survive a power cycle. Only categories that are actually stale are written, "
                 "and the response lists which ones those were, so an empty list means there was "
@@ -434,6 +436,7 @@ API_CALL(PUT, configs, save_to_flash, NULL, ARRAY ( {  } ))
 API_DOC(PUT, configs, reset_to_default,
     TAG("Configuration")
     SUMMARY("Reset settings to their defaults")
+    CAUTION("destructive", "Every setting the machine was configured with is replaced by its factory value.")
     DESCRIPTION("Puts the settings back to their factory values and applies them immediately. "
                 "Flash is not touched, so `configs:load_from_flash` undoes this and "
                 "`configs:save_to_flash` makes it permanent.")

@@ -13,6 +13,7 @@
 API_DOC(PUT, runners, sidplay,
     TAG("Runners")
     SUMMARY("Play a SID tune")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("Loads a SID file from the device and starts it. The player takes over the "
                 "machine, so whatever was running stops.\n"
                 "\n"
@@ -40,6 +41,7 @@ API_CALL(PUT, runners, sidplay, NULL, ARRAY( { { "file", P_REQUIRED }, { "songnr
 API_DOC(POST, runners, sidplay,
     TAG("Runners")
     SUMMARY("Upload and play a SID tune")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("The same as the PUT form, with the tune in the request body. A second file "
                 "part, if the request carries one, is taken as the matching `.ssl` song length "
                 "file, which the player uses to move on at the end of a subtune.")
@@ -76,6 +78,7 @@ API_CALL(POST, runners, sidplay, &attachment_writer, ARRAY( { { "songnr", P_OPTI
 API_DOC(PUT, runners, load_prg,
     TAG("Runners")
     SUMMARY("Load a program without starting it")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("DMA loads a PRG file from the device to the address in its first two bytes and "
                 "leaves it there. BASIC pointers are fixed up, so a BASIC program can be listed "
                 "or started with RUN afterwards. Use `runners:run_prg` to start it as well.")
@@ -96,6 +99,7 @@ API_CALL(PUT, runners, load_prg, NULL, ARRAY( { { "file", P_REQUIRED } }))
 API_DOC(PUT, runners, run_prg,
     TAG("Runners")
     SUMMARY("Load and start a program")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("DMA loads a PRG file from the device and starts it, the way selecting it in the "
                 "menu would. A BASIC program is run and a machine code program is called at its "
                 "load address.")
@@ -116,6 +120,7 @@ API_CALL(PUT, runners, run_prg, NULL, ARRAY( { { "file", P_REQUIRED } }))
 API_DOC(POST, runners, load_prg,
     TAG("Runners")
     SUMMARY("Upload a program without starting it")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("The same as the PUT form, with the program in the request body rather than on "
                 "the device.")
     PATH("/v1/runners:load_prg", "uploadPrg", "")
@@ -136,6 +141,7 @@ API_CALL(POST, runners, load_prg, &attachment_writer, ARRAY( { }))
 API_DOC(POST, runners, run_prg,
     TAG("Runners")
     SUMMARY("Upload and start a program")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("The same as the PUT form, with the program in the request body rather than on "
                 "the device.")
     PATH("/v1/runners:run_prg", "uploadAndRunPrg", "")
@@ -159,6 +165,7 @@ API_CALL(POST, runners, run_prg, &attachment_writer, ARRAY( { }))
 API_DOC(PUT, runners, run_crt,
     TAG("Runners")
     SUMMARY("Start a cartridge")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("Loads a CRT image from the device into the cartridge memory and reboots the "
                 "machine into it. The image has to be one of the cartridge types the firmware "
                 "implements; an unsupported type is reported rather than started.")
@@ -185,6 +192,7 @@ API_CALL(PUT, runners, run_crt, NULL, ARRAY( { { "file", P_REQUIRED } }))
 API_DOC(POST, runners, run_crt,
     TAG("Runners")
     SUMMARY("Upload and start a cartridge")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("The same as the PUT form, with the CRT image in the request body rather than on "
                 "the device.")
     PATH("/v1/runners:run_crt", "uploadAndRunCrt", "")
@@ -214,6 +222,7 @@ API_CALL(POST, runners, run_crt, &attachment_writer, ARRAY( { }))
 API_DOC(PUT, runners, modplay,
     TAG("Runners")
     SUMMARY("Play an Amiga MOD file")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("Loads a MOD file from the device into the REU memory and starts the module "
                 "player, which plays it through the sampler rather than through the SID.\n"
                 "\n"
@@ -246,6 +255,7 @@ API_CALL(PUT, runners, modplay, NULL, ARRAY( { { "file", P_REQUIRED } }))
 API_DOC(POST, runners, modplay,
     TAG("Runners")
     SUMMARY("Upload and play an Amiga MOD file")
+    CAUTION("machine-state", "Takes the machine over: whatever it was running stops.")
     DESCRIPTION("The same as the PUT form, with the module in the request body. The upload is "
                 "streamed straight into the REU memory rather than through a temporary file, so a "
                 "module larger than the file system would hold can still be played.")

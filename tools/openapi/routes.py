@@ -12,6 +12,8 @@ DIRECTIVE_ARITY = {
     "TAG": 1,
     "SUMMARY": 1,
     "DESCRIPTION": 1,
+    "DEPRECATED": 1,
+    "CAUTION": 2,
     "PATH": 3,
     "PATH_PARAM": 4,
     "PATH_PARAM_ENUM": 2,

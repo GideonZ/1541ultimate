@@ -58,6 +58,7 @@ API_CALL(PUT, machine, menu_button, NULL, ARRAY( {  }))
 API_DOC(PUT, machine, reset,
     TAG("Machine")
     SUMMARY("Reset the machine")
+    CAUTION("machine-state", "Whatever the machine was running is lost.")
     DESCRIPTION("Pulls reset on the C64. The machine restarts with whatever cartridge is active, "
                 "which is not the same as starting from cold; use `machine:reboot` for that.\n"
                 "\n"
@@ -86,6 +87,7 @@ API_CALL(PUT, machine, reset, NULL, ARRAY( {  }))
 API_DOC(PUT, machine, reboot,
     TAG("Machine")
     SUMMARY("Reboot the machine")
+    CAUTION("machine-state", "Whatever the machine was running is lost, and the cartridge is started from scratch.")
     DESCRIPTION("Resets the C64 and re-initialises the cartridge with it, which is what the "
                 "Reboot entry in the menu does. Use this rather than `machine:reset` when a "
                 "cartridge has to start from scratch.\n"
@@ -114,6 +116,7 @@ API_CALL(PUT, machine, reboot, NULL, ARRAY( {  }))
 API_DOC(PUT, machine, pause,
     TAG("Machine")
     SUMMARY("Pause the CPU")
+    CAUTION("machine-state", "The machine stays halted until machine:resume. A client that stops without resuming leaves it frozen.")
     DESCRIPTION("Halts the 6510 by holding DMA. The video output freezes on the frame that was "
                 "being drawn and the machine stays halted until `machine:resume`. Memory can "
                 "still be read and written while paused, which is what makes this useful before "
@@ -156,6 +159,7 @@ API_CALL(PUT, machine, resume, NULL, ARRAY( {  }))
 API_DOC(PUT, machine, poweroff,
     TAG("Machine")
     SUMMARY("Power the machine off")
+    CAUTION("power", "There is no call that turns the machine back on. It has to be done at the machine.")
     DESCRIPTION("Turns the C64 off. The Ultimate 64 writes its power register directly; the "
                 "Ultimate 64 Elite II asks the controller that owns the power rail. The "
                 "machine can only be turned back on at the machine.")
@@ -187,6 +191,7 @@ API_CALL(PUT, machine, poweroff, NULL, ARRAY( {  }))
 API_DOC(PUT, machine, writemem,
     TAG("Machine")
     SUMMARY("Write bytes to C64 memory")
+    CAUTION("destructive,idempotent", "Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.")
     DESCRIPTION("Performs a DMA write on the cartridge bus. `data` carries the bytes as "
                 "hexadecimal, two characters per byte, and at most 128 bytes fit here; use the "
                 "POST form for more. The write may not pass $FFFF.\n"
@@ -262,6 +267,7 @@ API_CALL(PUT, machine, writemem, NULL, ARRAY( { {"address", P_REQUIRED}, {"data"
 API_DOC(POST, machine, writemem,
     TAG("Machine")
     SUMMARY("Upload bytes into C64 memory")
+    CAUTION("destructive,idempotent", "Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.")
     DESCRIPTION("The same DMA write as the PUT form, with the bytes in the request body instead "
                 "of the URL, which raises the limit from 128 bytes to 65536. The body may be sent "
                 "raw or as a multipart file part. The write may not pass $FFFF.")
@@ -422,8 +428,9 @@ API_CALL(GET, machine, menu_screen, NULL, ARRAY( {  }))
 #if U64
 #include "u64.h"
 API_DOC(GET, machine, debugreg,
-    TAG("Machine")
+    TAG("Diagnostics")
     SUMMARY("Read the debug register")
+    CAUTION("diagnostic", "An FPGA debug facility, not part of the C64 memory map.")
     DESCRIPTION("Reads the Ultimate 64 debug register at $D7FF and returns it as two hexadecimal "
                 "digits. The register controls FPGA debug facilities and is not part of the C64 "
                 "memory map that `machine:readmem` reaches.")
@@ -439,8 +446,9 @@ API_CALL(GET, machine, debugreg, NULL, ARRAY( {  }))
 }
 
 API_DOC(PUT, machine, debugreg,
-    TAG("Machine")
+    TAG("Diagnostics")
     SUMMARY("Write the debug register")
+    CAUTION("diagnostic", "An FPGA debug facility, not part of the C64 memory map.")
     DESCRIPTION("Writes `value` to the debug register at $D7FF and returns what the register "
                 "reads back afterwards, which is not necessarily what was written: some bits are "
                 "driven by the hardware.")
@@ -535,6 +543,7 @@ static void make_vcd(StreamRamFile *d, uint32_t *values, int count, const char *
 API_DOC(GET, machine, measure,
     TAG("Diagnostics")
     SUMMARY("Capture cartridge bus timing")
+    CAUTION("diagnostic", "A hardware capture for diagnosing the cartridge bus.")
     DESCRIPTION("Samples the cartridge bus and returns the capture as a VCD file, which any "
                 "waveform viewer opens. The traces are the dot clock, PHI2 and the copy the FPGA "
                 "recovers from it, the address and data buses, the read/write line and the "
@@ -601,6 +610,7 @@ API_CALL(GET, machine, measure, NULL, ARRAY( {  }))
 API_DOC(GET, machine, heap,
     TAG("Diagnostics")
     SUMMARY("Read heap statistics")
+    CAUTION("diagnostic", "Firmware internals, for finding a leak rather than for driving the machine.")
     DESCRIPTION("Reports the FreeRTOS heap. Every dynamic allocation in the firmware ends up "
                 "there, `new` and `malloc` alike, so one free figure accounts for all of it.\n"
                 "\n"

@@ -135,6 +135,39 @@ class FirmwareTest(unittest.TestCase):
             }
             self.assertEqual(refusing, expected[profile], profile)
 
+    def test_the_only_deprecated_call_is_the_one_that_was_never_implemented(self):
+        for profile, document in self.documents.items():
+            deprecated = {
+                "%s %s" % (method.upper(), template)
+                for template, item in document["paths"].items()
+                for method, operation in item.items()
+                if operation.get("deprecated")
+            }
+            self.assertEqual(deprecated, {"GET /v1/help"}, profile)
+
+    def test_every_caution_names_hints_from_the_vocabulary(self):
+        seen = set()
+        for profile, document in self.documents.items():
+            for template, item in document["paths"].items():
+                for method, operation in item.items():
+                    caution = operation.get(schemas.CAUTION_FIELD)
+                    if not caution:
+                        continue
+                    where = "%s %s in %s" % (method, template, profile)
+                    self.assertTrue(caution["note"], where)
+                    for hint in caution["hints"]:
+                        self.assertIn(hint, schemas.CAUTION_HINTS, where)
+                        seen.add(hint)
+        self.assertEqual(seen, set(schemas.CAUTION_HINTS),
+                         "a hint in the vocabulary that nothing uses")
+
+    def test_powering_the_machine_off_is_flagged_on_the_product_that_can(self):
+        def hints(profile):
+            operation = self.documents[profile]["paths"]["/v1/machine:poweroff"]["put"]
+            return operation.get(schemas.CAUTION_FIELD, {}).get("hints", [])
+        self.assertEqual(hints("u64"), ["power"])
+        self.assertEqual(hints("u2"), [])
+
     def test_calls_the_hand_written_specifications_missed_are_present(self):
         for path in ("/v1/help", "/v1/machine:measure", "/v1/machine:heap",
                      "/v1/drives/{drive}:unlink"):

@@ -83,6 +83,7 @@ REUWriter *attachment_reu(HTTPReqMessage *req, HTTPRespMessage *resp, const ApiC
 API_DOC(GET, help, none,
     TAG("About")
     SUMMARY("Reserved help endpoint")
+    DEPRECATED("Registered since the REST interface was introduced and never implemented. Nothing reads the `command` argument and the answer is a fixed page.")
     DESCRIPTION("Registered since the REST interface was introduced, but never implemented. It "
                 "requires a `command` argument, does nothing with the value, and answers with a "
                 "fixed HTML page rather than JSON. The header it sends spells the content type "

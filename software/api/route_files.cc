@@ -85,6 +85,7 @@ static void enforce_diskname(ArgsURI &args)
 API_DOC(PUT, files, create_d64,
     TAG("Files")
     SUMMARY("Create an empty D64 image")
+    CAUTION("destructive", "A file that is already at that path is overwritten.")
     DESCRIPTION("Creates a file at the given path, fills it with zeros and formats it as a 1541 "
                 "disk, so the result can be mounted straight away.\n"
                 "\n"
@@ -135,6 +136,7 @@ API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "dis
 API_DOC(PUT, files, create_d71,
     TAG("Files")
     SUMMARY("Create an empty D71 image")
+    CAUTION("destructive", "A file that is already at that path is overwritten.")
     DESCRIPTION("Creates a file at the given path and formats it as a 1571 disk, which is the "
                 "double sided 70 track layout. The track count is fixed.")
     PATH("/v1/files/{path}:create_d71", "createD71", "")
@@ -173,6 +175,7 @@ API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 API_DOC(PUT, files, create_d81,
     TAG("Files")
     SUMMARY("Create an empty D81 image")
+    CAUTION("destructive", "A file that is already at that path is overwritten.")
     DESCRIPTION("Creates a file at the given path and formats it as a 1581 disk, 3200 blocks of "
                 "256 bytes. The size is fixed.")
     PATH("/v1/files/{path}:create_d81", "createD81", "")
@@ -208,6 +211,7 @@ API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 API_DOC(PUT, files, create_dnp,
     TAG("Files")
     SUMMARY("Create an empty DNP image")
+    CAUTION("destructive", "A file that is already at that path is overwritten.")
     DESCRIPTION("Creates a native partition image and formats it. Each track is 64 KB, so the "
                 "largest image, 255 tracks, is just under 16 MB. Unlike the other three, `tracks` "
                 "has to be given here because there is no conventional size.")

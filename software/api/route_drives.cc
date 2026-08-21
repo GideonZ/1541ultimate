@@ -83,6 +83,7 @@ void api_mount(ResponseWrapper *resp, const char *fn, const char *drive, const c
 API_DOC(PUT, drives, mount,
     TAG("Drives")
     SUMMARY("Mount a disk image")
+    CAUTION("destructive", "Replaces whatever was in the drive, with the same loss a remove would cause.")
     DESCRIPTION("Mounts an image that is already on the device.\n"
                 "\n"
                 "`type` decides how the image is read and defaults to the extension of the file "
@@ -116,6 +117,7 @@ API_CALL(PUT, drives, mount, NULL, ARRAY({{ "image", P_REQUIRED }, { "type", P_O
 API_DOC(POST, drives, mount,
     TAG("Drives")
     SUMMARY("Upload and mount a disk image")
+    CAUTION("destructive", "Replaces whatever was in the drive, with the same loss a remove would cause.")
     DESCRIPTION("The same as the PUT form, with the image in the request body. The upload is "
                 "written to a temporary file on the device first, and the name it is given comes "
                 "from the multipart part or from the `Content-Disposition` header. That name is "
@@ -196,6 +198,7 @@ API_CALL(PUT, drives, reset, NULL, ARRAY({ }))
 API_DOC(PUT, drives, remove,
     TAG("Drives")
     SUMMARY("Remove the mounted disk")
+    CAUTION("destructive", "Changes made in unlinked mode were never written to the file and are lost with the disk.")
     DESCRIPTION("Ejects the disk. Changes that were made in `unlinked` mode are lost, because "
                 "they were never written to the file.")
     PATH("/v1/drives/{drive}:remove", "removeImage", "")
@@ -248,6 +251,7 @@ API_CALL(PUT, drives, off, NULL, ARRAY({ }))
 API_DOC(PUT, drives, unlink,
     TAG("Drives")
     SUMMARY("Unlink the mounted disk from its file")
+    CAUTION("destructive", "Everything written from now on is discarded when the disk is removed.")
     DESCRIPTION("Leaves the disk in the drive but breaks the connection to the file it came from. "
                 "The drive keeps accepting writes and they stay in memory, but nothing more is "
                 "written back to the image file. This is `mode=unlinked` applied after the fact, "

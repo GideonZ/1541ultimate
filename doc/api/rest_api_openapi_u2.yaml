@@ -36,6 +36,17 @@ info:
     is set, every request must carry it in an `X-Password` header. A request without
     the header, or with the wrong value, is answered with `403 Forbidden`. While no
     password is configured the header is ignored.
+
+    ## Calls that need care
+
+    An operation that has consequences beyond returning an answer carries a
+    `x-ultimate-caution` field naming what those are. The vocabulary is closed:
+
+    - `destructive`: Loses state the caller did not supply.
+    - `diagnostic`: Hardware debugging, not part of normal use.
+    - `idempotent`: The same request produces the same result however often it arrives.
+    - `machine-state`: Takes over or halts the C64.
+    - `persistent`: Writes flash, so the effect survives a power cycle.
   contact:
     name: '1541 Ultimate firmware'
     url: 'https://github.com/GideonZ/1541ultimate'
@@ -65,7 +76,7 @@ tags:
   - name: Files
     description: Inspect files and create empty disk images.
   - name: Diagnostics
-    description: Bus timing capture and heap accounting.
+    description: 'Hardware debugging: the debug register, bus timing capture and heap accounting. Not part of driving the machine.'
 externalDocs:
   description: Ultimate firmware documentation
   url: 'https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html'
@@ -320,8 +331,15 @@ paths:
       tags:
         - Configuration
       summary: Reload matching categories
-      description: Throws away the settings in memory and reads them back from flash, undoing every change that has not been saved. With a category in the path only that category is reloaded and the response lists what was touched.
+      description: |2-
+        Throws away the settings in memory and reads them back from flash, undoing every change that has not been saved. With a category in the path only that category is reloaded and the response lists what was touched.
+
+        **Caution (destructive):** Settings changed since the last save are discarded.
       operationId: loadConfigCategoryFromFlash
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Settings changed since the last save are discarded.
       parameters:
         - name: category
           in: path
@@ -355,8 +373,15 @@ paths:
       tags:
         - Configuration
       summary: Reset matching categories
-      description: 'Puts the settings back to their factory values and applies them immediately. Flash is not touched, so `configs:load_from_flash` undoes this and `configs:save_to_flash` makes it permanent.'
+      description: |2-
+        Puts the settings back to their factory values and applies them immediately. Flash is not touched, so `configs:load_from_flash` undoes this and `configs:save_to_flash` makes it permanent.
+
+        **Caution (destructive):** Every setting the machine was configured with is replaced by its factory value.
       operationId: resetConfigCategoryToDefault
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Every setting the machine was configured with is replaced by its factory value.
       parameters:
         - name: category
           in: path
@@ -394,7 +419,13 @@ paths:
         Writes the settings that have changed since the last save into flash, so that they survive a power cycle. Only categories that are actually stale are written, and the response lists which ones those were, so an empty list means there was nothing to do.
 
         Take care when the device has booted into safe mode: the settings in memory are defaults then, and saving replaces the stored values with them.
+
+        **Caution (persistent):** Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.
       operationId: saveConfigCategoryToFlash
+      x-ultimate-caution:
+        hints:
+          - persistent
+        note: Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.
       parameters:
         - name: category
           in: path
@@ -434,8 +465,15 @@ paths:
       tags:
         - Configuration
       summary: Reload every category
-      description: Throws away the settings in memory and reads them back from flash, undoing every change that has not been saved. With a category in the path only that category is reloaded and the response lists what was touched.
+      description: |2-
+        Throws away the settings in memory and reads them back from flash, undoing every change that has not been saved. With a category in the path only that category is reloaded and the response lists what was touched.
+
+        **Caution (destructive):** Settings changed since the last save are discarded.
       operationId: loadConfigsFromFlash
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Settings changed since the last save are discarded.
       responses:
         '200':
           description: Every category was reloaded.
@@ -461,8 +499,15 @@ paths:
       tags:
         - Configuration
       summary: Reset every category
-      description: 'Puts the settings back to their factory values and applies them immediately. Flash is not touched, so `configs:load_from_flash` undoes this and `configs:save_to_flash` makes it permanent.'
+      description: |2-
+        Puts the settings back to their factory values and applies them immediately. Flash is not touched, so `configs:load_from_flash` undoes this and `configs:save_to_flash` makes it permanent.
+
+        **Caution (destructive):** Every setting the machine was configured with is replaced by its factory value.
       operationId: resetConfigsToDefault
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Every setting the machine was configured with is replaced by its factory value.
       responses:
         '200':
           description: Every category was reset.
@@ -492,7 +537,13 @@ paths:
         Writes the settings that have changed since the last save into flash, so that they survive a power cycle. Only categories that are actually stale are written, and the response lists which ones those were, so an empty list means there was nothing to do.
 
         Take care when the device has booted into safe mode: the settings in memory are defaults then, and saving replaces the stored values with them.
+
+        **Caution (persistent):** Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.
       operationId: saveConfigsToFlash
+      x-ultimate-caution:
+        hints:
+          - persistent
+        note: Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.
       responses:
         '200':
           description: The categories that were written.
@@ -729,8 +780,15 @@ paths:
       tags:
         - Drives
       summary: Upload and mount a disk image
-      description: 'The same as the PUT form, with the image in the request body. The upload is written to a temporary file on the device first, and the name it is given comes from the multipart part or from the `Content-Disposition` header. That name is also where the default `type` comes from, so an upload whose name has no useful extension needs `type` to be given.'
+      description: |2-
+        The same as the PUT form, with the image in the request body. The upload is written to a temporary file on the device first, and the name it is given comes from the multipart part or from the `Content-Disposition` header. That name is also where the default `type` comes from, so an upload whose name has no useful extension needs `type` to be given.
+
+        **Caution (destructive):** Replaces whatever was in the drive, with the same loss a remove would cause.
       operationId: uploadAndMountImage
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Replaces whatever was in the drive, with the same loss a remove would cause.
       parameters:
         - name: drive
           in: path
@@ -833,7 +891,13 @@ paths:
         Mounts an image that is already on the device.
 
         `type` decides how the image is read and defaults to the extension of the file name, so it only has to be given when the extension is missing or wrong. `mode` decides what happens to writes: `readwrite` puts them in the file, `readonly` write protects the disk so the drive refuses them, and `unlinked` accepts them in memory but never writes them back.
+
+        **Caution (destructive):** Replaces whatever was in the drive, with the same loss a remove would cause.
       operationId: mountImage
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Replaces whatever was in the drive, with the same loss a remove would cause.
       parameters:
         - name: drive
           in: path
@@ -1040,8 +1104,15 @@ paths:
       tags:
         - Drives
       summary: Remove the mounted disk
-      description: 'Ejects the disk. Changes that were made in `unlinked` mode are lost, because they were never written to the file.'
+      description: |2-
+        Ejects the disk. Changes that were made in `unlinked` mode are lost, because they were never written to the file.
+
+        **Caution (destructive):** Changes made in unlinked mode were never written to the file and are lost with the disk.
       operationId: removeImage
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Changes made in unlinked mode were never written to the file and are lost with the disk.
       parameters:
         - name: drive
           in: path
@@ -1240,8 +1311,15 @@ paths:
       tags:
         - Drives
       summary: Unlink the mounted disk from its file
-      description: 'Leaves the disk in the drive but breaks the connection to the file it came from. The drive keeps accepting writes and they stay in memory, but nothing more is written back to the image file. This is `mode=unlinked` applied after the fact, and it is the way to try something destructive on a disk without risking the file.'
+      description: |2-
+        Leaves the disk in the drive but breaks the connection to the file it came from. The drive keeps accepting writes and they stay in memory, but nothing more is written back to the image file. This is `mode=unlinked` applied after the fact, and it is the way to try something destructive on a disk without risking the file.
+
+        **Caution (destructive):** Everything written from now on is discarded when the disk is removed.
       operationId: unlinkImage
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: Everything written from now on is discarded when the disk is removed.
       parameters:
         - name: drive
           in: path
@@ -1294,7 +1372,13 @@ paths:
         Creates a file at the given path, fills it with zeros and formats it as a 1541 disk, so the result can be mounted straight away.
 
         `tracks` is 35 by default and may go up to 41; anything past 35 is the extended area that not every program can read. `diskname` is what goes in the directory header and defaults to the file name without its extension.
+
+        **Caution (destructive):** A file that is already at that path is overwritten.
       operationId: createD64
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: A file that is already at that path is overwritten.
       parameters:
         - name: path
           in: path
@@ -1356,8 +1440,15 @@ paths:
       tags:
         - Files
       summary: Create an empty D71 image
-      description: Creates a file at the given path and formats it as a 1571 disk, which is the double sided 70 track layout. The track count is fixed.
+      description: |2-
+        Creates a file at the given path and formats it as a 1571 disk, which is the double sided 70 track layout. The track count is fixed.
+
+        **Caution (destructive):** A file that is already at that path is overwritten.
       operationId: createD71
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: A file that is already at that path is overwritten.
       parameters:
         - name: path
           in: path
@@ -1398,8 +1489,15 @@ paths:
       tags:
         - Files
       summary: Create an empty D81 image
-      description: Creates a file at the given path and formats it as a 1581 disk, 3200 blocks of 256 bytes. The size is fixed.
+      description: |2-
+        Creates a file at the given path and formats it as a 1581 disk, 3200 blocks of 256 bytes. The size is fixed.
+
+        **Caution (destructive):** A file that is already at that path is overwritten.
       operationId: createD81
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: A file that is already at that path is overwritten.
       parameters:
         - name: path
           in: path
@@ -1440,8 +1538,15 @@ paths:
       tags:
         - Files
       summary: Create an empty DNP image
-      description: 'Creates a native partition image and formats it. Each track is 64 KB, so the largest image, 255 tracks, is just under 16 MB. Unlike the other three, `tracks` has to be given here because there is no conventional size.'
+      description: |2-
+        Creates a native partition image and formats it. Each track is 64 KB, so the largest image, 255 tracks, is just under 16 MB. Unlike the other three, `tracks` has to be given here because there is no conventional size.
+
+        **Caution (destructive):** A file that is already at that path is overwritten.
       operationId: createDnp
+      x-ultimate-caution:
+        hints:
+          - destructive
+        note: A file that is already at that path is overwritten.
       parameters:
         - name: path
           in: path
@@ -1550,8 +1655,12 @@ paths:
       tags:
         - About
       summary: Reserved help endpoint
-      description: 'Registered since the REST interface was introduced, but never implemented. It requires a `command` argument, does nothing with the value, and answers with a fixed HTML page rather than JSON. The header it sends spells the content type `text_html`, which is not a media type, so most clients treat the body as plain text. It is documented here because the firmware serves it, not because there is anything useful to read from it.'
+      description: |2-
+        Registered since the REST interface was introduced, but never implemented. It requires a `command` argument, does nothing with the value, and answers with a fixed HTML page rather than JSON. The header it sends spells the content type `text_html`, which is not a media type, so most clients treat the body as plain text. It is documented here because the firmware serves it, not because there is anything useful to read from it.
+
+        Deprecated: Registered since the REST interface was introduced and never implemented. Nothing reads the `command` argument and the answer is a fixed page.
       operationId: getHelp
+      deprecated: true
       parameters:
         - name: command
           in: query
@@ -1622,7 +1731,13 @@ paths:
         Reports the FreeRTOS heap. Every dynamic allocation in the firmware ends up there, `new` and `malloc` alike, so one free figure accounts for all of it.
 
         `free` is the number to diff: sample it, do a body of work, sample it again, and a difference that does not come back is a leak. `min_ever_free` is the low water mark since boot. It never recovers, so it shows how much headroom there has ever been but cannot tell a leak from a transient peak.
+
+        **Caution (diagnostic):** Firmware internals, for finding a leak rather than for driving the machine.
       operationId: getHeapStatistics
+      x-ultimate-caution:
+        hints:
+          - diagnostic
+        note: Firmware internals, for finding a leak rather than for driving the machine.
       responses:
         '200':
           description: The state of the heap.
@@ -1707,7 +1822,13 @@ paths:
         Samples the cartridge bus and returns the capture as a VCD file, which any waveform viewer opens. The traces are the dot clock, PHI2 and the copy the FPGA recovers from it, the address and data buses, the read/write line and the tri-state controls. The sample interval follows the FPGA clock of the product, so it is 20 ns, 16 ns or 15 ns depending on which one this is.
 
         The measurement block is an optional part of the FPGA build. Where it is absent, and it usually is on the cartridges, the call answers 501.
+
+        **Caution (diagnostic):** A hardware capture for diagnosing the cartridge bus.
       operationId: measureBusTiming
+      x-ultimate-caution:
+        hints:
+          - diagnostic
+        note: A hardware capture for diagnosing the cartridge bus.
       responses:
         '200':
           description: A VCD capture, offered as bus_measurement.vcd.
@@ -1817,8 +1938,15 @@ paths:
       tags:
         - Machine
       summary: Pause the CPU
-      description: 'Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`.'
+      description: |2-
+        Halts the 6510 by holding DMA. The video output freezes on the frame that was being drawn and the machine stays halted until `machine:resume`. Memory can still be read and written while paused, which is what makes this useful before a large `machine:readmem`.
+
+        **Caution (machine-state):** The machine stays halted until machine:resume. A client that stops without resuming leaves it frozen.
       operationId: pauseMachine
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'The machine stays halted until machine:resume. A client that stops without resuming leaves it frozen.'
       responses:
         '200':
           description: The CPU is halted.
@@ -1948,7 +2076,13 @@ paths:
         Resets the C64 and re-initialises the cartridge with it, which is what the Reboot entry in the menu does. Use this rather than `machine:reset` when a cartridge has to start from scratch.
 
         On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reboot.
+
+        **Caution (machine-state):** Whatever the machine was running is lost, and the cartridge is started from scratch.
       operationId: rebootMachine
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: Whatever the machine was running is lost, and the cartridge is started from scratch.
       responses:
         '200':
           description: The machine was rebooted.
@@ -1989,7 +2123,13 @@ paths:
         Pulls reset on the C64. The machine restarts with whatever cartridge is active, which is not the same as starting from cold; use `machine:reboot` for that.
 
         On Ultimate 64 hardware every key and joystick direction the input API is holding is released as part of the reset, so a reset cannot leave an injected key stuck down.
+
+        **Caution (machine-state):** Whatever the machine was running is lost.
       operationId: resetMachine
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: Whatever the machine was running is lost.
       responses:
         '200':
           description: The machine was reset.
@@ -2064,8 +2204,16 @@ paths:
       tags:
         - Machine
       summary: Upload bytes into C64 memory
-      description: The same DMA write as the PUT form, with the bytes in the request body instead of the URL, which raises the limit from 128 bytes to 65536. The body may be sent raw or as a multipart file part. The write may not pass $FFFF.
+      description: |2-
+        The same DMA write as the PUT form, with the bytes in the request body instead of the URL, which raises the limit from 128 bytes to 65536. The body may be sent raw or as a multipart file part. The write may not pass $FFFF.
+
+        **Caution (destructive, idempotent):** Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.
       operationId: uploadMemory
+      x-ultimate-caution:
+        hints:
+          - destructive
+          - idempotent
+        note: Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.
       parameters:
         - name: address
           in: query
@@ -2150,7 +2298,14 @@ paths:
         Performs a DMA write on the cartridge bus. `data` carries the bytes as hexadecimal, two characters per byte, and at most 128 bytes fit here; use the POST form for more. The write may not pass $FFFF.
 
         The write is decoded through the bank configuration that is in force at the time, the same way a write by the CPU would be, so a write to $D020 reaches the VIC register while I/O is mapped in.
+
+        **Caution (destructive, idempotent):** Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.
       operationId: writeMemory
+      x-ultimate-caution:
+        hints:
+          - destructive
+          - idempotent
+        note: Overwrites whatever the running program had at those addresses. Writing the same bytes again changes nothing further.
       parameters:
         - name: address
           in: query
@@ -2208,8 +2363,15 @@ paths:
       tags:
         - Runners
       summary: Upload a program without starting it
-      description: The same as the PUT form, with the program in the request body rather than on the device.
+      description: |2-
+        The same as the PUT form, with the program in the request body rather than on the device.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: uploadPrg
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       requestBody:
         required: true
         description: The program to load.
@@ -2267,8 +2429,15 @@ paths:
       tags:
         - Runners
       summary: Load a program without starting it
-      description: 'DMA loads a PRG file from the device to the address in its first two bytes and leaves it there. BASIC pointers are fixed up, so a BASIC program can be listed or started with RUN afterwards. Use `runners:run_prg` to start it as well.'
+      description: |2-
+        DMA loads a PRG file from the device to the address in its first two bytes and leaves it there. BASIC pointers are fixed up, so a BASIC program can be listed or started with RUN afterwards. Use `runners:run_prg` to start it as well.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: loadPrg
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: file
           in: query
@@ -2324,8 +2493,15 @@ paths:
       tags:
         - Runners
       summary: Upload and play an Amiga MOD file
-      description: The same as the PUT form, with the module in the request body. The upload is streamed straight into the REU memory rather than through a temporary file, so a module larger than the file system would hold can still be played.
+      description: |2-
+        The same as the PUT form, with the module in the request body. The upload is streamed straight into the REU memory rather than through a temporary file, so a module larger than the file system would hold can still be played.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: uploadAndPlayMod
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       requestBody:
         required: true
         description: The module to play.
@@ -2376,7 +2552,13 @@ paths:
         Loads a MOD file from the device into the REU memory and starts the module player, which plays it through the sampler rather than through the SID.
 
         The sampler is an optional part of the FPGA build. Where it is absent the call answers 501. Loading the module overwrites whatever the REU held.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: playMod
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: file
           in: query
@@ -2421,8 +2603,15 @@ paths:
       tags:
         - Runners
       summary: Upload and start a cartridge
-      description: The same as the PUT form, with the CRT image in the request body rather than on the device.
+      description: |2-
+        The same as the PUT form, with the CRT image in the request body rather than on the device.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: uploadAndRunCrt
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       requestBody:
         required: true
         description: The cartridge image to start.
@@ -2491,8 +2680,15 @@ paths:
       tags:
         - Runners
       summary: Start a cartridge
-      description: 'Loads a CRT image from the device into the cartridge memory and reboots the machine into it. The image has to be one of the cartridge types the firmware implements; an unsupported type is reported rather than started.'
+      description: |2-
+        Loads a CRT image from the device into the cartridge memory and reboots the machine into it. The image has to be one of the cartridge types the firmware implements; an unsupported type is reported rather than started.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: runCrt
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: file
           in: query
@@ -2559,8 +2755,15 @@ paths:
       tags:
         - Runners
       summary: Upload and start a program
-      description: The same as the PUT form, with the program in the request body rather than on the device.
+      description: |2-
+        The same as the PUT form, with the program in the request body rather than on the device.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: uploadAndRunPrg
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       requestBody:
         required: true
         description: The program to run.
@@ -2618,8 +2821,15 @@ paths:
       tags:
         - Runners
       summary: Load and start a program
-      description: DMA loads a PRG file from the device and starts it, the way selecting it in the menu would. A BASIC program is run and a machine code program is called at its load address.
+      description: |2-
+        DMA loads a PRG file from the device and starts it, the way selecting it in the menu would. A BASIC program is run and a machine code program is called at its load address.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: runPrg
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: file
           in: query
@@ -2675,8 +2885,15 @@ paths:
       tags:
         - Runners
       summary: Upload and play a SID tune
-      description: 'The same as the PUT form, with the tune in the request body. A second file part, if the request carries one, is taken as the matching `.ssl` song length file, which the player uses to move on at the end of a subtune.'
+      description: |2-
+        The same as the PUT form, with the tune in the request body. A second file part, if the request carries one, is taken as the matching `.ssl` song length file, which the player uses to move on at the end of a subtune.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: uploadAndPlaySid
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: songnr
           in: query
@@ -2740,7 +2957,13 @@ paths:
         Loads a SID file from the device and starts it. The player takes over the machine, so whatever was running stops.
 
         `songnr` selects a subtune, counting from 1. Leaving it out, or passing 0, plays the start song the file itself names.
+
+        **Caution (machine-state):** Takes the machine over: whatever it was running stops.
       operationId: playSid
+      x-ultimate-caution:
+        hints:
+          - machine-state
+        note: 'Takes the machine over: whatever it was running stops.'
       parameters:
         - name: file
           in: query

@@ -80,6 +80,21 @@ EXTERNAL_DOCS = {
     "url": "https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html",
 }
 
+# What `CAUTION` may say about a call, and what each token means. Closed: the
+# generator rejects anything else, so an agent can gate on the set without
+# guessing. The names follow the shape of MCP tool annotations, so a server
+# wrapping this API can map them onto its own.
+CAUTION_HINTS = {
+    "destructive": "Loses state the caller did not supply.",
+    "machine-state": "Takes over or halts the C64.",
+    "persistent": "Writes flash, so the effect survives a power cycle.",
+    "power": "Turns the machine off.",
+    "diagnostic": "Hardware debugging, not part of normal use.",
+    "idempotent": "The same request produces the same result however often it arrives.",
+}
+
+CAUTION_FIELD = "x-ultimate-caution"
+
 TAGS = [
     ("About", "Firmware, FPGA and product identification."),
     ("Configuration", "Read and write the settings the menu also exposes."),
@@ -89,7 +104,7 @@ TAGS = [
     ("Runners", "Start a program, cartridge or tune on the machine."),
     ("Files", "Inspect files and create empty disk images."),
     ("Streams", "Video, audio and debug streams sent to a listening host."),
-    ("Diagnostics", "Bus timing capture and heap accounting."),
+    ("Diagnostics", "Hardware debugging: the debug register, bus timing capture and heap accounting. Not part of driving the machine."),
 ]
 
 SECURITY_SCHEMES = {

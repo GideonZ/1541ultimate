@@ -188,6 +188,25 @@ def _responses(call, doc, operation_id):
     return dict(sorted(out.items()))
 
 
+def _caution(doc):
+    declared = doc.values("CAUTION")
+    if not declared:
+        return None
+    if len(declared) > 1:
+        raise OpenApiError("%s: expected at most one CAUTION" % doc.where)
+    tokens, note = declared[0]
+    hints = [token.strip() for token in tokens.split(",") if token.strip()]
+    unknown = [hint for hint in hints if hint not in schemas.CAUTION_HINTS]
+    if unknown:
+        raise OpenApiError(
+            "%s: CAUTION uses %s, which is not one of %s"
+            % (doc.where, ", ".join(unknown), ", ".join(sorted(schemas.CAUTION_HINTS)))
+        )
+    if not hints:
+        raise OpenApiError("%s: CAUTION names no hint" % doc.where)
+    return {"hints": hints, "note": note}
+
+
 def _operation(call, doc, template, operation_id, summary):
     operation = {
         "tags": [doc.value("TAG")],
@@ -195,6 +214,19 @@ def _operation(call, doc, template, operation_id, summary):
         "description": doc.value("DESCRIPTION"),
         "operationId": operation_id,
     }
+    deprecated = doc.values("DEPRECATED")
+    if deprecated:
+        if len(deprecated) > 1:
+            raise OpenApiError("%s: expected at most one DEPRECATED" % doc.where)
+        operation["deprecated"] = True
+        operation["description"] += "\n\nDeprecated: " + deprecated[0][0]
+    caution = _caution(doc)
+    if caution:
+        # Twice over, from the one directive: as prose for whoever is reading the
+        # rendered document, and as a field for whatever is calling it.
+        operation["description"] += "\n\n**Caution (%s):** %s" % (
+            ", ".join(caution["hints"]), caution["note"])
+        operation[schemas.CAUTION_FIELD] = caution
     parameters = _parameters(call, doc, template)
     if parameters:
         operation["parameters"] = parameters
@@ -289,6 +321,23 @@ def _referenced(paths, components):
     return used
 
 
+def _caution_legend(paths):
+    """Explain the caution field in the document that uses it, or say nothing."""
+    used = {
+        hint
+        for item in paths.values()
+        for operation in item.values()
+        for hint in operation.get(schemas.CAUTION_FIELD, {}).get("hints", [])
+    }
+    if not used:
+        return ""
+    lines = ["", "## Calls that need care", "",
+             "An operation that has consequences beyond returning an answer carries a",
+             "`%s` field naming what those are. The vocabulary is closed:" % schemas.CAUTION_FIELD, ""]
+    lines += ["- `%s`: %s" % (hint, schemas.CAUTION_HINTS[hint]) for hint in sorted(used)]
+    return "\n".join(lines) + "\n"
+
+
 def _tags(paths):
     used = {tag for item in paths.values() for operation in item.values() for tag in operation["tags"]}
     unknown = used - {name for name, _ in schemas.TAGS}
@@ -308,7 +357,8 @@ def build(name, repo_root):
             "title": profile["title"],
             "version": schemas.API_VERSION,
             "summary": "REST interface of the Ultimate firmware on %s." % profile["products"],
-            "description": schemas.DESCRIPTION.format(products=profile["products"]),
+            "description": (schemas.DESCRIPTION.format(products=profile["products"])
+                            + _caution_legend(paths)),
             "contact": schemas.CONTACT,
             "license": schemas.LICENSE,
         },
