@@ -2591,11 +2591,11 @@ CHILD_FORWARDED_NEGATIVE = (
 # target so two children cannot write the same file; stop_on_fail is forwarded
 # by hand because it is a short flag with a different destination name; list
 # never reaches a child, because the parent prints the registry and stops;
-# assume_fix reaches every child through the environment instead, because a
-# suite started by hand has to be able to set it the same way (see
-# machine.ASSUME_ENV).
+# assume_fix and validate_openapi reach every child through the environment
+# instead, because a suite started by hand has to be able to set them the same
+# way (see machine.ASSUME_ENV and openapi_contract.ENV_FLAG).
 CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
-                          "assume_fix")
+                          "assume_fix", "validate_openapi")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
