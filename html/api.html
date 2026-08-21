@@ -35,6 +35,9 @@ window.onload = function () {
         deepLinking: true,
         presets: [SwaggerUIBundle.presets.apis],
         layout: "BaseLayout",
+        // Swagger UI otherwise offers a badge that sends the address of this
+        // device to validator.swagger.io. The document is validated in CI.
+        validatorUrl: null,
         // Try it out talks to the device this page came from, whatever the
         // server variable in the document says.
         requestInterceptor: function (request) {
