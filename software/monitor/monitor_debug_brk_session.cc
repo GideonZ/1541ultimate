@@ -455,10 +455,10 @@ void BrkDebugSession :: save_and_install_visible_hard_vector(void)
     // read_patch_byte, not peek_cpu: the saved bytes get RESTORED into the
     // ROM image later, and under the freezer a raw aperture read returns the
     // freezer cart's garbage, which would trash the IRQ vector on uninstall.
-    saved_hard_rom_vector[0] = read_patch_byte(HARD_VECTOR_LO,
-                                               HARD_VECTOR_ROM_CPU_PORT);
-    saved_hard_rom_vector[1] = read_patch_byte(HARD_VECTOR_HI,
-                                               HARD_VECTOR_ROM_CPU_PORT);
+    saved_hard_rom_vector[0] = read_patch_original_byte(HARD_VECTOR_LO,
+                                                        HARD_VECTOR_ROM_CPU_PORT);
+    saved_hard_rom_vector[1] = read_patch_original_byte(HARD_VECTOR_HI,
+                                                        HARD_VECTOR_ROM_CPU_PORT);
     if (hard_vector_points_to_stub(saved_hard_rom_vector[0],
                                    saved_hard_rom_vector[1])) {
         saved_hard_rom_vector[0] = HARD_VECTOR_DEFAULT_LO;
@@ -627,7 +627,7 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_brk_at(
         save_and_install_visible_hard_vector();
     }
     bool stopped_it = begin_stopped_session();
-    uint8_t original = read_patch_byte(addr, cpu_port);
+    uint8_t original = read_patch_original_byte(addr, cpu_port);
     // A target may already contain BRK. Treat that as a valid trap location
     // instead of failing the step command.
     if (original != 0x00) {

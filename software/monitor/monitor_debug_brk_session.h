@@ -60,6 +60,13 @@ protected:
     static void clear_run_result_markers(uint8_t *page, uint16_t base,
                                          uint16_t length);
     virtual uint8_t read_patch_byte(uint16_t address, uint8_t cpu_port);
+    // The byte a patch records so it can put it back, which is not always the
+    // byte read_patch_byte answers with. A backend whose patch store and live
+    // aperture can disagree - the U64's volatile ROM images - reads this one
+    // from the store, while everything else keeps reading what the 6510 will
+    // fetch. Only what a patch will later write back goes through here.
+    virtual uint8_t read_patch_original_byte(uint16_t address, uint8_t cpu_port)
+    { return read_patch_byte(address, cpu_port); }
     virtual void write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port);
     virtual void note_captured_cpu_port(uint8_t) { }
 public:

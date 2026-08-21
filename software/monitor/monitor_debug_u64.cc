@@ -43,6 +43,26 @@ class U64DebugSession : public BrkDebugSession
         return 0;
     }
 
+    // Whether the live aperture is known to serve `addr` from the store that
+    // `cpu_port` names. The port passed to a CPU-mapped read cannot re-bank the
+    // aperture on this hardware: RAM $00/$01 is a DMA-only mirror of the 6510's
+    // port, refreshed at reset, so the aperture answers from whatever the
+    // running program has mapped. Only a port the 6510 itself reported at the
+    // last debug stop counts as knowing; an unknown port is treated as "cannot
+    // serve", because the alternative is trusting a read that may be answering
+    // from the RAM underneath a ROM. The machine is never stopped to ask: this
+    // runs on patch install and restore paths, where doing so would disturb a
+    // parked CPU.
+    bool live_aperture_serves(uint16_t addr, uint8_t cpu_port)
+    {
+        uint8_t live = 0;
+        if (!backend || !backend->known_live_cpu_port(&live)) {
+            return false;
+        }
+        return monitor_backing_store_for_cpu_port(addr, live) ==
+               monitor_backing_store_for_cpu_port(addr, cpu_port);
+    }
+
     void wait_for_cpu_visible_rom_byte(uint16_t addr, uint8_t cpu_port, uint8_t byte)
     {
         for (int i = 0; i < 8; i++) {
@@ -187,30 +207,18 @@ protected:
     {
         volatile uint8_t *rom = rom_patch_ptr(addr, cpu_port);
         if (rom) {
-            // Two cases where the live aperture cannot answer for the store
-            // this patch belongs to, and the monitor's ROM cache has to:
-            //
-            // - frozen: the aperture serves the freezer cartridge's banking,
-            //   not BASIC/KERNAL, so a raw read is garbage and would restore a
-            //   trashed "original" into the ROM image (this caused the
-            //   frozen-continue jiffy-death via a trashed $FFFE vector).
-            // - the running program has this ROM banked out: `cpu_port` cannot
-            //   re-bank the aperture, because RAM $00/$01 on this hardware is a
-            //   DMA-only mirror of the 6510's port. A breakpoint armed in the
-            //   KERNAL store while the program runs at $01=$35 would save the
-            //   RAM byte underneath as its original and write that byte into
-            //   the KERNAL image when it was removed. Measured on hardware:
-            //   after the banked-breakpoint scenario, $E000 in the image read
-            //   $EE, the first byte of the RAM payload, and stayed wrong until
-            //   the firmware restarted and reloaded the ROMs.
+            // While frozen, the live aperture serves the freezer cartridge's
+            // banking, not BASIC/KERNAL, so a raw read is garbage and would
+            // restore a trashed "original" into the ROM image (this caused
+            // the frozen-continue jiffy-death via a trashed $FFFE vector).
             uint8_t cached = 0;
-            if (backend && (machine_is_frozen() ||
-                            !backend->live_mapping_serves(addr, cpu_port)) &&
+            if (machine_is_frozen() && backend &&
                     backend->read_monitor_rom_byte(addr, cpu_port, &cached)) {
                 return cached;
             }
-            // Otherwise keep reads aligned with actual 6510 fetches. The
-            // volatile ROM image pointer remains the write target only.
+            // Keep reads aligned with actual 6510 fetches. The volatile ROM
+            // image pointer remains the write target only, and a caller that
+            // needs the image's own byte asks read_patch_original_byte.
             return machine->peek_cpu(addr, cpu_port);
         }
         if (monitor_backing_store_for_cpu_port(addr, cpu_port) == MONITOR_BACKING_IO) {
@@ -220,6 +228,26 @@ protected:
         // the byte the SAME cpu_port selects; the _raw pair ignores the port and
         // follows whatever the live map has banked in.
         return machine->peek_cpu(addr, cpu_port);
+    }
+    // What a ROM-store patch records so it can put it back. The aperture cannot
+    // answer for a ROM the running program has banked out: the cpu_port passed
+    // with a read does not re-bank it, because RAM $00/$01 on this hardware is a
+    // DMA-only mirror of the 6510's port, refreshed at reset. A KERNAL-store
+    // breakpoint armed while the program ran at $01=$35 therefore saved the RAM
+    // byte underneath and wrote it into the KERNAL image when it was removed:
+    // measured on hardware, $E000 in the image read $EE, the first byte of the
+    // scenario's RAM payload, and stayed wrong until the firmware restarted and
+    // reloaded the ROMs. The monitor's ROM cache holds the image's own bytes and
+    // is used whenever the aperture is not known to be serving this store.
+    virtual uint8_t read_patch_original_byte(uint16_t addr, uint8_t cpu_port)
+    {
+        uint8_t cached = 0;
+        if (rom_patch_ptr(addr, cpu_port) && backend &&
+                !live_aperture_serves(addr, cpu_port) &&
+                backend->read_monitor_rom_byte(addr, cpu_port, &cached)) {
+            return cached;
+        }
+        return read_patch_byte(addr, cpu_port);
     }
     virtual bool read_step_bytes(uint16_t address, uint8_t *dst, uint8_t len)
     {

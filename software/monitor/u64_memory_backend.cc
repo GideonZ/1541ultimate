@@ -137,9 +137,15 @@ bool U64MemoryBackend :: read_monitor_rom_byte(uint16_t address, uint8_t cpu_por
     }
 }
 
-bool U64MemoryBackend :: live_mapping_serves(uint16_t address, uint8_t cpu_port)
+bool U64MemoryBackend :: known_live_cpu_port(uint8_t *out) const
 {
-    return uses_live_mapping_for_address(address, get_live_cpu_port(), cpu_port);
+    if (!observed_live_cpu_port_valid) {
+        return false;
+    }
+    if (out) {
+        *out = observed_live_cpu_port & 0x07;
+    }
+    return true;
 }
 
 void U64MemoryBackend :: begin_session(void)

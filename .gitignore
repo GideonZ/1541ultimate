@@ -298,3 +298,4 @@ fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
 
 # Python bytecode cache
 __pycache__/
+.gstack/
