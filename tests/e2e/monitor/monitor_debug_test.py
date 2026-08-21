@@ -750,7 +750,12 @@ def _reset_c64_core(rest_host: str, timeout: float = 20.0) -> None:
     # late or not at all, and the only evidence either way is whether the KERNAL
     # reached its READY prompt. One resend distinguishes a reset that was missed
     # from a machine that cannot come back, and the second failure says which.
-    for attempt in (1, 2):
+    for attempt in (1, 2, 3):
+        if attempt == 1:
+            # Let the debugger's own teardown finish before the machine is
+            # reset. A reset issued into the middle of it is taken late or not
+            # at all, which is what the second attempt is otherwise for.
+            time.sleep(1.0)
         try:
             mt.rest_api(rest_host, timeout=max(5.0, timeout)).machine.reset(
                 force=True, wait=False)
@@ -764,7 +769,7 @@ def _reset_c64_core(rest_host: str, timeout: float = 20.0) -> None:
             _wait_for_c64_ready(rest_host, timeout)
             break
         except mt.Failure:
-            if attempt == 2:
+            if attempt == 3:
                 raise
             print("[info] reset did not reach READY; resending it once", flush=True)
     time.sleep(3.0)
@@ -1745,7 +1750,7 @@ def _classify_execution_failure(session: "mt.MonitorSession", pc_before: str) ->
             f"to enter; needs the target's own sentinel to confirm")
 
 
-def _pc_wait_budget() -> float:
+def _pc_wait_budget(after_go: bool = False) -> float:
     """How long a step is given to land its new PC in the footer.
 
     Measured on a U2+L in a C64 Ultimate: a Trace into a JSR reaches the target
@@ -1753,8 +1758,27 @@ def _pc_wait_budget() -> float:
     fits the U64 reports the cartridge's slower but correct step as a failure to
     step at all, which is what four checks in the side-effect and step-out
     groups were reporting.
+
+    A Go on the cartridge is slower again, and for a reason of its own: it runs
+    through the boot cartridge, which resets the C64 before the program starts
+    (tests/e2e/monitor/U2_CARTRIDGE_NMI.md). Measured in a full run, the stop at
+    the breakpoint arrived after the twenty seconds a step is given, so the check
+    that pressed Go reported no stop while the next check read the stop it had
+    missed, and each check after that read the one before it.
     """
-    return 20.0 if mt.TestConfig.target == "u2" else 6.0
+    if mt.TestConfig.target != "u2":
+        return 6.0
+    return 60.0 if after_go else 20.0
+
+
+def _wait_for_go_pc(session: "mt.MonitorSession", expected_pc: str) -> dict:
+    """Wait for the stop a Go produces, on the budget a Go needs.
+
+    Separate from _wait_for_pc because the two measure different things: a step
+    is the debugger moving a parked CPU, while a Go on the cartridge restarts
+    the machine through the boot cartridge first.
+    """
+    return _wait_for_pc(session, expected_pc, timeout=_pc_wait_budget(after_go=True))
 
 
 def _wait_for_pc(session: "mt.MonitorSession", expected_pc: str,
@@ -2078,6 +2102,17 @@ def run_refusal_and_return_edge_tests(rest_host: str, session: "mt.MonitorSessio
 
     with mt.check("Debug: RTI restores the stacked target PC and flags truthfully"):
         _reopen_monitor(session)
+        # Read the fixture back before stepping it. A step that meets a $00 is
+        # refused with UNSAFE TARGET, and that message alone cannot say whether
+        # the byte was never written or was left behind by an earlier check's
+        # breakpoint patch. Seen once on a cartridge in a full-suite run, where
+        # the same group passed three times in isolation.
+        present = mt.read_rest_memory(rest_host, 0xC280, len(rti_setup))
+        if present != rti_setup:
+            raise mt.Failure(
+                f"RTI fixture at $C280 is not what was written: "
+                f"{present.hex().upper()}, expected {rti_setup.hex().upper()}; "
+                f"a $00 here is a breakpoint patch that outlived its check")
         session.goto("C280")
         session.send_char("A")
         session.send_char("D")
@@ -2462,7 +2497,7 @@ def run_breakpoint_reentry_tests(rest_host: str, session: "mt.MonitorSession") -
         _ensure_breakpoint_at(session, 0xC300, "$C300 re-entry breakpoint set")
 
         session.send_char("G")
-        _wait_for_pc(session, "C300")
+        _wait_for_go_pc(session, "C300")
         if mt.read_rest_memory(rest_host, 0xC190, 1)[0] != 0x00:
             raise mt.Failure("Initial breakpoint hit must stop before INC $C190 executes")
 
@@ -2776,7 +2811,7 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: "mt.MonitorSessio
             raise mt.Failure(f"$E002 must be the canonical KERNAL JSR into BASIC: {row!r}")
 
         session.send_char("G")
-        parsed = _wait_for_pc(session, "BC0F")
+        parsed = _wait_for_go_pc(session, "BC0F")
         _assert_no_debug_modal(session, "deep trace Go to BASIC breakpoint")
         if parsed["pc"].upper() != "BC0F":
             raise mt.Failure(f"Deep trace did not stop at BASIC breakpoint: {parsed!r}")
@@ -2787,7 +2822,7 @@ def run_deep_kernal_basic_trace_tests(rest_host: str, session: "mt.MonitorSessio
             raise mt.Failure(f"$E005 must be visible as KERNAL ROM before breakpointing: {row!r}")
         _ensure_breakpoint_at(session, 0xE005, "$E005 KERNAL return breakpoint set")
         session.send_char("G")
-        _wait_for_pc(session, "E005")
+        _wait_for_go_pc(session, "E005")
         _assert_no_debug_modal(session, "deep trace current BASIC breakpoint skip")
 
         session.send_char("U")
@@ -2946,7 +2981,7 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         _ensure_breakpoint_at(session, capture_addr, f"${capture_addr:04X} live-port capture breakpoint set")
         session.goto(f"{bootstrap_addr:04X}")
         session.send_char("G")
-        _wait_for_pc(session, f"{capture_addr:04X}")
+        _wait_for_go_pc(session, f"{capture_addr:04X}")
         mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
         _clear_breakpoint_at(session, capture_addr, f"${capture_addr:04X} live-port capture breakpoint clear")
         snap = mt.ensure_status(session, "C5O7 $A:BAS $D:I/O $E:KRN VIC")
@@ -3002,7 +3037,7 @@ def run_banked_breakpoint_tests(rest_host: str, session: "mt.MonitorSession") ->
         if "Dbg" not in _header_line(session):
             session.send_char("D")
         session.send_char("G")
-        parsed = _wait_for_pc(session, "E000")
+        parsed = _wait_for_go_pc(session, "E000")
         _assert_no_debug_modal(session, "$E000 RAM-under-KERNAL breakpoint hit")
         if parsed["pc"].upper() != "E000":
             raise mt.Failure(f"RAM-under-KERNAL breakpoint did not hit $E000: {parsed!r}")
@@ -3094,7 +3129,7 @@ def _arm_loop_breakpoint_and_hit(session: "mt.MonitorSession", loop_addr: int,
         _assert_no_debug_modal(session, f"{context}: loop breakpoint set")
     session.goto(f"{start_addr:04X}")
     session.send_char("G")
-    _wait_for_pc(session, f"{loop_addr:04X}")
+    _wait_for_go_pc(session, f"{loop_addr:04X}")
     mt.ensure_status(session, mapped_status)
     _clear_breakpoint_at(session, loop_addr, f"{context}: clear initial loop breakpoint")
 
@@ -3259,7 +3294,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
                 raise mt.Failure(f"$01=$00 RAM breakpoint was not armed: {row!r}")
         session.goto(f"{bootstrap:04X}")
         session.send_char("G")
-        parsed = _wait_for_pc(session, "E000")
+        parsed = _wait_for_go_pc(session, "E000")
         _assert_no_debug_modal(session, "$01=$00 $E000 breakpoint hit")
         snap = session.capture()
         status = snap.line(mt.find_status_line(snap))
@@ -3320,7 +3355,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
                               f"${capture_addr:04X} $01=$35 payload-copy breakpoint set")
         session.goto(f"{bootstrap_addr:04X}")
         session.send_char("G")
-        _wait_for_pc(session, f"{capture_addr:04X}")
+        _wait_for_go_pc(session, f"{capture_addr:04X}")
         mt.wait_for_rest_byte(rest_host, ready_addr, 0xA5, timeout=4.0)
         mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
         _clear_breakpoint_at(session, capture_addr,
@@ -3331,7 +3366,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
             raise mt.Failure(f"$01=$35 payload copy did not install RAM loop: {row!r}")
         _ensure_breakpoint_at(session, payload, "$01=$35 RAM-under-KERNAL breakpoint set")
         session.send_char("G")
-        _wait_for_pc(session, "E000")
+        _wait_for_go_pc(session, "E000")
         mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
         row = _disassembly_row(session.capture(), payload)
         if not _shows_ram(row) or "INC $D020" not in row:
@@ -3380,7 +3415,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
         _ensure_breakpoint_at(session, loop, f"${loop:04X} baseline loop breakpoint set")
         session.goto(f"{base:04X}")
         session.send_char("G")
-        _wait_for_pc(session, f"{loop:04X}")
+        _wait_for_go_pc(session, f"{loop:04X}")
         mt.wait_for_rest_byte(rest_host, ready, 0xA5, timeout=4.0)
         mt.ensure_status(session, "CPU7 $A:BAS $D:I/O $E:KRN VIC")
         _clear_all_breakpoints(session, "$01=$37 continue release cleanup")
@@ -3433,7 +3468,7 @@ def run_banked_continue_no_breakpoints_tests(rest_host: str,
             raise mt.Failure(f"$E003 RAM breakpoint was not set: {row!r}")
         session.goto(f"{bootstrap_addr:04X}")
         session.send_char("G")
-        _wait_for_pc(session, "E003")
+        _wait_for_go_pc(session, "E003")
         mt.ensure_status(session, "CPU5 $A:RAM $D:I/O $E:RAM VIC")
         row = _disassembly_row(session.capture(), 0xE003)
         if not _shows_ram(row) or "JMP $E000" not in row:
@@ -3493,7 +3528,7 @@ def run_brk_orchestrator_tests(rest_host: str, session: "mt.MonitorSession") -> 
         session.send_text("C000\r", "J C000")
         # Go: NMI-jump to $C000, run, BRK at $C006, capture.
         session.send_char("G")
-        parsed = _wait_for_pc(session, "C006")
+        parsed = _wait_for_go_pc(session, "C006")
         if parsed["ac"] != "AA":
             raise mt.Failure(f"AC expected AA, got {parsed!r}")
         if parsed["xr"] != "BB":
@@ -3769,9 +3804,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
     loop's forward progress is the liveness proof instead of the jiffy clock.
     """
 
-    with mt.check("Exit-liveness: ordinary RAM step then natural exit stays live",
-                  u2=False, u2_reason="U64 jiffy/keyboard liveness oracles required"):
-        mt.skip_unsupported()
+    with mt.check("Exit-liveness: ordinary RAM step then natural exit stays live"):
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC000, bytes.fromhex("EE20D04C00C0"))  # INC $D020;JMP
@@ -3781,9 +3814,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
             rest_host, session, "ordinary RAM step exit",
             require_jiffy=True, progress_oracle=_resumed_loop_oracle(rest_host, 0xD020))
 
-    with mt.check("Exit-liveness: continue-from-breakpoint then natural exit stays live",
-                  u2=False, u2_reason="U64 jiffy/keyboard liveness oracles required"):
-        mt.skip_unsupported()
+    with mt.check("Exit-liveness: continue-from-breakpoint then natural exit stays live"):
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         mt.write_rest_memory(rest_host, 0xC100, bytes.fromhex("EE21D04C00C1"))  # INC $D021;JMP
@@ -3792,7 +3823,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
         session.goto("C100")
         _ensure_breakpoint_at(session, 0xC100, "exit-liveness continue-from-bp set")
         session.send_char("G")
-        _wait_for_pc(session, "C100")
+        _wait_for_go_pc(session, "C100")
         _clear_all_breakpoints(session, "exit-liveness continue-from-bp release")
         session.send_char("G")           # continue with no remaining breakpoint
         prove_monitor_exit_basic_liveness_and_reentry(
@@ -3817,9 +3848,7 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
             rest_host, session, "KERNAL ROM step exit",
             require_jiffy=True, require_editor=False)
 
-    with mt.check("Exit-liveness: RETURN follow (non-executing) then natural exit stays live",
-                  u2=False, u2_reason="U64 jiffy liveness oracle required"):
-        mt.skip_unsupported()
+    with mt.check("Exit-liveness: RETURN follow (non-executing) then natural exit stays live"):
         _reset_c64_core(rest_host)
         _reopen_monitor(session)
         # JSR target that would mutate $D020 if executed; RETURN must only FOLLOW.

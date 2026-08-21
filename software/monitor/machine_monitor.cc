@@ -2303,6 +2303,7 @@ MachineMonitor :: MachineMonitor(UserInterface *ui, MemoryBackend *mem_backend) 
     bookmark_selected = 0;
     bookmark_status_text[0] = 0;
 	    bookmark_status_visible = false;
+	    bookmark_status_pending = false;
 	    bookmark_status_emphasis = false;
 	    bookmark_status_deadline = 0;
 	    return_stack_count = 0;
@@ -3334,6 +3335,14 @@ bool MachineMonitor :: update_bookmark_status(void)
     if (!bookmark_status_visible) {
         return false;
     }
+    if (bookmark_status_pending) {
+        // The note has not been on screen yet, so it has not had its two
+        // seconds. Work done between setting it and drawing it does not count
+        // against them: a bookmark jump on a cartridge stops the machine to
+        // read memory, which took longer than the whole window, so the note was
+        // set, expired, and was never drawn at all.
+        return false;
+    }
     if (!monitor_deadline_reached(bookmark_status_deadline, getMsTimer())) {
         return false;
     }
@@ -3349,7 +3358,7 @@ void MachineMonitor :: show_bookmark_status(uint8_t slot, const MonitorBookmarkS
                                    slot, bookmark, status);
     bookmark_status_visible = true;
     bookmark_status_emphasis = monitor_bookmark_status_uses_emphasis(status, bookmark);
-    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+    bookmark_status_pending = true;
 }
 
 void MachineMonitor :: show_navigation_status(uint8_t index, const char *kind, uint16_t address)
@@ -3358,7 +3367,7 @@ void MachineMonitor :: show_navigation_status(uint8_t index, const char *kind, u
             (unsigned)index, kind ? kind : "", (unsigned)address);
     bookmark_status_visible = true;
     bookmark_status_emphasis = false;
-    bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+    bookmark_status_pending = true;
 }
 
 void MachineMonitor :: clear_bookmark_transient_state(void)
@@ -4291,6 +4300,10 @@ void MachineMonitor :: draw_status()
     // that row's content once the alert above has been cleared, which is what
     // the bookmark suite's set/jump notes assert.
     if (bookmark_status_visible) {
+        if (bookmark_status_pending) {
+            bookmark_status_pending = false;
+            bookmark_status_deadline = (uint16_t)(getMsTimer() + 2000);
+        }
         window->set_color(bookmark_status_emphasis ? MONITOR_UI_ACCENT_COLOR : get_ui()->color_fg);
         draw_padded(window, window->get_size_y() - 1, bookmark_status_text,
                     (int)strlen(bookmark_status_text));

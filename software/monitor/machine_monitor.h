@@ -333,6 +333,9 @@ class MachineMonitor : public UIObject
     bool bookmark_status_visible;
     bool bookmark_status_emphasis;
     uint16_t bookmark_status_deadline;
+    // Set with the note, cleared when it is first drawn: until then it has not
+    // had its time on screen. See update_bookmark_status().
+    bool bookmark_status_pending;
     struct ReturnStackEntry {
         MonitorBookmarkSlot location;
         uint16_t base_addr;
