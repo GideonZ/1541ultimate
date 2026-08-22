@@ -293,14 +293,22 @@ def run_cmd(cmd: list[str], cwd: Path, log_path: Path, timeout: Optional[float] 
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"$ {' '.join(cmd)}\n")
         log.flush()
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cwd),
-            text=True,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(cwd),
+                text=True,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            # A caller-visible failure, not a crash: an uncaught TimeoutExpired
+            # here takes down the whole gate instead of reporting one command
+            # as failed, which is what every other kind of command failure
+            # already does.
+            log.write(f"rc=-1 (timed out after {timeout}s)\n")
+            return -1
         log.write(f"rc={proc.returncode}\n")
         return proc.returncode
 
@@ -1213,6 +1221,31 @@ class TelnetDebugDriver(BaseDriver):
                     self.session.capture().text(), encoding="utf-8")
             except Exception:
                 pass
+            # Leave the monitor with no Debug session, the same as
+            # RestDebugDriver.close_monitor(): closing the telnet connection
+            # ends this cell's transport but not the device's Debug session,
+            # which stays parked on this fixture's PC. The next cell reopens
+            # onto that session - possibly over a different transport, since
+            # a memory mode runs every transport back to back - and a parked
+            # session will not navigate, so its first goto times out and the
+            # failure is reported against a cell that inherited someone
+            # else's state. leave_stale_debug() is a second line of defence
+            # for a REST-driven next cell; this is the first, so an all-telnet
+            # run gets it too.
+            #
+            # dbg._ensure_no_debug(), not a fixed number of C=+D taps: tearing
+            # a session down restores every patched byte before the header
+            # redraws, so on a slow exit the Dbg flag can outlive the keystroke
+            # by several seconds - its own docstring records that one C=+D and
+            # a 3s budget was not enough. It also re-sends only every 4s
+            # rather than stacking taps, and backs out of a BREAKPOINTS or
+            # BOOKMARKS popup first, since either would otherwise eat a C=+D
+            # the loop is waiting on.
+            try:
+                dbg._ensure_no_debug(self.session)
+                self.event("close_monitor_debug_state", debug_active=False)
+            except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
+                self.event("close_monitor_leave_debug_failed", error=str(exc))
             self.session.close()
             self.session = None
             mt.TestConfig.session = None
@@ -1451,12 +1484,30 @@ class RestDebugDriver(BaseDriver):
         # parked session will not navigate: the next cell's first goto times out
         # and the failure is reported against a cell that did nothing wrong.
         # Runs after this cell's verdict is decided, so it cannot mask it.
+        #
+        # A twelve-second budget, not three quick taps: tearing a session down
+        # restores every patched byte before the header redraws, so on a slow
+        # exit the Dbg flag can outlive the keystroke by several seconds - see
+        # monitor_debug_test.py's dbg._ensure_no_debug(), which exists because a
+        # short fixed budget was measured not enough. This mirrors that
+        # function for the REST transport: re-send only every 4s rather than
+        # stacking taps, and back out of a BREAKPOINTS or BOOKMARKS popup
+        # first, since either would otherwise eat a C=+D the loop is waiting on.
         try:
-            for _ in range(3):
-                if "Dbg" not in self.rest.screen_text():
+            deadline = time.time() + 12.0
+            last_sent = 0.0
+            while time.time() < deadline:
+                text = self.rest.screen_text()
+                if "Dbg" not in text:
                     break
-                self.rest.tap(["commodore", "d"])
-                time.sleep(0.5)
+                if "BREAKPOINTS" in text or "BOOKMARKS" in text:
+                    self.rest.tap(["run_stop"])
+                    time.sleep(0.2)
+                    continue
+                if time.time() - last_sent > 4.0:
+                    self.rest.tap(["commodore", "d"])
+                    last_sent = time.time()
+                time.sleep(0.2)
             self.event("close_monitor_debug_state",
                        debug_active="Dbg" in self.rest.screen_text())
         except Exception as exc:  # noqa: BLE001 - teardown must not mask a verdict
@@ -1557,14 +1608,25 @@ class RestDebugDriver(BaseDriver):
                           footer.sp, footer.sr, raw=footer.__dict__)
 
     def _open_breakpoint_popup(self) -> str:
-        self.rest.tap(["commodore", "r"])
+        self.rest.tap(["commodore", "p"])
         time.sleep(0.45)
         text = self.rest.screen_text()
         if "BREAKPOINT" not in text.upper():
             raise GateError(
-                "breakpoint popup did not open on CBM+R; monitor screen:\n"
+                "breakpoint popup did not open on CBM+P; monitor screen:\n"
                 + text)
         return text
+
+    def _open_breakpoint_popup_if_any(self) -> Optional[str]:
+        """Like _open_breakpoint_popup, but tolerates a table with nothing
+        armed: the firmware only opens this popup when debug_has_breakpoint()
+        is true (see machine_monitor.cc), so CBM+P legitimately does nothing
+        on an already-empty table. That is not a failure for a caller that is
+        only checking whether there is anything to clear."""
+        self.rest.tap(["commodore", "p"])
+        time.sleep(0.45)
+        text = self.rest.screen_text()
+        return text if "BREAKPOINT" in text.upper() else None
 
     @staticmethod
     def _slot_lines_from(text: str) -> list[str]:
@@ -1595,7 +1657,11 @@ class RestDebugDriver(BaseDriver):
         is the only pacing that suits both.
         """
         for attempt in range(1, 4):
-            text = self._open_breakpoint_popup()
+            text = self._open_breakpoint_popup_if_any()
+            if text is None:
+                self.event("clear_all_breakpoints", attempts=attempt,
+                           table_empty="no armed slot to show CBM+P")
+                return
             if not any("EMPTY" not in line.upper()
                        for line in self._slot_lines_from(text)):
                 self.rest.tap(["run_stop"])
@@ -1764,15 +1830,29 @@ class RestDebugDriver(BaseDriver):
             self.select_bank(7)
         elif self.fixture.memory_mode == "rom":
             self.select_bank(self.fixture.bank)
-        self.goto(self.fixture.bootstrap_addr)
-        self.log_entry_opcode(address, "before launch")
-        self.send_key("G")
-        try:
-            state = self.wait_pc(address, "entry breakpoint",
-                                 timeout=CONTEXTLESS_ENTRY_WAIT_S)
-        except BaseException:
-            self.log_entry_opcode(address, "entry FAILED")
-            raise
+        state = None
+        for attempt in range(2):
+            self.goto(self.fixture.bootstrap_addr)
+            self.log_entry_opcode(address, "before launch")
+            self.send_key("G")
+            try:
+                state = self.wait_pc(address, "entry breakpoint",
+                                     timeout=CONTEXTLESS_ENTRY_WAIT_S)
+                break
+            except BaseException as exc:
+                if "DEBUG TIMEOUT" not in str(exc) or attempt:
+                    self.log_entry_opcode(address, "entry FAILED")
+                    raise
+                # The firmware's own 5s watchdog on the breakpoint-hit wait,
+                # not a logic failure: the entry breakpoint is a single JMP
+                # away from the bootstrap, and normally trips in well under
+                # that budget. Recorded in the run ledgers as roughly 11 of
+                # 26 overlay x boundary-mode failures, all this shape. Clear
+                # the popup and relaunch once, the same bootstrap+breakpoint
+                # a first attempt uses, before treating it as a real failure.
+                self.event("entry_debug_timeout_retry", attempt=attempt + 1)
+                self.send_key("RETURN")
+                time.sleep(0.3)
         self.log_entry_opcode(address, "entry ok")
         # The entry slot is the only slot this path armed.  Clearing that
         # address directly avoids repeatedly reopening the popup while the
@@ -3142,6 +3222,54 @@ def selected_values(value: str, all_values: tuple[str, ...]) -> list[str]:
     return [value]
 
 
+def parse_cell_selection(value: str,
+                         default_reps: int = 1) -> list[tuple[str, str, int]]:
+    """Parse `--cells` into (memory, interface, repetitions) terms.
+
+    `--memory` and `--ui` can only describe a rectangle: every selected memory
+    mode against every selected UI. A caller that wants a chosen set of
+    intersections rather than a product - one memory mode on one UI, a second
+    on another - cannot express that as a rectangle, and running the rectangle
+    that contains it costs the cells it did not ask for. This takes the set
+    directly: `ram:telnet,rom:freeze:2` is two terms, the second repeated
+    twice.
+
+    Raises ValueError with the offending term named, so a mistyped selection is
+    a message before the device is touched rather than a cell that never runs.
+    """
+    terms: list[tuple[str, str, int]] = []
+    for raw in value.split(","):
+        term = raw.strip()
+        if not term:
+            continue
+        parts = term.split(":")
+        if len(parts) not in (2, 3):
+            raise ValueError(
+                f"cell term {term!r} is not MEMORY:UI or MEMORY:UI:REPS")
+        memory, interface = parts[0].strip(), parts[1].strip()
+        if memory not in MEMORY_MODES:
+            raise ValueError(
+                f"cell term {term!r}: unknown memory mode {memory!r}; "
+                f"choose from {', '.join(MEMORY_MODES)}")
+        if interface not in INTERFACES:
+            raise ValueError(
+                f"cell term {term!r}: unknown UI {interface!r}; "
+                f"choose from {', '.join(INTERFACES)}")
+        reps = default_reps
+        if len(parts) == 3:
+            try:
+                reps = int(parts[2])
+            except ValueError:
+                raise ValueError(
+                    f"cell term {term!r}: repetitions {parts[2]!r} is not a number")
+            if reps < 1:
+                raise ValueError(f"cell term {term!r}: repetitions must be at least 1")
+        terms.append((memory, interface, reps))
+    if not terms:
+        raise ValueError("--cells was given but names no cell")
+    return terms
+
+
 def create_or_load_ledger(args: argparse.Namespace, artifact_dir: Path) -> Ledger:
     json_path = Path(args.coverage_ledger) if args.coverage_ledger else artifact_dir / "coverage-ledger.json"
     md_path = artifact_dir / "coverage-ledger.md"
@@ -3149,6 +3277,12 @@ def create_or_load_ledger(args: argparse.Namespace, artifact_dir: Path) -> Ledge
     interfaces = selected_values(args.ui, INTERFACES)
     if args.resume and json_path.exists():
         rows = json.loads(json_path.read_text(encoding="utf-8"))
+    elif getattr(args, "cells", ""):
+        rows = [
+            default_row(memory, interface, rep)
+            for memory, interface, reps in parse_cell_selection(args.cells, args.reps)
+            for rep in range(1, reps + 1)
+        ]
     else:
         rows = [
             default_row(memory, interface, rep)
@@ -3271,8 +3405,15 @@ def run_preflight(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any
         "device_identity": SR.device_identity(make_rest(args)),
         "commands": [],
     }
+    # A split session's checks run 3-4x an ordinary target's, since every
+    # keystroke crosses the cartridge bus (measured throughout this branch's
+    # own checks: 20-280s where the equivalent U64 check is 10-70s). 180s cut
+    # quick-telnet-debug off after 2 of its checks on a U2+L and crashed the
+    # whole gate with an uncaught TimeoutExpired; 600s gives the same command
+    # the same margin a single-host run already has.
+    command_timeout = 600.0 if args.c64_host else 180.0
     for name, cmd in preflight_commands(args, log_dir):
-        rc = run_cmd(cmd, REPO_ROOT, log_dir / f"{name}.log", timeout=180)
+        rc = run_cmd(cmd, REPO_ROOT, log_dir / f"{name}.log", timeout=command_timeout)
         results[name] = rc
         results["commands"].append({"name": name, "cmd": cmd, "rc": rc})
     results["vice-oracle"] = run_vice_oracle_check(artifact_dir)
@@ -3322,7 +3463,7 @@ def opcode_volume_command(args: argparse.Namespace, op_dir: Path) -> list[str]:
         "--host", args.rest_host,
         "--ui", "overlay",
         "--focus", "all",
-        "--iterations", "12",
+        "--iterations", str(getattr(args, "opcode_iterations", 12)),
         "--prog-len", "120",
         "--max-steps", "120",
         "--jsr-depths", str(max(32, args.required_step_into_depth)),
@@ -3594,6 +3735,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--password")
     parser.add_argument("--memory", choices=MEMORY_MODES + ("all",), default="all")
     parser.add_argument("--ui", choices=INTERFACES + ("all",), default="all")
+    parser.add_argument("--cells", default="",
+                        help="Run a named set of cells instead of the "
+                             "--memory x --ui product: a comma-separated list "
+                             "of MEMORY:UI or MEMORY:UI:REPS terms, e.g. "
+                             "'ram:telnet,rom:freeze:2'. A term without its own "
+                             "repetition count uses --reps. Overrides --memory "
+                             "and --ui.")
     parser.add_argument("--focus",
                         choices=("matrix", "alerts", "banking", "entry-footer"),
                         default="matrix",
@@ -3610,6 +3758,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--straight-calls", type=int,
                         help="Consecutive Step Overs (default: 32; 8 for split U2 sessions).")
     parser.add_argument("--opcode-run", type=int, default=1000)
+    parser.add_argument("--opcode-iterations", type=int, default=12,
+                        help="Random programs the closing opcode-volume run "
+                             "drives (default 12, which lands ~2592 opcodes "
+                             "against the 1000 --opcode-run requirement). "
+                             "Lower it to trade the requirement's headroom for "
+                             "wall clock; the requirement itself does not move.")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")
@@ -3651,6 +3805,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             args.required_step_into_depth = DEFAULT_STEP_INTO_DEPTH
         if args.straight_calls is None:
             args.straight_calls = DEFAULT_STRAIGHT_CALLS
+    if args.cells:
+        # Validated here rather than when the ledger is built, so a mistyped
+        # cell is a usage error before the device is touched at all.
+        try:
+            parse_cell_selection(args.cells, args.reps)
+        except ValueError as exc:
+            parser.error(str(exc))
     return args
 
 
@@ -4185,8 +4346,16 @@ def run_alert_scope(args: argparse.Namespace, artifact_dir: Path) -> int:
     return 0 if not problems else 1
 
 
-def main() -> int:
-    args = parse_args()
+# Set by a caller that wraps this runner and reports each cell through
+# tests/lib/report.py. It is called with (row, seconds) once a cell has reached
+# its terminal status, which is the only moment a wrapper can name a verdict
+# and its wall time without duplicating the ledger. Left None here: this
+# runner's own console output is its progress line.
+CELL_OBSERVER: Optional[Any] = None
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
     mt.set_target(debug_suite_target(args))
     if not args.artifact_dir:
         args.artifact_dir = str(
@@ -4252,6 +4421,7 @@ def main() -> int:
         # (never masked) and the run proceeds to its fail-fast / continue policy.
         signal.signal(signal.SIGALRM, _cell_watchdog_handler)
         signal.alarm(CELL_WATCHDOG_SECONDS)
+        cell_started = time.monotonic()
         try:
             run_cell(args, row, ledger)
         except CellTimeout as exc:
@@ -4264,6 +4434,14 @@ def main() -> int:
             print(f"{row['cell_id']}: CELL WATCHDOG TIMEOUT", flush=True)
         finally:
             signal.alarm(0)
+            if CELL_OBSERVER is not None:
+                # Never allowed to raise: a wrapper's reporting must not turn a
+                # passing cell into a failing run.
+                try:
+                    CELL_OBSERVER(row, time.monotonic() - cell_started)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"cell observer failed: {type(exc).__name__}: {exc}",
+                          flush=True)
         print(progress_line(ledger.rows, opcode_status), flush=True)
         # Detect a hard C64 wedge left by this cell (jiffy frozen even though REST
         # is up). Log it with the pre-wedge cell so the report captures exactly what
