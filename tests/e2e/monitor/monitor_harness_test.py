@@ -44,6 +44,7 @@ import mcm_rest as R  # noqa: E402
 import mcm_split_rest as SR  # noqa: E402
 import monitor_debug_stress as stress  # noqa: E402
 import monitor_debug_matrix_test as gate  # noqa: E402
+import monitor_debug_regression_test as regression  # noqa: E402
 import monitor_test as monitor  # noqa: E402
 
 # Gate harnesses whose green result must never depend on a hidden reset-retry.
@@ -989,7 +990,7 @@ class BreakpointRowToggleTest(unittest.TestCase):
 
         def send_text(self, text, settle=0.12):
             self.sent.append(text)
-            if text == "r" and len(self.rows) > 1:
+            if text == "p" and len(self.rows) > 1:
                 self.rows.pop(0)
 
         def screen_lines(self):
@@ -1005,10 +1006,13 @@ class BreakpointRowToggleTest(unittest.TestCase):
                 rest, 0xC020, armed, "unit")
         return rest, row
 
-    def test_arming_an_unarmed_row_presses_r(self) -> None:
+    def test_arming_an_unarmed_row_presses_p(self) -> None:
         rest, row = self._toggle(["  [RAM]", "  [BRK0][RAM]"], True)
 
-        self.assertEqual(rest.sent, ["r"])
+        # P, not R: the firmware wires 'p' to debug_toggle_breakpoint() and 'r'
+        # to range-select mode, so a toggle sent as R selects a range and leaves
+        # the row unarmed.
+        self.assertEqual(rest.sent, ["p"])
         self.assertIn("[BRK0]", row)
 
     def test_an_already_armed_row_is_left_alone(self) -> None:
@@ -1017,10 +1021,10 @@ class BreakpointRowToggleTest(unittest.TestCase):
         self.assertEqual(rest.sent, [])
         self.assertIn("[BRK0]", row)
 
-    def test_clearing_an_armed_row_presses_r(self) -> None:
+    def test_clearing_an_armed_row_presses_p(self) -> None:
         rest, row = self._toggle(["  [BRK0][RAM]", "  [RAM]"], False)
 
-        self.assertEqual(rest.sent, ["r"])
+        self.assertEqual(rest.sent, ["p"])
         self.assertNotIn("[BRK", row)
 
     def test_armed_slot_rows_are_recognised(self) -> None:
@@ -1064,6 +1068,191 @@ class FinalTeardownTest(unittest.TestCase):
         gate._TEARDOWN_CONTEXT.clear()
 
         gate._run_final_teardown()      # must not raise and must not touch a device
+
+
+class CellSelectionTest(unittest.TestCase):
+    """`--cells` names a set of intersections; `--memory` x `--ui` can only
+    name a rectangle. A mistyped term has to be a usage error before the device
+    is touched, or the cell it meant to run silently never runs."""
+
+    def test_terms_carry_their_own_repetition_count(self) -> None:
+        self.assertEqual(
+            gate.parse_cell_selection("ram:telnet,rom:freeze:2", 1),
+            [("ram", "telnet", 1), ("rom", "freeze", 2)])
+
+    def test_a_term_without_a_count_takes_the_default(self) -> None:
+        self.assertEqual(gate.parse_cell_selection("ram:telnet", 3),
+                         [("ram", "telnet", 3)])
+
+    def test_every_malformed_term_names_itself(self) -> None:
+        for bad in ("ram", "ram:vt100", "core:telnet", "ram:telnet:0",
+                    "ram:telnet:x", ""):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError) as caught:
+                    gate.parse_cell_selection(bad, 1)
+                self.assertTrue(str(caught.exception))
+
+    def test_a_selection_builds_exactly_the_rows_it_names(self) -> None:
+        args = gate.parse_args([
+            "--host", "u64", "--rest-host", "u64",
+            "--cells", "rom:telnet:1,rom:freeze:2", "--reps", "1",
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = gate.create_or_load_ledger(args, Path(tmp))
+        self.assertEqual([row["cell_id"] for row in ledger.rows],
+                         ["ROM_TELNET_REP_01", "ROM_FREEZE_REP_01",
+                          "ROM_FREEZE_REP_02"])
+
+    def test_no_selection_still_builds_the_full_product(self) -> None:
+        args = gate.parse_args([
+            "--host", "u64", "--rest-host", "u64", "--reps", "1",
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = gate.create_or_load_ledger(args, Path(tmp))
+        self.assertEqual(len(ledger.rows),
+                         len(gate.MEMORY_MODES) * len(gate.INTERFACES))
+
+
+class RegressionPlanTest(unittest.TestCase):
+    """The regression gate's plan is a claim about coverage, and a claim that is
+    only in a comment stops being true. These assert the properties the
+    selection was chosen for, so a lane cannot be dropped or a group renamed
+    without the host-side suite saying so."""
+
+    def test_the_plan_the_gate_runs_is_the_plan_the_matrix_accepts(self) -> None:
+        for split in (False, True):
+            with self.subTest(split=split):
+                cells = regression.plan_cells(split)
+                parsed = gate.parse_cell_selection(regression.cells_argument(cells), 1)
+                self.assertEqual(
+                    parsed,
+                    [(cell.memory, cell.ui, cell.reps) for cell in cells])
+
+    def test_every_named_group_exists_in_the_debug_suite(self) -> None:
+        known = {name for name, _runner in gate.dbg.TEST_GROUPS}
+        for split in (False, True):
+            for group in regression.plan_groups(split):
+                with self.subTest(split=split, group=group.name):
+                    self.assertIn(group.name, known)
+
+    def test_the_u64_plan_covers_every_ui_transport(self) -> None:
+        used = {cell.ui for cell in regression.U64_CELLS}
+        self.assertEqual(used, set(gate.INTERFACES))
+
+    def test_every_memory_mode_is_actually_run(self) -> None:
+        """Not "run or justified as deferred" - run. The three regions the
+        debugger works in, and the two ways a developer crosses between them,
+        each cost real effort to get working and none of them is inferable from
+        another. The selection may cut how many transports a mode is repeated
+        on; it may not cut a mode."""
+        run = {cell.memory for cell in regression.U64_CELLS}
+        self.assertEqual(run, set(gate.MEMORY_MODES))
+
+    def test_both_boundary_traversals_are_run(self) -> None:
+        """RAM into ROM and back, and RAM into RAM-under-ROM and back out
+        through ROM, are the two shapes real debug stepping takes. The second
+        contains the first's ROM leg, but reaches it after two bank switches
+        rather than from an untouched banking state, so it does not stand in
+        for it."""
+        run = {cell.memory for cell in regression.U64_CELLS}
+        for mode in gate.TRAVERSAL_MODES:
+            with self.subTest(mode=mode):
+                self.assertIn(mode, run)
+
+    def test_a_deferred_mode_is_deferred_only_on_some_transports(self) -> None:
+        run = {cell.memory for cell in regression.U64_CELLS}
+        for item in regression.DEFERRED:
+            for mode in item.modes:
+                with self.subTest(what=item.what, mode=mode):
+                    self.assertIn(mode, run,
+                                  "a mode may be deferred on a transport, "
+                                  "never entirely")
+
+    def test_a_deferred_mode_names_a_real_memory_mode(self) -> None:
+        for item in regression.DEFERRED:
+            for mode in item.modes:
+                with self.subTest(what=item.what, mode=mode):
+                    self.assertIn(mode, gate.MEMORY_MODES)
+
+    def test_the_split_plan_stays_inside_what_a_u2_supports(self) -> None:
+        # Visible ROM refuses on a U2+L, RAM-under-ROM entry is undemonstrated,
+        # and the cartridge has one local UI rather than two.
+        self.assertEqual({cell.memory for cell in regression.SPLIT_CELLS}, {"ram"})
+        self.assertEqual(len({cell.ui for cell in regression.SPLIT_CELLS}), 1)
+        u64_groups = {group.name for group in regression.U64_GROUPS}
+        self.assertTrue(
+            {group.name for group in regression.SPLIT_GROUPS} <= u64_groups)
+
+    def test_the_selection_stays_smaller_than_the_matrix_it_replaces(self) -> None:
+        # Without this the selection drifts back into a second full matrix one
+        # justified cell at a time, and the gate stops being runnable before a
+        # merge, which is the only reason it exists.
+        runs = sum(cell.reps for cell in regression.U64_CELLS)
+        full = len(gate.MEMORY_MODES) * len(gate.INTERFACES) * gate.DEFAULT_REPS
+        self.assertLess(runs, full // 3)
+
+    def test_every_lane_carries_its_reason_and_its_evidence(self) -> None:
+        for cell in regression.U64_CELLS + regression.SPLIT_CELLS:
+            with self.subTest(cell=cell.term()):
+                self.assertTrue(cell.why.strip())
+                self.assertTrue(cell.evidence.strip())
+        for group in regression.U64_GROUPS + regression.SPLIT_GROUPS:
+            with self.subTest(group=group.name):
+                self.assertTrue(group.why.strip())
+                self.assertTrue(group.evidence.strip())
+
+    def test_the_opcode_volume_requirement_is_not_lowered(self) -> None:
+        # The gate buys wall clock by driving fewer random programs, never by
+        # accepting fewer verified instructions.
+        args = gate.parse_args([
+            "--host", "u64", "--rest-host", "u64",
+            "--opcode-iterations", str(regression.OPCODE_ITERATIONS),
+        ])
+        self.assertEqual(args.opcode_run, 1000)
+        self.assertLess(regression.OPCODE_ITERATIONS, 12)
+        with tempfile.TemporaryDirectory() as tmp:
+            command = gate.opcode_volume_command(args, Path(tmp))
+        self.assertIn(str(regression.OPCODE_ITERATIONS),
+                      command[command.index("--iterations") + 1])
+
+    def test_the_gate_never_runs_a_group_its_preflight_already_ran(self) -> None:
+        """The matrix preflight runs two of the debug suite's groups itself.
+        Selecting either of them here would run those checks twice inside one
+        gate, which is the duplication this suite exists to remove - and it
+        would do it silently, because both runs would pass."""
+        args = gate.parse_args(["--host", "u64", "--rest-host", "u64"])
+        with tempfile.TemporaryDirectory() as tmp:
+            commands = dict(gate.preflight_commands(args, Path(tmp)))
+        preflight = commands["quick-telnet-debug"]
+        already_run = set(preflight[preflight.index("--test") + 1].split(","))
+        self.assertTrue(already_run, "the preflight no longer names any group")
+        for split in (False, True):
+            with self.subTest(split=split):
+                selected = {group.name
+                            for group in regression.plan_groups(split)}
+                self.assertEqual(
+                    selected & already_run, set(),
+                    "these groups run in the matrix preflight already")
+
+    def test_no_lane_is_selected_twice(self) -> None:
+        for split in (False, True):
+            with self.subTest(split=split, kind="cells"):
+                pairs = [(cell.memory, cell.ui)
+                         for cell in regression.plan_cells(split)]
+                self.assertEqual(len(pairs), len(set(pairs)),
+                                 "a lane is defined twice; give it repetitions "
+                                 "instead")
+            with self.subTest(split=split, kind="groups"):
+                names = [group.name for group in regression.plan_groups(split)]
+                self.assertEqual(len(names), len(set(names)))
+
+    def test_the_plan_prints_without_a_device(self) -> None:
+        for split in (False, True):
+            with self.subTest(split=split):
+                text = "\n".join(regression.plan_lines(split))
+                self.assertIn("Deferred to", text)
+                for cell in regression.plan_cells(split):
+                    self.assertIn(cell.term(), text)
 
 
 if __name__ == "__main__":

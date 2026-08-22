@@ -88,6 +88,10 @@ def start_run(repo_root: Path, args: Any, artifact_dir: Path) -> dict[str, Any]:
         "reps": getattr(args, "reps", None),
         "memory_selection": getattr(args, "memory", None),
         "ui_selection": getattr(args, "ui", None),
+        # An explicit cell set, when one was given. It overrides the two
+        # selections above, so a history row that shows only those would
+        # describe a run that never happened.
+        "cell_selection": getattr(args, "cells", "") or None,
         "required_step_into_depth": getattr(args, "required_step_into_depth", None),
         "opcode_run_target": getattr(args, "opcode_run", None),
         "artifact_dir": str(artifact_dir),
@@ -200,8 +204,10 @@ def _run_markdown(record: dict[str, Any]) -> str:
         f"- Started: {record.get('started_at')}  Ended: {record.get('ended_at')}"
         f"  Duration: {record.get('duration_seconds')}s",
         f"- Device: `{record.get('host')}` (REST `{record.get('rest_host')}`)",
-        f"- Selection: memory=`{record.get('memory_selection')}` "
-        f"ui=`{record.get('ui_selection')}` reps=`{record.get('reps')}`",
+        (f"- Selection: cells=`{record.get('cell_selection')}`"
+         if record.get("cell_selection") else
+         f"- Selection: memory=`{record.get('memory_selection')}` "
+         f"ui=`{record.get('ui_selection')}` reps=`{record.get('reps')}`"),
         "",
         "## Result",
         "",

@@ -42,6 +42,14 @@ confusing failures scattered across every suite built on it.
 ./run-tests -H u64 --manual -s machine-code-monitor-debug
 ```
 
+Before a merge, run the monitor suite and the debugger regression gate
+together. That is the pair that has to be green:
+
+```bash
+./run-tests -H u64 --manual -s machine-code-monitor -s machine-code-monitor-regression
+./run-tests -H u2@c64u --manual -s machine-code-monitor -s machine-code-monitor-regression
+```
+
 This suite takes its defaults from the same environment variables as every
 other one; see [tests/README.md](../../README.md). `U64_TELNET_PORT` and
 `U64_REST_HOST` matter here because the Telnet mode drives port 23 while the
@@ -74,10 +82,64 @@ intentional Telnet-only monitor suite; run it explicitly with
 memory/UI lane and writes a diagnostic ledger, so run it explicitly with
 `./run-tests -H u64 --manual -s machine-code-monitor-matrix`.
 
+## The Regression Gate
+
+`machine-code-monitor-regression` is the suite to run before a merge. It owns no
+test logic: it selects lanes out of the two suites above and drives them through
+their own runners. The selection is 14 cell runs instead of the matrix's 45 and
+11 of the debug suite's 21 groups. All five memory modes are run -- plain RAM,
+RAM under ROM, visible ROM, and both boundary traversals (`ram -> rom -> ram`
+and `ram -> ram-under-rom -> ram -> rom -> ram`), because each was hard-won and
+none is inferable from another's result. What the selection cuts is how many
+*transports* a mode is repeated on, and it cuts on two grounds only: the places
+where the firmware genuinely takes a different code path depending on which UI
+owns the machine, so one transport's result says nothing about another's, and
+the intersections that have actually failed in the recorded run history. About
+60 minutes on a U64 against a little over two hours for all three suites.
+
+Every selected lane carries the reason it is there and the evidence behind that
+reason. Print them, with what the gate deliberately does not cover, without
+touching a device:
+
+```bash
+python3 tests/e2e/monitor/monitor_debug_regression_test.py \
+    --host u64 --rest-host u64 --list-plan
+```
+
+`--skip-cells` and `--skip-groups` run one half of the gate on its own, for
+iterating on a single failure. Split `u2@c64u` sessions get a smaller plan --
+one memory mode, one UI, the groups whose checks are reachable, and the two
+`--focus` scopes that only exist for a split session -- because a U2+L refuses
+visible-ROM breakpoints and has one local UI rather than two.
+
+[tests/e2e/doc/machine-code-monitor-regression.md](../doc/machine-code-monitor-regression.md)
+derives the selection: which firmware paths branch on the transport, which
+cells the 36 recorded matrix runs have seen fail and on which repetition, what
+each lane costs, and the harness confounds that have repeatedly been misread as
+debugger defects.
+
+The gate adds exactly one check of its own, because nothing else asserted it: it
+reads the KERNAL and BASIC ROM heads before it touches the debugger and again
+when it has finished, so a run that leaves a displaced byte in the volatile ROM
+image is named by the run that caused it rather than by the next suite to notice.
+
 ## Matrix Coverage
 
 `monitor_debug_matrix_test.py` runs one cell per combination of memory mode and
-UI, repeated `--reps` times:
+UI, repeated `--reps` times. `--memory` and `--ui` narrow that to a rectangle;
+`--cells` replaces it with a named set of intersections, which is how the
+regression gate above asks for the lanes it wants:
+
+```bash
+--cells "rom:telnet,rom:freeze:2,ram-under-rom:freeze:2"
+```
+
+Each term is `MEMORY:UI` or `MEMORY:UI:REPETITIONS`, and a term naming an
+unknown mode or UI is a usage error before the device is touched. The cell set
+is recorded in the cross-run history, so a selected run is not mistaken for a
+full one.
+
+The axes are:
 
 - **UI**: `telnet`, `freeze`, `overlay`
 - **Memory**: `ram`, `ram-under-rom`, `rom`, plus the boundary-traversal modes

@@ -146,6 +146,13 @@ class Suite:
     on-device UI through Telnet as well as REST/Freeze/Overlay, or only works
     one way, is a per-suite call documented next to its entry below.
 
+    @DEVICE@ and @COMPUTER@ are for a suite whose own CLI does not accept the
+    composite `device@computer` token @HOST@ carries and instead wants the two
+    machines as separate flags. @DEVICE@ is always the bare device host;
+    @COMPUTER@ is the bare computer host on a split target and an empty string
+    otherwise, so a flag templated as `--c64-host @COMPUTER@` can be included
+    unconditionally and still read as "not split" to the suite it configures.
+
     `manual` marks a suite that needs an operator decision, extra privileges, a
     long wall-clock wait, or a device setting it changes, so it runs only when
     named with -s or when --manual is given.
@@ -265,12 +272,37 @@ SUITES: Sequence[Suite] = (
           # Keep its focused evidence available, but do not let one known
           # debugger defect make the general E2E gate red.
           manual=True),
+    # The debugger gate. It runs the places the firmware genuinely takes a
+    # different code path per UI transport, so one lane's result says nothing
+    # about another, plus the intersections that have actually failed before. It drives them through the two suites above
+    # rather than owning any test logic of its own. tests/e2e/doc/machine-code-monitor-regression.md records
+    # which lanes those are and the evidence for each; `--list-plan` prints the
+    # same thing without touching a device.
+    #
+    # Manual for the same reason machine-code-monitor-debug is: it includes
+    # that suite's natural-exit lane, so one known debugger defect would make
+    # the general E2E gate red. It is the suite to name before a merge, and it
+    # takes the two hosts as separate flags for the reason described on the
+    # matrix entry below.
+    Suite("e2e", "machine-code-monitor-regression",
+          "tests/e2e/monitor/monitor_debug_regression_test.py",
+          "--host @DEVICE@ --rest-host @DEVICE@ --c64-host @COMPUTER@ "
+          "--password @PASS@ --timeout @TIMEOUT@", manual=True),
     # The exhaustive debugger matrix repeats every memory/UI lane and writes a
     # diagnostic ledger. It is deliberately opt-in rather than a release-gate
     # default, but it still shares the runner's host/password conventions.
+    #
+    # Unlike its sibling monitor suites, this script does not parse a
+    # composite `device@computer` token out of --host: it takes the two
+    # machines as separate flags, so @DEVICE@/@COMPUTER@ carry them rather
+    # than @HOST@. --timeout matters here beyond the per-request budget: its
+    # default (5s) is also the preflight's telnet-quiet-window timeout, too
+    # short for the 1.7KB screen a Step Out redraw sends, which made the
+    # preflight fail before any matrix cell ran.
     Suite("e2e", "machine-code-monitor-matrix",
           "tests/e2e/monitor/monitor_debug_matrix_test.py",
-          "--host @HOST@ --rest-host @HOST@ --password @PASS@", manual=True),
+          "--host @DEVICE@ --rest-host @DEVICE@ --c64-host @COMPUTER@ "
+          "--password @PASS@ --timeout @TIMEOUT@", manual=True),
     # The device's own FTP server: a name it reports in a listing has to be a
     # name it accepts back for SIZE and DELE.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
@@ -1487,11 +1519,15 @@ def ui_state_ready(options: Options, label: str) -> str:
 
 def build_command(suite: Suite, options: Options, mode: str) -> List[str]:
     command = [sys.executable, os.path.join(ROOT, suite.path)]
+    target = targets_lib.resolve(options.host)
+    computer = target.computer if target.split else ""
     for token in suite.args.split():
         if token == "@PASS@":
             command.append(options.password)
             continue
         token = token.replace("@HOST@", options.host)
+        token = token.replace("@DEVICE@", target.device)
+        token = token.replace("@COMPUTER@", computer)
         token = token.replace("@TIMEOUT@", options.timeout)
         token = token.replace("@MODE@", mode)
         token = token.replace("@SOAKPROFILE@", options.soak_profile)
