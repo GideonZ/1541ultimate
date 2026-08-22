@@ -164,7 +164,21 @@ protected:
     virtual bool launch_contextless_with_breakpoints(uint16_t address)
     {
         (void)address;
-        bool stopped_it = machine->begin_stopped_session();
+        // begin_stopped_session()'s return says whether IT put the machine in
+        // the stopped state, for end_stopped_session()'s "only the one who
+        // stopped it resumes it" pairing elsewhere. It is the wrong signal
+        // here: opening the monitor already holds the C64 stopped for the
+        // whole Debug session (U2's only UI is the freeze overlay), so this
+        // call almost always finds it already stopped and would return
+        // false - both as a bogus launch failure (DBG_REFUSED, "UNSAFE
+        // TARGET" in the UI) and, worse, silently skipping
+        // end_stopped_session_nmi()'s resume/NMI delivery, leaving the CPU
+        // parked forever (confirmed on hardware: $FFFE/$FFFF stayed
+        // unwritten - the staged launcher never ran - and the C64 went
+        // permanently non-ticking). The launch's poke sequence above always
+        // runs; a Go's whole purpose is to make the CPU execute now, so
+        // delivery must not depend on who is bookkept as the stopper.
+        machine->begin_stopped_session();
         for (int i = 0; i < CONTEXTLESS_RELOAD_LENGTH; i++) {
             machine->poke((uint16_t)(CONTEXTLESS_RELOAD_START + i),
                           contextless_reload[i]);
@@ -173,8 +187,8 @@ protected:
                       (uint8_t)(CONTEXTLESS_LAUNCHER & 0xFF));
         machine->poke((uint16_t)(CONTEXTLESS_NMI_VECTOR + 1),
                       (uint8_t)(CONTEXTLESS_LAUNCHER >> 8));
-        machine->end_stopped_session_nmi(stopped_it);
-        return stopped_it;
+        machine->end_stopped_session_nmi(true);
+        return true;
     }
 
     virtual void on_cpu_run_window_open(void)
