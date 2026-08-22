@@ -729,6 +729,9 @@ def run_cartridge_preference_checks():
                     outer.value = value
 
             class Machine:
+                def writemem(self, address, data):
+                    outer.calls.append(("writemem", address, data))
+
                 def reboot(self):
                     outer.calls.append(("reboot",))
 
@@ -763,10 +766,22 @@ def run_cartridge_preference_checks():
         if "reboot" not in (described or ""):
             raise Failure(f"the caller was not told about the reboot: {described!r}")
 
-    with check("a computer that already prefers the cartridge is left alone"):
+    with check("a computer already reading External is rebooted anyway"):
+        # The config store answering External does not prove the running bus
+        # is routed that way - only a boot since the value was set does,
+        # because the computer applies it at boot and nowhere else. Measured
+        # on the bench: a computer that reached External at some earlier boot
+        # or reset, and was never rebooted since, still showed 'CPU VIEW' with
+        # no banking. So this reboots unconditionally rather than trusting the
+        # config read.
         computer, described = preflight(api_module.CARTRIDGE_PREFERENCE_EXTERNAL)
-        expect("nothing described", described, None)
-        expect("no reboot", ("reboot",) in computer.calls, False)
+        expect("no redundant write",
+              ("set", api_module.CARTRIDGE_PREFERENCE_ITEM,
+               api_module.CARTRIDGE_PREFERENCE_EXTERNAL) in computer.calls, False)
+        expect("rebooted", ("reboot",) in computer.calls, True)
+        if "already" not in (described or ""):
+            raise Failure(f"the caller was not told the value was already "
+                          f"correct: {described!r}")
 
     with check("a computer that does not come back is reported, not hidden"):
         computer, described = preflight("Auto", ready=False)
