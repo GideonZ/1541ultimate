@@ -39,19 +39,26 @@ jobs:
       # The step above proves the documents are what the sources say. This one
       # proves they are valid OpenAPI 3.1, by running openapi-spec-validator, so
       # a generator change cannot produce a fresh document that no standard tool
-      # will read. The pinned validator is installed into a directory of its own
-      # and reached through PYTHONPATH: that needs neither a virtual environment,
-      # which the build image cannot create, nor a write to the image's own
-      # packages, which pip refuses on an externally managed installation. It is
-      # a separate step, so a package index that is unreachable is reported as
-      # that rather than as a broken document, and the firmware builds do not
-      # depend on it.
+      # will read.
+      #
+      # It runs in a stock Python image rather than the build image, because the
+      # build image has neither pip nor ensurepip and so cannot install a host
+      # package at all. The image is small, it is pulled once and cached on the
+      # runner, and nothing else in the build depends on this step, so a package
+      # index that is unreachable is reported as that rather than as a broken
+      # document.
+      #
+      # The documents to check come from `generate.py paths`, the same list
+      # `make openapi_validate` uses, so this cannot drift to a different set of
+      # files. tools/openapi/test_ci.py holds the two invocations to each other.
       - name: Validate OpenAPI Specification
         run: |
-          docker run --rm \
-          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && \
-            python3 -m pip install --quiet --target /tmp/openapi-packages -r tools/openapi/requirements.txt && \
-            PYTHONPATH=/tmp/openapi-packages make openapi_validate"
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
+          "pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+             --target /tmp/openapi-packages -r tools/openapi/requirements.txt && \
+           PYTHONPATH=/tmp/openapi-packages python -m openapi_spec_validator \
+             --validation-errors all \$(python tools/openapi/generate.py paths)"
 
       - name: Determine FPGA & ESP32 dependencies
         run: |
