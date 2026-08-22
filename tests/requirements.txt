@@ -9,7 +9,7 @@
 
 openapi-python-client    # e2e/api/openapi_contract_test.py, generates a client from the document
 openapi-schema-validator # tests/lib/openapi_contract.py, checks device answers against the document
-openapi-spec-validator   # e2e/api/openapi_contract_test.py, checks the documents themselves
+-r ../tools/openapi/requirements.txt  # openapi-spec-validator, pinned there because `make openapi_validate` is a gate
 Pillow                   # e2e/api/input_test.py, e2e/io/printer/printer_test.py
 pyftpdlib                # e2e/filesystem/ftp_client_test.py
 pytesseract              # e2e/io/printer/printer_test.py, only under --stage verify

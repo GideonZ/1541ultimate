@@ -1,5 +1,6 @@
 """Turns the documented call table of one product family into an OpenAPI 3.1 document."""
 
+import contextlib
 import json
 import re
 
@@ -9,7 +10,7 @@ from errors import OpenApiError
 
 HTTP_REASON = {
     "200": "OK",
-    "203": "No content to return",
+    "203": "Nothing to return (the firmware's own use of 203; see the document description)",
     "400": "Bad request",
     "403": "Forbidden",
     "404": "Not found",
@@ -46,10 +47,20 @@ def _schema_for(type_name):
 
 
 def _as_declared(type_name, text):
-    declared = _schema_for(type_name)["type"]
-    if declared == "integer":
-        return int(text)
-    if declared == "boolean":
+    """The literal a directive wrote, as the type it declared, or a refusal."""
+    schema = _schema_for(type_name)
+    if schema["type"] == "integer":
+        try:
+            value = int(text)
+        except ValueError:
+            raise OpenApiError("%r is not an integer, which %r declares" % (text, type_name))
+        low, high = schema.get("minimum"), schema.get("maximum")
+        if low is not None and not low <= value <= high:
+            raise OpenApiError("%s is outside %r" % (value, type_name))
+        return value
+    if schema["type"] == "boolean":
+        if text not in ("true", "false"):
+            raise OpenApiError('%r is not a boolean; write "true" or "false"' % text)
         return text == "true"
     return text
 
@@ -88,10 +99,8 @@ def _template_problem(call, template):
 
 
 def _enum(doc, directive, name):
-    for declared, values in doc.values(directive):
-        if declared == name:
-            return [value.strip() for value in values.split(",")]
-    return None
+    declared = _declared_once(doc, directive).get(name)
+    return [value.strip() for value in declared[0].split(",")] if declared else None
 
 
 def _parameter(where, name, type_name, description, example, enum, required, default=None):
@@ -112,9 +121,19 @@ def _parameter(where, name, type_name, description, example, enum, required, def
     return parameter
 
 
+def _declared_once(doc, directive):
+    """The directives of one kind, keyed by the name each one is about."""
+    out = {}
+    for name, *rest in doc.values(directive):
+        if name in out:
+            raise OpenApiError("%s: two %s directives for %r" % (doc.where, directive, name))
+        out[name] = rest
+    return out
+
+
 def _parameters(call, doc, template):
-    declared_path = {name: rest for name, *rest in doc.values("PATH_PARAM")}
-    declared_query = {name: rest for name, *rest in doc.values("PARAM")}
+    declared_path = _declared_once(doc, "PATH_PARAM")
+    declared_query = _declared_once(doc, "PARAM")
 
     out = []
     for name in _PLACEHOLDER.findall(template):
@@ -123,17 +142,24 @@ def _parameters(call, doc, template):
                 "%s: path %s uses {%s} but declares no PATH_PARAM for it" % (doc.where, template, name)
             )
         type_name, description, example = declared_path[name]
-        out.append(
-            _parameter("path", name, type_name, description, example,
-                       _enum(doc, "PATH_PARAM_ENUM", name), True)
-        )
+        with _blaming(doc, name):
+            out.append(_parameter("path", name, type_name, description, example,
+                                  _enum(doc, "PATH_PARAM_ENUM", name), True))
     for name, required in call.parameters:
         type_name, description, default, example = declared_query[name]
-        out.append(
-            _parameter("query", name, type_name, description, example,
-                       _enum(doc, "PARAM_ENUM", name), required, default)
-        )
+        with _blaming(doc, name):
+            out.append(_parameter("query", name, type_name, description, example,
+                                  _enum(doc, "PARAM_ENUM", name), required, default))
     return out
+
+
+@contextlib.contextmanager
+def _blaming(doc, name):
+    """Names the block and the parameter in whatever the body refuses."""
+    try:
+        yield
+    except OpenApiError as error:
+        raise OpenApiError("%s: parameter %r: %s" % (doc.where, name, error))
 
 
 def _request_body(doc):
@@ -153,26 +179,47 @@ def _request_body(doc):
 
 
 def _responses(call, doc, operation_id):
-    def mine(directive):
-        return [values for values in doc.values(directive) if values[-1] in ("", operation_id)]
+    def applying(directive):
+        """The directives of one kind that apply here: the unscoped ones, then the scoped.
+
+        A directive scoped to this operation refines the unscoped one for the same
+        status code, and does so whichever order the block happens to write them in.
+        Two directives in the same scope for the same code are a conflict, because
+        the block would then be saying two things and only one could survive.
+        """
+        applies = [values for values in doc.values(directive) if values[-1] in ("", operation_id)]
+        return [values for values in applies if not values[-1]], [values for values in applies if values[-1]]
+
+    def once(seen, key, complaint):
+        if key in seen:
+            raise OpenApiError("%s: %s in operation %r" % (doc.where, complaint, operation_id))
+        seen.add(key)
 
     out = {}
-    for code, content_type, schema_name, description, _ in mine("RESPONSE"):
-        entry = out.setdefault(code, {"description": description})
-        if content_type:
-            schema = _reference(schema_name) if schema_name else dict(_BINARY)
-            entry.setdefault("content", {})[content_type] = {"schema": schema}
-    for code, name, payload, _ in mine("RESPONSE_EXAMPLE"):
-        if code not in out or "content" not in out[code]:
-            raise OpenApiError(
-                "%s: RESPONSE_EXAMPLE for %s, which has no response with content" % (doc.where, code)
-            )
-        media = out[code]["content"].get("application/json") or next(iter(out[code]["content"].values()))
-        media.setdefault("examples", {})[name] = {
-            "value": _example_value(payload, doc.where)
-        }
-    for code, message, _ in mine("RESPONSE_ERROR"):
-        _add_error_example(out, code, message)
+    for group in applying("RESPONSE"):
+        seen = set()
+        for code, content_type, schema_name, description, _ in group:
+            once(seen, code, "two RESPONSE directives for %s" % code)
+            entry = {"description": description}
+            if content_type:
+                schema = _reference(schema_name) if schema_name else dict(_BINARY)
+                entry["content"] = {content_type: {"schema": schema}}
+            out[code] = entry
+    for group in applying("RESPONSE_EXAMPLE"):
+        seen = set()
+        for code, name, payload, _ in group:
+            once(seen, (code, name), "two RESPONSE_EXAMPLE directives named %r for %s" % (name, code))
+            if code not in out or "content" not in out[code]:
+                raise OpenApiError(
+                    "%s: RESPONSE_EXAMPLE for %s, which has no response with content" % (doc.where, code)
+                )
+            media = out[code]["content"].get("application/json") or next(iter(out[code]["content"].values()))
+            media.setdefault("examples", {})[name] = {"value": _example_value(payload, doc.where)}
+    for group in applying("RESPONSE_ERROR"):
+        seen = set()
+        for code, message, _ in group:
+            once(seen, (code, message), "two RESPONSE_ERROR directives say %r for %s" % (message, code))
+            _add_error_example(out, code, message)
     if not out:
         raise OpenApiError("%s: no RESPONSE applies to operation %r" % (doc.where, operation_id))
 
@@ -275,6 +322,7 @@ def _verify_consistency(call, doc):
 def _paths(profile, repo_root):
     out = {}
     seen_ids = {}
+    seen_where = {}
     for call, doc in routes.documented_calls(profile, repo_root).values():
         _verify_consistency(call, doc)
         for template, operation_id, summary in doc.values("PATH"):
@@ -284,9 +332,16 @@ def _paths(profile, repo_root):
                     % (doc.where, operation_id, seen_ids[operation_id])
                 )
             seen_ids[operation_id] = doc.where
-            out.setdefault(template, {})[call.method.lower()] = _operation(
-                call, doc, template, operation_id, summary
-            )
+            item = out.setdefault(template, {})
+            method = call.method.lower()
+            if method in item:
+                where, first_id = seen_where[(template, method)]
+                raise OpenApiError(
+                    "%s: %s %s is described twice, as %r and as %r; the second declaration is at %s"
+                    % (where, call.method, template, first_id, operation_id, doc.where)
+                )
+            seen_where[(template, method)] = (doc.where, operation_id)
+            item[method] = _operation(call, doc, template, operation_id, summary)
     return {template: dict(sorted(out[template].items())) for template in sorted(out)}
 
 
@@ -378,7 +433,10 @@ def build(name, repo_root):
         ],
         "tags": _tags(paths),
         "externalDocs": schemas.EXTERNAL_DOCS,
-        "security": [{"NetworkPassword": []}],
+        # A device with no network password configured accepts every request
+        # without one, so the empty requirement is an alternative rather than the
+        # scheme being demanded unconditionally.
+        "security": [{}, {"NetworkPassword": []}],
         "paths": paths,
         "components": {
             "securitySchemes": schemas.SECURITY_SCHEMES,

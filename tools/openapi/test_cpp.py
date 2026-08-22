@@ -133,5 +133,54 @@ class StringLiteralTest(unittest.TestCase):
             cpp.string_literal('"text" + variable')
 
 
+class EscapeTest(unittest.TestCase):
+    """A literal is decoded the way the compiler decodes it, or refused."""
+
+    def test_the_single_character_escapes_are_decoded(self):
+        self.assertEqual(cpp.string_literal(r'"a\nb\tc\\d\"e"'), 'a\nb\tc\\d"e')
+
+    def test_a_hexadecimal_escape_is_decoded(self):
+        self.assertEqual(cpp.string_literal(r'"\x41"'), "A")
+
+    def test_an_octal_escape_is_decoded(self):
+        self.assertEqual(cpp.string_literal(r'"\101"'), "A")
+
+    def test_a_hexadecimal_escape_takes_every_digit_after_it(self):
+        """C does the same, which is why \x41BC is an error and not A followed by BC."""
+        with self.assertRaises(OpenApiError) as raised:
+            cpp.string_literal(r'"\x41BC"')
+        self.assertIn("not one byte", str(raised.exception))
+
+    def test_splitting_the_literal_is_how_digits_follow_a_hexadecimal_escape(self):
+        self.assertEqual(cpp.string_literal(r'"\x41" "BC"'), "ABC")
+
+    def test_an_octal_escape_above_one_byte_is_refused(self):
+        with self.assertRaises(OpenApiError):
+            cpp.string_literal(r'"\400"')
+
+    def test_an_unsupported_escape_is_refused_rather_than_dropped(self):
+        with self.assertRaises(OpenApiError) as raised:
+            cpp.string_literal(r'"\q"')
+        self.assertIn("unsupported escape", str(raised.exception))
+
+
+class NumberTest(unittest.TestCase):
+    def test_a_hexadecimal_literal_is_compared_as_a_number(self):
+        self.assertEqual(
+            cpp.active_lines("#if IOBASE == 0x10000000\nyes\n#endif\n", {"IOBASE": 0x10000000}),
+            "\nyes\n\n",
+        )
+
+    def test_a_define_that_is_not_a_number_is_refused_where_it_is_compared(self):
+        with self.assertRaises(OpenApiError) as raised:
+            cpp.active_lines("#if NAME == 1\nyes\n#endif\n", {"NAME": "text"})
+        self.assertIn("cannot compare", str(raised.exception))
+
+    def test_a_define_that_is_not_a_number_is_ignored_where_it_is_not_compared(self):
+        self.assertEqual(
+            cpp.active_lines("#ifdef NAME\nyes\n#endif\n", {"NAME": "text"}), "\nyes\n\n"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

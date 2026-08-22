@@ -7,12 +7,12 @@ the tag list, the security scheme and the response schemas that endpoints share.
 A schema an API_DOC names but this module does not define is a build failure.
 """
 
-# `defines` and `targets` are the two things that decide which calls a product
-# serves: the macros its sources are compiled with, and which route sources its
-# makefiles compile. Both are read from the tree rather than restated here.
+# `targets` is the only thing that decides which calls a product family serves.
+# Each target makefile names the route sources it compiles and the -D flags it
+# compiles them with, and both are read from it rather than restated here. A
+# family whose targets disagree on either is a build failure.
 PROFILES = {
     "u2": {
-        "defines": {},
         "targets": (
             "target/u2/riscv/ultimate/Makefile",
             "target/u2plus/nios/ultimate/Makefile",
@@ -23,7 +23,6 @@ PROFILES = {
         "default_host": "ultimate",
     },
     "u64": {
-        "defines": {"U64": 1},
         "targets": (
             "target/u64/nios2/ultimate/Makefile",
             "target/u64ii/riscv/ultimate/Makefile",
@@ -57,8 +56,15 @@ the URL, and `POST` acts on data carried in the request body.
 Unless a call returns a binary attachment, the response is
 `Content-Type: application/json` and carries an `errors` array. The array is
 empty when the call succeeded. A call that returns an attachment answers with
-`Content-Type: application/octet-stream` and a `Content-Disposition` header, or
-with `203 No Content` when there is nothing to return.
+`Content-Type: application/octet-stream` and a `Content-Disposition` header.
+
+When such a call has nothing to return, the firmware answers with the status
+line `203 No Content`. That is the firmware's own status, not standard HTTP:
+RFC 9110 defines 203 as Non-Authoritative Information, and it is 204 that means
+No Content. The document describes what the firmware sends, because changing the
+status would break clients written against the current releases. A client should
+read a 203 from one of these calls as "the call succeeded and there is no
+attachment".
 
 ## Authentication
 

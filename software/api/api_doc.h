@@ -49,7 +49,18 @@
  *
  * A type is "string", "integer", "boolean", or "integer(low..high)". A schema is
  * a name from tools/openapi/schemas.py. A scope is the operation_id the response
- * belongs to, or "" for all of them.
+ * belongs to, or "" for all of them. A RESPONSE scoped to an operation replaces
+ * the unscoped one for the same status code, whichever order they are written in.
+ *
+ * A default or an example has to be a literal of the type the directive declares:
+ * "true" or "false" for a boolean, and a number within the range for a ranged
+ * integer. Anything else fails the build rather than becoming a plausible value.
+ *
+ * Nothing may be declared twice: one PARAM, PATH_PARAM, PARAM_ENUM or
+ * PATH_PARAM_ENUM per name, one RESPONSE per status code per scope, one
+ * RESPONSE_EXAMPLE per name per code, one BODY per content type, and one
+ * PATH per template and verb. A second declaration is refused rather than
+ * replacing the first, because only one of them could reach the document.
  *
  * CAUTION hints come from a closed set, also in tools/openapi/schemas.py, so
  * that a caller can act on them without reading English: destructive,

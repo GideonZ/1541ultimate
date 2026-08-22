@@ -40,7 +40,7 @@ class ShapeTest(unittest.TestCase):
         self.assertIn("the large product", self.built["info"]["summary"])
 
     def test_the_password_header_is_the_security_scheme(self):
-        self.assertEqual(self.built["security"], [{"NetworkPassword": []}])
+        self.assertEqual(self.built["security"], [{}, {"NetworkPassword": []}])
         self.assertEqual(
             self.built["components"]["securitySchemes"]["NetworkPassword"]["name"], "X-Password"
         )
@@ -319,6 +319,164 @@ class MultiplePathTest(unittest.TestCase):
         self.assertEqual(
             [p["name"] for p in self.built["paths"]["/v1/demo/{name}"]["get"]["parameters"]], ["name"]
         )
+
+
+class DuplicateDeclarationTest(unittest.TestCase):
+    """A second declaration is refused rather than replacing the first.
+
+    Every case here built a document before, in which one declaration had quietly
+    replaced another, so the document said something the block did not.
+    """
+
+    def test_two_paths_with_the_same_template_and_verb_are_refused(self):
+        refuses(self, "GET /v1/demo is described twice", replacements=[(
+            '    PATH("/v1/demo", "listDemos", "")\n',
+            '    PATH("/v1/demo", "listDemos", "")\n'
+            '    PATH("/v1/demo", "listDemosAgain", "Second summary")\n',
+        )])
+
+    def test_two_param_directives_for_one_name_are_refused(self):
+        refuses(self, "two PARAM directives for 'value'", profile="large", replacements=[(
+            '    PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")\n',
+            '    PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")\n'
+            '    PARAM("value", "string", "Something else.", "", "x")\n',
+        )])
+
+    def test_two_path_param_directives_for_one_name_are_refused(self):
+        refuses(self, "two PATH_PARAM directives for 'slot'", profile="large", replacements=[(
+            '    PATH_PARAM("slot", "string", "Which slot.", "a")\n',
+            '    PATH_PARAM("slot", "string", "Which slot.", "a")\n'
+            '    PATH_PARAM("slot", "integer", "Something else.", "1")\n',
+        )])
+
+    def test_two_param_enum_directives_for_one_name_are_refused(self):
+        refuses(self, "two PARAM_ENUM directives for 'value'", profile="large", replacements=[(
+            '    PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")\n',
+            '    PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")\n'
+            '    PARAM_ENUM("value", "1,2")\n'
+            '    PARAM_ENUM("value", "3,4")\n',
+        )])
+
+    def test_two_responses_for_one_code_in_one_scope_are_refused(self):
+        refuses(self, "two RESPONSE directives for 200", replacements=[(
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+            '    RESPONSE("200", "application/json", "ErrorResponse", "Something else.", "")\n',
+        )])
+
+    def test_two_response_examples_of_one_name_are_refused(self):
+        refuses(self, "two RESPONSE_EXAMPLE directives named 'one' for 200", replacements=[(
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+            '    RESPONSE_EXAMPLE("200", "one", "{\\"demos\\": []}", "")\n'
+            '    RESPONSE_EXAMPLE("200", "one", "{\\"demos\\": [\\"x\\"]}", "")\n',
+        )])
+
+    def test_two_response_errors_with_the_same_message_are_refused(self):
+        refuses(self, "two RESPONSE_ERROR directives say 'Bad' for 400", replacements=[(
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+            '    RESPONSE_ERROR("400", "Bad", "")\n'
+            '    RESPONSE_ERROR("400", "Bad", "")\n',
+        )])
+
+    def test_two_response_errors_with_different_messages_are_two_examples(self):
+        built = build(replacements=[(
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+            '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+            '    RESPONSE_ERROR("400", "Bad", "")\n'
+            '    RESPONSE_ERROR("400", "Worse", "")\n',
+        )])
+        examples = built["paths"]["/v1/demo"]["get"]["responses"]["400"]["content"]
+        self.assertEqual(sorted(examples["application/json"]["examples"]), ["Bad", "Worse"])
+
+
+class ScopedResponseTest(unittest.TestCase):
+    """A response scoped to an operation refines the unscoped one for that code."""
+
+    UNSCOPED_FIRST = (
+        '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+        '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n'
+        '    RESPONSE("200", "application/json", "DemoResponse", "One demo.", "getDemo")\n',
+    )
+    SCOPED_FIRST = (
+        '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+        '    RESPONSE("200", "application/json", "DemoResponse", "One demo.", "getDemo")\n'
+        '    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")\n',
+    )
+    SECOND_PATH = (
+        '    PATH("/v1/demo", "listDemos", "")\n',
+        '    PATH("/v1/demo", "listDemos", "")\n'
+        '    PATH("/v1/demo/{name}", "getDemo", "Read one demo")\n'
+        '    PATH_PARAM("name", "string", "Which demo.", "first")\n',
+    )
+
+    def descriptions(self, ordering):
+        paths = build(replacements=[self.SECOND_PATH, ordering])["paths"]
+        return (paths["/v1/demo"]["get"]["responses"]["200"]["description"],
+                paths["/v1/demo/{name}"]["get"]["responses"]["200"]["description"])
+
+    def test_the_scoped_response_wins_when_it_is_written_last(self):
+        self.assertEqual(self.descriptions(self.UNSCOPED_FIRST), ("The demos.", "One demo."))
+
+    def test_the_scoped_response_wins_when_it_is_written_first(self):
+        """Which one applies is decided by scope, not by which line came first."""
+        self.assertEqual(self.descriptions(self.SCOPED_FIRST), ("The demos.", "One demo."))
+
+
+class DeclaredTypeTest(unittest.TestCase):
+    """A literal that is not the type its directive declared is refused, not coerced."""
+
+    def test_a_misspelt_boolean_is_refused(self):
+        refuses(self, 'is not a boolean', replacements=[(
+            '    RESPONSE("200"',
+            '    PARAM("flag", "boolean", "A flag.", "ture", "")\n'
+            '    RESPONSE("200"',
+        ), (
+            'ARRAY( { })',
+            'ARRAY( { { "flag", P_OPTIONAL } })',
+        )])
+
+    def test_a_boolean_default_is_read_as_a_boolean(self):
+        built = build(replacements=[(
+            '    RESPONSE("200"',
+            '    PARAM("flag", "boolean", "A flag.", "false", "true")\n'
+            '    RESPONSE("200"',
+        ), (
+            'ARRAY( { })',
+            'ARRAY( { { "flag", P_OPTIONAL } })',
+        )])
+        flag = built["paths"]["/v1/demo"]["get"]["parameters"][0]
+        self.assertIs(flag["schema"]["default"], False)
+        self.assertIs(flag["example"], True)
+
+    def test_an_example_outside_the_declared_range_is_refused(self):
+        refuses(self, "is outside 'integer(0..255)'", profile="large", replacements=[(
+            'PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")',
+            'PARAM("value", "integer(0..255)", "Byte to write.", "0", "300")',
+        )])
+
+    def test_a_value_that_is_not_an_integer_is_refused(self):
+        refuses(self, "is not an integer", profile="large", replacements=[(
+            'PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")',
+            'PARAM("value", "integer(0..255)", "Byte to write.", "0", "many")',
+        )])
+
+    def test_a_refusal_names_the_block_and_the_parameter(self):
+        with self.assertRaises(OpenApiError) as raised:
+            build(profile="large", replacements=[(
+                'PARAM("value", "integer(0..255)", "Byte to write.", "0", "64")',
+                'PARAM("value", "integer(0..255)", "Byte to write.", "0", "many")',
+            )])
+        self.assertIn("route_demo.cc", str(raised.exception))
+        self.assertIn("parameter 'value'", str(raised.exception))
+
+
+class SecurityTest(unittest.TestCase):
+    def test_the_password_is_an_alternative_and_not_a_demand(self):
+        """A device with no password configured answers every call without one, so
+        the empty requirement has to stand beside the scheme."""
+        self.assertEqual(build()["security"], [{}, {"NetworkPassword": []}])
 
 
 if __name__ == "__main__":

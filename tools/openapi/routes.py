@@ -27,6 +27,7 @@ DIRECTIVE_ARITY = {
 
 _REGISTERS_A_CALL = re.compile(r"(?<![A-Za-z0-9_])API_CALL\s*\(")
 _DECLARED_PARAM = re.compile(r'\{\s*"([^"]+)"\s*,\s*([^}]*?)\s*\}')
+_DEFINE = re.compile(r"(?<![\w-])-D[ \t]*([A-Za-z_]\w*)(?:=(\S*))?")
 
 
 class Entry:
@@ -55,16 +56,31 @@ class ApiCall(Entry):
         Entry.__init__(self, origin, line, method, route, command)
         self.takes_body = takes_body
         self.parameters = parameters
+        names = [name for name, _ in parameters]
+        repeated = sorted({name for name in names if names.count(name) > 1})
+        if repeated:
+            raise OpenApiError(
+                "%s: %s declares the parameter %s twice"
+                % (self.where, self, ", ".join(repeated))
+            )
 
     @property
     def parameter_names(self):
         return {name for name, _ in self.parameters}
+
+    @property
+    def fingerprint(self):
+        return (self.takes_body, tuple(self.parameters))
 
 
 class ApiDoc(Entry):
     def __init__(self, origin, line, method, route, command, directives):
         Entry.__init__(self, origin, line, method, route, command)
         self.directives = directives
+
+    @property
+    def fingerprint(self):
+        return tuple((name, tuple(arguments)) for name, arguments in self.directives)
 
     def values(self, name):
         return [arguments for directive, arguments in self.directives if directive == name]
@@ -129,17 +145,46 @@ def sources_with_calls(repo_root):
     return found
 
 
+def _without_comments(makefile):
+    """A makefile comment runs from an unescaped # to the end of the line."""
+    return "\n".join(line.split("#", 1)[0] for line in makefile.split("\n"))
+
+
+def target_defines(makefile):
+    """The macros a target compiles with, from the -D flags in its own makefile.
+
+    A -D flag with no value defines the macro as 1, which is what the compiler
+    does. A value that is not an integer literal is kept as written; #if only
+    rejects it if an expression actually compares against it.
+    """
+    defines = {}
+    for name, value in _DEFINE.findall(_without_comments(makefile)):
+        if not value:
+            defines[name] = 1
+            continue
+        try:
+            defines[name] = int(value, 0)
+        except ValueError:
+            defines[name] = value
+    return defines
+
+
+def target_sources(makefile, candidates):
+    text = _without_comments(makefile)
+    return {
+        source
+        for source in candidates
+        if re.search(r"(?<![\w/.])%s(?![\w])" % re.escape(pathlib.Path(source).name), text)
+    }
+
+
 def compiled_sources(profile, repo_root):
     """The route sources a product family builds, as its own makefiles list them."""
     candidates = sources_with_calls(repo_root)
-    per_target = {}
-    for target in profile["targets"]:
-        makefile = (pathlib.Path(repo_root) / target).read_text()
-        per_target[target] = {
-            source
-            for source in candidates
-            if re.search(r"(?<![\w/.])%s(?![\w])" % re.escape(pathlib.Path(source).name), makefile)
-        }
+    per_target = {
+        target: target_sources((pathlib.Path(repo_root) / target).read_text(), candidates)
+        for target in profile["targets"]
+    }
     reference_target, reference = next(iter(per_target.items()))
     for target, sources in per_target.items():
         if sources != reference:
@@ -163,12 +208,12 @@ def _by_key(entries, what):
     return table
 
 
-def documented_calls(profile, repo_root):
-    """Every call the product compiles, each with the block that documents it."""
+def _table(sources, defines, repo_root):
+    """The documented calls that survive the preprocessor for one set of macros."""
     calls, docs = [], []
-    for source in compiled_sources(profile, repo_root):
+    for source in sources:
         text = cpp.active_lines(
-            cpp.without_comments((pathlib.Path(repo_root) / source).read_text()), profile["defines"]
+            cpp.without_comments((pathlib.Path(repo_root) / source).read_text()), defines
         )
         calls.extend(_parse_calls(source, text))
         docs.extend(_parse_docs(source, text))
@@ -178,6 +223,56 @@ def documented_calls(profile, repo_root):
     _reject(set(by_call) - set(by_doc), by_call, "no API_DOC block for")
     _reject(set(by_doc) - set(by_call), by_doc, "an API_DOC block with no API_CALL for")
     return {key: (by_call[key], by_doc[key]) for key in sorted(by_call)}
+
+
+def _fingerprints(table):
+    return {key: (call.fingerprint, doc.fingerprint) for key, (call, doc) in table.items()}
+
+
+def _call_name(key):
+    method, route, command = key
+    return "%s /v1/%s%s" % (method, route, "" if command == "none" else ":" + command)
+
+
+def _divergence(reference_target, reference_marks, target, marks):
+    """What to say about two targets of one family that do not serve the same API."""
+    missing = sorted(set(reference_marks) - set(marks))
+    added = sorted(set(marks) - set(reference_marks))
+    if missing or added:
+        return "%s serves %s, which %s does not" % (
+            reference_target if missing else target,
+            ", ".join(_call_name(key) for key in (missing or added)),
+            target if missing else reference_target,
+        )
+    differing = sorted(key for key in reference_marks if reference_marks[key] != marks[key])
+    return "%s and %s describe %s differently" % (
+        reference_target, target, ", ".join(_call_name(key) for key in differing)
+    )
+
+
+def documented_calls(profile, repo_root):
+    """Every call the product family compiles, each with the block that documents it.
+
+    Which calls survive the preprocessor is decided per target, from the macros
+    that target's own makefile passes to the compiler. Every target in the family
+    has to arrive at the same table, because one document describes all of them.
+    """
+    sources = compiled_sources(profile, repo_root)
+    per_target = {}
+    for target in profile["targets"]:
+        defines = target_defines((pathlib.Path(repo_root) / target).read_text())
+        per_target[target] = _table(sources, defines, repo_root)
+
+    reference_target, reference = next(iter(per_target.items()))
+    reference_marks = _fingerprints(reference)
+    for target, table in per_target.items():
+        marks = _fingerprints(table)
+        if marks != reference_marks:
+            raise OpenApiError(
+                "the targets of one product family do not serve the same API: %s"
+                % _divergence(reference_target, reference_marks, target, marks)
+            )
+    return reference
 
 
 def _reject(keys, table, complaint):

@@ -36,6 +36,21 @@ jobs:
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make openapi_test && make openapi_check"
 
+      # The step above proves the documents are what the sources say. This one
+      # proves they are valid OpenAPI 3.1, by running openapi-spec-validator, so
+      # a generator change cannot produce a fresh document that no standard tool
+      # will read. It is a separate step, and installs the pinned validator into
+      # its own virtual environment, so a package index that is unreachable is
+      # reported as that rather than as a broken document. The firmware builds do
+      # not depend on it.
+      - name: Validate OpenAPI Specification
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && \
+            python3 -m venv /tmp/openapi-venv && \
+            /tmp/openapi-venv/bin/pip install --quiet -r tools/openapi/requirements.txt && \
+            make openapi_validate PYTHON=/tmp/openapi-venv/bin/python"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \

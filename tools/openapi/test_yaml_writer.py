@@ -8,6 +8,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import yaml_writer
+from errors import OpenApiError
 
 try:
     import yaml
@@ -63,6 +64,36 @@ class BlockTest(unittest.TestCase):
 
     def test_nesting_is_two_spaces_per_level(self):
         self.assertEqual(yaml_writer.dump({"a": {"b": {"c": 1}}}), "a:\n  b:\n    c: 1\n")
+
+    def test_an_empty_mapping_in_a_list_stays_a_mapping(self):
+        """`security: [{}, ...]` is how an optional scheme is written, and the empty
+        requirement has to reach the document as a mapping and not as the text {}."""
+        self.assertEqual(yaml_writer.dump({"security": [{}, {"P": []}]}),
+                         "security:\n  - {}\n  - P: []\n")
+
+    def test_an_empty_list_in_a_list_stays_a_list(self):
+        self.assertEqual(yaml_writer.dump({"a": [[], 1]}), "a:\n  - []\n  - 1\n")
+
+
+class ControlCharacterTest(unittest.TestCase):
+    """Refused rather than written, because a scalar carrying one is not readable YAML."""
+
+    def test_a_newline_in_a_key_is_refused(self):
+        with self.assertRaises(OpenApiError) as raised:
+            yaml_writer.dump({"one\ntwo": 1})
+        self.assertIn("in the key", str(raised.exception))
+
+    def test_a_tab_in_a_key_is_refused(self):
+        with self.assertRaises(OpenApiError):
+            yaml_writer.dump({"one\ttwo": 1})
+
+    def test_a_null_byte_in_a_value_is_refused(self):
+        with self.assertRaises(OpenApiError) as raised:
+            yaml_writer.dump({"a": "one\x00two"})
+        self.assertIn("in the value", str(raised.exception))
+
+    def test_a_newline_in_a_value_is_still_a_block(self):
+        self.assertEqual(yaml_writer.dump({"a": "one\ntwo"}), "a: |2-\n  one\n  two\n")
 
 
 @unittest.skipUnless(yaml, "PyYAML is not installed")

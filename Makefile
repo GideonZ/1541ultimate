@@ -2,7 +2,14 @@
 APP_SPACE = python3 tools/app_space.py
 OPENAPI = python3 tools/openapi/generate.py
 
-.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test
+# Host Python for `openapi_validate` only. It needs the validator in
+# tools/openapi/requirements.txt, which nothing else in the build does, so point
+# this at a virtual environment that has it rather than installing it globally:
+#
+#   make openapi_validate PYTHON=/path/to/venv/bin/python
+PYTHON ?= python3
+
+.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test openapi_validate
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -31,6 +38,19 @@ openapi_check:
 
 openapi_test:
 	@python3 -m unittest discover -s tools/openapi -p "test_*.py"
+
+# The committed documents against the OpenAPI 3.1 specification itself, by the
+# validator's own command line rather than through anything written here. Kept
+# out of `openapi_check` and out of the firmware targets because it needs host
+# packages the firmware build does not: it is its own CI step, so a package that
+# will not install is reported as that rather than as a stale document.
+openapi_validate:
+	@$(PYTHON) -c "import openapi_spec_validator" 2>/dev/null || { \
+	  echo "openapi_validate needs the validator in tools/openapi/requirements.txt:"; \
+	  echo "    python3 -m venv .venv && .venv/bin/pip install -r tools/openapi/requirements.txt"; \
+	  echo "    make openapi_validate PYTHON=.venv/bin/python"; \
+	  exit 2; }
+	@$(PYTHON) -m openapi_spec_validator --validation-errors all `$(OPENAPI) paths`
 
 # Unit tests that run on the build host rather than on the device. Kept out of
 # the firmware targets deliberately: those build with a cross compiler, and

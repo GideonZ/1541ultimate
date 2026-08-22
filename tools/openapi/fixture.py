@@ -56,8 +56,8 @@ API_CALL(POST, extra, upload, &attachment_writer, ARRAY( { }))
 }
 """
 
-SMALL_MAKEFILE = "SRCS_CC = route_demo.cc \\\n\troutes.cc\n"
-LARGE_MAKEFILE = "SRCS_CC = route_demo.cc \\\n\troute_extra.cc\n"
+SMALL_MAKEFILE = "OPTIONS += -DSMALL\nSRCS_CC = route_demo.cc \\\n\troutes.cc\n"
+LARGE_MAKEFILE = "OPTIONS += -DBIG=1\nSRCS_CC = route_demo.cc \\\n\troute_extra.cc\n"
 
 SCHEMAS = {
     "ErrorResponse": {
@@ -74,14 +74,12 @@ TAGS = [("Demo", "The demo route.")]
 
 PROFILES = {
     "small": {
-        "defines": {},
         "targets": ("target/small/Makefile",),
         "title": "Small API",
         "products": "the small product",
         "default_host": "small",
     },
     "large": {
-        "defines": {"BIG": 1},
         "targets": ("target/large/Makefile",),
         "title": "Large API",
         "products": "the large product",

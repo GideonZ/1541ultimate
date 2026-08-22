@@ -119,5 +119,100 @@ class PairingTest(unittest.TestCase):
                 sources={"route_demo.cc": fixture.DEMO_SOURCE + fixture.DEMO_SOURCE})
 
 
+class TargetDefinesTest(unittest.TestCase):
+    """The macros a target compiles with come from its own makefile, not from a list here."""
+
+    def test_a_flag_with_a_value_keeps_it(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -DU64=2\n"), {"U64": 2})
+
+    def test_a_flag_without_a_value_is_one_as_the_compiler_makes_it(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -DRISCV\n"), {"RISCV": 1})
+
+    def test_a_hexadecimal_value_is_read_as_a_number(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -DIOBASE=0x10000000\n"),
+                         {"IOBASE": 0x10000000})
+
+    def test_a_value_that_is_not_a_number_is_kept_as_written(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -DNAME=text\n"), {"NAME": "text"})
+
+    def test_a_commented_out_line_defines_nothing(self):
+        """The real u2plus makefile keeps an older OPTIONS line commented out."""
+        self.assertEqual(
+            routes.target_defines("OPTIONS = -DU2P=1\n# OPTIONS = -DDEVELOPER=1\n"), {"U2P": 1}
+        )
+
+    def test_a_later_flag_wins_the_way_the_command_line_does(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -DA=1\nOPTIONS += -DA=2\n"), {"A": 2})
+
+    def test_a_flag_that_only_looks_like_one_is_not_a_define(self):
+        self.assertEqual(routes.target_defines("OPTIONS = -gdwarf-2 -Wno-write-strings\n"), {})
+
+
+class ProfileDefinesTest(unittest.TestCase):
+    """What the target compiles decides the document, so the makefile is the authority."""
+
+    MAKEFILE = "OPTIONS += -DBIG\nSRCS_CC = route_demo.cc\n"
+
+    def test_a_makefile_define_reaches_the_document_without_being_restated(self):
+        """The reviewed generator read a per-family list instead, so a target that
+        compiled -DBIG got a document with the call it serves left out."""
+        table = documented(SMALL, makefiles={"target/small/Makefile": self.MAKEFILE})
+        self.assertIn(("PUT", "demo", "poke"), table)
+
+    def test_targets_of_one_family_that_serve_different_calls_are_refused(self):
+        profile = dict(SMALL, targets=("target/a/Makefile", "target/b/Makefile"))
+        refuses(self, profile, "do not serve the same API",
+                makefiles={"target/a/Makefile": "SRCS_CC = route_demo.cc\n",
+                           "target/b/Makefile": self.MAKEFILE})
+
+    #: The same call on both targets, described differently on one of them.
+    SAME_CALL_DIFFERENT_TEXT = """\
+#include "routes.h"
+
+API_DOC(GET, demo, none,
+    TAG("Demo")
+#if BIG
+    SUMMARY("List big demos")
+#else
+    SUMMARY("List demos")
+#endif
+    DESCRIPTION("Lists every demo.")
+    PATH("/v1/demo", "listDemos", "")
+    RESPONSE("200", "application/json", "DemoResponse", "The demos.", "")
+)
+API_CALL(GET, demo, none, NULL, ARRAY( { }))
+{
+}
+"""
+
+    def test_targets_of_one_family_that_document_a_call_differently_are_refused(self):
+        """One document describes the whole family, so the same call has to read
+        the same on every target in it, not only be present on every target."""
+        profile = dict(SMALL, targets=("target/a/Makefile", "target/b/Makefile"))
+        refuses(self, profile, "describe GET /v1/demo differently",
+                sources={"route_demo.cc": self.SAME_CALL_DIFFERENT_TEXT},
+                makefiles={"target/a/Makefile": "SRCS_CC = route_demo.cc\n",
+                           "target/b/Makefile": "OPTIONS += -DBIG\nSRCS_CC = route_demo.cc\n"})
+
+    def test_targets_that_agree_are_accepted(self):
+        profile = dict(SMALL, targets=("target/a/Makefile", "target/b/Makefile"))
+        table = documented(profile,
+                           makefiles={"target/a/Makefile": self.MAKEFILE,
+                                      "target/b/Makefile": "OPTIONS += -DBIG=1\nSRCS_CC = route_demo.cc\n"})
+        self.assertIn(("PUT", "demo", "poke"), table)
+
+
+class RepeatedParameterTest(unittest.TestCase):
+    def test_a_registration_that_names_one_parameter_twice_is_refused(self):
+        """Two entries of one name would otherwise become two query parameters of
+        that name, which no OpenAPI reader accepts."""
+        source = fixture.DEMO_SOURCE.replace(
+            'ARRAY( { { "value", P_REQUIRED } })',
+            'ARRAY( { { "value", P_REQUIRED }, { "value", P_OPTIONAL } })',
+        )
+        refuses(self, LARGE, "declares the parameter value twice",
+                sources={"route_demo.cc": source})
+
+
 if __name__ == "__main__":
     unittest.main()

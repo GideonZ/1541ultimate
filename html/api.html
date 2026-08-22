@@ -3,8 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+    Swagger UI is fetched from unpkg.com rather than shipped in the flash disk,
+    because the bundle is about 1.7 MB and the smallest product has under 900 KB
+    of flash disk in total.
+
+    A script fetched from another origin still runs with this page's privileges,
+    which here means the device's own API and whatever password is typed into the
+    Try it out form. Three things bound that:
+
+      - the version is exact, so the URL names one immutable release rather than
+        whatever the newest 5.x happens to be;
+      - integrity pins each file to the bytes reviewed here, so a substituted
+        file is refused by the browser rather than executed;
+      - the policy below allows scripts from nowhere else, and allows fetches to
+        this device only, so nothing the page loads can send anything elsewhere.
+
+    tools/openapi/test_explorer.py fails the build if any of that is dropped.
+
+    To move to a newer Swagger UI, change SWAGGER_UI_VERSION in
+    tools/openapi/explorer.py, then:
+      curl -sL https://unpkg.com/swagger-ui-dist@<version>/swagger-ui.css |
+          openssl dgst -sha384 -binary | openssl base64 -A
+    and the same for swagger-ui-bundle.js, and put both here.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'sha256-MbbxGLnf0+hcHG4EyZkflTUx/Y6JjKwXOJWeTY6Re8s=' https://unpkg.com/swagger-ui-dist@5.32.14/;
+    style-src 'unsafe-inline' https://unpkg.com/swagger-ui-dist@5.32.14/;
+    img-src 'self' data:;
+    font-src 'self' data:;
+    connect-src 'self';
+    base-uri 'none';
+    form-action 'none'">
 <title>Ultimate REST API</title>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<link rel="stylesheet"
+      href="https://unpkg.com/swagger-ui-dist@5.32.14/swagger-ui.css"
+      integrity="sha384-fgyWYkUAamzuI8mJFu/xpRP0JWCJRwkwUwsYDoOYVHUJ8NQE5cENn8ib3ppwFFSX"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer">
 <style>
     body { margin: 0; font-family: sans-serif; }
     #notice { margin: 2em; color: #444; }
@@ -22,7 +59,10 @@
        from the firmware it is shipped with.</p>
 </div>
 <div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+<script src="https://unpkg.com/swagger-ui-dist@5.32.14/swagger-ui-bundle.js"
+        integrity="sha384-Dt83RhU85ZmX7werw9uTFCzmauXUoSyx3pdzTQMABtsnFmooJy4Vz9/ACh7n5m1A"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
 <script>
 window.onload = function () {
     if (typeof SwaggerUIBundle === "undefined") {

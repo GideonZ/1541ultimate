@@ -4,11 +4,20 @@ import re
 
 from errors import OpenApiError
 
-_TOKEN = re.compile(r"\s*(\d+|[A-Za-z_]\w*|&&|\|\||[<>=!]=|.)")
+_TOKEN = re.compile(r"\s*(0[xX][0-9a-fA-F]+|\d+|[A-Za-z_]\w*|&&|\|\||[<>=!]=|.)")
 _DIRECTIVE = re.compile(r"^#\s*(\w+)\s*(.*)$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_]\w*$")
+_INTEGER = re.compile(r"^(0[xX][0-9a-fA-F]+|\d+)$")
 _STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
-_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0"}
+
+# The single-character escapes C defines. \x and the octal forms are decoded
+# from their digits; anything else is refused rather than silently dropped.
+_ESCAPES = {
+    "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v",
+    "\\": "\\", "'": "'", '"': '"', "?": "?",
+}
+_HEX_ESCAPE = re.compile(r"x([0-9a-fA-F]+)")
+_OCTAL_ESCAPE = re.compile(r"([0-7]{1,3})")
 
 _PRECEDENCE = (("||",), ("&&",), ("==", "!="), ("<", ">", "<=", ">="), ("+", "-"))
 _APPLY = {
@@ -118,10 +127,15 @@ class _Expression:
             return int(name in self.defines)
         if token is None:
             raise OpenApiError("#if expression ended early")
-        if token.isdigit():
-            return int(token)
+        if _INTEGER.match(token):
+            return int(token, 0)
         if _IDENTIFIER.match(token):
-            return int(self.defines.get(token, 0))
+            value = self.defines.get(token, 0)
+            if not isinstance(value, int):
+                raise OpenApiError(
+                    "%s is defined as %r, which this evaluator cannot compare" % (token, value)
+                )
+            return value
         raise OpenApiError("unsupported token %r in #if expression" % token)
 
 
@@ -248,6 +262,31 @@ def split_arguments(text):
     return [part.strip() for part in parts]
 
 
+def _byte(value, literal, sequence):
+    if value > 0xFF:
+        raise OpenApiError(
+            "escape sequence %r in %r denotes %#x, which is not one byte"
+            % ("\\" + sequence, literal, value)
+        )
+    return chr(value)
+
+
+def _escape(literal, i):
+    """Decodes the escape sequence starting at the backslash at `i`."""
+    rest = literal[i + 1:]
+    hexadecimal = _HEX_ESCAPE.match(rest)
+    if hexadecimal:
+        # C reads every hexadecimal digit that follows \x, so the digits are not
+        # split into a byte and some trailing text.
+        return _byte(int(hexadecimal.group(1), 16), literal, hexadecimal.group(0)), 1 + hexadecimal.end()
+    octal = _OCTAL_ESCAPE.match(rest)
+    if octal:
+        return _byte(int(octal.group(1), 8), literal, octal.group(0)), 1 + octal.end()
+    if rest[:1] in _ESCAPES:
+        return _ESCAPES[rest[0]], 2
+    raise OpenApiError("unsupported escape sequence %r in %r" % ("\\" + rest[:1], literal))
+
+
 def string_literal(text):
     """Resolves one or more adjacent C string literals into the string they denote."""
     literals = _STRING.findall(text)
@@ -258,8 +297,9 @@ def string_literal(text):
         i = 0
         while i < len(literal):
             if literal[i] == "\\":
-                out.append(_ESCAPES.get(literal[i + 1], literal[i + 1]))
-                i += 2
+                decoded, width = _escape(literal, i)
+                out.append(decoded)
+                i += width
             else:
                 out.append(literal[i])
                 i += 1

@@ -144,8 +144,9 @@ extern const char _api_html_end[1];
 // product family, so the caller passes the one this updater carries.
 static FRESULT write_api_files(const char *spec_start, const char *spec_end)
 {
-    write_html_file("api.html", _api_html_start, (int)_api_html_end - (int)_api_html_start);
-    return write_html_file("openapi.yaml", spec_start, (int)spec_end - (int)spec_start);
+    FRESULT page = write_html_file("api.html", _api_html_start, (int)_api_html_end - (int)_api_html_start);
+    FRESULT spec = write_html_file("openapi.yaml", spec_start, (int)spec_end - (int)spec_start);
+    return (page != FR_OK) ? page : spec;
 }
 
 static void copy_flash_binary(Flash *flash, uint32_t addr, uint32_t len, const char *fn)

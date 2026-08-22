@@ -27,8 +27,15 @@ info:
     Unless a call returns a binary attachment, the response is
     `Content-Type: application/json` and carries an `errors` array. The array is
     empty when the call succeeded. A call that returns an attachment answers with
-    `Content-Type: application/octet-stream` and a `Content-Disposition` header, or
-    with `203 No Content` when there is nothing to return.
+    `Content-Type: application/octet-stream` and a `Content-Disposition` header.
+
+    When such a call has nothing to return, the firmware answers with the status
+    line `203 No Content`. That is the firmware's own status, not standard HTTP:
+    RFC 9110 defines 203 as Non-Authoritative Information, and it is 204 that means
+    No Content. The document describes what the firmware sends, because changing the
+    status would break clients written against the current releases. A client should
+    read a 203 from one of these calls as "the call succeeded and there is no
+    attachment".
 
     ## Authentication
 
@@ -84,6 +91,7 @@ externalDocs:
   description: Ultimate firmware documentation
   url: 'https://1541u-documentation.readthedocs.io/en/latest/api/api_calls.html'
 security:
+  - {}
   - NetworkPassword: []
 paths:
   /v1/configs:

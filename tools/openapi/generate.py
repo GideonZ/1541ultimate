@@ -3,6 +3,7 @@
 
     generate.py generate    write doc/api/rest_api_openapi_{u2,u64}.yaml
     generate.py check       rebuild in memory and fail if the committed files differ
+    generate.py paths       print the path of each document, one per line
 
 Every REST call is registered through the API_CALL macro in software/api/routes.h,
 which already carries the verb, the route, the command and the query parameters.
@@ -13,7 +14,12 @@ so never reaches the firmware image.
 
 Both halves are cross checked before anything is written, so a call without a
 block, a block without a call, a parameter only one of them knows about, or a path
-template that no longer matches its route, all fail the build.
+template that no longer matches its route, all fail the build. So does anything
+declared twice, and so does a family whose targets do not all serve the same calls.
+
+`make openapi_validate` additionally checks the written documents against the
+OpenAPI 3.1 specification with openapi-spec-validator, which needs the host
+package in tools/openapi/requirements.txt and so is its own target.
 """
 
 import argparse
@@ -75,10 +81,15 @@ def stale(repo_root=REPO_ROOT):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("command", choices=("generate", "check"))
+    parser.add_argument("command", choices=("generate", "check", "paths"))
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     arguments = parser.parse_args(argv)
     repo_root = pathlib.Path(arguments.repo_root)
+
+    if arguments.command == "paths":
+        for profile in sorted(schemas.PROFILES):
+            print(os.path.relpath(output_path(profile, repo_root), repo_root))
+        return 0
 
     try:
         if arguments.command == "generate":
