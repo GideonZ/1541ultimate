@@ -47,8 +47,10 @@ openapi_test:
 openapi_validate:
 	@$(PYTHON) -c "import openapi_spec_validator" 2>/dev/null || { \
 	  echo "openapi_validate needs the validator in tools/openapi/requirements.txt:"; \
-	  echo "    python3 -m venv .venv && .venv/bin/pip install -r tools/openapi/requirements.txt"; \
-	  echo "    make openapi_validate PYTHON=.venv/bin/python"; \
+	  echo "    python3 -m pip install --target /tmp/openapi-packages -r tools/openapi/requirements.txt"; \
+	  echo "    PYTHONPATH=/tmp/openapi-packages make openapi_validate"; \
+	  echo "or point PYTHON at an interpreter that already has it:"; \
+	  echo "    make openapi_validate PYTHON=/path/to/venv/bin/python"; \
 	  exit 2; }
 	@$(PYTHON) -m openapi_spec_validator --validation-errors all `$(OPENAPI) paths`
 
