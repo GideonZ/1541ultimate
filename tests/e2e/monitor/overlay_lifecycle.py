@@ -276,7 +276,7 @@ def ensure_breakpoint_at(r: Rest, addr: int, bank: int, source: str, label: str)
         raise Failure(f"{label}: bp row ${addr:04X} missing [{source}]: {row!r}")
     if "[BRK" in row:
         return
-    r.send_text("r")
+    r.send_text("p")
     time.sleep(0.3)
     row = line_for_address(r, addr)
     if "[BRK" not in row:
@@ -292,7 +292,7 @@ def _screen_or_empty(r: Rest):
 
 
 def toggle_breakpoint_at(r: Rest, addr: int, armed: bool, label: str, timeout=4.0):
-    """Set (`armed` true) or clear the breakpoint on the row at `addr` with R.
+    """Set (`armed` true) or clear the breakpoint on the row at `addr` with P.
 
     `ensure_breakpoint_at` and `clear_breakpoint_at` select a monitor bank and
     match the row's memory-source tag. A U2 MCM has neither: CPU BANK is N/A
@@ -308,7 +308,7 @@ def toggle_breakpoint_at(r: Rest, addr: int, armed: bool, label: str, timeout=4.
     row = line_for_address(r, addr)
     if ("[BRK" in row) == armed:
         return row
-    r.send_text("r")
+    r.send_text("p")
     deadline = time.time() + timeout
     while time.time() < deadline:
         if "not mapped now" in _screen_or_empty(r):
@@ -326,15 +326,20 @@ def armed_breakpoint_addresses(r: Rest, label: str, timeout=8.0):
 
     The popup is waited on and the chord re-sent while it has not appeared. A
     chord sent into a repainting overlay is dropped, and on a U2+L that repaint
-    crosses the cartridge bus; measured, C=+R raises the popup in about 0.23s
+    crosses the cartridge bus; measured, C=+P raises the popup in about 0.23s
     when it lands at all, and not at all when it does not. Re-sending a
     popup-open key cannot mask a debugger result, because no debugger command
     runs until the table has been read.
+
+    The firmware only opens this popup when debug_has_breakpoint() is true
+    (machine_monitor.cc), so a table with nothing armed never shows it: the
+    full retry budget still elapses to rule out a dropped chord, and then an
+    empty table - not a broken popup - is reported as the answer, `[]`.
     """
     deadline = time.time() + timeout
     text = ""
     while time.time() < deadline:
-        r.tap(["commodore", "r"])
+        r.tap(["commodore", "p"])
         settled = time.time() + 1.5
         while time.time() < settled:
             text = _screen_or_empty(r)
@@ -347,7 +352,7 @@ def armed_breakpoint_addresses(r: Rest, label: str, timeout=8.0):
                 time.sleep(0.2)
                 return addresses
             time.sleep(0.15)
-    raise Failure(f"{label}: breakpoint popup did not open on C=+R\n{text}")
+    return []
 
 
 def clear_breakpoint_at(r: Rest, addr: int, bank: int, label: str):
@@ -356,7 +361,7 @@ def clear_breakpoint_at(r: Rest, addr: int, bank: int, label: str):
     row = line_for_address(r, addr)
     if "[BRK" not in row:
         return
-    r.send_text("r")
+    r.send_text("p")
     time.sleep(0.3)
     row = line_for_address(r, addr)
     if "[BRK" in row:

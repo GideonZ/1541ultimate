@@ -425,11 +425,11 @@ class RestSession:
                               + ", ".join(f"${a:04X}" for a in remaining))
 
     def clear_all_breakpoints(self):
-        """Reset all 10 breakpoint slots via the C=+R list popup (DEL per slot)."""
+        """Reset all 10 breakpoint slots via the C=+P list popup (DEL per slot)."""
         if self.split:
             self.clear_table_by_row_toggle()
             return
-        self.rest.tap(["commodore", "r"]); time.sleep(0.3)
+        self.rest.tap(["commodore", "p"]); time.sleep(0.3)
         ls = self.lines() or []
         if not any("BRK" in ln.upper() or "BREAK" in ln.upper() for ln in ls):
             # popup not detected; bail without leaving stray keys
