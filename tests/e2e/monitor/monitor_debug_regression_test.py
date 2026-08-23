@@ -202,9 +202,13 @@ U64_CELLS: tuple[Cell, ...] = (
 # drive the same firmware through the same keys and a second lane would be a
 # second copy of the first.
 SPLIT_CELLS: tuple[Cell, ...] = (
-    Cell("ram", "overlay", 2,
-         "The whole supported U2+L debugger surface, run twice in one session "
-         "so a repeat-only entry failure has somewhere to appear.",
+    Cell("ram", "overlay", 3,
+         "The whole supported U2+L debugger surface, run three times in one "
+         "session so a repeat-only entry failure has somewhere to appear. The "
+         "third repetition is not spare capacity: the matrix fixture seed is a "
+         "function of the repetition index, and repetition 3's program is the "
+         "one that reproduced the torn debug-footer read, twice, where "
+         "repetitions 1 and 2 passed.",
          "doc/machine_code_monitor.md:815; U2_CARTRIDGE_NMI.md; "
          "every recorded u2 matrix ledger holds this single row"),
 )

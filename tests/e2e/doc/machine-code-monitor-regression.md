@@ -293,7 +293,13 @@ freeze overlay - so `overlay` and `freeze` drive the same firmware through the
 same keys and a second lane would be a copy of the first. Every recorded u2
 matrix ledger holds a single row.
 
-The split plan is therefore `ram:overlay` twice, the seven semantic groups
+The repetition count is three, not two. The matrix fixture seed is a function
+of the repetition index, so each repetition runs a fixed program. Repetition 3's
+program is the one that reproduced the torn debug-footer read (the register row
+copied by `menu_screen` while it was half redrawn), twice in two runs, with
+repetitions 1 and 2 passing both times. Two repetitions would not reach it.
+
+The split plan is therefore `ram:overlay` three times, the seven semantic groups
 whose checks are reachable, and the two focused scopes that exist only for a
 split session and that no cell reaches, because the matrix driver skips monitor
 bank selection on a U2:

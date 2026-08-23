@@ -1601,6 +1601,25 @@ class RestDebugDriver(BaseDriver):
                     self.rest.screen_text(), encoding="utf-8")
             except Exception:
                 pass
+            # Evidence only: the footer PC never reached the target, so record
+            # what the footer and the firmware's own STORE_* capture say now.
+            # A STORE_* PC that already equals the target means the step ran and
+            # only its footer render is behind.
+            samples = []
+            for _ in range(4):
+                entry: dict[str, Any] = {}
+                try:
+                    entry["footer"] = self.read_debug_state().raw
+                except Exception as exc:  # noqa: BLE001 - diagnostic capture only
+                    entry["footer_error"] = str(exc)
+                try:
+                    entry["store"] = _authoritative_debug_state(self.rest).raw
+                except Exception as exc:  # noqa: BLE001 - diagnostic capture only
+                    entry["store_error"] = str(exc)
+                samples.append(entry)
+                time.sleep(0.1)
+            self.event("footer_resample_after_wait_pc_timeout", label=label,
+                       expected_pc=f"{address:04X}", samples=samples)
             raise
         self.event("wait_pc", label=label, pc=f"{address:04X}",
                    footer=footer.__dict__)
@@ -2391,8 +2410,37 @@ class DualOracles:
             self._record(label, last, f"run_{count}")
         return count
 
+    def _resample_footer_evidence(self, state: DebugState, label: str) -> None:
+        """Evidence only, on a mismatch: re-read the debug footer and the
+        firmware's own STORE_* capture several times without issuing any
+        debugger command. If the later samples report the expected values, the
+        failing sample read the footer while it was being redrawn; if they keep
+        reporting the wrong values, the debugger really is holding that state.
+        """
+        samples = []
+        for _ in range(6):
+            entry: dict[str, Any] = {}
+            try:
+                entry["footer"] = self.driver.read_debug_state().raw
+            except Exception as exc:  # noqa: BLE001 - diagnostic capture only
+                entry["footer_error"] = str(exc)
+            try:
+                entry["store"] = _authoritative_debug_state(self.driver.rest).raw
+            except Exception as exc:  # noqa: BLE001 - diagnostic capture only
+                entry["store_error"] = str(exc)
+            samples.append(entry)
+            time.sleep(0.1)
+        self.driver.event("footer_resample_after_mismatch", label=label,
+                          expected_pc=f"{self.cpu.pc:04X}",
+                          expected_sp=f"{self.cpu.sp:02X}",
+                          observed=state.raw, samples=samples)
+
     def compare_state_and_stack(self, state: DebugState, label: str) -> None:
-        assert_state_matches_cpu(state, self.cpu, f"{label} internal oracle")
+        try:
+            assert_state_matches_cpu(state, self.cpu, f"{label} internal oracle")
+        except GateError:
+            self._resample_footer_evidence(state, label)
+            raise
         stack = self.driver.read_bytes(0x0100, 256)
         expected_stack = bytes(self.cpu.mem[0x0100:0x0200])
         active_start = state.sp + 1
