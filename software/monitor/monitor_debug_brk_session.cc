@@ -4,6 +4,7 @@
 #include "keyboard.h"
 #include "monitor_file_io.h"
 #include "itu.h"
+#include "small_printf.h"
 
 #include <string.h>
 
@@ -54,6 +55,10 @@ static const uint16_t DEBUG_AREA_END  = 0x03FB;
 // Max extra attempts to re-issue a patched launch when the live 6510 fetched past
 // an installed BRK and ran away. The race is rare per launch, so keep it bounded.
 static const int MAX_BREAKPOINT_RELAUNCH = 2;
+// Attempts to get one patch byte written and read back through the machine
+// aperture. A lost write is rare, so this is a small bound rather than a long
+// loop; exhausting it is reported instead of retried further.
+static const int PATCH_WRITE_ATTEMPTS = 4;
 static const int BREAKPOINT_WAIT_MS = 5000;
 static const int HIGH_MEMORY_BREAKPOINT_WAIT_MS = 900;
 
@@ -230,6 +235,33 @@ uint8_t BrkDebugSession :: read_patch_byte(uint16_t address, uint8_t cpu_port)
 void BrkDebugSession :: write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port)
 {
     poke_cpu(address, byte, cpu_port);
+}
+
+void BrkDebugSession :: write_patch_byte_verified(uint16_t address, uint8_t byte,
+                                                  uint8_t cpu_port,
+                                                  MonitorBackingStore target)
+{
+    // A write through the machine aperture is observed, rarely, not to take.
+    // One dropped write of the original byte leaves the debugger's BRK behind
+    // in the program under test: the next command at that address decodes $00
+    // and refuses with UNSAFE TARGET, and the program itself stays corrupted.
+    // install_brk_at() already reads its own write back and reports a failure;
+    // the restore direction had no check at all, so the same lost write was
+    // silent. Read back through the same aperture and rewrite when it did not
+    // take, in the cases where a read-back observes the store at all.
+    bool verify = patch_verify_now(address, current_cpu_port(), target);
+    if (verify && patch_requires_visible_rom(target) && machine_is_frozen()) {
+        // Frozen read-back sees the backup, not the served ROM image.
+        verify = false;
+    }
+    for (int attempt = 0; attempt < PATCH_WRITE_ATTEMPTS; attempt++) {
+        write_patch_byte(address, byte, cpu_port);
+        if (!verify || read_patch_byte(address, cpu_port) == byte) {
+            return;
+        }
+    }
+    printf("MCM patch restore $%04X did not take, byte still $%02X\n",
+           address, read_patch_byte(address, cpu_port));
 }
 
 void BrkDebugSession :: set_cancel_keyboard(Keyboard *keyboard)
@@ -718,8 +750,8 @@ void BrkDebugSession :: restore_patches(void)
     bool stopped_it = begin_stopped_session();
     for (int i = 0; i < MAX_PATCHES; i++) {
         if (patches[i].used) {
-            write_patch_byte(patches[i].address, patches[i].original,
-                             patches[i].cpu_port);
+            write_patch_byte_verified(patches[i].address, patches[i].original,
+                                      patches[i].cpu_port, patches[i].target);
             patches[i].used = false;
         }
     }

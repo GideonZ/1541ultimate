@@ -68,6 +68,10 @@ protected:
     virtual uint8_t read_patch_original_byte(uint16_t address, uint8_t cpu_port)
     { return read_patch_byte(address, cpu_port); }
     virtual void write_patch_byte(uint16_t address, uint8_t byte, uint8_t cpu_port);
+    // write_patch_byte plus a read-back and a bounded rewrite, for the restore
+    // direction, where a lost write leaves a BRK behind in the program.
+    void write_patch_byte_verified(uint16_t address, uint8_t byte,
+                                   uint8_t cpu_port, MonitorBackingStore target);
     virtual void note_captured_cpu_port(uint8_t) { }
 public:
     BrkDebugSession();
