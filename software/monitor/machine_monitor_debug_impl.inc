@@ -206,9 +206,19 @@ void MachineMonitor :: draw_debug_footer()
     draw_with_style_mask(window, window->get_size_y() - 3, header_row, draw_len,
                          0, header_accent,
                          get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+    // The register row is written one character at a time straight into the
+    // character matrix that UserInterface::copy_active_screen_matrix() hands to
+    // /v1/machine:menu_screen, and that is the only way a REST client can read
+    // the debugger's registers. Without this section the drawing task can be
+    // preempted part way along the row, and the reader then returns a row that
+    // holds the new PC next to the previous SP. copy_active_screen_matrix()
+    // takes the same critical section, so the row it copies is either entirely
+    // the previous step's or entirely this step's.
+    ENTER_SAFE_SECTION
     draw_with_style_mask(window, window->get_size_y() - 2, value_row, draw_len,
                          0, value_accent,
                          get_ui()->color_fg, MONITOR_UI_ACCENT_COLOR);
+    LEAVE_SAFE_SECTION
     window->set_color(get_ui()->color_fg);
 }
 
