@@ -18,7 +18,8 @@ library ieee;
 library work;    
     use work.endianness_pkg.all;
     use work.io_bus_pkg.all;
-    
+    use work.mem_bus_pkg.all;
+
 entity floppy_param_mem is
 generic (
     g_big_endian    : boolean );
@@ -32,7 +33,7 @@ port (
     track       : in  unsigned(6 downto 0);
     side        : in  std_logic := '0';
     bit_time    : out unsigned(9 downto 0);
-    track_start : out std_logic_vector(work.mem_bus_pkg.t_mem_req.address'range);
+    track_start : out std_logic_vector(c_mem_addr_width-1 downto 0);
     max_offset  : out std_logic_vector(13 downto 0) );
 
 end floppy_param_mem;

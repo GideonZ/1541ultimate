@@ -235,9 +235,10 @@ begin
     end process;
 
     b_mem_fifo: block
+        constant c_width : natural := mem_req.address'length+8; 
         signal rack      : std_logic;
-        signal fifo_din  : std_logic_vector(mem_req.address'length+7 downto 0);
-        signal fifo_dout : std_logic_vector(mem_req.address'length+7 downto 0);
+        signal fifo_din  : std_logic_vector(c_width-1 downto 0);
+        signal fifo_dout : std_logic_vector(c_width-1 downto 0);
     begin
         fifo_din <= fetch_tag & std_logic_vector(fetch_addr);
         

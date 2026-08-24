@@ -113,7 +113,7 @@ architecture structural of cpu_part_1541 is
 
     -- "old" style signals
     signal mem_request     : std_logic;
-    signal mem_addr        : unsigned(25 downto 0);
+    signal mem_addr        : unsigned(c_mem_addr_width-1 downto 0);
     signal mem_rwn         : std_logic;
     signal mem_rack        : std_logic;
     signal mem_dack        : std_logic;
@@ -252,7 +252,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            mem_addr(25 downto 16) <= g_ram_base(25 downto 16);
+            mem_addr(c_mem_addr_width-1 downto 16) <= g_ram_base(c_mem_addr_width-1 downto 16);
             
             case mem_state is
             when idle =>

@@ -4,12 +4,14 @@ use ieee.numeric_std.all;
 
 package mem_bus_pkg is
 
+    constant c_mem_addr_width : natural := 27;
+
     type t_mem_req is record
         tag         : std_logic_vector(7 downto 0);
         request     : std_logic;
         read_writen : std_logic;
         size        : unsigned(1 downto 0); -- +1 for reads only
-        address     : unsigned(26 downto 0);
+        address     : unsigned(c_mem_addr_width-1 downto 0);
         data        : std_logic_vector(7 downto 0);
     end record;
     
@@ -44,7 +46,7 @@ package mem_bus_pkg is
         tag         : std_logic_vector(7 downto 0);
         request     : std_logic;
         read_writen : std_logic;
-        address     : unsigned(26 downto 0);
+        address     : unsigned(c_mem_addr_width-1 downto 0);
         byte_en     : std_logic_vector(3 downto 0);
         data        : std_logic_vector(31 downto 0);
     end record;
@@ -118,7 +120,7 @@ package mem_bus_pkg is
         data    : std_logic_vector(31 downto 0);
     end record;
 
-    constant c_mem_bus_req_width    : natural := 71;
+    constant c_mem_bus_req_width    : natural := 72;
     function to_std_logic_vector(a: t_mem_req_32) return std_logic_vector;
     function to_mem_req(a: std_logic_vector(c_mem_bus_req_width-1 downto 0); valid: std_logic) return t_mem_req_32;
 end package;
@@ -134,10 +136,10 @@ package body mem_bus_pkg is
     function to_mem_req(a: std_logic_vector(c_mem_bus_req_width-1 downto 0); valid: std_logic) return t_mem_req_32 is
         variable ret : t_mem_req_32;
     begin
-        ret.read_writen := a(70);
-        ret.byte_en     := a(69 downto 66);
-        ret.tag         := a(65 downto 58);
-        ret.address     := unsigned(a(57 downto 32));
+        ret.read_writen := a(71);
+        ret.byte_en     := a(70 downto 67);
+        ret.tag         := a(66 downto 59);
+        ret.address     := unsigned(a(58 downto 32));
         ret.data        := a(31 downto 0);
         ret.request     := valid;
         return ret;

@@ -44,8 +44,8 @@ end entity;
 architecture gideon of usb_memory_ctrl is
     type t_state is (idle, reading, writing, data_wait, prefetch, init);
     signal state            : t_state;
-    signal mem_addr_r       : unsigned(mem_req.address'range) := (others => '0');
-    signal mem_addr_i       : unsigned(mem_req.address'high downto 2) := (others => '0');
+    signal mem_addr_r       : unsigned(c_mem_addr_width-1 downto 0) := (others => '0');
+    signal mem_addr_i       : unsigned(c_mem_addr_width-1 downto 2) := (others => '0');
     signal ram_addr_i       : unsigned(8 downto 2) := (others => '0');
     signal size_r           : unsigned(1 downto 0) := "00";
     signal mreq             : std_logic := '0';

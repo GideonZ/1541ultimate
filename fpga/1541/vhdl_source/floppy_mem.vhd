@@ -32,12 +32,12 @@ port (
     do_write        : in  std_logic;
     do_advance      : in  std_logic;
     
-    track_start     : in  std_logic_vector(work.mem_bus_pkg.t_mem_req.address'range);
-    max_offset      : in  std_logic_vector(13 downto 0);
-    
     mem_req         : out t_mem_req;
-    mem_resp        : in  t_mem_resp );
-    
+    mem_resp        : in  t_mem_resp;
+
+    track_start     : in  std_logic_vector(mem_req.address'range);
+    max_offset      : in  std_logic_vector(13 downto 0)
+);
 end floppy_mem;
 
 architecture gideon of floppy_mem is

@@ -45,7 +45,7 @@ architecture gideon of sid_trace is
     signal state        : t_state;
     type t_mem_state is (idle, do_req, wait_ack );
     signal mem_state    : t_mem_state;
-    signal address      : unsigned(25 downto 0);
+    signal address      : unsigned(c_mem_addr_width-1 downto 0);
     signal count        : unsigned(23 downto 0);
     signal fifo_din     : std_logic_vector(38 downto 0);
     signal fifo_dout    : std_logic_vector(38 downto 0);
@@ -97,7 +97,7 @@ begin
                     when "10" =>
                         io_resp.data <= std_logic_vector(address(23 downto 16));
                     when "11" =>
-                        io_resp.data <= "000000" & std_logic_vector(address(25 downto 24));
+                        io_resp.data(c_mem_addr_width-25 downto 0) <= std_logic_vector(address(c_mem_addr_width-1 downto 24));
                     when others =>
                         null;
                     end case;
