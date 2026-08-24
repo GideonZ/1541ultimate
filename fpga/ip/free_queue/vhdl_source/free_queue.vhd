@@ -16,7 +16,7 @@ library ieee;
 library work;
     use work.io_bus_pkg.all;
     use work.block_bus_pkg.all;
-    
+
 entity free_queue is
 generic (
     g_store_size    : boolean := true;
@@ -73,7 +73,7 @@ architecture gideon of free_queue is
 
     signal sw_insert        : std_logic;
     signal sw_ins_done      : std_logic;
-    signal sw_addr          : std_logic_vector(25 downto 0) := (others => '0');
+    signal sw_addr          : std_logic_vector(alloc_resp.address'range) := (others => '0');
     signal sw_id            : std_logic_vector(7 downto 0) := (others => '0');
     signal sw_pop           : std_logic;
     signal sw_pop_valid     : std_logic;
@@ -122,7 +122,7 @@ begin
                 when X"2" =>
                     sw_addr(23 downto 16) <= io_req.data;
                 when X"3" => 
-                    sw_addr(25 downto 24) <= io_req.data(1 downto 0);
+                    sw_addr(alloc_resp.address'high downto 24) <= io_req.data(alloc_resp.address'high-24 downto 0);
                 when X"4" => -- free / insert
                     sw_id <= io_req.data;
                     sw_insert <= '1';

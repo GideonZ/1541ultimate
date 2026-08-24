@@ -69,7 +69,7 @@ architecture gideon of sampler2 is
     signal voice_sample_reg_l : t_sample_byte_array(0 to g_num_voices-1) := (others => (others => '0'));
     
     signal fetch_en      : std_logic;
-    signal fetch_addr    : unsigned(25 downto 0);
+    signal fetch_addr    : unsigned(mem_req.address'range);
     signal fetch_tag     : std_logic_vector(7 downto 0);
     signal interrupt     : std_logic_vector(g_num_voices-1 downto 0);
     signal interrupt_clr : std_logic_vector(g_num_voices-1 downto 0);
@@ -171,7 +171,7 @@ begin
 
             when fetch1 =>
                 fetch_en <= '1';
-                fetch_addr <= current_control.start_addr + current_state.position;
+                fetch_addr <= current_control.start_addr(fetch_addr'range) + current_state.position;
                 if current_control.mode = mono8 or not g_support_16bit then
                     fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                     next_state.state := playing;
@@ -188,7 +188,7 @@ begin
             
             when fetch2 =>
                 fetch_en   <= '1';
-                fetch_addr <= current_control.start_addr + current_state.position;
+                fetch_addr <= current_control.start_addr(fetch_addr'range) + current_state.position;
                 fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                 next_state.state    := playing;
                 if current_control.interleave then
@@ -236,14 +236,14 @@ begin
 
     b_mem_fifo: block
         signal rack      : std_logic;
-        signal fifo_din  : std_logic_vector(33 downto 0);
-        signal fifo_dout : std_logic_vector(33 downto 0);
+        signal fifo_din  : std_logic_vector(mem_req.address'length+7 downto 0);
+        signal fifo_dout : std_logic_vector(mem_req.address'length+7 downto 0);
     begin
         fifo_din <= fetch_tag & std_logic_vector(fetch_addr);
         
         i_fifo: entity work.srl_fifo
         generic map (
-            Width     => 34,
+            Width     => fifo_din'length,
             Depth     => 15,
             Threshold => 10 )
         port map (
@@ -258,8 +258,8 @@ begin
             DataInFifo  => mem_req.request );
     
         mem_req.read_writen <= '1';
-        mem_req.address     <= unsigned(fifo_dout(25 downto 0));
-        mem_req.tag         <= fifo_dout(33 downto 26);
+        mem_req.address     <= unsigned(fifo_dout(mem_req.address'range));
+        mem_req.tag         <= fifo_dout(mem_req.address'length+7 downto mem_req.address'length+0);
         mem_req.data        <= X"00";
         mem_req.size        <= "00"; -- 1 byte at a time (can be optimized!)
         rack <= '1' when (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 5)="110") else '0';

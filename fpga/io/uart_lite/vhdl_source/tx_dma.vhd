@@ -48,7 +48,7 @@ architecture gideon of tx_dma is
     type t_state is (idle, wait_mem, copy);
     signal state    : t_state;
 
-    signal mem_addr     : unsigned(25 downto 0) := (others => '0');
+    signal mem_addr     : unsigned(mem_req.address'range) := (others => '0');
     signal mem_data     : std_logic_vector(31 downto 0);
     signal read_req     : std_logic;
     signal remain       : unsigned(15 downto 0);

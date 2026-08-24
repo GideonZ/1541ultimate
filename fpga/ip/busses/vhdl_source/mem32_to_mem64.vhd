@@ -65,9 +65,10 @@ begin
 
     process(mem_req_32)
     begin
+        mem_req_64.address      <= (others => '0');
         mem_req_64.request      <= mem_req_32.request;
         mem_req_64.read_writen  <= mem_req_32.read_writen;
-        mem_req_64.address      <= "00" & mem_req_32.address(25 downto 1); -- left: 27 downto 1; right: 25 downto 0
+        mem_req_64.address(mem_req_32.address'high downto 1) <= mem_req_32.address(mem_req_32.address'high downto 1); -- left: 27 downto 1; right: 25 downto 0
         mem_req_64.address(2)   <= mem_req_32.address(2) xor mem_req_32.address(0); -- whoa!!! This is crazy!!
         mem_req_64.tag          <= mem_req_32.address(0) & mem_req_32.tag; -- pass bit 0 of the address as tag, needed for read
         mem_req_64.data         <= X"0000" & mem_req_32.data(7 downto 0) & X"00" & mem_req_32.data;

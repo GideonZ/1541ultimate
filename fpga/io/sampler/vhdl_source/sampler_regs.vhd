@@ -28,7 +28,7 @@ architecture gideon of sampler_regs is
     type t_u8_array      is array (natural range <>) of unsigned(7 downto 0);
     type t_u6_array      is array (natural range <>) of unsigned(5 downto 0);
     type t_u4_array      is array (natural range <>) of unsigned(3 downto 0);
-    type t_u2_array      is array (natural range <>) of unsigned(1 downto 0);
+    --type t_u2_array      is array (natural range <>) of unsigned(1 downto 0);
 
     signal enable      : t_boolean_array(0 to g_num_voices-1) := (others => false);
     signal repeat      : t_boolean_array(0 to g_num_voices-1) := (others => false);
@@ -41,7 +41,7 @@ architecture gideon of sampler_regs is
     signal rep_b_pos2  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal rep_b_pos1  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal rep_b_pos0  : t_u8_array(0 to g_num_voices-1) := (others => X"00");
-    signal start_addr3 : t_u2_array(0 to g_num_voices-1) := (others => "00");
+    signal start_addr3 : t_u4_array(0 to g_num_voices-1) := (others => X"0");
     signal start_addr2 : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal start_addr1 : t_u8_array(0 to g_num_voices-1) := (others => X"00");
     signal start_addr0 : t_u8_array(0 to g_num_voices-1) := (others => X"00");
@@ -108,7 +108,7 @@ begin
                     pan(wr_addr) <= unsigned(io_req.data(3 downto 0));
 
                 when c_sample_start_addr_h  =>
-                    start_addr3(wr_addr) <= unsigned(io_req.data(1 downto 0));
+                    start_addr3(wr_addr) <= unsigned(io_req.data(3 downto 0));
 
                 when c_sample_start_addr_mh =>
                     start_addr2(wr_addr) <= unsigned(io_req.data);

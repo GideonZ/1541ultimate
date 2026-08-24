@@ -147,12 +147,16 @@ begin
     mem_rack  <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack  <= '1' when mem_resp.dack_tag = g_tag else '0';
     
-    mem_req.address <= "00" & transfer_addr;
-    mem_req.data    <= disk_data;
-    mem_req.read_writen <= mem_rwn;
-    mem_req.request     <= mem_request;
-    mem_req.size        <= "00"; -- one byte at a time
-    mem_req.tag         <= g_tag;
+    process(transfer_addr, disk_data, mem_rwn, mem_request)
+    begin
+        mem_req.address <= (others => '0');
+        mem_req.address(transfer_addr'range) <= transfer_addr;
+        mem_req.data    <= disk_data;
+        mem_req.read_writen <= mem_rwn;
+        mem_req.request     <= mem_request;
+        mem_req.size        <= "00"; -- one byte at a time
+        mem_req.tag         <= g_tag;
+    end process;
 
     process(status, index_out, index_enable, index_polarity, command)
     begin

@@ -63,12 +63,12 @@ architecture gideon of eth_transmit is
     signal done             : std_logic;
         
     -- memory signals
-    signal sw_addr      : std_logic_vector(25 downto 0);
+    signal sw_addr      : std_logic_vector(mem_req.address'high downto 0);
     signal sw_length    : std_logic_vector(11 downto 0);
     signal down_count   : unsigned(11 downto 0);
     signal up_count     : unsigned(11 downto 0);
     signal offset       : unsigned(1 downto 0) := (others => '0');
-    signal mem_addr     : unsigned(25 downto 2) := (others => '0');
+    signal mem_addr     : unsigned(mem_req.address'high downto 2) := (others => '0');
     signal mem_data     : std_logic_vector(31 downto 0);
     signal read_req     : std_logic;
 
@@ -159,7 +159,7 @@ begin
                 when X"2" =>
                     sw_addr(23 downto 16) <= io_req.data;
                 when X"3" => 
-                    sw_addr(25 downto 24) <= io_req.data(1 downto 0);
+                    sw_addr(mem_req.address'high downto 24) <= io_req.data(mem_req.address'high-24 downto 0);
                 when X"4" =>
                     sw_length(7 downto 0) <= io_req.data;
                 when X"5" =>
@@ -208,7 +208,7 @@ begin
                 if wr_full = '0' then
                     wr_en <= '0';
                 end if;
-                mem_addr <= unsigned(sw_addr(25 downto 2));
+                mem_addr <= unsigned(sw_addr(mem_addr'high downto 2));
                 down_count <= unsigned(sw_length);
                 up_count <= (others => '0');
                 offset <= unsigned(sw_addr(1 downto 0));

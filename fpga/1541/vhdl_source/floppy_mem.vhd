@@ -32,7 +32,7 @@ port (
     do_write        : in  std_logic;
     do_advance      : in  std_logic;
     
-    track_start     : in  std_logic_vector(25 downto 0);
+    track_start     : in  std_logic_vector(work.mem_bus_pkg.t_mem_req.address'range);
     max_offset      : in  std_logic_vector(13 downto 0);
     
     mem_req         : out t_mem_req;

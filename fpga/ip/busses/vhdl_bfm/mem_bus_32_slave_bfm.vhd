@@ -51,7 +51,7 @@ begin
 
     process(clock)
         variable data : std_logic_vector(31 downto 0);
-        variable word_addr : unsigned(31 downto 2);
+        variable word_addr : unsigned(31 downto 2) := (others => '0');
         variable byte_addr : unsigned(1 downto 0);
         variable seed1 : positive := 1;
         variable seed2 : positive := 1;
@@ -77,7 +77,7 @@ begin
 				if pipe(0).request='1' then
 					if pipe(0).read_writen='1' then
 						resp.dack_tag <= pipe(0).tag;
-						data := read_memory_32(mem, "000000" & std_logic_vector(pipe(0).address));
+						data := read_memory_32(mem, std_logic_vector(pipe(0).address));
                         if pipe(0).address(1 downto 0) = "00" then
                             resp.data     <= data;
                         elsif pipe(0).address(1 downto 0) = "01" then
@@ -88,7 +88,7 @@ begin
                             resp.data     <= data(23 downto 0) & data(31 downto 24);
                         end if;
                     else
-                        word_addr := "000000" & pipe(0).address(25 downto 2);
+                        word_addr(req_i.address'high downto 2) := pipe(0).address(req_i.address'high downto 2);
                         byte_addr := pipe(0).address(1 downto 0);
                         for i in 0 to 3 loop
                             if pipe(0).byte_en(i) = '1' then

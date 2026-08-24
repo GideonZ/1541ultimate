@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.mem_bus_pkg.all;
 
 package sampler_pkg is
 
@@ -28,7 +29,7 @@ package sampler_pkg is
         interrupt   : boolean;
         interleave  : boolean;
         mode        : t_sample_mode;
-        start_addr  : unsigned(25 downto 0);
+        start_addr  : unsigned(27 downto 0);
         repeat_a    : unsigned(23 downto 0);
         repeat_b    : unsigned(23 downto 0);
         length      : unsigned(23 downto 0);        
@@ -43,7 +44,7 @@ package sampler_pkg is
         interrupt   => false,
         interleave  => false,
         mode        => mono8,
-        start_addr  => to_unsigned(16*1024*1024, 26),
+        start_addr  => to_unsigned(16*1024*1024, 28),
         repeat_a    => to_unsigned(32768, 24),
         repeat_b    => to_unsigned(49152, 24),
         length      => to_unsigned(65536, 24),

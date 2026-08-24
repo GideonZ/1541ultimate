@@ -69,7 +69,7 @@ architecture structural of floppy is
     signal do_read          : std_logic;
     signal do_write         : std_logic;
     signal do_advance       : std_logic;
-    signal track_start      : std_logic_vector(25 downto 0);
+    signal track_start      : std_logic_vector(work.mem_bus_pkg.t_mem_req.address'range);
     signal max_offset       : std_logic_vector(13 downto 0);
     signal track_i          : unsigned(6 downto 0);
     signal bit_time         : unsigned(9 downto 0);

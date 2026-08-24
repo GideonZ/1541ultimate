@@ -44,8 +44,8 @@ end entity;
 architecture gideon of usb_memory_ctrl is
     type t_state is (idle, reading, writing, data_wait, prefetch, init);
     signal state            : t_state;
-    signal mem_addr_r       : unsigned(25 downto 0) := (others => '0');
-    signal mem_addr_i       : unsigned(25 downto 2) := (others => '0');
+    signal mem_addr_r       : unsigned(mem_req.address'range) := (others => '0');
+    signal mem_addr_i       : unsigned(mem_req.address'high downto 2) := (others => '0');
     signal ram_addr_i       : unsigned(8 downto 2) := (others => '0');
     signal size_r           : unsigned(1 downto 0) := "00";
     signal mreq             : std_logic := '0';
@@ -125,7 +125,7 @@ begin
                             mem_addr_r(15 downto 0) <= unsigned(cmd_wdata(15 downto 0));
                             new_addr <= '1';
                         when X"1" =>
-                            mem_addr_r(25 downto 16) <= unsigned(cmd_wdata(9 downto 0));
+                            mem_addr_r(mem_addr_r'high downto 16) <= unsigned(cmd_wdata(mem_addr_r'high-16 downto 0));
                             new_addr <= '1';
                         when X"2" =>
                             rwn <= '0';
@@ -211,9 +211,10 @@ begin
     addr_do_inc   <= '1' when (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 2) = g_tag(7 downto 2)) else '0';
     
     i_addr: entity work.mem_addr_counter
+    generic map (mem_addr_i'length)
     port map (
         clock       => clock,
-        load_value  => mem_addr_r(25 downto 2),
+        load_value  => mem_addr_r(mem_addr_r'high downto 2),
         do_load     => addr_do_load,
         do_inc      => addr_do_inc,
         address     => mem_addr_i );

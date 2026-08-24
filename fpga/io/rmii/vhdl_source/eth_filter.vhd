@@ -75,13 +75,13 @@ architecture gideon of eth_filter is
     type t_state is (idle, get_block, drop, copy, valid_packet, pushing, ram_write);
     signal state    : t_state;
     signal address_valid    : std_logic;
-    signal start_addr       : unsigned(25 downto 0);
+    signal start_addr       : unsigned(mem_req.address'range);
     signal mac_idx          : integer range 0 to 3;
     signal for_me           : std_logic;
     signal block_id         : unsigned(7 downto 0);
     
     -- memory signals
-    signal mem_addr     : unsigned(25 downto 0) := (others => '0');
+    signal mem_addr     : unsigned(mem_req.address'range) := (others => '0');
     signal mem_data     : std_logic_vector(31 downto 0) := (others => '0');
     signal write_req    : std_logic;
     

@@ -22,7 +22,7 @@ port (
     -- 32 bits Avalon bus interface
     avs_read            : in  std_logic;
     avs_write           : in  std_logic;
-    avs_address         : in  std_logic_vector(25 downto 0);
+    avs_address         : in  std_logic_vector(31 downto 0);
     avs_writedata       : in  std_logic_vector(31 downto 0);
     avs_byteenable      : in  std_logic_vector(3 downto 0);
     avs_waitrequest     : out std_logic;
@@ -31,7 +31,7 @@ port (
 
     mem_req_read_writen : out std_logic;
     mem_req_request     : out std_logic;
-    mem_req_address     : out std_logic_vector(25 downto 0);
+    mem_req_address     : out std_logic_vector(31 downto 0);
     mem_req_wdata       : out std_logic_vector(31 downto 0);
     mem_req_byte_en     : out std_logic_vector(3 downto 0);
     mem_req_tag         : out std_logic_vector(7 downto 0);

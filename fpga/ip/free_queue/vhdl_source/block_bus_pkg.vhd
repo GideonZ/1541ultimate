@@ -12,6 +12,7 @@
 library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
+    use work.mem_bus_pkg.all;
 
 package block_bus_pkg is
 
@@ -19,7 +20,7 @@ package block_bus_pkg is
         done    : std_logic;
         error   : std_logic;
         id      : unsigned(7 downto 0);
-        address : unsigned(25 downto 0);
+        address : unsigned(t_mem_req.address'range);
     end record;
 
     type t_used_req is record

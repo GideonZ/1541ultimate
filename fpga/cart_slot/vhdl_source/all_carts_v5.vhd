@@ -52,7 +52,7 @@ port (
     allow_write     : out std_logic;
 
     mem_req         : in  std_logic; -- if '1', the address shouldn't change
-    mem_addr        : out unsigned(25 downto 0);   
+    mem_addr        : out unsigned(work.mem_bus_pkg.t_mem_req.address'range);   
 
     phi2            : in  std_logic;
     irq_n           : out std_logic;

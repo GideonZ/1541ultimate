@@ -3,13 +3,15 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity mem_addr_counter is
+generic (
+    g_width     : natural := 24 );
 port (
     clock       : in  std_logic;
-    load_value  : in  unsigned(25 downto 2);
+    load_value  : in  unsigned(g_width-1 downto 0);
     do_load     : in  std_logic;
     do_inc      : in  std_logic;
     
-    address     : out unsigned(25 downto 2) );
+    address     : out unsigned(g_width-1 downto 0) );
 end mem_addr_counter;
 
 architecture test of mem_addr_counter is

@@ -140,7 +140,7 @@ architecture arch of jtag_client_xilinx is
     signal avm_waitrequest      : std_logic;
     signal avm_readdata         : std_logic_vector(31 downto 0);
     signal avm_readdatavalid    : std_logic;
-    signal mem_addr_jtag        : std_logic_vector(25 downto 0);
+    signal mem_addr_jtag        : std_logic_vector(31 downto 0);
 
     signal io_read              : std_logic := '0';
     signal io_write             : std_logic := '0';
@@ -599,7 +599,7 @@ begin
             reset               => sys_reset,
             avs_read            => avm_read,
             avs_write           => avm_write,
-            avs_address         => avm_address(25 downto 0),
+            avs_address         => avm_address,
             avs_writedata       => avm_writedata,
             avs_byteenable      => avm_byteenable,
             avs_waitrequest     => avm_waitrequest,
@@ -617,7 +617,8 @@ begin
             mem_resp_dack_tag   => mem_resp.dack_tag,
             mem_resp_data       => mem_resp.data
         );
-    mem_req.address <= unsigned(mem_addr_jtag(25 downto 0));
+
+    mem_req.address <= unsigned(mem_addr_jtag(mem_req.address'range));
 
     io_req.address <= address(io_req.address'range);
     io_req.read   <= io_read;

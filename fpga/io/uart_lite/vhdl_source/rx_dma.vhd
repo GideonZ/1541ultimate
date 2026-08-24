@@ -56,7 +56,7 @@ architecture gideon of rx_dma is
     type t_state is (idle, first, collect, write_mem, write_last, report_len, dropping);
     signal state    : t_state;
 
-    signal mem_addr     : unsigned(25 downto 0) := (others => '0');
+    signal mem_addr     : unsigned(mem_req.address'range) := (others => '0');
     signal mem_data     : std_logic_vector(31 downto 0);
     signal mem_be       : std_logic_vector(3 downto 0);
     signal write_req    : std_logic;

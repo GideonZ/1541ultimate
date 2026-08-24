@@ -146,7 +146,7 @@ begin
     -- fill mem request structure
     mem_req.tag         <= g_ram_tag;
     mem_req.request     <= reu_req;
-    mem_req.address     <= g_ram_base(25 downto 24) & masked_reu_addr;
+    mem_req.address     <= g_ram_base(mem_req.address'high downto 24) & masked_reu_addr;
     mem_req.read_writen <= glob_rwn;
     mem_req.data        <= c64_read_reg;
     mem_req.size        <= "00"; -- 1 byte at a time

@@ -9,7 +9,7 @@ package mem_bus_pkg is
         request     : std_logic;
         read_writen : std_logic;
         size        : unsigned(1 downto 0); -- +1 for reads only
-        address     : unsigned(25 downto 0);
+        address     : unsigned(26 downto 0);
         data        : std_logic_vector(7 downto 0);
     end record;
     
@@ -44,7 +44,7 @@ package mem_bus_pkg is
         tag         : std_logic_vector(7 downto 0);
         request     : std_logic;
         read_writen : std_logic;
-        address     : unsigned(25 downto 0);
+        address     : unsigned(26 downto 0);
         byte_en     : std_logic_vector(3 downto 0);
         data        : std_logic_vector(31 downto 0);
     end record;
