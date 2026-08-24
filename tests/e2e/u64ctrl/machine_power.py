@@ -29,9 +29,17 @@ from report import Failure, detail
 # A cold start has to load the FPGA before the application answers anything.
 DEFAULT_UP_TIMEOUT = 90.0
 # How long a machine that is supposed to stay off has to stay silent for a
-# check to believe it. Sized above the boot time above, so that "still off"
-# cannot just mean "not up yet".
-DEFAULT_SILENCE_SECONDS = 30.0
+# check to believe it.
+#
+# It has to be at least the boot budget above, and for a reason worth stating:
+# the two are the same question asked twice. A machine that wrongly powers up
+# has to load the FPGA, boot the application and get on the network before
+# anything answers, and this suite already says that may take up to
+# DEFAULT_UP_TIMEOUT. A shorter silence window therefore proves nothing -- it
+# ends while a machine that did wrongly come up is still booting, and reads its
+# silence as "stayed off". This was 30s, which is a third of the budget the
+# positive checks give the very same boot.
+DEFAULT_SILENCE_SECONDS = DEFAULT_UP_TIMEOUT
 POLL_SECONDS = 2.0
 
 
