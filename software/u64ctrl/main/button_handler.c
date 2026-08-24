@@ -80,17 +80,20 @@ static void handle_button_event(int event)
             ESP_LOGI(TAG, "** ON **");
             regulator_enable(1, 0);
             power_store_last_state(1);
+            wake_on_wifi_update(1);
             break;
         case BUTTON_ON2:
             ESP_LOGI(TAG, "** ON with delay **");
             regulator_enable(1, 20);
             power_store_last_state(1);
+            wake_on_wifi_update(1);
             break;
         case BUTTON_OFF:
             ESP_LOGI(TAG, "** OFF **");
             regulator_enable(0, 0);
             disable_hook();
             power_store_last_state(0);
+            wake_on_wifi_update(0);
             break;
     }
 }
@@ -114,6 +117,9 @@ static void button_handler(void *arg)
     gpio_set_direction(IO_ENABLE_MOD, GPIO_MODE_OUTPUT);
     vTaskDelay(100 / portTICK_PERIOD_MS); // Allow pull up to do its work.
     regulator_enable(initial_state, 0); // turn off uart also
+    // A machine that cold starts into the off state is watched from here on,
+    // just as one that is switched off later is.
+    wake_on_wifi_update(initial_state);
 
     while (1) {
         up = gpio_get_level(IO_BUTTON_UP);

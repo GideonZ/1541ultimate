@@ -29,6 +29,9 @@
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
 #include "pinout.h"
+#include "power_state.h"
+#include "button_handler.h"
+#include "wol_magic.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -128,6 +131,79 @@ static err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const struct ip4_
 {
     //pbuf_free(pbuf);
     return ERR_OK;
+}
+
+
+/* Wake on Wi-Fi.
+ *
+ * While the machine is off, the application does not exist -- and with it
+ * neither the REST API nor the IP stack it serves -- so the only thing on the
+ * network is this module, associated on its own credentials with its own lwIP.
+ * Frames reach it through netif->input, which is where hacked_recv sits while
+ * the machine is on. That slot is therefore also the place to watch for a
+ * magic packet, before the module's own stack consumes the frame.
+ *
+ * Unlike hacked_recv this does not take the frame over: whether it matched or
+ * not, it is passed on to the stack that was there. That stack is what keeps
+ * the association, the DHCP lease and SNTP alive while the machine is off, and
+ * it is what answers the ARP the sender of a unicast magic packet needs.
+ *
+ * Nothing here can wake the machine over the wired jack: the RMII PHY and its
+ * MDIO live in the FPGA power domain, which is down while the machine is off,
+ * and this module has no wired path of its own. Wi-Fi is not the convenient
+ * channel for this, it is the only possible one.
+ *
+ * Armed and disarmed from the button handler's task, cleared by the watcher
+ * itself on a match, and read in the frame path, so volatile. */
+static volatile bool wake_armed = false;
+
+static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
+{
+    if (wake_armed) {
+        uint8_t frame[WOL_SCAN_BYTES];
+        // pbuf_copy_partial() flattens a chain and clamps to what is there, so
+        // a short frame is short rather than a read past the first pbuf.
+        const uint16_t got = pbuf_copy_partial(p, frame, sizeof(frame), 0);
+        if (wol_is_magic_packet(frame, got, inp->hwaddr)) {
+            // Disarmed before the event is posted: wake tools send the packet
+            // several times over, and the machine is to be switched on once.
+            wake_armed = false;
+            ESP_LOGI(TAG, "Magic packet received; switching the machine on.");
+            extern_button_event(BUTTON_ON);
+        }
+    }
+    return default_input(p, inp);
+}
+
+/* Called on every power transition, and once at startup, with the state the
+ * machine is now in. Reads the setting each time, so a change made in the menu
+ * is picked up without the module having to be told twice. */
+void wake_on_wifi_update(int machine_on)
+{
+    if (!my_sta_netif) {
+        return;
+    }
+    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
+    if (!lw) {
+        return;
+    }
+
+    if (!machine_on && default_input && (power_get_wake_on_wifi() == WAKE_ON_WIFI_ENABLED)) {
+        // default_input is what the watcher hands the frame on to, so there is
+        // no watching to do before wifi_init() has recorded it.
+        wake_armed = true;
+        lw->input = wake_watch_recv;
+        ESP_LOGI(TAG, "Wake on Wi-Fi armed.");
+        return;
+    }
+
+    wake_armed = false;
+    // Only our own watcher is taken out again. While the machine is on, the
+    // slot belongs to the application's hacked_recv, and the machine may well
+    // have asked for it before this runs.
+    if (lw->input == wake_watch_recv) {
+        lw->input = default_input;
+    }
 }
 
 
