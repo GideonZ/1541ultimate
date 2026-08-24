@@ -140,7 +140,10 @@ int main(void)
     given(POWERON_MODE_LAST_STATE, 1);
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
     check_eq(power_get_mode(), POWERON_MODE_LAST_STATE, "the mode survives a wake write");
+    power_set_mode(POWERON_MODE_ON);              // now the other direction
     check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_ENABLED, "the wake setting survives a mode write");
+    check_eq(power_get_mode(), POWERON_MODE_ON, "and the mode is the one just written");
+    power_set_mode(POWERON_MODE_LAST_STATE);
     check_eq(power_initial_state(0), 1, "and the cold start still acts on the mode");
 
     printf("Writing a Wake on Wi-Fi value that has not changed\n");
