@@ -163,9 +163,11 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
-// 0x55..0x5E are used by the USB HID store (io/usb/usb_hid_config.h) and
-// 0x56..0x63 by the audio selection store (io/audio/audio_select.cc); both are
-// different stores, but kept clear here to keep the ids readable side by side
+// 0x55..0x5E are declared in io/usb/usb_hid_config.h but are items of *this*
+// store (CFG_MOUSE_MODE and friends appear in u64_cfg below), so they are taken.
+// 0x56..0x63 belong to the audio selection store (io/audio/audio_select.cc),
+// which is a store of its own; they are kept clear here anyway, because
+// ConfigStore::unpack() matches by id across every store on STORE_PAGE_ID.
 #define CFG_POWERON_MODE      0x5F
 // The first id clear of both ranges above; 0x60 would sit inside the audio one
 #define CFG_WAKE_ON_WIFI      0x64
