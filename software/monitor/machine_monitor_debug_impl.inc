@@ -1130,12 +1130,12 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
     }
     if (key == KEY_UP) {
         if (breakpoint_selected > 0) breakpoint_selected--;
-        refresh_popup_overlay();
+        refresh_breakpoint_popup_overlay();
         return 0;
     }
     if (key == KEY_DOWN) {
         if (breakpoint_selected + 1 < (uint8_t)breakpoints.slot_count()) breakpoint_selected++;
-        refresh_popup_overlay();
+        refresh_breakpoint_popup_overlay();
         return 0;
     }
     if (key >= '0' && key <= '9') {
@@ -1151,7 +1151,7 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             debug_close_breakpoint_popup();
             redraw_full();
         } else {
-            refresh_popup_overlay();
+            refresh_breakpoint_popup_overlay();
         }
         return 0;
     }
@@ -1179,10 +1179,12 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
                (unsigned)breakpoint_selected, state.current_addr,
                monitor_backing_store_tag(backing_store));
         show_breakpoint_mapping_note(state.current_addr, backing_store);
-        refresh_popup_overlay();
+        refresh_breakpoint_popup_overlay();
         return 0;
     }
     if (key == 'l' || key == 'L') {
+        // edit_breakpoint_label opens a modal prompt outside the popup box, so
+        // this stays a full redraw to clean up after it.
         edit_breakpoint_label(breakpoint_selected);
         refresh_popup_overlay();
         return 0;
@@ -1195,7 +1197,7 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             printf("MCM breakpoint %s %u $%04X\n", new_enabled ? "enable" : "disable",
                    (unsigned)breakpoint_selected, bp->address);
         }
-        refresh_popup_overlay();
+        refresh_breakpoint_popup_overlay();
         return 0;
     }
     if (key == KEY_DELETE || key == KEY_BACK) {
@@ -1204,7 +1206,7 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             printf("MCM breakpoint clear %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
         }
         breakpoints.clear_slot(breakpoint_selected);
-        refresh_popup_overlay();
+        refresh_breakpoint_popup_overlay();
         return 0;
     }
     return 0;

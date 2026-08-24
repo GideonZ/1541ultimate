@@ -4594,6 +4594,21 @@ void MachineMonitor :: refresh_opcode_overlay()
     screen->sync();
 }
 
+void MachineMonitor :: refresh_breakpoint_popup_overlay()
+{
+    // Same fix as refresh_opcode_overlay(): selecting a row or clearing a slot
+    // changes only the popup box, so repaint that instead of falling back to a
+    // full draw() on a full-refresh (telnet/VT100) screen.
+    if (!window || !screen) {
+        return;
+    }
+    if (!breakpoint_popup_active) {
+        return;
+    }
+    debug_render_breakpoint_popup();
+    screen->sync();
+}
+
 void MachineMonitor :: draw_hex_row(int y, uint16_t addr, const uint8_t *bytes)
 {
     char line[MONITOR_MEMORY_ROW_16_CHARS + 1];

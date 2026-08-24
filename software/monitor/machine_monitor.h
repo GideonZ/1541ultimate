@@ -375,6 +375,7 @@ class MachineMonitor : public UIObject
     void draw_popup_overlays();
     void refresh_popup_overlay();
     void refresh_opcode_overlay();
+    void refresh_breakpoint_popup_overlay();
     void draw_hex();
     void draw_ascii();
     void draw_screen_codes();
