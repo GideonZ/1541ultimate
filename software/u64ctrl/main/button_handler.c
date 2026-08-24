@@ -194,7 +194,9 @@ void start_button_handler(int initial)
     xTaskCreate(button_handler, "button_handler", 3072, &initial_power_state, tskIDLE_PRIORITY + 2, NULL);
 }
 
-void extern_button_event(uint8_t button)
+BaseType_t extern_button_event(uint8_t button)
 {
-    xQueueSend(button_queue, &button, 0);
+    // The result matters to a caller that has no second chance to post: see
+    // wake_watch_recv() in wifi_modem.c, which stays armed when this fails.
+    return xQueueSend(button_queue, &button, 0);
 }
