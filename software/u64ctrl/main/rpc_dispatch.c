@@ -335,6 +335,34 @@ void cmd_get_power_mode(command_buf_t *buf)
     my_uart_transmit_packet(UART_CHAN, buf);
 }
 
+void cmd_set_wake_on_wifi(command_buf_t *buf)
+{
+    rpc_set_wake_on_wifi_req *param = (rpc_set_wake_on_wifi_req *)buf->data;
+    rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
+
+    if (buf->size < (int)sizeof(rpc_set_wake_on_wifi_req)) {
+        resp->esp_err = ESP_ERR_INVALID_ARG;
+        buf->size = sizeof(rpc_espcmd_resp);
+        my_uart_transmit_packet(UART_CHAN, buf);
+        return;
+    }
+    uint8_t enabled = param->enabled; // read before the response overwrites the request
+    // The machine is on -- it just sent this -- so nothing is armed right now;
+    // the value is read again the next time the machine goes off.
+    resp->esp_err = power_set_wake_on_wifi(enabled);
+    buf->size = sizeof(rpc_espcmd_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
+void cmd_get_wake_on_wifi(command_buf_t *buf)
+{
+    rpc_get_wake_on_wifi_resp *resp = (rpc_get_wake_on_wifi_resp *)buf->data;
+    resp->enabled = power_get_wake_on_wifi();
+    resp->esp_err = ESP_OK;
+    buf->size = sizeof(rpc_get_wake_on_wifi_resp);
+    my_uart_transmit_packet(UART_CHAN, buf);
+}
+
 void cmd_not_implemented(command_buf_t *buf)
 {
     rpc_espcmd_resp *resp = (rpc_espcmd_resp *)buf->data;
@@ -461,6 +489,12 @@ void dispatch(void *ct)
             break;
         case CMD_GET_POWER_MODE:
             cmd_get_power_mode(pbuffer);
+            break;
+        case CMD_SET_WAKE_ON_WIFI:
+            cmd_set_wake_on_wifi(pbuffer);
+            break;
+        case CMD_GET_WAKE_ON_WIFI:
+            cmd_get_wake_on_wifi(pbuffer);
             break;
         default:
             cmd_not_implemented(pbuffer);
