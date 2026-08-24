@@ -2066,6 +2066,18 @@ def screen_text(driver: BaseDriver) -> str:
 
 
 
+# Two concurrent runs of this suite must not pick the same VICE port.
+# run-tests hands each one an index in E2E_PORT_SLOT; a run started by hand
+# has no index and keeps port 6518, this suite's traditional default.
+VICE_PORT_BASE = 6518
+VICE_PORTS_PER_RUN = 8
+
+
+def vice_port(offset: int) -> int:
+    slot = int(os.environ.get("E2E_PORT_SLOT", "0"))
+    return VICE_PORT_BASE + slot * VICE_PORTS_PER_RUN + offset
+
+
 class ViceBinaryMonitor:
     def __init__(self, port: int, artifact_dir: Path) -> None:
         self.port = port
@@ -2300,7 +2312,7 @@ class DualOracles:
         self.vice_warning: Optional[str] = None
         vice_path = self._vice_path()
         if vice_path is not None:
-            port = 6520 + (os.getpid() % 200)
+            port = vice_port(1)
             self.vice = ViceBinaryMonitor(port, cell_dir / "vice-oracle")
             try:
                 self.vice.__enter__()
@@ -2708,8 +2720,10 @@ def run_step_trace_dual(driver: BaseDriver, row: dict[str, Any], cell_dir: Path,
     return len(trace)
 
 
-def run_vice_oracle_check(artifact_dir: Path, port: int = 6518,
+def run_vice_oracle_check(artifact_dir: Path, port: Optional[int] = None,
                           minimum_opcodes: int = 100) -> dict[str, Any]:
+    if port is None:
+        port = vice_port(0)
     out_dir = artifact_dir / "preflight" / "vice-oracle"
     transcript = []
     with ViceBinaryMonitor(port, out_dir) as vice:
