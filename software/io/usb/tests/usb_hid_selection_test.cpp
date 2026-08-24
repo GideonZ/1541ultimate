@@ -104,3 +104,112 @@ TEST(HidVisibilitySelectionTest, DisconnectMatchesOnlyTheExactVisibleSource)
 	EXPECT_FALSE(usb_hid_source_matches(keychron, 1, keychron, 2));
 	EXPECT_FALSE(usb_hid_source_matches(keychron, 1, logitech, 1));
 }
+
+TEST(HidSetIdleTest, OnlyAKeyboardOnlyInterfaceIsAskedForAPeriodicRate)
+{
+	EXPECT_EQ(USB_HID_SET_IDLE_UNITS, usb_hid_set_idle_units(true, false));
+	// Report id 0 covers the mouse reports of these interfaces too, and the HID
+	// specification asks for an infinite idle period for a mouse.
+	EXPECT_EQ(0, usb_hid_set_idle_units(false, true));
+	EXPECT_EQ(0, usb_hid_set_idle_units(true, true));
+	EXPECT_EQ(0, usb_hid_set_idle_units(false, false));
+}
+
+TEST(HidKeyboardIdleStateTest, SingleKeyboardThatAcceptedSetIdleGetsThePeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	EXPECT_EQ(USB_HID_SET_IDLE_PERIOD_MS, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, SingleKeyboardWithoutAPeriodicRateGetsNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, false);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, NoKeyboardAttachedGetsNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+// Keyboard_USB sees one merged report stream, so the periodic reports of the
+// second keyboard would keep a stale key of the first keyboard looking fresh.
+TEST(HidKeyboardIdleStateTest, TwoPeriodicKeyboardsGetNoPeriod)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	usb_hid_keyboard_idle_add(state, true);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+}
+
+TEST(HidKeyboardIdleStateTest, PeriodReturnsWhenTheSecondKeyboardIsUnplugged)
+{
+	t_usb_hid_keyboard_idle_state state = { 0, 0 };
+	usb_hid_keyboard_idle_add(state, true);
+	usb_hid_keyboard_idle_add(state, false);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+
+	usb_hid_keyboard_idle_remove(state, false);
+	EXPECT_EQ(USB_HID_SET_IDLE_PERIOD_MS, usb_hid_keyboard_idle_period_ms(state));
+
+	usb_hid_keyboard_idle_remove(state, true);
+	EXPECT_EQ(0, usb_hid_keyboard_idle_period_ms(state));
+	EXPECT_EQ(0, state.interfaces);
+	EXPECT_EQ(0, state.interfaces_periodic);
+}
+
+TEST(HidSetIdleTest, OnlyAReadBackDurationCountsAsAcceptance)
+{
+	// The keyboard returns the duration that was requested.
+	EXPECT_TRUE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 1, USB_HID_SET_IDLE_UNITS));
+	// GET_IDLE stalled, so control_exchange returned an error.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, -4, USB_HID_SET_IDLE_UNITS));
+	// The request completed without transferring the duration byte.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 0, USB_HID_SET_IDLE_UNITS));
+	// The keyboard acknowledged SET_IDLE but kept reporting only on change.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(USB_HID_SET_IDLE_UNITS, 1, 0));
+	// Nothing was requested, so there is nothing to accept.
+	EXPECT_FALSE(usb_hid_idle_rate_accepted(0, 1, 0));
+}
+
+TEST(HidRelinquishTest, TakingOverOneFunctionReleasesEveryFunctionOfTheInterface)
+{
+	// Boot mouse with a keyboard collection in its report descriptor. A sibling
+	// takes over the mouse, the interface stops, so its keyboard source must go
+	// too or its last report stays merged with a key still down.
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, true, false,
+	                                                                 false, true);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_TRUE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, TakingOverTheKeyboardOfACompositeReleasesItsMouseToo)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, false, true,
+	                                                                 true, false);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_TRUE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, BootKeyboardOnlyReleasesItsKeyboard)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, false, false, false,
+	                                                                 true, false);
+	EXPECT_TRUE(actions.relinquish);
+	EXPECT_TRUE(actions.release_keyboard);
+	EXPECT_FALSE(actions.release_mouse);
+}
+
+TEST(HidRelinquishTest, AReportProtocolInterfaceKeepsItsFunctions)
+{
+	t_usb_hid_relinquish_actions actions = usb_hid_relinquish_actions(true, true, true, true,
+	                                                                 true, true);
+	EXPECT_FALSE(actions.relinquish);
+	EXPECT_FALSE(actions.release_keyboard);
+	EXPECT_FALSE(actions.release_mouse);
+}
