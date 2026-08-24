@@ -203,7 +203,7 @@ architecture rtl of u2p_nios_solo is
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
     signal is_idle          : std_logic;
-    signal cpu_mem_req      : t_mem_req_32;
+    signal cpu_mem_req      : t_mem_req_32 := c_mem_req_32_init;
     signal cpu_mem_resp     : t_mem_resp_32;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
@@ -368,7 +368,7 @@ begin
         unsigned(io_u2p_address) => io_u2p_req.address(19 downto 0),
         io_u2p_irq         => '0',
         
-        unsigned(mem_mem_req_address) => cpu_mem_req.address,
+        unsigned(mem_mem_req_address) => cpu_mem_req.address(25 downto 0),
         mem_mem_req_byte_en     => cpu_mem_req.byte_en,
         mem_mem_req_read_writen => cpu_mem_req.read_writen,
         mem_mem_req_request     => cpu_mem_req.request,
