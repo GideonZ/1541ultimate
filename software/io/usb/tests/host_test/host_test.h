@@ -5,8 +5,18 @@
 #include <exception>
 #include <sstream>
 #include <stdexcept>
+#include <stdint.h>
 #include <string>
 #include <vector>
+
+// keyboard_usb.cc reads the firmware millisecond timer, which has no host
+// implementation to link against. The harness provides one so a test can hold
+// time still or advance it deliberately. A time source injected into
+// Keyboard_USB would do the same job, but it would exist in production only for
+// the tests, while this stub is confined to the test binaries.
+extern "C" uint16_t getMsTimer(void);
+void host_test_set_ms_timer(uint16_t ms);
+void host_test_advance_ms_timer(uint16_t delta);
 
 namespace host_test {
 

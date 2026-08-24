@@ -58,6 +58,7 @@ roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
 runs
 software/api/tests/inputApiValidationTest
 software/api/tests/inputApiStateTest
+software/io/usb/tests/keyboardC64ClearTest
 software/io/usb/tests/usbHidKeyboardTest
 software/io/usb/tests/usbHidMouseTest
 software/io/usb/tests/usbHidSelectionTest

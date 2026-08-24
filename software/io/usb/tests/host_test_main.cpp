@@ -1,6 +1,25 @@
 #include <iostream>
 #include "host_test/host_test.h"
 
+namespace {
+uint16_t host_test_ms_timer = 0;
+}
+
+extern "C" uint16_t getMsTimer(void)
+{
+	return host_test_ms_timer;
+}
+
+void host_test_set_ms_timer(uint16_t ms)
+{
+	host_test_ms_timer = ms;
+}
+
+void host_test_advance_ms_timer(uint16_t delta)
+{
+	host_test_ms_timer += delta;
+}
+
 namespace host_test {
 
 int run_all_tests()

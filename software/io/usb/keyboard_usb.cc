@@ -5,6 +5,7 @@
  *      Author: gideon
  */
 #include "keyboard_usb.h"
+#include "itu.h"
 #include <string.h>
 #include "FreeRTOS.h"
 #include "task.h"
@@ -49,6 +50,11 @@ static const uint32_t WAIT_FREE_POLL_TICKS =
 #endif
 static const uint8_t REST_TAP_CHORD_SETUP_TICKS = 1;
 static const uint8_t REST_TAP_CHORD_RELEASE_TICKS = 1;
+
+// Silence for this many idle periods does not prove the release was lost, only
+// that the repeat state cannot be trusted; a long USB delay looks the same. Three
+// rather than one, to survive the 20ms endpoint poll and the USB event task.
+static const int USB_REPEAT_STALE_IDLE_PERIODS = 3;
 
 }
 
@@ -172,6 +178,9 @@ Keyboard_USB :: Keyboard_USB()
     first_delay = 16;
     delay_count = first_delay;
     num_keys = 0;
+    report_idle_period_ms = 0;
+    last_report_time = 0;
+    repeat_stale = false;
 
 	memset(key_buffer, 0, USB_KEY_BUFFER_SIZE);
 	memset(injected_buffer, 0, USB_INJECTED_BUFFER_SIZE);
@@ -456,6 +465,7 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 {
 	usb2matrix(kbdata);
 
+	bool report_changed = (memcmp(last_data, kbdata, USB_DATA_SIZE) != 0);
 	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kbdata[i]) {
@@ -483,7 +493,42 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 	}
 
 	memcpy(last_data, kbdata, USB_DATA_SIZE);
-    delay_count = first_delay;
+	last_report_time = getMsTimer();
+	repeat_stale = false;
+	// A periodic idle report repeats the key set that is already down. Restarting
+	// the repeat delay on it would hold off the repeat forever, so only a report
+	// that changes the key set counts as a new key press.
+	if (report_changed) {
+		delay_count = first_delay;
+	}
+}
+
+// A lost release leaves num_keys at 1 and the repeat free runs. With a negotiated
+// idle rate a held key re-reports itself, so silence bounds the repeat; without one
+// no reports arrive while a key is held and a bound would break auto-repeat.
+// Latched until the next report, so a wrap of the 16-bit timer cannot look fresh.
+// Two accepted limits: these fields are unlocked across the USB and UI tasks, so a
+// report landing mid-check can cost one repeat decision; and a UI stall longer than
+// the timer's 65.536s period hides the age until the next three idle periods pass.
+bool Keyboard_USB :: repeatIsLive(void)
+{
+	if (report_idle_period_ms <= 0) {
+		return true;
+	}
+	if (repeat_stale) {
+		return false;
+	}
+	uint16_t age = (uint16_t)(getMsTimer() - last_report_time);
+	if (age > (uint16_t)(USB_REPEAT_STALE_IDLE_PERIODS * report_idle_period_ms)) {
+		repeat_stale = true;
+		return false;
+	}
+	return true;
+}
+
+void Keyboard_USB :: setReportIdlePeriod(int period_ms)
+{
+	report_idle_period_ms = (period_ms > 0) ? period_ms : 0;
 }
 
 // called from the user interface thread
@@ -496,7 +541,7 @@ int  Keyboard_USB :: getch(void)
 			applyMatrixState();
 		}
     }
-    if (num_keys == 1) { // implement repeat for one key pressed (other than the modifiers)
+    if ((num_keys == 1) && repeatIsLive()) { // implement repeat for one key pressed (other than the modifiers)
         if (delay_count == 0) {
             delay_count = repeat_speed;
 
@@ -651,9 +696,18 @@ void Keyboard_USB :: wait_free(void)
 	}
 }
 
-void Keyboard_USB :: clear_buffer(void)
+// Queued characters and the repeat that produces them. A repeat that is already
+// running would emit into the buffer that was just cleared, so a key that is
+// genuinely held serves the full initial delay again before it repeats.
+void Keyboard_USB :: clear_pending_input(void)
 {
 	key_tail = key_head;
+	delay_count = first_delay;
+}
+
+void Keyboard_USB :: clear_buffer(void)
+{
+	clear_pending_input();
 	portENTER_CRITICAL();
 	injected_tail = injected_head;
 	portEXIT_CRITICAL();
