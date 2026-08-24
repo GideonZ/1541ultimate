@@ -16,17 +16,20 @@ cannot be recovered by software. While the machine is off the Ultimate
 application is not running, and with it neither the REST API nor the IP stack
 it serves -- the control module only bridges Ethernet frames, it does not
 listen on anything itself. So a machine that correctly stays off can only be
-revived by the power button, and the suite asks the operator to press it. This
-is why the suite is registered `manual`, and why adapter support cannot make
-it unattended.
+revived by its power button. This is why the suite is registered `manual`.
 
-Switching the mains is asked of the operator by default, which needs no
-hardware beyond whatever socket the tester already owns. Give
---power-off-cmd/--power-on-cmd to drive a socket that can be scripted; the
-outcome is still read from the device either way, never from the operator's
-say-so. Some command lines that work, for a reader who would rather not
-research their own -- untested here beyond the shape, so treat them as
-starting points:
+Two separate pairs of hands are therefore needed, and a scripted socket
+supplies only one of them:
+
+    the mains   --power-off-cmd / --power-on-cmd, or the operator
+    the button  --power-button-cmd, or the operator
+
+Give all three and the suite runs unattended; give the socket commands alone
+and it still stops at the button, so it still needs a terminal to ask on. The
+outcome is read from the device in every case, never from the operator's
+say-so. Some command lines that work for the socket, for a reader who would
+rather not research their own -- untested here beyond the shape, so treat them
+as starting points:
 
     Zigbee2MQTT  mosquitto_pub -t zigbee2mqtt/c64u/set -m '{"state":"OFF"}'
     Tasmota      curl -s -o /dev/null 'http://PLUG/cm?cmnd=Power%20Off'
@@ -39,14 +42,17 @@ Run it by hand, or with --manual, when the power-on behaviour is changed:
 
 import argparse
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from api import UltimateApi
+from machine_power import (DEFAULT_SILENCE_SECONDS, DEFAULT_UP_TIMEOUT,
+                           PowerButton, alive, ask, run_command, stays_off,
+                           switch_machine_off, wait_for_state)
 from report import (Failure, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 
@@ -62,53 +68,6 @@ MODE_LAST = "Last State"
 # was, which reads exactly like the setting being ignored. Ten seconds was
 # enough on the machine this was written against; fifteen is comfortable.
 DEFAULT_OFF_SECONDS = 15.0
-# A cold start has to load the FPGA before the application answers anything.
-DEFAULT_UP_TIMEOUT = 90.0
-# How long a machine that is supposed to stay off has to stay silent for the
-# check to believe it. Sized above the boot time above, so that "still off"
-# cannot just mean "not up yet".
-DEFAULT_SILENCE_SECONDS = 30.0
-POLL_SECONDS = 2.0
-
-
-def alive(api: UltimateApi) -> bool:
-    """Whether the application answers. Nothing answers while the machine is off."""
-    try:
-        return bool(api.version())
-    except Exception:  # noqa: BLE001  (any transport failure means "not there")
-        return False
-
-
-def wait_for(api: UltimateApi, want_alive: bool, timeout: float) -> bool:
-    """Poll until the device reaches `want_alive`, or the timeout runs out.
-
-    Returns whether it got there. Polling rather than sleeping is what lets the
-    up cases finish as soon as the machine is back instead of always paying the
-    worst case.
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        if alive(api) == want_alive:
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(POLL_SECONDS)
-
-
-def stays_off(api: UltimateApi, seconds: float) -> bool:
-    """Whether the device keeps quiet for the whole window.
-
-    The negative assertion cannot be made by a single probe: a machine that is
-    booting is also silent for a while. This one fails the moment it hears
-    anything, so it costs the full window only when the answer is the one the
-    check wants.
-    """
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if alive(api):
-            return False
-        time.sleep(POLL_SECONDS)
-    return True
 
 
 class Mains:
@@ -125,43 +84,20 @@ class Mains:
         if not self.scripted and not sys.stdin.isatty():
             raise Failure(
                 "no terminal to prompt on and no socket commands given.\n"
-                "Pass --power-off-cmd and --power-on-cmd to run this without "
-                "an operator, or run it from a terminal.")
-
-    def _run(self, cmd: str, what: str) -> None:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Failure(f"{what} command failed with {result.returncode}: "
-                          f"{(result.stderr or result.stdout).strip()[:200]}")
-
-    def _ask(self, instruction: str) -> None:
-        print(f"      >>> {instruction}, then press Enter: ", end="", flush=True)
-        sys.stdin.readline()
+                "Pass --power-off-cmd and --power-on-cmd to switch the mains "
+                "without an operator, or run this from a terminal.")
 
     def cycle(self) -> None:
         """Remove mains, hold it off long enough to matter, put it back."""
         if self.scripted:
-            self._run(self.off_cmd, "power off")
+            run_command(self.off_cmd, "power off")
             detail(f"mains off for {self.off_seconds:.0f}s")
             time.sleep(self.off_seconds)
-            self._run(self.on_cmd, "power on")
+            run_command(self.on_cmd, "power on")
         else:
-            self._ask(f"switch the socket OFF and leave it off for "
-                      f"{self.off_seconds:.0f}s")
-            self._ask("switch the socket back ON")
-
-    def revive(self, api: UltimateApi, up_timeout: float) -> None:
-        """Get a deliberately-off machine running again, for what comes next.
-
-        Only the power button can do this, so it is always the operator's job,
-        even when the socket itself is scripted. Leaving the machine off would
-        fail the next check and then the runner's own teardown, which resets
-        the machine after every suite.
-        """
-        self._ask("press the machine's power button to switch it back on")
-        if not wait_for(api, True, up_timeout):
-            raise Failure("the machine did not come back after the power button; "
-                          "the rest of the suite cannot run")
+            ask(f"switch the socket OFF and leave it off for "
+                f"{self.off_seconds:.0f}s")
+            ask("switch the socket back ON")
 
 
 def find_store(api: UltimateApi) -> str:
@@ -190,13 +126,6 @@ def set_mode(api: UltimateApi, store: str, mode: str) -> None:
     detail(f"mode is {mode!r}")
 
 
-def switch_machine_off(api: UltimateApi, up_timeout: float) -> None:
-    """Put the machine in the off state the next scenario needs it to be in."""
-    api.machine.poweroff()
-    if not wait_for(api, False, up_timeout):
-        raise Failure("the machine still answered after machine:poweroff")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -209,6 +138,12 @@ def main() -> int:
                              "Without it the operator is asked to switch the socket.")
     parser.add_argument("--power-on-cmd", default="",
                         help="Shell command that puts mains back.")
+    parser.add_argument("--power-button-cmd", default="",
+                        help="Shell command that presses the machine's power "
+                             "button. Without it the operator is asked, which "
+                             "needs a terminal: two scenarios end with the "
+                             "machine off and nothing on the network can "
+                             "revive it.")
     parser.add_argument("--off-seconds", type=float, default=DEFAULT_OFF_SECONDS,
                         help=f"How long mains stays off (default: {DEFAULT_OFF_SECONDS:.0f}). "
                              "Below about ten the control module keeps running "
@@ -224,7 +159,10 @@ def main() -> int:
     original = ""
     store = ""
     try:
+        # Both are checked before the first scenario, so a run that cannot be
+        # completed says so now rather than after the first mains cut.
         mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
+        button = PowerButton(args.power_button_cmd)
 
         section("1. Preconditions")
         check_start("the machine answers")
@@ -250,14 +188,14 @@ def main() -> int:
             set_mode(api, store, MODE_ON)
             switch_machine_off(api, args.up_timeout)
             mains.cycle()
-            if not wait_for(api, True, args.up_timeout):
+            if not wait_for_state(api, True, args.up_timeout):
                 raise Failure(f"stayed off with the mode at {MODE_ON!r}")
 
         section("3. Mode Last State, machine on before the cut")
         with check("comes up by itself"):
             set_mode(api, store, MODE_LAST)
             mains.cycle()
-            if not wait_for(api, True, args.up_timeout):
+            if not wait_for_state(api, True, args.up_timeout):
                 raise Failure("stayed off although it was on when power was lost")
 
         # The two negative scenarios go last, because each one ends with a
@@ -269,7 +207,7 @@ def main() -> int:
             mains.cycle()
             if not stays_off(api, args.silence_seconds):
                 raise Failure("came up although it was off when power was lost")
-        mains.revive(api, args.up_timeout)
+        button.press(api, args.up_timeout)
 
         section("5. Mode Off, machine on before the cut")
         with check("stays off"):
@@ -277,7 +215,7 @@ def main() -> int:
             mains.cycle()
             if not stays_off(api, args.silence_seconds):
                 raise Failure(f"came up with the mode at {MODE_OFF!r}")
-        mains.revive(api, args.up_timeout)
+        button.press(api, args.up_timeout)
 
         suite_ok(SUITE)
         return 0

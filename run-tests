@@ -265,8 +265,9 @@ SUITES: Sequence[Suite] = (
     # Manual: asserting what the machine does when its input power returns
     # means actually removing mains, which the suite asks the operator to do
     # unless it is given commands for a socket it can script. Two of its four
-    # scenarios end with the machine deliberately off, and only the power
-    # button can revive it, so no adapter support makes this unattended.
+    # scenarios end with the machine deliberately off, which only the machine's
+    # power button can undo -- so running it unattended takes an actuator for
+    # that button too (--power-button-cmd), not a scriptable socket alone.
     Suite("e2e", "power-cycle", "tests/e2e/u64ctrl/power_cycle_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
 
