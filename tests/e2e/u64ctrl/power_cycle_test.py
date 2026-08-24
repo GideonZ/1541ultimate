@@ -159,11 +159,6 @@ def main() -> int:
     original = ""
     store = ""
     try:
-        # Both are checked before the first scenario, so a run that cannot be
-        # completed says so now rather than after the first mains cut.
-        mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
-        button = PowerButton(args.power_button_cmd)
-
         section("1. Preconditions")
         check_start("the machine answers")
         if not alive(api):
@@ -179,6 +174,11 @@ def main() -> int:
             return 0
         original = api.configs.current(store, ITEM)
         detail(f"store {store!r}, currently {original!r}")
+        # After the skips and before anything destructive: a run that cannot be
+        # completed says so now rather than after the first mains cut, and a run
+        # that was going to skip anyway is not asked for hands it never needs.
+        mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
+        button = PowerButton(args.power_button_cmd)
 
         # Every check below waits out a real mains interruption, so all of them
         # are past the ten second mark that report.py paints yellow. That time
