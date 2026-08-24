@@ -5,6 +5,13 @@ Supported target: a C64 Ultimate carrying the "Power On After Power Loss"
 setting. The suite skips, rather than fails, on firmware that does not serve
 the item, so it is safe to name on an older build.
 
+What it cannot detect is the other half of the pair: an application that has
+the setting on top of a control module too old to store it. The menu greys the
+item out in that case, but `cfg->disable()` is a menu affordance only -- the
+REST store still serves it -- so the suite finds the item, runs, and fails
+every scenario. A run that fails all four with the machine ignoring the mode
+should have the module's version checked before the firmware is suspected.
+
 The setting lives in the control module's NVS, because the module is the only
 part of the machine powered before the power button is pressed. Asserting it
 therefore means actually removing mains from the machine: the whole point is
