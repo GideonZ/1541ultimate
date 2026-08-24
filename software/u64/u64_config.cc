@@ -1468,7 +1468,9 @@ void U64Config :: pushWakeOnWifi(void)
         return;
     }
     uint8_t enabled = 0xFF;
-    if (wifi_get_wake_on_wifi(&enabled) != 0) {
+    // As with the power mode: a starved TX buffer answers pdFALSE, which is 0,
+    // which is what success returns too, so the value is the witness.
+    if ((wifi_get_wake_on_wifi(&enabled) != 0) || (enabled > 1)) {
         printf("Control module does not support wake on Wi-Fi; disabling the setting.\n");
         u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
         return;
