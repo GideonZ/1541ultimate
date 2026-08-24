@@ -20,6 +20,13 @@
 #define POWERON_MODE_LAST_STATE 2  // power up if the machine was on when the power was lost
 #define POWERON_MODE_MAX        POWERON_MODE_LAST_STATE
 
+/* Whether a magic packet addressed to the station MAC switches the machine on
+   while it is off. Also the enum values of the "Wake On Wi-Fi" setting in the
+   menu of the machine, so don't renumber these either. */
+#define WAKE_ON_WIFI_DISABLED   0  // (default)
+#define WAKE_ON_WIFI_ENABLED    1
+#define WAKE_ON_WIFI_MAX        WAKE_ON_WIFI_ENABLED
+
 /* Human readable name of a mode, for logging. Never returns NULL. */
 const char *power_mode_name(uint8_t mode);
 
@@ -28,6 +35,13 @@ uint8_t power_get_mode(void);
 
 /* Stores the behavior; ESP_ERR_INVALID_ARG for an unknown mode. */
 esp_err_t power_set_mode(uint8_t mode);
+
+/* Whether waking over Wi-Fi is enabled; disabled when nothing was stored yet,
+   and when what was stored is not a value this firmware knows. */
+uint8_t power_get_wake_on_wifi(void);
+
+/* Stores it; ESP_ERR_INVALID_ARG for anything but the two values above. */
+esp_err_t power_set_wake_on_wifi(uint8_t enabled);
 
 /* Whether the machine was on the last time the power state was stored. */
 uint8_t power_get_last_state(void);

@@ -14,6 +14,7 @@ static const char *TAG = "power_state";
 #define NVS_NAMESPACE "power"
 #define NVS_KEY_MODE  "mode"
 #define NVS_KEY_LAST  "last"
+#define NVS_KEY_WAKE  "wowifi"
 
 static uint8_t read_u8(const char *key, uint8_t dflt)
 {
@@ -86,6 +87,26 @@ esp_err_t power_set_mode(uint8_t mode)
     }
     ESP_LOGI(TAG, "Power on after power loss: %s", power_mode_name(mode));
     return write_u8(NVS_KEY_MODE, mode);
+}
+
+uint8_t power_get_wake_on_wifi(void)
+{
+    uint8_t enabled = read_u8(NVS_KEY_WAKE, WAKE_ON_WIFI_DISABLED);
+    if (enabled > WAKE_ON_WIFI_MAX) {
+        ESP_LOGW(TAG, "Stored wake on Wi-Fi %d is out of range; falling back to disabled", enabled);
+        enabled = WAKE_ON_WIFI_DISABLED;
+    }
+    return enabled;
+}
+
+esp_err_t power_set_wake_on_wifi(uint8_t enabled)
+{
+    if (enabled > WAKE_ON_WIFI_MAX) {
+        ESP_LOGE(TAG, "Refusing to store unknown wake on Wi-Fi value %d", enabled);
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_LOGI(TAG, "Wake on Wi-Fi: %s", enabled ? "ENABLED" : "DISABLED");
+    return write_u8(NVS_KEY_WAKE, enabled);
 }
 
 uint8_t power_get_last_state(void)

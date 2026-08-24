@@ -111,6 +111,46 @@ int main(void)
     power_store_last_state(0);
     check(nvs_stub_commits() > 0, "a real change does touch the flash");
 
+    printf("Wake on Wi-Fi, on a factory fresh module\n");
+    nvs_stub_erase_all();
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_DISABLED, "is disabled");
+
+    printf("Turning Wake on Wi-Fi on and off\n");
+    check_eq(power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED), ESP_OK, "enabling is accepted");
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_ENABLED, "reads back as enabled");
+    check_eq(power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED), ESP_OK, "disabling is accepted");
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_DISABLED, "reads back as disabled");
+
+    printf("Storing a Wake on Wi-Fi value that does not exist\n");
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check_eq(power_set_wake_on_wifi(2), ESP_ERR_INVALID_ARG, "is refused");
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_ENABLED, "leaves the stored value alone");
+
+    printf("A stored Wake on Wi-Fi value that is out of range\n");
+    {
+        nvs_handle_t h;
+        check_eq(nvs_open("power", NVS_READWRITE, &h), ESP_OK, "namespace can be opened");
+        nvs_set_u8(h, "wowifi", 42);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_DISABLED, "is read as disabled");
+
+    printf("The two settings share a namespace but not a value\n");
+    given(POWERON_MODE_LAST_STATE, 1);
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check_eq(power_get_mode(), POWERON_MODE_LAST_STATE, "the mode survives a wake write");
+    check_eq(power_get_wake_on_wifi(), WAKE_ON_WIFI_ENABLED, "the wake setting survives a mode write");
+    check_eq(power_initial_state(0), 1, "and the cold start still acts on the mode");
+
+    printf("Writing a Wake on Wi-Fi value that has not changed\n");
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    nvs_stub_reset_commits();
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check_eq(nvs_stub_commits(), 0, "does not touch the flash");
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED);
+    check(nvs_stub_commits() > 0, "a real change does touch the flash");
+
     printf("\n%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
