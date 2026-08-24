@@ -1424,7 +1424,12 @@ void U64Config :: pushPowerOnMode(void)
     }
     uint8_t mode = 0xFF;
     uint8_t last_state = 0xFF;
-    if (wifi_get_power_mode(&mode, &last_state) != 0) {
+    // BUFARGS answers a starved TX buffer with pdFALSE, which is 0, which is
+    // also what success returns -- so a call that never reached the module
+    // cannot be told from one that did by its return value alone. The mode it
+    // would have written is the second witness: nothing but a real answer
+    // leaves a value this firmware knows behind.
+    if ((wifi_get_power_mode(&mode, &last_state) != 0) || (mode > 2)) {
         // A control module that predates these commands answers "not
         // implemented", and cannot store the setting either. Offering a choice
         // that quietly does nothing is worse than offering none.
