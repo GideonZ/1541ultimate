@@ -167,6 +167,8 @@ static SemaphoreHandle_t resetSemaphore;
 // 0x56..0x63 by the audio selection store (io/audio/audio_select.cc); both are
 // different stores, but kept clear here to keep the ids readable side by side
 #define CFG_POWERON_MODE      0x5F
+// The first id clear of both ranges above; 0x60 would sit inside the audio one
+#define CFG_WAKE_ON_WIFI      0x64
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -383,6 +385,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
 #if U64 == 2
     { CFG_POWERON_MODE,         CFG_TYPE_ENUM, "Power On After Power Loss",    "%s", poweron_modes, 0, 2, 0 },
+    { CFG_WAKE_ON_WIFI,         CFG_TYPE_ENUM, "Wake On Wi-Fi",                "%s", en_dis,       0,  1, 0 },
 #endif
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -914,6 +917,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
 #if U64 == 2
         cfg->set_change_hook(CFG_POWERON_MODE, U64Config::setPowerOnMode);
+        cfg->set_change_hook(CFG_WAKE_ON_WIFI, U64Config::setWakeOnWifi);
 #endif
 
         if (!isEliteBoard()) {
@@ -1435,6 +1439,46 @@ void U64Config :: pushPowerOnMode(void)
         return; // already in sync
     }
     setPowerOnMode(it);
+}
+
+// Waking the machine from off is decided by the control module as well: it is
+// the only part that is still listening at that moment, and the only one with
+// a network path of its own. Stored in its NVS, pushed down on every change.
+int U64Config :: setWakeOnWifi(ConfigItem *it)
+{
+    if(it) {
+        int retval = wifi_set_wake_on_wifi((uint8_t)it->getValue());
+        if (retval) {
+            printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
+        }
+    }
+    return 0;
+}
+
+// As with the power on behavior: the module may have been updated or replaced
+// since the setting was last changed, so bring the two in sync when it reports
+// in, and take the item away when the module cannot store it at all.
+void U64Config :: pushWakeOnWifi(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_WAKE_ON_WIFI);
+    if (!it) {
+        return;
+    }
+    uint8_t enabled = 0xFF;
+    if (wifi_get_wake_on_wifi(&enabled) != 0) {
+        printf("Control module does not support wake on Wi-Fi; disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        return;
+    }
+    printf("Wake on Wi-Fi of the control module: %d\n", enabled);
+    u64_configurator->cfg->enable(CFG_WAKE_ON_WIFI);
+    if (enabled == (uint8_t)it->getValue()) {
+        return; // already in sync
+    }
+    setWakeOnWifi(it);
 }
 #endif
 
@@ -2746,9 +2790,14 @@ void U64Config :: setup_config_menu(void)
 #if U64 == 2
     grp = ConfigGroupCollection :: getGroup("Power Settings", SORT_ORDER_CFG_POWER);
     grp->append(cfg->find_item(CFG_POWERON_MODE));
+    grp->append(cfg->find_item(CFG_WAKE_ON_WIFI));
     grp->append(ConfigItem :: separator());
     grp->append(ConfigItem :: heading("'Last State' powers the machine up if"));
     grp->append(ConfigItem :: heading("it was on when the power was lost."));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("'Wake On Wi-Fi' switches it on when a"));
+    grp->append(ConfigItem :: heading("magic packet arrives. Only Wi-Fi can:"));
+    grp->append(ConfigItem :: heading("the wired jack is off with the machine."));
 #endif
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);

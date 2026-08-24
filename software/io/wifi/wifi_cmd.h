@@ -56,6 +56,11 @@ int wifi_get_serial(char *serial);
 int wifi_set_power_mode(uint8_t mode);
 int wifi_get_power_mode(uint8_t *mode, uint8_t *last_state);
 
+// Waking the machine from off with a magic packet; the values are the
+// WAKE_ON_WIFI_* defines of the control module (software/u64ctrl).
+int wifi_set_wake_on_wifi(uint8_t enabled);
+int wifi_get_wake_on_wifi(uint8_t *enabled);
+
 extern uint16_t sequence_nr;
 extern TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
 extern "C" { void print_uart_status(); }
