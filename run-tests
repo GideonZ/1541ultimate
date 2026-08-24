@@ -295,6 +295,13 @@ SUITES: Sequence[Suite] = (
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
     Suite("e2e", "freeze-menu", "tests/e2e/io/c64/freeze_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # Manual: the machine is put off over REST rather than by cutting mains, so
+    # this one needs no socket -- but its last scenario asserts that a packet is
+    # ignored, and leaves a machine only its power button can revive. Also needs
+    # the device on Wi-Fi and the harness in its broadcast domain, neither of
+    # which the suite can check for itself.
+    Suite("e2e", "wake-on-wifi", "tests/e2e/u64ctrl/wake_on_wifi_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Manual: asserting what the machine does when its input power returns
     # means actually removing mains, which the suite asks the operator to do
     # unless it is given commands for a socket it can script. Two of its four

@@ -63,7 +63,7 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power |
+| `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power, and waking the machine from off over Wi-Fi |
 | `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
