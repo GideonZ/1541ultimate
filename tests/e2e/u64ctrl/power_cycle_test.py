@@ -53,7 +53,7 @@ from api import UltimateApi
 from machine_power import (DEFAULT_SILENCE_SECONDS, DEFAULT_UP_TIMEOUT,
                            PowerButton, alive, ask, run_command, stays_off,
                            switch_machine_off, wait_for_state)
-from report import (Failure, check, check_skip, check_start, detail,
+from report import (Failure, check, check_ok, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 
 SUITE = "power_cycle_test"
@@ -165,7 +165,12 @@ def main() -> int:
             check_skip(f"nothing answers on {args.host}; switch the machine on first")
             suite_ok(SUITE)
             return 0
-        detail(f"firmware {api.version()}")
+        # api.version() is the REST API's version, not the machine's, and
+        # saying "firmware 0.1" of a device running 1.1.0 is worse than saying
+        # nothing. The firmware and the product come from /v1/info.
+        info = api.info()
+        detail(f"{info.product}, firmware {info.firmware_version} "
+               f"(REST API {api.version()})")
         store = find_store(api)
         if not store:
             check_skip(f"no config store serves {ITEM!r}; "
@@ -174,6 +179,11 @@ def main() -> int:
             return 0
         original = api.configs.current(store, ITEM)
         detail(f"store {store!r}, currently {original!r}")
+        # Closes the check the two skips above would have closed. Leaving it
+        # open makes report.py treat every check that follows as nested inside
+        # it, which prints no verdict, counts nothing, and holds back the
+        # details above -- a whole run reported as one check.
+        check_ok()
         # After the skips and before anything destructive: a run that cannot be
         # completed says so now rather than after the first mains cut, and a run
         # that was going to skip anyway is not asked for hands it never needs.
