@@ -160,16 +160,26 @@ static volatile bool wake_armed = false;
 static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
 {
     if (wake_armed) {
-        uint8_t frame[WOL_SCAN_BYTES];
+        // Static, not on the stack: this runs on the receive path, whose task
+        // stack is not this function's to spend 256 bytes of, and netif->input
+        // is called from that one task alone, so one buffer is enough. It is
+        // written before it is read on every call.
+        static uint8_t frame[WOL_SCAN_BYTES];
         // pbuf_copy_partial() flattens a chain and clamps to what is there, so
         // a short frame is short rather than a read past the first pbuf.
         const uint16_t got = pbuf_copy_partial(p, frame, sizeof(frame), 0);
         if (wol_is_magic_packet(frame, got, inp->hwaddr)) {
-            // Disarmed before the event is posted: wake tools send the packet
-            // several times over, and the machine is to be switched on once.
-            wake_armed = false;
             ESP_LOGI(TAG, "Magic packet received; switching the machine on.");
-            extern_button_event(BUTTON_ON);
+            // Disarmed once the event is on the queue, not before: the post
+            // does not block and its failure is the one case where staying
+            // armed is what saves the wake, since a tool sends the packet
+            // several times over. Disarming first would turn a full queue into
+            // a machine that never comes on at all.
+            if (extern_button_event(BUTTON_ON) == pdTRUE) {
+                wake_armed = false;
+            } else {
+                ESP_LOGW(TAG, "Could not post the wake; staying armed for the next packet.");
+            }
         }
     }
     return default_input(p, inp);
