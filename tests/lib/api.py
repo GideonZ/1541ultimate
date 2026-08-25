@@ -843,6 +843,33 @@ class UltimateApi:
         except Failure:
             return False
 
+    def unreachable_reason(self, budget: float = 10.0,
+                           poll: float = 1.0) -> Optional[str]:
+        """None when the device answers within `budget`, else why it did not.
+
+        `reachable()` answers yes or no, which is all a gate needs. A suite
+        asserting that the device survived the call it just made has to put the
+        reason in the failure, or every lockup reads as the same blank timeout.
+        This is that probe, in one place, so suites that check liveness after
+        each step do not each grow their own poll loop.
+
+        Catches Failure only, deliberately: rest.py raises it when no answer
+        arrived, and a blanket except here would report a coding mistake in the
+        probe as a dead device.
+        """
+        deadline = time.monotonic() + budget
+        last = "no answer"
+        while True:
+            try:
+                if self.version():
+                    return None
+                last = "version answered without a version string"
+            except Failure as exc:
+                last = str(exc)
+            if time.monotonic() >= deadline:
+                return last
+            time.sleep(poll)
+
 
 # ---------------------------------------------------------------------------
 # Helpers

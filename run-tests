@@ -212,6 +212,12 @@ SUITES: Sequence[Suite] = (
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Calls every endpoint the firmware registers, and fails when one is
+    # neither probed nor excluded with a reason. The lockup that prompted it
+    # shipped because no suite called that route at all, so the gate matters
+    # more than any single probe. Runs in about a second.
+    Suite("e2e", "rest-api-coverage", "tests/e2e/api/rest_api_coverage_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",

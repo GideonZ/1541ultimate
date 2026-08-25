@@ -12,9 +12,8 @@ import argparse
 import ftplib
 import os
 import sys
-import time
 import urllib.error
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 # tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
@@ -55,33 +54,35 @@ class SuiteRunner:
     def remote_path(self, label: str, kind: str) -> str:
         return f"{TEST_DIR}/cdi_{label}.{kind}"
 
-    def ftp_delete(self, path: str) -> None:
-        directory, _, name = path.rpartition("/")
+    def ftp_delete(self, paths: Iterable[str]) -> None:
+        """Remove several paths over one FTP session.
+
+        One session per file costs a control and a data connection each time,
+        which is most of this suite's wall clock for work that is not under
+        test.
+        """
+        paths = list(paths)
+        if not paths:
+            return
         try:
             with ftp_lib.session(self.args.host, self.args.password) as client:
-                ftp_lib.delete_quietly(client, f"{directory}/{name}")
+                for path in paths:
+                    ftp_lib.delete_quietly(client, path)
         except ftplib.all_errors + (OSError, Failure):
             pass
 
     def alive(self) -> Optional[str]:
-        """None when the device answers, otherwise the reason it did not."""
-        deadline = time.time() + LIVENESS_TIMEOUT_SECONDS
-        last = "no answer"
-        while time.time() < deadline:
-            try:
-                info = self.api.info()
-                if info.product:
-                    return None
-                last = "info answered without a product name"
-            except (Failure, OSError, TimeoutError, urllib.error.URLError) as exc:
-                last = format_exception(exc)
-            time.sleep(1.0)
-        return last
+        return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
+
+    def all_paths(self) -> List[str]:
+        paths = [self.remote_path(label, kind) for label, kind, _p, _e in CASES]
+        label, kind, _p, _e = CASES[0]
+        paths.append(self.remote_path(f"{label}-repeat", kind))
+        return paths
 
     # -- checks -------------------------------------------------------------
     def create_case(self, label: str, kind: str, params: dict, expected: int) -> bool:
         path = self.remote_path(label, kind)
-        self.ftp_delete(path)
 
         check_start(f"create {kind} at {path}")
         try:
@@ -134,6 +135,12 @@ class SuiteRunner:
             return False
         check_ok()
 
+        # create_* refuses to overwrite (FA_CREATE_NEW), so a leftover from an
+        # aborted run would fail every case. One session clears them all.
+        check_start("clear leftovers from an earlier run")
+        self.ftp_delete(self.all_paths())
+        check_ok()
+
         all_ok = True
         for label, kind, params, expected in CASES:
             section(label)
@@ -149,10 +156,7 @@ class SuiteRunner:
         return all_ok
 
     def cleanup(self) -> None:
-        for label, kind, _params, _expected in CASES:
-            self.ftp_delete(self.remote_path(label, kind))
-        label, kind, _params, _expected = CASES[0]
-        self.ftp_delete(self.remote_path(f"{label}-repeat", kind))
+        self.ftp_delete(self.all_paths())
 
 
 def main() -> int:
