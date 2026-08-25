@@ -10,6 +10,7 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 | [`perf/`](perf/) | Timing and throughput benchmarks that measure a number rather than assert a pass/fail outcome. Not the gate. |
 | [`soak/`](soak/) | Time- and load-based checks for leaks, exhaustion, races and transport degradation. Not the gate. |
 | [`lib/`](lib/) | Support code shared by all three categories, plus the two gate checks that need no device. |
+| [`bisect/`](bisect/) | Hardware bisection harnesses: drive a device across many firmware revisions to find the commit a defect arrived in. Not the gate, and not run by `run-tests`. |
 
 `./run-tests <target>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
 to run more, and `-m` to repeat the E2E suites in more than one UI profile:

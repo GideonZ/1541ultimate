@@ -264,6 +264,12 @@ SUITES: Sequence[Suite] = (
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # Manual: downloads a release from github.com and changes machine settings
+    # while it runs. Third-party software, but the most demanding public
+    # exercise of the U64 bus there is, streaming a 16 MB REU every frame under
+    # turbo. Bitstreams that pass every other suite here have broken it.
+    Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Measures the keystroke injection every other suite depends on: a lost key
     # fails whichever check was typing at the time and names no rate, so this
     # names one. One batch of the largest size the input API accepts, which is
