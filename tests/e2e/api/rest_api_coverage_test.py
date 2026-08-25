@@ -79,10 +79,15 @@ OPENAPI_DIR = REPO_ROOT / "doc" / "api"
 API_CALL_RE = re.compile(
     r"^API_CALL\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,", re.MULTILINE)
 
-# The category the reset case uses. Printer settings change nothing the harness
-# depends on, unlike User Interface Settings, whose Interface Type defaults to
-# Freeze. See the reset case for why that matters.
-RESETTABLE_CATEGORY = "Printer Settings"
+# Categories the reset case must not touch, whatever the product calls the rest.
+# User Interface Settings holds Interface Type, whose default is Freeze, and a
+# menu opened in Freeze takes down a device whose core lacks the GideonZ#733
+# fix. The network ones re-apply on write and bounce the link the run is using.
+RESET_DENY_LIST = ("User Interface Settings", "Ethernet Settings",
+                   "Network Settings", "WiFi Settings")
+# Tried first when it is present, only so the report names the same category
+# from run to run. Any category outside the deny list will do.
+RESET_PREFERRED = "Printer Settings"
 
 SCRATCH = "/Temp"
 # A path whose parent does not exist either, so a route that creates a file on
@@ -279,7 +284,7 @@ def build_cases() -> List[Case]:
 
     # ---- configuration reads --------------------------------------------
     def _configs(ctx: Ctx) -> None:
-        if not ctx.api.configs.categories():
+        if not ctx.api.configs.category_names():
             raise Failure("the configuration listing is empty")
     case(("GET", "/v1/configs"), "lists categories", "happy", _configs)
 
@@ -303,20 +308,20 @@ def build_cases() -> List[Case]:
 
     # ---- configuration writes -------------------------------------------
     def _config_write(ctx: Ctx) -> None:
-        value = ctx.suite.config_value(ctx)
-        ctx.api.configs.set(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM, value)
-        after = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        category, item, value = ctx.suite.config_target(ctx)
+        ctx.api.configs.set(category, item, value)
+        after = ctx.api.configs.current(category, item)
         if after != value:
-            raise Failure(f"wrote {value!r}, reads {after!r}")
+            raise Failure(f"wrote {value!r} to {category}/{item}, reads {after!r}")
     case(("PUT", "/v1/configs/{category}/{item}"),
          "writing the current value back is a no-op", "happy", _config_write,
          exclusive=True)
 
     def _config_write_path(ctx: Ctx) -> None:
         # The other accepted form: the value as a third path element.
-        value = ctx.suite.config_value(ctx)
-        ctx.api.configs.set_by_path(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM, value)
-        after = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        category, item, value = ctx.suite.config_target(ctx)
+        ctx.api.configs.set_by_path(category, item, value)
+        after = ctx.api.configs.current(category, item)
         if after != value:
             raise Failure(f"wrote {value!r} through the path form, reads {after!r}")
     case(("PUT", "/v1/configs/{category}/{item}"),
@@ -330,9 +335,9 @@ def build_cases() -> List[Case]:
          "negative", _config_write_bad)
 
     def _config_apply(ctx: Ctx) -> None:
-        value = ctx.suite.config_value(ctx)
-        ctx.api.configs.apply({CONFIG_CATEGORY: {AUTO_CLEANUP_ITEM: value}})
-        after = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        category, item, value = ctx.suite.config_target(ctx)
+        ctx.api.configs.apply({category: {item: value}})
+        after = ctx.api.configs.current(category, item)
         if after != value:
             raise Failure(f"the JSON form wrote {value!r}, reads {after!r}")
     case(("POST", "/v1/configs"), "the JSON form sets an item", "happy",
@@ -348,26 +353,28 @@ def build_cases() -> List[Case]:
     # Saving writes what is already in force, because no case changes a setting
     # without putting it back first, so the store ends where it started.
     def _flash_roundtrip(ctx: Ctx) -> None:
-        before = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        category, item, _value = ctx.suite.config_target(ctx)
+        before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash()
         ctx.api.configs.load_from_flash()
-        after = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        after = ctx.api.configs.current(category, item)
         if after != before:
-            raise Failure(f"save then load changed {AUTO_CLEANUP_ITEM} from "
-                          f"{before!r} to {after!r}")
+            raise Failure(f"save then load changed {item} from {before!r} to "
+                          f"{after!r}")
     case(("PUT", "/v1/configs:save_to_flash"), "save then load leaves the value",
          "happy", _flash_roundtrip, exclusive=True)
     case(("PUT", "/v1/configs:load_from_flash"), "covered by the save case above",
          "happy", _flash_roundtrip, exclusive=True)
 
     def _flash_roundtrip_category(ctx: Ctx) -> None:
-        before = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
-        ctx.api.configs.save_to_flash(CONFIG_CATEGORY)
-        ctx.api.configs.load_from_flash(CONFIG_CATEGORY)
-        after = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
+        category, item, _value = ctx.suite.config_target(ctx)
+        before = ctx.api.configs.current(category, item)
+        ctx.api.configs.save_to_flash(category)
+        ctx.api.configs.load_from_flash(category)
+        after = ctx.api.configs.current(category, item)
         if after != before:
-            raise Failure(f"per-category save then load changed "
-                          f"{AUTO_CLEANUP_ITEM} from {before!r} to {after!r}")
+            raise Failure(f"per-category save then load changed {item} from "
+                          f"{before!r} to {after!r}")
     case(("PUT", "/v1/configs/{category}:save_to_flash"),
          "save then load leaves the value", "happy", _flash_roundtrip_category,
          exclusive=True)
@@ -381,8 +388,9 @@ def build_cases() -> List[Case]:
         # lacks the GideonZ#733 fix. Resetting a category is a real reset even
         # when it is undone a moment later, so the category has to be one whose
         # defaults cannot cost the run its device.
-        category = RESETTABLE_CATEGORY
+        category = ctx.suite.resettable_category(ctx)
         snapshot = ctx.suite.snapshot_category(ctx, category)
+        ctx.suite.remember_reset_snapshot(snapshot)
         probe = next(iter(snapshot))
         try:
             ctx.api.configs.reset_to_default(category)
@@ -721,10 +729,6 @@ def build_cases() -> List[Case]:
         # The debug stream is the cheap one; the video stream shares a multicast
         # group with anything else on the network. Sent to this host and stopped
         # in the same case so nothing keeps streaming afterwards.
-        # Not a firmware vintage question on every machine: where the device
-        # has two interfaces, the streamer looks the destination up on the
-        # wrong one. tests/lib/machine.py carries that as an open gap.
-        ctx.require_fix(machine_lib.STREAM_FINDS_DESTINATION_MAC)
         # A route the product does not build is not in the table and the
         # dispatcher answers 404 with an empty body. The handler's own refusals
         # are 404 too but carry a JSON error, so the body is what tells a
@@ -735,6 +739,16 @@ def build_cases() -> List[Case]:
             params={"ip": ctx.suite.local_ip(ctx)})
         if code == 404 and not body.strip():
             raise Skip("this product does not serve the data streams")
+        if code == 404 and b"Resolve Error" in body:
+            # DataStreamer::startStream always takes
+            # NetworkInterface::getInterface(0) and looks the destination up in
+            # that interface's ARP table, so a device with both Ethernet and
+            # WiFi can fail to find the MAC of the host it is answering right
+            # now. Detected here rather than keyed to a product, because a
+            # device with one interface resolves it and passes.
+            raise Skip("the data streamer resolves the destination on the first "
+                       "interface only, and this device has another one that "
+                       "carries the traffic")
         if code != 200:
             raise Failure(f"streams/debug:start answered HTTP {code}: {body[:160]!r}")
         ctx.api.streams.stop("debug")
@@ -791,10 +805,13 @@ class SuiteRunner:
         self.dead = threading.Event()
         self._image_ready = False
         self._image_bytes: Optional[bytes] = None
-        self._config_value: Optional[str] = None
+        self._config_target: Optional[Tuple[str, str, str]] = None
+        self._reset_category: Optional[str] = None
         self._local_ip: Optional[str] = None
         self.restore_drive: Optional[Tuple[bool, str, str]] = None
         self.restore_config: Optional[Dict[str, str]] = None
+        self.restore_config_category = CONFIG_CATEGORY
+        self._reset_snapshot: Optional[Dict[str, str]] = None
 
     # -- fixtures -----------------------------------------------------------
     def ensure_mount_image(self, ctx: Ctx) -> None:
@@ -816,17 +833,54 @@ class SuiteRunner:
             self._image_bytes = data
         return data
 
-    def config_value(self, ctx: Ctx) -> str:
-        """The settings item's value as found, so writes can be no-ops."""
+    def config_target(self, ctx: Ctx) -> Tuple[str, str, str]:
+        """A settings item and its current value, so a write can be a no-op.
+
+        The item the cfg-* suites use is preferred, so the report names the same
+        one from run to run, but any readable item will do: a product without
+        that one still gets the write and the read-back exercised.
+        """
         with self.state_lock:
-            if self._config_value is not None:
-                return self._config_value
-        value = ctx.api.configs.current(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)
-        if not value:
-            raise Skip(f"{CONFIG_CATEGORY}/{AUTO_CLEANUP_ITEM} is not on this firmware")
+            if self._config_target is not None:
+                return self._config_target
+        candidates = [(CONFIG_CATEGORY, AUTO_CLEANUP_ITEM)]
+        for category in ctx.api.configs.category_names():
+            if category in RESET_DENY_LIST:
+                continue
+            for item in ctx.api.configs.category(category):
+                candidates.append((category, item))
+        for category, item in candidates:
+            try:
+                value = ctx.api.configs.current(category, item)
+            except Failure:
+                continue
+            if value:
+                with self.state_lock:
+                    self._config_target = (category, item, value)
+                return self._config_target
+        raise Skip("no readable settings item to write back")
+
+    def remember_reset_snapshot(self, snapshot: Dict[str, str]) -> None:
+        """Kept so cleanup() can put the category back if a case is cut short."""
         with self.state_lock:
-            self._config_value = value
-        return value
+            if self._reset_snapshot is None:
+                self._reset_snapshot = dict(snapshot)
+
+    def resettable_category(self, ctx: Ctx) -> str:
+        """A category whose defaults cannot cost the run its device."""
+        with self.state_lock:
+            if self._reset_category is not None:
+                return self._reset_category
+        names = [c for c in ctx.api.configs.category_names()
+                 if c not in RESET_DENY_LIST]
+        if RESET_PREFERRED in names:
+            names.insert(0, names.pop(names.index(RESET_PREFERRED)))
+        for name in names:
+            if ctx.api.configs.category(name):
+                with self.state_lock:
+                    self._reset_category = name
+                return name
+        raise Skip("no category outside the deny list to reset")
 
     def snapshot_category(self, ctx: Ctx, category: str) -> Dict[str, str]:
         items = ctx.api.configs.category(category)
@@ -857,7 +911,7 @@ class SuiteRunner:
         # operator is expected to know the device may need its interface type
         # put back by hand if the restore below cannot run.
         snapshot = {c: self.snapshot_category(ctx, c)
-                    for c in ctx.api.configs.categories()}
+                    for c in ctx.api.configs.category_names()}
         try:
             ctx.api.configs.reset_to_default()
         finally:
@@ -1086,6 +1140,7 @@ class SuiteRunner:
         try:
             drive = self.api.drives.get("a")
             self.restore_drive = (drive.enabled, drive.type, drive.image_path)
+            self.restore_config_category = CONFIG_CATEGORY
             self.restore_config = self.snapshot_category(
                 Ctx(self.api, self), CONFIG_CATEGORY)
         except (Failure, Skip) as exc:
@@ -1124,7 +1179,14 @@ class SuiteRunner:
                 quietly(lambda: self.api.drives.mount("a", image))
         if self.restore_config:
             quietly(lambda: self.restore_category(
-                Ctx(self.api, self), CONFIG_CATEGORY, self.restore_config))
+                Ctx(self.api, self), self.restore_config_category,
+                self.restore_config))
+        if self._config_target is not None:
+            category, item, value = self._config_target
+            quietly(lambda: self.api.configs.set(category, item, value))
+        if self._reset_category is not None and self._reset_snapshot:
+            quietly(lambda: self.restore_category(
+                Ctx(self.api, self), self._reset_category, self._reset_snapshot))
         quietly(self._remove_scratch)
 
     def _remove_scratch(self) -> None:
