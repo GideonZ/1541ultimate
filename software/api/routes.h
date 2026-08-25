@@ -212,7 +212,14 @@ public:
         // clear temporaries
         if (temporaries) {
             for(int i=0; i<temporaries->get_elements(); i++) {
-                delete (*temporaries)[i];
+                // These strings come from strdup(), so they must be released
+                // through free(). The linker wraps malloc/free (see
+                // software/system/memory_wrap.cc), and a wrapped allocation
+                // carries a size header in front of the pointer the caller
+                // gets. delete maps to a bare vPortFree() with no such
+                // adjustment, so it hands heap_4 an address that is not a block
+                // start and trips its allocated-bit assert.
+                free((void *)(*temporaries)[i]);
             }
             delete temporaries;
             temporaries = NULL;
@@ -238,6 +245,8 @@ public:
         ClearArgs();
     }
 
+    // Takes ownership of a string allocated with malloc()/strdup(). ClearAll()
+    // releases it with free(); do not pass memory obtained from new.
     void temporary(const char *im_trash)
     {
         if (!temporaries) {

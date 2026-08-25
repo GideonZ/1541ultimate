@@ -206,6 +206,12 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Creates every disk-image kind and reads the device back after each one.
+    # A create that answers 200 and then takes the device down is the defect
+    # this catches, so it runs early: a dead device makes every later suite
+    # fail for a reason that is not its own.
+    Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
