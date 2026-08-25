@@ -186,17 +186,38 @@ records each with sound, and writes a run directory laid out the way
 `run-tests --record` writes one:
 
 ```
-runs/<stamp>/
-  index.md          the whole run, for a person
-  index.json        the whole run, for a program
-  01-<commit>-<blob>/
-    video.mp4       the game, with sound
-    metadata.json   verdict, per-launch measurements, device identity
-    deploy.txt      what the deploy printed
-    launch-N.txt    what each launch measured
-    frame0.png      the first captured frame
-    mask0.png       which pixels changed, if any did
+runs/20260825-1024/                           when the run itself was made
+  index.md                                    the whole run, for a person
+  index.json                                  the whole run, for a program
+  20260502T142608Z-c4be69a2-bff2d1eb/         one candidate
+    video.mp4                                 the game, with sound
+    metadata.json                             verdict and measurements
+    deploy.txt                                what the deploy printed
+    launch-1.txt launch-2.txt launch-3.txt    what each launch measured
+    frame0.png                                the first captured frame
+    mask0.png                                 which pixels changed, if any did
 ```
+
+#### How a candidate folder is named
+
+`20260502T142608Z-c4be69a2-bff2d1eb` has three parts:
+
+| part | meaning |
+|---|---|
+| `20260502T142608Z` | when that commit was made, in UTC, to the second |
+| `c4be69a2` | the **commit** that was checked out and deployed |
+| `bff2d1eb` | the **FPGA bitstream** that commit carries, which is the thing actually under test |
+
+The two hexadecimal parts are different kinds of identifier and are easy to
+confuse. The first is a commit in this repository. The second is the content
+hash of `external/u64.sof` at that commit, from
+`git rev-parse --short <commit>:external/u64.sof`. Several commits in a row
+normally carry the same bitstream, so the second part is what tells you whether
+two folders really tested different hardware.
+
+The timestamp comes first so that an ordinary directory listing puts the
+candidates in the order the changes were made. That order is not obvious from
+the hashes, and the candidates are not all on one branch.
 
 A sweep rather than a binary search, because the defect's rate varies from one
 launch to the next: a candidate can pass by luck, and a binary search would then

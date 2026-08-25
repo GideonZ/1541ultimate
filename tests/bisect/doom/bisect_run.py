@@ -11,7 +11,7 @@ and one Markdown index over the whole run.
     runs/<stamp>/
       index.md                 the whole run, for a person
       index.json               the whole run, for a program
-      <commit>-<blob>/
+      <utc commit time>-<commit>-<bitstream blob>/
         video.mp4              25s of the game, with sound
         metadata.json          verdict, measurements, device identity
         deploy.txt             what deploy_commit.sh printed
@@ -43,7 +43,20 @@ VERDICTS = {"GOOD": "pass", "BAD": "corrupt", "BROKEN": "does not run",
 
 def git(*args, cwd=None):
     return subprocess.run(["git", *args], cwd=cwd or REPO, check=False,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True,
+                          env={**os.environ, "TZ": "UTC"}).stdout.strip()
+
+
+def commit_stamp(commit):
+    """The commit's own time in UTC, as YYYYMMDDTHHMMSSZ.
+
+    Folders are named with this so that listing the run directory puts the
+    candidates in the order the changes were actually made. A bitstream's
+    position in a range is not obvious from its hash, and the candidates are not
+    all on one branch.
+    """
+    return git("log", "-1", "--format=%cd",
+               "--date=format-local:%Y%m%dT%H%M%SZ", commit) or "00000000T000000Z"
 
 
 def candidates_for(commit_range):
@@ -236,7 +249,8 @@ def main():
     entries = []
     for index, commit in enumerate(candidates, 1):
         blob = git("rev-parse", "--short", f"{commit}:external/u64.sof") or "nosof"
-        folder = f"{index:02d}-{commit}-{blob}"
+        # <commit time in UTC>-<the commit tested>-<the bitstream it carries>
+        folder = f"{commit_stamp(commit)}-{commit}-{blob}"
         directory = run_dir / folder
         directory.mkdir(exist_ok=True)
         print(f"[{index}/{len(candidates)}] {commit} ({blob})", flush=True)
