@@ -174,18 +174,32 @@ API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
             list->add(s->get_store_name());
         }
     } else {  // path specified, so the output would list the stores that match the path
+        bool matched = false;
         for(int i=0; i<stores->get_elements(); i++) {
             ConfigStore *s = (*stores)[i];
             if ((path_elements < 1) || pattern_match(args.get_path(0), s->get_store_name())) {
                 emit_store(s, resp->json, args);
+                matched = true;
             }
+        }
+        if (!matched) {
+            // A name no store answers to used to come back as 200 with an empty
+            // body, which reads as "the category exists and holds nothing"
+            // rather than as the typo it is.
+            resp->error("No configuration category matches '%s'.", args.get_path(0));
+            resp->json_response(HTTP_NOT_FOUND);
+            return;
         }
     }
 
     resp->json_response(HTTP_OK);
 }
 
-API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_REQUIRED }} ))
+// 'value' is optional because this route takes it either as the query argument
+// or as a third path element, and the handler below chooses between them and
+// rejects every other shape. Declaring it required had the validator refuse the
+// path form before the handler ran, so the branch that reads it was dead.
+API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_OPTIONAL }} ))
 {
     ConfigManager *cfg = ConfigManager::getConfigManager();
     IndexedList<ConfigStore *> *stores = cfg->getStores();

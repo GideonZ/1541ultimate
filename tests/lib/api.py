@@ -344,6 +344,44 @@ class MachineApi:
             raise Failure(f"writemem ${address:04X} ({len(data)} bytes) returned "
                           f"HTTP {code}: {body[:160]!r}")
 
+    def measure(self) -> Optional[bytes]:
+        """A bus timing capture, or None where the FPGA cannot measure (501)."""
+        code, _, body = self._rest.request("GET", "/v1/machine:measure",
+                                           idempotent=True)
+        if code == 501:
+            return None
+        if code != 200:
+            raise Failure(f"machine:measure returned HTTP {code}: {body[:160]!r}")
+        return body
+
+    def debugreg(self) -> Optional[str]:
+        """The debug register as two hex digits, or None where it does not exist.
+
+        Both debugreg routes sit inside `#if U64`, so on other products they
+        are not in the route table and the dispatcher answers 404. That is a
+        product difference, not a failure, so it is None rather than a raise.
+        """
+        code, _, body = self._rest.request("GET", "/v1/machine:debugreg",
+                                           idempotent=True)
+        if code == 404:
+            return None
+        if code != 200:
+            raise Failure(f"machine:debugreg returned HTTP {code}: {body[:160]!r}")
+        payload = _errors(_json(body, "machine:debugreg"), "machine:debugreg")
+        return str(payload.get("value", ""))
+
+    def set_debugreg(self, value: str) -> Optional[str]:
+        """Set the debug register, returning what it reads back, or None where
+        the route does not exist."""
+        code, _, body = self._rest.request("PUT", "/v1/machine:debugreg",
+                                           params={"value": value})
+        if code == 404:
+            return None
+        if code != 200:
+            raise Failure(f"machine:debugreg returned HTTP {code}: {body[:160]!r}")
+        payload = _errors(_json(body, "machine:debugreg"), "machine:debugreg")
+        return str(payload.get("value", ""))
+
     def heap(self) -> Optional[Dict[str, int]]:
         """Free, low-water and total FreeRTOS heap, or None on firmware without it.
 
@@ -659,6 +697,29 @@ class ConfigsApi:
         if code != 200:
             raise Failure(f"{path}={value!r} returned HTTP {code}: {body[:160]!r}")
 
+    def set_by_path(self, category: str, item: str, value: object) -> None:
+        """Set an item with the value as the third path element.
+
+        The route takes either `?value=` with a two-element path or a
+        three-element path with no query argument (route_configs.cc). Both
+        reach the same code; a suite that only ever used one would not notice
+        the other breaking.
+        """
+        path = (f"/v1/configs/{_quote(category)}/{_quote(item)}"
+                f"/{_quote(str(value))}")
+        code, _, body = self._rest.request("PUT", path)
+        if code != 200:
+            raise Failure(f"{path} returned HTTP {code}: {body[:160]!r}")
+
+    def apply(self, settings: Dict[str, Dict[str, object]]) -> None:
+        """Set several items at once, as the JSON body form of the route."""
+        body = json.dumps(settings).encode("utf-8")
+        code, _, answer = self._rest.request(
+            "POST", "/v1/configs", body=body,
+            headers={"Content-Type": "application/json"})
+        if code != 200:
+            raise Failure(f"POST /v1/configs returned HTTP {code}: {answer[:160]!r}")
+
     def _flash(self, action: str, category: Optional[str]) -> None:
         path = (f"/v1/configs:{action}" if category is None
                 else f"/v1/configs/{_quote(category)}:{action}")
@@ -826,6 +887,15 @@ class UltimateApi:
 
     def version(self) -> str:
         return str(_errors(self.rest.json("/v1/version"), "version").get("version", ""))
+
+    def help(self, command: str) -> bytes:
+        """The help page for one command. Answers HTML, not JSON."""
+        code, _, body = self.rest.request("GET", "/v1/help",
+                                          params={"command": command},
+                                          idempotent=True)
+        if code != 200:
+            raise Failure(f"/v1/help returned HTTP {code}: {body[:160]!r}")
+        return body
 
     def info(self) -> Info:
         payload = _errors(self.rest.json("/v1/info"), "info")
