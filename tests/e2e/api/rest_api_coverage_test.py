@@ -18,6 +18,14 @@
 #
 # After every probe the device is read back. That read is what turns "the route
 # answered" into "the route answered and the firmware is still running".
+#
+# Repetition. The lockup this suite exists for did not fire on a cold device on
+# the first call, so every probe runs --repeat times. By default the repetitions
+# are spread across worker threads so that different endpoints are in flight at
+# once, which is the harder case: it overlaps request teardown on one connection
+# with argument parsing on another. --order sequential runs each endpoint's
+# repetitions back to back on one thread instead, which is what you want when a
+# single endpoint is suspect and you need the calls attributable.
 
 import argparse
 import ftplib
@@ -25,7 +33,9 @@ import os
 import posixpath
 import re
 import sys
+import threading
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -36,7 +46,7 @@ import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (  # noqa: E402  (needs tests/lib on sys.path first)
-    Failure, check_count, check_fail, check_ok, check_start, detail,
+    Failure, check_count, check_fail, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok)
 
 SUITE = "rest_api_coverage_test"
@@ -52,6 +62,15 @@ SCRATCH = "/Temp"
 MISSING = "/Temp/rest_api_coverage_no_such_dir/no_such_file"
 
 LIVENESS_TIMEOUT_SECONDS = 10.0
+
+# The firmware serves MAX_HTTP_CLIENT = 4 connections (httpd/c-version/lib/
+# server.h). Each worker holds one for the call and one for the liveness read
+# that follows it, but never both at once, so the ceiling is one per worker.
+# Three leaves a slot free: saturating the last one turns a slow answer into a
+# refused connection, which would read as a device failure rather than as the
+# queueing it is.
+DEFAULT_WORKERS = 3
+DEFAULT_REPEAT = 3
 
 # Endpoints that are deliberately not called, and why. Anything listed here is
 # still required to exist: if one is removed from the firmware this suite fails,
@@ -92,7 +111,8 @@ class Probe:
                  path: str, accept: Sequence[int], *,
                  params: Optional[Dict[str, object]] = None,
                  body: Optional[bytes] = None,
-                 note: str = "") -> None:
+                 note: str = "",
+                 exclusive: bool = False) -> None:
         self.method = method
         self.group = group
         self.command = command
@@ -101,6 +121,9 @@ class Probe:
         self.params = params
         self.body = body
         self.note = note
+        # An exclusive probe changes machine state that the next probe would
+        # see, so it never runs concurrently with anything, including itself.
+        self.exclusive = exclusive
 
     @property
     def key(self) -> Tuple[str, str, str]:
@@ -136,7 +159,12 @@ def build_probes() -> List[Probe]:
     p.append(Probe("GET", "machine", "readmem", "/v1/machine:readmem", OK,
                    params={"address": 1024, "length": 16}))
     p.append(Probe("GET", "machine", "heap", "/v1/machine:heap", OK))
-    p.append(Probe("GET", "machine", "debugreg", "/v1/machine:debugreg", OK))
+    # Both debugreg routes are inside #if U64 in route_machine.cc, so on a
+    # product without that register they are not in the route table at all and
+    # the dispatcher answers 404. That is different from machine:input, which
+    # is always registered and answers 501.
+    p.append(Probe("GET", "machine", "debugreg", "/v1/machine:debugreg",
+                   OK + (404,), note="404 where the route is not compiled in"))
     p.append(Probe("GET", "machine", "menu_screen", "/v1/machine:menu_screen",
                    OK + (404,), note="404 when no menu is open"))
     p.append(Probe("GET", "machine", "measure", "/v1/machine:measure",
@@ -157,9 +185,10 @@ def build_probes() -> List[Probe]:
     # debugreg takes any value and answers 200, so there is no argument that
     # refuses. run() replaces this with the value the register already holds,
     # which makes the call a no-op, and cleanup() puts it back either way.
-    p.append(Probe("PUT", "machine", "debugreg", "/v1/machine:debugreg", OK,
-                   params={"value": "0"},
-                   note="writes back the value already in the register"))
+    p.append(Probe("PUT", "machine", "debugreg", "/v1/machine:debugreg",
+                   OK + (404,), params={"value": "0"},
+                   note="writes back the value already in the register, "
+                        "404 where the route is not compiled in"))
     p.append(Probe("PUT", "drives", "mount", "/v1/drives:mount", REFUSED,
                    params={"drive": "a", "image": MISSING + ".d64"}))
     p.append(Probe("PUT", "drives", "load_rom", "/v1/drives:load_rom", REFUSED,
@@ -194,8 +223,10 @@ def build_probes() -> List[Probe]:
     # freezes the machine. They are adjacent and in this order, and cleanup()
     # sends a resume as well, so an abort between them cannot leave the C64
     # paused for the suites that follow.
-    p.append(Probe("PUT", "machine", "pause", "/v1/machine:pause", OK))
-    p.append(Probe("PUT", "machine", "resume", "/v1/machine:resume", OK))
+    p.append(Probe("PUT", "machine", "pause", "/v1/machine:pause", OK,
+                   exclusive=True))
+    p.append(Probe("PUT", "machine", "resume", "/v1/machine:resume", OK,
+                   exclusive=True))
 
     # ---- POST routes ----------------------------------------------------
     # Every POST route takes its payload as an attachment. Sending none is
@@ -222,6 +253,11 @@ class SuiteRunner:
         self.rest = self.api.rest
         self.probes = build_probes()
         self.debugreg_before: Optional[str] = None
+        self.local = threading.local()
+        self.local.api = self.api
+        # Set by the first worker that finds the device gone, so the others
+        # stop rather than each spending the liveness budget discovering it.
+        self.dead = threading.Event()
 
     # -- helpers ------------------------------------------------------------
     def alive(self) -> Optional[str]:
@@ -290,31 +326,103 @@ class SuiteRunner:
             detail(f"not called: {method} {_route_path(group, command)} - {reason}")
         return True
 
-    def run_probe(self, probe: Probe) -> bool:
-        label = probe.label
-        if probe.note:
-            label = f"{label} ({probe.note})"
-        check_start(label)
+    def call_once(self, api, probe: Probe) -> Optional[str]:
+        """Run one probe once on `api`; None when it passed, else the reason.
+
+        Each worker owns its client, so nothing here touches shared state and
+        the transport's counters stay meaningful per thread.
+        """
         try:
-            code, _, body = self.rest.request(
+            code, _, body = api.rest.request(
                 probe.method, probe.path, params=probe.params, body=probe.body)
         except (Failure, OSError, TimeoutError, urllib.error.URLError) as exc:
-            check_fail(f"{probe.label} did not answer: {format_exception(exc)}")
-            return False
+            return f"did not answer: {format_exception(exc)}"
         if code not in probe.accept:
-            check_fail(f"{probe.label} answered HTTP {code}, expected one of "
-                       f"{sorted(probe.accept)}: {body[:160]!r}")
-            return False
-        check_ok(f"HTTP {code}")
-
-        check_start(f"device still answers after {probe.label}")
-        reason = self.alive()
+            return (f"answered HTTP {code}, expected one of "
+                    f"{sorted(probe.accept)}: {body[:160]!r}")
+        reason = api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
         if reason:
-            check_fail(f"device stopped answering after {probe.label}: {reason}. "
-                       "It needs a power cycle.")
-            return False
-        check_ok()
-        return True
+            self.dead.set()
+            return (f"the device stopped answering after this call: {reason}. "
+                    "It needs a power cycle.")
+        return None
+
+    def client(self):
+        """One UltimateApi per thread.
+
+        Keyed by thread rather than by task, because the pool decides which
+        thread runs which task: two tasks that happened to pick the same client
+        would share its transport counters across threads.
+        """
+        api = getattr(self.local, "api", None)
+        if api is None:
+            api = UltimateApi(self.args.host, self.args.password, self.args.timeout)
+            self.local.api = api
+        return api
+
+    def run_probes(self) -> bool:
+        """Run every probe `repeat` times and report one check per endpoint."""
+        shared = [p for p in self.probes if not p.exclusive]
+        exclusive = [p for p in self.probes if p.exclusive]
+        results: Dict[Tuple[str, str, str], Optional[str]] = {}
+        lock = threading.Lock()
+
+        def record(probe: Probe, reason: Optional[str]) -> None:
+            if reason is None:
+                return
+            with lock:
+                results.setdefault(probe.key, reason)
+
+        def task(probe: Probe) -> None:
+            if self.dead.is_set():
+                return
+            with lock:
+                if probe.key in results:
+                    return          # already failed; do not pile on
+            record(probe, self.call_once(self.client(), probe))
+
+        if self.args.order == "sequential":
+            # a,a,a,b,b,b: one endpoint at a time, on one connection.
+            for probe in shared:
+                for _ in range(self.args.repeat):
+                    task(probe)
+        else:
+            # a,b,c,...,a,b,c,...: one pass of every endpoint per round, so the
+            # calls in flight together are always different endpoints.
+            with ThreadPoolExecutor(max_workers=self.args.workers) as pool:
+                for _ in range(self.args.repeat):
+                    if self.dead.is_set():
+                        break
+                    list(pool.map(task, shared))
+
+        # The exclusive ones are always sequential and always in list order, so
+        # pause is followed by resume however the rest of the suite ran.
+        for _ in range(self.args.repeat):
+            if self.dead.is_set():
+                break
+            for probe in exclusive:
+                task(probe)
+
+        ok = True
+        for probe in self.probes:
+            label = probe.label
+            if probe.note:
+                label = f"{label} ({probe.note})"
+            check_start(f"{label} x{self.args.repeat}")
+            reason = results.get(probe.key)
+            if reason is None:
+                if self.dead.is_set() and probe.key not in results:
+                    check_skip("device was already down")
+                    ok = False
+                    continue
+                check_ok()
+                continue
+            check_fail(f"{probe.label} {reason}")
+            ok = False
+            if self.dead.is_set():
+                detail("device is down; the remaining endpoints were not called")
+                break
+        return ok
 
     def run(self) -> bool:
         if not self.check_coverage():
@@ -336,14 +444,11 @@ class SuiteRunner:
                     probe.params = {"value": f"0x{self.debugreg_before}"}
 
         section("endpoints")
-        for probe in self.probes:
-            if not self.run_probe(probe):
-                # Once the device is down every later probe reports the same
-                # thing, so stop and say so once.
-                if self.alive():
-                    detail("device is down; skipping the remaining endpoints")
-                return False
-        return True
+        detail(f"{len(self.probes)} endpoints x{self.args.repeat}, "
+               f"{self.args.order}"
+               + (f", {self.args.workers} workers" if self.args.order == "concurrent"
+                  else ""))
+        return self.run_probes()
 
     def cleanup(self) -> None:
         """The probes are chosen not to leave anything behind. What is left is
@@ -373,7 +478,23 @@ def main() -> int:
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "10.0")))
+    parser.add_argument("-r", "--repeat", type=int, default=DEFAULT_REPEAT,
+                        help="how many times each endpoint is called "
+                             "(default: %(default)s)")
+    parser.add_argument("--order", choices=("concurrent", "sequential"),
+                        default="concurrent",
+                        help="concurrent spreads the repetitions across workers "
+                             "so different endpoints overlap; sequential calls "
+                             "each endpoint's repetitions back to back on one "
+                             "thread (default: %(default)s)")
+    parser.add_argument("-w", "--workers", type=int, default=DEFAULT_WORKERS,
+                        help="concurrent workers, at most one HTTP connection "
+                             "each (default: %(default)s)")
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be at least 1")
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
 
     runner = SuiteRunner(args)
     try:
