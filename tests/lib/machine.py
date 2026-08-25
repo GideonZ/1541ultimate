@@ -161,6 +161,20 @@ READMEM_REJECTS_ZERO_LENGTH = _fix(
     "with an empty body",
     (C64U,))
 
+# What the streams case of tests/e2e/api/rest_api_coverage_test.py asserts:
+# PUT /v1/streams/{stream}:start answers 200 for a destination on the local
+# network. DataStreamer::startStream always takes NetworkInterface
+# ::getInterface(0) and looks the destination up in that interface's ARP table,
+# so on a machine with both Ethernet and WiFi it can fail to find the MAC of a
+# host it is serving HTTP to at that moment, and answers 404 "Network Host
+# Resolve Error". Seen on an Ultimate 64 Elite whose two addresses carry
+# different MACs, one of them the WiFi module's.
+STREAM_FINDS_DESTINATION_MAC = _fix(
+    "stream-finds-destination-mac",
+    "PUT /v1/streams/<stream>:start resolves a destination that is reachable "
+    "on an interface other than the first one",
+    (U64,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP

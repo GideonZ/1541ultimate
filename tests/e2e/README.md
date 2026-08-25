@@ -57,7 +57,7 @@ to drive it.
 
 | Folder | Production owner | Coverage |
 |---|---|---|
-| `api/` | `software/api/` | REST contracts for input, menu screen, memory, and PRG runners |
+| `api/` | `software/api/` | REST contracts for input, menu screen, memory, disk-image creation and PRG runners, plus `rest-api-coverage`, which calls every registered operation |
 | `filemanager/` | `software/filemanager/`, `software/userinterface/` | Browser actions, change notification, and managed `/Temp` lifecycle |
 | `filesystem/` | `software/filesystem/` | Filesystem implementations, including the remote FTP filesystem |
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
@@ -187,7 +187,23 @@ fails the run.
    that needs a host Python package adds it to [`tests/requirements.txt`](../requirements.txt)
    and to the table in [`tests/README.md`](../README.md) in the same change, so
    a fresh checkout can run the gate without guessing.
-9. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
+9. A new REST operation is not finished until `rest-api-coverage` knows about
+   it. That suite reads the operation list from
+   `doc/api/rest_api_openapi_*.yaml` when the tree has it and from the
+   `API_CALL` macros otherwise, and fails while an operation is neither
+   exercised by a case nor written into one of its three tables: `EXCLUDED`
+   (never call it, and why), `HAPPY_ELSEWHERE` (which suite owns the happy
+   path) or `NEGATIVE_ONLY` (why there cannot be one). The gate exists because
+   a device-halting bug in `files:create_d64` shipped while no suite called
+   that route at all.
+
+   Prefer a case that checks what the call did over one that checks the status
+   code: read the drive listing back after mounting, read the item back after
+   writing it. Where the API exposes no outcome, say so in the case rather than
+   letting a 200 stand in for a result. A case that changes machine state is
+   marked `exclusive`, records what it found, and restores it.
+
+10. Keep each check under ten seconds. Above that `tests/lib/report.py` marks
    the duration `SLOW` in yellow, which is a prompt to look rather than a
    failure. The whole gate is run repeatedly by people waiting for it, so a
    slow check has to earn its time.

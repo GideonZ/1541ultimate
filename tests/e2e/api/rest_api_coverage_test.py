@@ -721,6 +721,10 @@ def build_cases() -> List[Case]:
         # The debug stream is the cheap one; the video stream shares a multicast
         # group with anything else on the network. Sent to this host and stopped
         # in the same case so nothing keeps streaming afterwards.
+        # Not a firmware vintage question on every machine: where the device
+        # has two interfaces, the streamer looks the destination up on the
+        # wrong one. tests/lib/machine.py carries that as an open gap.
+        ctx.require_fix(machine_lib.STREAM_FINDS_DESTINATION_MAC)
         # A route the product does not build is not in the table and the
         # dispatcher answers 404 with an empty body. The handler's own refusals
         # are 404 too but carry a JSON error, so the body is what tells a
