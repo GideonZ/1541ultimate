@@ -617,6 +617,15 @@ def run_tcp_lossless(net: Net, peer: Peer) -> bool:
             if bytes(recovered) != pattern(BIG_DATAGRAM):
                 raise Failure(f"recovered {len(recovered)} of {BIG_DATAGRAM} bytes; a stream "
                               f"read that asks for less than is pending must lose nothing")
+
+        with check("a stream read that asks for less than is pending still answers 00,OK"):
+            # Every read above asked for less than the socket held, which is
+            # ordinary on a stream and loses nothing. Nothing that reports
+            # truncation on datagram sockets may report it here.
+            unexpected = [r.status_text for r in chunks if r.payload and r.status_text != STATUS_OK]
+            if unexpected:
+                raise Failure(f"a stream read answered {unexpected!r}; only {STATUS_OK!r} "
+                              f"is correct when no data was lost")
     finally:
         if conn is not None:
             conn.close()
