@@ -247,6 +247,12 @@ SUITES: Sequence[Suite] = (
     # and the file system.
     Suite("e2e", "uci-targets", "tests/e2e/io/command_interface/uci_targets_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # The UCI network target's READ_SOCKET: what the requested length does, and
+    # what happens to a datagram larger than it (#802). This host is the
+    # device's network peer, so it binds two ports and needs the device to be
+    # able to reach it; the scenarios that need that skip where it cannot.
+    Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
     # under --mode telnet.
