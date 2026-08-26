@@ -20,7 +20,10 @@
 ;   OPT_CAP     how much to pull before giving up, which turns a reply that
 ;               never ends into a measurement instead of a hang
 ;   OPT_OVR     how many bytes to read past DATA_AV
-;   $C009-$C00F and $C440-$C4FF are reserved for further options and results.
+;   OPT_ABRT    abandon the reply after the first block, which is what a
+;               client does when it gives up part way through a Data More
+;               reply
+;   $C00A-$C00F and $C440-$C4FF are reserved for further options and results.
 ; New behaviour, as opposed to a new value, belongs in a reserved option byte,
 ; where zero has to keep meaning what the agent does today: the host writes the
 ; whole option block at once, so an older host leaves zeroes there.
@@ -44,9 +47,11 @@ STATR   = $DF1F                 ; read: status data queue
 
 CTRL_PUSH = $01
 CTRL_ACC  = $02
+CTRL_ABRT = $04
 CTRL_CLR  = $08
 
 ST_STATE  = $30
+ST_IDLE   = $00
 ST_LAST   = $20
 ST_MORE   = $30
 ST_STAT   = $40
@@ -60,7 +65,9 @@ OPT_OVR  = $C004                ; bytes to read from RESP after DATA_AV clears
 OPT_MAXB = $C005                ; how many reply blocks to follow, at least 1
 OPT_CAP  = $C006                ; 16 bit cap on the data drain
 READY    = $C008                ; agent writes $A5 here once it is running
-;          $C009-$C00F          ; reserved for further options
+OPT_ABRT = $C009                ; non-zero: abandon the reply after the first
+                                ; block by writing the abort bit
+;          $C00A-$C00F          ; reserved for further options
 CMDBUF   = $C010                ; command bytes, up to 896
 
 ; ------------------------------------------------------------- result block --
@@ -107,6 +114,7 @@ start
         lda #$00
         sta GO
         sta SEQ
+        sta OPT_ABRT            ; so a host that never sets it gets the default
         lda #$A5
         sta READY
 main_wait
@@ -196,6 +204,12 @@ block_loop
         jsr drain_status
         jsr record_block
 
+        ; Abandon the transaction rather than accept it, if asked to. The
+        ; abort bit is the documented way out of a reply a client no longer
+        ; wants, and the Ultimate answers it by resetting the exchange.
+        lda OPT_ABRT
+        bne transact_abort
+
         ; Follow a Data More reply into its next block, up to OPT_MAXB.
         lda zstat
         and #ST_STATE
@@ -211,7 +225,33 @@ block_loop
         jmp block_loop
 
 blocks_done
+        ; Whether the Ultimate still had blocks to send when the agent stopped
+        ; following them, which is what OPT_MAXB does.
+        ldx #$00
+        lda zstat
+        and #ST_STATE
+        cmp #ST_MORE
+        bne blocks_accept
+        ldx #$01
+blocks_accept
         lda #CTRL_ACC
+        sta CTRL
+        lda CTRL
+        sta R_FINAL
+        cpx #$00
+        beq blocks_end
+        ; The reply was left part way through, so the rest of it has to be
+        ; taken before anything else can use the interface. R_FINAL above still
+        ; records the state that first accept produced.
+        jsr release_to_idle
+blocks_end
+        rts
+
+transact_abort
+        lda #CTRL_ABRT
+        sta CTRL
+        jsr wait_idle
+        lda #CTRL_CLR
         sta CTRL
         lda CTRL
         sta R_FINAL
@@ -221,6 +261,54 @@ transact_timeout
         lda CTRL
         sta R_FIRST
         sta R_FINAL
+        rts
+
+; ---------------------------------------------------------- release_to_idle ---
+; Accepts the remaining blocks of a reply the agent stopped following, waiting
+; for the Ultimate to produce each one, until the exchange is back to Idle.
+; Bounded by the number of blocks it will accept and by wait_reply's own
+; timeout, so an exchange that will not end is recorded rather than hung on.
+release_to_idle
+        ldy #$08
+rti_loop
+        lda CTRL
+        and #ST_STATE
+        beq rti_done
+        jsr wait_reply
+        bcs rti_done
+        lda #CTRL_ACC
+        sta CTRL
+        dey
+        bne rti_loop
+rti_done
+        rts
+
+; --------------------------------------------------------------- wait_idle ---
+; Waits for the state bits to return to Idle after an abort. Bounded the same
+; way wait_reply is, and records the same flag when it gives up, so a state
+; that will not clear is a measurement rather than a hang.
+wait_idle
+        lda #$00
+        sta ztmo
+        sta ztmo+1
+        sta ztmo+2
+idle_loop
+        lda CTRL
+        and #ST_STATE
+        cmp #ST_IDLE
+        beq idle_ok
+        inc ztmo
+        bne idle_loop
+        inc ztmo+1
+        bne idle_loop
+        inc ztmo+2
+        lda ztmo+2
+        cmp #WAIT_WRAPS
+        bne idle_loop
+        lda R_FLAGS
+        ora #$01
+        sta R_FLAGS
+idle_ok
         rts
 
 ; -------------------------------------------------------------- wait_reply ---

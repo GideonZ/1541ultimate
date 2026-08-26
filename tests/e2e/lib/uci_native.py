@@ -36,6 +36,7 @@ OPT_OVR = 0xC004
 OPT_MAXB = 0xC005
 OPT_CAP = 0xC006
 READY = 0xC008
+OPT_ABRT = 0xC009
 CMDBUF = 0xC010
 
 RESULT_BASE = 0xC400
@@ -110,15 +111,19 @@ class NativeUci:
 
     # -- one command --------------------------------------------------------
 
-    def _run(self, command: bytes, overrun_reads: int, cap: int) -> Tuple[bytes, bytes]:
+    def _run(self, command: bytes, overrun_reads: int, cap: int,
+             max_blocks: int = MAX_BLOCKS, abort_first: bool = False) -> Tuple[bytes, bytes]:
         """Hand one command to the agent and return (result block, payload)."""
         if len(command) > CMD_QUEUE_BYTES:
             raise Failure(f"a command of {len(command)} bytes does not fit the command queue")
         self.machine.writemem(CMDBUF, command)
         self.machine.writemem(CMDLEN, bytes([
             len(command) & 0xFF, (len(command) >> 8) & 0xFF,
-            min(overrun_reads, MAX_OVERRUN_READS), MAX_BLOCKS,
+            min(overrun_reads, MAX_OVERRUN_READS), max_blocks,
             cap & 0xFF, (cap >> 8) & 0xFF]))
+        # Outside the option block above, so it is written every time rather
+        # than left over from the previous transaction.
+        self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00]))
         self.machine.writemem(GO, bytes([0x01]))
 
         deadline = time.time() + self.busy_timeout
@@ -222,11 +227,32 @@ class NativeUci:
         Returns how many bytes the queue handed out, whether DATA_AV cleared,
         and the last few of them, which say whether the queue was repeating
         itself. This is the same measurement uci.Uci.probe_drain makes, taken
-        by the 6510 instead of by DMA.
+        by the 6510 instead of by DMA, and like that one it measures the first
+        reply block: the agent is told to follow no further one, so a reply
+        announced as Data More is counted here as the block it started with.
         """
-        block, payload = self._run(command, 0, cap)
+        block, payload = self._run(command, 0, cap, max_blocks=1)
         flags = self._byte(block, R_FLAGS)
         if flags & FLAG_WAIT_TIMEOUT:
             raise Failure(f"command {command.hex(' ')} never left Command Busy")
         cleared = not (flags & FLAG_DRAIN_CAP)
         return len(payload), cleared, payload[-6:]
+
+    # -- abort --------------------------------------------------------------
+
+    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+        """Push one command, take its first reply block, then abandon it.
+
+        The same measurement uci.Uci.probe_abort makes: how many bytes that
+        first block carried, and whether the interface came back to Idle.
+        """
+        block, payload = self._run(command, 0, DEFAULT_DRAIN_CAP,
+                                   max_blocks=1, abort_first=True)
+        flags = self._byte(block, R_FLAGS)
+        if flags & FLAG_WAIT_TIMEOUT:
+            raise Failure(f"command {command.hex(' ')} never left Command Busy, or the "
+                          f"interface never returned to Idle after the abort; CTRL was "
+                          f"{describe_status(self._byte(block, R_FINAL))}")
+        final = self._byte(block, R_FINAL)
+        idle = (final & ST_STATE_MASK) == ST_STATE_IDLE and not (final & ST_ERROR)
+        return len(payload), idle

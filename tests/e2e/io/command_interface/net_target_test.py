@@ -62,7 +62,8 @@ from report import (  # noqa: E402
     FAIL, Failure, OK, SKIP, check, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from uci import (  # noqa: E402
-    REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged, interface_present)
+    MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged,
+    interface_present)
 from uci_native import NativeUci  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
@@ -88,13 +89,27 @@ STATUS_NO_DATA_PREFIX = b"02,NO DATA"
 # and the length in the command is the only variable.
 NEVER_OPENED = 0x7F
 
-# The largest length READ_SOCKET accepts is discovered on the device rather
-# than written down here. A reply is a 2-byte header plus the payload, so the
-# number depends on how large a reply block the transport can deliver, and a
-# suite that hard-codes it asserts today's number instead of the property that
-# matters: whatever length the firmware accepts, its reply has to be readable.
-# The search runs over this range, which spans every plausible answer.
+# The largest UDP payload that fits one Ethernet frame: 1500 less 20 bytes of
+# IPv4 header and 8 of UDP header. Anything above it is sent as fragments, and
+# IP_REASSEMBLY is 0 in software/network/config/lwipopts.h, so nothing larger
+# reaches a socket on the device at all.
+UNFRAGMENTED_MAX = 1472
+
+# The largest length READ_SOCKET accepts. A complete unfragmented IPv4 UDP
+# datagram is the most the command can ever return, so the two are the same
+# number. This is asserted rather than only discovered, because it is now a
+# deliberate limit of the command rather than a side effect of how large a
+# reply block the transport happens to be able to carry.
+MAX_READ = UNFRAGMENTED_MAX
+# The search for the boundary runs over this range, which spans every
+# plausible answer, and is what turns "the limit is 1472" into a measurement.
 LENGTH_SEARCH_MAX = 2048
+
+# What one reply block can carry. A block of exactly REPLY_QUEUE_BYTES never
+# ends, so a block holds at most MAX_BLOCK_BYTES, and the first block of a
+# reply spends two of them on the length header.
+FIRST_BLOCK_PAYLOAD = MAX_BLOCK_BYTES - 2
+
 # A safe length for reads that only have to work, not to probe a boundary.
 SAFE_READ = 512
 
@@ -103,11 +118,20 @@ SAFE_READ = 512
 SMALL_READ = 64
 BIG_DATAGRAM = 200
 
-# A datagram long enough to fill any read length this suite asks for.
-FULL_DATAGRAM = 1000
-# Where the drain of the largest accepted read gives up. The response queue
-# holds 896 bytes, so anything past that is the queue failing to end rather
-# than a longer reply.
+# One payload that needs more than one reply block and is not a round number
+# of blocks either way, so a payload placed at the wrong offset in the second
+# block shows up as wrong data rather than as the right data shifted by zero.
+# Used as a datagram over UDP and as a run of stream bytes over TCP.
+SPANNING_DATAGRAM = 1420
+
+# A truncated read whose returned part still needs more than one block: the
+# datagram is larger than the request, and the request is larger than a block.
+TRUNCATED_REQUEST = 1000
+TRUNCATED_DATAGRAM = 1200
+
+# Where the drain of one reply block gives up. The response queue holds 896
+# bytes, so anything past that is the queue failing to end rather than a
+# longer block.
 OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 
 # The device's socket carries SO_RCVTIMEO of 40 ms, so a read finds a datagram
@@ -120,16 +144,15 @@ ROUTES = ["rest", "native"]
 
 TESTS = [
     "read-length-limit",
-    "largest-accepted-read-drains",
+    "reply-blocks-are-drainable",
+    "datagram-spans-reply-blocks",
     "datagram-size-ceiling",
     "udp-truncation-is-detectable",
+    "truncation-spans-reply-blocks",
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
+    "multi-block-state-does-not-leak",
 ]
-
-# The largest UDP payload that fits one Ethernet frame: 1500 less 20 bytes of
-# IP header and 8 of UDP header. Anything above it is fragmented on the wire.
-UNFRAGMENTED_MAX = 1472
 
 
 def pattern(size: int, seed: int = 0) -> bytes:
@@ -160,11 +183,17 @@ class ReadResult:
         self.state = block.state
         self.state_name = block.state_name
         self.status_byte = block.status_byte
-        self.reply = block.data
+        # The logical reply, which is every block's data in order. A reply that
+        # fits one block is that block; one that does not is announced as Data
+        # More and continues in the next, and a client that concatenates them
+        # holds exactly what a single block would have carried.
+        self.reply = transaction.data
         self.status_text = transaction.status_text
         self.overrun = block.overrun
+        self.block_lengths = [len(b.data) for b in transaction.blocks]
         self.blocks = len(transaction.blocks)
-        # The reply's own framing: two header bytes, then the payload.
+        # The reply's own framing: two header bytes, then the payload. The
+        # header counts the whole payload, not the part in the first block.
         self.header = (int.from_bytes(self.reply[:2], "little", signed=True)
                        if len(self.reply) >= 2 else None)
         self.payload = self.reply[2:]
@@ -182,8 +211,30 @@ class ReadResult:
     def describe(self) -> str:
         return (f"{self.state_name}, header {self.header}, payload {len(self.payload)} bytes"
                 f"{f' from offset {run_offset(self.payload)}' if self.payload else ''}"
+                f", blocks {self.block_lengths}"
                 f", status {self.status_text!r}"
                 + (f", overrun {self.overrun.hex(' ')}" if self.overrun else ""))
+
+
+def describe_mismatch(actual: bytes, expected: bytes) -> str:
+    """Where two payloads first differ, and what is there instead.
+
+    A reply assembled from several blocks can go wrong by dropping bytes,
+    repeating them, or starting the second block at the wrong offset. All three
+    show up as the first differing position plus the offset the bytes there
+    actually came from, because pattern() makes every byte name its own offset.
+    """
+    if len(actual) != len(expected):
+        return (f"got {len(actual)} bytes, expected {len(expected)}"
+                + (f"; the bytes it does have start at offset {run_offset(actual)}"
+                   if run_offset(actual) is not None else ""))
+    for index, (got, want) in enumerate(zip(actual, expected)):
+        if got != want:
+            tail = actual[index:index + 16]
+            return (f"first difference at offset {index}: got ${got:02X}, expected "
+                    f"${want:02X}; the run starting there came from offset "
+                    f"{run_offset(tail)}")
+    return "identical"
 
 
 class Net:
@@ -221,13 +272,25 @@ class Net:
         return bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
                       maxlen & 0xFF, (maxlen >> 8) & 0xFF])
 
-    def read(self, handle: int, maxlen: int, overrun_reads: int = 0) -> ReadResult:
+    def read(self, handle: int, maxlen: int, overrun_reads: int = 0,
+             single_part: bool = True) -> ReadResult:
+        """One READ_SOCKET, followed through however many blocks it takes.
+
+        `single_part` asserts that the reply arrives in one block, announced as
+        Data Last, which is what every reply short enough to fit one has to do.
+        Pass False for a read whose payload cannot fit one block.
+        """
         return ReadResult(self.uci.transact(self.read_command(handle, maxlen),
+                                            single_part=single_part,
                                             overrun_reads=overrun_reads))
 
     def probe_read(self, handle: int, maxlen: int) -> Tuple[int, bool, bytes]:
-        """One read, drained to a cap rather than to the DATA_AV flag."""
+        """One read, its first block drained to a cap rather than to DATA_AV."""
         return self.uci.probe_drain(self.read_command(handle, maxlen), OVERRUN_LIMIT)
+
+    def abort_read(self, handle: int, maxlen: int) -> Tuple[int, bool]:
+        """One read whose reply is abandoned after its first block."""
+        return self.uci.probe_abort(self.read_command(handle, maxlen))
 
     def close(self, handle: int):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_CLOSE_SOCKET, handle]))
@@ -239,7 +302,8 @@ class Net:
         every one of them and the only thing that separates the answers is the
         length: an accepted length is answered by the socket
         ('02,NO DATA'), a refused one by the length check
-        ('82,PARAMETER(S) OUT OF RANGE').
+        ('82,PARAMETER(S) OUT OF RANGE'). No reply carries a payload, so this
+        costs a handful of register accesses per probe whatever the length.
         """
         def accepted(length: int) -> bool:
             return self.read(NEVER_OPENED, length).status_text != STATUS_OUT_OF_RANGE
@@ -248,8 +312,8 @@ class Net:
         if not accepted(low):
             raise Failure(f"READ_SOCKET refused a length of {low}")
         if accepted(high):
-            raise Failure(f"READ_SOCKET accepted a length of {high}, which cannot fit the "
-                          f"{REPLY_QUEUE_BYTES}-byte response queue")
+            raise Failure(f"READ_SOCKET accepted a length of {high}, which is larger than "
+                          f"any datagram that can reach the device")
         while high - low > 1:
             middle = (low + high) // 2
             if accepted(middle):
@@ -340,14 +404,23 @@ def run_read_length_limit(net: Net) -> bool:
     difference between two rows is therefore the length handling and nothing
     else.
 
-    The boundary is found on the device rather than asserted, because the
-    number is not part of any published contract: the network target document
-    states no maximum for READ_SOCKET, and neither the cap nor the status that
-    reports it is documented. What is asserted is that the boundary is sharp
-    and that both sides of it answer on the status channel.
+    The boundary is found on the device by bisection and then compared against
+    MAX_READ. It is asserted rather than only recorded because it is now a
+    deliberate limit of the command: a complete unfragmented IPv4 UDP datagram
+    is the most READ_SOCKET can return, so 1472 is the most it accepts. A reply
+    longer than one transport block is split across blocks rather than refused,
+    so the limit no longer follows from the size of the response queue.
     """
     section("read-length-limit")
     accepted_max = net.largest_accepted_length()
+
+    with check(f"READ_SOCKET accepts lengths up to {MAX_READ} and no further"):
+        detail(f"bisection found the boundary at {accepted_max}")
+        if accepted_max != MAX_READ:
+            raise Failure(
+                f"READ_SOCKET accepts up to {accepted_max}, expected {MAX_READ}: "
+                f"1500 bytes of Ethernet MTU less 20 of IPv4 header and 8 of UDP "
+                f"header, which is the largest datagram that can reach the device")
 
     with check(f"READ_SOCKET accepts a length of {accepted_max}"):
         result = net.read(NEVER_OPENED, accepted_max, overrun_reads=4)
@@ -388,17 +461,15 @@ def run_read_length_limit(net: Net) -> bool:
             raise Failure(f"length {accepted_max} was refused: {accepted.status_text!r}")
         if refused.status_text != STATUS_OUT_OF_RANGE:
             raise Failure(f"length {accepted_max + 1} was accepted: {refused.status_text!r}")
-        detail(f"accepted up to {accepted_max}, refused from {accepted_max + 1}; "
-               f"the response queue holds {REPLY_QUEUE_BYTES} bytes and a reply is a "
-               f"2-byte header plus the payload")
+        detail(f"accepted up to {accepted_max}, refused from {accepted_max + 1}")
     return True
 
 
-def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
-    """Whatever length READ_SOCKET accepts, the reply to it has to be readable.
+def run_reply_blocks_are_drainable(net: Net, peer: Peer) -> bool:
+    """Every reply block the firmware builds has to end.
 
-    A reply block is a 2-byte header plus the payload, and the transport cannot
-    deliver a block of exactly the response queue's size. Measured on a U64
+    A reply block is delivered through the response queue, and the transport
+    cannot deliver a block of exactly the queue's size. Measured on a U64
     Elite: a block of 895 bytes ends and DATA_AV clears, a block of 896 never
     ends and every further read returns the same last byte.
 
@@ -415,45 +486,143 @@ def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
     The reference client, ultimateii-dos-lib, does exactly that into a
     fixed-size buffer.
 
-    The length is the one the device accepts, not a number written here, so
-    this stays a statement about the firmware's own boundary rather than about
-    any particular value of it.
+    This measures the first block of a reply directly, at three lengths: the
+    largest payload that fits one block, one byte more than that, and the
+    largest read the command accepts. The second is the case that used to build
+    a 896-byte block. It is now the first block of a reply that continues, and
+    it still has to end.
     """
-    section("largest-accepted-read-drains")
-    accepted_max = net.largest_accepted_length()
+    section("reply-blocks-are-drainable")
     handle = net.open_udp(peer.ip, peer.udp_port)
     try:
         peer.learn_udp_peer(net, handle)
         measured = {}
-        for maxlen in (accepted_max - 1, accepted_max):
+        for maxlen in (FIRST_BLOCK_PAYLOAD, FIRST_BLOCK_PAYLOAD + 1, MAX_READ):
             net.drain_socket(handle)
-            peer.send_udp(pattern(FULL_DATAGRAM))
+            peer.send_udp(pattern(MAX_READ))
             time.sleep(DELIVERY_SETTLE_SECONDS)
             measured[maxlen] = net.probe_read(handle, maxlen)
             block, cleared, tail = measured[maxlen]
-            detail(f"length {maxlen}: reply block {block} bytes, DATA_AV cleared {cleared}, "
+            detail(f"length {maxlen}: first block {block} bytes, DATA_AV cleared {cleared}, "
                    f"last bytes {tail.hex(' ')}")
 
-        with check(f"a read of {accepted_max - 1} bytes ends its reply"):
-            block, cleared, _ = measured[accepted_max - 1]
+        with check(f"a read of {FIRST_BLOCK_PAYLOAD} bytes ends its reply in one block"):
+            block, cleared, _ = measured[FIRST_BLOCK_PAYLOAD]
             if not cleared:
                 raise Failure(f"DATA_AV was still set after {block} bytes")
-            if block != accepted_max + 1:
-                raise Failure(f"expected {accepted_max + 1} bytes (2 header + "
-                              f"{accepted_max - 1} payload), got {block}")
+            if block != FIRST_BLOCK_PAYLOAD + 2:
+                raise Failure(f"expected {FIRST_BLOCK_PAYLOAD + 2} bytes (2 header + "
+                              f"{FIRST_BLOCK_PAYLOAD} payload), got {block}")
 
-        with check(f"a read of {accepted_max} bytes, the largest accepted, ends its reply"):
-            block, cleared, tail = measured[accepted_max]
-            if not cleared:
-                raise Failure(
-                    f"DATA_AV was still set after {block} bytes and the queue was still "
-                    f"repeating {tail[-1:].hex()}. A read of {accepted_max} bytes builds a "
-                    f"reply block of {accepted_max + 2} bytes, the exact size of the "
-                    f"{REPLY_QUEUE_BYTES}-byte response queue, and that block never ends. "
-                    f"A client that reads while DATA_AV is set never stops")
-            if block != accepted_max + 2:
-                raise Failure(f"expected {accepted_max + 2} bytes (2 header + "
-                              f"{accepted_max} payload), got {block}")
+        for maxlen in (FIRST_BLOCK_PAYLOAD + 1, MAX_READ):
+            with check(f"the first block of a read of {maxlen} bytes ends"):
+                block, cleared, tail = measured[maxlen]
+                if not cleared:
+                    raise Failure(
+                        f"DATA_AV was still set after {block} bytes and the queue was still "
+                        f"repeating {tail[-1:].hex()}. A block of exactly "
+                        f"{REPLY_QUEUE_BYTES} bytes, the size of the response queue, never "
+                        f"ends, and a client that reads while DATA_AV is set never stops")
+                if block > MAX_BLOCK_BYTES:
+                    raise Failure(
+                        f"the first block carried {block} bytes; a block may carry at most "
+                        f"{MAX_BLOCK_BYTES}, because one of {REPLY_QUEUE_BYTES} never ends")
+                if block == 0:
+                    raise Failure(
+                        f"a read of {maxlen} bytes put nothing in the response queue, so it "
+                        f"was refused rather than answered; a datagram of {MAX_READ} bytes "
+                        f"was pending and the command accepts lengths up to {MAX_READ}")
+
+        with check(f"no block of any of these replies reaches {REPLY_QUEUE_BYTES} bytes"):
+            sizes = {maxlen: block for maxlen, (block, _, _) in measured.items()}
+            detail(f"first block sizes: {sizes}")
+            oversized = {maxlen: block for maxlen, block in sizes.items()
+                         if block >= REPLY_QUEUE_BYTES}
+            if oversized:
+                raise Failure(f"reads of {sorted(oversized)} built a block of "
+                              f"{sorted(oversized.values())} bytes")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_datagram_spans_reply_blocks(net: Net, peer: Peer) -> bool:
+    """A datagram larger than one reply block still arrives complete.
+
+    The reply is a 2-byte length header followed by the payload. When that does
+    not fit one block, the firmware announces Data More and continues in the
+    next, and a client that concatenates the blocks holds exactly the reply a
+    large enough response queue would have delivered in one. The header stays
+    the total number of payload bytes rather than the number in the first
+    block, which is what a client uses to find the end of the payload.
+
+    Four sizes: the largest payload that fits one block, one byte more than
+    that, a size in the middle of the second block, and the largest datagram
+    that can reach the device at all. The payload identifies its own offset, so
+    a second block written from the wrong offset, or one that repeats or drops
+    bytes, shows up as wrong data rather than as a plausible reply.
+    """
+    section("datagram-spans-reply-blocks")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+        # (datagram size, requested length, whether it can fit one block)
+        cases = [
+            (FIRST_BLOCK_PAYLOAD, FIRST_BLOCK_PAYLOAD, True),
+            (FIRST_BLOCK_PAYLOAD + 1, MAX_READ, False),
+            (SPANNING_DATAGRAM, MAX_READ, False),
+            (MAX_READ, MAX_READ, False),
+        ]
+        measured = []
+        for size, maxlen, one_block in cases:
+            net.drain_socket(handle)
+            peer.send_udp(pattern(size))
+            time.sleep(DELIVERY_SETTLE_SECONDS)
+            result = net.read(handle, maxlen, single_part=one_block)
+            measured.append((size, maxlen, one_block, result))
+            detail(f"{size}-byte datagram read at {maxlen}: {result.describe()}")
+            if not one_block and len(result.payload) > FIRST_BLOCK_PAYLOAD:
+                # What a wrong split looks like in the payload: the first byte
+                # of the second block has to continue the run the first block
+                # ended with. The equality check below is what fails on it;
+                # this records the bytes so the failure reads directly.
+                edge = FIRST_BLOCK_PAYLOAD
+                around = result.payload[edge - 4:edge + 4]
+                detail(f"  bytes {edge - 4} to {edge + 3}, spanning the block boundary: "
+                       f"{around.hex(' ')}, a run from offset {run_offset(around)}")
+
+        for size, maxlen, one_block, result in measured:
+            with check(f"a {size}-byte datagram read with a length of {maxlen} arrives whole"):
+                if result.status_text != STATUS_OK:
+                    raise Failure(f"expected {STATUS_OK!r}, got {result.status_text!r}")
+                if result.header != size:
+                    raise Failure(
+                        f"the header reports {result.header} while the datagram was {size} "
+                        f"bytes; the header is the total number of payload bytes the reply "
+                        f"carries, not the number in its first block")
+                if result.payload != pattern(size):
+                    raise Failure(f"the payload is not the datagram that was sent: "
+                                  f"{describe_mismatch(result.payload, pattern(size))}")
+
+            with check(f"the reply to a {size}-byte read is delivered in "
+                       f"{'one block' if one_block else 'blocks that each end'}"):
+                detail(f"block sizes {result.block_lengths}")
+                if one_block and result.blocks != 1:
+                    raise Failure(
+                        f"a payload of {size} bytes fits one block, so it must arrive in "
+                        f"one rather than in {result.blocks}; splitting it would break a "
+                        f"client that does not follow Data More")
+                if not one_block and result.blocks < 2:
+                    raise Failure(
+                        f"a payload of {size} bytes cannot fit one block, because a block "
+                        f"carries at most {MAX_BLOCK_BYTES} bytes, yet the reply arrived "
+                        f"in {result.blocks}")
+                oversized = [b for b in result.block_lengths if b > MAX_BLOCK_BYTES]
+                if oversized:
+                    raise Failure(
+                        f"blocks of {oversized} bytes were built; a block of "
+                        f"{REPLY_QUEUE_BYTES} bytes never ends, so no block may exceed "
+                        f"{MAX_BLOCK_BYTES}")
     finally:
         net.close(handle)
     return True
@@ -583,12 +752,167 @@ def run_udp_truncation(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def run_truncation_spans_reply_blocks(net: Net, peer: Peer) -> bool:
+    """Truncation and continuation are independent, and have to compose.
+
+    A 1200-byte datagram read with a length of 1000: the request is smaller
+    than the datagram, so the read is truncated, and it is larger than one
+    reply block, so what is returned still has to be split. The firmware must
+    return exactly the requested number of bytes, report the true datagram
+    length on the status channel, and keep the header at the number of bytes
+    the reply carries.
+    """
+    section("truncation-spans-reply-blocks")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+        net.drain_socket(handle)
+        peer.send_udp(pattern(TRUNCATED_DATAGRAM))
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+        result = net.read(handle, TRUNCATED_REQUEST, single_part=False)
+        follow_up = net.read(handle, SAFE_READ)
+        detail(f"{TRUNCATED_DATAGRAM}-byte datagram read at {TRUNCATED_REQUEST}: "
+               f"{result.describe()}")
+
+        with check(f"exactly {TRUNCATED_REQUEST} bytes of a {TRUNCATED_DATAGRAM}-byte "
+                   f"datagram are returned"):
+            if result.header != TRUNCATED_REQUEST:
+                raise Failure(
+                    f"the header reports {result.header}; it is the number of bytes the "
+                    f"reply carries, which is the requested {TRUNCATED_REQUEST}, not the "
+                    f"datagram's {TRUNCATED_DATAGRAM}")
+            if result.payload != pattern(TRUNCATED_REQUEST):
+                raise Failure(f"the payload is not the head of the datagram: "
+                              f"{describe_mismatch(result.payload, pattern(TRUNCATED_REQUEST))}")
+            if result.blocks < 2:
+                raise Failure(f"the reply arrived in {result.blocks} block(s); "
+                              f"{TRUNCATED_REQUEST} payload bytes cannot fit one block of at "
+                              f"most {MAX_BLOCK_BYTES}")
+            oversized = [b for b in result.block_lengths if b > MAX_BLOCK_BYTES]
+            if oversized:
+                raise Failure(f"blocks of {oversized} bytes were built; no block may exceed "
+                              f"{MAX_BLOCK_BYTES}, because one of {REPLY_QUEUE_BYTES} never "
+                              f"ends")
+
+        with check("the true datagram length is reported on the status channel"):
+            expected = f"04,DATAGRAM TRUNCATED: {TRUNCATED_DATAGRAM}".encode("ascii")
+            if result.status_text != expected:
+                raise Failure(f"expected {expected!r}, got {result.status_text!r}")
+
+        with check("the rest of the truncated datagram is gone, not left in the socket"):
+            # UDP semantics: what did not fit is discarded with the datagram.
+            # Recorded as a check rather than a warning because a following
+            # read that returned the remainder would mean the read had queued
+            # part of a datagram, which no client can ask about.
+            detail(f"a further read returned {len(follow_up.payload)} bytes, "
+                   f"status {follow_up.status_text!r}")
+            if follow_up.payload:
+                raise Failure(f"a further read returned {len(follow_up.payload)} bytes from "
+                              f"offset {run_offset(follow_up.payload)}; the remainder of a "
+                              f"truncated datagram is discarded, so it must return nothing")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_multi_block_state_does_not_leak(net: Net, peer: Peer) -> bool:
+    """A reply that spans blocks must not outlive its own command.
+
+    The firmware holds the received payload between blocks, so there is state
+    that a client could leave behind: by abandoning the reply part way through,
+    or simply by finishing it. Neither may show up in the next command, and
+    neither may leave the target unable to answer one.
+
+    Abandoning is the documented way out of a reply a client no longer wants:
+    the abort bit in the control register, which the Ultimate answers by
+    resetting the exchange.
+    """
+    section("multi-block-state-does-not-leak")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        net.drain_socket(handle)
+        peer.send_udp(pattern(MAX_READ))
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+        first_block, idle = net.abort_read(handle, MAX_READ)
+        detail(f"abandoned after {first_block} bytes, interface idle {idle}")
+
+        with check("a reply abandoned after its first block returns the interface to Idle"):
+            # A payload of MAX_READ bytes cannot fit one block, so a first
+            # block within the block limit says the reply had more to come and
+            # the abort really did abandon one part way through.
+            if not 0 < first_block <= MAX_BLOCK_BYTES:
+                raise Failure(f"the first block carried {first_block} bytes; a block carries "
+                              f"between 1 and {MAX_BLOCK_BYTES}, and a {MAX_READ}-byte "
+                              f"payload needs more than one, so this reply was not one that "
+                              f"could be abandoned part way through")
+            if not idle:
+                raise Failure("the interface did not return to Idle after the abort")
+
+        with check("the next command after an abandoned reply is answered normally"):
+            # NET_CMD_IDENTIFY has a fixed reply of its own, so anything left
+            # over from the abandoned read would show up as extra bytes, as a
+            # reply announced as Data More, or as no reply at all.
+            identity = net.identify()
+            detail(f"{identity.data!r}, {len(identity.blocks)} block(s), "
+                   f"status {identity.status_text!r}")
+            if identity.status_text != STATUS_OK:
+                raise Failure(f"NET_CMD_IDENTIFY answered {identity.status_text!r}")
+            if len(identity.blocks) != 1:
+                raise Failure(f"NET_CMD_IDENTIFY replied in {len(identity.blocks)} blocks; "
+                              f"its reply fits one, so the abandoned read left the target "
+                              f"still handing out blocks")
+            if not identity.data.startswith(b"ULTIMATE"):
+                raise Failure(f"NET_CMD_IDENTIFY replied {identity.data!r}, which is not its "
+                              f"identification string")
+
+        with check("a read after an abandoned reply returns the next datagram, not the old one"):
+            net.drain_socket(handle)
+            peer.send_udp(pattern(SMALL_READ, seed=7))
+            time.sleep(DELIVERY_SETTLE_SECONDS)
+            result = net.read(handle, SAFE_READ)
+            detail(result.describe())
+            if result.payload != pattern(SMALL_READ, seed=7):
+                raise Failure(f"expected the {SMALL_READ}-byte datagram sent after the "
+                              f"abort, got {len(result.payload)} bytes: "
+                              f"{describe_mismatch(result.payload, pattern(SMALL_READ, seed=7))}")
+
+        with check("the command after a completed multi-block reply is answered normally"):
+            net.drain_socket(handle)
+            peer.send_udp(pattern(MAX_READ))
+            time.sleep(DELIVERY_SETTLE_SECONDS)
+            completed = net.read(handle, MAX_READ, single_part=False)
+            detail(f"completed: {completed.describe()}")
+            if completed.payload != pattern(MAX_READ):
+                raise Failure(f"the multi-block read itself failed: "
+                              f"{describe_mismatch(completed.payload, pattern(MAX_READ))}")
+            identity = net.identify()
+            detail(f"{identity.data!r}, {len(identity.blocks)} block(s), "
+                   f"status {identity.status_text!r}")
+            if len(identity.blocks) != 1 or not identity.data.startswith(b"ULTIMATE"):
+                raise Failure(f"NET_CMD_IDENTIFY replied {identity.data!r} in "
+                              f"{len(identity.blocks)} block(s); a finished reply must leave "
+                              f"nothing behind")
+    finally:
+        net.close(handle)
+    return True
+
+
 def run_tcp_lossless(net: Net, peer: Peer) -> bool:
     """The same command over TCP loses nothing, which is the control for UDP.
 
     read_socket() never looks at the socket type, so this runs the identical
     firmware path with the identical length. Anything UDP loses here is lost by
     the socket layer under it, not by the command interface or by the length.
+
+    The second half reads a stream with a length above what one reply block can
+    carry. read_socket() splits a reply over blocks whatever the socket type,
+    so a stream read can now return more than one block's worth in a single
+    command. A stream has no datagram boundaries, so how many bytes any one
+    read returns is up to the socket; what the test fixes is that repeated
+    reads recover every byte in order, that nothing is reported as truncated,
+    and that no block exceeds what the transport can deliver.
     """
     section("tcp-read-is-lossless")
     ok = True
@@ -624,6 +948,43 @@ def run_tcp_lossless(net: Net, peer: Peer) -> bool:
             if unexpected:
                 raise Failure(f"a stream read answered {unexpected!r}; only {STATUS_OK!r} "
                               f"is correct when no data was lost")
+
+        conn.sendall(pattern(SPANNING_DATAGRAM, seed=3))
+        time.sleep(DELIVERY_SETTLE_SECONDS)
+        wide: List[ReadResult] = []
+        stream = bytearray()
+        for _ in range(8):
+            result = net.read(handle, MAX_READ, single_part=False)
+            wide.append(result)
+            if not result.payload:
+                break
+            stream += result.payload
+            if len(stream) >= SPANNING_DATAGRAM:
+                break
+
+        with check(f"{SPANNING_DATAGRAM} bytes sent over TCP are recovered by reads of "
+                   f"{MAX_READ} bytes"):
+            detail(" ".join(f"{len(r.payload)}@{run_offset(r.payload, seed=3)}"
+                            f"{r.block_lengths}" for r in wide))
+            if bytes(stream) != pattern(SPANNING_DATAGRAM, seed=3):
+                raise Failure(f"recovered {len(stream)} of {SPANNING_DATAGRAM} bytes: "
+                              f"{describe_mismatch(bytes(stream), pattern(SPANNING_DATAGRAM, seed=3))}")
+
+        with check("a stream read above one block reports its own length and stays 00,OK"):
+            for result in wide:
+                if not result.payload:
+                    continue
+                if result.header != len(result.payload):
+                    raise Failure(f"a read reported {result.header} in its header while "
+                                  f"carrying {len(result.payload)} payload bytes")
+                if result.status_text != STATUS_OK:
+                    raise Failure(f"a stream read answered {result.status_text!r}; a stream "
+                                  f"has no datagram to truncate, so only {STATUS_OK!r} is "
+                                  f"correct")
+                oversized = [b for b in result.block_lengths if b > MAX_BLOCK_BYTES]
+                if oversized:
+                    raise Failure(f"blocks of {oversized} bytes were built; no block may "
+                                  f"exceed {MAX_BLOCK_BYTES}")
     finally:
         if conn is not None:
             conn.close()
@@ -730,6 +1091,7 @@ def main() -> int:
     interface_enabled = False
     native_started = False
     cleanup_ok = True
+    setup_failed = False
 
     def run(route: str, name: str, fn, *fn_args) -> None:
         """Run one scenario on one route; a failed check ends that scenario only.
@@ -771,11 +1133,8 @@ def main() -> int:
             suite_ok("net_target_test")
             return 0
 
-        needs_peer = [name for name in
-                      ("largest-accepted-read-drains", "datagram-size-ceiling",
-                       "udp-truncation-is-detectable",
-                       "tcp-read-is-lossless", "oversize-request-keeps-the-datagram")
-                      if name in selected]
+        needs_peer = [name for name in TESTS
+                      if name != "read-length-limit" and name in selected]
         if needs_peer:
             check_start("this host can act as the device's network peer")
             try:
@@ -837,14 +1196,23 @@ def main() -> int:
                 for name in needs_peer:
                     results.setdefault(f"{name} [{route}]", None)
                 continue
-            run(route, "largest-accepted-read-drains", run_largest_accepted_read_drains, net, peer)
+            run(route, "reply-blocks-are-drainable", run_reply_blocks_are_drainable, net, peer)
+            run(route, "datagram-spans-reply-blocks", run_datagram_spans_reply_blocks, net, peer)
             run(route, "datagram-size-ceiling", run_datagram_size_ceiling, net, peer)
             run(route, "udp-truncation-is-detectable", run_udp_truncation, net, peer)
+            run(route, "truncation-spans-reply-blocks",
+                run_truncation_spans_reply_blocks, net, peer)
             run(route, "tcp-read-is-lossless", run_tcp_lossless, net, peer)
             run(route, "oversize-request-keeps-the-datagram",
                 run_oversize_request_keeps_datagram, net, peer)
+            run(route, "multi-block-state-does-not-leak",
+                run_multi_block_state_does_not_leak, net, peer)
 
     except Failure as exc:
+        # Setup and route initialisation raise rather than recording a result,
+        # so without this the summary below would find an empty results map, see
+        # a clean cleanup, and report the run as passing.
+        setup_failed = True
         suite_fail("net_target_test", format_exception(exc))
     finally:
         if peer is not None:
@@ -863,7 +1231,7 @@ def main() -> int:
         cleanup_ok = released and restored
 
     section("summary")
-    all_ok = cleanup_ok
+    all_ok = cleanup_ok and not setup_failed
     for label, outcome in results.items():
         state = OK if outcome else (FAIL if outcome is False else SKIP)
         if outcome is False:

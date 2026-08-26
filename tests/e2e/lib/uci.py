@@ -64,6 +64,13 @@ CMD_QUEUE_BYTES = 896
 REPLY_QUEUE_BYTES = 896
 STATUS_QUEUE_BYTES = 256
 
+# The largest reply block that can actually be read back. A block of exactly
+# REPLY_QUEUE_BYTES never ends: command_protocol.vhd stops response_pointer on
+# the last byte of the buffer while response_valid stays asserted, so DATA_AV
+# never clears and the queue repeats that byte. Measured on a U64 Elite, and
+# the reason a longer reply has to be split over several blocks.
+MAX_BLOCK_BYTES = REPLY_QUEUE_BYTES - 1
+
 BUSY_TIMEOUT_SECONDS = 15.0
 BUSY_POLL_SECONDS = 0.05
 ABORT_TIMEOUT_SECONDS = 5.0
@@ -235,8 +242,34 @@ class Uci:
                               f"{bytes(out)[:80]!r}")
         return bytes(out)
 
+    def _drain_response(self) -> bytes:
+        """The response queue, one readmem per byte instead of two.
+
+        $DF1C, $DF1D and $DF1E in one call: the control register, the
+        identification byte, and one byte off the response queue. readmem walks
+        an ascending span as separate DMA cycles, and reading $DF1D has no side
+        effect, because command_protocol.vhd advances a pointer only for the
+        response and status registers. So this is the same "check DATA_AV, then
+        take a byte" that _drain does, at half the REST calls, which halves the
+        cost of the replies this suite now reads back in kilobytes.
+
+        The final call reads $DF1E once with DATA_AV already clear, and that
+        byte is discarded. It costs nothing: the response queue answers $00
+        past the end of a reply, and the read pointer is reset when the next
+        reply's length is written.
+        """
+        out = bytearray()
+        while True:
+            status, _, value = self.machine.readmem(REG_CONTROL, 3)
+            if not (status & ST_DATA_AV):
+                return bytes(out)
+            out.append(value)
+            if len(out) >= DRAIN_LIMIT_BYTES:
+                raise Failure(f"response queue did not drain within {DRAIN_LIMIT_BYTES} "
+                              f"bytes: {bytes(out)[:80]!r}")
+
     def drain(self) -> Tuple[bytes, bytes]:
-        return (self._drain(ST_DATA_AV, REG_RESPONSE, "response"),
+        return (self._drain_response(),
                 self._drain(ST_STAT_AV, REG_STATUS, "status"))
 
     def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
@@ -267,6 +300,26 @@ class Uci:
         self.control(CTRL_DATA_ACC)
         self.release()
         return len(out), cleared, bytes(out[-6:])
+
+    def probe_abort(self, command: bytes) -> Tuple[int, bool]:
+        """Push one command, take its first reply block, then abandon it.
+
+        Returns how many bytes that first block carried and whether the
+        interface came back to Idle. This is what a client does when it gives
+        up part way through a Data More reply, and it is the path on which a
+        target that holds continuation state has to let go of it.
+
+        uci_native.NativeUci offers the same method, taken by the 6510 rather
+        than by DMA, so a test can make this measurement down either route.
+        """
+        self.release()
+        self.require_idle("before the abort probe")
+        self.push(command)
+        self.wait_for_reply(command)
+        data = self._drain_response()
+        self._drain(ST_STAT_AV, REG_STATUS, "status")
+        idle = self.abort_to_idle()
+        return len(data), idle
 
     # -- one command --------------------------------------------------------
 
@@ -299,7 +352,7 @@ class Uci:
 
         blocks: List[Reply] = []
         while True:
-            data = self._drain(ST_DATA_AV, REG_RESPONSE, "response")
+            data = self._drain_response()
             overrun = bytes(self.peek(REG_RESPONSE) for _ in range(overrun_reads)) if not blocks else b""
             text = self._drain(ST_STAT_AV, REG_STATUS, "status")
             blocks.append(Reply(status, data, text, overrun))
