@@ -20,9 +20,25 @@ any run of received bytes identifies the offset it came from. That turns "64
 bytes arrived" into "bytes 0-63 arrived", which is what separates truncation
 at the head from anything else.
 
-Reads are kept small on purpose. The response queue is drained one REST DMA
-cycle per byte, so the size of the payload is the cost of the suite, and every
-property under test is visible at 64 bytes as clearly as at 894.
+Every scenario runs twice, once down each way of reaching the registers. The
+"rest" route uses machine:readmem / machine:writemem, which are DMA cycles the
+Ultimate issues on the cartridge bus. The "native" route runs a small 6502 agent
+on the C64 itself, which is how a program actually uses the interface: its
+register accesses are microseconds apart rather than tens of milliseconds, and
+no DMA is involved. Both were measured to agree in every field, which is what
+says a finding is a property of the interface rather than of how it was
+observed.
+
+The native route runs only on a target that is one machine. On
+cartridge@computer the host's own command interface answers its 6510 at
+$DF1B-$DF1F, so a program there would measure the host instead of the cartridge
+under test, and the suite skips the route rather than report on the wrong
+device.
+
+Reads are kept small on purpose. Over the REST route the response queue is
+drained one DMA cycle per byte, so the size of the payload is the cost of the
+suite, and every property under test is visible at 64 bytes as clearly as at
+894.
 
 Supported on any Ultimate whose FPGA provides the command interface. The suite
 enables the "Command Interface" setting and restores it on exit.
@@ -47,6 +63,7 @@ from report import (  # noqa: E402
     format_exception, section, suite_fail, suite_ok, warn)
 from uci import (  # noqa: E402
     REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged, interface_present)
+from uci_native import NativeUci  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
 CFG_CMD_IF = "Command Interface"
@@ -61,7 +78,6 @@ NET_CMD_READ_SOCKET = 0x10
 NET_CMD_WRITE_SOCKET = 0x11
 
 STATUS_OK = b"00,OK"
-STATUS_CLOSED = b"01,CONNECTION CLOSED BY HOST"
 STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
 # Not in the network target document, but what the firmware answers when
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
@@ -98,7 +114,9 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 # that is already queued and does not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
-RESET_SETTLE_SECONDS = 3.0
+
+# The two ways of reaching the registers, described at the top of this file.
+ROUTES = ["rest", "native"]
 
 TESTS = [
     "read-length-limit",
@@ -199,10 +217,17 @@ class Net:
     def write(self, handle: int, payload: bytes):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET, handle]) + payload)
 
+    def read_command(self, handle: int, maxlen: int) -> bytes:
+        return bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
+                      maxlen & 0xFF, (maxlen >> 8) & 0xFF])
+
     def read(self, handle: int, maxlen: int, overrun_reads: int = 0) -> ReadResult:
-        command = bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
-                         maxlen & 0xFF, (maxlen >> 8) & 0xFF])
-        return ReadResult(self.uci.transact(command, overrun_reads=overrun_reads))
+        return ReadResult(self.uci.transact(self.read_command(handle, maxlen),
+                                            overrun_reads=overrun_reads))
+
+    def probe_read(self, handle: int, maxlen: int) -> Tuple[int, bool, bytes]:
+        """One read, drained to a cap rather than to the DATA_AV flag."""
+        return self.uci.probe_drain(self.read_command(handle, maxlen), OVERRUN_LIMIT)
 
     def close(self, handle: int):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_CLOSE_SOCKET, handle]))
@@ -404,7 +429,7 @@ def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
             net.drain_socket(handle)
             peer.send_udp(pattern(FULL_DATAGRAM))
             time.sleep(DELIVERY_SETTLE_SECONDS)
-            measured[maxlen] = drain_count(net.uci, handle, maxlen)
+            measured[maxlen] = net.probe_read(handle, maxlen)
             block, cleared, tail = measured[maxlen]
             detail(f"length {maxlen}: reply block {block} bytes, DATA_AV cleared {cleared}, "
                    f"last bytes {tail.hex(' ')}")
@@ -432,33 +457,6 @@ def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
     finally:
         net.close(handle)
     return True
-
-
-def drain_count(uci: Uci, handle: int, maxlen: int) -> Tuple[int, bool, bytes]:
-    """Push one READ_SOCKET and pull bytes until DATA_AV clears or the cap is hit.
-
-    Returns the number of bytes the queue handed out, whether DATA_AV cleared,
-    and the last few bytes, which say whether the queue was repeating itself.
-    """
-    from uci import (CTRL_DATA_ACC, REG_RESPONSE, REG_STATUS, ST_DATA_AV, ST_STAT_AV)
-    uci.release()
-    uci.require_idle("before the largest accepted read")
-    command = bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
-                     maxlen & 0xFF, (maxlen >> 8) & 0xFF])
-    uci.push(command)
-    uci.wait_for_reply(command)
-    out = bytearray()
-    while uci.status() & ST_DATA_AV:
-        out.append(uci.peek(REG_RESPONSE))
-        if len(out) >= OVERRUN_LIMIT:
-            break
-    cleared = not (uci.status() & ST_DATA_AV)
-    uci._drain(ST_STAT_AV, REG_STATUS, "status")
-    uci.control(CTRL_DATA_ACC)
-    # Writing DATA_ACC leaves the data state whether or not the queue emptied,
-    # so the interface is usable again even after a block that never ended.
-    uci.release()
-    return len(out), cleared, bytes(out[-6:])
 
 
 def run_datagram_size_ceiling(net: Net, peer: Peer) -> bool:
@@ -679,6 +677,15 @@ def restore_settings(device, original: Dict[str, str], keep: bool) -> bool:
     return ok
 
 
+def build_driver(route: str, computer, busy_timeout: float):
+    """The driver for one route, ready to use."""
+    if route == "rest":
+        return Uci(computer.machine, busy_timeout)
+    agent = NativeUci(computer.machine, computer.runners, busy_timeout)
+    agent.start()
+    return agent
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify how the UCI network target's READ_SOCKET handles the requested "
@@ -692,29 +699,40 @@ def main() -> int:
                         help="How long one command may stay in Command Busy before it "
                              "counts as wedged.")
     parser.add_argument("--test", action="append", choices=["all"] + TESTS)
+    parser.add_argument("--route", action="append", choices=["all"] + ROUTES,
+                        help="How to reach $DF1C-$DF1F: 'rest' for DMA cycles the "
+                             "Ultimate issues, 'native' for 6502 code running on the "
+                             "C64. Both by default.")
     parser.add_argument("--keep-config", action="store_true",
                         help="Don't restore the original Command Interface setting on exit.")
     args = parser.parse_args()
 
     selected = TESTS if not args.test or "all" in args.test else [t for t in TESTS if t in args.test]
+    routes = ROUTES if not args.route or "all" in args.route else [r for r in ROUTES if r in args.route]
     target = targets.parse(args.host)
     device = UltimateApi(target.device, args.password, args.timeout)
     # The command interface registers are decoded on the C64 expansion bus, so
     # the machine that reads them back has to be the one driving that bus. On a
     # single-machine target these are the same host; on cartridge@computer they
-    # are not. See tests/lib/targets.py.
+    # are not, and the 6502 agent runs on the computer while the network stack
+    # under test is the cartridge's. See tests/lib/targets.py.
     computer = UltimateApi(target.computer, args.password, args.timeout)
-    uci = Uci(computer.machine, args.busy_timeout)
-    net = Net(uci)
+    # The REST driver is also the suite's frame: it decides whether this machine
+    # has a command interface at all, and it is what hands data back when a
+    # scenario leaves a reply pending. Neither is something the 6502 agent can
+    # do, since it needs a working interface in order to report anything and it
+    # owns the CPU while it runs.
+    rest_uci = Uci(computer.machine, args.busy_timeout)
 
     original: Dict[str, str] = {}
-    results: Dict[str, bool] = {}
+    results: Dict[str, Optional[bool]] = {}
     peer: Optional[Peer] = None
     interface_enabled = False
+    native_started = False
     cleanup_ok = True
 
-    def run(name: str, fn, *fn_args) -> None:
-        """Run one scenario; a failed check ends that scenario, not the run.
+    def run(route: str, name: str, fn, *fn_args) -> None:
+        """Run one scenario on one route; a failed check ends that scenario only.
 
         report.check re-raises, so the first failing check leaves its scenario
         immediately. The others still have to run: this suite is measuring
@@ -723,14 +741,15 @@ def main() -> int:
         """
         if name not in selected:
             return
-        results[name] = False  # so an aborted scenario reports FAIL, not "not reached"
+        label = f"{name} [{route}]"
+        results[label] = False  # so an aborted scenario reports FAIL, not "not reached"
         try:
-            results[name] = fn(*fn_args)
+            results[label] = fn(*fn_args)
         except Wedged:
             # The interface is stuck for every target; nothing after this can run.
             raise
         except Failure as exc:
-            detail(f"{name} stopped: {format_exception(exc)}")
+            detail(f"{label} stopped: {format_exception(exc)}")
 
     try:
         with check(f"read {CONFIG_CATEGORY!r}"):
@@ -743,23 +762,14 @@ def main() -> int:
         with check("enable the Command Interface registers at $DF1B-$DF1F"):
             device.configs.set(CONFIG_CATEGORY, CFG_CMD_IF, "Enabled")
             interface_enabled = True
-            uci.release()
+            rest_uci.release()
 
-        if not interface_present(uci):
+        if not interface_present(rest_uci):
             check_start("this machine answers at the Command Interface registers")
             check_skip("$DF1B-$DF1F all read $FF, so no command interface is present "
                        "at those addresses on this machine")
             suite_ok("net_target_test")
             return 0
-
-        with check("the network target identifies itself"):
-            result = net.identify()
-            if result.status_text != STATUS_OK or not result.data:
-                raise Failure(f"NET_CMD_IDENTIFY answered {result.status_text!r} "
-                              f"with reply {result.data!r}")
-            detail(result.data.decode("latin-1"))
-
-        run("read-length-limit", run_read_length_limit, net)
 
         needs_peer = [name for name in
                       ("largest-accepted-read-drains", "datagram-size-ceiling",
@@ -773,11 +783,12 @@ def main() -> int:
                 # Proves the route in the direction that matters: the device
                 # opening a socket back to this process and its datagram
                 # arriving here.
-                handle = net.open_udp(peer.ip, peer.udp_port)
+                probe = Net(rest_uci)
+                handle = probe.open_udp(peer.ip, peer.udp_port)
                 try:
-                    peer.learn_udp_peer(net, handle)
+                    peer.learn_udp_peer(probe, handle)
                 finally:
-                    net.close(handle)
+                    probe.close(handle)
                 check_ok(f"{peer.ip} UDP {peer.udp_port}, TCP {peer.tcp_port}")
             except (Failure, OSError, socket.timeout) as exc:
                 check_skip(f"the device could not reach this host: {format_exception(exc)}")
@@ -785,16 +796,53 @@ def main() -> int:
                     peer.close()
                 peer = None
 
-        if peer is not None:
-            run("largest-accepted-read-drains", run_largest_accepted_read_drains, net, peer)
-            run("datagram-size-ceiling", run_datagram_size_ceiling, net, peer)
-            run("udp-truncation-is-detectable", run_udp_truncation, net, peer)
-            run("tcp-read-is-lossless", run_tcp_lossless, net, peer)
-            run("oversize-request-keeps-the-datagram",
+        for route in routes:
+            section(f"route: {route}")
+            if route == "native" and target.split:
+                # Measured on a U2+L in a C64 Ultimate: the host's own command
+                # interface claims $DF1B-$DF1F from its 6510, so a program there
+                # reaches the host's target, not the cartridge's. Turning the
+                # host's interface off does not hand the range over: the 6510
+                # then reads $FF. DMA is the asymmetry, since a readmem issued
+                # by the host does reach the cartridge. So on a split target
+                # this route cannot address the device under test at all.
+                check_start(f"the network target answers over the {route} route")
+                check_skip(f"{target.device} is a cartridge in {target.computer}, and 6502 "
+                           f"code on {target.computer} reaches its own command interface "
+                           f"rather than the cartridge's")
+                for name in selected:
+                    results.setdefault(f"{name} [{route}]", None)
+                continue
+            # A route that cannot be reached fails the run rather than skipping
+            # it: both are expected to work on any device with a command
+            # interface, so one that does not is a finding, not a limitation.
+            with check(f"the network target answers over the {route} route"):
+                if route == "native":
+                    # run_prg needs the machine at a BASIC prompt, and the agent
+                    # keeps the CPU for itself until the machine is reset.
+                    # force=True because MachineApi.reset skips one it believes
+                    # cannot change anything, and this one has to happen.
+                    computer.machine.reset(force=True)
+                    native_started = True
+                driver = build_driver(route, computer, args.busy_timeout)
+                net = Net(driver)
+                identity = net.identify()
+                if identity.status_text != STATUS_OK or not identity.data:
+                    raise Failure(f"NET_CMD_IDENTIFY answered {identity.status_text!r} "
+                                  f"with reply {identity.data!r}")
+                detail(identity.data.decode("latin-1"))
+
+            run(route, "read-length-limit", run_read_length_limit, net)
+            if peer is None:
+                for name in needs_peer:
+                    results.setdefault(f"{name} [{route}]", None)
+                continue
+            run(route, "largest-accepted-read-drains", run_largest_accepted_read_drains, net, peer)
+            run(route, "datagram-size-ceiling", run_datagram_size_ceiling, net, peer)
+            run(route, "udp-truncation-is-detectable", run_udp_truncation, net, peer)
+            run(route, "tcp-read-is-lossless", run_tcp_lossless, net, peer)
+            run(route, "oversize-request-keeps-the-datagram",
                 run_oversize_request_keeps_datagram, net, peer)
-        else:
-            for name in needs_peer:
-                results.setdefault(name, None)
 
     except Failure as exc:
         suite_fail("net_target_test", format_exception(exc))
@@ -803,20 +851,24 @@ def main() -> int:
             peer.close()
         # A failed scenario can leave the interface holding a reply, so hand the
         # data back before the setting goes home.
-        released = uci.release() if interface_enabled else True
+        released = rest_uci.release() if interface_enabled else True
         if not released:
             warn("the command interface did not return to Idle")
+        if native_started:
+            # The agent runs with interrupts off and never returns, so the
+            # machine has to be reset before anything else can use it.
+            with check("reset the C64 so the 6502 agent releases the machine"):
+                computer.machine.reset(force=True)
         restored = restore_settings(device, original, args.keep_config)
         cleanup_ok = released and restored
 
     section("summary")
     all_ok = cleanup_ok
-    for name in selected:
-        outcome = results.get(name)
+    for label, outcome in results.items():
         state = OK if outcome else (FAIL if outcome is False else SKIP)
         if outcome is False:
             all_ok = False
-        detail(f"{name}: {state}")
+        detail(f"{label}: {state}")
     detail(f"cleanup: {OK if cleanup_ok else FAIL}")
 
     if all_ok:

@@ -2,7 +2,9 @@
 """The Ultimate Command Interface transport, driven over REST DMA cycles.
 
 The registers live at $DF1B-$DF1F on the cartridge bus and are reached through
-machine:readmem / machine:writemem, so no 6502 code is involved.
+machine:readmem / machine:writemem, so no 6502 code is involved. uci_native.py
+drives the same registers from 6502 code running on the C64 and offers the same
+`transact` and `probe_drain`, so a test can run down either route.
 
   $DF1C  write: control (bit 0 PUSH_CMD, bit 1 DATA_ACC, bit 2 ABORT, bit 3 CLR_ERR)
          read:  status  (bit 0 CMD_BUSY, bit 1 DATA_ACC, bit 2 ABORT_P, bit 3 ERROR,
@@ -236,6 +238,35 @@ class Uci:
     def drain(self) -> Tuple[bytes, bytes]:
         return (self._drain(ST_DATA_AV, REG_RESPONSE, "response"),
                 self._drain(ST_STAT_AV, REG_STATUS, "status"))
+
+    def probe_drain(self, command: bytes, cap: int) -> Tuple[int, bool, bytes]:
+        """Push one command and pull bytes until DATA_AV clears or `cap` is hit.
+
+        Returns how many bytes the queue handed out, whether DATA_AV cleared,
+        and the last few of them, which say whether the queue was repeating
+        itself. `transact` cannot be used for this: it drains on the flag, so a
+        reply that never ends would never come back.
+
+        uci_native.NativeUci offers the same method, taken by the 6510 rather
+        than by DMA, so a test can make this measurement down either route.
+        """
+        self.release()
+        self.require_idle("before the probe read")
+        self.push(command)
+        self.wait_for_reply(command)
+        out = bytearray()
+        while self.status() & ST_DATA_AV:
+            out.append(self.peek(REG_RESPONSE))
+            if len(out) >= cap:
+                break
+        cleared = not (self.status() & ST_DATA_AV)
+        self._drain(ST_STAT_AV, REG_STATUS, "status")
+        # Writing DATA_ACC leaves the data state whether or not the queue
+        # emptied, so the interface is usable again even after a block that
+        # never ended.
+        self.control(CTRL_DATA_ACC)
+        self.release()
+        return len(out), cleared, bytes(out[-6:])
 
     # -- one command --------------------------------------------------------
 
