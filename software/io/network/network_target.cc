@@ -237,18 +237,37 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 	uint8_t socketnr = command->message[2];
 	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
 
-    if (length > (CMD_MAX_REPLY_LEN-2)) {
+    // The reply is a two byte header plus the payload, and the transport can
+    // only deliver a block shorter than the response queue: the FPGA stops the
+    // response pointer at the last byte of the buffer while it still reports
+    // data available, so a block of exactly CMD_MAX_REPLY_LEN never ends and a
+    // client reading on that flag never stops.
+    if (length > (CMD_MAX_REPLY_LEN-3)) {
         *status = &c_status_param_out_of_range;
         *reply = &c_message_empty;
         return;
     }
 
     *reply = &data_message;
-	int ret = lwip_recv(socketnr, &data_message.message[2], length, 0);
+    // lwip_recvmsg rather than lwip_recv: on a datagram socket it returns the
+    // length of the datagram itself and sets MSG_TRUNC when it did not fit,
+    // where lwip_recv reports only what was copied and drops the rest without
+    // a trace. On a stream socket the two behave the same way.
+    struct iovec iov;
+    struct msghdr msg;
+    iov.iov_base = &data_message.message[2];
+    iov.iov_len = length;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    int ret = lwip_recvmsg(socketnr, &msg, 0);
+    // The header is the number of bytes this reply carries, which is what the
+    // network target document specifies and what existing clients read.
+    int copied = (ret > (int)length) ? (int)length : ret;
     data_message.length = 2;
     data_message.last_part = true;
-    data_message.message[0] = (ret & 0xFF);
-    data_message.message[1] = (ret & 0xFF00) >> 8;
+    data_message.message[0] = (copied & 0xFF);
+    data_message.message[1] = (copied & 0xFF00) >> 8;
 
     // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
 	if (ret == 0) {
@@ -257,7 +276,18 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 	if (ret > 0) {
-		data_message.length = ret + 2;
+		data_message.length = copied + 2;
+		if (msg.msg_flags & MSG_TRUNC) {
+			// The datagram was longer than the caller asked for and the rest is
+			// gone. Reporting that on the status channel leaves the reply itself
+			// unchanged, so a client that does not look is no worse off than
+			// before, and one that does can tell a short datagram from a
+			// truncated one.
+			*status = &status_message;
+			sprintf((char *)this->status_message.message, "04,DATAGRAM TRUNCATED: %d", ret);
+			this->status_message.length = strlen((char *)this->status_message.message);
+			return;
+		}
 		*status = &c_status_ok;
 		return;
 	}
