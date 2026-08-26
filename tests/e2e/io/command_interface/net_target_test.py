@@ -971,6 +971,18 @@ def run_tcp_lossless(net: Net, peer: Peer) -> bool:
                               f"{describe_mismatch(bytes(stream), pattern(SPANNING_DATAGRAM, seed=3))}")
 
         with check("a stream read above one block reports its own length and stays 00,OK"):
+            # Without this, the case passes whether or not any read was large
+            # enough to need a second block, and a broken split over TCP would
+            # go unnoticed. lwip_recv_tcp fills the requested length from every
+            # segment already queued, so after the settle above one read takes
+            # the whole run: measured as blocks [895, 527] on both a U64 Elite
+            # and a U2+L.
+            if not any(len(r.payload) > FIRST_BLOCK_PAYLOAD for r in wide):
+                raise Failure(
+                    f"no read returned more than {FIRST_BLOCK_PAYLOAD} bytes, the most one "
+                    f"block carries, so the stream never crossed a block boundary and this "
+                    f"case tested nothing: reads returned "
+                    f"{[len(r.payload) for r in wide]}")
             for result in wide:
                 if not result.payload:
                     continue
