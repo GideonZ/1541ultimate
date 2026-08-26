@@ -72,9 +72,15 @@ STATUS_NO_DATA_PREFIX = b"02,NO DATA"
 # and the length in the command is the only variable.
 NEVER_OPENED = 0x7F
 
-# The largest length READ_SOCKET accepts, measured below: the 896-byte response
-# queue less the two header bytes the reply puts in front of the payload.
-ACCEPTED_MAX = REPLY_QUEUE_BYTES - 2
+# The largest length READ_SOCKET accepts is discovered on the device rather
+# than written down here. A reply is a 2-byte header plus the payload, so the
+# number depends on how large a reply block the transport can deliver, and a
+# suite that hard-codes it asserts today's number instead of the property that
+# matters: whatever length the firmware accepts, its reply has to be readable.
+# The search runs over this range, which spans every plausible answer.
+LENGTH_SEARCH_MAX = 2048
+# A safe length for reads that only have to work, not to probe a boundary.
+SAFE_READ = 512
 
 # Small enough that a full drain is a few seconds, large enough that a
 # truncated read and a complete read differ by an obvious amount.
@@ -201,7 +207,33 @@ class Net:
     def close(self, handle: int):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_CLOSE_SOCKET, handle]))
 
-    def drain_socket(self, handle: int, maxlen: int = ACCEPTED_MAX, limit: int = 8) -> int:
+    def largest_accepted_length(self) -> int:
+        """The largest length READ_SOCKET accepts, found by bisection.
+
+        Probed against a handle that was never opened, so the socket refuses
+        every one of them and the only thing that separates the answers is the
+        length: an accepted length is answered by the socket
+        ('02,NO DATA'), a refused one by the length check
+        ('82,PARAMETER(S) OUT OF RANGE').
+        """
+        def accepted(length: int) -> bool:
+            return self.read(NEVER_OPENED, length).status_text != STATUS_OUT_OF_RANGE
+
+        low, high = 1, LENGTH_SEARCH_MAX
+        if not accepted(low):
+            raise Failure(f"READ_SOCKET refused a length of {low}")
+        if accepted(high):
+            raise Failure(f"READ_SOCKET accepted a length of {high}, which cannot fit the "
+                          f"{REPLY_QUEUE_BYTES}-byte response queue")
+        while high - low > 1:
+            middle = (low + high) // 2
+            if accepted(middle):
+                low = middle
+            else:
+                high = middle
+        return low
+
+    def drain_socket(self, handle: int, maxlen: int = SAFE_READ, limit: int = 8) -> int:
         """Read until the socket has nothing left, so a case starts clean."""
         drained = 0
         for _ in range(limit):
@@ -282,27 +314,33 @@ def run_read_length_limit(net: Net) -> bool:
     The handle here was never opened, so the socket can only ever refuse. Any
     difference between two rows is therefore the length handling and nothing
     else.
+
+    The boundary is found on the device rather than asserted, because the
+    number is not part of any published contract: the network target document
+    states no maximum for READ_SOCKET, and neither the cap nor the status that
+    reports it is documented. What is asserted is that the boundary is sharp
+    and that both sides of it answer on the status channel.
     """
     section("read-length-limit")
-    ok = True
+    accepted_max = net.largest_accepted_length()
 
-    with check(f"READ_SOCKET accepts a length of {ACCEPTED_MAX}"):
-        result = net.read(NEVER_OPENED, ACCEPTED_MAX, overrun_reads=4)
+    with check(f"READ_SOCKET accepts a length of {accepted_max}"):
+        result = net.read(NEVER_OPENED, accepted_max, overrun_reads=4)
         detail(result.describe())
         if not result.status_text.startswith(STATUS_NO_DATA_PREFIX):
             raise Failure(
-                f"length {ACCEPTED_MAX} answered {result.status_text!r}; the socket was "
+                f"length {accepted_max} answered {result.status_text!r}; the socket was "
                 f"never opened, so the answer has to come from the socket "
                 f"({STATUS_NO_DATA_PREFIX.decode()}), not from the length")
         if result.header != -1:
             raise Failure(f"a refused socket read should report -1 in the reply header, "
                           f"got {result.header}")
 
-    with check(f"READ_SOCKET refuses a length of {ACCEPTED_MAX + 1}"):
-        result = net.read(NEVER_OPENED, ACCEPTED_MAX + 1, overrun_reads=4)
+    with check(f"READ_SOCKET refuses a length of {accepted_max + 1}"):
+        result = net.read(NEVER_OPENED, accepted_max + 1, overrun_reads=4)
         detail(result.describe())
         if result.status_text != STATUS_OUT_OF_RANGE:
-            raise Failure(f"length {ACCEPTED_MAX + 1} answered {result.status_text!r}, "
+            raise Failure(f"length {accepted_max + 1} answered {result.status_text!r}, "
                           f"expected {STATUS_OUT_OF_RANGE!r}")
         if result.reply:
             raise Failure(f"a refused request put {len(result.reply)} bytes in the response "
@@ -316,25 +354,28 @@ def run_read_length_limit(net: Net) -> bool:
                    "2-byte header without checking DATA_AV computes a length of 0 and "
                    "sees a refusal as an empty read")
 
-    with check("the refusal boundary is where the response queue ends"):
-        accepted = net.read(NEVER_OPENED, ACCEPTED_MAX)
-        refused = net.read(NEVER_OPENED, ACCEPTED_MAX + 1)
+    with check("the refusal boundary is sharp"):
+        # Bisection only finds a boundary if the answer is monotonic in the
+        # length. This confirms the two lengths either side of it directly.
+        accepted = net.read(NEVER_OPENED, accepted_max)
+        refused = net.read(NEVER_OPENED, accepted_max + 1)
         if not accepted.status_text.startswith(STATUS_NO_DATA_PREFIX):
-            raise Failure(f"length {ACCEPTED_MAX} was refused: {accepted.status_text!r}")
+            raise Failure(f"length {accepted_max} was refused: {accepted.status_text!r}")
         if refused.status_text != STATUS_OUT_OF_RANGE:
-            raise Failure(f"length {ACCEPTED_MAX + 1} was accepted: {refused.status_text!r}")
-        detail(f"accepted up to {ACCEPTED_MAX}, refused from {ACCEPTED_MAX + 1}: the "
-               f"{REPLY_QUEUE_BYTES}-byte response queue less the 2-byte reply header")
-    return ok
+            raise Failure(f"length {accepted_max + 1} was accepted: {refused.status_text!r}")
+        detail(f"accepted up to {accepted_max}, refused from {accepted_max + 1}; "
+               f"the response queue holds {REPLY_QUEUE_BYTES} bytes and a reply is a "
+               f"2-byte header plus the payload")
+    return True
 
 
 def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
-    """The largest length READ_SOCKET accepts has to produce a reply a client can read.
+    """Whatever length READ_SOCKET accepts, the reply to it has to be readable.
 
-    A reply block is a 2-byte header plus the payload, so a read of 894 bytes
-    builds a block of exactly 896, the size of the response queue. Measured on
-    a U64 Elite: at 893 the queue delivers 895 bytes and DATA_AV clears; at 894
-    DATA_AV never clears and every further read returns the same last byte.
+    A reply block is a 2-byte header plus the payload, and the transport cannot
+    deliver a block of exactly the response queue's size. Measured on a U64
+    Elite: a block of 895 bytes ends and DATA_AV clears, a block of 896 never
+    ends and every further read returns the same last byte.
 
     The mechanism is in fpga/io/command_interface/vhdl_source/command_protocol.vhd.
     response_pointer stops incrementing once it reaches
@@ -348,13 +389,18 @@ def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
     is set, so this is not a slow read or a lost byte: it is an endless one.
     The reference client, ultimateii-dos-lib, does exactly that into a
     fixed-size buffer.
+
+    The length is the one the device accepts, not a number written here, so
+    this stays a statement about the firmware's own boundary rather than about
+    any particular value of it.
     """
     section("largest-accepted-read-drains")
+    accepted_max = net.largest_accepted_length()
     handle = net.open_udp(peer.ip, peer.udp_port)
     try:
         peer.learn_udp_peer(net, handle)
         measured = {}
-        for maxlen in (ACCEPTED_MAX - 1, ACCEPTED_MAX):
+        for maxlen in (accepted_max - 1, accepted_max):
             net.drain_socket(handle)
             peer.send_udp(pattern(FULL_DATAGRAM))
             time.sleep(DELIVERY_SETTLE_SECONDS)
@@ -363,23 +409,26 @@ def run_largest_accepted_read_drains(net: Net, peer: Peer) -> bool:
             detail(f"length {maxlen}: reply block {block} bytes, DATA_AV cleared {cleared}, "
                    f"last bytes {tail.hex(' ')}")
 
-        with check(f"a read of {ACCEPTED_MAX - 1} bytes ends its reply"):
-            block, cleared, _ = measured[ACCEPTED_MAX - 1]
+        with check(f"a read of {accepted_max - 1} bytes ends its reply"):
+            block, cleared, _ = measured[accepted_max - 1]
             if not cleared:
                 raise Failure(f"DATA_AV was still set after {block} bytes")
-            if block != ACCEPTED_MAX + 1:
-                raise Failure(f"expected {ACCEPTED_MAX + 1} bytes (2 header + "
-                              f"{ACCEPTED_MAX - 1} payload), got {block}")
+            if block != accepted_max + 1:
+                raise Failure(f"expected {accepted_max + 1} bytes (2 header + "
+                              f"{accepted_max - 1} payload), got {block}")
 
-        with check(f"a read of {ACCEPTED_MAX} bytes, the largest accepted, ends its reply"):
-            block, cleared, tail = measured[ACCEPTED_MAX]
+        with check(f"a read of {accepted_max} bytes, the largest accepted, ends its reply"):
+            block, cleared, tail = measured[accepted_max]
             if not cleared:
                 raise Failure(
                     f"DATA_AV was still set after {block} bytes and the queue was still "
-                    f"repeating {tail[-1:].hex()}. A read of {ACCEPTED_MAX} bytes builds a "
-                    f"reply block of {ACCEPTED_MAX + 2} bytes, the exact size of the "
+                    f"repeating {tail[-1:].hex()}. A read of {accepted_max} bytes builds a "
+                    f"reply block of {accepted_max + 2} bytes, the exact size of the "
                     f"{REPLY_QUEUE_BYTES}-byte response queue, and that block never ends. "
                     f"A client that reads while DATA_AV is set never stops")
+            if block != accepted_max + 2:
+                raise Failure(f"expected {accepted_max + 2} bytes (2 header + "
+                              f"{accepted_max} payload), got {block}")
     finally:
         net.close(handle)
     return True
@@ -481,7 +530,7 @@ def run_udp_truncation(net: Net, peer: Peer) -> bool:
         peer.send_udp(pattern(BIG_DATAGRAM))
         time.sleep(DELIVERY_SETTLE_SECONDS)
         truncated = net.read(handle, SMALL_READ, overrun_reads=2)
-        follow_up = net.read(handle, ACCEPTED_MAX)
+        follow_up = net.read(handle, SAFE_READ)
 
         with check(f"a {SMALL_READ}-byte datagram read with a length of {SMALL_READ} arrives whole"):
             detail(complete.describe())
@@ -503,6 +552,19 @@ def run_udp_truncation(net: Net, peer: Peer) -> bool:
                  f"retrievable: the first read delivered {len(truncated.payload)} and a "
                  f"further read delivered {len(follow_up.payload)}, status "
                  f"{follow_up.status_text!r}")
+
+        with check("the reply header still reports the bytes the reply carries"):
+            # The network target document defines the header as "the actual
+            # number of bytes read". Anything that reports a datagram's true
+            # length there instead would tell a client how much was lost at the
+            # cost of breaking every client that uses the header to find the
+            # end of the payload, so the contract is asserted on both reads.
+            for label, result in (("complete", complete), ("truncated", truncated)):
+                if result.header != len(result.payload):
+                    raise Failure(
+                        f"the {label} read reported {result.header} in its header while "
+                        f"carrying {len(result.payload)} payload bytes; the header is "
+                        f"specified as the number of bytes read")
 
         with check(f"a {BIG_DATAGRAM}-byte datagram read with a length of {SMALL_READ} "
                    f"is distinguishable from a complete one"):
@@ -572,6 +634,7 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
     """
     section("oversize-request-keeps-the-datagram")
     ok = True
+    over_long = net.largest_accepted_length() + 1
     handle = net.open_udp(peer.ip, peer.udp_port)
     try:
         peer.learn_udp_peer(net, handle)
@@ -579,10 +642,10 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
         peer.send_udp(pattern(SMALL_READ))
         time.sleep(DELIVERY_SETTLE_SECONDS)
 
-        refused = net.read(handle, ACCEPTED_MAX + 1, overrun_reads=2)
+        refused = net.read(handle, over_long, overrun_reads=2)
         after = net.read(handle, SMALL_READ)
 
-        with check(f"a request of {ACCEPTED_MAX + 1} bytes is refused without touching the socket"):
+        with check(f"a request of {over_long} bytes is refused without touching the socket"):
             detail(f"refused read: {refused.describe()}")
             detail(f"next read:    {after.describe()}")
             if refused.status_text != STATUS_OUT_OF_RANGE:
