@@ -218,6 +218,18 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Creates every disk-image kind and reads the device back after each one.
+    # A create that answers 200 and then takes the device down is the defect
+    # this catches, so it runs early: a dead device makes every later suite
+    # fail for a reason that is not its own.
+    Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Calls every endpoint the firmware registers, and fails when one is
+    # neither probed nor excluded with a reason. The lockup that prompted it
+    # shipped because no suite called that route at all, so the gate matters
+    # more than any single probe. Runs in about a second.
+    Suite("e2e", "rest-api-coverage", "tests/e2e/api/rest_api_coverage_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
@@ -258,6 +270,12 @@ SUITES: Sequence[Suite] = (
     # until the firmware restarts, so run it after the suites that drive the menu
     # and the file system.
     Suite("e2e", "uci-targets", "tests/e2e/io/command_interface/uci_targets_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # The UCI network target's READ_SOCKET: what the requested length does, and
+    # what happens to a datagram larger than it (#802). This host is the
+    # device's network peer, so it binds two ports and needs the device to be
+    # able to reach it; the scenarios that need that skip where it cannot.
+    Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
@@ -345,6 +363,9 @@ SUITES: Sequence[Suite] = (
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("soak", "listener-soak", "tests/soak/network/listener_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Physical Pico 2 W fixture; selected explicitly with -s after setup.
+    Suite("soak", "usb-keyboard-repeat", "tests/soak/io/usb/usb_keyboard_repeat_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --profile @SOAKPROFILE@", manual=True),
     # Drives the browser context menu, which is the only way to reach the PRG
     # load path the REST surface cannot see: launching a PRG over REST goes
     # straight to the C64 subsystem. Skips until #766 lands machine:heap.

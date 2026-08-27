@@ -403,10 +403,19 @@ void NetworkInterface :: effectuate_settings(void)
  */
     if (my_net_if.state) { // is it initialized?
         if (netif_is_link_up(&my_net_if)) {
-            dhcp_stop(&my_net_if);
             if (dhcp_enable) {
-                dhcp_start(&my_net_if);
+                // Only start the client when it is not already running.
+                // dhcp_stop() clears the interface address, and lwIP aborts
+                // every connection bound to it, so stopping and starting a
+                // client that was already running dropped all of them for no
+                // change at all, including the request that asked for this:
+                // applying these settings over REST answered nothing, because
+                // the answer went out on a connection it had just aborted.
+                if (!netif_dhcp_data(&my_net_if)) {
+                    dhcp_start(&my_net_if);
+                }
             } else {
+                dhcp_stop(&my_net_if);
                 netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
                 tcpip_callback((tcpip_callback_fn)set_dns_server_unsafe, &my_dns);
             }

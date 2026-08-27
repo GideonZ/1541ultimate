@@ -71,12 +71,16 @@ class Keyboard_USB : public Keyboard
     int  injected_tail;
     void putch(uint8_t ch);
     bool PresentInLastData(uint8_t check);
+    bool repeatIsLive(void);
     void usb2matrix(uint8_t *data);
 
     int  num_keys;
     int  repeat_speed;
     int  first_delay;
     int  delay_count;
+    int  report_idle_period_ms;
+    uint16_t last_report_time;
+    bool repeat_stale;
     int  injected_matrix_hold;
 	void applyMatrixState(void);
 	void clearInjectedMatrixState(void);
@@ -104,7 +108,13 @@ public:
     bool has_injected_key(int c) const;
     void remove_injected_key(int c);
     void wait_free(void);
+
+    // called from the USB HID driver, with the idle period it negotiated with
+    // SET_IDLE, or 0 when the keyboard did not accept a periodic idle rate.
+    void setReportIdlePeriod(int period_ms);
+    int  reportIdlePeriod(void) const { return report_idle_period_ms; }
     bool anyKeyPressed(void) const;
+    void clear_pending_input(void);
     void clear_buffer(void);
 
 	void restPress(uint8_t row, uint8_t col_bit);

@@ -1220,6 +1220,8 @@ void C64::freeze(void)
     // configASSERT(!backupIsValid) (a Nios hard-halt) and overwrites the saved
     // pre-freeze state, corrupting the eventual restore. The local-UI monitor
     // can reach freeze() twice over REST without an intervening unfreeze().
+    // isFrozen is the single source of truth for this guard, kept in sync
+    // with backupIsValid by unfreeze() (see the desync note there).
     if (isFrozen)
         return;
 
@@ -1356,6 +1358,19 @@ void C64::unfreeze()
 {
     if (!isFrozen)
         return;
+
+    if (!backupIsValid) {
+        // Nothing left to put back: something else already restored it
+        // while isFrozen stayed set. A reset issued with the menu open
+        // takes that path, because closing the menu restores the
+        // registers before MENU_C64_RESET calls this. restore_io()
+        // asserts on it, and a failed configASSERT spins with
+        // interrupts off, so the device stops answering and needs a
+        // power cycle. Clear the flag and let the caller carry on.
+        printf("C64::unfreeze: no backup held, nothing to restore\n");
+        isFrozen = false;
+        return;
+    }
 
     if (!phi2_present())
         return;
