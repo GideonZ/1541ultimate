@@ -71,41 +71,40 @@ prose, the tag list, the security scheme, the shared schemas - lives in
 
 ```mermaid
 flowchart TB
-    subgraph A["Author, by hand"]
-        A1["edit API_CALL / API_DOC"]
-        A2["make openapi"]
-        A3["commit code + both documents"]
-        A1 --> A2 --> A3
-    end
-
+    S1["software/api/route_*.cc<br/>API_CALL and API_DOC"] --> C
+    S2["5 application makefiles<br/>-D flags, route source lists"] --> C
+    S3["tools/openapi/schemas.py<br/>profiles, tags, shared schemas"] --> F
     subgraph G["make openapi"]
         direction TB
-        G1["routes.py reads the 5 application makefiles:<br/>-D flags, and which route_*.cc each target compiles"]
-        G2["cpp.py strips comments, evaluates #if,<br/>blanks the skipped lines"]
-        G3["routes.py parses API_CALL and API_DOC,<br/>pairs them on (verb, route, command)"]
-        G4["document.py cross-checks both halves<br/>and builds the OpenAPI object"]
-        G5["yaml_writer.py renders deterministic YAML"]
-        G1 --> G2 --> G3 --> G4 --> G5
+        C["routes.py<br/>which sources, which macros"]
+        D["cpp.py<br/>evaluate the #if regions"]
+        E["routes.py<br/>pair each call with its block"]
+        F["document.py<br/>cross-check, then build"]
+        H["yaml_writer.py<br/>render"]
+        C --> D --> E --> F --> H
     end
+    H --> Y["doc/api/rest_api_openapi_u2.yaml<br/>doc/api/rest_api_openapi_u64.yaml<br/>committed to git"]
+```
 
-    subgraph B["Firmware build"]
-        B1["make openapi_check<br/>rebuild in memory, compare bytes, never overwrite"]
-        B2["rules.mk objcopies the .yaml into a .o;<br/>gcc.mk / ld.mk link it"]
-        B3["updater image carries the document as a blob"]
+From the committed documents to the device:
+
+```mermaid
+flowchart TB
+    Y["doc/api/*.yaml"] --> B1
+    subgraph BUILD["Firmware build"]
+        direction TB
+        B1["make openapi_check<br/>rebuild, compare, never overwrite"]
+        B2["rules.mk objcopies .yaml to .o<br/>gcc.mk / ld.mk link it"]
+        B3["updater image carries the blob"]
         B1 --> B2 --> B3
     end
-
-    subgraph D["Device"]
-        D1["updater writes /flash/html/openapi.yaml + api.html"]
-        D2["httpd static file middleware serves /Flash/html"]
+    B3 --> D1
+    subgraph DEV["Device"]
+        direction TB
+        D1["updater writes<br/>/flash/html/openapi.yaml + api.html"]
+        D2["httpd serves /Flash/html"]
         D1 --> D2
     end
-
-    A2 --> G1
-    G5 --> Y["doc/api/rest_api_openapi_{u2,u64}.yaml<br/>committed to git"]
-    A3 --> Y
-    Y --> B1
-    B3 --> D1
 ```
 
 Where each piece runs:
