@@ -119,16 +119,23 @@ API_CALL(PUT, files, create_d64, NULL, ARRAY( { { "tracks", P_OPTIONAL }, { "dis
     int size = (17 * (tracks - 35) + 683) * 256;
     File *f = create_file_of_size(resp, args.get_full_path(), size);
     if (f) {
-        BlockDevice_File blk(f, 256);
-        Partition prt(&blk, 0, 0, 0);
-        FileSystemD64 fs(&prt, true);
-        FRESULT fres = fs.format(fn);
+        FRESULT fres;
+        {
+            // The file system stack borrows f, so it has to be gone before the
+            // file is closed. Scoping it here also means there is one close for
+            // both outcomes: the failure path used to return without closing,
+            // leaking the File and its open handle.
+            BlockDevice_File blk(f, 256);
+            Partition prt(&blk, 0, 0, 0);
+            FileSystemD64 fs(&prt, true);
+            fres = fs.format(fn);
+        }
+        FileManager :: getFileManager()->fclose(f);
         if (fres != FR_OK) {
             resp->error(FileSystem::get_error_string(fres));
             resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
-        FileManager :: getFileManager()->fclose(f);
         resp->json_response(HTTP_OK);
     } 
 }
@@ -158,16 +165,23 @@ API_CALL(PUT, files, create_d71, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
     int size = 683 * 2 * 256;
     File *f = create_file_of_size(resp, args.get_full_path(), size);
     if (f) {
-        BlockDevice_File blk(f, 256);
-        Partition prt(&blk, 0, 0, 0);
-        FileSystemD71 fs(&prt, true);
-        FRESULT fres = fs.format(fn);
+        FRESULT fres;
+        {
+            // The file system stack borrows f, so it has to be gone before the
+            // file is closed. Scoping it here also means there is one close for
+            // both outcomes: the failure path used to return without closing,
+            // leaking the File and its open handle.
+            BlockDevice_File blk(f, 256);
+            Partition prt(&blk, 0, 0, 0);
+            FileSystemD71 fs(&prt, true);
+            fres = fs.format(fn);
+        }
+        FileManager :: getFileManager()->fclose(f);
         if (fres != FR_OK) {
             resp->error(FileSystem::get_error_string(fres));
             resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
-        FileManager :: getFileManager()->fclose(f);
         resp->json_response(HTTP_OK);
     } 
 }
@@ -194,16 +208,23 @@ API_CALL(PUT, files, create_d81, NULL, ARRAY( { { "diskname", P_OPTIONAL } } ))
 
     File *f = create_file_of_size(resp, args.get_full_path(), 256*3200);
     if (f) {
-        BlockDevice_File blk(f, 256);
-        Partition prt(&blk, 0, 0, 0);
-        FileSystemD81 fs(&prt, true);
-        FRESULT fres = fs.format(fn);
+        FRESULT fres;
+        {
+            // The file system stack borrows f, so it has to be gone before the
+            // file is closed. Scoping it here also means there is one close for
+            // both outcomes: the failure path used to return without closing,
+            // leaking the File and its open handle.
+            BlockDevice_File blk(f, 256);
+            Partition prt(&blk, 0, 0, 0);
+            FileSystemD81 fs(&prt, true);
+            fres = fs.format(fn);
+        }
+        FileManager :: getFileManager()->fclose(f);
         if (fres != FR_OK) {
             resp->error(FileSystem::get_error_string(fres));
             resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
-        FileManager :: getFileManager()->fclose(f);
         resp->json_response(HTTP_OK);
     } 
 }
@@ -240,16 +261,23 @@ API_CALL(PUT, files, create_dnp, NULL, ARRAY( { { "tracks", P_REQUIRED }, { "dis
 
     File *f = create_file_of_size(resp, args.get_full_path(), tracks * 65536);
     if (f) {
-        BlockDevice_File blk(f, 256);
-        Partition prt(&blk, 0, 0, 0);
-        FileSystemDNP fs(&prt, true);
-        FRESULT fres = fs.format(fn);
+        FRESULT fres;
+        {
+            // The file system stack borrows f, so it has to be gone before the
+            // file is closed. Scoping it here also means there is one close for
+            // both outcomes: the failure path used to return without closing,
+            // leaking the File and its open handle.
+            BlockDevice_File blk(f, 256);
+            Partition prt(&blk, 0, 0, 0);
+            FileSystemDNP fs(&prt, true);
+            fres = fs.format(fn);
+        }
+        FileManager :: getFileManager()->fclose(f);
         if (fres != FR_OK) {
             resp->error(FileSystem::get_error_string(fres));
             resp->json_response(HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
-        FileManager :: getFileManager()->fclose(f);
         resp->json_response(HTTP_OK);
     } 
 }

@@ -220,6 +220,17 @@ paths:
                     errors: []
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                'No configuration category matches ''drive c*''.':
+                  value:
+                    errors:
+                      - 'No configuration category matches ''drive c*''.'
   '/v1/configs/{category}/{item}':
     get:
       tags:
@@ -267,12 +278,25 @@ paths:
                     errors: []
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                'No configuration category matches ''drive c*''.':
+                  value:
+                    errors:
+                      - 'No configuration category matches ''drive c*''.'
     put:
       tags:
         - Configuration
-      summary: Change a setting
+      summary: Set a value passed as a query argument
       description: |2-
         Sets one setting. The path names the category and the item, both matched as patterns, and the first match wins, so a pattern that matches more than one item sets whichever comes first.
+
+        The new value is given in one of two ways, and in exactly one of them: as the `value` query argument on a two element path, or as a third path element with no query argument. Any other shape is answered with 400.
 
         The change takes effect at once but lives only in memory. It survives until the device reboots, and no longer, unless `configs:save_to_flash` writes it.
       operationId: setConfigItem
@@ -293,8 +317,8 @@ paths:
           example: 'Drive%20Bus%20ID'
         - name: value
           in: query
-          required: true
-          description: 'The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting.'
+          required: false
+          description: 'The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting. Two element form only.'
           schema:
             type: string
           example: '9'
@@ -312,6 +336,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
+                'When using the ''value'' argument, the path should have two elements; the config category and the config item name. Given: ''/Drive A Settings''':
+                  value:
+                    errors:
+                      - 'When using the ''value'' argument, the path should have two elements; the config category and the config item name. Given: ''/Drive A Settings'''
+                Value 12 is outside of the allowable range (8-11):
+                  value:
+                    errors:
+                      - Value 12 is outside of the allowable range (8-11)
+                'Value ''Maybe'' is not a valid choice for item Drive':
+                  value:
+                    errors:
+                      - 'Value ''Maybe'' is not a valid choice for item Drive'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                'There is no config category that matches ''drive c*''':
+                  value:
+                    errors:
+                      - 'There is no config category that matches ''drive c*'''
+                'Item ''speed'' not found in this configuration category [Drive A Settings].':
+                  value:
+                    errors:
+                      - 'Item ''speed'' not found in this configuration category [Drive A Settings].'
+  '/v1/configs/{category}/{item}/{value}':
+    put:
+      tags:
+        - Configuration
+      summary: Set a value passed as a path element
+      description: |2-
+        Sets one setting. The path names the category and the item, both matched as patterns, and the first match wins, so a pattern that matches more than one item sets whichever comes first.
+
+        The new value is given in one of two ways, and in exactly one of them: as the `value` query argument on a two element path, or as a third path element with no query argument. Any other shape is answered with 400.
+
+        The change takes effect at once but lives only in memory. It survives until the device reboots, and no longer, unless `configs:save_to_flash` writes it.
+      operationId: setConfigItemByPath
+      parameters:
+        - name: category
+          in: path
+          required: true
+          description: Category name or pattern. Names contain spaces, so this has to be URL encoded.
+          schema:
+            type: string
+          example: 'Drive%20A%20Settings'
+        - name: item
+          in: path
+          required: true
+          description: Item name or pattern, URL encoded.
+          schema:
+            type: string
+          example: 'Drive%20Bus%20ID'
+        - name: value
+          in: path
+          required: true
+          description: 'The new value, URL encoded. Three element form only; the query argument has to be absent.'
+          schema:
+            type: string
+          example: '9'
+        - name: value
+          in: query
+          required: false
+          description: 'The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting. Two element form only.'
+          schema:
+            type: string
+          example: '9'
+      responses:
+        '200':
+          description: The setting was changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                'When using the ''value'' argument, the path should have two elements; the config category and the config item name. Given: ''/Drive A Settings''':
+                  value:
+                    errors:
+                      - 'When using the ''value'' argument, the path should have two elements; the config category and the config item name. Given: ''/Drive A Settings'''
                 Value 12 is outside of the allowable range (8-11):
                   value:
                     errors:

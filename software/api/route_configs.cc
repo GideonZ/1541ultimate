@@ -186,6 +186,8 @@ API_DOC(GET, configs, none,
     RESPONSE_EXAMPLE("200", "Drive A", "{\n  \"Drive A Settings\" : {\n    \"Drive\" : \"Enabled\",\n    \"Drive Type\" : \"1541\",\n    \"Drive Bus ID\" : 8\n  },\n  \"errors\" : []\n}", "getConfigCategory")
     RESPONSE("200", "application/json", "ConfigItemsResponse", "Every matching item, described in full.", "getConfigItem")
     RESPONSE_EXAMPLE("200", "One item", "{\n  \"Drive A Settings\" : {\n    \"Drive Bus ID\" : {\n      \"current\" : 8,\n      \"min\" : 8,\n      \"max\" : 11,\n      \"format\" : \"%d\",\n      \"default\" : 8\n    }\n  },\n  \"errors\" : []\n}", "getConfigItem")
+    RESPONSE_ERROR("404", "No configuration category matches 'drive c*'.", "getConfigCategory")
+    RESPONSE_ERROR("404", "No configuration category matches 'drive c*'.", "getConfigItem")
 )
 API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
 {
@@ -201,11 +203,21 @@ API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
             list->add(s->get_store_name());
         }
     } else {  // path specified, so the output would list the stores that match the path
+        bool matched = false;
         for(int i=0; i<stores->get_elements(); i++) {
             ConfigStore *s = (*stores)[i];
             if ((path_elements < 1) || pattern_match(args.get_path(0), s->get_store_name())) {
                 emit_store(s, resp->json, args);
+                matched = true;
             }
+        }
+        if (!matched) {
+            // A name no store answers to used to come back as 200 with an empty
+            // body, which reads as "the category exists and holds nothing"
+            // rather than as the typo it is.
+            resp->error("No configuration category matches '%s'.", args.get_path(0));
+            resp->json_response(HTTP_NOT_FOUND);
+            return;
         }
     }
 
@@ -219,19 +231,30 @@ API_DOC(PUT, configs, none,
                 "patterns, and the first match wins, so a pattern that matches more than one item "
                 "sets whichever comes first.\n"
                 "\n"
+                "The new value is given in one of two ways, and in exactly one of them: as the "
+                "`value` query argument on a two element path, or as a third path element with no "
+                "query argument. Any other shape is answered with 400.\n"
+                "\n"
                 "The change takes effect at once but lives only in memory. It survives until the "
                 "device reboots, and no longer, unless `configs:save_to_flash` writes it.")
-    PATH("/v1/configs/{category}/{item}", "setConfigItem", "")
+    PATH("/v1/configs/{category}/{item}", "setConfigItem", "Set a value passed as a query argument")
+    PATH("/v1/configs/{category}/{item}/{value}", "setConfigItemByPath", "Set a value passed as a path element")
     PATH_PARAM("category", "string", "Category name or pattern. Names contain spaces, so this has to be URL encoded.", "Drive%20A%20Settings")
     PATH_PARAM("item", "string", "Item name or pattern, URL encoded.", "Drive%20Bus%20ID")
-    PARAM("value", "string", "The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting.", "", "9")
+    PATH_PARAM("value", "string", "The new value, URL encoded. Three element form only; the query argument has to be absent.", "9")
+    PARAM("value", "string", "The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting. Two element form only.", "", "9")
     RESPONSE("200", "application/json", "ErrorResponse", "The setting was changed.", "")
+    RESPONSE_ERROR("400", "When using the 'value' argument, the path should have two elements; the config category and the config item name. Given: '/Drive A Settings'", "")
     RESPONSE_ERROR("400", "Value 12 is outside of the allowable range (8-11)", "")
     RESPONSE_ERROR("400", "Value 'Maybe' is not a valid choice for item Drive", "")
     RESPONSE_ERROR("404", "There is no config category that matches 'drive c*'", "")
     RESPONSE_ERROR("404", "Item 'speed' not found in this configuration category [Drive A Settings].", "")
 )
-API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_REQUIRED }} ))
+// 'value' is optional because this route takes it either as the query argument
+// or as a third path element, and the handler below chooses between them and
+// rejects every other shape. Declaring it required had the validator refuse the
+// path form before the handler ran, so the branch that reads it was dead.
+API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_OPTIONAL }} ))
 {
     ConfigManager *cfg = ConfigManager::getConfigManager();
     IndexedList<ConfigStore *> *stores = cfg->getStores();
