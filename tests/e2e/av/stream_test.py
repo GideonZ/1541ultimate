@@ -4,21 +4,19 @@
 import argparse
 import math
 import os
-import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
-ASSEMBLER = REPO_ROOT / "tools" / "64tass" / "64tass"
 
 sys.path.insert(0, str(REPO_ROOT / "tests" / "lib"))
 sys.path.insert(0, str(REPO_ROOT / "tests" / "e2e" / "lib"))
 
 from api import UltimateApi
+from assembler import assemble
 from av_stream import (
     AUDIO_PACKET_BYTES,
     VIDEO_PACKET_BYTES,
@@ -37,19 +35,6 @@ PAL_AUDIO_RATE = 47982.8869047619
 LADDER_FRAMES_PER_NOTE = 10
 LADDER_FREQUENCIES = (130.8, 146.8, 164.8, 174.6, 196.0, 220.0, 246.9, 261.6,
                       246.9, 220.0, 196.0, 174.6, 164.8, 146.8, 130.8)
-
-
-def assemble(name: str) -> bytes:
-    source = SCRIPT_DIR / name
-    with tempfile.TemporaryDirectory(prefix="av-stream-") as directory:
-        output = Path(directory) / "fixture.prg"
-        result = subprocess.run(
-            [str(ASSEMBLER), "-q", "-o", str(output), str(source)],
-            capture_output=True, text=True, check=False,
-        )
-        if result.returncode:
-            raise Failure(f"64tass failed for {name}: {result.stderr.strip()}")
-        return output.read_bytes()
 
 
 def log_packet_health(capture: AvStreamCapture) -> None:
@@ -98,7 +83,7 @@ def assert_tone_ladder(capture: AvStreamCapture, start: float) -> None:
 
 def run_tone_ladder(device: UltimateApi) -> None:
     device.machine.reset(force=True)
-    program = assemble("tone_ladder.asm")
+    program = assemble(SCRIPT_DIR / "tone_ladder.asm")
     # The handle rather than the host name: for a cartridge target the video,
     # the audio and the request that starts them belong to the computer, and
     # only the handle knows which machine that is.
@@ -120,7 +105,7 @@ def run_tone_ladder(device: UltimateApi) -> None:
 
 def run_key_pop(device: UltimateApi) -> None:
     device.machine.reset(force=True)
-    program = assemble("av_pop_key.asm")
+    program = assemble(SCRIPT_DIR / "av_pop_key.asm")
     with AvStreamCapture(device.target) as capture:
         capture.capture(0.15)
         device.runners.upload("run_prg", program)
@@ -157,7 +142,7 @@ def main() -> int:
         if args.case in ("all", "pop"):
             with check("Space key reaches aligned audio and video pop"):
                 run_key_pop(device)
-    except (Failure, OSError, subprocess.SubprocessError) as exc:
+    except (Failure, OSError) as exc:
         suite_fail("stream_test", str(exc))
         return 1
     suite_ok("stream_test")
