@@ -157,6 +157,12 @@ static err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const struct ip4_
  * itself on a match, and read in the frame path, so volatile. */
 static volatile bool wake_armed = false;
 
+/* The state the machine was last known to be in, so that a netif whose input
+ * slot was reset behind our back can be watched again without the button
+ * handler having to say so a second time. Written from the button handler's
+ * task, read from the event loop's. */
+static volatile int wake_machine_on = 1;
+
 static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
 {
     if (wake_armed) {
@@ -190,6 +196,7 @@ static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
  * is picked up without the module having to be told twice. */
 void wake_on_wifi_update(int machine_on)
 {
+    wake_machine_on = machine_on;
     if (!my_sta_netif) {
         return;
     }
@@ -288,6 +295,18 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
 
     uint8_t evcode = 0;
     switch(event_id) {
+        case WIFI_EVENT_STA_START:
+            // The station starting is where esp_netif attaches the lwIP netif,
+            // which is also where netif->input goes back to what esp_netif put
+            // there. Anything installed in that slot before is gone, so a
+            // machine that is off is watched again from here. A machine that
+            // is on is left alone: the slot then belongs to the application's
+            // own hook, and taking it over would cut the machine off the
+            // network.
+            if (!wake_machine_on) {
+                wake_on_wifi_update(0);
+            }
+            break;
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
             cev.event_code = evcode;

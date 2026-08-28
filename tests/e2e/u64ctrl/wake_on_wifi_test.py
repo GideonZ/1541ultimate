@@ -5,8 +5,15 @@ Supported target: a C64 Ultimate (or Ultimate 64 Elite II) carrying the "Wake
 On Wi-Fi" setting. The suite skips, rather than fails, on firmware that does not
 serve the item, so it is safe to name on an older build.
 
-Two conditions of the setup this cannot check for itself, and both make every
-check below fail if they do not hold:
+Three conditions of the setup this cannot check for itself, and each of them
+makes every check below fail if it does not hold:
+
+- The control module is 1.14 or newer. An application that has the setting on
+  top of an older module is the case this suite cannot detect: the menu greys
+  the item out, but `cfg->disable()` is a menu affordance only and the REST
+  store still serves it, so the suite finds the item, sets it, and fails the
+  wake instead of skipping. A run that fails every scenario should have the
+  module version checked before the firmware is suspected.
 
 - The device is on Wi-Fi. Over the wired jack the control module never sees the
   packet: the RMII PHY sits in the FPGA power domain, which is down while the
@@ -176,7 +183,14 @@ def find_store(api: UltimateApi) -> str:
 
 
 def set_named_item(api: UltimateApi, store: str, item: str, value: str) -> None:
-    """Set a setting and read it back, so a silent refusal is not a pass."""
+    """Set a setting and read back what the application now holds.
+
+    What this proves is bounded, and the bound matters when a scenario fails:
+    it says the application took the value, not that the control module stored
+    it. The value travels on from there over the UART RPC, and nothing served
+    over REST reports what the module ended up with. Only the scenarios below
+    do, by what the machine does with a packet.
+    """
     api.configs.set(store, item, value)
     current = api.configs.current(store, item)
     if current != value:
@@ -190,10 +204,19 @@ def set_item(api: UltimateApi, store: str, value: str) -> None:
 
 
 def wake_hint(args: argparse.Namespace) -> str:
-    """What to look at when a wake that should have happened did not."""
-    return (f"no wake: check that the device is associated over Wi-Fi rather "
-            f"than plugged into the wired jack, and that this harness shares "
-            f"its broadcast domain (sent to {args.broadcast}:{args.port})")
+    """What to look at when a wake that should have happened did not.
+
+    Three suspects, in the order they are worth checking. The control module is
+    first because it is the one this suite cannot see: the item is served over
+    REST whether or not the module can store it, so a machine whose module
+    predates the setting takes the value and ignores it.
+    """
+    return (f"no wake: check that the control module is 1.14 or newer (the "
+            f"application prints what it found at boot, and greys the item out "
+            f"in the menu when the module cannot store it), that the device is "
+            f"associated over Wi-Fi rather than plugged into the wired jack, "
+            f"and that this harness shares its broadcast domain (sent to "
+            f"{args.broadcast}:{args.port})")
 
 
 def main() -> int:

@@ -1450,8 +1450,27 @@ static bool writePowerOnMode(uint8_t mode)
 // it is only presented to the user and pushed down on every change.
 int U64Config :: setPowerOnMode(ConfigItem *it)
 {
-    if (it && !writePowerOnMode((uint8_t)it->getValue())) {
-        printf("The control module did not take the power on behavior.\n");
+    if (!it || writePowerOnMode((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // The module holds what it holds. An item left at a value the module did
+    // not take tells the menu, the REST API and the flash that the machine
+    // will come up when it will not, so it is put back to what is really
+    // stored. setValueQuietly() rather than setValue(), which would call this
+    // hook again.
+    uint8_t mode;
+    uint8_t last_state;
+    if (readPowerOnMode(mode, last_state)) {
+        it->setValueQuietly((int)mode);
+        printf("The control module did not take the power on behavior; it is still %d.\n", mode);
+        UserInterface :: postMessage("Power on behavior not stored.");
+    } else {
+        printf("The control module did not take the power on behavior and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_POWERON_MODE);
+        }
     }
     return 0;
 }
@@ -1527,8 +1546,23 @@ static bool writeWakeOnWifi(uint8_t enabled)
 // a network path of its own. Stored in its NVS, pushed down on every change.
 int U64Config :: setWakeOnWifi(ConfigItem *it)
 {
-    if (it && !writeWakeOnWifi((uint8_t)it->getValue())) {
-        printf("The control module did not take the wake on Wi-Fi setting.\n");
+    if (!it || writeWakeOnWifi((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // As above: the item goes back to what the module really holds, so that
+    // "Enabled" in the menu and over REST means a machine that will wake.
+    uint8_t enabled;
+    if (readWakeOnWifi(enabled)) {
+        it->setValueQuietly((int)enabled);
+        printf("The control module did not take wake on Wi-Fi; it is still %d.\n", enabled);
+        UserInterface :: postMessage("Wake on Wi-Fi not stored.");
+    } else {
+        printf("The control module did not take wake on Wi-Fi and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        }
     }
     return 0;
 }
