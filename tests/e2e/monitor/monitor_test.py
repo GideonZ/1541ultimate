@@ -1371,6 +1371,14 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
                     f"round {round_index + 1} of {rounds}, after {verified} "
                     f"arguments arrived character for character: {failure}")
             session.send_key("ARROW_LEFT")
+            # Wait for the prompt to be gone, not just for the monitor to be
+            # drawn under it. Every case here reopens a prompt with the same
+            # title, so a screen still showing the previous one satisfies the
+            # next wait_for_prompt immediately, and the characters are then
+            # typed against a prompt that is already closing. The field is read
+            # back holding the previous argument, which is what this check
+            # reported: "the field reads '1100' after '2200' was typed".
+            wait_until(session, lambda screen: title not in screen.text())
             wait_for_monitor(session, f"leaving the {title} prompt")
             verified += 1
     detail(f"{verified} command arguments typed and read back character for character")
