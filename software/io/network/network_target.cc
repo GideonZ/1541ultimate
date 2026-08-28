@@ -210,7 +210,9 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	}
 
 	// Freed before the new socket is taken, so the client never sees the
-	// pool run out before its own limit does.
+	// pool run out before its own limit does. An open that then fails has
+	// still cost the client its oldest socket: the slot only exists once
+	// something has been closed.
 	if (socket_count == NET_MAX_SOCKETS) {
 		int oldest = sockets[0];
 		untrack_socket(oldest);
@@ -280,7 +282,13 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
     memset(&msg, 0, sizeof(msg));
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
-    int ret = lwip_recvmsg(socketnr, &msg, 0);
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_recvmsg(socketnr, &msg, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
     // The header is the number of bytes this reply carries, which is what the
     // network target document specifies and what existing clients read. On a
     // reply that spans blocks it is still the total, not the part in the first
@@ -356,7 +364,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
     uint8_t *src = &command->message[3];
 
     int length = command->length - 3;
-    int ret = lwip_send(socketnr, src, length, 0);
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_send(socketnr, src, length, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
     // printf("Writing %d bytes to socket %d resulted in %d\n", length, socketnr, ret);
     // dump_hex_relative(src, length);
 

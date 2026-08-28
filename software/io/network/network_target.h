@@ -26,9 +26,12 @@
 
 // How many sockets a client can hold open at once. A socket a client opens
 // and never closes otherwise stays open until the device is power cycled, and
-// lwip has MEMP_NUM_UDP_PCB (8) of them for everything on the device, so a
-// client that loses its handles takes the whole network target down. Opening
-// one more than this closes the oldest. See GideonZ/1541ultimate#808.
+// lwip has 8 UDP control blocks and 16 sockets in total for everything on the
+// device, so a client that loses its handles takes the whole network target
+// down. Opening one more than this closes the oldest, and the target only
+// reads, writes and closes sockets in its table, so a handle that has gone
+// stale cannot reach a socket the firmware opened for itself.
+// See GideonZ/1541ultimate#808.
 #define NET_MAX_SOCKETS 4
 
 // The largest payload READ_SOCKET accepts, which is the largest UDP payload

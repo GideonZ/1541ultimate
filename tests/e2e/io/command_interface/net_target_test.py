@@ -1142,9 +1142,18 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
             with check(f"cycle {cycle + 1}: reset the C64 with "
                        f"{SOCKETS_LEFT_OPEN_AT_RESET} sockets open"):
                 net = reset()
-            # Only a reset that closed the sockets left behind lets this many
-            # more open: the sockets from every cycle so far would otherwise
-            # add up past the pool.
+            with check(f"cycle {cycle + 1}: the reset closed the sockets left open"):
+                # A socket the reset closed answers CLOSE_SOCKET with an error;
+                # one it left open closes now, and answers OK. This is what
+                # tells a reset that closes sockets from a cap that merely
+                # makes room for the next opens.
+                still_open = [handle for handle in handles
+                              if net.close(handle).status_text == STATUS_OK]
+                handles.clear()
+                if still_open:
+                    raise Failure(f"handles {still_open} were still open after the reset; "
+                                  f"the program that opened them is gone, so nothing "
+                                  f"else can ever close them")
             open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
             close_quietly(net, handles)
             handles.clear()
@@ -1355,6 +1364,8 @@ def main() -> int:
                     native_started = True
                     return Net(build_driver(route, computer, args.busy_timeout))
                 return Net(rest_uci)
+            # Last on purpose: on the native route the reset inside it ends
+            # the 6502 agent that `net` wraps, so nothing can follow it here.
             run(route, "reset-closes-uci-sockets",
                 run_reset_closes_uci_sockets, net, peer, reset_and_reopen, device)
 

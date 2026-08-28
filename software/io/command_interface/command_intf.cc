@@ -123,6 +123,14 @@ void CommandInterface :: run_task(void)
 #if CMD_IF_DEBUG
 		printf("{%b}", status_byte);
 #endif
+		// Checked on every event rather than only on the abort the reset
+		// interrupt posts, so a reset whose post did not fit the queue is
+		// still acted on by the next event that does.
+		if (c64_reset_pending) {
+			c64_reset_pending = false;
+			for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
+				command_targets[i]->c64_reset();
+		}
 		if(status_byte & CMD_ABORT_DATA) {
 			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
@@ -131,11 +139,6 @@ void CommandInterface :: run_task(void)
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
-			if (c64_reset_pending) {
-				c64_reset_pending = false;
-				for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
-					command_targets[i]->c64_reset();
-			}
 		}
 		if(status_byte & CMD_DATA_ACCEPTED) {
 			if (target != CMD_TARGET_NONE) {
