@@ -27,10 +27,6 @@ public:
     virtual int read(char *buffer, int length) { return 0; }
     virtual int write(const char *buffer, int length) { return 0; }
     virtual int get_char(void) { return -1; }
-
-    // Whether -1 from get_char() means "waited and nothing came" rather than
-    // "nothing buffered now". Only a waiting stream can tell a lone ESC apart.
-    virtual bool get_char_waits(void) { return false; }
     virtual bool is_alive(void) { return true; }
     virtual void charout(int c) { printf("[SBco%02x]", c); }
 

@@ -59,16 +59,8 @@ int Keyboard_VT100 :: getch()
 		break;
 	case e_esc_escape:
 		charin = stream->get_char();
-		if (charin == -1) {
-			// Nothing followed the ESC. On a stream that waits the ESC was
-			// the key itself: a terminal writes a sequence in one go. A polled
-			// stream returns -1 constantly, so it cannot tell and keeps waiting.
-			if (stream->get_char_waits()) {
-				escape_state = e_esc_idle;
-				ret = '\e';
-			}
+		if (charin == -1)
 			break;
-		}
 
 		if (charin == 'O') {
 			escape_state = e_esc_o;
@@ -82,12 +74,8 @@ int Keyboard_VT100 :: getch()
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
 		} else {
-			if (charin != '\e') {
+			if (charin != '\e')
 				escape_state = e_esc_idle;
-				// Hand the byte back rather than swallow it; it is a
-				// keystroke somebody pressed.
-				return_unused(charin);
-			}
 			ret = '\e';
 		}
 		break;
@@ -99,8 +87,6 @@ int Keyboard_VT100 :: getch()
 		escape_state = e_esc_idle;
 		if ((charin >= 'P') && (charin <= 'S')) {
 			ret = function[charin - 'P'];
-		} else {
-			return_unused(charin);
 		}
 		break;
 	case e_esc_bracket:
@@ -120,8 +106,6 @@ int Keyboard_VT100 :: getch()
 				}
 			} else if ((charin >= 'A') && (charin <= 'D')) {
 				ret = cursor[charin - 'A'];
-			} else {
-				return_unused(charin);
 			}
 		}
 		break;
@@ -134,14 +118,6 @@ int Keyboard_VT100 :: getch()
 void Keyboard_VT100 :: push_head(int c)
 {
     pending_char = c;
-}
-
-// Give back a byte getch() could not use, without overwriting the single slot:
-// a key the user interface pushed on purpose outranks an unrecognised tail.
-void Keyboard_VT100 :: return_unused(int c)
-{
-    if (c > 0 && !pending_char)
-        pending_char = c;
 }
 
 void Keyboard_VT100 :: wait_free(void)

@@ -39,7 +39,6 @@ public:
 
     int  getch(void);
     void push_head(int);
-    void return_unused(int);
     void wait_free(void);
     void clear_buffer(void);
 };
