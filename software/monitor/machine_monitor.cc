@@ -1636,20 +1636,42 @@ class MonitorBlockReader
 {
     MemoryBackend *backend;
     uint8_t buffer[MONITOR_READ_BLOCK];
+    uint32_t first;
+    uint32_t last;
     uint32_t base;
+    uint16_t held;
     bool filled;
 
 public:
-    explicit MonitorBlockReader(MemoryBackend *backend)
-        : backend(backend), base(0), filled(false) { }
+    // `first` and `last` bound what the caller will actually ask for, so a
+    // short range costs one short read rather than a whole block. Without that
+    // a sixteen-byte Compare would fetch 256 bytes per side, which is free on a
+    // backend whose reads are cheap but is still work nobody asked for.
+    MonitorBlockReader(MemoryBackend *backend, uint16_t first, uint16_t last)
+        : backend(backend), first(first), last(last), base(0), held(0),
+          filled(false) { }
 
     uint8_t read(uint16_t address)
     {
         uint32_t block = (uint32_t)address & ~(uint32_t)(MONITOR_READ_BLOCK - 1);
 
-        if (!filled || block != base) {
-            backend->read_block((uint16_t)block, buffer, MONITOR_READ_BLOCK);
-            base = block;
+        if (!filled || address < base || address >= base + held) {
+            uint32_t start = (block < first) ? first : block;
+            uint32_t end = block + MONITOR_READ_BLOCK - 1;
+
+            // Compare's second range can run past $FFFF and wrap, which leaves
+            // last below first. The bound is only meaningful when it does not,
+            // and a block never crosses the wrap itself, so the block's own end
+            // is the safe answer there.
+            if (last >= first && end > last) {
+                end = last;
+            }
+            if (end < start) {
+                end = start;
+            }
+            base = start;
+            held = (uint16_t)(end - start + 1);
+            backend->read_block((uint16_t)base, buffer, held);
             filled = true;
         }
         return buffer[address - base];
@@ -1664,8 +1686,8 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
     int count = 0;
     int pos = 0;
 
-    MonitorBlockReader left(backend);
-    MonitorBlockReader right(backend);
+    MonitorBlockReader left(backend, start, (uint16_t)(start + length - 1));
+    MonitorBlockReader right(backend, dest, (uint16_t)(dest + length - 1));
 
     out[0] = 0;
     for (index = 0; index < length; index++) {
@@ -1712,7 +1734,7 @@ int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, c
     if ((uint32_t)needle_len > limit) {
         return 0;
     }
-    MonitorBlockReader reader(backend);
+    MonitorBlockReader reader(backend, start, end);
 
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
@@ -1746,7 +1768,7 @@ int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, co
         append_text(out, out_len, pos, "No matches\n");
         return 0;
     }
-    MonitorBlockReader reader(backend);
+    MonitorBlockReader reader(backend, start, end);
 
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
