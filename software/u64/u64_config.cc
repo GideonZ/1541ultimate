@@ -29,6 +29,9 @@ extern "C" {
 //#include "sys/alt_irq.h"
 #include "c64.h"
 #include "esp32.h"
+#if U64 == 2
+#include "wifi_cmd.h"
+#endif
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
@@ -160,6 +163,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
+// 0x55..0x5E are used by the USB HID store (io/usb/usb_hid_config.h) and
+// 0x56..0x63 by the audio selection store (io/audio/audio_select.cc); both are
+// different stores, but kept clear here to keep the ids readable side by side
+#define CFG_POWERON_MODE      0x5F
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -302,6 +309,8 @@ static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 static const char *speeds_u64[]   = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
 static const char *speeds_u64ii[] = { " 1", " 2", " 3", " 4", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48", "64" };
+// The order of these must match the POWERON_MODE_* defines of the control module
+static const char *poweron_modes[] = { "Off", "On", "Last State" };
 static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
 static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
@@ -372,6 +381,9 @@ struct t_cfg_definition u64_cfg[] = {
 #endif
     { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
+#if U64 == 2
+    { CFG_POWERON_MODE,         CFG_TYPE_ENUM, "Power On After Power Loss",    "%s", poweron_modes, 0, 2, 0 },
+#endif
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
@@ -900,6 +912,9 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
+#if U64 == 2
+        cfg->set_change_hook(CFG_POWERON_MODE, U64Config::setPowerOnMode);
+#endif
 
         if (!isEliteBoard()) {
             cfg->disable(CFG_JOYSWAP);
@@ -1375,6 +1390,53 @@ int U64Config :: setLedSelector(ConfigItem *it)
     }
     return 0;
 }
+
+#if U64 == 2
+// What the machine does when the input power returns is decided by the control
+// module (ESP32), as that is the only part of the machine that is powered at
+// that moment. The setting is therefore stored in the NVS of that module; here
+// it is only presented to the user and pushed down on every change.
+int U64Config :: setPowerOnMode(ConfigItem *it)
+{
+    if(it) {
+        int retval = wifi_set_power_mode((uint8_t)it->getValue());
+        if (retval) {
+            printf("Setting the power on behavior failed with error %d.\n", retval);
+        }
+    }
+    return 0;
+}
+
+// Called when the control module reports in; it may have been updated or
+// replaced since the setting was last changed, so bring the two in sync.
+void U64Config :: pushPowerOnMode(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_POWERON_MODE);
+    if (!it) {
+        return;
+    }
+    uint8_t mode = 0xFF;
+    uint8_t last_state = 0xFF;
+    if (wifi_get_power_mode(&mode, &last_state) != 0) {
+        // A control module that predates these commands answers "not
+        // implemented", and cannot store the setting either. Offering a choice
+        // that quietly does nothing is worse than offering none.
+        printf("Control module does not support the power on behavior; disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_POWERON_MODE);
+        return;
+    }
+    printf("Power on behavior of the control module: %d (machine was %s at the last transition)\n",
+           mode, last_state ? "on" : "off");
+    u64_configurator->cfg->enable(CFG_POWERON_MODE);
+    if (mode == (uint8_t)it->getValue()) {
+        return; // already in sync
+    }
+    setPowerOnMode(it);
+}
+#endif
 
 int U64Config :: setCpuSpeed(ConfigItem *it)
 {
@@ -2680,6 +2742,14 @@ void U64Config :: setup_config_menu(void)
     grp->append(cfg->find_item(CFG_PARCABLE_ENABLE)->set_item_altname("Parallel Cable to Drive A"));
     grp->append(cfg->find_item(CFG_IEC_BUS_MODE));
     //grp->append(cfg->find_item(CFG_HDMI_TX_SWING));
+
+#if U64 == 2
+    grp = ConfigGroupCollection :: getGroup("Power Settings", SORT_ORDER_CFG_POWER);
+    grp->append(cfg->find_item(CFG_POWERON_MODE));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("'Last State' powers the machine up if"));
+    grp->append(ConfigItem :: heading("it was on when the power was lost."));
+#endif
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);
     grp->append(cfg->find_item(CFG_PLAYER_AUTOCONFIG));

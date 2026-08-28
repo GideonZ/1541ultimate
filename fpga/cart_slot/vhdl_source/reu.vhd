@@ -15,6 +15,7 @@ entity reu is
 generic (
     g_ram_tag       : std_logic_vector(7 downto 0) := X"10";
     g_extended      : boolean := true;
+    g_no_dma_delay  : boolean := false;
     g_ram_base      : unsigned(27 downto 0) := X"1000000" ); -- second (=upper 16M)
 port (
     clock           : in  std_logic;
@@ -287,6 +288,11 @@ begin
                         -- start_delay is 1 when g_extended is false, so going to the delay
                         -- state will insert one cycle of delay
                         if g_extended or true then
+                            if g_no_dma_delay then
+                                -- 2026-08-27: Setting DMA immedately will stop the CPU, avoiding execution of program code at higher speeds than 1 MHz
+                                -- Only applies to U64/U64E2
+                                reu_dma_n <= '0'; 
+                            end if;
                             state <= delay;
                         else
                             dispatch;

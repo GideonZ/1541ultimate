@@ -27,12 +27,21 @@ reu_ctrl_fixc64  = $80
 reu_ctrl_fixreu  = $40
 reu_ctrl_fixboth = $C0
 
+iter    .byte $00
+
 start   sei
 
+        lda #$3F
+-       cmp $d012
+        lda #$40
+-       cmp $d012
+        bne -
+
     ; fill screen
-        ldx #$00
+nextiter ldx #$00
 -       txa
-        eor #$ff
+        clc
+        adc iter        
         sta $0400,x
         sta $0500,x
         sta $0600,x
@@ -40,7 +49,7 @@ start   sei
         inx
         bne -
 
-    ; setup reu 
+    ; setup reu for copy to REU
         lda #$00
         sta reu_reubase_l
         sta reu_reubase_m
@@ -50,37 +59,11 @@ start   sei
         lda #$04
         sta reu_translen_h
         sta reu_c64base_h
-
-        lda #$40
--       cmp $d012
-        bne -
 
         lda #reu_ctrl_nofix
         sta reu_control
         lda #reu_mode_toreu
         sta reu_command
-
-
-    ; setup reu for copy back 
-        lda #$00
-        sta reu_reubase_l
-        sta reu_reubase_h
-        sta reu_translen_l
-        sta reu_c64base_l
-        lda #$04
-        sta reu_reubase_m
-        sta reu_translen_h
-        sta reu_c64base_h
-
-        lda #$40
--       cmp $d012
-        bne -
-
-        lda #reu_ctrl_nofix
-        sta reu_control
-        lda #reu_mode_toc64
-        sta reu_command
-
 
     ; setup reu for copy back 
         lda #$00
@@ -103,7 +86,8 @@ start   sei
 
         ldx #$00
 -       txa
-        eor #$ff
+        clc
+        adc iter
         cmp $1400,x
         bne error
         cmp $1500,x
@@ -115,31 +99,17 @@ start   sei
         inx
         bne -
         
+        inc iter
+        beq done
+        jmp nextiter
+
+done    lda #$00
+        sta $d7ff
         lda #$05
 -       sta $d020
-
-
-    ; setup reu for copy back 
-        lda #$00
-        sta reu_reubase_l
-        sta reu_reubase_m
-        sta reu_reubase_h
-        sta reu_translen_l
-        sta reu_c64base_l
-        lda #$01
-        sta reu_translen_h
-        lda #$d8
-        sta reu_c64base_h
-
-        lda #reu_ctrl_nofix
-        sta reu_control
-        lda #reu_mode_toc64
-        sta reu_command
-
-
         cli
         rts
 
 error   lda #$02
+        sta $d7ff
         bne -
-        
