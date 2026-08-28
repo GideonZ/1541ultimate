@@ -4965,6 +4965,12 @@ int MachineMonitor :: hunt_picker_handle_key(int key)
 
 void MachineMonitor :: draw()
 {
+    // One stop for the whole redraw rather than one per row. See
+    // MemoryBackend::begin_redraw; on a backend that stops the machine per
+    // access this is the difference between eighteen stops and one.
+    if (backend) {
+        backend->begin_redraw();
+    }
     draw_header();
     if (help_visible) {
         draw_help();
@@ -4994,6 +5000,11 @@ void MachineMonitor :: draw()
     // row to the full window width, so a popup that reaches that row would
     // lose it. The popup is the thing the user is looking at, so it wins.
     draw_popup_overlays();
+    // Every read this redraw needed has been made, so let the machine go
+    // before the screen is pushed out, which does not touch it.
+    if (backend) {
+        backend->end_redraw();
+    }
     if (screen) {
         screen->sync();
     }

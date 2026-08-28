@@ -15,6 +15,19 @@ public:
     virtual void begin_session(void) { }
     virtual void end_session(void) { }
 
+    // Hold the host machine still for the length of one screen redraw.
+    //
+    // A redraw reads its memory one row at a time, and a backend that stops
+    // the machine per access pays that stop once per row. On an Ultimate II+L
+    // that stop costs about 100ms, because C64::stop's safe R/Wn sequence
+    // never arrives and it falls through to the forced stop, so an 18-row view
+    // spends about 1.8s and stops the C64 eighteen times to draw one screen.
+    // Taking the stop once for the whole redraw is both faster and less
+    // disruptive to the machine being watched. A backend whose per-access
+    // stops are already cheap, which is every other one, needs neither.
+    virtual void begin_redraw(void) { }
+    virtual void end_redraw(void) { }
+
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len)
     {
         while (len) {
