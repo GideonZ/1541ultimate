@@ -653,6 +653,11 @@ FakeMemoryBackend :: FakeMemoryBackend()
     memset(memory, 0, sizeof(memory));
     session_begin_count = 0;
     session_end_count = 0;
+    redraw_begin_count = 0;
+    redraw_end_count = 0;
+    redraw_depth = 0;
+    block_reads_inside_redraw = 0;
+    block_reads_outside_redraw = 0;
 }
 
 uint8_t FakeMemoryBackend :: read(uint16_t address)
@@ -667,6 +672,11 @@ void FakeMemoryBackend :: write(uint16_t address, uint8_t value)
 
 void FakeMemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
 {
+    if (redraw_depth > 0) {
+        block_reads_inside_redraw++;
+    } else {
+        block_reads_outside_redraw++;
+    }
     for (uint16_t i = 0; i < len; i++) {
         dst[i] = memory[(uint16_t)(address + i)];
     }
@@ -680,6 +690,18 @@ void FakeMemoryBackend :: begin_session(void)
 void FakeMemoryBackend :: end_session(void)
 {
     session_end_count++;
+}
+
+void FakeMemoryBackend :: begin_redraw(void)
+{
+    redraw_begin_count++;
+    redraw_depth++;
+}
+
+void FakeMemoryBackend :: end_redraw(void)
+{
+    redraw_end_count++;
+    redraw_depth--;
 }
 
 FakeBankedMemoryBackend :: FakeBankedMemoryBackend() : frozen(false), live_cpu_port(0x07), live_cpu_ddr(0x07), live_dd00(0x01)
