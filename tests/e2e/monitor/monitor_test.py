@@ -205,6 +205,19 @@ class MonitorSession:
             # the template_mode flag on their MonitorCommandInput.
             if not template:
                 self.empty_open_prompt(title)
+            else:
+                # A template prompt opens holding the last argument it was
+                # given. When that is what is about to be typed, reading the
+                # field back afterwards cannot tell "every character arrived"
+                # from "none of them did, and this is the old value". Check
+                # [42] types G C000 every time, so its read-back proved
+                # nothing. Emptying the field first makes the read-back mean
+                # what it says.
+                try:
+                    if prompt_field(self.capture(), title) == text:
+                        self.empty_open_prompt(title)
+                except Failure:
+                    pass
             self.send_text(text, f"{key} {text}")
             snapshot = wait_until(self, typed)
             try:
