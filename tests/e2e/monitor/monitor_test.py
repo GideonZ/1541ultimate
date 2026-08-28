@@ -2189,12 +2189,7 @@ def run_freeze_toggle_test(session: MonitorSession, live_host: str) -> None:
     usable afterwards in both cases.
     """
     def jiffy_advances() -> bool:
-        first = read_rest_memory(live_host, 0x00A2, 1)[0]
-        for _ in range(12):
-            time.sleep(0.1)
-            if read_rest_memory(live_host, 0x00A2, 1)[0] != first:
-                return True
-        return False
+        return jiffy_clock_advances(live_host)
 
     # Settled, because the branch taken below is decided from this capture.
     # An unsettled one can be read before the refusal popup has drawn, and then
@@ -3581,24 +3576,83 @@ def set_u2_vic_bank(session: MonitorSession, target: int) -> Snapshot:
     raise Failure(f"U2 VIC bank did not reach VIC{target}")
 
 
-def ui_freezes_machine(device_host: str, mode: str) -> bool:
-    """Whether this device stops the C64 while its monitor is on screen.
+JIFFY_POLLS = 12
+JIFFY_POLL_INTERVAL = 0.1
 
-    Asked of the device rather than inferred from its name. A device that
-    offers the `Interface Type` setting can draw its UI as an overlay on a
-    running machine, and does so unless --mode freeze says otherwise. A
-    cartridge has no such setting: its UI is the freezer, whatever the flag
-    says, so every check that depends on a running machine or on a
-    second view of memory has to treat it as frozen.
+
+def jiffy_clock_advances(host: str) -> bool:
+    """Whether the KERNAL jiffy clock at $00A2 is still counting.
+
+    The KERNAL raster interrupt increments it about 60 times a second on a
+    running machine and not at all on a stopped one, so it reports whether the
+    C64 is executing rather than what any setting says it should be doing.
     """
-    if mode == MODE_FREEZE:
-        return True
+    first = read_rest_memory(host, 0x00A2, 1)[0]
+    for _ in range(JIFFY_POLLS):
+        time.sleep(JIFFY_POLL_INTERVAL)
+        if read_rest_memory(host, 0x00A2, 1)[0] != first:
+            return True
+    return False
+
+
+def wait_for_running_machine(host: str, timeout: float = 10.0) -> bool:
+    """Wait for the jiffy clock to start counting after a machine reset.
+
+    `reset_rest_machine` returns as soon as the device accepts the reset, and
+    the KERNAL takes a moment after that to reach the interrupt that drives the
+    clock. Sampling once straight after the reset therefore reads a machine
+    that is running but has not started counting yet.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        if jiffy_clock_advances(host):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+
+
+def offers_overlay_setting(device_host: str) -> bool:
+    """Whether the device has an `Interface Type` setting at all."""
     try:
         rest_api(device_host).configs.item("User Interface Settings",
                                            "Interface Type")
     except Failure:
-        return True  # no such setting, so the UI is the freezer
-    return False
+        return False
+    return True
+
+
+def ui_freezes_machine(device_host: str, mode: str,
+                       machine_was_running: bool) -> bool:
+    """Whether this user interface stops the C64 while the monitor is up.
+
+    Measured on the machine rather than inferred from a setting. Owning the
+    `Interface Type` setting only says the device *can* draw its UI over a
+    running machine; whether it actually does also depends on the hardware it
+    finds. An Ultimate 64 draws the overlay only while a display asserts HDMI
+    hot-plug detect (software/application/ultimate/ultimate.cc), and falls back
+    to the freezer without one, so a device set to `Overlay on HDMI` with no
+    display attached holds the machine while the setting says it does not.
+    Every check that needs a running machine, or a second view of memory, then
+    runs against a stopped one.
+
+    The jiffy clock is read through the device's own DMA. That works whether or
+    not the device is holding the machine, while a cartridge's companion
+    computer reads open bus for as long as the cartridge has it.
+
+    `machine_was_running` is the control sample taken before the UI came up. A
+    machine whose KERNAL interrupt was not counting to begin with cannot answer
+    the question, so the old inference is used and the reason is reported.
+    """
+    if mode == MODE_FREEZE:
+        return True
+    if not machine_was_running:
+        inferred = not offers_overlay_setting(device_host)
+        detail(f"the jiffy clock at $00A2 was not counting before the user "
+               f"interface came up, so whether it holds the machine could not "
+               f"be measured; assuming {'frozen' if inferred else 'running'} "
+               f"from the Interface Type setting instead")
+        return inferred
+    return not jiffy_clock_advances(device_host)
 
 
 def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
@@ -3922,8 +3976,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
             run_go_visible_state_test(session, rest_host)
 
     with check("G keeps the monitor open"):
-        if mode == MODE_FREEZE:
-            check_skip("Freeze hands the machine back, which closes the whole user interface")
+        if frozen:
+            check_skip("this user interface holds the machine, and handing it "
+                       "back on G closes the whole user interface")
         else:
             run_go_keeps_monitor_open_test(session, rest_host)
 
@@ -4662,10 +4717,11 @@ def main() -> int:
     # is the only one that can read the memory the monitor is showing: the
     # computer's own DMA reads open bus. Otherwise the computer's live view is
     # the independent oracle.
-    frozen = ui_freezes_machine(device_host, args.mode)
-    memory_host = device_host if frozen else live_host
-
     reset_rest_machine(control, args.password)
+
+    # The control sample for the freeze measurement below, taken while no user
+    # interface is up and the machine is therefore running.
+    machine_was_running = wait_for_running_machine(device_host)
 
     session = None
     try:
@@ -4673,7 +4729,9 @@ def main() -> int:
             args.mode, target.token, args.password, args.timeout,
             telnet_host=device_host, telnet_port=args.port,
         )
-        session = MonitorSession(backend)
+        session = MonitorSession(backend)  # opens the menu and enters the monitor
+        frozen = ui_freezes_machine(device_host, args.mode, machine_was_running)
+        memory_host = device_host if frozen else live_host
         run_tests(session, memory_host, args.mode, is_u2, control,
                   live_host, device_host, live_host, frozen, device_host)
     except Failure as exc:
