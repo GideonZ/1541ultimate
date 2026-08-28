@@ -1622,6 +1622,30 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     return rewritten;
 }
 
+// Holds the host machine still across a burst of reads that is not a redraw.
+//
+// MemoryBackend::begin_redraw/end_redraw exist so a backend that stops the
+// machine per access can take that stop once for a screen. Navigation needs the
+// same thing for the same reason: it walks the view a row at a time before it
+// draws anything. Scoped, so an early return cannot leave the machine stopped.
+class MonitorReadBurst
+{
+    MemoryBackend *backend;
+public:
+    explicit MonitorReadBurst(MemoryBackend *backend) : backend(backend)
+    {
+        if (backend) {
+            backend->begin_redraw();
+        }
+    }
+    ~MonitorReadBurst()
+    {
+        if (backend) {
+            backend->end_redraw();
+        }
+    }
+};
+
 // Serves single-byte reads out of a block the backend filled in one call.
 //
 // The range commands below walk memory a byte at a time, which reads well and
@@ -3570,6 +3594,14 @@ bool MachineMonitor :: follow_current(void)
     uint16_t target;
     uint8_t index;
 
+    // follow_target() walks the view a row at a time to find which instruction
+    // the cursor is on, and each row is a read the backend serves separately.
+    // Outside a bracket, a backend that stops the host machine per access stops
+    // it once per row: measured on an Ultimate II+L, one follow took 3.37s
+    // against 0.031s on an Ultimate 64 and 0.35s for a plain redraw on the same
+    // II+L. Held still for the whole walk it costs one stop, like the redraw.
+    MonitorReadBurst burst(backend);
+
     if (!follow_target(&target)) {
         return false;
     }
@@ -3583,6 +3615,10 @@ bool MachineMonitor :: return_current(void)
 {
     ReturnStackEntry entry;
     uint8_t index;
+
+    // Same reason as follow_current() above: restoring a location re-reads the
+    // view to place the cursor.
+    MonitorReadBurst burst(backend);
 
     if (!return_stack_pop(&entry, &index)) {
         return false;
