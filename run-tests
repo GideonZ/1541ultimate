@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
+import openapi_contract  # noqa: E402
 import pacing  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
@@ -183,6 +184,11 @@ SUITES: Sequence[Suite] = (
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
     Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    # Also needs no device: --validate-openapi puts this validator in the path
+    # of every REST call the gate makes, where a wrong verdict looks exactly
+    # like a firmware defect. Its decisions are pinned against the committed
+    # documents and answers written by hand.
+    Suite("e2e", "openapi-validator", "tests/lib/openapi_contract_test.py", ""),
     # Also needs no device: the observability harness watches a run and by
     # design cannot change a verdict, so nothing else notices when it breaks.
     # A run whose report generator has stopped rendering fails here, rather
@@ -217,6 +223,12 @@ SUITES: Sequence[Suite] = (
     # shipped because no suite called that route at all, so the gate matters
     # more than any single probe. Runs in about a second.
     Suite("e2e", "rest-api-coverage", "tests/e2e/api/rest_api_coverage_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # The REST API described by doc/api/rest_api_openapi_*.yaml, held to the
+    # device: the documents are checked as OpenAPI, a client is generated from
+    # them, and the answers are validated against them. --validate-openapi
+    # extends that last part to every suite above and below.
+    Suite("e2e", "openapi-contract", "tests/e2e/api/openapi_contract_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
@@ -290,11 +302,23 @@ SUITES: Sequence[Suite] = (
     # soak.
     Suite("e2e", "key-injection", "tests/e2e/io/c64/key_injection_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --keys 64 --batch 64"),
+    # Starting an REU transfer has to stop the 6510 in the same cycle as the
+    # command write. It did not, so above 1 MHz the instructions that follow
+    # rewrote the registers of the transfer still running and the REU handed
+    # back the wrong bytes. Measured red on core 1.4E and green on 1.4F.
+    Suite("e2e", "reu-turbo", "tests/e2e/io/c64/reu_turbo_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
     Suite("e2e", "freeze-menu", "tests/e2e/io/c64/freeze_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # Manual: downloads a release from github.com and changes machine settings,
+    # both of which it puts back. The same REU defect reu-turbo above guards,
+    # seen through a real program: Doom C64U streams level data out of a 16 MB
+    # REU with the CPU in turbo, which no other suite here comes close to.
+    Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Manual: the machine is put off over REST rather than by cutting mains, so
     # this one needs no socket -- but its last scenario asserts that a packet is
     # ignored, and leaves a machine only its power button can revive. Also needs
@@ -2209,6 +2233,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "want of a firmware fix, which is how a backport "
                           "is found. Repeatable, and 'all' assumes every "
                           "fix. The names are in tests/lib/machine.py.")
+    e2e.add_argument("--validate-openapi", action="store_true",
+                     help="Check every REST answer against the generated "
+                          "OpenAPI document in doc/api, for every suite. The "
+                          "openapi-contract suite does this for itself either "
+                          "way; this extends it to the whole run.")
     e2e.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
                      help="Set how long the network soak runs: stress takes "
                           "about two minutes, soak twelve hours (default: "
@@ -2614,11 +2643,11 @@ CHILD_FORWARDED_NEGATIVE = (
 # target so two children cannot write the same file; stop_on_fail is forwarded
 # by hand because it is a short flag with a different destination name; list
 # never reaches a child, because the parent prints the registry and stops;
-# assume_fix reaches every child through the environment instead, because a
-# suite started by hand has to be able to set it the same way (see
-# machine.ASSUME_ENV).
+# assume_fix and validate_openapi reach every child through the environment
+# instead, because a suite started by hand has to be able to set them the same
+# way (see machine.ASSUME_ENV and openapi_contract.ENV_FLAG).
 CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
-                          "assume_fix")
+                          "assume_fix", "validate_openapi")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
@@ -2907,6 +2936,12 @@ def main(argv: List[str]) -> int:
         except machine_lib.UnknownFix as exc:
             die(str(exc))
         os.environ[machine_lib.ASSUME_ENV] = " ".join(sorted(assumed))
+
+    if args.validate_openapi:
+        # Exported the same way, and for the same reason: the suites are child
+        # processes, and tests/lib/rest.py is where every one of them makes its
+        # calls. See tests/lib/openapi_contract.py.
+        os.environ[openapi_contract.ENV_FLAG] = "1"
 
     if args.list:
         print_listing()

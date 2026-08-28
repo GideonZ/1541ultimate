@@ -19,7 +19,7 @@ reasonable; this is for the ones that would rather not commit a binary.
 import os
 import subprocess
 import tempfile
-from typing import Union
+from typing import Mapping, Optional, Union
 
 from report import Failure
 
@@ -29,8 +29,14 @@ ASSEMBLER = os.path.join(REPO_ROOT, "tools", "64tass", "64tass")
 ASSEMBLE_TIMEOUT_SECONDS = 120.0
 
 
-def assemble(source: Union[str, "os.PathLike[str]"]) -> bytes:
-    """Return the assembled program, with its two-byte load address in front."""
+def assemble(source: Union[str, "os.PathLike[str]"],
+             defines: Optional[Mapping[str, object]] = None) -> bytes:
+    """Return the assembled program, with its two-byte load address in front.
+
+    `defines` becomes 64tass -D arguments. A source shared with a build that is
+    not this suite's uses them to guard what only a run on hardware needs, so
+    there is one program rather than a copy per caller.
+    """
     source = os.path.abspath(os.fspath(source))
     if not os.path.exists(source):
         raise Failure(f"no such 6502 source: {source}")
@@ -40,8 +46,11 @@ def assemble(source: Union[str, "os.PathLike[str]"]) -> bytes:
     with tempfile.TemporaryDirectory(prefix="c64-asm-") as directory:
         output = os.path.join(directory, "fixture.prg")
         try:
+            command = [ASSEMBLER, "-q", "--cbm-prg"]
+            for name, value in (defines or {}).items():
+                command += ["-D", f"{name}={value}"]
             result = subprocess.run(
-                [ASSEMBLER, "-q", "--cbm-prg", "-o", output, source],
+                command + ["-o", output, source],
                 capture_output=True, text=True, timeout=ASSEMBLE_TIMEOUT_SECONDS)
         except (OSError, subprocess.SubprocessError) as exc:
             raise Failure(f"could not run {ASSEMBLER}: {exc}") from exc

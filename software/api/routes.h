@@ -2,6 +2,7 @@
 #define ROUTES_H
 
 #include "cli.h"
+#include "api_doc.h"
 #include "indexed_list.h"
 #include "stream_textlog.h"
 #include "stream_ramfile.h"
