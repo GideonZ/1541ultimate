@@ -1355,20 +1355,15 @@ MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end
     return MONITOR_OK;
 }
 
-// How much of a fill one write_block call carries. Small enough to sit on the
-// monitor's stack, large enough that a backend which stops the host machine
-// per access stops it once per block instead of once per byte.
+// How much of a fill one write_block call carries: small enough for the
+// monitor's stack, large enough to stop the host machine once per block.
 static const uint16_t FILL_BLOCK = 256;
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value)
 {
-    // Written in blocks rather than a byte at a time. write_block holds one
-    // stopped session for the whole block, which is what transfer_write_range
-    // below already relies on. Writing byte by byte instead resumes and
-    // re-stops the machine between every byte, and on an Ultimate II+L that
-    // both costs about 100ms a byte and loses writes across the resume/stop
-    // boundary: a 256-byte fill of a running machine reached 239 of 256 bytes
-    // and stayed there.
+    // write_block holds one stopped session per block. A byte at a time
+    // re-stops the machine between bytes: on an Ultimate II+L that costs about
+    // 100ms a byte and loses writes, leaving a 256-byte fill stuck at 239.
     uint8_t buffer[FILL_BLOCK];
     uint32_t length = (uint32_t)end - (uint32_t)start + 1;
     uint32_t done = 0;
@@ -1389,9 +1384,8 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
 // because the machine is held stopped for the length of one call.
 static const uint32_t TRANSFER_BLOCK = 4096;
 
-// How much of a range one read_block call carries for the walk-a-byte-at-a-time
-// commands. Smaller than TRANSFER_BLOCK because it sits on the monitor's stack,
-// and a power of two so a block never crosses the 64K wrap.
+// Block size for the commands that walk a range a byte at a time: on the stack,
+// so smaller than TRANSFER_BLOCK, and a power of two so none crosses the 64K wrap.
 static const uint32_t MONITOR_READ_BLOCK = 256;
 
 // Read a range into a buffer. Addresses wrap at $FFFF, which is what lets
@@ -1622,12 +1616,9 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     return rewritten;
 }
 
-// Holds the host machine still across a burst of reads that is not a redraw.
-//
-// MemoryBackend::begin_redraw/end_redraw exist so a backend that stops the
-// machine per access can take that stop once for a screen. Navigation needs the
-// same thing for the same reason: it walks the view a row at a time before it
-// draws anything. Scoped, so an early return cannot leave the machine stopped.
+// Holds the host machine still across a burst of reads that is not a redraw:
+// navigation walks the view a row at a time before it draws anything. Scoped,
+// so an early return cannot leave the machine stopped.
 class MonitorReadBurst
 {
     MemoryBackend *backend;
@@ -1646,16 +1637,10 @@ public:
     }
 };
 
-// Serves single-byte reads out of a block the backend filled in one call.
-//
-// The range commands below walk memory a byte at a time, which reads well and
-// is how Compare and Hunt are specified. On a backend that stops the host
-// machine per access, though, a byte at a time is a stop at a time: an
-// Ultimate II+L pays about 100ms for each one, because C64::stop's safe R/Wn
-// sequence never arrives and it falls through to the forced stop. Reading a
-// block at a time leaves the walk as it is and makes the stops proportional to
-// the range rather than to the bytes in it. Blocks are aligned to their own
-// size, so one never crosses the 64K wrap.
+// Serves single-byte reads out of a block the backend filled in one call. The
+// range commands below walk memory a byte at a time, which on a backend that
+// stops the host machine per access is a stop per byte, about 100ms each on an
+// Ultimate II+L. Blocks are size-aligned, so one never crosses the 64K wrap.
 class MonitorBlockReader
 {
     MemoryBackend *backend;
@@ -1668,9 +1653,7 @@ class MonitorBlockReader
 
 public:
     // `first` and `last` bound what the caller will actually ask for, so a
-    // short range costs one short read rather than a whole block. Without that
-    // a sixteen-byte Compare would fetch 256 bytes per side, which is free on a
-    // backend whose reads are cheap but is still work nobody asked for.
+    // sixteen-byte Compare costs one short read rather than 256 bytes a side.
     MonitorBlockReader(MemoryBackend *backend, uint16_t first, uint16_t last)
         : backend(backend), first(first), last(last), base(0), held(0),
           filled(false) { }
@@ -1683,10 +1666,9 @@ public:
             uint32_t start = (block < first) ? first : block;
             uint32_t end = block + MONITOR_READ_BLOCK - 1;
 
-            // Compare's second range can run past $FFFF and wrap, which leaves
-            // last below first. The bound is only meaningful when it does not,
-            // and a block never crosses the wrap itself, so the block's own end
-            // is the safe answer there.
+            // Compare's second range can wrap past $FFFF, leaving last below
+            // first. The bound only means something when it does not, and a
+            // block never crosses the wrap, so the block's own end is safe.
             if (last >= first && end > last) {
                 end = last;
             }
@@ -1735,9 +1717,7 @@ int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end
 
     if (max_addrs <= 0) return 0;
 
-    // Through the block reader, for the same reason as monitor_compare_memory
-    // above. This is the one the C key calls, so it is the one whose cost the
-    // user waits for.
+    // Block reader as in monitor_compare_memory; this is what the C key calls.
     MonitorBlockReader left(backend, start, (uint16_t)(start + length - 1));
     MonitorBlockReader right(backend, dest, (uint16_t)(dest + length - 1));
 
@@ -3594,12 +3574,10 @@ bool MachineMonitor :: follow_current(void)
     uint16_t target;
     uint8_t index;
 
-    // follow_target() walks the view a row at a time to find which instruction
-    // the cursor is on, and each row is a read the backend serves separately.
-    // Outside a bracket, a backend that stops the host machine per access stops
-    // it once per row: measured on an Ultimate II+L, one follow took 3.37s
+    // follow_target() walks the view a row at a time, one backend read per row.
+    // Unheld, that is a stop per row: on an Ultimate II+L one follow took 3.37s
     // against 0.031s on an Ultimate 64 and 0.35s for a plain redraw on the same
-    // II+L. Held still for the whole walk it costs one stop, like the redraw.
+    // II+L. Held for the whole walk it costs one stop.
     MonitorReadBurst burst(backend);
 
     if (!follow_target(&target)) {
@@ -3616,8 +3594,7 @@ bool MachineMonitor :: return_current(void)
     ReturnStackEntry entry;
     uint8_t index;
 
-    // Same reason as follow_current() above: restoring a location re-reads the
-    // view to place the cursor.
+    // Same as follow_current() above: restoring a location re-reads the view.
     MonitorReadBurst burst(backend);
 
     if (!return_stack_pop(&entry, &index)) {
@@ -3977,8 +3954,7 @@ uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
-    // Same reason as disasm_rewind_rows below: this walks the view a row at a
-    // time and each row is a separate read.
+    // Same as disasm_rewind_rows below: a row at a time, one read per row.
     MonitorReadBurst burst(backend);
 
     for (int row = 0; (addr != address) && (row < max_scan); row++) {
@@ -4016,10 +3992,8 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
 
 uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
 {
-    // Paging forward walks a row at a time and each row is a separate read,
-    // so on a backend that stops the host machine per access this is one stop
-    // per row paged over. Nested brackets are counted, so holding it here as
-    // well as in the callers below costs nothing.
+    // One read, and so one stop, per row paged over. Nested brackets are
+    // counted, so holding it here as well as in the callers below costs nothing.
     MonitorReadBurst burst(backend);
     while (rows > 0) {
         address = disasm_next_addr(address);
@@ -4044,11 +4018,9 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
     if (rows <= 0) {
         return address;
     }
-    // Every lead-in below disassembles forward over tens of instructions, and
-    // each one is a read the backend serves separately. Unheld, a backend that
-    // stops the host machine per access stops it once per instruction probed:
-    // measured on an Ultimate II+L, one press of UP in the Assembly view took
-    // 3.895s against 0.033s on an Ultimate 64.
+    // Each lead-in below disassembles forward over tens of instructions, one
+    // read and so one stop each: on an Ultimate II+L one press of UP in the
+    // Assembly view took 3.895s against 0.033s on an Ultimate 64.
     MonitorReadBurst burst(backend);
     for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
         uint16_t start = (uint16_t)(address - lead_in);
@@ -5111,9 +5083,7 @@ int MachineMonitor :: hunt_picker_handle_key(int key)
 
 void MachineMonitor :: draw()
 {
-    // One stop for the whole redraw rather than one per row. See
-    // MemoryBackend::begin_redraw; on a backend that stops the machine per
-    // access this is the difference between eighteen stops and one.
+    // One stop for the whole redraw, not one per row (MemoryBackend::begin_redraw).
     if (backend) {
         backend->begin_redraw();
     }
@@ -5146,8 +5116,7 @@ void MachineMonitor :: draw()
     // row to the full window width, so a popup that reaches that row would
     // lose it. The popup is the thing the user is looking at, so it wins.
     draw_popup_overlays();
-    // Every read this redraw needed has been made, so let the machine go
-    // before the screen is pushed out, which does not touch it.
+    // Every read is made, so let the machine go before pushing the screen out.
     if (backend) {
         backend->end_redraw();
     }

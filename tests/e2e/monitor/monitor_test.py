@@ -206,13 +206,9 @@ class MonitorSession:
             if not template:
                 self.empty_open_prompt(title)
             else:
-                # A template prompt opens holding the last argument it was
-                # given. When that is what is about to be typed, reading the
-                # field back afterwards cannot tell "every character arrived"
-                # from "none of them did, and this is the old value". Check
-                # [42] types G C000 every time, so its read-back proved
-                # nothing. Emptying the field first makes the read-back mean
-                # what it says.
+                # A template prompt opens holding the last argument. When that
+                # equals what is about to be typed, the read-back cannot tell
+                # "all characters arrived" from "none did", so empty it first.
                 try:
                     if prompt_field(self.capture(), title) == text:
                         self.empty_open_prompt(title)
@@ -1384,13 +1380,10 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
                     f"round {round_index + 1} of {rounds}, after {verified} "
                     f"arguments arrived character for character: {failure}")
             session.send_key("ARROW_LEFT")
-            # Wait for the prompt to be gone, not just for the monitor to be
-            # drawn under it. Every case here reopens a prompt with the same
-            # title, so a screen still showing the previous one satisfies the
-            # next wait_for_prompt immediately, and the characters are then
-            # typed against a prompt that is already closing. The field is read
-            # back holding the previous argument, which is what this check
-            # reported: "the field reads '1100' after '2200' was typed".
+            # Wait for the prompt to be gone, not just the monitor drawn under
+            # it. Every case reopens a prompt with the same title, so a stale one
+            # satisfies the next wait_for_prompt at once and the text goes into a
+            # closing prompt: "the field reads '1100' after '2200' was typed".
             wait_until(session, lambda screen: title not in screen.text())
             wait_for_monitor(session, f"leaving the {title} prompt")
             verified += 1
@@ -1970,9 +1963,8 @@ ASM_ANCHOR_PROGRAM = bytes((
 # How far to walk away from the baseline and back.
 ASM_ANCHOR_STEPS = 6
 
-# How long check [42] waits for the C64U's video stream to yield frames it can
-# judge. The capture used to take a fixed 0.60s, which is ample when the stream
-# is already flowing and reports "no complete frame" when it is not yet.
+# How long check [42] waits for judgeable frames from the C64U video stream; a
+# fixed 0.60s window reports "no complete frame" before the stream is flowing.
 VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
 
 
@@ -2320,12 +2312,8 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             capture.clear()
             launched = time.monotonic()
             # Collect until there is something to judge rather than for a fixed
-            # window. A stream that has not started sending yet, or a device
-            # rendering more slowly than usual, yields nothing in 0.60s and the
-            # check then reports "no frame" for a reason that has nothing to do
-            # with what it is testing. Two frames is what assert_frames_differ
-            # below needs; the deadline is generous because it is only reached
-            # when the capture has genuinely failed.
+            # 0.60s window a slow-starting stream misses, which reports "no
+            # frame" for an unrelated reason. assert_frames_differ needs two.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
@@ -3631,9 +3619,8 @@ JIFFY_POLL_INTERVAL = 0.1
 def jiffy_clock_advances(host: str) -> bool:
     """Whether the KERNAL jiffy clock at $00A2 is still counting.
 
-    The KERNAL raster interrupt increments it about 60 times a second on a
-    running machine and not at all on a stopped one, so it reports whether the
-    C64 is executing rather than what any setting says it should be doing.
+    The KERNAL raster interrupt increments it about 60 times a second while the
+    machine runs and not at all while it is stopped, so this measures the C64.
     """
     first = read_rest_memory(host, 0x00A2, 1)[0]
     for _ in range(JIFFY_POLLS):
@@ -3646,10 +3633,8 @@ def jiffy_clock_advances(host: str) -> bool:
 def wait_for_running_machine(host: str, timeout: float = 10.0) -> bool:
     """Wait for the jiffy clock to start counting after a machine reset.
 
-    `reset_rest_machine` returns as soon as the device accepts the reset, and
-    the KERNAL takes a moment after that to reach the interrupt that drives the
-    clock. Sampling once straight after the reset therefore reads a machine
-    that is running but has not started counting yet.
+    `reset_rest_machine` returns as soon as the device accepts the reset, but
+    the KERNAL takes a moment to reach the interrupt that drives the clock.
     """
     deadline = time.monotonic() + timeout
     while True:
@@ -3673,23 +3658,14 @@ def ui_freezes_machine(device_host: str, mode: str,
                        machine_was_running: bool) -> bool:
     """Whether this user interface stops the C64 while the monitor is up.
 
-    Measured on the machine rather than inferred from a setting. Owning the
-    `Interface Type` setting only says the device *can* draw its UI over a
-    running machine; whether it actually does also depends on the hardware it
-    finds. An Ultimate 64 draws the overlay only while a display asserts HDMI
-    hot-plug detect (software/application/ultimate/ultimate.cc), and falls back
-    to the freezer without one, so a device set to `Overlay on HDMI` with no
-    display attached holds the machine while the setting says it does not.
-    Every check that needs a running machine, or a second view of memory, then
-    runs against a stopped one.
-
-    The jiffy clock is read through the device's own DMA. That works whether or
-    not the device is holding the machine, while a cartridge's companion
-    computer reads open bus for as long as the cartridge has it.
-
-    `machine_was_running` is the control sample taken before the UI came up. A
-    machine whose KERNAL interrupt was not counting to begin with cannot answer
-    the question, so the old inference is used and the reason is reported.
+    Measured, not inferred: owning `Interface Type` only says the device *can*
+    draw over a running machine. An Ultimate 64 draws the overlay only while a
+    display asserts HDMI hot-plug detect (ultimate.cc), so with no display it
+    freezes while the setting says it does not. The jiffy clock is read through
+    the device's own DMA, so it works whether or not the machine is held, while
+    a cartridge's companion computer reads open bus. Without the
+    `machine_was_running` control sample this cannot be measured, so the
+    setting is used instead.
     """
     if mode == MODE_FREEZE:
         return True
@@ -4767,8 +4743,7 @@ def main() -> int:
     # the independent oracle.
     reset_rest_machine(control, args.password)
 
-    # The control sample for the freeze measurement below, taken while no user
-    # interface is up and the machine is therefore running.
+    # Control sample for the freeze measurement below, with no user interface up.
     machine_was_running = wait_for_running_machine(device_host)
 
     session = None

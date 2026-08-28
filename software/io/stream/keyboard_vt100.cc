@@ -60,13 +60,9 @@ int Keyboard_VT100 :: getch()
 	case e_esc_escape:
 		charin = stream->get_char();
 		if (charin == -1) {
-			// Nothing followed the ESC. On a stream that waits, that means the
-			// ESC was the key itself rather than the start of a sequence: a
-			// terminal writes a whole sequence in one go, so a real one never
-			// reaches here between its own bytes. On a polled stream, such as
-			// the UART consoles the flasher and updater applications run on,
-			// -1 is what every idle poll returns and says nothing, so those
-			// keep waiting as they always have.
+			// Nothing followed the ESC. On a stream that waits the ESC was
+			// the key itself: a terminal writes a sequence in one go. A polled
+			// stream returns -1 constantly, so it cannot tell and keeps waiting.
 			if (stream->get_char_waits()) {
 				escape_state = e_esc_idle;
 				ret = '\e';
@@ -88,10 +84,8 @@ int Keyboard_VT100 :: getch()
 		} else {
 			if (charin != '\e') {
 				escape_state = e_esc_idle;
-				// Hand it back rather than drop it. This is a keystroke a
-				// person pressed, and swallowing it is how one key in a
-				// session goes missing: ESC followed by anything used to
-				// deliver the ESC and lose whatever came after it.
+				// Hand the byte back rather than swallow it; it is a
+				// keystroke somebody pressed.
 				return_unused(charin);
 			}
 			ret = '\e';
@@ -142,10 +136,8 @@ void Keyboard_VT100 :: push_head(int c)
     pending_char = c;
 }
 
-// Give back a byte getch() read but could not use, without overwriting one the
-// user interface injected. There is only one slot, and a key somebody pushed on
-// purpose (tree_browser's send_keystroke, form.cc, assembly_search.cc) outranks
-// the tail of an escape sequence nobody recognised.
+// Give back a byte getch() could not use, without overwriting the single slot:
+// a key the user interface pushed on purpose outranks an unrecognised tail.
 void Keyboard_VT100 :: return_unused(int c)
 {
     if (c > 0 && !pending_char)

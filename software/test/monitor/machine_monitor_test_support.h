@@ -23,17 +23,14 @@ struct FakeMemoryBackend : public MemoryBackend
     uint8_t memory[65536];
     int session_begin_count;
     int session_end_count;
-    // How the redraw bracket was used: how many times it opened and closed,
-    // how deep it is right now, and whether every block read a redraw made
-    // happened while it was open. A backend that stops the machine per access
-    // depends on that being true for the stop to be taken once.
+    // How the redraw bracket was used: opens, closes, current depth, and
+    // whether every block read a redraw made happened while it was open.
     int redraw_begin_count;
     int redraw_end_count;
     int redraw_depth;
     int block_reads_inside_redraw;
     int block_reads_outside_redraw;
-    // Single-byte reads, counted so a test can tell a range command that walks
-    // memory a byte at a time from one that fills a block and walks the copy.
+    // Counted so a test can tell byte-at-a-time reads from block reads.
     int single_read_count;
     int block_read_count;
 

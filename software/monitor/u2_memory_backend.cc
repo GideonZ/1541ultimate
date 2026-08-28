@@ -98,8 +98,7 @@ void U2MemoryBackend :: begin_redraw(void)
 
 void U2MemoryBackend :: end_redraw(void)
 {
-    // An end without a begin releases nothing, rather than resuming a machine
-    // this never stopped.
+    // An end without a begin releases nothing; it never stopped the machine.
     if (redraw_depth == 0 || --redraw_depth > 0) {
         return;
     }

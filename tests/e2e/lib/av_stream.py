@@ -72,10 +72,8 @@ class AvStreamCapture:
         self.arming = streams.Arming(self.device, host)
         self.video_packets: List[Packet] = []
         self.audio_packets: List[Packet] = []
-        # Packets that arrived on the group and were not this device's. An
-        # empty capture means something different depending on this: none at
-        # all is a stream that is not arriving, and some is a stream arriving
-        # from an address this does not count as the device's.
+        # Packets on the group that were not this device's: an empty capture
+        # with none of these is no stream at all, with some a wrong address.
         self.foreign_packets = 0
         self.started = False
 

@@ -28,10 +28,8 @@ public:
     virtual int write(const char *buffer, int length) { return 0; }
     virtual int get_char(void) { return -1; }
 
-    // Whether -1 from get_char() means "I waited and nothing came" rather than
-    // "nothing is buffered at this instant". Only a stream that waits can be
-    // used to decide that an ESC was the whole keystroke; a polled one returns
-    // -1 constantly, including between the bytes of a real escape sequence.
+    // Whether -1 from get_char() means "waited and nothing came" rather than
+    // "nothing buffered now". Only a waiting stream can tell a lone ESC apart.
     virtual bool get_char_waits(void) { return false; }
     virtual bool is_alive(void) { return true; }
     virtual void charout(int c) { printf("[SBco%02x]", c); }

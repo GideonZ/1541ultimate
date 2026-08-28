@@ -9548,18 +9548,11 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
 
 static int test_ui_range_commands_read_in_blocks(void)
 {
-    // Compare and Hunt are reached from the C and H keys through their
-    // _collect entry points, not through the _memory ones. Both walk memory a
-    // byte at a time, and on a backend that stops the host machine per access
-    // each of those bytes is a stop: an Ultimate II+L pays about 100ms for one,
-    // so a 256-byte Compare reading both sides a byte at a time is 512 stops
-    // and does not finish inside any budget a user or a suite would allow.
-    //
-    // Measured on an Ultimate II+L over Telnet while only the _memory variants
-    // were batched: 58.58s for a 256-byte Compare, which the E2E suite gives
-    // five seconds. The host tests passed throughout, because they called the
-    // batched variant the user interface does not use. This holds the entry
-    // points the user interface actually calls.
+    // The C and H keys reach Compare and Hunt through the _collect entry
+    // points, not the _memory ones. A 256-byte Compare walking both sides is
+    // 512 single-byte reads, each a stop of about 100ms on an Ultimate II+L:
+    // measured at 58.58s against a 5s budget while only the _memory variants
+    // were batched, with the host tests green throughout.
     FakeMemoryBackend backend;
     uint16_t addrs[8];
     const uint8_t needle[2] = { 0xAB, 0xCD };
@@ -9606,13 +9599,10 @@ static int test_ui_range_commands_read_in_blocks(void)
 
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
-    // A backend that stops the host machine per access has to be told when a
-    // redraw starts and ends, or it pays that stop once per displayed row. On
-    // an Ultimate II+L the stop costs about 100ms and the view is 18 rows, so
-    // the difference is a screen that takes 1.8s to draw against one that
-    // takes 0.15s. What a host test can hold is not the timing but the shape:
-    // one balanced bracket per redraw, with every block read that redraw makes
-    // inside it, and many rows read per bracket rather than one bracket each.
+    // Without the bracket, a backend that stops per access pays one stop per
+    // displayed row: about 100ms each on an Ultimate II+L, so 1.8s for an
+    // 18-row view against 0.15s. A host test can hold only the shape: one
+    // balanced bracket per redraw, every block read of that redraw inside it.
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
@@ -9644,9 +9634,8 @@ static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
                backend.block_reads_outside_redraw);
         return 1;
     }
-    // The point of the bracket: many row reads share one of them. One bracket
-    // per row would leave this at one read each, which is the behaviour this
-    // exists to keep from coming back.
+    // The point of the bracket: many row reads share one. One bracket per row
+    // would leave this at one read each.
     if (expect(backend.block_reads_inside_redraw >= backend.redraw_begin_count * 4,
                "Each redraw bracket covered fewer than four row reads, so the "
                "reads are not being batched under one bracket.")) {
@@ -9654,8 +9643,7 @@ static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
                backend.block_reads_inside_redraw, backend.redraw_begin_count);
         return 1;
     }
-    // Close the monitor, so this leaves no more state behind than any other
-    // test here does.
+    // Close the monitor, leaving no more state behind than the tests above.
     monitor.poll(0);
     return 0;
 }
