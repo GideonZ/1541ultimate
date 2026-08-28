@@ -56,7 +56,7 @@ import argparse
 import os
 import sys
 import time
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
@@ -67,7 +67,7 @@ from api import UltimateApi                                        # noqa: E402
 from assembler import assemble                                     # noqa: E402
 from report import (Failure, check, check_ok, check_skip,          # noqa: E402
                     check_start, detail, format_exception, section,
-                    suite_fail, suite_ok)
+                    suite_fail, suite_ok, suite_skip)
 
 SUITE = "reu_turbo_test"
 
@@ -257,8 +257,13 @@ def report(result: Result, speed: str) -> None:
            f"{speed.strip()} MHz in {result.seconds:.2f}s")
 
 
-def run(args) -> bool:
-    """Returns True when the suite has already reported itself and should stop."""
+def run(args) -> Optional[str]:
+    """Run the suite, or answer why this machine could not run it.
+
+    A product without an REU or a CPU speed setting is a skip, not a pass: the
+    runner cannot tell the two apart from an exit code, so the suite's own
+    closing line has to.
+    """
     api = UltimateApi(args.host, args.password or None, args.timeout)
     info = api.info()
 
@@ -269,9 +274,10 @@ def run(args) -> bool:
                 and serves(api, U64_STORE, SPEED_ITEM))
     check_start("the machine has an REU and a CPU speed setting")
     if not equipped:
-        check_skip(f"{info.product} does not serve both {REU_STORE}/{REU_ITEM} "
-                   f"and {U64_STORE}/{SPEED_ITEM}")
-        return True
+        reason = (f"{info.product} does not serve both {REU_STORE}/{REU_ITEM} "
+                  f"and {U64_STORE}/{SPEED_ITEM}")
+        check_skip(reason)
+        return reason
     check_ok(f"{info.product}, firmware {info.firmware_version}, "
              f"FPGA {info.fpga_version}, core "
              f"{info.extra.get('core_version', '?')}")
@@ -326,7 +332,7 @@ def run(args) -> bool:
                     f"the run at {SLOWEST_SPEED.strip()} MHz, so the machine "
                     f"did not change speed and the check above passed at "
                     f"1 MHz rather than in turbo")
-        return False
+        return None
     finally:
         restore_settings(api, previous)
         try:
@@ -344,8 +350,9 @@ def main() -> int:
     parser.add_argument("-t", "--timeout", type=float, default=30.0)
     args = parser.parse_args()
     try:
-        if run(args):
-            suite_ok(SUITE)
+        skipped = run(args)
+        if skipped:
+            suite_skip(SUITE, skipped)
             return 0
     except Failure as exc:
         suite_fail(SUITE, str(exc))

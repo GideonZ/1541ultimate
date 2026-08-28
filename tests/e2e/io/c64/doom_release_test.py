@@ -57,7 +57,7 @@ from rest import retrying_urlopen                                  # noqa: E402
 import streams                                                     # noqa: E402
 import targets                                                     # noqa: E402
 from report import (Failure, check, check_ok, check_skip, check_start,   # noqa: E402
-                    detail, format_exception, suite_fail, suite_ok)
+                    detail, format_exception, suite_fail, suite_ok, suite_skip)
 
 SUITE = "doom_release_test"
 
@@ -303,8 +303,12 @@ def measure_fps(api: UltimateApi, seconds: float) -> float:
     return (read_framecnt(api) - start_count) / (time.monotonic() - start)
 
 
-def run(args) -> bool:
-    """Returns True when the suite has already reported itself and should stop."""
+def run(args):
+    """Run the suite, or answer why this machine could not run it.
+
+    A product without an REU or turbo control is a skip, not a pass: the runner
+    cannot tell the two apart from an exit code, so the closing line has to.
+    """
     api = UltimateApi(args.host, args.password or None, args.timeout)
 
     info = api.info()
@@ -316,10 +320,10 @@ def run(args) -> bool:
                 and serves(api, TURBO_STORE, TURBO_ITEM))
     check_start("the machine has the REU and turbo this release needs")
     if not equipped:
-        check_skip(f"{info.product} does not serve both a REU Size and a "
-                   f"{TURBO_ITEM} setting")
-        suite_ok(SUITE)
-        return True
+        reason = (f"{info.product} does not serve both a REU Size and a "
+                  f"{TURBO_ITEM} setting")
+        check_skip(reason)
+        return reason
     check_ok(f"{info.product}, firmware {info.firmware_version}, "
              f"FPGA {info.fpga_version}")
 
@@ -388,7 +392,7 @@ def run(args) -> bool:
                     f"frames (ratio {ratio:.2f}): the picture changes a different "
                     f"set of pixels nearly every frame, which is REU data "
                     f"arriving corrupt, not the game's own output")
-        return False
+        return None
     finally:
         restore_settings(api, previous)
         try:
@@ -415,7 +419,9 @@ def main() -> int:
                              "check compares; not a per-request timeout")
     args = parser.parse_args()
     try:
-        if run(args):
+        skipped = run(args)
+        if skipped:
+            suite_skip(SUITE, skipped)
             return 0
         suite_ok(SUITE)
         return 0
