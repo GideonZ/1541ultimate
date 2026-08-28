@@ -1454,10 +1454,16 @@ int U64Config :: setPowerOnMode(ConfigItem *it)
         return 0;
     }
     // The module holds what it holds. An item left at a value the module did
-    // not take tells the menu, the REST API and the flash that the machine
-    // will come up when it will not, so it is put back to what is really
-    // stored. setValueQuietly() rather than setValue(), which would call this
-    // hook again.
+    // not take tells the menu and the REST API that the machine will come up
+    // when it will not, so it is put back to what is really stored.
+    // setValueQuietly() rather than setValue(), which would call this hook
+    // again, and which would also make the item look like a fresh user change.
+    //
+    // What is in flash is deliberately left alone. A user's choice that the
+    // module refused stays in flash, so the next boot pushes it down again and
+    // a module that was merely busy takes it then. The item and the flash
+    // therefore disagree until that happens, which is the point: the item says
+    // what the machine will do now, the flash says what was asked for.
     uint8_t mode;
     uint8_t last_state;
     if (readPowerOnMode(mode, last_state)) {
@@ -1550,7 +1556,8 @@ int U64Config :: setWakeOnWifi(ConfigItem *it)
         return 0;
     }
     // As above: the item goes back to what the module really holds, so that
-    // "Enabled" in the menu and over REST means a machine that will wake.
+    // "Enabled" in the menu and over REST means a machine that will wake,
+    // while flash keeps what was asked for and the next boot tries again.
     uint8_t enabled;
     if (readWakeOnWifi(enabled)) {
         it->setValueQuietly((int)enabled);
