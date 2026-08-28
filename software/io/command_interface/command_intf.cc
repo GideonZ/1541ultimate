@@ -125,9 +125,14 @@ void CommandInterface :: run_task(void)
 #endif
 		// Checked on every event rather than only on the abort the reset
 		// interrupt posts, so a reset whose post did not fit the queue is
-		// still acted on by the next event that does.
-		if (c64_reset_pending) {
-			c64_reset_pending = false;
+		// still acted on by the next event that does. Read and cleared as one
+		// step, because a reset landing between the two would otherwise be
+		// cleared without ever being told to the targets.
+		portENTER_CRITICAL();
+		bool reset_seen = c64_reset_pending;
+		c64_reset_pending = false;
+		portEXIT_CRITICAL();
+		if (reset_seen) {
 			for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
 				command_targets[i]->c64_reset();
 		}
