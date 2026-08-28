@@ -198,9 +198,10 @@ void wake_on_wifi_update(int machine_on)
         return;
     }
 
-    if (!machine_on && default_input && (power_get_wake_on_wifi() == WAKE_ON_WIFI_ENABLED)) {
-        // default_input is what the watcher hands the frame on to, so there is
-        // no watching to do before wifi_init() has recorded it.
+    // default_input is what the watcher hands the frame on to, so there is no
+    // watching to do before wifi_init() has recorded it. The decision itself
+    // lives in power_state.c, where a host build can reach it.
+    if (power_should_watch_for_wake(machine_on, default_input != NULL)) {
         wake_armed = true;
         lw->input = wake_watch_recv;
         ESP_LOGI(TAG, "Wake on Wi-Fi armed.");

@@ -154,6 +154,35 @@ int main(void)
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED);
     check(nvs_stub_commits() > 0, "a real change does touch the flash");
 
+    printf("Arming the watcher for a magic packet\n");
+    nvs_stub_erase_all();
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check(power_should_watch_for_wake(0, true), "a machine that is off is watched");
+    check(!power_should_watch_for_wake(1, true), "a machine that is on is not");
+    check(!power_should_watch_for_wake(0, false),
+          "an off machine is not watched before the frame path is known");
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED);
+    check(!power_should_watch_for_wake(0, true), "the setting decides, not the state");
+    // The setting is read on every call rather than remembered, so a change
+    // made in the menu takes effect at the next transition without the module
+    // being told a second time.
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check(power_should_watch_for_wake(0, true), "a setting changed since the last call is seen");
+
+    printf("A machine that cold starts into the off state\n");
+    // Mode OFF is the default, so this is what a machine does after a real
+    // power loss: it comes up off, and it has to be watched from there on
+    // exactly like a machine switched off by hand.
+    given(POWERON_MODE_OFF, 1);
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check_eq(power_initial_state(0), 0, "comes up off");
+    check(power_should_watch_for_wake(power_initial_state(0), true),
+          "is watched from the state it came up in");
+    given(POWERON_MODE_ON, 0);
+    (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
+    check(!power_should_watch_for_wake(power_initial_state(0), true),
+          "a machine that cold starts on is not watched");
+
     printf("\n%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

@@ -86,6 +86,15 @@ int main(void)
     check(!wol_is_magic_packet(frame, len, (const uint8_t *)"\x00\x00\x00\x00\x00\x00"),
           "all zeroes never matches");
 
+    printf("A pattern at the edge of what is scanned\n");
+    // The last offset whose pattern still ends inside the window. One byte
+    // further is the case below, so the two together pin the boundary rather
+    // than only the side of it that must not match.
+    len = build(frame, sizeof(frame), WOL_SCAN_BYTES - WOL_PATTERN_LEN, mac);
+    check(wol_is_magic_packet(frame, len, mac), "still matches");
+    check(wol_is_magic_packet(frame, sizeof(frame), mac),
+          "still matches in a frame longer than the window");
+
     printf("A pattern beyond what is scanned\n");
     // Sized so that the pattern begins inside the frame but ends past the
     // scan window, which is where a wake tool would have to be malicious

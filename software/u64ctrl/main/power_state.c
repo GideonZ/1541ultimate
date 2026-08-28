@@ -109,6 +109,12 @@ esp_err_t power_set_wake_on_wifi(uint8_t enabled)
     return write_u8(NVS_KEY_WAKE, enabled);
 }
 
+bool power_should_watch_for_wake(int machine_on, bool have_input_path)
+{
+    return (!machine_on) && have_input_path &&
+           (power_get_wake_on_wifi() == WAKE_ON_WIFI_ENABLED);
+}
+
 uint8_t power_get_last_state(void)
 {
     return read_u8(NVS_KEY_LAST, 0) ? 1 : 0;

@@ -10,6 +10,7 @@
 #ifndef SOFTWARE_U64CTRL_MAIN_POWER_STATE_H_
 #define SOFTWARE_U64CTRL_MAIN_POWER_STATE_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -42,6 +43,15 @@ uint8_t power_get_wake_on_wifi(void);
 
 /* Stores it; ESP_ERR_INVALID_ARG for anything but the two values above. */
 esp_err_t power_set_wake_on_wifi(uint8_t enabled);
+
+/* Whether the frame path should be watched for a magic packet right now.
+
+   Kept here rather than in wifi_modem.c, where it is acted on, because it is
+   the whole decision and it needs no lwIP: `machine_on` is the state the
+   machine has just moved into, and `have_input_path` says whether the frame
+   path the watcher chains to is known yet, which it is not before wifi_init()
+   has recorded it. */
+bool power_should_watch_for_wake(int machine_on, bool have_input_path);
 
 /* Whether the machine was on the last time the power state was stored. */
 uint8_t power_get_last_state(void);
