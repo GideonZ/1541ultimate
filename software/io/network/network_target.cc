@@ -29,11 +29,13 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    socket_count = 0;
     discard_read_reply();
 }
 
 NetworkTarget::~NetworkTarget()
 {
+    close_all_sockets();
     delete[] data_message.message;
     delete[] status_message.message;
 }
@@ -207,6 +209,14 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
+	// Freed before the new socket is taken, so the client never sees the
+	// pool run out before its own limit does.
+	if (socket_count == NET_MAX_SOCKETS) {
+		int oldest = sockets[0];
+		untrack_socket(oldest);
+		lwip_close(oldest);
+	}
+
 	int socket = socket(AF_INET, type, 0);
 	if (socket < 0) {
 		*status = &c_status_no_socket;
@@ -228,6 +238,7 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
         return;
 	}
 
+	track_socket(socket);
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
@@ -283,6 +294,7 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 
     // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
 	if (ret == 0) {
+		untrack_socket(socketnr);
 		lwip_close(socketnr);
 		*status = &c_status_socket_closed;
 		return;
@@ -366,7 +378,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 void NetworkTarget :: close_socket(Message *command, Message **reply, Message **status)
 {
     uint8_t socketnr = command->message[2];
-    int result = lwip_close(socketnr);
+    int result = -1;
+    if (owns_socket(socketnr)) {
+        untrack_socket(socketnr);
+        result = lwip_close(socketnr);
+    } else {
+        errno = EBADF;
+    }
     *reply = &c_message_empty;
     if (result < 0) {
         *status = &status_message;
@@ -375,6 +393,47 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     } else {
         *status = &c_status_ok;
     }
+}
+
+void NetworkTarget :: track_socket(int socketnr)
+{
+    sockets[socket_count++] = socketnr;
+}
+
+void NetworkTarget :: untrack_socket(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            socket_count--;
+            for (; i < socket_count; i++) {
+                sockets[i] = sockets[i + 1];
+            }
+            return;
+        }
+    }
+}
+
+bool NetworkTarget :: owns_socket(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void NetworkTarget :: close_all_sockets(void)
+{
+    for (int i = 0; i < socket_count; i++) {
+        lwip_close(sockets[i]);
+    }
+    socket_count = 0;
+}
+
+void NetworkTarget :: c64_reset(void)
+{
+    close_all_sockets();
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)

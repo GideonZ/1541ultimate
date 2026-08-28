@@ -18,6 +18,10 @@ CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
+// Set by the reset interrupt for the server task, which tells the targets on
+// its own thread rather than the reset task's, so a target never hears of the
+// reset while it is in the middle of a command.
+static volatile bool c64_reset_pending;
 
 #define CMD_IF_DEBUG 0
 
@@ -27,6 +31,7 @@ void ResetInterruptHandlerCmdIf()
 {
     BaseType_t woken;
     uint8_t new_flags = CMD_ABORT_DATA;
+    c64_reset_pending = true;
     xSemaphoreGiveFromISR(resetSemaphore, &woken);
     xQueueSendFromISR(cmd_if.queue, &new_flags, &woken);
 }
@@ -126,6 +131,11 @@ void CommandInterface :: run_task(void)
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
+			if (c64_reset_pending) {
+				c64_reset_pending = false;
+				for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
+					command_targets[i]->c64_reset();
+			}
 		}
 		if(status_byte & CMD_DATA_ACCEPTED) {
 			if (target != CMD_TARGET_NONE) {

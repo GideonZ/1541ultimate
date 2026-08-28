@@ -24,6 +24,13 @@
 
 #define NET_CMD_BUFSIZE 2048
 
+// How many sockets a client can hold open at once. A socket a client opens
+// and never closes otherwise stays open until the device is power cycled, and
+// lwip has MEMP_NUM_UDP_PCB (8) of them for everything on the device, so a
+// client that loses its handles takes the whole network target down. Opening
+// one more than this closes the oldest. See GideonZ/1541ultimate#808.
+#define NET_MAX_SOCKETS 4
+
 // The largest payload READ_SOCKET accepts, which is the largest UDP payload
 // that can reach the device: 1500 bytes of Ethernet MTU less 20 bytes of IPv4
 // header and 8 bytes of UDP header. IP_REASSEMBLY is 0 in
@@ -63,6 +70,17 @@ class NetworkTarget : public CommandTarget {
     int read_offset;
     Message *read_status;
 
+    // The sockets this target opened for its client, oldest first. It closes
+    // only these: a handle the client has lost track of may by now be a socket
+    // the firmware opened for itself.
+    int sockets[NET_MAX_SOCKETS];
+    int socket_count;
+
+    void track_socket(int socketnr);
+    void untrack_socket(int socketnr);
+    bool owns_socket(int socketnr);
+    void close_all_sockets(void);
+
     void open_socket(Message *command, Message **reply, Message **status, int);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
@@ -76,6 +94,7 @@ public:
     void parse_command(Message *command, Message **reply, Message **status);
     void get_more_data(Message **reply, Message **status);
     void abort(int a);
+    void c64_reset(void);
 };
 
 #endif /* IO_NETWORK_NETWORK_TARGET_H_ */
