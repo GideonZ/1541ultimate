@@ -9546,6 +9546,62 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
     return 0;
 }
 
+static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
+{
+    // A backend that stops the host machine per access has to be told when a
+    // redraw starts and ends, or it pays that stop once per displayed row. On
+    // an Ultimate II+L the stop costs about 100ms and the view is 18 rows, so
+    // the difference is a screen that takes 1.8s to draw against one that
+    // takes 0.15s. What a host test can hold is not the timing but the shape:
+    // one balanced bracket per redraw, with every block read that redraw makes
+    // inside it, and many rows read per bracket rather than one bracket each.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(backend.redraw_begin_count >= 1,
+               "Drawing the monitor opened no redraw bracket.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "The redraw bracket was not balanced, so a backend that stops "
+               "the machine would leave it stopped.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "The redraw bracket was left open.")) return 1;
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "A redraw read memory outside its bracket, which is a stop the "
+               "backend then pays on its own.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    // The point of the bracket: many row reads share one of them. One bracket
+    // per row would leave this at one read each, which is the behaviour this
+    // exists to keep from coming back.
+    if (expect(backend.block_reads_inside_redraw >= backend.redraw_begin_count * 4,
+               "Each redraw bracket covered fewer than four row reads, so the "
+               "reads are not being batched under one bracket.")) {
+        printf("  %d block reads across %d brackets\n",
+               backend.block_reads_inside_redraw, backend.redraw_begin_count);
+        return 1;
+    }
+    // Close the monitor, so this leaves no more state behind than any other
+    // test here does.
+    monitor.poll(0);
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -9661,6 +9717,7 @@ int main()
     if (test_assembly_data_range_is_byte_addressable()) return 1;
     if (test_assembly_data_delete_clears_bytes()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
+    if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;
