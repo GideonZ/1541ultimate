@@ -3976,6 +3976,10 @@ uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
+    // Same reason as disasm_rewind_rows below: this walks the view a row at a
+    // time and each row is a separate read.
+    MonitorReadBurst burst(backend);
+
     for (int row = 0; (addr != address) && (row < max_scan); row++) {
         uint16_t next = disasm_next_addr(addr);
         if (next == address) {
@@ -4034,6 +4038,12 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
     if (rows <= 0) {
         return address;
     }
+    // Every lead-in below disassembles forward over tens of instructions, and
+    // each one is a read the backend serves separately. Unheld, a backend that
+    // stops the host machine per access stops it once per instruction probed:
+    // measured on an Ultimate II+L, one press of UP in the Assembly view took
+    // 3.895s against 0.033s on an Ultimate 64.
+    MonitorReadBurst burst(backend);
     for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
         uint16_t start = (uint16_t)(address - lead_in);
         uint16_t addr = start;
