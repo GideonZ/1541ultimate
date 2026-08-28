@@ -1389,6 +1389,11 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
 // because the machine is held stopped for the length of one call.
 static const uint32_t TRANSFER_BLOCK = 4096;
 
+// How much of a range one read_block call carries for the walk-a-byte-at-a-time
+// commands. Smaller than TRANSFER_BLOCK because it sits on the monitor's stack,
+// and a power of two so a block never crosses the 64K wrap.
+static const uint32_t MONITOR_READ_BLOCK = 256;
+
 // Read a range into a buffer. Addresses wrap at $FFFF, which is what lets
 // $0000-$FFFF name the whole 64K.
 static void transfer_read_range(MemoryBackend *backend, uint16_t start, uint32_t length,
@@ -1617,6 +1622,40 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     return rewritten;
 }
 
+// Serves single-byte reads out of a block the backend filled in one call.
+//
+// The range commands below walk memory a byte at a time, which reads well and
+// is how Compare and Hunt are specified. On a backend that stops the host
+// machine per access, though, a byte at a time is a stop at a time: an
+// Ultimate II+L pays about 100ms for each one, because C64::stop's safe R/Wn
+// sequence never arrives and it falls through to the forced stop. Reading a
+// block at a time leaves the walk as it is and makes the stops proportional to
+// the range rather than to the bytes in it. Blocks are aligned to their own
+// size, so one never crosses the 64K wrap.
+class MonitorBlockReader
+{
+    MemoryBackend *backend;
+    uint8_t buffer[MONITOR_READ_BLOCK];
+    uint32_t base;
+    bool filled;
+
+public:
+    explicit MonitorBlockReader(MemoryBackend *backend)
+        : backend(backend), base(0), filled(false) { }
+
+    uint8_t read(uint16_t address)
+    {
+        uint32_t block = (uint32_t)address & ~(uint32_t)(MONITOR_READ_BLOCK - 1);
+
+        if (!filled || block != base) {
+            backend->read_block((uint16_t)block, buffer, MONITOR_READ_BLOCK);
+            base = block;
+            filled = true;
+        }
+        return buffer[address - base];
+    }
+};
+
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len)
 {
     // Both ends, as Transfer, Fill, Hunt and Save all do.
@@ -1625,9 +1664,12 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
     int count = 0;
     int pos = 0;
 
+    MonitorBlockReader left(backend);
+    MonitorBlockReader right(backend);
+
     out[0] = 0;
     for (index = 0; index < length; index++) {
-        if (backend->read((uint16_t)(start + index)) != backend->read((uint16_t)(dest + index))) {
+        if (left.read((uint16_t)(start + index)) != right.read((uint16_t)(dest + index))) {
             pos = append_line_address(out, out_len, pos, (uint16_t)(start + index));
             count++;
         }
@@ -1670,11 +1712,13 @@ int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, c
     if ((uint32_t)needle_len > limit) {
         return 0;
     }
+    MonitorBlockReader reader(backend);
+
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
         int i;
         for (i = 0; i < needle_len; i++) {
-            if (backend->read((uint16_t)(start + index + i)) != needle[i]) {
+            if (reader.read((uint16_t)(start + index + i)) != needle[i]) {
                 matched = 0;
                 break;
             }
@@ -1702,11 +1746,13 @@ int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, co
         append_text(out, out_len, pos, "No matches\n");
         return 0;
     }
+    MonitorBlockReader reader(backend);
+
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
         int i;
         for (i = 0; i < needle_len; i++) {
-            if (backend->read((uint16_t)(start + index + i)) != needle[i]) {
+            if (reader.read((uint16_t)(start + index + i)) != needle[i]) {
                 matched = 0;
                 break;
             }
