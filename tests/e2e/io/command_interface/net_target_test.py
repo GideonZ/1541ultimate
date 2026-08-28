@@ -138,6 +138,9 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 # that is already queued and does not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
+# How often a lost probe datagram is sent again before the socket is judged
+# unable to reach this host.
+PROBE_ATTEMPTS = 3
 
 # GideonZ/1541ultimate#808: sockets a client opens and never closes. lwip has
 # MEMP_NUM_UDP_PCB = 8 protocol control blocks in total (lwipopts.h), and the
@@ -382,12 +385,24 @@ class Peer:
         The device connects its UDP socket, so it only accepts datagrams from
         the address it connected to, and a reply has to come from this bound
         port back to whatever source port the device chose.
+
+        The probe is a datagram, so it can be lost; seen once in a dozen runs
+        on a wired LAN, with WRITE_SOCKET reporting the bytes as sent. A lost
+        probe is sent again rather than counted against the firmware.
         """
-        net.write(handle, b"PROBE")
-        self.udp.settimeout(PEER_TIMEOUT_SECONDS)
-        _, address = self.udp.recvfrom(2048)
-        self.udp_peer = address
-        return address
+        for attempt in range(PROBE_ATTEMPTS):
+            net.write(handle, b"PROBE")
+            self.udp.settimeout(PEER_TIMEOUT_SECONDS)
+            try:
+                _, address = self.udp.recvfrom(2048)
+            except socket.timeout:
+                detail(f"probe datagram {attempt + 1} of {PROBE_ATTEMPTS} did not arrive "
+                       f"within {PEER_TIMEOUT_SECONDS:.0f}s")
+                continue
+            self.udp_peer = address
+            return address
+        raise Failure(f"no probe datagram arrived from handle {handle} in "
+                      f"{PROBE_ATTEMPTS} attempts")
 
     def send_udp(self, payload: bytes) -> None:
         if self.udp_peer is None:
