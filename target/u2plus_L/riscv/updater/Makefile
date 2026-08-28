@@ -88,6 +88,7 @@ VPATH +=	$(PATH_SW)/../neorv32/sw/lib/include
 VPATH +=	$(PATH_SW)/../neorv32/sw/lib/source
 VPATH +=    $(PATH_SW)/application/update_u2pl
 VPATH +=    $(PATH_SW)/../html
+VPATH +=    $(PATH_SW)/../doc/api
 VPATH +=	$(PATH_SW)/wifi/raw_c3/main
 VPATH +=	$(PATH_SW)/wifi/raw_c3/build/bootloader
 VPATH +=	$(PATH_SW)/wifi/raw_c3/build/partition_table
@@ -103,7 +104,8 @@ SRCS_6502 =
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin bridge.bin
 
-SRCS_HTML = index.html
+SRCS_HTML = index.html api.html
+SRCS_YAML = rest_api_openapi_u2.yaml
 
 SRCS_IEC = 
 

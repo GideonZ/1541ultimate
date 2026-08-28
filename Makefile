@@ -1,7 +1,15 @@
 
 APP_SPACE = python3 tools/app_space.py
+OPENAPI = python3 tools/openapi/generate.py
 
-.PHONY: all app_space app_space_test observability_test host_tests
+# Host Python for `openapi_validate` only. It needs the validator in
+# tools/openapi/requirements.txt, which nothing else in the build does, so point
+# this at a virtual environment that has it rather than installing it globally:
+#
+#   make openapi_validate PYTHON=/path/to/venv/bin/python
+PYTHON ?= python3
+
+.PHONY: all app_space app_space_test observability_test host_tests openapi openapi_check openapi_test openapi_validate
 
 all: esp32 u2_rv u2plus u2pl u64 u64ii
 	@$(APP_SPACE) report
@@ -18,6 +26,33 @@ app_space_test:
 # `observability` suite.
 observability_test:
 	@python3 tests/lib/observability_test.py
+
+# The OpenAPI documents of the REST API, one per product family. `openapi_check`
+# is the gate: it rebuilds them in memory and fails when the committed copies
+# differ.
+openapi:
+	@$(OPENAPI) generate
+
+openapi_check:
+	@$(OPENAPI) check
+
+openapi_test:
+	@python3 -m unittest discover -s tools/openapi -p "test_*.py"
+
+# The committed documents against the OpenAPI 3.1 specification itself, by the
+# validator's own command line rather than through anything written here. Kept
+# out of `openapi_check` and out of the firmware targets because it needs host
+# packages the firmware build does not: it is its own CI step, so a package that
+# will not install is reported as that rather than as a stale document.
+openapi_validate:
+	@$(PYTHON) -c "import openapi_spec_validator" 2>/dev/null || { \
+	  echo "openapi_validate needs the validator in tools/openapi/requirements.txt:"; \
+	  echo "    python3 -m pip install --target /tmp/openapi-packages -r tools/openapi/requirements.txt"; \
+	  echo "    PYTHONPATH=/tmp/openapi-packages make openapi_validate"; \
+	  echo "or point PYTHON at an interpreter that already has it:"; \
+	  echo "    make openapi_validate PYTHON=/path/to/venv/bin/python"; \
+	  exit 2; }
+	@$(PYTHON) -m openapi_spec_validator --validation-errors all `$(OPENAPI) paths`
 
 # Unit tests that run on the build host rather than on the device. Kept out of
 # the firmware targets deliberately: those build with a cross compiler, and
@@ -89,7 +124,7 @@ fpga_depends::
 esp_depends::
 	@cd software && python3 esp_depends.py >esp_depends.txt
 
-u2_rv: app_space_test
+u2_rv: app_space_test openapi_check
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/u2/riscv/boot1
 	@$(MAKE) -C target/u2/riscv/boot2
@@ -101,7 +136,7 @@ u2_rv: app_space_test
 	@$(MAKE) -C target/u2/riscv/updater
 	@cp target/u2/riscv/updater/result/update.u2r ./update.u2r
 
-u2_rv_swonly: app_space_test
+u2_rv_swonly: app_space_test openapi_check
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2/riscv/ultimate
@@ -152,7 +187,7 @@ niosboot:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u2plus: app_space_test
+u2plus: app_space_test openapi_check
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -240,7 +275,7 @@ mb_clean:
 	@rm -rf `find target/u2/microblaze/mb* -name result`
 	@rm -rf `find target/u2/microblaze/mb* -name output`
 
-u2plus_swonly: app_space_test
+u2plus_swonly: app_space_test openapi_check
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -280,7 +315,7 @@ nios_bsps:
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 
-u64: app_space_test esp32_raw_u64
+u64: app_space_test openapi_check esp32_raw_u64
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -294,7 +329,7 @@ u64: app_space_test esp32_raw_u64
 	@$(MAKE) -C target/u64/nios2/updater
 	@cp target/u64/nios2/updater/result/update.app ./update.u64
 
-u64_no_esp:: app_space_test
+u64_no_esp:: app_space_test openapi_check
 	@touch software/nios_solo_bsp/Makefile
 	@touch software/nios_solo_bsp/public.mk
 	@touch software/nios_appl_bsp/Makefile
@@ -312,7 +347,7 @@ u64_clean:
 	@$(MAKE) -C target/u64/nios2/ultimate clean
 	@$(MAKE) -C target/u64/nios2/updater clean
 
-u64ii: app_space_test esp32_u64ctrl
+u64ii: app_space_test openapi_check esp32_u64ctrl
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
@@ -329,7 +364,7 @@ u64ii: app_space_test esp32_u64ctrl
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
-u64ii_no_esp:: app_space_test
+u64ii_no_esp:: app_space_test openapi_check
 	@mkdir -p u64ii
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
@@ -346,7 +381,7 @@ u64ii_no_esp:: app_space_test
 	@cp target/u64ii/riscv/update/result/update.app ./update.ue2
 	@cp target/u64ii/riscv/update/result/update.cfw ./update.cfw
 
-u2pl: app_space_test esp32_raw_c3
+u2pl: app_space_test openapi_check esp32_raw_c3
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
@@ -356,7 +391,7 @@ u2pl: app_space_test esp32_raw_c3
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
-u2pl_no_esp:: app_space_test
+u2pl_no_esp:: app_space_test openapi_check
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/rvlite/bootloader
@@ -366,7 +401,7 @@ u2pl_no_esp:: app_space_test
 	@$(MAKE) -C target/u2plus_L/riscv/updater
 	@cp target/u2plus_L/riscv/updater/result/update.app ./update.u2l
 
-u2pl_swonly: app_space_test
+u2pl_swonly: app_space_test openapi_check
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/libs/riscv/lwip
 	@$(MAKE) -C target/u2plus_L/riscv/ultimate

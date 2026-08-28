@@ -27,6 +27,8 @@ extern uint8_t _1581_bin_start;
 extern uint8_t _snds1541_bin_start;
 extern uint8_t _snds1571_bin_start;
 extern uint8_t _snds1581_bin_start;
+extern const char _rest_api_openapi_u2_yaml_start[];
+extern const char _rest_api_openapi_u2_yaml_end[1];
 extern const char _index_html_start[];
 extern const char _index_html_end[1];
 static void status_callback(void *user)
@@ -55,6 +57,7 @@ void do_update(void)
         write_flash_file("snds1571.bin", &_snds1571_bin_start, 0xC000);
         write_flash_file("snds1581.bin", &_snds1581_bin_start, 0xC000);
         write_html_file("index.html", _index_html_start, (int)_index_html_end - (int)_index_html_start);
+        write_api_files(_rest_api_openapi_u2_yaml_start, _rest_api_openapi_u2_yaml_end);
 
         flash_buffer(flash2, screen, FLASH_ID_BOOTFPGA, &_u2p_ecp5_impl1_bit_start, &_u2p_ecp5_impl1_bit_end, "", "Runtime FPGA");
         flash_buffer(flash2, screen, FLASH_ID_APPL,     &_ultimate_app_start,     &_ultimate_app_end,  APPL_VERSION, "Ultimate Application");
