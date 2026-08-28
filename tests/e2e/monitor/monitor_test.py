@@ -1949,6 +1949,11 @@ ASM_ANCHOR_PROGRAM = bytes((
 # How far to walk away from the baseline and back.
 ASM_ANCHOR_STEPS = 6
 
+# How long check [42] waits for the C64U's video stream to yield frames it can
+# judge. The capture used to take a fixed 0.60s, which is ample when the stream
+# is already flowing and reports "no complete frame" when it is not yet.
+VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
+
 
 def asm_row_for(snapshot: Snapshot, address: int) -> Optional[str]:
     """The disassembly row for `address`, or None when it is off screen.
@@ -2293,11 +2298,33 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            capture.capture(0.60)
-            frames = [frame for frame in video_frames(capture.video_packets)
-                      if frame.received_at >= launched]
+            # Collect until there is something to judge rather than for a fixed
+            # window. A stream that has not started sending yet, or a device
+            # rendering more slowly than usual, yields nothing in 0.60s and the
+            # check then reports "no frame" for a reason that has nothing to do
+            # with what it is testing. Two frames is what assert_frames_differ
+            # below needs; the deadline is generous because it is only reached
+            # when the capture has genuinely failed.
+            frames = []
+            video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
+            while time.monotonic() < video_deadline:
+                capture.capture(0.20)
+                frames = [frame for frame in video_frames(capture.video_packets)
+                          if frame.received_at >= launched]
+                if len(frames) >= 2:
+                    break
             if not frames:
-                raise Failure("G $C000 produced no complete C64U video frame")
+                raise Failure(
+                    f"G ${address:04X} produced no complete C64U video frame "
+                    f"within {VIDEO_CAPTURE_TIMEOUT_SECONDS:.0f}s: "
+                    f"{len(capture.video_packets)} packets were counted as this "
+                    f"device's and {capture.foreign_packets} as another's, with "
+                    f"{', '.join(sorted(capture.source_addresses)) or 'no address'} "
+                    f"expected. Packets kept but no frame completed means frames "
+                    f"are arriving incomplete; nothing kept and nothing foreign "
+                    f"means the stream is not arriving at all; nothing kept but "
+                    f"foreign packets counted means it is arriving from an "
+                    f"address this does not recognise as the device's.")
             visible = [frame for frame in frames if set(frame.pixels) != {0}]
             if not visible:
                 assert_not_black(frames[-1], "G $C000 video")

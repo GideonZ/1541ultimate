@@ -72,6 +72,11 @@ class AvStreamCapture:
         self.arming = streams.Arming(self.device, host)
         self.video_packets: List[Packet] = []
         self.audio_packets: List[Packet] = []
+        # Packets that arrived on the group and were not this device's. An
+        # empty capture means something different depending on this: none at
+        # all is a stream that is not arriving, and some is a stream arriving
+        # from an address this does not count as the device's.
+        self.foreign_packets = 0
         self.started = False
 
     def start(self) -> None:
@@ -100,6 +105,7 @@ class AvStreamCapture:
             for sock in ready:
                 data, sender = sock.recvfrom(2048)
                 if sender[0] not in self.source_addresses:
+                    self.foreign_packets += 1
                     continue
                 packet = Packet(now, data)
                 if sock is self.video_socket:
