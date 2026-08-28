@@ -1481,7 +1481,12 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     # e_esc_escape default returns as KEY_ESCAPE, dropping the second byte.
     # 'x' is such a byte and stays one: CBM_R above ends in $12 rather than
     # the letter 'r', so no letter is claimed by that case.
-    "ESC": b"\x1bx",
+    # A bare ESC, which is what a terminal sends. It used to carry a trailing
+    # 'x' because the firmware delivered an ESC only once another byte arrived
+    # and then swallowed that byte; the 'x' was the sacrifice. Keyboard_VT100
+    # now delivers a lone ESC on its own and hands back anything that follows
+    # one, so the sacrifice would arrive as a keystroke.
+    "ESC": b"\x1b",
     "ENTER": b"\r",
     # DEL and BACKSPACE are the same physical key (KEY_ALIASES maps both to
     # the matrix's single "inst_del" key on REST); the VT100 driver passes

@@ -59,8 +59,16 @@ int Keyboard_VT100 :: getch()
 		break;
 	case e_esc_escape:
 		charin = stream->get_char();
-		if (charin == -1)
+		if (charin == -1) {
+			// Nothing followed the ESC within the stream's read timeout, so
+			// the ESC was the key itself rather than the start of a sequence.
+			// SocketStream::get_char() recv()s on a socket whose SO_RCVTIMEO
+			// is 200ms, and a terminal writes a whole sequence in one go, so a
+			// real sequence never reaches here between its own bytes.
+			escape_state = e_esc_idle;
+			ret = '\e';
 			break;
+		}
 
 		if (charin == 'O') {
 			escape_state = e_esc_o;
@@ -74,8 +82,15 @@ int Keyboard_VT100 :: getch()
 			escape_state = e_esc_idle;
 			ret = KEY_CTRL_B;
 		} else {
-			if (charin != '\e')
+			if (charin != '\e') {
 				escape_state = e_esc_idle;
+				// Hand it back rather than drop it. This is a keystroke a
+				// person pressed, and swallowing it is how one key in a
+				// session goes missing: ESC followed by anything used to
+				// deliver the ESC and lose whatever came after it.
+				if (charin > 0)
+					push_head(charin);
+			}
 			ret = '\e';
 		}
 		break;
@@ -87,6 +102,8 @@ int Keyboard_VT100 :: getch()
 		escape_state = e_esc_idle;
 		if ((charin >= 'P') && (charin <= 'S')) {
 			ret = function[charin - 'P'];
+		} else if (charin > 0) {
+			push_head(charin);
 		}
 		break;
 	case e_esc_bracket:
@@ -106,6 +123,8 @@ int Keyboard_VT100 :: getch()
 				}
 			} else if ((charin >= 'A') && (charin <= 'D')) {
 				ret = cursor[charin - 'A'];
+			} else if (charin > 0) {
+				push_head(charin);
 			}
 		}
 		break;
