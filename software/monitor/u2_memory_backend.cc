@@ -84,6 +84,31 @@ void U2MemoryBackend :: begin_session(void)
     machine->end_stopped_session(stopped_it);
 }
 
+void U2MemoryBackend :: begin_redraw(void)
+{
+    if (redraw_depth++ > 0) {
+        return;
+    }
+    redraw_stopped_machine = false;
+    if (!machine || !machine->exists()) {
+        return;
+    }
+    redraw_stopped_machine = machine->begin_stopped_session();
+}
+
+void U2MemoryBackend :: end_redraw(void)
+{
+    // An end without a begin releases nothing, rather than resuming a machine
+    // this never stopped.
+    if (redraw_depth == 0 || --redraw_depth > 0) {
+        return;
+    }
+    if (machine) {
+        machine->end_stopped_session(redraw_stopped_machine);
+    }
+    redraw_stopped_machine = false;
+}
+
 uint8_t U2MemoryBackend :: read_cia2_porta(void)
 {
     if (!machine || !machine->exists()) {
