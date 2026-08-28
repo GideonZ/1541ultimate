@@ -205,15 +205,6 @@ class MonitorSession:
             # the template_mode flag on their MonitorCommandInput.
             if not template:
                 self.empty_open_prompt(title)
-            else:
-                # A template prompt opens holding the last argument. When that
-                # equals what is about to be typed, the read-back cannot tell
-                # "all characters arrived" from "none did", so empty it first.
-                try:
-                    if prompt_field(self.capture(), title) == text:
-                        self.empty_open_prompt(title)
-                except Failure:
-                    pass
             self.send_text(text, f"{key} {text}")
             snapshot = wait_until(self, typed)
             try:
