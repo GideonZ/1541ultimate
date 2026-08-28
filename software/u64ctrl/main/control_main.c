@@ -22,6 +22,7 @@
 #include "button_handler.h"
 #include "jtag.h"
 #include "sntp.h"
+#include "power_state.h"
 
 static const char *TAG = "u64ctrl";
 
@@ -182,14 +183,18 @@ int check_fpga(void)
 
 void app_main(void)
 {
-    // Check whether the application FPGA was already loaded.
-    int initial_state = check_fpga();
+    // Check whether the application FPGA was already loaded. If it was, only the
+    // ESP32 restarted, and the machine should simply stay on.
+    int fpga_running = check_fpga();
 
     // Configure IOs
     jtag_disable_io();
     configure_led();
     configure_adc();
-    setup_modem();
+    setup_modem(); // also initializes the NVS, which power_initial_state() reads
+
+    // On a cold start, the configured power on behavior decides.
+    int initial_state = power_initial_state(fpga_running);
     start_button_handler(initial_state);
 
     while (1) {

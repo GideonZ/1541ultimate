@@ -51,6 +51,11 @@ int wifi_forget_aps();
 int wifi_set_serial(const char *serial);
 int wifi_get_serial(char *serial);
 
+// Power on behavior after loss of input power; the mode values are the
+// POWERON_MODE_* defines of the control module (software/u64ctrl).
+int wifi_set_power_mode(uint8_t mode);
+int wifi_get_power_mode(uint8_t *mode, uint8_t *last_state);
+
 extern uint16_t sequence_nr;
 extern TaskHandle_t tasksWaitingForReply[NUM_TX_BUFFERS];
 extern "C" { void print_uart_status(); }
