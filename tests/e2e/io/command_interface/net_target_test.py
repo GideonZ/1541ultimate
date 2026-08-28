@@ -139,6 +139,17 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
 
+# GideonZ/1541ultimate#808: sockets a client opens and never closes. lwip has
+# MEMP_NUM_UDP_PCB = 8 protocol control blocks in total (lwipopts.h), and the
+# firmware's own UDP users hold some of them, so this many opens without a
+# CLOSE_SOCKET exhausts the pool on firmware that keeps every socket for ever.
+# On firmware that bounds what a client can hold open, every one succeeds.
+ABANDONED_SOCKETS = 8
+# How many sockets a reset has to release before opening ABANDONED_SOCKETS
+# more can succeed only if the reset closed them.
+SOCKETS_LEFT_OPEN_AT_RESET = 4
+RESET_CYCLES = 3
+
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
 
@@ -152,6 +163,8 @@ TESTS = [
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
+    "abandoned-sockets-are-bounded",
+    "reset-closes-uci-sockets",
 ]
 
 
@@ -1040,6 +1053,118 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def close_quietly(net: Net, handles: List[int]) -> None:
+    """Close every handle a scenario opened, tolerating ones already gone.
+
+    A handle the firmware closed on its own answers CLOSE_SOCKET with an
+    error, which is the expected outcome for some of them and never a reason
+    to leave the rest open.
+    """
+    for handle in handles:
+        try:
+            net.close(handle)
+        except Failure:
+            pass
+
+
+def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
+                   ports: List[int]) -> None:
+    """OPEN_UDP `count` times without a CLOSE_SOCKET, recording each socket.
+
+    Each socket announces itself with one datagram, which tells this host the
+    ephemeral source port lwip gave it. Two live sockets never share a port,
+    so a port is the identity of a socket where a handle number is not: lwip
+    hands the number of a closed socket to the next one opened.
+    """
+    for n in range(count):
+        with check(f"OPEN_UDP #{n + 1} without closing the previous ones"):
+            handle = net.open_udp(peer.ip, peer.udp_port)
+            handles.append(handle)
+            _, port = peer.learn_udp_peer(net, handle)
+            ports.append(port)
+            detail(f"handle {handle}, source port {port}")
+
+
+def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
+    """A client that never closes its sockets cannot exhaust the device.
+
+    GideonZ/1541ultimate#808: every OPEN_* takes a lwip socket, and nothing
+    but the client's own CLOSE_SOCKET ever gives it back, so a client that
+    loses track of its handles, or is simply restarted, takes the network
+    target down for everyone until the device is power cycled. A bounded
+    target keeps at most a fixed number of client sockets and lets a new one
+    in by closing the oldest, so an OPEN_UDP always succeeds and the first
+    socket opened is gone by the time the pool would have run out.
+    """
+    section("abandoned-sockets-are-bounded")
+    handles: List[int] = []
+    ports: List[int] = []
+    try:
+        open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
+
+        with check(f"the first of {ABANDONED_SOCKETS} abandoned sockets has been closed"):
+            # Its handle number may by now belong to a newer socket, so the
+            # test is not "the write fails" but "nothing arrives from the
+            # port the first socket had".
+            result = net.write(handles[0], b"STALE")
+            detail(f"WRITE_SOCKET on handle {handles[0]} answered {result.status_text!r}")
+            if result.status_text == STATUS_OK:
+                peer.udp.settimeout(DELIVERY_SETTLE_SECONDS)
+                try:
+                    _, (_, port) = peer.udp.recvfrom(2048)
+                except socket.timeout:
+                    port = None
+                detail(f"datagram source port {port}, first socket had {ports[0]}")
+                if port == ports[0]:
+                    raise Failure(f"the first socket opened is still live after "
+                                  f"{ABANDONED_SOCKETS} opens without a close; the "
+                                  f"target keeps every socket a client abandons")
+    finally:
+        close_quietly(net, handles)
+    return True
+
+
+def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
+    """A C64 reset releases every socket a client left open.
+
+    A program that opened sockets is gone after a reset, and with it any
+    chance of those sockets ever being closed by their owner. `reset` resets
+    the C64 and returns a Net that reaches the target afterwards; on the
+    native route that is a freshly started 6502 agent.
+    """
+    section("reset-closes-uci-sockets")
+    handles: List[int] = []
+    ports: List[int] = []
+    heap_before = free_heap(device)
+    try:
+        for cycle in range(RESET_CYCLES):
+            open_abandoned(net, peer, SOCKETS_LEFT_OPEN_AT_RESET, handles, ports)
+            with check(f"cycle {cycle + 1}: reset the C64 with "
+                       f"{SOCKETS_LEFT_OPEN_AT_RESET} sockets open"):
+                net = reset()
+            # Only a reset that closed the sockets left behind lets this many
+            # more open: the sockets from every cycle so far would otherwise
+            # add up past the pool.
+            open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
+            close_quietly(net, handles)
+            handles.clear()
+        heap_after = free_heap(device)
+        if heap_before is not None and heap_after is not None:
+            detail(f"free heap {heap_before} -> {heap_after} over {RESET_CYCLES} cycles")
+    finally:
+        close_quietly(net, handles)
+    return True
+
+
+def free_heap(device) -> Optional[int]:
+    """Free FreeRTOS heap, for the record; lwip's pools are static and do not show here."""
+    try:
+        heap = device.machine.heap()
+    except Failure:
+        return None
+    return heap["free"] if heap else None
+
+
 def restore_settings(device, original: Dict[str, str], keep: bool) -> bool:
     if keep or not original:
         return True
@@ -1219,6 +1344,19 @@ def main() -> int:
                 run_oversize_request_keeps_datagram, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
+            run(route, "abandoned-sockets-are-bounded",
+                run_abandoned_sockets_are_bounded, net, peer)
+
+            def reset_and_reopen(route=route):
+                """Reset the C64 and hand back a driver that reaches the target."""
+                nonlocal native_started
+                computer.machine.reset(force=True)
+                if route == "native":
+                    native_started = True
+                    return Net(build_driver(route, computer, args.busy_timeout))
+                return Net(rest_uci)
+            run(route, "reset-closes-uci-sockets",
+                run_reset_closes_uci_sockets, net, peer, reset_and_reopen, device)
 
     except Failure as exc:
         # Setup and route initialisation raise rather than recording a result,
