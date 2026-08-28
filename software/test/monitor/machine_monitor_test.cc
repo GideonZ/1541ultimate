@@ -9546,6 +9546,64 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
     return 0;
 }
 
+static int test_ui_range_commands_read_in_blocks(void)
+{
+    // Compare and Hunt are reached from the C and H keys through their
+    // _collect entry points, not through the _memory ones. Both walk memory a
+    // byte at a time, and on a backend that stops the host machine per access
+    // each of those bytes is a stop: an Ultimate II+L pays about 100ms for one,
+    // so a 256-byte Compare reading both sides a byte at a time is 512 stops
+    // and does not finish inside any budget a user or a suite would allow.
+    //
+    // Measured on an Ultimate II+L over Telnet while only the _memory variants
+    // were batched: 58.58s for a 256-byte Compare, which the E2E suite gives
+    // five seconds. The host tests passed throughout, because they called the
+    // batched variant the user interface does not use. This holds the entry
+    // points the user interface actually calls.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    const uint8_t needle[2] = { 0xAB, 0xCD };
+    int index;
+
+    for (index = 0; index < 0x100; index++) {
+        backend.memory[0xC800 + index] = (uint8_t)index;
+        backend.memory[0xCA00 + index] = (uint8_t)index;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_compare_collect(&backend, 0xC800, 0xC8FF, 0xCA00, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Compare read memory a byte at a time, so a backend that stops "
+               "the machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Compare did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_hunt_collect(&backend, 0xC800, 0xC8FF, needle, 2, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Hunt read memory a byte at a time, so a backend that stops the "
+               "machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Hunt did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+    return 0;
+}
+
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
     // A backend that stops the host machine per access has to be told when a
@@ -9717,6 +9775,7 @@ int main()
     if (test_assembly_data_range_is_byte_addressable()) return 1;
     if (test_assembly_data_delete_clears_bytes()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
+    if (test_ui_range_commands_read_in_blocks()) return 1;
     if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
 
     puts("machine_monitor_test: OK");

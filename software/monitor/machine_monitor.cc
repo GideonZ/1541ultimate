@@ -1710,8 +1710,15 @@ int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end
     int count = 0;
 
     if (max_addrs <= 0) return 0;
+
+    // Through the block reader, for the same reason as monitor_compare_memory
+    // above. This is the one the C key calls, so it is the one whose cost the
+    // user waits for.
+    MonitorBlockReader left(backend, start, (uint16_t)(start + length - 1));
+    MonitorBlockReader right(backend, dest, (uint16_t)(dest + length - 1));
+
     for (index = 0; index < length; index++) {
-        if (backend->read((uint16_t)(start + index)) != backend->read((uint16_t)(dest + index))) {
+        if (left.read((uint16_t)(start + index)) != right.read((uint16_t)(dest + index))) {
             if (count < max_addrs) {
                 out_addrs[count] = (uint16_t)(start + index);
             }

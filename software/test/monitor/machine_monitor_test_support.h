@@ -32,6 +32,10 @@ struct FakeMemoryBackend : public MemoryBackend
     int redraw_depth;
     int block_reads_inside_redraw;
     int block_reads_outside_redraw;
+    // Single-byte reads, counted so a test can tell a range command that walks
+    // memory a byte at a time from one that fills a block and walks the copy.
+    int single_read_count;
+    int block_read_count;
 
     FakeMemoryBackend();
     virtual uint8_t read(uint16_t address);

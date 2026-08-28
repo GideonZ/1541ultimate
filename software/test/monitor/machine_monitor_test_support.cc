@@ -658,10 +658,13 @@ FakeMemoryBackend :: FakeMemoryBackend()
     redraw_depth = 0;
     block_reads_inside_redraw = 0;
     block_reads_outside_redraw = 0;
+    single_read_count = 0;
+    block_read_count = 0;
 }
 
 uint8_t FakeMemoryBackend :: read(uint16_t address)
 {
+    single_read_count++;
     return memory[address];
 }
 
@@ -672,6 +675,7 @@ void FakeMemoryBackend :: write(uint16_t address, uint8_t value)
 
 void FakeMemoryBackend :: read_block(uint16_t address, uint8_t *dst, uint16_t len)
 {
+    block_read_count++;
     if (redraw_depth > 0) {
         block_reads_inside_redraw++;
     } else {
