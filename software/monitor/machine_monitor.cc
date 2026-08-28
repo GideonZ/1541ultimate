@@ -3956,6 +3956,7 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 
 uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
+    MonitorReadBurst burst(backend);
     if (address == 0x0000) {
         return 0xFFFF;
     }
@@ -4015,6 +4016,11 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
 
 uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
 {
+    // Paging forward walks a row at a time and each row is a separate read,
+    // so on a backend that stops the host machine per access this is one stop
+    // per row paged over. Nested brackets are counted, so holding it here as
+    // well as in the callers below costs nothing.
+    MonitorReadBurst burst(backend);
     while (rows > 0) {
         address = disasm_next_addr(address);
         rows--;
