@@ -41,6 +41,9 @@ public:
 	// stream interface
 	int write(const char *buffer, int n);
 	int get_char(void);
+	// recv() on a socket whose SO_RCVTIMEO socket_gui.cc sets to 200ms, so a
+	// -1 here means nothing arrived for that long.
+	bool get_char_waits(void) { return true; }
 	// host_stream.h's exists()/is_accessible() call this through the base Stream
 	// pointer; get_char()/transmit() set actual_socket to -1 on disconnect, so this
 	// is how run_remote() and the UI menu loops detect a gone telnet client. Without

@@ -60,13 +60,17 @@ int Keyboard_VT100 :: getch()
 	case e_esc_escape:
 		charin = stream->get_char();
 		if (charin == -1) {
-			// Nothing followed the ESC within the stream's read timeout, so
-			// the ESC was the key itself rather than the start of a sequence.
-			// SocketStream::get_char() recv()s on a socket whose SO_RCVTIMEO
-			// is 200ms, and a terminal writes a whole sequence in one go, so a
-			// real sequence never reaches here between its own bytes.
-			escape_state = e_esc_idle;
-			ret = '\e';
+			// Nothing followed the ESC. On a stream that waits, that means the
+			// ESC was the key itself rather than the start of a sequence: a
+			// terminal writes a whole sequence in one go, so a real one never
+			// reaches here between its own bytes. On a polled stream, such as
+			// the UART consoles the flasher and updater applications run on,
+			// -1 is what every idle poll returns and says nothing, so those
+			// keep waiting as they always have.
+			if (stream->get_char_waits()) {
+				escape_state = e_esc_idle;
+				ret = '\e';
+			}
 			break;
 		}
 
@@ -88,8 +92,7 @@ int Keyboard_VT100 :: getch()
 				// person pressed, and swallowing it is how one key in a
 				// session goes missing: ESC followed by anything used to
 				// deliver the ESC and lose whatever came after it.
-				if (charin > 0)
-					push_head(charin);
+				return_unused(charin);
 			}
 			ret = '\e';
 		}
@@ -102,8 +105,8 @@ int Keyboard_VT100 :: getch()
 		escape_state = e_esc_idle;
 		if ((charin >= 'P') && (charin <= 'S')) {
 			ret = function[charin - 'P'];
-		} else if (charin > 0) {
-			push_head(charin);
+		} else {
+			return_unused(charin);
 		}
 		break;
 	case e_esc_bracket:
@@ -123,8 +126,8 @@ int Keyboard_VT100 :: getch()
 				}
 			} else if ((charin >= 'A') && (charin <= 'D')) {
 				ret = cursor[charin - 'A'];
-			} else if (charin > 0) {
-				push_head(charin);
+			} else {
+				return_unused(charin);
 			}
 		}
 		break;
@@ -137,6 +140,16 @@ int Keyboard_VT100 :: getch()
 void Keyboard_VT100 :: push_head(int c)
 {
     pending_char = c;
+}
+
+// Give back a byte getch() read but could not use, without overwriting one the
+// user interface injected. There is only one slot, and a key somebody pushed on
+// purpose (tree_browser's send_keystroke, form.cc, assembly_search.cc) outranks
+// the tail of an escape sequence nobody recognised.
+void Keyboard_VT100 :: return_unused(int c)
+{
+    if (c > 0 && !pending_char)
+        pending_char = c;
 }
 
 void Keyboard_VT100 :: wait_free(void)
