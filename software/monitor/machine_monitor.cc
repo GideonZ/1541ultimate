@@ -1355,12 +1355,31 @@ MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end
     return MONITOR_OK;
 }
 
+// How much of a fill one write_block call carries. Small enough to sit on the
+// monitor's stack, large enough that a backend which stops the host machine
+// per access stops it once per block instead of once per byte.
+static const uint16_t FILL_BLOCK = 256;
+
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value)
 {
-    uint16_t address = start;
-    do {
-        backend->write(address, value);
-    } while (address++ != end);
+    // Written in blocks rather than a byte at a time. write_block holds one
+    // stopped session for the whole block, which is what transfer_write_range
+    // below already relies on. Writing byte by byte instead resumes and
+    // re-stops the machine between every byte, and on an Ultimate II+L that
+    // both costs about 100ms a byte and loses writes across the resume/stop
+    // boundary: a 256-byte fill of a running machine reached 239 of 256 bytes
+    // and stayed there.
+    uint8_t buffer[FILL_BLOCK];
+    uint32_t length = (uint32_t)end - (uint32_t)start + 1;
+    uint32_t done = 0;
+
+    memset(buffer, value, sizeof(buffer));
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > FILL_BLOCK) ? FILL_BLOCK : (uint16_t)left;
+        backend->write_block((uint16_t)(start + done), buffer, chunk);
+        done += chunk;
+    }
 }
 
 // How much of a range one read_block or write_block call carries. A block is
