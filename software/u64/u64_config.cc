@@ -1398,17 +1398,60 @@ int U64Config :: setLedSelector(ConfigItem *it)
 }
 
 #if U64 == 2
+// A call into the module cannot report a starved TX buffer distinguishably
+// from success: BUFARGS answers pdFALSE, which is 0, which is also what a
+// successful call returns. The value the module holds is therefore the only
+// evidence that a call arrived, and a single attempt cannot tell a transient
+// shortage from a module that does not know the command. Two attempts can: a
+// buffer frees up, a module that predates the command answers the same way
+// every time.
+#define MODULE_ATTEMPTS 2
+
+// Reads the power on behavior. False when no answer carrying a mode this
+// firmware knows arrived, whatever the reason.
+static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        mode = 0xFF;
+        last_state = 0xFF;
+        if ((wifi_get_power_mode(&mode, &last_state) == 0) && (mode <= 2)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Writes the power on behavior and reads it back, because the write cannot
+// report a starved buffer either. False when the module does not hold the
+// value afterwards.
+static bool writePowerOnMode(uint8_t mode)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_power_mode(mode);
+        if (retval) {
+            printf("Setting the power on behavior failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went
+            // missing, so repeating it would only print it twice.
+            return false;
+        }
+        // One read per attempt: the loop around it is the retry.
+        uint8_t stored = 0xFF;
+        uint8_t last_state = 0xFF;
+        if ((wifi_get_power_mode(&stored, &last_state) == 0) && (stored == mode)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // What the machine does when the input power returns is decided by the control
 // module (ESP32), as that is the only part of the machine that is powered at
 // that moment. The setting is therefore stored in the NVS of that module; here
 // it is only presented to the user and pushed down on every change.
 int U64Config :: setPowerOnMode(ConfigItem *it)
 {
-    if(it) {
-        int retval = wifi_set_power_mode((uint8_t)it->getValue());
-        if (retval) {
-            printf("Setting the power on behavior failed with error %d.\n", retval);
-        }
+    if (it && !writePowerOnMode((uint8_t)it->getValue())) {
+        printf("The control module did not take the power on behavior.\n");
     }
     return 0;
 }
@@ -1424,18 +1467,17 @@ void U64Config :: pushPowerOnMode(void)
     if (!it) {
         return;
     }
-    uint8_t mode = 0xFF;
-    uint8_t last_state = 0xFF;
-    // BUFARGS answers a starved TX buffer with pdFALSE, which is 0, which is
-    // also what success returns -- so a call that never reached the module
-    // cannot be told from one that did by its return value alone. The mode it
-    // would have written is the second witness: nothing but a real answer
-    // leaves a value this firmware knows behind.
-    if ((wifi_get_power_mode(&mode, &last_state) != 0) || (mode > 2)) {
+    uint8_t mode;
+    uint8_t last_state;
+    if (!readPowerOnMode(mode, last_state)) {
         // A control module that predates these commands answers "not
         // implemented", and cannot store the setting either. Offering a choice
-        // that quietly does nothing is worse than offering none.
-        printf("Control module does not support the power on behavior; disabling the setting.\n");
+        // that quietly does nothing is worse than offering none. A module that
+        // could not be reached at all is disabled the same way, because from
+        // here the two look alike; the message says so rather than claiming
+        // the module lacks the feature.
+        printf("No usable answer about the power on behavior from the control module; "
+               "disabling the setting.\n");
         u64_configurator->cfg->disable(CFG_POWERON_MODE);
         return;
     }
@@ -1448,16 +1490,45 @@ void U64Config :: pushPowerOnMode(void)
     setPowerOnMode(it);
 }
 
+// Read and written the same way as the power on behavior above, and for the
+// same reason: what the module holds is the only evidence a call arrived.
+static bool readWakeOnWifi(uint8_t &enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        enabled = 0xFF;
+        if ((wifi_get_wake_on_wifi(&enabled) == 0) && (enabled <= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool writeWakeOnWifi(uint8_t enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_wake_on_wifi(enabled);
+        if (retval) {
+            printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went
+            // missing, so repeating it would only print it twice.
+            return false;
+        }
+        // One read per attempt: the loop around it is the retry.
+        uint8_t stored = 0xFF;
+        if ((wifi_get_wake_on_wifi(&stored) == 0) && (stored == enabled)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Waking the machine from off is decided by the control module as well: it is
 // the only part that is still listening at that moment, and the only one with
 // a network path of its own. Stored in its NVS, pushed down on every change.
 int U64Config :: setWakeOnWifi(ConfigItem *it)
 {
-    if(it) {
-        int retval = wifi_set_wake_on_wifi((uint8_t)it->getValue());
-        if (retval) {
-            printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
-        }
+    if (it && !writeWakeOnWifi((uint8_t)it->getValue())) {
+        printf("The control module did not take the wake on Wi-Fi setting.\n");
     }
     return 0;
 }
@@ -1474,11 +1545,10 @@ void U64Config :: pushWakeOnWifi(void)
     if (!it) {
         return;
     }
-    uint8_t enabled = 0xFF;
-    // As with the power mode: a starved TX buffer answers pdFALSE, which is 0,
-    // which is what success returns too, so the value is the witness.
-    if ((wifi_get_wake_on_wifi(&enabled) != 0) || (enabled > 1)) {
-        printf("Control module does not support wake on Wi-Fi; disabling the setting.\n");
+    uint8_t enabled;
+    if (!readWakeOnWifi(enabled)) {
+        printf("No usable answer about wake on Wi-Fi from the control module; "
+               "disabling the setting.\n");
         u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
         return;
     }
