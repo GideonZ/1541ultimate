@@ -290,11 +290,23 @@ SUITES: Sequence[Suite] = (
     # soak.
     Suite("e2e", "key-injection", "tests/e2e/io/c64/key_injection_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --keys 64 --batch 64"),
+    # Starting an REU transfer has to stop the 6510 in the same cycle as the
+    # command write. It did not, so above 1 MHz the instructions that follow
+    # rewrote the registers of the transfer still running and the REU handed
+    # back the wrong bytes. Measured red on core 1.4E and green on 1.4F.
+    Suite("e2e", "reu-turbo", "tests/e2e/io/c64/reu_turbo_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # Reproduces #733: with the FPGA decoder fix in the core, "mirroring off" is
     # the regression guard. Runs last, because a device whose core predates that
     # fix stalls the whole Nios on this scenario and needs a JTAG recovery.
     Suite("e2e", "freeze-menu", "tests/e2e/io/c64/freeze_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+    # Manual: downloads a release from github.com and changes machine settings,
+    # both of which it puts back. The same REU defect reu-turbo above guards,
+    # seen through a real program: Doom C64U streams level data out of a 16 MB
+    # REU with the CPU in turbo, which no other suite here comes close to.
+    Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
 
     # --------------------------------------------------------------- perf --
     Suite("perf", "temp-auto-cleanup-perf", "tests/perf/temp_auto_cleanup_perf_test.py",

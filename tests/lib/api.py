@@ -838,11 +838,18 @@ class RunnersApi:
         self._run("modplay", {"file": file})
 
     def upload(self, action: str, payload: bytes,
-               params: Optional[Dict[str, object]] = None) -> Response:
-        """POST a file body to a runner, e.g. `upload("run_prg", prg_bytes)`."""
+               params: Optional[Dict[str, object]] = None,
+               timeout: Optional[float] = None) -> Response:
+        """POST a file body to a runner, e.g. `upload("run_prg", prg_bytes)`.
+
+        `timeout` is worth setting for a large body. A megabytes-sized REU image
+        is streamed into memory as it arrives, but the device answers only once
+        all of it is written, so the client's ordinary per-request timeout can
+        expire on a request that is progressing normally.
+        """
         return self._rest.request(
             "POST", f"/v1/runners:{action}", params=params, body=payload,
-            headers={"Content-Type": "application/octet-stream"})
+            headers={"Content-Type": "application/octet-stream"}, timeout=timeout)
 
 
 class StreamsApi:
