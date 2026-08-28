@@ -10,12 +10,15 @@ flight and the data that comes back is not the data that went out. At 1 MHz the
 CPU is halted before the next instruction can run, so the same code is clean and
 nothing in the suite set notices.
 
-That is the shape of GideonZ/1541ultimate#804: Doom C64U streams level data out
-of a 16 MB REU with the CPU in turbo, its boot-time check of the REU image
-failed, and the picture was corrupt. The fix is in the U64 and U64 Elite II
-cores, where `reu.vhd` now asserts `reu_dma_n` on the command write itself when
-`g_no_dma_delay` is set. This suite is the regression guard for it, and needs
-neither that game nor a network.
+The fix is in the U64 and U64 Elite II cores, where `reu.vhd` asserts
+`reu_dma_n` on the command write itself when `g_no_dma_delay` is set. This suite
+is the regression guard for that, and needs neither a game nor a network.
+
+Real software does hit it. On the core before the fix, Doom C64U, which streams
+level data out of a 16 MB REU with the CPU in turbo, fails its own boot-time
+check of the REU image with mapOK=0; on the core with the fix it runs at
+12.3 fps with an unchanging picture. `doom_release_test.py` is that same
+measurement as a manual suite. This one is the automated half.
 
 The stimulus is `software/6502/unsorted/reu_test.tas` itself, the program the
 fix was made against, assembled here with -D E2E=1. It copies 1 KB of screen
