@@ -17,11 +17,20 @@ cores, where `reu.vhd` now asserts `reu_dma_n` on the command write itself when
 `g_no_dma_delay` is set. This suite is the regression guard for it, and needs
 neither that game nor a network.
 
-The stimulus is `reu_turbo.asm`, which is written the way
-`software/6502/unsorted/reu_test.tas` is: it copies 1 KB of screen memory out to
-the REU and straight back into another block, with no instruction between the
-command write and the register writes for the transfer that follows, and
-compares every byte. Anything inserted in that gap hides the defect.
+The stimulus is `software/6502/unsorted/reu_test.tas` itself, the program the
+fix was made against, assembled here with -D E2E=1. It copies 1 KB of screen
+memory out to the REU and straight back into another block, with no instruction
+between the command write and the register writes for the transfer that
+follows, and compares every byte over 256 rounds. Anything inserted in that gap
+hides the defect, which is the reason this suite runs that file rather than a
+copy of it: a copy would be free to drift away from the sequence that matters.
+
+The define adds a settle wait and a result block in RAM, and nothing else. Its
+own build, with no define, is byte for byte what it was before the guards were
+added, so the simulation runs are unaffected. $D7FF, which that file writes for
+VICE, is a SID register mirror on real hardware and machine:readmem reads RAM
+rather than I/O, so the host cannot read the verdict from there; hence the
+block at $C000.
 
 Three measurements, in this order, because each one only means something if the
 one before it held:
@@ -62,26 +71,28 @@ from report import (Failure, check, check_ok, check_skip,          # noqa: E402
 
 SUITE = "reu_turbo_test"
 
-SOURCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reu_turbo.asm")
+REPO_ROOT = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+SOURCE = os.path.join(REPO_ROOT, "software", "6502", "unsorted", "reu_test.tas")
+DEFINES = {"E2E": 1}
 
-# The result block reu_turbo.asm writes. These mirror its equates and have to be
-# changed with it.
+# The result block the E2E build of that file writes. These mirror its equates
+# and have to be changed with them.
 STATUS = 0xC000         # 0 running, 1 every round matched, 2 a byte differed
 READY = 0xC001          # $A5 once the program is running
-ITER = 0xC002           # the round that was running
-ERRADDR = 0xC003        # 16 bit, the address of the first byte that differed
-EXPECT = 0xC005
-GOT = 0xC006
-RUNNING = 0xC007        # $A5 once the settle wait is over and the rounds began
+ROUND = 0xC002          # the round that failed
+INDEX = 0xC003          # the byte index within it that failed
+EXPECT = 0xC004         # what that byte should have been
+RUNNING = 0xC005        # $A5 once the settle wait is over and the rounds began
 BLOCK_BASE = STATUS
-RESULT_BYTES = 8
+RESULT_BYTES = 6
 
 STATUS_RUNNING = 0x00
 STATUS_PASSED = 0x01
 STATUS_MISMATCH = 0x02
 READY_MARK = 0xA5
 
-# reu_turbo.asm runs 256 rounds of 1 KB out and back, so each speed round-trips
+# reu_test.tas runs 256 rounds of 1 KB out and back, so each speed round-trips
 # 256 KB. Measured on a U64 Elite, firmware 3.15, core 1.4F: 8.5 s at 1 MHz and
 # 0.32 s at 48 MHz, plus the program's own 5 s settle wait at each speed.
 ROUNDS = 256
@@ -103,14 +114,14 @@ SLOWEST_SPEED = " 1"            # the enum labels are right-aligned in two colum
 # How much faster the fast run has to be before the CPU speed setting counts as
 # having taken effect. Measured at 30x on a U64 Elite (8.5 s against 0.32 s),
 # so five leaves six times the margin. It is not only a check that the setting
-# works: without the settle wait in reu_turbo.asm the fast run spends its first
-# seconds at 1 MHz, and that measured 3.0x, which is what this rules out.
+# works: without the settle wait the fast run spends its first seconds at
+# 1 MHz, and that measured 3.0x, which is what this rules out.
 MIN_SPEEDUP = 5.0
 
 START_TIMEOUT_SECONDS = 20.0
-# reu_turbo.asm waits 250 frames before its first round, so that it does not do
-# its work inside the seconds of CPU and REU slowdown the machine applies after
-# a reset. That is 5.0s on PAL and 4.2s on NTSC.
+# The E2E build of reu_test.tas waits 250 frames before its first round, so it
+# does not do its work inside the seconds of CPU and REU slowdown the machine
+# applies after a reset. That is 5.0s on PAL and 4.2s on NTSC.
 SETTLE_TIMEOUT_SECONDS = 20.0
 RUN_TIMEOUT_SECONDS = 60.0
 POLL_SECONDS = 0.05
@@ -177,11 +188,9 @@ class Result:
 
     def __init__(self, block: bytes, seconds: float) -> None:
         self.status = block[STATUS - BLOCK_BASE]
-        self.round = block[ITER - BLOCK_BASE]
-        self.address = (block[ERRADDR - BLOCK_BASE]
-                        | (block[ERRADDR + 1 - BLOCK_BASE] << 8))
+        self.round = block[ROUND - BLOCK_BASE]
+        self.index = block[INDEX - BLOCK_BASE]
         self.expect = block[EXPECT - BLOCK_BASE]
-        self.got = block[GOT - BLOCK_BASE]
         self.seconds = seconds
 
     @property
@@ -190,9 +199,9 @@ class Result:
 
     def describe(self) -> str:
         if self.status == STATUS_MISMATCH:
-            return (f"${self.address:04X} came back as ${self.got:02X} where "
-                    f"${self.expect:02X} went out, in round {self.round} of "
-                    f"{ROUNDS}")
+            return (f"byte ${self.index:02X} of the block came back wrong in "
+                    f"round {self.round} of {ROUNDS}; it should have been "
+                    f"${self.expect:02X}")
         # The program only ever writes $01 or $02 here. Anything else means the
         # block read back is not the one it wrote, which is a device that was
         # still settling or a reset that landed mid-run, and saying so beats
@@ -239,7 +248,7 @@ def run_stimulus(api: UltimateApi, prg: bytes, speed: str) -> Result:
             raise Failure(
                 f"the 6502 program did not finish within "
                 f"{RUN_TIMEOUT_SECONDS:.0f}s at {speed.strip()} MHz; it reached "
-                f"round {block[ITER - BLOCK_BASE]} of {ROUNDS}")
+                f"round {block[ROUND - BLOCK_BASE]} of {ROUNDS}")
         time.sleep(POLL_SECONDS)
 
 
@@ -267,8 +276,10 @@ def run(args) -> bool:
              f"FPGA {info.fpga_version}, core "
              f"{info.extra.get('core_version', '?')}")
 
-    prg = assemble(SOURCE)
-    detail(f"assembled reu_turbo.asm: {len(prg)} bytes, load address "
+    prg = assemble(SOURCE, DEFINES)
+    detail(f"assembled {os.path.relpath(SOURCE, REPO_ROOT)} with "
+           f"{', '.join(f'-D {k}={v}' for k, v in DEFINES.items())}: "
+           f"{len(prg)} bytes, load address "
            f"${int.from_bytes(prg[:2], 'little'):04X}")
 
     previous: Dict[Tuple[str, str], str] = {}
