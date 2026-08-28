@@ -42,6 +42,12 @@ DEFAULT_UP_TIMEOUT = 90.0
 DEFAULT_SILENCE_SECONDS = DEFAULT_UP_TIMEOUT
 POLL_SECONDS = 2.0
 
+# Long enough for the control module to lose power. A brief dip leaves the
+# ESP32 running, so nothing cold starts and the machine simply stays as it
+# was, which reads exactly like the setting being ignored. Ten seconds was
+# enough on the machine this was written against; fifteen is comfortable.
+DEFAULT_OFF_SECONDS = 15.0
+
 
 def alive(api: UltimateApi) -> bool:
     """Whether the application answers. Nothing answers while the machine is off."""
@@ -102,6 +108,58 @@ def ask(instruction: str) -> None:
     """Ask the operator to do something the harness cannot do itself."""
     print(f"      >>> {instruction}, then press Enter: ", end="", flush=True)
     sys.stdin.readline()
+
+
+class Mains:
+    """The socket the machine is plugged into, scripted or switched by hand."""
+
+    def __init__(self, off_cmd: str, on_cmd: str, off_seconds: float) -> None:
+        self.off_cmd = off_cmd
+        self.on_cmd = on_cmd
+        self.off_seconds = off_seconds
+        self.scripted = bool(off_cmd and on_cmd)
+        if bool(off_cmd) != bool(on_cmd):
+            raise Failure("--power-off-cmd and --power-on-cmd go together; "
+                          "give both or neither")
+        if not self.scripted and not sys.stdin.isatty():
+            raise Failure(
+                "no terminal to prompt on and no socket commands given.\n"
+                "Pass --power-off-cmd and --power-on-cmd to switch the mains "
+                "without an operator, or run this from a terminal.")
+
+    def cycle(self) -> None:
+        """Remove mains, hold it off long enough to matter, put it back."""
+        if self.scripted:
+            run_command(self.off_cmd, "power off")
+            detail(f"mains off for {self.off_seconds:.0f}s")
+            time.sleep(self.off_seconds)
+            run_command(self.on_cmd, "power on")
+        else:
+            ask(f"switch the socket OFF and leave it off for "
+                f"{self.off_seconds:.0f}s")
+            ask("switch the socket back ON")
+
+
+def recover_if_off(button: "PowerButton | None", api: UltimateApi,
+                   up_timeout: float) -> None:
+    """Get the machine back on, whatever left it off, including a failure.
+
+    Every scenario that ends with the machine off is followed by a press, but
+    only on the path where the scenario passed: `check()` re-raises, so a
+    failure between switching the machine off and that press skips it. What is
+    left behind is a device that answers nothing -- the setting restore fails,
+    and so does the runner's teardown and every suite after this one, none of
+    which look like the failure that caused it.
+
+    A no-op when the machine is up, so the suites can call it unconditionally
+    on their way out. It never turns a failure into a pass: it only presses.
+    """
+    if button is None or alive(api):
+        return
+    try:
+        button.press(api, up_timeout)
+    except Exception as exc:  # noqa: BLE001  (recovery must not mask the failure)
+        detail(f"could not switch the machine back on: {exc}")
 
 
 class PowerButton:

@@ -50,16 +50,16 @@ Run it by hand, or with --manual, when the power-on behaviour is changed:
 import argparse
 import os
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from api import UltimateApi
-from machine_power import (DEFAULT_SILENCE_SECONDS, DEFAULT_UP_TIMEOUT,
-                           PowerButton, alive, ask, run_command, stays_off,
-                           switch_machine_off, wait_for_state)
+from machine_power import (DEFAULT_OFF_SECONDS, DEFAULT_SILENCE_SECONDS,
+                           DEFAULT_UP_TIMEOUT, Mains, PowerButton, alive,
+                           recover_if_off, stays_off, switch_machine_off,
+                           wait_for_state)
 from report import (Failure, check, check_ok, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 
@@ -69,43 +69,6 @@ ITEM = "Power On After Power Loss"
 MODE_OFF = "Off"
 MODE_ON = "On"
 MODE_LAST = "Last State"
-
-# Long enough for the control module to lose power. A brief dip leaves the
-# ESP32 running, so nothing cold starts and the machine simply stays as it
-# was, which reads exactly like the setting being ignored. Ten seconds was
-# enough on the machine this was written against; fifteen is comfortable.
-DEFAULT_OFF_SECONDS = 15.0
-
-
-class Mains:
-    """The socket the machine is plugged into, scripted or switched by hand."""
-
-    def __init__(self, off_cmd: str, on_cmd: str, off_seconds: float) -> None:
-        self.off_cmd = off_cmd
-        self.on_cmd = on_cmd
-        self.off_seconds = off_seconds
-        self.scripted = bool(off_cmd and on_cmd)
-        if bool(off_cmd) != bool(on_cmd):
-            raise Failure("--power-off-cmd and --power-on-cmd go together; "
-                          "give both or neither")
-        if not self.scripted and not sys.stdin.isatty():
-            raise Failure(
-                "no terminal to prompt on and no socket commands given.\n"
-                "Pass --power-off-cmd and --power-on-cmd to switch the mains "
-                "without an operator, or run this from a terminal.")
-
-    def cycle(self) -> None:
-        """Remove mains, hold it off long enough to matter, put it back."""
-        if self.scripted:
-            run_command(self.off_cmd, "power off")
-            detail(f"mains off for {self.off_seconds:.0f}s")
-            time.sleep(self.off_seconds)
-            run_command(self.on_cmd, "power on")
-        else:
-            ask(f"switch the socket OFF and leave it off for "
-                f"{self.off_seconds:.0f}s")
-            ask("switch the socket back ON")
-
 
 def find_store(api: UltimateApi) -> str:
     """The config store serving the setting, or "" when this firmware has none.
@@ -140,12 +103,13 @@ def main() -> int:
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS", ""))
     parser.add_argument("-t", "--timeout", type=float,
                         default=float(os.environ.get("U64_TIMEOUT", "5.0")))
-    parser.add_argument("--power-off-cmd", default="",
+    parser.add_argument("--power-off-cmd", default=os.environ.get("U64_POWER_OFF_CMD", ""),
                         help="Shell command that removes mains from the machine. "
                              "Without it the operator is asked to switch the socket.")
-    parser.add_argument("--power-on-cmd", default="",
+    parser.add_argument("--power-on-cmd", default=os.environ.get("U64_POWER_ON_CMD", ""),
                         help="Shell command that puts mains back.")
-    parser.add_argument("--power-button-cmd", default="",
+    parser.add_argument("--power-button-cmd",
+                        default=os.environ.get("U64_POWER_BUTTON_CMD", ""),
                         help="Shell command that presses the machine's power "
                              "button. Without it the operator is asked, which "
                              "needs a terminal: two scenarios end with the "
@@ -165,6 +129,7 @@ def main() -> int:
     api = UltimateApi(args.host, args.password or None, args.timeout)
     original = ""
     store = ""
+    button = None
     try:
         section("1. Preconditions")
         check_start("the machine answers")
@@ -243,6 +208,10 @@ def main() -> int:
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
+        # A scenario that failed after switching the machine off left it off,
+        # and its press was skipped. Press here, so the setting below can be
+        # written and the next suite finds a machine that answers.
+        recover_if_off(button, api, args.up_timeout)
         # Put the setting back if it was read and the machine is there to take
         # it. A machine left off cannot be written to, and saying so is better
         # than a traceback out of the cleanup path.
