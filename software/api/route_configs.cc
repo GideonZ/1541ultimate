@@ -160,6 +160,35 @@ bool apply_config(ResponseWrapper *resp, JSON *obj)
     return success;
 }
 
+API_DOC(GET, configs, none,
+    TAG("Configuration")
+    SUMMARY("Read configuration")
+    DESCRIPTION("Reads the same settings the menu shows, at one of three levels of detail. With "
+                "no path it lists the category names. With a category it gives the current value "
+                "of every item in it. With a category and an item it describes each matching item "
+                "in full: the current value, the default, and either the accepted values of an "
+                "enumeration or the range and format of a number.\n"
+                "\n"
+                "Both path elements are patterns, so `drive*` selects every category whose name "
+                "starts with `drive` and `*bus*` selects every item with `bus` in its name. "
+                "Category and item names contain spaces and must be URL encoded.\n"
+                "\n"
+                "Which categories exist depends on the product and on what is installed, so the "
+                "list is not the same on two devices.")
+    PATH("/v1/configs", "listConfigCategories", "List the configuration categories")
+    PATH("/v1/configs/{category}", "getConfigCategory", "Read the values in a category")
+    PATH("/v1/configs/{category}/{item}", "getConfigItem", "Read a setting in full")
+    PATH_PARAM("category", "string", "Category name or pattern. Names contain spaces, so this has to be URL encoded.", "Drive%20A%20Settings")
+    PATH_PARAM("item", "string", "Item name or pattern, URL encoded.", "Drive%20Bus%20ID")
+    RESPONSE("200", "application/json", "ConfigCategoriesResponse", "The categories on this device.", "listConfigCategories")
+    RESPONSE_EXAMPLE("200", "Categories", "{\n  \"categories\" : [ \"Drive A Settings\", \"Network Settings\", \"User Interface Settings\" ],\n  \"errors\" : []\n}", "listConfigCategories")
+    RESPONSE("200", "application/json", "ConfigValuesResponse", "The current value of every matching item.", "getConfigCategory")
+    RESPONSE_EXAMPLE("200", "Drive A", "{\n  \"Drive A Settings\" : {\n    \"Drive\" : \"Enabled\",\n    \"Drive Type\" : \"1541\",\n    \"Drive Bus ID\" : 8\n  },\n  \"errors\" : []\n}", "getConfigCategory")
+    RESPONSE("200", "application/json", "ConfigItemsResponse", "Every matching item, described in full.", "getConfigItem")
+    RESPONSE_EXAMPLE("200", "One item", "{\n  \"Drive A Settings\" : {\n    \"Drive Bus ID\" : {\n      \"current\" : 8,\n      \"min\" : 8,\n      \"max\" : 11,\n      \"format\" : \"%d\",\n      \"default\" : 8\n    }\n  },\n  \"errors\" : []\n}", "getConfigItem")
+    RESPONSE_ERROR("404", "No configuration category matches 'drive c*'.", "getConfigCategory")
+    RESPONSE_ERROR("404", "No configuration category matches 'drive c*'.", "getConfigItem")
+)
 API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
 {
     ConfigManager *cfg = ConfigManager::getConfigManager();
@@ -195,6 +224,32 @@ API_CALL(GET, configs, none, NULL, ARRAY ( { } ))
     resp->json_response(HTTP_OK);
 }
 
+API_DOC(PUT, configs, none,
+    TAG("Configuration")
+    SUMMARY("Change a setting")
+    DESCRIPTION("Sets one setting. The path names the category and the item, both matched as "
+                "patterns, and the first match wins, so a pattern that matches more than one item "
+                "sets whichever comes first.\n"
+                "\n"
+                "The new value is given in one of two ways, and in exactly one of them: as the "
+                "`value` query argument on a two element path, or as a third path element with no "
+                "query argument. Any other shape is answered with 400.\n"
+                "\n"
+                "The change takes effect at once but lives only in memory. It survives until the "
+                "device reboots, and no longer, unless `configs:save_to_flash` writes it.")
+    PATH("/v1/configs/{category}/{item}", "setConfigItem", "Set a value passed as a query argument")
+    PATH("/v1/configs/{category}/{item}/{value}", "setConfigItemByPath", "Set a value passed as a path element")
+    PATH_PARAM("category", "string", "Category name or pattern. Names contain spaces, so this has to be URL encoded.", "Drive%20A%20Settings")
+    PATH_PARAM("item", "string", "Item name or pattern, URL encoded.", "Drive%20Bus%20ID")
+    PATH_PARAM("value", "string", "The new value, URL encoded. Three element form only; the query argument has to be absent.", "9")
+    PARAM("value", "string", "The new value: one of the accepted values for an enumeration, a number for a numeric setting, or free text for a string setting. Two element form only.", "", "9")
+    RESPONSE("200", "application/json", "ErrorResponse", "The setting was changed.", "")
+    RESPONSE_ERROR("400", "When using the 'value' argument, the path should have two elements; the config category and the config item name. Given: '/Drive A Settings'", "")
+    RESPONSE_ERROR("400", "Value 12 is outside of the allowable range (8-11)", "")
+    RESPONSE_ERROR("400", "Value 'Maybe' is not a valid choice for item Drive", "")
+    RESPONSE_ERROR("404", "There is no config category that matches 'drive c*'", "")
+    RESPONSE_ERROR("404", "Item 'speed' not found in this configuration category [Drive A Settings].", "")
+)
 // 'value' is optional because this route takes it either as the query argument
 // or as a third path element, and the handler below chooses between them and
 // rejects every other shape. Declaring it required had the validator refuse the
@@ -262,6 +317,25 @@ API_CALL(PUT, configs, none, NULL, ARRAY ( { {"value", P_OPTIONAL }} ))
     }
 }
 
+API_DOC(POST, configs, none,
+    TAG("Configuration")
+    SUMMARY("Change several settings at once")
+    DESCRIPTION("Applies a JSON object of categories to items to values in a single request, "
+                "which is how a full configuration is restored without one call per setting.\n"
+                "\n"
+                "Names are matched exactly here, not as patterns. Every item in the body is "
+                "attempted whatever happens to the others, so a body with one bad name still "
+                "applies the rest and the response says which ones failed. Like the PUT form, "
+                "this changes memory only until `configs:save_to_flash` is called.\n"
+                "\n"
+                "The request must be `application/json` and at most 32 KB.")
+    PATH("/v1/configs", "updateConfigs", "")
+    BODY("application/json", "ConfigUpdate", "Categories, items and the values to set.")
+    RESPONSE("200", "application/json", "ErrorResponse", "Every setting in the body was applied.", "")
+    RESPONSE("400", "application/json", "ErrorResponse", "Nothing could be parsed, or some settings were rejected. The errors array names them.", "")
+    RESPONSE_EXAMPLE("400", "One bad item name", "{\n  \"errors\" : [ \"'Drive Speed' is not a valid item name in category 'Drive A Settings'.\" ]\n}", "")
+    RESPONSE_ERROR("500", "Could not buffer attachment.", "")
+)
 API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
 {
     if (!req->ContentType || strcasecmp(req->ContentType, "application/json") != 0)  {
@@ -293,6 +367,20 @@ API_CALL(POST, configs, none, &attachment_writer, ARRAY ( { } ))
 }
 
 
+API_DOC(PUT, configs, load_from_flash,
+    TAG("Configuration")
+    SUMMARY("Reload settings from flash")
+    CAUTION("destructive", "Settings changed since the last save are discarded.")
+    DESCRIPTION("Throws away the settings in memory and reads them back from flash, undoing every "
+                "change that has not been saved. With a category in the path only that category "
+                "is reloaded and the response lists what was touched.")
+    PATH("/v1/configs:load_from_flash", "loadConfigsFromFlash", "Reload every category")
+    PATH("/v1/configs/{category}:load_from_flash", "loadConfigCategoryFromFlash", "Reload matching categories")
+    PATH_PARAM("category", "string", "Category name or pattern, URL encoded.", "Drive%20A%20Settings")
+    RESPONSE("200", "application/json", "ErrorResponse", "Every category was reloaded.", "loadConfigsFromFlash")
+    RESPONSE("200", "application/json", "ConfigStoreListResponse", "The categories that were reloaded.", "loadConfigCategoryFromFlash")
+    RESPONSE_ERROR("400", "Path depth exceeds 1.", "")
+)
 API_CALL(PUT, configs, load_from_flash, NULL, ARRAY ( {  } ))
 {
     ConfigManager *cm = ConfigManager :: getConfigManager();
@@ -322,6 +410,24 @@ API_CALL(PUT, configs, load_from_flash, NULL, ARRAY ( {  } ))
     resp->json_response(HTTP_OK);
 }
 
+API_DOC(PUT, configs, save_to_flash,
+    TAG("Configuration")
+    SUMMARY("Save settings to flash")
+    CAUTION("persistent", "Writes flash. A device that booted into safe mode holds defaults, and saving then replaces the stored values with them.")
+    DESCRIPTION("Writes the settings that have changed since the last save into flash, so that "
+                "they survive a power cycle. Only categories that are actually stale are written, "
+                "and the response lists which ones those were, so an empty list means there was "
+                "nothing to do.\n"
+                "\n"
+                "Take care when the device has booted into safe mode: the settings in memory are "
+                "defaults then, and saving replaces the stored values with them.")
+    PATH("/v1/configs:save_to_flash", "saveConfigsToFlash", "Save every stale category")
+    PATH("/v1/configs/{category}:save_to_flash", "saveConfigCategoryToFlash", "Save matching categories")
+    PATH_PARAM("category", "string", "Category name or pattern, URL encoded.", "Drive%20A%20Settings")
+    RESPONSE("200", "application/json", "ConfigStoreListResponse", "The categories that were written.", "")
+    RESPONSE_EXAMPLE("200", "One category written", "{\n  \"written\" : [ \"Drive A Settings\" ],\n  \"errors\" : []\n}", "")
+    RESPONSE_ERROR("400", "Path depth exceeds 1.", "")
+)
 API_CALL(PUT, configs, save_to_flash, NULL, ARRAY ( {  } ))
 {
     ConfigManager *cm = ConfigManager :: getConfigManager();
@@ -350,6 +456,20 @@ API_CALL(PUT, configs, save_to_flash, NULL, ARRAY ( {  } ))
     resp->json_response(HTTP_OK);
 }
 
+API_DOC(PUT, configs, reset_to_default,
+    TAG("Configuration")
+    SUMMARY("Reset settings to their defaults")
+    CAUTION("destructive", "Every setting the machine was configured with is replaced by its factory value.")
+    DESCRIPTION("Puts the settings back to their factory values and applies them immediately. "
+                "Flash is not touched, so `configs:load_from_flash` undoes this and "
+                "`configs:save_to_flash` makes it permanent.")
+    PATH("/v1/configs:reset_to_default", "resetConfigsToDefault", "Reset every category")
+    PATH("/v1/configs/{category}:reset_to_default", "resetConfigCategoryToDefault", "Reset matching categories")
+    PATH_PARAM("category", "string", "Category name or pattern, URL encoded.", "Drive%20A%20Settings")
+    RESPONSE("200", "application/json", "ErrorResponse", "Every category was reset.", "resetConfigsToDefault")
+    RESPONSE("200", "application/json", "ConfigStoreListResponse", "The categories that were reset.", "resetConfigCategoryToDefault")
+    RESPONSE_ERROR("400", "Path depth exceeds 1.", "")
+)
 API_CALL(PUT, configs, reset_to_default, NULL, ARRAY ( {  } ))
 {
     ConfigManager *cm = ConfigManager :: getConfigManager();

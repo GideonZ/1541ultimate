@@ -1491,11 +1491,10 @@ TELNET_KEY_BYTES: Dict[str, bytes] = {
     "CBM_X": b"\x18",
     # KEY_CTRL_I is $09, which the VT100 driver also passes through as itself.
     "CBM_I": b"\x09",
-    # ESC is ESC followed by a byte the driver does not decode, which its
-    # e_esc_escape default returns as KEY_ESCAPE, dropping the second byte.
-    # 'x' is such a byte and stays one: CBM_R above ends in $12 rather than
-    # the letter 'r', so no letter is claimed by that case.
-    "ESC": b"\x1bx",
+    # A bare ESC, as a terminal sends for the ESC key; the VT100 driver delivers
+    # it after VT100_ESCAPE_ALONE_MS with nothing following (keyboard_vt100.cc
+    # getch()). A trailing byte would now arrive as its own keystroke.
+    "ESC": b"\x1b",
     "ENTER": b"\r",
     # DEL and BACKSPACE are the same physical key (KEY_ALIASES maps both to
     # the matrix's single "inst_del" key on REST); the VT100 driver passes

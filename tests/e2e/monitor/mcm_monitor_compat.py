@@ -10,6 +10,7 @@ policy back into ``monitor_test.py``.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -29,8 +30,13 @@ from ui_backend import MODE_TELNET, Snapshot, add_mode_argument, make_backend
 # natural-exit liveness checks must observe the C64 without an Overlay/Freeze
 # UI owning the live screen.
 HEIGHT = 24
-STATUS_LINE_RE = core.STATUS_LINE_RE
-find_status_line = core.find_status_line
+# The Debug scenarios accept either footer. monitor_test.py keeps the two apart,
+# because its own checks read CPU banking out of the first one; the Debug
+# scenarios only need to find the row, and on a U2+L the monitor draws the
+# VIC-only form instead.
+STATUS_LINE_RE = re.compile(
+    f"{core.STATUS_LINE_RE.pattern}|{core.U2_STATUS_LINE_RE.pattern}")
+find_status_line = core.find_any_status_line
 read_rest_memory = core.read_rest_memory
 write_rest_memory = core.write_rest_memory
 wait_for_rest_byte = core.wait_for_rest_byte

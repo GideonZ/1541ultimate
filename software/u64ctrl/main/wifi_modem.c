@@ -29,6 +29,9 @@
 #include "rpc_dispatch.h"
 #include "wifi_modem.h"
 #include "pinout.h"
+#include "power_state.h"
+#include "button_handler.h"
+#include "wol_magic.h"
 
 #define NET_CMD_BUFSIZE 512
 
@@ -131,6 +134,79 @@ static err_t hacked_tx(struct netif *netif, struct pbuf *pbuf, const struct ip4_
 }
 
 
+/* Wake on Wi-Fi.
+ *
+ * While the machine is off, the only thing on the network is this module, on
+ * its own lwIP. Frames arrive through netif->input, the slot hacked_recv holds
+ * while the machine is on, so that is where a magic packet is watched for. The
+ * frame is always handed on to the stack that was there, which keeps the
+ * association, the DHCP lease and SNTP alive and answers the ARP a unicast
+ * magic packet needs.
+ *
+ * Only Wi-Fi can do this: the wired PHY sits in the FPGA power domain, which is
+ * down with the machine.
+ *
+ * Written from the button handler's task, read in the frame path, so volatile. */
+static volatile bool wake_armed = false;
+
+/* The last known machine state, so a netif whose input slot was reset can be
+ * watched again without the button handler saying so twice. */
+static volatile int wake_machine_on = 1;
+
+static err_t wake_watch_recv(struct pbuf *p, struct netif *inp)
+{
+    if (wake_armed) {
+        // Static: 256 bytes is too much for the receive task's stack, and
+        // netif->input is called from that one task, so one buffer is enough.
+        static uint8_t frame[WOL_SCAN_BYTES];
+        // pbuf_copy_partial() flattens a chain and clamps to what is there.
+        const uint16_t got = pbuf_copy_partial(p, frame, sizeof(frame), 0);
+        if (wol_is_magic_packet(frame, got, inp->hwaddr)) {
+            ESP_LOGI(TAG, "Magic packet received; switching the machine on.");
+            // Disarmed only once the event is queued: the post does not
+            // block, and wake tools repeat the packet, so a failed post is
+            // exactly when staying armed saves the wake.
+            if (extern_button_event(BUTTON_ON) == pdTRUE) {
+                wake_armed = false;
+            } else {
+                ESP_LOGW(TAG, "Could not post the wake; staying armed for the next packet.");
+            }
+        }
+    }
+    return default_input(p, inp);
+}
+
+/* Called on every power transition and once at startup, with the state the
+ * machine is now in. Reads the setting each time. */
+void wake_on_wifi_update(int machine_on)
+{
+    wake_machine_on = machine_on;
+    if (!my_sta_netif) {
+        return;
+    }
+    struct netif *lw = ((struct esp_netif_obj *)my_sta_netif)->lwip_netif;
+    if (!lw) {
+        return;
+    }
+
+    // No watching before wifi_init() has recorded default_input. The decision
+    // lives in power_state.c, where a host build can reach it.
+    if (power_should_watch_for_wake(machine_on, default_input != NULL)) {
+        wake_armed = true;
+        lw->input = wake_watch_recv;
+        ESP_LOGI(TAG, "Wake on Wi-Fi armed.");
+        return;
+    }
+
+    wake_armed = false;
+    // Only our own watcher is removed: while the machine is on, that slot
+    // belongs to the application's hacked_recv.
+    if (lw->input == wake_watch_recv) {
+        lw->input = default_input;
+    }
+}
+
+
 static void got_ip_event_handler(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
 {
     const ip_event_got_ip_t *event = (const ip_event_got_ip_t *) data;
@@ -201,6 +277,14 @@ static void wifi_event_handler(void *esp_netif, esp_event_base_t base, int32_t e
 
     uint8_t evcode = 0;
     switch(event_id) {
+        case WIFI_EVENT_STA_START:
+            // Attaching the lwIP netif resets netif->input, so a machine that
+            // is off is watched again from here. One that is on is left alone:
+            // that slot then belongs to the application's own hook.
+            if (!wake_machine_on) {
+                wake_on_wifi_update(0);
+            }
+            break;
         case WIFI_EVENT_STA_DISCONNECTED:
             evcode = EVENT_DISCONNECTED;
             cev.event_code = evcode;

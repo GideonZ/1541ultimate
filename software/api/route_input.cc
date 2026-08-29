@@ -602,6 +602,37 @@ static bool ensure_input_capability(ResponseWrapper *resp)
 
 #endif
 
+// The blocks are split the same way the handlers below are: on a cartridge the
+// active body is the 501 branch, so the call has no success to describe.
+#if U64
+API_DOC(GET, machine, input,
+    TAG("Input")
+    SUMMARY("Read the keyboard and joystick state")
+    DESCRIPTION("Returns every key and joystick input that is currently held, both the ones this "
+                "API is holding and the ones the Ultimate menu is holding, so the answer matches "
+                "what the machine sees.\n"
+                "\n"
+                "The FPGA build has to carry the block that drives the keyboard and joystick "
+                "lines. A build without it answers 501.")
+    PATH("/v1/machine:input", "getInputState", "")
+    RESPONSE("200", "application/json", "InputStateResponse", "What is being held right now.", "")
+    RESPONSE_EXAMPLE("200", "Shift and fire", "{\n  \"keyboard\" : { \"inputs\" : [ \"left_shift\", \"a\" ] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [ \"up\", \"fire\" ] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"errors\" : []\n}", "")
+    RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
+    RESPONSE_ERROR("500", "Could not create REST input mutex.", "")
+)
+#else
+API_DOC(GET, machine, input,
+    TAG("Input")
+    SUMMARY("Read the keyboard and joystick state")
+    DESCRIPTION("Not implemented on this product. Keyboard and joystick injection needs the "
+                "hardware that drives those lines, which a cartridge does not have. The call is "
+                "registered so that a client is told why rather than reading a 404 as a wrong URL, "
+                "and it always answers 501 here. The Ultimate 64 document describes what it does "
+                "on hardware that has it.")
+    PATH("/v1/machine:input", "getInputState", "")
+    RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
+)
+#endif
 API_CALL(GET, machine, input, NULL, ARRAY( { }))
 {
 #if U64
@@ -624,6 +655,48 @@ API_CALL(GET, machine, input, NULL, ARRAY( { }))
 #endif
 }
 
+#if U64
+API_DOC(POST, machine, input,
+    TAG("Input")
+    SUMMARY("Apply keyboard and joystick events")
+    DESCRIPTION("Applies up to 64 input events in the order they are given and returns the state "
+                "that results. The whole batch is validated before any of it is applied, so a "
+                "batch that is rejected changes nothing.\n"
+                "\n"
+                "`press` holds an input down until something releases it, `release` lets it go, "
+                "and `tap` does both, which is what typing needs. A `release_all` event drops "
+                "everything this API is holding, and a machine reset does the same.\n"
+                "\n"
+                "`restore` is not part of the keyboard matrix; it is wired to NMI. It has to "
+                "appear on its own and only with transition `tap`.\n"
+                "\n"
+                "The request must be `application/json` and the body must be under 4096 bytes. "
+                "The FPGA build has to carry the block that drives those lines; a build without "
+                "it answers 501.")
+    PATH("/v1/machine:input", "applyInputEvents", "")
+    BODY("application/json", "InputBatch", "The events to apply, in order.")
+    RESPONSE("200", "application/json", "InputStateResponse", "What is held after the batch was applied.", "")
+    RESPONSE_EXAMPLE("200", "After typing LOAD", "{\n  \"keyboard\" : { \"inputs\" : [] },\n  \"joysticks\" : [\n    { \"port\" : 1, \"inputs\" : [] },\n    { \"port\" : 2, \"inputs\" : [] }\n  ],\n  \"errors\" : []\n}", "")
+    RESPONSE_ERROR("400", "Content type should be 'application/json'.", "")
+    RESPONSE_ERROR("400", "`events` must contain 1..64 entries.", "")
+    RESPONSE_ERROR("400", "JSON body is too large.", "")
+    RESPONSE_ERROR("400", "events[0]: `kind` must be one of `keyboard`, `joystick`, or `release_all`.", "")
+    RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
+)
+#else
+API_DOC(POST, machine, input,
+    TAG("Input")
+    SUMMARY("Apply keyboard and joystick events")
+    DESCRIPTION("Not implemented on this product. Keyboard and joystick injection needs the "
+                "hardware that drives those lines, which a cartridge does not have. The call is "
+                "registered so that a client is told why rather than reading a 404 as a wrong URL, "
+                "and it always answers 501 here. The Ultimate 64 document describes what it does "
+                "on hardware that has it.")
+    PATH("/v1/machine:input", "applyInputEvents", "")
+    BODY("application/json", "InputBatch", "The events to apply, in order.")
+    RESPONSE_ERROR("501", "Keyboard and joystick injection require Ultimate 64-class hardware.", "")
+)
+#endif
 API_CALL(POST, machine, input, &input_json_writer, ARRAY( { }))
 {
 #if U64

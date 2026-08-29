@@ -11,12 +11,16 @@ class U2MemoryBackend : public MemoryBackend
     bool observed_cpu_port_valid;
     uint8_t observed_cpu_port;
     uint8_t cached_cia2_porta;
+    // Whether begin_redraw stopped the machine, and the bracket depth so a
+    // nested caller cannot leave it stopped.
+    bool redraw_stopped_machine;
+    int redraw_depth;
     uint8_t read_cia2_porta(void);
 
 public:
     explicit U2MemoryBackend(C64 *machine)
         : machine(machine), observed_cpu_port_valid(false), observed_cpu_port(0x07),
-          cached_cia2_porta(0x03) { }
+          cached_cia2_porta(0x03), redraw_stopped_machine(false), redraw_depth(0) { }
 
     virtual uint8_t read(uint16_t address);
     virtual void write(uint16_t address, uint8_t value);
@@ -45,6 +49,8 @@ public:
     // running machine that reading is a sample: it is dropped again whenever
     // the debugger lets the program run, because the program can rewrite $01.
     virtual void begin_session(void);
+    virtual void begin_redraw(void);
+    virtual void end_redraw(void);
     virtual bool supports_vic_bank(void) const { return true; }
     virtual uint8_t get_live_vic_bank(void);
     virtual void set_live_vic_bank(uint8_t vic_bank);

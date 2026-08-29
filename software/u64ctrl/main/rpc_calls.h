@@ -85,6 +85,29 @@ typedef struct {
     char serial[16];
 } rpc_get_serial_resp;
 
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t mode; // POWERON_MODE_* from power_state.h
+} rpc_set_power_mode_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    uint8_t mode;       // POWERON_MODE_* from power_state.h
+    uint8_t last_state; // 1 when the machine was on at the last power transition
+} rpc_get_power_mode_resp;
+
+typedef struct {
+    rpc_header_t hdr;
+    uint8_t enabled; // WAKE_ON_WIFI_* from power_state.h
+} rpc_set_wake_on_wifi_req;
+
+typedef struct {
+    rpc_header_t hdr;
+    int esp_err;
+    uint8_t enabled; // WAKE_ON_WIFI_* from power_state.h
+} rpc_get_wake_on_wifi_resp;
+
 /* 42 byte AP record */
 typedef struct {
     uint8_t bssid[6];            // MAC address of AP
@@ -180,6 +203,10 @@ typedef struct {
 #define CMD_MACHINE_REBOOT    0x13
 #define CMD_SET_SERIAL        0x14
 #define CMD_GET_SERIAL        0x15
+#define CMD_SET_POWER_MODE    0x16
+#define CMD_GET_POWER_MODE    0x17
+#define CMD_SET_WAKE_ON_WIFI  0x18
+#define CMD_GET_WAKE_ON_WIFI  0x19
 
 #define EVENT_CONNECTED     0x40
 #define EVENT_GOTIP         0x41

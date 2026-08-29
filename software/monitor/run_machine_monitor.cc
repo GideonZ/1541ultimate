@@ -9,6 +9,20 @@ namespace {
 static MachineMonitor *active_reset_monitor = 0;
 }
 
+// True only when the user interface is holding the machine, which is the freeze
+// menu and an overlay that had to freeze because no display asserted hot-plug
+// detect. A telnet session and an overlay drawn over a running machine leave it
+// running, so a Go there does not have to let go of anything.
+static bool ui_holds_machine_frozen(void)
+{
+#if !defined(RUNS_ON_PC)
+    C64 *machine = C64::getMachine();
+    return machine && machine->is_accessible();
+#else
+    return false;
+#endif
+}
+
 void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 {
     bool reopen_after_reset;
@@ -59,6 +73,24 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         int ret = 0;
         while(!ret && host->exists()) {
             ret = monitor->poll(0);
+            // A Go closes the monitor only where handing the machine back tears
+            // the user interface down with it. Where the user interface never
+            // held the machine, the jump is made with the monitor still on
+            // screen. A Debug session's Go is not this case: it resumes a
+            // parked CPU through the staged NMI below.
+            if ((ret == 1) && !ui_holds_machine_frozen() &&
+                    !monitor->is_debug_session_active() &&
+                    !monitor->has_deferred_debug_go() &&
+                    monitor->consume_pending_go(&go_address, &go_context,
+                                                &go_has_context)) {
+                if (go_has_context) {
+                    monitor_io::resume_to_context(go_context);
+                } else {
+                    monitor_io::jump_to(go_address);
+                }
+                go_has_context = false;
+                ret = 0;
+            }
             // A menu-button push (hardware or REST) while the monitor owns the
             // loop closes the monitor; pollMenuButtonPush() re-arms the push so
             // the outer run_once() loop also tears the menu down, landing the
@@ -75,11 +107,12 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             }
         }
         bool exit_ui = ret == MENU_EXIT;
-        // C=+I's swap_interface_type() toggles the persisted UI mode and
-        // returns MENU_HIDE; unlike a normal exit, the user expects the whole
-        // UI to close onto the live machine, so escalate to a full teardown
-        // (mirrors the browser's own C=+I handler).
-        bool swap_close = ret == MENU_HIDE;
+        // C=+I leaves the monitor with the same value Back returns and
+        // records the swap on the monitor, so the request is read from there
+        // rather than from `ret`. Unlike a normal exit the user expects the
+        // whole UI to close onto the live machine, so it escalates to a full
+        // teardown, mirroring the browser's own C=+I handler.
+        bool swap_close = monitor->consume_pending_interface_swap();
         bool do_go = monitor->consume_pending_go(&go_address, &go_context,
                                                  &go_has_context);
         bool release_after_exit = monitor->consume_release_host_after_exit();

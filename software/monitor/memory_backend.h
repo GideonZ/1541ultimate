@@ -56,6 +56,12 @@ public:
     virtual void begin_session(void) { }
     virtual void end_session(void) { }
 
+    // Hold the host machine still across a burst of reads. Without it a backend
+    // that stops per access pays one stop per row drawn, which on an Ultimate
+    // II+L is about 100ms a row.
+    virtual void begin_redraw(void) { }
+    virtual void end_redraw(void) { }
+
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len)
     {
         while (len) {

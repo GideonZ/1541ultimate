@@ -867,6 +867,7 @@ begin
         i_reu: entity work.reu
         generic map (
             g_extended      => g_extended_reu,
+            g_no_dma_delay  => g_direct_dma,
             g_ram_base      => unsigned(g_ram_base_reu),
             g_ram_tag       => g_tag_reu )
         port map (

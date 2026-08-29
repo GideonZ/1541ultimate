@@ -396,6 +396,11 @@ void U64Machine :: poke_visible(uint16_t address, uint8_t byte)
 
     write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
 
+    // Flush read, as dma_transfer_frozen documents: a write does not stall on
+    // the bus, so without this it can still be on its way out when
+    // after_memory_access puts the mode back, and is then lost.
+    (void)ram[address];
+
     after_memory_access(0, freezerMenu, stopped_it);
 }
 

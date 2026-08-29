@@ -28,6 +28,13 @@ struct FakeMemoryBackend : public MemoryBackend
     // so the count is the subject of a test, not a detail.
     int single_write_count;
     int block_write_count;
+    // How the redraw bracket was used: opens, closes, depth, and reads inside it.
+    int redraw_begin_count;
+    int redraw_end_count;
+    int redraw_depth;
+    int block_reads_inside_redraw;
+    int block_reads_outside_redraw;
+    // Counted so a test can tell byte-at-a-time reads from block reads.
     int single_read_count;
     int block_read_count;
 
@@ -38,6 +45,8 @@ struct FakeMemoryBackend : public MemoryBackend
     virtual void read_block(uint16_t address, uint8_t *dst, uint16_t len);
     virtual void begin_session(void);
     virtual void end_session(void);
+    virtual void begin_redraw(void);
+    virtual void end_redraw(void);
 };
 
 struct FakeBankedMemoryBackend : public MemoryBackend
