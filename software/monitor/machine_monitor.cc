@@ -3982,6 +3982,12 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
+    // Paging asks which row the cursor is on before it moves, and answering
+    // walks the view an instruction at a time. Each step is a read the backend
+    // serves separately, so unheld this is one stop per row scanned, up to
+    // content_height + 64 of them.
+    MonitorReadBurst burst(backend);
+
     for (int row = 0; row < max_scan; row++) {
         uint8_t len = disasm_length(addr);
         if (len == 0) {
@@ -4053,6 +4059,8 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
 
 void MachineMonitor :: restore_disasm_cursor_row(int row)
 {
+    // Rewinds to find the top row and then walks back down to the cursor.
+    MonitorReadBurst burst(backend);
     if (row < 0) {
         ensure_disasm_visible();
         return;
@@ -4071,6 +4079,9 @@ void MachineMonitor :: ensure_disasm_visible()
     if (state.view != MONITOR_VIEW_ASM) {
         return;
     }
+    // Walks from the top of the view to the cursor an instruction at a time,
+    // one read each, so it is held for the same reason as the walks above.
+    MonitorReadBurst burst(backend);
     if (state.current_addr < state.base_addr) {
         state.base_addr = state.current_addr;
         return;
@@ -4096,6 +4107,10 @@ void MachineMonitor :: ensure_disasm_visible()
 
 void MachineMonitor :: step_disassembly(int lines)
 {
+    // Every line stepped is a disassembly probe, and the two helpers below
+    // walk the view again. Nested brackets are counted, so holding it once
+    // here leaves the machine stopped once for the whole move.
+    MonitorReadBurst burst(backend);
     while (lines < 0) {
         uint16_t current = state.current_addr;
         uint16_t prev = disasm_prev_visible_addr(current);

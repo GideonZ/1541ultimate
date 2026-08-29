@@ -9640,6 +9640,57 @@ static int test_compare_serves_a_range_that_wraps_past_ffff(void)
     return 0;
 }
 
+static int test_paging_reads_inside_a_bracket(void)
+{
+    // Paging is not a redraw, and the walks it makes are what a user waits
+    // for. page_disassembly asks disasm_visible_row where the cursor is, and
+    // that scans the view an instruction at a time, up to content_height + 64
+    // reads. Unheld, a backend that stops the host machine per access stops it
+    // once per row scanned: measured on an Ultimate II+L, over 1s per PGUP or
+    // PGDN against 180-210ms on an Ultimate 64, which is enough for the E2E
+    // suite to read a screen one keystroke stale.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'a', KEY_PAGEDOWN, KEY_PAGEUP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    // The bracketing under test is on the key handlers, so the counters are
+    // taken from after the keys are polled, not from the opening redraw.
+    backend.block_reads_inside_redraw = 0;
+    backend.block_reads_outside_redraw = 0;
+    backend.redraw_begin_count = 0;
+    backend.redraw_end_count = 0;
+    for (int i = 0; i < 4; i++) {
+        if (monitor.poll(0) != 0) {
+            break;
+        }
+    }
+
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "Paging read memory outside a bracket, so a backend that stops "
+               "the host machine per access pays one stop per row scanned.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "A paging bracket was left open.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "A paging bracket was not balanced.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    return 0;
+}
+
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
     // Without the bracket, a backend that stops per access pays one stop per
@@ -9809,6 +9860,7 @@ int main()
     if (test_ui_range_commands_read_in_blocks()) return 1;
     if (test_compare_serves_a_range_that_wraps_past_ffff()) return 1;
     if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
+    if (test_paging_reads_inside_a_bracket()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;
