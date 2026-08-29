@@ -1447,7 +1447,12 @@ def run_debug_tests(rest_host: str, session: "mt.MonitorSession") -> None:
         mt.write_rest_memory(rest_host, 0xC040, bytes([0xA9, 0x66, 0xEA, 0x4C, 0x42, 0xC0]))
         session.goto("C040")
         session.send_char("A")
-        session.send_char("D")  # Over from the restored Debug cursor, not live snapshot state
+        # _reopen_monitor leaves Debug, so D opens it here rather than stepping.
+        # Entry captures no context, which is the state under test: the Over
+        # below has only the cursor to execute from.
+        if "Dbg" not in _header_line(session):
+            session.send_char("D")
+        session.send_char("D")  # Over from the Debug cursor, not a live snapshot
         parsed = _wait_for_pc(session, "C042")
         if parsed["ac"] != "66":
             raise mt.Failure(f"No-context Over should execute LDA #$66, got {parsed!r}")
