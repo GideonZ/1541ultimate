@@ -8,6 +8,7 @@
 #include "network_target.h"
 #include "network_interface.h"
 #include "socket.h"
+#include "lwip/opt.h"
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
@@ -209,13 +210,6 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
-	// The client's own limit. Refused rather than reclaimed, with the answer
-	// an exhausted pool already gives. See NET_MAX_SOCKETS.
-	if (socket_count >= NET_MAX_SOCKETS) {
-		*status = &c_status_no_socket;
-		return;
-	}
-
 	int socket = socket(AF_INET, type, 0);
 	if (socket < 0) {
 		*status = &c_status_no_socket;
@@ -237,8 +231,14 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
         return;
 	}
 
-	// The cap above left room, so this is within the table.
-	track_socket(socket);
+	// The table has room for every socket lwip can create, so this cannot
+	// fail. Refusing rather than writing past the table keeps that a check
+	// instead of an assumption.
+	if (!track_socket(socket)) {
+		*status = &c_status_no_socket;
+		lwip_close(socket);
+		return;
+	}
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
@@ -407,9 +407,20 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     }
 }
 
-void NetworkTarget :: track_socket(int socketnr)
+// A socket handed to the client without a table entry would survive a C64
+// reset, which is the defect in #808, so the table must cover every descriptor
+// lwip can return. lwip's NUM_SOCKETS is MEMP_NUM_NETCONN, tested here rather
+// than including lwip's private socket header.
+static_assert(NET_MAX_SOCKETS >= MEMP_NUM_NETCONN,
+              "the socket table is smaller than the number of lwip sockets");
+
+bool NetworkTarget :: track_socket(int socketnr)
 {
+    if (socket_count >= NET_MAX_SOCKETS) {
+        return false;
+    }
     sockets[socket_count++] = socketnr;
+    return true;
 }
 
 void NetworkTarget :: untrack_socket(int socketnr)

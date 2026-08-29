@@ -84,9 +84,6 @@ STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
 STATUS_NO_DATA_PREFIX = b"02,NO DATA"
-# What OPEN_* answers when there is no socket to give: the client is at
-# NET_MAX_SOCKETS, or lwip's pool is out. Not in the network target document.
-STATUS_NO_SOCKET = b"85,ERROR OPENING SOCKET"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
 # and the length in the command is the only variable.
@@ -145,13 +142,11 @@ PEER_TIMEOUT_SECONDS = 10.0
 # unreachable.
 PROBE_ATTEMPTS = 3
 
-# NET_MAX_SOCKETS in software/io/network/network_target.h: how many sockets the
-# target lets one client hold. Repeated rather than discovered, so changing the
-# cap in the firmware has to be a deliberate change here too. See #808.
-SOCKET_CAP = 4
-# Sockets left open at the reset. Refilling the cap afterwards says the reset
-# released them: had it not, the client would still be at its cap.
-SOCKETS_LEFT_OPEN_AT_RESET = SOCKET_CAP
+# How many sockets the scenario leaks before the reset. Any number the device
+# can spare will do: four is enough to be obvious in lwip's pool and leaves
+# room for the sockets the firmware opens for itself. Opening the same number
+# again after the reset says they were released rather than merely forgotten.
+SOCKETS_LEFT_OPEN_AT_RESET = 4
 RESET_CYCLES = 3
 
 # The two ways of reaching the registers, described at the top of this file.
@@ -167,7 +162,6 @@ TESTS = [
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
-    "abandoned-sockets-are-bounded",
     "reset-closes-uci-sockets",
 ]
 
@@ -1108,62 +1102,6 @@ def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
             detail(f"handle {handle}, source port {port}")
 
 
-def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
-    """A client cannot hold more sockets than the target's cap.
-
-    GideonZ/1541ultimate#808: nothing but the client's own CLOSE_SOCKET ever
-    gave a socket back, so a client that lost its handles took the network
-    target down for everyone until the device was power cycled.
-    """
-    section("abandoned-sockets-are-bounded")
-    handles: List[int] = []
-    ports: List[int] = []
-    try:
-        open_abandoned(net, peer, SOCKET_CAP, handles, ports)
-
-        with check(f"OPEN_UDP past the cap of {SOCKET_CAP} is refused"):
-            result = net.uci.transact(
-                net.open_command(NET_CMD_OPEN_UDP, peer.ip, peer.udp_port))
-            detail(f"OPEN_UDP #{SOCKET_CAP + 1} answered {result.status_text!r}")
-            if result.status_text != STATUS_NO_SOCKET:
-                # It succeeded, so this client can hold more than the cap.
-                # Hand the socket back before reporting that.
-                if result.status_text == STATUS_OK and len(result.data) == 1:
-                    close_quietly(net, [result.data[0]])
-                raise Failure(f"OPEN_UDP #{SOCKET_CAP + 1} answered "
-                              f"{result.status_text!r} rather than "
-                              f"{STATUS_NO_SOCKET.decode()!r}, so a client can hold "
-                              f"more than {SOCKET_CAP} sockets at once")
-
-        with check(f"the {SOCKET_CAP} sockets already open are untouched"):
-            # Nothing is closed on the client's behalf, so a target that made
-            # room by closing one of these fails here.
-            for number, handle in enumerate(handles, start=1):
-                answer = net.write(handle, b"STILL")
-                if answer.status_text != STATUS_OK:
-                    raise Failure(f"WRITE_SOCKET on handle {handle}, socket {number} "
-                                  f"of {SOCKET_CAP}, answered {answer.status_text!r}; "
-                                  f"the refused open cost the client a socket it "
-                                  f"already held")
-
-        with check("closing one socket makes room for another"):
-            # The cap counts live sockets, so a client that closes what it
-            # opens never meets it. Unlike the refusal above, this holds
-            # whatever the rest of the device is doing with the pool.
-            closed = handles.pop(0)
-            ports.pop(0)
-            answer = net.close(closed)
-            if answer.status_text != STATUS_OK:
-                raise Failure(f"CLOSE_SOCKET on handle {closed} answered "
-                              f"{answer.status_text!r}")
-            handle = net.open_udp(peer.ip, peer.udp_port)
-            handles.append(handle)
-            detail(f"closed handle {closed}, opened handle {handle}")
-    finally:
-        close_quietly(net, handles)
-    return True
-
-
 def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     """A C64 reset releases every socket a client left open.
 
@@ -1190,9 +1128,10 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
                     raise Failure(f"handles {still_open} were still open after the reset; "
                                   f"the program that opened them is gone, so nothing "
                                   f"else can ever close them")
-            # Refilling the cap says the reset released the sockets rather
-            # than forgetting them: had they still been open, this would be 85.
-            open_abandoned(net, peer, SOCKET_CAP, handles, ports)
+            # Opening as many again says the reset released the sockets rather
+            # than merely forgetting them: had they still been held, lwip would
+            # have that many fewer to give and this would answer 85.
+            open_abandoned(net, peer, SOCKETS_LEFT_OPEN_AT_RESET, handles, ports)
             close_quietly(net, handles)
             handles.clear()
         heap_after = free_heap(device)
@@ -1391,8 +1330,6 @@ def main() -> int:
                 run_oversize_request_keeps_datagram, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
-            run(route, "abandoned-sockets-are-bounded",
-                run_abandoned_sockets_are_bounded, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""

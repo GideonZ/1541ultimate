@@ -24,10 +24,11 @@
 
 #define NET_CMD_BUFSIZE 2048
 
-// How many sockets one client can hold. Opening past this is refused with 85,
-// as an exhausted lwip pool already answers, so a leak shows on the open that
-// caused it rather than later. Same shape as TELNET_MAX_SESSIONS. See #808.
-#define NET_MAX_SOCKETS 4
+// Room for every socket lwip can hand out, so the table holds whatever this
+// target opens and no client ever meets a limit of its own. lwip's NUM_SOCKETS
+// is MEMP_NUM_NETCONN, which is 16 in software/network/config/lwipopts.h;
+// network_target.cc checks that the two still agree. See #808.
+#define NET_MAX_SOCKETS 16
 
 // The largest payload READ_SOCKET accepts, which is the largest UDP payload
 // that can reach the device: 1500 bytes of Ethernet MTU less 20 bytes of IPv4
@@ -74,7 +75,7 @@ class NetworkTarget : public CommandTarget {
     int sockets[NET_MAX_SOCKETS];
     int socket_count;
 
-    void track_socket(int socketnr);
+    bool track_socket(int socketnr);
     void untrack_socket(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
