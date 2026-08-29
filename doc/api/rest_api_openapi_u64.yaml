@@ -7,9 +7,7 @@ info:
   version: '0.1'
   summary: REST interface of the Ultimate firmware on the Ultimate 64, Ultimate 64 Elite and Ultimate 64 Elite II.
   description: |2
-    Available since release 3.11. This document covers the Ultimate 64, Ultimate 64 Elite and Ultimate 64 Elite II; there is a
-    separate one for the other family, because which calls a product serves is
-    decided when the firmware is compiled rather than at run time.
+    Available since release 3.11.
 
     This document is generated from the firmware sources. Every call in it is
     registered in `software/api/route_*.cc` in the build it came from, and no call
