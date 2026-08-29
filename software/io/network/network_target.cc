@@ -8,6 +8,7 @@
 #include "network_target.h"
 #include "network_interface.h"
 #include "socket.h"
+#include "lwip/opt.h"
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
@@ -29,11 +30,13 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    socket_count = 0;
     discard_read_reply();
 }
 
 NetworkTarget::~NetworkTarget()
 {
+    close_all_sockets();
     delete[] data_message.message;
     delete[] status_message.message;
 }
@@ -228,6 +231,14 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
         return;
 	}
 
+	// The table has room for every socket lwip can create, so this cannot
+	// fail. Refusing rather than writing past the table keeps that a check
+	// instead of an assumption.
+	if (!track_socket(socket)) {
+		*status = &c_status_no_socket;
+		lwip_close(socket);
+		return;
+	}
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
@@ -269,7 +280,13 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
     memset(&msg, 0, sizeof(msg));
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
-    int ret = lwip_recvmsg(socketnr, &msg, 0);
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_recvmsg(socketnr, &msg, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
     // The header is the number of bytes this reply carries, which is what the
     // network target document specifies and what existing clients read. On a
     // reply that spans blocks it is still the total, not the part in the first
@@ -283,6 +300,7 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 
     // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
 	if (ret == 0) {
+		untrack_socket(socketnr);
 		lwip_close(socketnr);
 		*status = &c_status_socket_closed;
 		return;
@@ -344,7 +362,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
     uint8_t *src = &command->message[3];
 
     int length = command->length - 3;
-    int ret = lwip_send(socketnr, src, length, 0);
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_send(socketnr, src, length, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
     // printf("Writing %d bytes to socket %d resulted in %d\n", length, socketnr, ret);
     // dump_hex_relative(src, length);
 
@@ -366,7 +390,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 void NetworkTarget :: close_socket(Message *command, Message **reply, Message **status)
 {
     uint8_t socketnr = command->message[2];
-    int result = lwip_close(socketnr);
+    int result = -1;
+    if (owns_socket(socketnr)) {
+        untrack_socket(socketnr);
+        result = lwip_close(socketnr);
+    } else {
+        errno = EBADF;
+    }
     *reply = &c_message_empty;
     if (result < 0) {
         *status = &status_message;
@@ -375,6 +405,62 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     } else {
         *status = &c_status_ok;
     }
+}
+
+// A socket handed to the client without a table entry would survive a C64
+// reset, which is the defect in #808, so the table must cover every descriptor
+// lwip can return. lwip's NUM_SOCKETS is MEMP_NUM_NETCONN, tested here rather
+// than including lwip's private socket header.
+static_assert(NET_MAX_SOCKETS >= MEMP_NUM_NETCONN,
+              "the socket table is smaller than the number of lwip sockets");
+
+bool NetworkTarget :: track_socket(int socketnr)
+{
+    if (socket_count >= NET_MAX_SOCKETS) {
+        return false;
+    }
+    sockets[socket_count++] = socketnr;
+    return true;
+}
+
+void NetworkTarget :: untrack_socket(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            socket_count--;
+            for (; i < socket_count; i++) {
+                sockets[i] = sockets[i + 1];
+            }
+            return;
+        }
+    }
+}
+
+bool NetworkTarget :: owns_socket(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void NetworkTarget :: close_all_sockets(void)
+{
+    for (int i = 0; i < socket_count; i++) {
+        lwip_close(sockets[i]);
+    }
+    socket_count = 0;
+}
+
+void NetworkTarget :: c64_reset(void)
+{
+    // abort() also drops the reply, but it does not run when the reset's
+    // queue post was dropped. Without this the next program could be handed
+    // what is left of the previous one's read over Data More.
+    discard_read_reply();
+    close_all_sockets();
 }
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)

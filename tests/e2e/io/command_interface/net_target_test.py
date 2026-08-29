@@ -138,6 +138,16 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 # that is already queued and does not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
+# How often a lost probe datagram is resent before the socket is judged
+# unreachable.
+PROBE_ATTEMPTS = 3
+
+# How many sockets the scenario leaks before the reset. Any number the device
+# can spare will do: four is enough to be obvious in lwip's pool and leaves
+# room for the sockets the firmware opens for itself. Opening the same number
+# again after the reset says they were released rather than merely forgotten.
+SOCKETS_LEFT_OPEN_AT_RESET = 4
+RESET_CYCLES = 3
 
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
@@ -152,6 +162,7 @@ TESTS = [
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
+    "reset-closes-uci-sockets",
 ]
 
 
@@ -250,10 +261,12 @@ class Net:
         reply = self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_IPADDR, 0])).data
         return ".".join(str(b) for b in reply[:4]) if len(reply) >= 4 else None
 
+    def open_command(self, command: int, ip: str, port: int) -> bytes:
+        return (bytes([TARGET_NETWORK, command, port & 0xFF, (port >> 8) & 0xFF])
+                + ip.encode("ascii") + b"\x00")
+
     def _open(self, command: int, ip: str, port: int, what: str) -> int:
-        message = (bytes([TARGET_NETWORK, command, port & 0xFF, (port >> 8) & 0xFF])
-                   + ip.encode("ascii") + b"\x00")
-        result = self.uci.transact(message)
+        result = self.uci.transact(self.open_command(command, ip, port))
         if result.status_text != STATUS_OK or len(result.data) != 1:
             raise Failure(f"{what} {ip}:{port} answered {result.status_text!r} "
                           f"with reply {result.data!r}")
@@ -369,12 +382,36 @@ class Peer:
         The device connects its UDP socket, so it only accepts datagrams from
         the address it connected to, and a reply has to come from this bound
         port back to whatever source port the device chose.
+
+        The probe is a datagram, so it can be lost; seen once in a dozen runs.
+        A lost one is resent rather than counted against the firmware.
+
+        Anything already queued here is discarded first. A datagram left over
+        from an earlier scenario is read as this probe otherwise, and the
+        address learned is then a socket that is already closed, so every
+        send_udp that follows goes nowhere and the device reads report no data.
         """
-        net.write(handle, b"PROBE")
-        self.udp.settimeout(PEER_TIMEOUT_SECONDS)
-        _, address = self.udp.recvfrom(2048)
-        self.udp_peer = address
-        return address
+        self.udp.setblocking(False)
+        try:
+            while True:
+                self.udp.recvfrom(2048)
+        except OSError:
+            pass
+        finally:
+            self.udp.setblocking(True)
+        for attempt in range(PROBE_ATTEMPTS):
+            net.write(handle, b"PROBE")
+            self.udp.settimeout(PEER_TIMEOUT_SECONDS)
+            try:
+                _, address = self.udp.recvfrom(2048)
+            except socket.timeout:
+                detail(f"probe datagram {attempt + 1} of {PROBE_ATTEMPTS} did not arrive "
+                       f"within {PEER_TIMEOUT_SECONDS:.0f}s")
+                continue
+            self.udp_peer = address
+            return address
+        raise Failure(f"no probe datagram arrived from handle {handle} in "
+                      f"{PROBE_ATTEMPTS} attempts")
 
     def send_udp(self, payload: bytes) -> None:
         if self.udp_peer is None:
@@ -1040,6 +1077,80 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def close_quietly(net: Net, handles: List[int]) -> None:
+    """Close every handle a scenario opened; an error means it was already gone."""
+    for handle in handles:
+        try:
+            net.close(handle)
+        except Failure:
+            pass
+
+
+def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
+                   ports: List[int]) -> None:
+    """OPEN_UDP `count` times without a CLOSE_SOCKET, recording each socket.
+
+    Each announces itself with a datagram, so this host learns the source port
+    lwip gave it. Two live sockets never share a port, so it identifies one.
+    """
+    for n in range(count):
+        with check(f"OPEN_UDP #{n + 1} without closing the previous ones"):
+            handle = net.open_udp(peer.ip, peer.udp_port)
+            handles.append(handle)
+            _, port = peer.learn_udp_peer(net, handle)
+            ports.append(port)
+            detail(f"handle {handle}, source port {port}")
+
+
+def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
+    """A C64 reset releases every socket a client left open.
+
+    The program that opened them is gone, so nothing else ever can. `reset`
+    resets the C64 and returns a Net that reaches the target afterwards.
+    """
+    section("reset-closes-uci-sockets")
+    handles: List[int] = []
+    ports: List[int] = []
+    heap_before = free_heap(device)
+    try:
+        for cycle in range(RESET_CYCLES):
+            open_abandoned(net, peer, SOCKETS_LEFT_OPEN_AT_RESET, handles, ports)
+            with check(f"cycle {cycle + 1}: reset the C64 with "
+                       f"{SOCKETS_LEFT_OPEN_AT_RESET} sockets open"):
+                net = reset()
+            with check(f"cycle {cycle + 1}: the reset closed the sockets left open"):
+                # A socket the reset closed answers CLOSE_SOCKET with an
+                # error; one it left open closes now, and answers OK.
+                still_open = [handle for handle in handles
+                              if net.close(handle).status_text == STATUS_OK]
+                handles.clear()
+                if still_open:
+                    raise Failure(f"handles {still_open} were still open after the reset; "
+                                  f"the program that opened them is gone, so nothing "
+                                  f"else can ever close them")
+            # Opening as many again says the reset released the sockets rather
+            # than merely forgetting them: had they still been held, lwip would
+            # have that many fewer to give and this would answer 85.
+            open_abandoned(net, peer, SOCKETS_LEFT_OPEN_AT_RESET, handles, ports)
+            close_quietly(net, handles)
+            handles.clear()
+        heap_after = free_heap(device)
+        if heap_before is not None and heap_after is not None:
+            detail(f"free heap {heap_before} -> {heap_after} over {RESET_CYCLES} cycles")
+    finally:
+        close_quietly(net, handles)
+    return True
+
+
+def free_heap(device) -> Optional[int]:
+    """Free FreeRTOS heap, for the record; lwip's pools are static and do not show here."""
+    try:
+        heap = device.machine.heap()
+    except Failure:
+        return None
+    return heap["free"] if heap else None
+
+
 def restore_settings(device, original: Dict[str, str], keep: bool) -> bool:
     if keep or not original:
         return True
@@ -1219,6 +1330,19 @@ def main() -> int:
                 run_oversize_request_keeps_datagram, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
+
+            def reset_and_reopen(route=route):
+                """Reset the C64 and hand back a driver that reaches the target."""
+                nonlocal native_started
+                computer.machine.reset(force=True)
+                if route == "native":
+                    native_started = True
+                    return Net(build_driver(route, computer, args.busy_timeout))
+                return Net(rest_uci)
+            # Last on purpose: on the native route the reset inside it ends
+            # the 6502 agent that `net` wraps, so nothing can follow it here.
+            run(route, "reset-closes-uci-sockets",
+                run_reset_closes_uci_sockets, net, peer, reset_and_reopen, device)
 
     except Failure as exc:
         # Setup and route initialisation raise rather than recording a result,

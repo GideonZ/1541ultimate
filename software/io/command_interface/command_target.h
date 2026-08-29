@@ -44,6 +44,9 @@ public:
     }
     
     virtual void abort(int a) { }
+
+    // The C64 was reset, so the program talking to this target is gone.
+    virtual void c64_reset(void) { }
 };
 
 extern CommandTarget *command_targets[];
