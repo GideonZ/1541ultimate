@@ -60,6 +60,11 @@ POLL_INTERVAL_SECONDS = 0.25
 # mcm_monitor_compat.set_target() keeps this in step for the Debug suite.
 TARGET = "u64"
 
+# How many times a view key may be pressed. More than one only matters on a
+# cartridge, where the key crosses two keyboard scans before the monitor sees
+# it; see ensure_view.
+VIEW_KEY_PRESSES = 3
+
 # How many times a command argument may be typed again when the field shows it
 # did not all arrive, for the checks where typing it is preparation rather than
 # the subject. Two spare attempts, because the loss this covers is one
@@ -79,8 +84,15 @@ DATA_ROW_RE = re.compile(r"^\|?[0-9A-F]{4} [0-9A-F]{2}.*DATA ")
 MEMORY_ROW_RE = re.compile(r"^[0-9A-F]{4} ")
 MEMORY_ROW_16_RE = re.compile(r"^[0-9A-F]{4} [0-9A-F]{16} [0-9A-F]{16}$")
 
-# U2 has no monitor-selected CPU bank, so it uses a VIC-only footer.
-U2_STATUS_LINE_RE = re.compile(r"CPU VIEW  VIC([0-3]) \$([0-9A-F]{4})")
+# U2 has no monitor-selected CPU bank, so its footer names no view bank. It
+# still reports the live 6510 port where it has one: the BRK capture stub runs
+# LDA $01 on the CPU itself, and the footer then names the regions that port
+# maps. Both spellings end in the VIC bank and its base, which is what the U2
+# checks read out of it.
+U2_STATUS_LINE_RE = re.compile(
+    r"(?:CPU VIEW"
+    r"|(?:CPU[0-7]|C[0-7]O[0-7]) \$A:(?:RAM|BAS) \$D:(?:RAM|CHR|I/O) \$E:(?:RAM|KRN))"
+    r" {1,2}VIC([0-3]) \$([0-9A-F]{4})")
 U2_VIC_BANK_BASES = (0x0000, 0x4000, 0x8000, 0xC000)
 
 
@@ -389,12 +401,16 @@ def assert_contains(snapshot: Snapshot, line_index: int, expected: str) -> None:
 
 
 
-def assert_source_column_is_fixed(snapshot: Snapshot, expected_tag: str) -> None:
+def assert_source_column_is_fixed(snapshot: Snapshot, *expected_tags: str) -> None:
     """Every Assembly row's source tag is three characters at one column.
 
     The tag is right-aligned, so a tag whose width depended on the bank would
     move the column's left edge and the rows would appear to shift sideways
     when the cursor crossed a bank boundary.
+
+    Several tags are accepted where the backend has more than one right answer:
+    a cartridge names the device it read from once a BRK capture has told it
+    the 6510's port, and says CPU until one has.
     """
     columns = set()
     tags = set()
@@ -415,10 +431,10 @@ def assert_source_column_is_fixed(snapshot: Snapshot, expected_tag: str) -> None
         raise Failure(
             f"the Assembly source column moves between rows, columns {sorted(columns)}"
             f"\n{snapshot.text()}")
-    if expected_tag not in tags:
+    if not tags.intersection(expected_tags):
         raise Failure(
-            f"expected an {expected_tag!r} source tag, saw {sorted(tags)}"
-            f"\n{snapshot.text()}")
+            f"expected one of {list(expected_tags)!r} as a source tag, "
+            f"saw {sorted(tags)}\n{snapshot.text()}")
 
 
 def view_bank_status_forms(expected: str) -> Tuple[str, ...]:
@@ -813,11 +829,15 @@ def cycle_cpu_bank_from_cpu7(session: MonitorSession, target_status: str, steps:
 
 
 def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
-    """Select a monitor view, pressing its key at most once.
+    """Select a monitor view, waiting for its header rather than assuming it.
 
-    Each view has its own key, so the key is sent once when the wanted view is
-    not already up and the header is then waited for. A key that does not
-    arrive fails here rather than being covered by a second press.
+    Each view has its own key, so the key is sent only when the wanted view is
+    not already up, and the header is then waited for. On a cartridge the key
+    crosses the computer's keyboard matrix and the cartridge's own scan, which
+    drops one occasionally, so it is sent again where the header does not
+    arrive; each resend is reported, so a device that keeps dropping keys shows
+    up in the run rather than being hidden by the retry. A view that never
+    arrives still fails here.
     """
     key = VIEW_KEYS.get(expected)
     if key is None:
@@ -833,12 +853,17 @@ def ensure_view(session: MonitorSession, expected: str) -> Snapshot:
     screen = session.capture()
     if shows_view(screen):
         return screen
-    session.send_char(key)
-    screen = wait_until(session, shows_view)
-    if not shows_view(screen):
-        raise Failure(
-            f"{key!r} did not select the {expected!r} view; screen was\n{screen.text()}")
-    return screen
+    for press in range(VIEW_KEY_PRESSES):
+        session.send_char(key)
+        screen = wait_until(session, shows_view)
+        if shows_view(screen):
+            if press:
+                detail(f"the {key!r} key had to be pressed {press + 1} times "
+                       f"before the {expected!r} view came up")
+            return screen
+    raise Failure(
+        f"{key!r} did not select the {expected!r} view in {VIEW_KEY_PRESSES} "
+        f"presses; screen was\n{screen.text()}")
 
 
 def ensure_screen_charset(session: MonitorSession, expected: str) -> Snapshot:
@@ -2095,9 +2120,11 @@ ASM_ANCHOR_PROGRAM = bytes((
 # How far to walk away from the baseline and back.
 ASM_ANCHOR_STEPS = 6
 
-# How long check [42] waits for judgeable frames from the C64U video stream; a
-# fixed 0.60s window reports "no complete frame" before the stream is flowing.
-VIDEO_CAPTURE_TIMEOUT_SECONDS = 8.0
+# How long the G check waits for judgeable frames from the video stream; a fixed
+# 0.60s window reports "no complete frame" before the stream is flowing. The
+# budget also has to cover a cartridge's hand-back, which tears the user
+# interface down and pulses NMI after the key that asked for it has returned.
+VIDEO_CAPTURE_TIMEOUT_SECONDS = 15.0
 
 
 def asm_row_for(snapshot: Snapshot, address: int) -> Optional[str]:
@@ -2451,7 +2478,13 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                 capture.capture(0.20)
                 frames = [frame for frame in video_frames(capture.video_packets)
                           if frame.received_at >= launched]
-                if len(frames) >= 2:
+                # Two frames are the minimum to compare, but both can still show
+                # the picture from before the machine was handed back: on a
+                # cartridge that happens after the key has returned. Collect
+                # until two of them differ, so a slow hand-back costs time
+                # rather than the verdict. A picture that never changes still
+                # fails below, once the whole budget is spent on proving it.
+                if len(frames) >= 2 and len({bytes(f.pixels) for f in frames}) > 1:
                     break
             if not frames:
                 raise Failure(
@@ -2465,9 +2498,24 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                     f"means the stream is not arriving at all; nothing kept but "
                     f"foreign packets counted means it is arriving from an "
                     f"address this does not recognise as the device's.")
+            # Whether the program executed at all, established before the
+            # picture is judged. The loop's own RAM write says so wherever the
+            # video comes from, so a G that never reached the machine is
+            # reported as that rather than as a picture that did not change.
+            executed = True
+            try:
+                wait_for_rest_byte(rest_host, 0xC200, 0x5A)
+            except Failure:
+                executed = False
             visible = [frame for frame in frames if set(frame.pixels) != {0}]
             if not visible:
                 assert_not_black(frames[-1], "G $C000 video")
+            if not executed:
+                raise Failure(
+                    f"G ${address:04X} did not run the program: ${0xC200:04X} "
+                    f"never took $5A, so the loop at ${address:04X} never "
+                    f"executed its store. {len(frames)} frame(s) were captured "
+                    f"from {video_host}.")
             assert_frames_differ(visible, "G $C000 video")
     else:
         session.goto_run(f"{address:04X}")
@@ -4046,16 +4094,21 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         assert_equal("Memory stability", initial_snapshot, back.text(), back.last_command)
 
     with check("KERNAL disassembly formatting"):
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e000"]["contains"].items():
             assert_contains(screen, int(row), expected)
         # The tag identity is a property of the machine: only a backend that
         # selects the bank itself can say KRN. A cartridge reads whatever the
         # CPU sees and says CPU. The fixed column is asserted on both.
-        assert_source_column_is_fixed(screen, "CPU" if is_u2 else "KRN")
+        if is_u2:
+            # The cartridge names the device once its BRK capture has resolved
+            # the 6510's port, and says CPU until one has.
+            assert_source_column_is_fixed(screen, "KRN", "CPU")
+        else:
+            assert_source_column_is_fixed(screen, "KRN")
 
         screen = session.goto("E013")
-        screen = session.send_char("A")
+        screen = ensure_view(session, "ASM ")
         for row, expected in snapshots["kernal_disasm_e013"]["contains"].items():
             assert_contains(screen, int(row), expected)
 
