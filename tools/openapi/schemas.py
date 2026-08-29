@@ -36,9 +36,7 @@ PROFILES = {
 API_VERSION = "0.1"
 
 DESCRIPTION = """\
-Available since release 3.11. This document covers {products}; there is a
-separate one for the other family, because which calls a product serves is
-decided when the firmware is compiled rather than at run time.
+Available since release 3.11.
 
 This document is generated from the firmware sources. Every call in it is
 registered in `software/api/route_*.cc` in the build it came from, and no call
