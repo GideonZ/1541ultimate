@@ -45,8 +45,7 @@ public:
     
     virtual void abort(int a) { }
 
-    // The C64 was reset, so whatever program was talking to this target is
-    // gone and can never finish what it started.
+    // The C64 was reset, so the program talking to this target is gone.
     virtual void c64_reset(void) { }
 };
 

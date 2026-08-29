@@ -18,9 +18,8 @@ CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
-// Set by the reset interrupt for the server task, which tells the targets on
-// its own thread rather than the reset task's, so a target never hears of the
-// reset while it is in the middle of a command.
+// Set by the reset ISR for the server task, so a target is told about the
+// reset between commands rather than during one.
 static volatile bool c64_reset_pending;
 
 #define CMD_IF_DEBUG 0
@@ -123,11 +122,9 @@ void CommandInterface :: run_task(void)
 #if CMD_IF_DEBUG
 		printf("{%b}", status_byte);
 #endif
-		// Checked on every event rather than only on the abort the reset
-		// interrupt posts, so a reset whose post did not fit the queue is
-		// still acted on by the next event that does. Read and cleared as one
-		// step, because a reset landing between the two would otherwise be
-		// cleared without ever being told to the targets.
+		// Checked on every event, so a reset whose queue post was dropped is
+		// still acted on. Read and cleared as one step: a reset landing
+		// between the two would be cleared without ever reaching the targets.
 		portENTER_CRITICAL();
 		bool reset_seen = c64_reset_pending;
 		c64_reset_pending = false;

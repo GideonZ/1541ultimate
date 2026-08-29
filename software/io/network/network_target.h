@@ -24,21 +24,9 @@
 
 #define NET_CMD_BUFSIZE 2048
 
-// How many sockets a client can hold open at once. A socket a client opens
-// and never closes otherwise stays open until the device is power cycled, and
-// lwip has 8 UDP control blocks and 16 sockets in total for everything on the
-// device, so a client that loses its handles takes the whole network target
-// down. Opening one more than this is refused with 85, which is the same
-// answer an exhausted pool already gives, and the same shape as
-// TELNET_MAX_SESSIONS in software/network/socket_gui.cc, FTPD_MAX_SESSIONS in
-// software/network/ftpd.cc and MAX_HTTP_CLIENT in the http server.
-//
-// Refused rather than reclaimed on purpose. A client that leaks handles has a
-// bug, and the open it cannot complete is where that bug is: reporting it
-// there is what lets the author find it. Closing the oldest socket instead
-// would keep the leaking client running and move the symptom to some later
-// read or write of a socket it still believed it held.
-// See GideonZ/1541ultimate#808.
+// How many sockets one client can hold. Opening past this is refused with 85,
+// as an exhausted lwip pool already answers, so a leak shows on the open that
+// caused it rather than later. Same shape as TELNET_MAX_SESSIONS. See #808.
 #define NET_MAX_SOCKETS 4
 
 // The largest payload READ_SOCKET accepts, which is the largest UDP payload
@@ -80,11 +68,9 @@ class NetworkTarget : public CommandTarget {
     int read_offset;
     Message *read_status;
 
-    // The sockets this target opened for its client, oldest first. It reads,
-    // writes and closes only these: a handle the client has lost track of may
-    // by now be a socket the firmware opened for itself. Any command that
-    // hands the client a socket must therefore track it, or owns_socket()
-    // will refuse the client its own handle.
+    // The sockets this target opened, oldest first. It reads, writes and
+    // closes only these, so a stale handle cannot reach a socket the firmware
+    // opened for itself. Any command handing out a socket must track it here.
     int sockets[NET_MAX_SOCKETS];
     int socket_count;
 

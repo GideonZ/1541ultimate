@@ -84,10 +84,8 @@ STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
 STATUS_NO_DATA_PREFIX = b"02,NO DATA"
-# What OPEN_TCP/OPEN_UDP answer when the target has no socket to give: the
-# client is at NET_MAX_SOCKETS, or lwip's pool is out. The network target
-# document lists no failure at all for OPEN_UDP, so this is measured from the
-# firmware rather than taken from the contract.
+# What OPEN_* answers when there is no socket to give: the client is at
+# NET_MAX_SOCKETS, or lwip's pool is out. Not in the network target document.
 STATUS_NO_SOCKET = b"85,ERROR OPENING SOCKET"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
@@ -143,22 +141,15 @@ OVERRUN_LIMIT = REPLY_QUEUE_BYTES + 128
 # that is already queued and does not wait for one in flight.
 DELIVERY_SETTLE_SECONDS = 0.4
 PEER_TIMEOUT_SECONDS = 10.0
-# How often a lost probe datagram is sent again before the socket is judged
-# unable to reach this host.
+# How often a lost probe datagram is resent before the socket is judged
+# unreachable.
 PROBE_ATTEMPTS = 3
 
-# GideonZ/1541ultimate#808: sockets a client opens and never closes. Nothing
-# but the client's own CLOSE_SOCKET ever gave one back, so a client that lost
-# its handles exhausted lwip's pools and took the network target down for
-# everyone until the device was power cycled.
-#
-# NET_MAX_SOCKETS in software/io/network/network_target.h: how many sockets
-# the target lets one client hold. Repeated here rather than discovered, so
-# that changing the cap in the firmware has to be a deliberate change to this
-# test as well.
+# NET_MAX_SOCKETS in software/io/network/network_target.h: how many sockets the
+# target lets one client hold. Repeated rather than discovered, so changing the
+# cap in the firmware has to be a deliberate change here too. See #808.
 SOCKET_CAP = 4
-# Sockets left open when the C64 is reset. Filling the cap and then requiring
-# the same number of opens to succeed afterwards is what says the reset
+# Sockets left open at the reset. Refilling the cap afterwards says the reset
 # released them: had it not, the client would still be at its cap.
 SOCKETS_LEFT_OPEN_AT_RESET = SOCKET_CAP
 RESET_CYCLES = 3
@@ -398,9 +389,8 @@ class Peer:
         the address it connected to, and a reply has to come from this bound
         port back to whatever source port the device chose.
 
-        The probe is a datagram, so it can be lost; seen once in a dozen runs
-        on a wired LAN, with WRITE_SOCKET reporting the bytes as sent. A lost
-        probe is sent again rather than counted against the firmware.
+        The probe is a datagram, so it can be lost; seen once in a dozen runs.
+        A lost one is resent rather than counted against the firmware.
         """
         for attempt in range(PROBE_ATTEMPTS):
             net.write(handle, b"PROBE")
@@ -1081,12 +1071,7 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
 
 
 def close_quietly(net: Net, handles: List[int]) -> None:
-    """Close every handle a scenario opened, tolerating ones already gone.
-
-    A handle the firmware closed on its own answers CLOSE_SOCKET with an
-    error, which is the expected outcome for some of them and never a reason
-    to leave the rest open.
-    """
+    """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
         try:
             net.close(handle)
@@ -1098,10 +1083,8 @@ def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
                    ports: List[int]) -> None:
     """OPEN_UDP `count` times without a CLOSE_SOCKET, recording each socket.
 
-    Each socket announces itself with one datagram, which tells this host the
-    ephemeral source port lwip gave it. Two live sockets never share a port,
-    so a port is the identity of a socket where a handle number is not: lwip
-    hands the number of a closed socket to the next one opened.
+    Each announces itself with a datagram, so this host learns the source port
+    lwip gave it. Two live sockets never share a port, so it identifies one.
     """
     for n in range(count):
         with check(f"OPEN_UDP #{n + 1} without closing the previous ones"):
@@ -1115,15 +1098,9 @@ def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
 def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
     """A client cannot hold more sockets than the target's cap.
 
-    GideonZ/1541ultimate#808: every OPEN_* takes a lwip socket, and nothing
-    but the client's own CLOSE_SOCKET ever gave it back, so a client that
-    lost track of its handles, or was simply restarted, took the network
+    GideonZ/1541ultimate#808: nothing but the client's own CLOSE_SOCKET ever
+    gave a socket back, so a client that lost its handles took the network
     target down for everyone until the device was power cycled.
-
-    A capped target refuses the open past its cap. What that establishes,
-    beyond the pool no longer being reachable from one client: the refusal
-    lands on the open, which is where the client's leak is, and the sockets
-    the client already holds are untouched.
     """
     section("abandoned-sockets-are-bounded")
     handles: List[int] = []
@@ -1146,9 +1123,8 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
                               f"more than {SOCKET_CAP} sockets at once")
 
         with check(f"the {SOCKET_CAP} sockets already open are untouched"):
-            # Nothing is closed on the client's behalf, so every handle it was
-            # given still reaches the socket it was given. A target that made
-            # room by closing one of these would fail here.
+            # Nothing is closed on the client's behalf, so a target that made
+            # room by closing one of these fails here.
             for number, handle in enumerate(handles, start=1):
                 answer = net.write(handle, b"STILL")
                 if answer.status_text != STATUS_OK:
@@ -1158,10 +1134,9 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
                                   f"already held")
 
         with check("closing one socket makes room for another"):
-            # The cap counts what the client holds now, so a client that
-            # closes what it opens never meets it. This holds whatever the
-            # rest of the device is doing with the pool, which the refusal
-            # above does not.
+            # The cap counts live sockets, so a client that closes what it
+            # opens never meets it. Unlike the refusal above, this holds
+            # whatever the rest of the device is doing with the pool.
             closed = handles.pop(0)
             ports.pop(0)
             answer = net.close(closed)
@@ -1179,10 +1154,8 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
 def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     """A C64 reset releases every socket a client left open.
 
-    A program that opened sockets is gone after a reset, and with it any
-    chance of those sockets ever being closed by their owner. `reset` resets
-    the C64 and returns a Net that reaches the target afterwards; on the
-    native route that is a freshly started 6502 agent.
+    The program that opened them is gone, so nothing else ever can. `reset`
+    resets the C64 and returns a Net that reaches the target afterwards.
     """
     section("reset-closes-uci-sockets")
     handles: List[int] = []
@@ -1195,10 +1168,8 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
                        f"{SOCKETS_LEFT_OPEN_AT_RESET} sockets open"):
                 net = reset()
             with check(f"cycle {cycle + 1}: the reset closed the sockets left open"):
-                # A socket the reset closed answers CLOSE_SOCKET with an error;
-                # one it left open closes now, and answers OK. This is what
-                # tells a reset that closes sockets from a cap that merely
-                # makes room for the next opens.
+                # A socket the reset closed answers CLOSE_SOCKET with an
+                # error; one it left open closes now, and answers OK.
                 still_open = [handle for handle in handles
                               if net.close(handle).status_text == STATUS_OK]
                 handles.clear()
@@ -1206,10 +1177,8 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
                     raise Failure(f"handles {still_open} were still open after the reset; "
                                   f"the program that opened them is gone, so nothing "
                                   f"else can ever close them")
-            # Filling the cap again is what says the reset released the
-            # sockets rather than merely forgetting them: had they still been
-            # open, the client would still be at its cap and the first of
-            # these opens would answer 85.
+            # Refilling the cap says the reset released the sockets rather
+            # than forgetting them: had they still been open, this would be 85.
             open_abandoned(net, peer, SOCKET_CAP, handles, ports)
             close_quietly(net, handles)
             handles.clear()

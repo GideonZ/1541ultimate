@@ -209,10 +209,8 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
-	// The client's own limit, refused rather than enforced by taking a socket
-	// back: a socket the client still believes it holds must not go away
-	// underneath it. 85 is already what a client sees when there is no socket
-	// to give, so this adds no status a client has to learn.
+	// The client's own limit. Refused rather than reclaimed, with the answer
+	// an exhausted pool already gives. See NET_MAX_SOCKETS.
 	if (socket_count >= NET_MAX_SOCKETS) {
 		*status = &c_status_no_socket;
 		return;
@@ -447,11 +445,9 @@ void NetworkTarget :: close_all_sockets(void)
 
 void NetworkTarget :: c64_reset(void)
 {
-    // The reply is dropped here as well as in abort(), because this hook runs
-    // for a reset whose CMD_ABORT_DATA post did not fit the queue, and that is
-    // exactly the case where abort() is never called. Without it the next
-    // program asking for a further block over Data More would be handed what
-    // is left of the previous program's read.
+    // abort() also drops the reply, but it does not run when the reset's
+    // queue post was dropped. Without this the next program could be handed
+    // what is left of the previous one's read over Data More.
     discard_read_reply();
     close_all_sockets();
 }
