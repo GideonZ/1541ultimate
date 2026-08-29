@@ -27,6 +27,10 @@ extern uint8_t _snds1581_bin_start;
 extern uint8_t _characters_901225_01_bin_start;
 extern uint8_t _kernal_901227_03_bin_start;
 extern uint8_t _basic_901226_01_bin_start;
+extern uint8_t _api_html_start[];
+extern uint8_t _api_html_end[1];
+extern uint8_t _rest_api_openapi_u64_yaml_start[];
+extern uint8_t _rest_api_openapi_u64_yaml_end[1];
 extern uint8_t _index_html_start[];
 extern uint8_t _index_html_end[1];
 extern uint8_t _iec_config_bin_start[];
@@ -90,6 +94,8 @@ static void copy_files(void)
 //    write_file(ROMS_DIRECTORY, "basic.bin", &_basic_901226_01_bin_start, 0x2000);
 //    write_file(ROMS_DIRECTORY, "chars.bin", &_characters_901225_01_bin_start, 0x1000);
     write_file(HTML_DIRECOTRY, "index.html", (uint8_t *)_index_html_start, (long int)_index_html_end - (long int)_index_html_start);
+    write_file(HTML_DIRECOTRY, "api.html", (uint8_t *)_api_html_start, (long int)_api_html_end - (long int)_api_html_start);
+    write_file(HTML_DIRECOTRY, "openapi.yaml", (uint8_t *)_rest_api_openapi_u64_yaml_start, (long int)_rest_api_openapi_u64_yaml_end - (long int)_rest_api_openapi_u64_yaml_start);
     write_file(CFG_DIRECTORY, "iec_partitions.ipr", (uint8_t *)_iec_config_bin_start, (long int)_iec_config_bin_end - (long int)_iec_config_bin_start);
 }
 

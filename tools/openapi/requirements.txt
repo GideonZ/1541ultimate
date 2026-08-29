@@ -1,0 +1,9 @@
+# The validator that checks doc/api/rest_api_openapi_*.yaml against the OpenAPI
+# 3.1 specification. `make openapi_validate` and the CI step of the same name run
+# it; the firmware build and `make openapi` need nothing from here.
+#
+#   python3 -m pip install -r tools/openapi/requirements.txt
+#
+# Pinned because this is a gate: a validator that changes what it accepts should
+# turn the build red when somebody updates the pin, not on an unrelated morning.
+openapi-spec-validator==0.9.0

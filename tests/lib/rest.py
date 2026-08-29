@@ -35,6 +35,7 @@ import urllib.request
 from typing import Dict, Optional, Tuple
 
 import interactions
+import openapi_contract
 import report
 import targets
 from report import Failure, format_exception
@@ -392,6 +393,10 @@ class RestClient:
         # moved since; MachineApi.reset uses it to skip a reset that cannot
         # accomplish anything.
         self.mutations = 0
+        # Set on the first call when ULTIMATE_VALIDATE_OPENAPI is on. See
+        # tests/lib/openapi_contract.py.
+        self.contract: "Optional[openapi_contract.Contract]" = None
+        self._contract_resolved = False
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         return url_for(self.target, path, params)
@@ -475,9 +480,33 @@ class RestClient:
                           sent=outbound,
                           received=message_bytes(f"HTTP/1.1 {answer[0]}",
                                                  answer[1], answer[2]))
+            self._check_contract(method, path, answer)
             return answer
         raise Failure(f"{method} {target} failed: {format_exception(last_exc)}") from last_exc
 
+
+    def _check_contract(self, method: str, path: str, answer: Response) -> None:
+        """Hold the answer to the generated OpenAPI document, when that is switched on."""
+        if not openapi_contract.enabled():
+            return
+        if not self._contract_resolved:
+            # Set first: resolving asks the device what it is, and that call
+            # arrives back here before there is a contract to check it against.
+            self._contract_resolved = True
+            self.contract = self._resolve_contract()
+        if self.contract is not None:
+            self.contract.check(method, path, answer[0], answer[1], answer[2])
+
+    def _resolve_contract(self) -> "Optional[openapi_contract.Contract]":
+        declared = openapi_contract.declared_profile()
+        if declared:
+            return openapi_contract.Contract.load(declared)
+        code, _, body = self.request("GET", "/v1/info", idempotent=True)
+        if code != 200:
+            raise Failure(
+                f"cannot tell which OpenAPI document applies: GET /v1/info returned HTTP {code}")
+        info = json_object("/v1/info", body)
+        return openapi_contract.Contract.load(openapi_contract.profile_of(info))
 
     # -- shorthands for the shapes suites actually use --
 

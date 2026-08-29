@@ -29,6 +29,37 @@ jobs:
           docker run --rm \
           -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make observability_test"
 
+      # Also the gate that catches an endpoint whose documentation was not
+      # updated with it. Runs before the firmware builds because it costs seconds.
+      - name: Check OpenAPI Specification
+        run: |
+          docker run --rm \
+          -v $GITHUB_WORKSPACE:/mnt/project:rw my_docker_image /bin/bash -c "cd /mnt/project && make openapi_test && make openapi_check"
+
+      # The step above proves the documents are what the sources say. This one
+      # proves they are valid OpenAPI 3.1, by running openapi-spec-validator, so
+      # a generator change cannot produce a fresh document that no standard tool
+      # will read.
+      #
+      # It runs in a stock Python image rather than the build image, because the
+      # build image has neither pip nor ensurepip and so cannot install a host
+      # package at all. The image is small, it is pulled once and cached on the
+      # runner, and nothing else in the build depends on this step, so a package
+      # index that is unreachable is reported as that rather than as a broken
+      # document.
+      #
+      # The documents to check come from `generate.py paths`, the same list
+      # `make openapi_validate` uses, so this cannot drift to a different set of
+      # files. tools/openapi/test_ci.py holds the two invocations to each other.
+      - name: Validate OpenAPI Specification
+        run: |
+          docker run --rm -v $GITHUB_WORKSPACE:/mnt/project:rw --workdir /mnt/project \
+          --user $(id -u):$(id -g) -e HOME=/tmp python:3.12-slim /bin/sh -c \
+          "pip install --quiet --disable-pip-version-check --root-user-action=ignore \
+             --target /tmp/openapi-packages -r tools/openapi/requirements.txt && \
+           PYTHONPATH=/tmp/openapi-packages python -m openapi_spec_validator \
+             --validation-errors all \$(python tools/openapi/generate.py paths)"
+
       - name: Determine FPGA & ESP32 dependencies
         run: |
           docker run --rm \
@@ -167,6 +198,14 @@ jobs:
             update_${{ env.GIT_VERSION }}.u64
             update_${{ env.GIT_VERSION }}.ue2
             update_${{ env.GIT_VERSION }}.cfw
+
+      - name: Upload OpenAPI Specification
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi_${{ env.GIT_VERSION }}
+          path: |
+            doc/api/rest_api_openapi_u2.yaml
+            doc/api/rest_api_openapi_u64.yaml
 
       - name: Upload Factory Artifacts U2+L
         uses: actions/upload-artifact@v7
