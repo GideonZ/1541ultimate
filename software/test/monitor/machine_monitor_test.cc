@@ -9597,6 +9597,49 @@ static int test_ui_range_commands_read_in_blocks(void)
     return 0;
 }
 
+static int test_compare_serves_a_range_that_wraps_past_ffff(void)
+{
+    // Compare takes a destination and a length, and monitor_parse_transfer
+    // bounds each field to four hex digits without checking that the
+    // destination plus the length stays inside 64K. So `C FF00-FFFF,FF80`
+    // is accepted and its second range runs FF80..FFFF then 0000..007F.
+    //
+    // The block reader is bounded by the range it is asked for, and on a
+    // wrapped range the last address is below the first, which makes that
+    // bound meaningless. It has to fall back to the block rather than clamp
+    // the window to a start above the address being read: doing that leaves
+    // the read indexing before the start of the buffer.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    int index;
+    int expected = 0;
+    int got;
+
+    for (index = 0; index < 0x10000; index++) {
+        backend.memory[index] = (uint8_t)(index * 7);
+    }
+    // One byte that differs, in the wrapped half, so the walk has to read
+    // past $FFFF and get the right answer there.
+    backend.memory[0x0040] = (uint8_t)(backend.memory[0x0040] ^ 0xFF);
+
+    for (index = 0; index < 0x100; index++) {
+        uint16_t left = (uint16_t)(0xFF00 + index);
+        uint16_t right = (uint16_t)(0xFF80 + index);
+        if (backend.memory[left] != backend.memory[right]) {
+            expected++;
+        }
+    }
+
+    got = monitor_compare_collect(&backend, 0xFF00, 0xFFFF, 0xFF80, addrs, 8);
+    if (expect(got == expected,
+               "Compare over a range that wraps past $FFFF did not report the "
+               "differences a byte-by-byte walk of the same two ranges finds.")) {
+        printf("  reported %d, a byte-by-byte walk finds %d\n", got, expected);
+        return 1;
+    }
+    return 0;
+}
+
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
     // Without the bracket, a backend that stops per access pays one stop per
@@ -9764,6 +9807,7 @@ int main()
     if (test_assembly_data_delete_clears_bytes()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
     if (test_ui_range_commands_read_in_blocks()) return 1;
+    if (test_compare_serves_a_range_that_wraps_past_ffff()) return 1;
     if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
 
     puts("machine_monitor_test: OK");

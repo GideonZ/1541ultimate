@@ -1663,17 +1663,22 @@ public:
         uint32_t block = (uint32_t)address & ~(uint32_t)(MONITOR_READ_BLOCK - 1);
 
         if (!filled || address < base || address >= base + held) {
-            uint32_t start = (block < first) ? first : block;
+            uint32_t start = block;
             uint32_t end = block + MONITOR_READ_BLOCK - 1;
 
             // Compare's second range can wrap past $FFFF, leaving last below
-            // first. The bound only means something when it does not, and a
-            // block never crosses the wrap, so the block's own end is safe.
-            if (last >= first && end > last) {
-                end = last;
-            }
-            if (end < start) {
-                end = start;
+            // first. Neither bound places this block then, so it is read whole;
+            // a block never crosses the wrap, so all of it is in range.
+            // Narrowing the window to `first` there is what must not happen:
+            // for an address below `first` it puts the start above the address
+            // being served, and the index below runs off the front of buffer.
+            if (last >= first) {
+                if (first > start) {
+                    start = first;
+                }
+                if (last < end) {
+                    end = last;
+                }
             }
             base = start;
             held = (uint16_t)(end - start + 1);
