@@ -213,7 +213,13 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 	// pool run out before its own limit does. An open that then fails has
 	// still cost the client its oldest socket: the slot only exists once
 	// something has been closed.
-	if (socket_count == NET_MAX_SOCKETS) {
+	//
+	// A loop rather than a single test so that track_socket() below is
+	// provably within the table. sockets[NET_MAX_SOCKETS] would be
+	// socket_count itself, so a count that ever exceeded the table would
+	// overwrite the count rather than fail where it could be seen.
+	// untrack_socket() removes exactly the entry named, so this terminates.
+	while (socket_count >= NET_MAX_SOCKETS) {
 		int oldest = sockets[0];
 		untrack_socket(oldest);
 		lwip_close(oldest);
@@ -447,6 +453,12 @@ void NetworkTarget :: close_all_sockets(void)
 
 void NetworkTarget :: c64_reset(void)
 {
+    // The reply is dropped here as well as in abort(), because this hook runs
+    // for a reset whose CMD_ABORT_DATA post did not fit the queue, and that is
+    // exactly the case where abort() is never called. Without it the next
+    // program asking for a further block over Data More would be handed what
+    // is left of the previous program's read.
+    discard_read_reply();
     close_all_sockets();
 }
 
