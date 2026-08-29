@@ -84,6 +84,11 @@ STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
 STATUS_NO_DATA_PREFIX = b"02,NO DATA"
+# What OPEN_TCP/OPEN_UDP answer when the target has no socket to give: the
+# client is at NET_MAX_SOCKETS, or lwip's pool is out. The network target
+# document lists no failure at all for OPEN_UDP, so this is measured from the
+# firmware rather than taken from the contract.
+STATUS_NO_SOCKET = b"85,ERROR OPENING SOCKET"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
 # and the length in the command is the only variable.
@@ -142,25 +147,21 @@ PEER_TIMEOUT_SECONDS = 10.0
 # unable to reach this host.
 PROBE_ATTEMPTS = 3
 
-# GideonZ/1541ultimate#808: sockets a client opens and never closes. lwip has
-# MEMP_NUM_UDP_PCB = 8 protocol control blocks in total (lwipopts.h), and the
-# firmware's own UDP users hold some of them, so this many opens without a
-# CLOSE_SOCKET exhausts the pool on firmware that keeps every socket for ever.
-# On firmware that bounds what a client can hold open, every one succeeds.
-ABANDONED_SOCKETS = 8
+# GideonZ/1541ultimate#808: sockets a client opens and never closes. Nothing
+# but the client's own CLOSE_SOCKET ever gave one back, so a client that lost
+# its handles exhausted lwip's pools and took the network target down for
+# everyone until the device was power cycled.
+#
 # NET_MAX_SOCKETS in software/io/network/network_target.h: how many sockets
-# the target keeps for a client before opening one more closes the oldest.
-# Repeated here rather than discovered, so that changing the cap in the
-# firmware has to be a deliberate change to this test as well.
+# the target lets one client hold. Repeated here rather than discovered, so
+# that changing the cap in the firmware has to be a deliberate change to this
+# test as well.
 SOCKET_CAP = 4
-# How many sockets a reset has to release before opening ABANDONED_SOCKETS
-# more can succeed only if the reset closed them.
-SOCKETS_LEFT_OPEN_AT_RESET = 4
+# Sockets left open when the C64 is reset. Filling the cap and then requiring
+# the same number of opens to succeed afterwards is what says the reset
+# released them: had it not, the client would still be at its cap.
+SOCKETS_LEFT_OPEN_AT_RESET = SOCKET_CAP
 RESET_CYCLES = 3
-# How long this host is given to refuse a connection to a closed TCP port of
-# its own. A host that drops instead of refusing would leave the device
-# blocked in connect(), which the command interface reports as a wedge.
-REFUSAL_TIMEOUT_SECONDS = 1.0
 
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
@@ -176,7 +177,6 @@ TESTS = [
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
     "abandoned-sockets-are-bounded",
-    "failed-open-keeps-existing-sockets",
     "reset-closes-uci-sockets",
 ]
 
@@ -276,10 +276,12 @@ class Net:
         reply = self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_GET_IPADDR, 0])).data
         return ".".join(str(b) for b in reply[:4]) if len(reply) >= 4 else None
 
+    def open_command(self, command: int, ip: str, port: int) -> bytes:
+        return (bytes([TARGET_NETWORK, command, port & 0xFF, (port >> 8) & 0xFF])
+                + ip.encode("ascii") + b"\x00")
+
     def _open(self, command: int, ip: str, port: int, what: str) -> int:
-        message = (bytes([TARGET_NETWORK, command, port & 0xFF, (port >> 8) & 0xFF])
-                   + ip.encode("ascii") + b"\x00")
-        result = self.uci.transact(message)
+        result = self.uci.transact(self.open_command(command, ip, port))
         if result.status_text != STATUS_OK or len(result.data) != 1:
             raise Failure(f"{what} {ip}:{port} answered {result.status_text!r} "
                           f"with reply {result.data!r}")
@@ -413,46 +415,6 @@ class Peer:
             return address
         raise Failure(f"no probe datagram arrived from handle {handle} in "
                       f"{PROBE_ATTEMPTS} attempts")
-
-    def drain_udp(self) -> None:
-        """Discard datagrams already queued here, so the next read is this one's."""
-        self.udp.setblocking(False)
-        try:
-            while True:
-                self.udp.recvfrom(2048)
-        except OSError:
-            pass
-        finally:
-            self.udp.setblocking(True)
-
-    def refused_tcp_port(self) -> Optional[int]:
-        """A TCP port on this host that refuses a connection at once, or None.
-
-        Bound and released, so the number is almost certainly free, and then
-        tried from this host. What the caller needs is not that the port is
-        closed but that connecting to it comes back quickly: a host that
-        silently drops would leave the device blocked in connect() for as
-        long as lwip retries, and the command interface reports that as a
-        wedge for every target. A caller that gets None skips.
-        """
-        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            probe.bind((self.ip, 0))
-            port = probe.getsockname()[1]
-        finally:
-            probe.close()
-        attempt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        attempt.settimeout(REFUSAL_TIMEOUT_SECONDS)
-        try:
-            attempt.connect((self.ip, port))
-        except ConnectionRefusedError:
-            return port
-        except OSError:
-            return None
-        finally:
-            attempt.close()
-        # Something accepted, so the port is not closed after all.
-        return None
 
     def send_udp(self, payload: bytes) -> None:
         if self.udp_peer is None:
@@ -1150,134 +1112,65 @@ def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
             detail(f"handle {handle}, source port {port}")
 
 
-def source_port(net: Net, peer: Peer, handle: int) -> Optional[int]:
-    """The source port of a datagram written to `handle`, or None if none arrives.
-
-    Drains first, so a datagram left over from an earlier write is never read
-    as this one's, and repeats a lost datagram the way learn_udp_peer does.
-    None means the socket behind the handle did not put a datagram on the
-    wire: either WRITE_SOCKET refused the handle, or the socket is gone.
-    """
-    peer.drain_udp()
-    for _ in range(PROBE_ATTEMPTS):
-        if net.write(handle, b"WHICH").status_text != STATUS_OK:
-            return None
-        peer.udp.settimeout(DELIVERY_SETTLE_SECONDS)
-        try:
-            _, (_, port) = peer.udp.recvfrom(2048)
-        except socket.timeout:
-            continue
-        return port
-    return None
-
-
 def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
-    """A client that never closes its sockets cannot exhaust the device.
+    """A client cannot hold more sockets than the target's cap.
 
     GideonZ/1541ultimate#808: every OPEN_* takes a lwip socket, and nothing
-    but the client's own CLOSE_SOCKET ever gives it back, so a client that
-    loses track of its handles, or is simply restarted, takes the network
-    target down for everyone until the device is power cycled. A bounded
-    target keeps at most a fixed number of client sockets and lets a new one
-    in by closing the oldest, so an OPEN_UDP always succeeds and only the
-    newest SOCKET_CAP sockets are still live afterwards.
+    but the client's own CLOSE_SOCKET ever gave it back, so a client that
+    lost track of its handles, or was simply restarted, took the network
+    target down for everyone until the device was power cycled.
+
+    A capped target refuses the open past its cap. What that establishes,
+    beyond the pool no longer being reachable from one client: the refusal
+    lands on the open, which is where the client's leak is, and the sockets
+    the client already holds are untouched.
     """
     section("abandoned-sockets-are-bounded")
     handles: List[int] = []
     ports: List[int] = []
     try:
-        open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
-
-        with check(f"exactly the newest {SOCKET_CAP} of {ABANDONED_SOCKETS} "
-                   f"abandoned sockets are still live"):
-            # A handle number is not the identity of a socket here: lwip hands
-            # the number of a closed socket to the next one opened, so a write
-            # to an evicted socket's handle reaches whichever socket holds
-            # that number now. A source port is the identity, because two live
-            # sockets never share one. Writing to every handle and collecting
-            # the source ports that arrive therefore bounds the live set from
-            # both sides.
-            arrived = [source_port(net, peer, handle) for handle in handles]
-            detail(", ".join(f"#{n + 1} handle {handles[n]} port {ports[n]} "
-                             f"-> {arrived[n]}" for n in range(len(handles))))
-
-            # No port from an evicted socket may answer. This is what fails on
-            # firmware that keeps every socket, and also on firmware whose cap
-            # is larger than SOCKET_CAP.
-            evicted = set(ports[:ABANDONED_SOCKETS - SOCKET_CAP])
-            still_live = sorted(evicted.intersection(p for p in arrived if p is not None))
-            if still_live:
-                raise Failure(f"source ports {still_live} still answer after "
-                              f"{ABANDONED_SOCKETS} opens without a close, so the "
-                              f"target keeps more than {SOCKET_CAP} of a client's "
-                              f"sockets")
-
-            # And every port of the newest SOCKET_CAP has to answer. Their
-            # handles are the ones the target still holds, so each is a
-            # distinct live socket. This is what fails on firmware whose cap
-            # is smaller than SOCKET_CAP, or that evicts the newest rather
-            # than the oldest.
-            newest = set(ports[-SOCKET_CAP:])
-            reached = set(arrived[-SOCKET_CAP:])
-            missing = sorted(newest - reached)
-            if missing:
-                raise Failure(f"source ports {missing} did not answer, so the target "
-                              f"closed a socket that is not among the "
-                              f"{ABANDONED_SOCKETS - SOCKET_CAP} oldest")
-    finally:
-        close_quietly(net, handles)
-    return True
-
-
-def run_failed_open_keeps_sockets(net: Net, peer: Peer) -> Optional[bool]:
-    """An open that fails must not cost the client a socket it already holds.
-
-    The target closes its oldest socket to let a new one in. If it does that
-    before the new socket is known to be usable, a TCP connect that fails
-    destroys a live socket and creates nothing, and for TCP a refused or
-    unanswered connect is the ordinary outcome when a host is down rather
-    than an edge case: a client retrying a connection loses everything it
-    holds, one socket per attempt.
-
-    Run with the client at its cap, because that is the only state in which
-    the target has a reason to close anything.
-    """
-    section("failed-open-keeps-existing-sockets")
-    dead_port = peer.refused_tcp_port()
-    if dead_port is None:
-        check_start("this host refuses a connection on a closed TCP port")
-        check_skip("this host does not refuse a connection on a closed TCP port of its "
-                   "own, so a failing OPEN_TCP would block the device in connect() "
-                   "rather than come back with an error")
-        return None
-
-    handles: List[int] = []
-    ports: List[int] = []
-    try:
         open_abandoned(net, peer, SOCKET_CAP, handles, ports)
 
-        with check(f"OPEN_TCP to closed port {dead_port} fails"):
-            try:
-                handle = net.open_tcp(peer.ip, dead_port)
-            except Failure as exc:
-                detail(f"OPEN_TCP answered {format_exception(exc)}")
-            else:
-                # It succeeded, so this port is not closed and the scenario
-                # never exercised a failing open. Give the socket back.
-                close_quietly(net, [handle])
-                raise Failure(f"OPEN_TCP to port {dead_port} succeeded, so nothing on "
-                              f"this host refused it and the failing open this "
-                              f"scenario needs did not happen")
+        with check(f"OPEN_UDP past the cap of {SOCKET_CAP} is refused"):
+            result = net.uci.transact(
+                net.open_command(NET_CMD_OPEN_UDP, peer.ip, peer.udp_port))
+            detail(f"OPEN_UDP #{SOCKET_CAP + 1} answered {result.status_text!r}")
+            if result.status_text != STATUS_NO_SOCKET:
+                # It succeeded, so this client can hold more than the cap.
+                # Hand the socket back before reporting that.
+                if result.status_text == STATUS_OK and len(result.data) == 1:
+                    close_quietly(net, [result.data[0]])
+                raise Failure(f"OPEN_UDP #{SOCKET_CAP + 1} answered "
+                              f"{result.status_text!r} rather than "
+                              f"{STATUS_NO_SOCKET.decode()!r}, so a client can hold "
+                              f"more than {SOCKET_CAP} sockets at once")
 
-        with check(f"the {SOCKET_CAP} sockets already open survived the failed open"):
-            arrived = [source_port(net, peer, handle) for handle in handles]
-            detail(", ".join(f"handle {handles[n]} port {ports[n]} -> {arrived[n]}"
-                             for n in range(len(handles))))
-            lost = sorted(set(ports) - set(arrived))
-            if lost:
-                raise Failure(f"source ports {lost} stopped answering after an OPEN_TCP "
-                              f"that failed, so the target gave up a live socket for one "
-                              f"it never handed out")
+        with check(f"the {SOCKET_CAP} sockets already open are untouched"):
+            # Nothing is closed on the client's behalf, so every handle it was
+            # given still reaches the socket it was given. A target that made
+            # room by closing one of these would fail here.
+            for number, handle in enumerate(handles, start=1):
+                answer = net.write(handle, b"STILL")
+                if answer.status_text != STATUS_OK:
+                    raise Failure(f"WRITE_SOCKET on handle {handle}, socket {number} "
+                                  f"of {SOCKET_CAP}, answered {answer.status_text!r}; "
+                                  f"the refused open cost the client a socket it "
+                                  f"already held")
+
+        with check("closing one socket makes room for another"):
+            # The cap counts what the client holds now, so a client that
+            # closes what it opens never meets it. This holds whatever the
+            # rest of the device is doing with the pool, which the refusal
+            # above does not.
+            closed = handles.pop(0)
+            ports.pop(0)
+            answer = net.close(closed)
+            if answer.status_text != STATUS_OK:
+                raise Failure(f"CLOSE_SOCKET on handle {closed} answered "
+                              f"{answer.status_text!r}")
+            handle = net.open_udp(peer.ip, peer.udp_port)
+            handles.append(handle)
+            detail(f"closed handle {closed}, opened handle {handle}")
     finally:
         close_quietly(net, handles)
     return True
@@ -1313,7 +1206,11 @@ def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
                     raise Failure(f"handles {still_open} were still open after the reset; "
                                   f"the program that opened them is gone, so nothing "
                                   f"else can ever close them")
-            open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
+            # Filling the cap again is what says the reset released the
+            # sockets rather than merely forgetting them: had they still been
+            # open, the client would still be at its cap and the first of
+            # these opens would answer 85.
+            open_abandoned(net, peer, SOCKET_CAP, handles, ports)
             close_quietly(net, handles)
             handles.clear()
         heap_after = free_heap(device)
@@ -1514,8 +1411,6 @@ def main() -> int:
                 run_multi_block_state_does_not_leak, net, peer)
             run(route, "abandoned-sockets-are-bounded",
                 run_abandoned_sockets_are_bounded, net, peer)
-            run(route, "failed-open-keeps-existing-sockets",
-                run_failed_open_keeps_sockets, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""

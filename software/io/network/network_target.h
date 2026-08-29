@@ -28,9 +28,16 @@
 // and never closes otherwise stays open until the device is power cycled, and
 // lwip has 8 UDP control blocks and 16 sockets in total for everything on the
 // device, so a client that loses its handles takes the whole network target
-// down. Opening one more than this closes the oldest, and the target only
-// reads, writes and closes sockets in its table, so a handle that has gone
-// stale cannot reach a socket the firmware opened for itself.
+// down. Opening one more than this is refused with 85, which is the same
+// answer an exhausted pool already gives, and the same shape as
+// TELNET_MAX_SESSIONS in software/network/socket_gui.cc, FTPD_MAX_SESSIONS in
+// software/network/ftpd.cc and MAX_HTTP_CLIENT in the http server.
+//
+// Refused rather than reclaimed on purpose. A client that leaks handles has a
+// bug, and the open it cannot complete is where that bug is: reporting it
+// there is what lets the author find it. Closing the oldest socket instead
+// would keep the leaking client running and move the symptom to some later
+// read or write of a socket it still believed it held.
 // See GideonZ/1541ultimate#808.
 #define NET_MAX_SOCKETS 4
 
@@ -73,14 +80,15 @@ class NetworkTarget : public CommandTarget {
     int read_offset;
     Message *read_status;
 
-    // The sockets this target opened for its client, oldest first. It closes
-    // only these: a handle the client has lost track of may by now be a socket
-    // the firmware opened for itself.
+    // The sockets this target opened for its client, oldest first. It reads,
+    // writes and closes only these: a handle the client has lost track of may
+    // by now be a socket the firmware opened for itself. Any command that
+    // hands the client a socket must therefore track it, or owns_socket()
+    // will refuse the client its own handle.
     int sockets[NET_MAX_SOCKETS];
     int socket_count;
 
     void track_socket(int socketnr);
-    void close_oldest_socket(void);
     void untrack_socket(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);
