@@ -1,46 +1,30 @@
 #!/usr/bin/env python3
 """E2E: waking the machine from off with a magic packet.
 
-Supported target: a C64 Ultimate (or Ultimate 64 Elite II) carrying the "Wake
-On Wi-Fi" setting. The suite skips, rather than fails, on firmware that does not
-serve the item, so it is safe to name on an older build.
+Supported target: a C64 Ultimate or Ultimate 64 Elite II carrying the "Wake On
+Wi-Fi" setting. Firmware that does not serve the item skips rather than fails.
 
-Three conditions of the setup this cannot check for itself, and each of them
-makes every check below fail if it does not hold:
+Three conditions this cannot check for itself, each of which fails every check
+below:
 
-- The control module is 1.14 or newer. An application that has the setting on
-  top of an older module is the case this suite cannot detect: the menu greys
-  the item out, but `cfg->disable()` is a menu affordance only and the REST
-  store still serves it, so the suite finds the item, sets it, and fails the
-  wake instead of skipping. A run that fails every scenario should have the
-  module version checked before the firmware is suspected.
+- The control module is 1.14 or newer. The REST store serves the item whether
+  or not the module can store it, so an older module takes the value and
+  ignores it. Check the module version before suspecting the firmware.
+- The device is on Wi-Fi. The wired PHY is powered down with the machine, so
+  the module never sees the packet.
+- The harness is in the device's broadcast domain. A machine that is off
+  answers no ARP, so the packet goes to the broadcast address, which does not
+  cross a router. Give --broadcast to aim at a subnet's own instead.
 
-- The device is on Wi-Fi. Over the wired jack the control module never sees the
-  packet: the RMII PHY sits in the FPGA power domain, which is down while the
-  machine is off, and the module has no wired path of its own. That is what the
-  setting's help text in the menu says, and it is not a limitation this suite
-  can work around.
-- The harness is in the device's broadcast domain. A magic packet is sent to
-  the broadcast address because a machine that is off answers no ARP for the
-  application's address, and a limited broadcast does not cross a router. Give
-  --broadcast to aim at a subnet's own broadcast address instead.
+Scenarios 2, 3 and 5 put the machine off over REST, which leaves the control
+module powered and associated. Scenario 5 asserts that a packet is ignored, so
+it ends with a machine only its power button can revive: hence `manual`, and
+hence --power-button-cmd. Scenario 4, the cold start, covers the watcher armed
+from the module's own start rather than from a power transition; it needs
+--power-off-cmd and --power-on-cmd and is skipped without them.
 
-Three of the four scenarios need no mains interruption: the machine is put into
-the off state over REST, which leaves the control module powered and
-associated, which is exactly the state the feature is for. Only the last
-scenario, in which the packet must be ignored, ends with a machine that nothing
-on the network can revive -- hence `manual`, and hence --power-button-cmd if
-the run is to be unattended.
-
-The fourth scenario is the exception and is skipped unless a socket is given
-with --power-off-cmd and --power-on-cmd. It covers the machine that cold starts
-into the off state, where the watcher is armed from the control module's own
-start rather than from a power transition, which is what a user meets after a
-real power loss with the power on behaviour at its default.
-
-Every option can also come from the environment, which is how the runner passes
-them: U64_WOL_MAC, U64_WOL_BROADCAST, U64_WOL_PORT, U64_POWER_BUTTON_CMD,
-U64_POWER_OFF_CMD and U64_POWER_ON_CMD.
+Every option can also come from the environment: U64_WOL_MAC, U64_WOL_BROADCAST,
+U64_WOL_PORT, U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD and U64_POWER_ON_CMD.
 
     ./run-tests --suite wake-on-wifi --manual c64u
 """
@@ -71,20 +55,17 @@ ITEM = "Wake On Wi-Fi"
 ENABLED = "Enabled"
 DISABLED = "Disabled"
 
-# The other setting of the same group, needed by the cold start scenario: a
-# machine may only be woken from the off state, so the input power has to come
-# back without switching it on.
+# Needed by the cold start scenario: a machine may only be woken from off, so
+# the input power has to come back without switching it on.
 MODE_ITEM = "Power On After Power Loss"
 MODE_OFF = "Off"
 
-# Where a magic packet is sent. Port 9 (discard) is what wake tools use by
-# default; the firmware matches on the pattern rather than on the port, so 7 or
-# a raw frame would do as well.
+# Port 9 is what wake tools use by default. The firmware matches on the pattern
+# rather than on the port, so 7 or a raw frame would do as well.
 DEFAULT_BROADCAST = "255.255.255.255"
 DEFAULT_PORT = 9
-# Wake tools send the packet several times over, on the grounds that a single
-# lost datagram is not worth a failed wake. The firmware disarms on the first
-# match, so the copies cost nothing.
+# Wake tools repeat the packet, since a lost datagram is not worth a failed
+# wake. The firmware disarms on the first match, so the copies cost nothing.
 COPIES = 3
 COPY_PAUSE = 0.2
 
@@ -109,11 +90,8 @@ def format_mac(mac: bytes) -> str:
 
 
 def parse_mac(text: str) -> bytes:
-    """A MAC from a command line or from an ARP table.
-
-    macOS prints its ARP entries with the leading zero of an octet stripped
-    ("24:6f:28:1:22:33"), so each octet is padded rather than taken as written.
-    """
+    """A MAC from a command line or from an ARP table. macOS strips the leading
+    zero of an octet ("24:6f:28:1:22:33"), so each octet is padded."""
     parts = re.split(r"[:-]", text.strip())
     if len(parts) != 6:
         raise Failure(f"not a MAC address: {text!r}")
@@ -126,13 +104,9 @@ def parse_mac(text: str) -> bytes:
 def discover_mac(host: str) -> bytes:
     """The device's MAC, from the host's own neighbour table.
 
-    Asked of the operating system rather than of the device, which serves it
-    nowhere, and read while the machine is still up so the entry is fresh: the
-    REST calls of the preconditions have just been through it.
-
-    `ip neigh` first, `arp` second: `arp` comes from net-tools, which current
-    distributions no longer install by default, and a harness without it should
-    not fail with a FileNotFoundError traceback.
+    The device serves it nowhere, so the operating system is asked instead,
+    while the machine is still up and the entry is fresh. `ip neigh` first,
+    `arp` second: net-tools is no longer installed by default.
     """
     try:
         address = socket.gethostbyname(host)
@@ -156,12 +130,8 @@ def discover_mac(host: str) -> bytes:
 
 
 def other_mac(mac: bytes) -> bytes:
-    """A MAC that is not the device's, for the packet that must be ignored.
-
-    The last octet is moved, so the address stays inside the same block and
-    could plausibly be a neighbour of the device rather than something a
-    matcher might reject for its own reasons.
-    """
+    """A MAC that is not the device's, for the packet that must be ignored. The
+    last octet is moved, so it stays a plausible neighbour address."""
     return mac[:5] + bytes([mac[5] ^ 0x01])
 
 
@@ -185,11 +155,9 @@ def find_store(api: UltimateApi) -> str:
 def set_named_item(api: UltimateApi, store: str, item: str, value: str) -> None:
     """Set a setting and read back what the application now holds.
 
-    What this proves is bounded, and the bound matters when a scenario fails:
-    it says the application took the value, not that the control module stored
-    it. The value travels on from there over the UART RPC, and nothing served
-    over REST reports what the module ended up with. Only the scenarios below
-    do, by what the machine does with a packet.
+    This proves the application took the value, not that the control module
+    stored it: nothing over REST reports what the module ended up with. Only
+    what the machine does with a packet shows that.
     """
     api.configs.set(store, item, value)
     current = api.configs.current(store, item)
@@ -204,13 +172,8 @@ def set_item(api: UltimateApi, store: str, value: str) -> None:
 
 
 def wake_hint(args: argparse.Namespace) -> str:
-    """What to look at when a wake that should have happened did not.
-
-    Three suspects, in the order they are worth checking. The control module is
-    first because it is the one this suite cannot see: the item is served over
-    REST whether or not the module can store it, so a machine whose module
-    predates the setting takes the value and ignores it.
-    """
+    """What to look at when a wake that should have happened did not. The module
+    comes first, being the one suspect this suite cannot see for itself."""
     return (f"no wake: check that the control module is 1.14 or newer (the "
             f"application prints what it found at boot, and greys the item out "
             f"in the menu when the module cannot store it), that the device is "
@@ -291,24 +254,20 @@ def main() -> int:
         mac = parse_mac(args.mac) if args.mac else discover_mac(args.host)
         detail(f"device MAC {format_mac(mac)}"
                f"{'' if args.mac else ' (from the ARP table)'}")
-        # Closes the check the two skips above would have closed. An open check
-        # makes report.py treat every check that follows as nested inside it,
-        # which prints no verdict and counts nothing.
+        # Closes the check the two skips above would have closed; report.py
+        # nests every later check inside an open one and counts nothing.
         check_ok()
-        # After the skips and before anything that switches the machine off: a
-        # run that cannot be completed says so now, and a run that was going to
-        # skip is not asked for a power button it never needs.
+        # After the skips and before anything switches the machine off, so a run
+        # that was going to skip is never asked for a power button.
         button = PowerButton(args.power_button_cmd)
-        # Only when the socket can be scripted. The cold start scenario is
-        # skipped otherwise, so a run that never asked for a mains cut is not
-        # asked to perform one.
+        # Only when the socket can be scripted; the cold start scenario is
+        # skipped otherwise.
         mains = None
         if args.power_off_cmd or args.power_on_cmd:
             mains = Mains(args.power_off_cmd, args.power_on_cmd, args.off_seconds)
 
-        # The negative case first: it ends with the machine off, and the
-        # positive case that follows is what brings it back, so the operator is
-        # left out of it entirely.
+        # The negative case first: the positive case that follows is what
+        # brings the machine back, so no operator is needed in between.
         section("2. Enabled, a magic packet for another station")
         with check("is ignored"):
             set_item(api, store, ENABLED)
@@ -323,28 +282,24 @@ def main() -> int:
             if not wait_for_state(api, True, args.up_timeout):
                 raise Failure(wake_hint(args))
 
-        # The path no other check reaches: the watcher armed at startup rather
-        # than at a power transition. A machine that comes up off after a real
-        # power loss is the case a user hits with the default mode, and the
-        # firmware arms it from the button handler's own start rather than from
-        # an ON or OFF event.
+        # The path no other check reaches: the watcher armed from the button
+        # handler's own start rather than from an ON or OFF event, which is what
+        # a user meets after a real power loss with the default mode.
         section("4. Enabled, a machine that cold starts into the off state")
         if mains is None:
             check_start("wakes after the input power returned")
             check_skip("no socket commands; pass --power-off-cmd and --power-on-cmd")
         else:
             with check("wakes after the input power returned"):
-                # Set again rather than relied on from the scenario above:
-                # the machine rebooted in between, and a boot pushes the value
-                # held in flash down to the module.
+                # Set again: the machine rebooted in between, and a boot
+                # pushes the value held in flash down to the module.
                 set_item(api, store, ENABLED)
                 original_mode = api.configs.current(store, MODE_ITEM)
                 set_named_item(api, store, MODE_ITEM, MODE_OFF)
                 switch_machine_off(api, args.up_timeout)
                 mains.cycle()
-                # The machine has to be off before the packet means anything,
-                # and a machine that is booting is silent too, so this waits
-                # out the same budget a boot is given rather than sampling.
+                # A booting machine is silent too, so this waits out the same
+                # budget a boot is given rather than sampling.
                 if not stays_off(api, args.silence_seconds):
                     raise Failure(f"came up by itself with {MODE_ITEM!r} at "
                                   f"{MODE_OFF!r}, so the wake proves nothing")
@@ -371,9 +326,8 @@ def main() -> int:
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
-        # A scenario that failed after switching the machine off left it off,
-        # and its press was skipped. Press here, so the settings below can be
-        # written and the next suite finds a machine that answers.
+        # A failure after switching the machine off skipped its press, and the
+        # setting restore below needs a machine that answers.
         recover_if_off(button, api, args.up_timeout)
         # Put the settings back if they were read and the machine is there to
         # take them. A machine still off cannot be written to, and saying so is

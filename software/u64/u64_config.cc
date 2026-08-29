@@ -163,13 +163,11 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
-// 0x55..0x5E are declared in io/usb/usb_hid_config.h but are items of *this*
-// store (CFG_MOUSE_MODE and friends appear in u64_cfg below), so they are taken.
-// 0x56..0x63 belong to the audio selection store (io/audio/audio_select.cc),
-// which is a store of its own; they are kept clear here anyway, because
-// ConfigStore::unpack() matches by id across every store on STORE_PAGE_ID.
+// 0x55..0x5E are items of this store too, declared in io/usb/usb_hid_config.h.
+// 0x56..0x63 belong to the audio store; unpack() matches ids across stores on
+// the same page, so they are kept clear here.
 #define CFG_POWERON_MODE      0x5F
-// The first id clear of both ranges above; 0x60 would sit inside the audio one
+// The first id clear of both ranges above.
 #define CFG_WAKE_ON_WIFI      0x64
 
 #define CFG_SCAN_MODE_TEST    0xA8
@@ -1398,17 +1396,12 @@ int U64Config :: setLedSelector(ConfigItem *it)
 }
 
 #if U64 == 2
-// A call into the module cannot report a starved TX buffer distinguishably
-// from success: BUFARGS answers pdFALSE, which is 0, which is also what a
-// successful call returns. The value the module holds is therefore the only
-// evidence that a call arrived, and a single attempt cannot tell a transient
-// shortage from a module that does not know the command. Two attempts can: a
-// buffer frees up, a module that predates the command answers the same way
-// every time.
+// A starved TX buffer makes BUFARGS answer 0, which is also what success
+// returns, so what the module holds is the only evidence a call arrived. A
+// second attempt separates a busy buffer from a module without the command.
 #define MODULE_ATTEMPTS 2
 
-// Reads the power on behavior. False when no answer carrying a mode this
-// firmware knows arrived, whatever the reason.
+// False when no answer carrying a known mode arrived, whatever the reason.
 static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
 {
     for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
@@ -1421,20 +1414,16 @@ static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
     return false;
 }
 
-// Writes the power on behavior and reads it back, because the write cannot
-// report a starved buffer either. False when the module does not hold the
-// value afterwards.
+// Reads back, because the write cannot report a starved buffer either.
 static bool writePowerOnMode(uint8_t mode)
 {
     for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
         int retval = wifi_set_power_mode(mode);
         if (retval) {
             printf("Setting the power on behavior failed with error %d.\n", retval);
-            // An error is the module's own answer, not a call that went
-            // missing, so repeating it would only print it twice.
+            // An error is the module's own answer, not a call that went missing.
             return false;
         }
-        // One read per attempt: the loop around it is the retry.
         uint8_t stored = 0xFF;
         uint8_t last_state = 0xFF;
         if ((wifi_get_power_mode(&stored, &last_state) == 0) && (stored == mode)) {
@@ -1444,26 +1433,18 @@ static bool writePowerOnMode(uint8_t mode)
     return false;
 }
 
-// What the machine does when the input power returns is decided by the control
-// module (ESP32), as that is the only part of the machine that is powered at
-// that moment. The setting is therefore stored in the NVS of that module; here
-// it is only presented to the user and pushed down on every change.
+// The control module (ESP32) is the only part powered when the input power
+// returns, so the setting lives in its NVS. Here it is only shown to the user
+// and pushed down on every change.
 int U64Config :: setPowerOnMode(ConfigItem *it)
 {
     if (!it || writePowerOnMode((uint8_t)it->getValue())) {
         return 0;
     }
-    // The module holds what it holds. An item left at a value the module did
-    // not take tells the menu and the REST API that the machine will come up
-    // when it will not, so it is put back to what is really stored.
-    // setValueQuietly() rather than setValue(), which would call this hook
-    // again, and which would also make the item look like a fresh user change.
-    //
-    // What is in flash is deliberately left alone. A user's choice that the
-    // module refused stays in flash, so the next boot pushes it down again and
-    // a module that was merely busy takes it then. The item and the flash
-    // therefore disagree until that happens, which is the point: the item says
-    // what the machine will do now, the flash says what was asked for.
+    // An item left at a refused value would tell the menu and the REST API that
+    // the machine will come up when it will not, so it follows the module.
+    // setValueQuietly(), or this hook runs again. Flash keeps what the user
+    // asked for, so the next boot pushes it down to a module that was busy.
     uint8_t mode;
     uint8_t last_state;
     if (readPowerOnMode(mode, last_state)) {
@@ -1495,12 +1476,9 @@ void U64Config :: pushPowerOnMode(void)
     uint8_t mode;
     uint8_t last_state;
     if (!readPowerOnMode(mode, last_state)) {
-        // A control module that predates these commands answers "not
-        // implemented", and cannot store the setting either. Offering a choice
-        // that quietly does nothing is worse than offering none. A module that
-        // could not be reached at all is disabled the same way, because from
-        // here the two look alike; the message says so rather than claiming
-        // the module lacks the feature.
+        // A module that predates these commands cannot store the setting, and
+        // one that cannot be reached looks the same from here. A choice that
+        // quietly does nothing is worse than no choice at all.
         printf("No usable answer about the power on behavior from the control module; "
                "disabling the setting.\n");
         u64_configurator->cfg->disable(CFG_POWERON_MODE);
@@ -1515,8 +1493,7 @@ void U64Config :: pushPowerOnMode(void)
     setPowerOnMode(it);
 }
 
-// Read and written the same way as the power on behavior above, and for the
-// same reason: what the module holds is the only evidence a call arrived.
+// Read and written like the power on behavior above, and for the same reason.
 static bool readWakeOnWifi(uint8_t &enabled)
 {
     for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
@@ -1534,11 +1511,9 @@ static bool writeWakeOnWifi(uint8_t enabled)
         int retval = wifi_set_wake_on_wifi(enabled);
         if (retval) {
             printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
-            // An error is the module's own answer, not a call that went
-            // missing, so repeating it would only print it twice.
+            // An error is the module's own answer, not a call that went missing.
             return false;
         }
-        // One read per attempt: the loop around it is the retry.
         uint8_t stored = 0xFF;
         if ((wifi_get_wake_on_wifi(&stored) == 0) && (stored == enabled)) {
             return true;
@@ -1547,17 +1522,15 @@ static bool writeWakeOnWifi(uint8_t enabled)
     return false;
 }
 
-// Waking the machine from off is decided by the control module as well: it is
-// the only part that is still listening at that moment, and the only one with
-// a network path of its own. Stored in its NVS, pushed down on every change.
+// The control module is the only part still listening while the machine is off,
+// so this setting lives in its NVS as well.
 int U64Config :: setWakeOnWifi(ConfigItem *it)
 {
     if (!it || writeWakeOnWifi((uint8_t)it->getValue())) {
         return 0;
     }
-    // As above: the item goes back to what the module really holds, so that
-    // "Enabled" in the menu and over REST means a machine that will wake,
-    // while flash keeps what was asked for and the next boot tries again.
+    // As above: the item follows the module, so "Enabled" means a machine that
+    // will wake; flash keeps what was asked for and the next boot tries again.
     uint8_t enabled;
     if (readWakeOnWifi(enabled)) {
         it->setValueQuietly((int)enabled);
@@ -1574,9 +1547,8 @@ int U64Config :: setWakeOnWifi(ConfigItem *it)
     return 0;
 }
 
-// As with the power on behavior: the module may have been updated or replaced
-// since the setting was last changed, so bring the two in sync when it reports
-// in, and take the item away when the module cannot store it at all.
+// The module may have been updated or replaced since the setting was last
+// changed, so bring the two in sync when it reports in.
 void U64Config :: pushWakeOnWifi(void)
 {
     if (!u64_configurator || !u64_configurator->cfg) {

@@ -117,8 +117,7 @@ static void button_handler(void *arg)
     gpio_set_direction(IO_ENABLE_MOD, GPIO_MODE_OUTPUT);
     vTaskDelay(100 / portTICK_PERIOD_MS); // Allow pull up to do its work.
     regulator_enable(initial_state, 0); // turn off uart also
-    // A machine that cold starts into the off state is watched from here on,
-    // just as one that is switched off later is.
+    // A cold start into off is watched from here, like a later power off.
     wake_on_wifi_update(initial_state);
 
     while (1) {
@@ -196,7 +195,6 @@ void start_button_handler(int initial)
 
 BaseType_t extern_button_event(uint8_t button)
 {
-    // The result matters to a caller that has no second chance to post: see
-    // wake_watch_recv() in wifi_modem.c, which stays armed when this fails.
+    // wake_watch_recv() in wifi_modem.c stays armed when the post fails.
     return xQueueSend(button_queue, &button, 0);
 }

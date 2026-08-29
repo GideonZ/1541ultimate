@@ -208,9 +208,8 @@ def main() -> int:
         suite_fail(SUITE, format_exception(exc))
         return 1
     finally:
-        # A scenario that failed after switching the machine off left it off,
-        # and its press was skipped. Press here, so the setting below can be
-        # written and the next suite finds a machine that answers.
+        # A failure after switching the machine off skipped its press, and the
+        # setting restore below needs a machine that answers.
         recover_if_off(button, api, args.up_timeout)
         # Put the setting back if it was read and the machine is there to take
         # it. A machine left off cannot be written to, and saying so is better

@@ -28,8 +28,7 @@ void send_keepalive();
 
 #define IDENT_STRING "ESP32 WiFi Bridge V1.14"
 #define IDENT_MAJOR   1
-// 1.14: the module wakes the machine on a magic packet, and stores whether it
-// should.
+// 1.14: wakes the machine on a magic packet, and stores whether it should.
 // 1.13: the module stores the power on behavior after a loss of input power.
 // 1.12: the connector retries after a dropped link instead of idling in
 // Disconnected forever. The Ultimate's updater only reflashes the module

@@ -3,9 +3,8 @@
  *
  *   make -C target/pc/linux/wolmagic test
  *
- * The real software/u64ctrl/main/wol_magic.c is compiled here, so what is
- * exercised is the code that ships, not a copy of it. The matcher has no
- * ESP-IDF or lwIP dependency, which is why it is a file of its own.
+ * The real software/u64ctrl/main/wol_magic.c is compiled here, so what runs is
+ * the code that ships. It has no ESP-IDF or lwIP dependency.
  */
 #include <stdio.h>
 #include <string.h>
@@ -87,18 +86,15 @@ int main(void)
           "all zeroes never matches");
 
     printf("A pattern at the edge of what is scanned\n");
-    // The last offset whose pattern still ends inside the window. One byte
-    // further is the case below, so the two together pin the boundary rather
-    // than only the side of it that must not match.
+    // The last offset whose pattern still ends inside the window; the case
+    // below is one byte further, so the two pin both sides of the boundary.
     len = build(frame, sizeof(frame), WOL_SCAN_BYTES - WOL_PATTERN_LEN, mac);
     check(wol_is_magic_packet(frame, len, mac), "still matches");
     check(wol_is_magic_packet(frame, sizeof(frame), mac),
           "still matches in a frame longer than the window");
 
     printf("A pattern beyond what is scanned\n");
-    // Sized so that the pattern begins inside the frame but ends past the
-    // scan window, which is where a wake tool would have to be malicious
-    // rather than merely unusual.
+    // The pattern begins inside the frame but ends past the scan window.
     len = build(frame, sizeof(frame), WOL_SCAN_BYTES - WOL_PATTERN_LEN + 1, mac);
     check(!wol_is_magic_packet(frame, len, mac), "is not searched for");
 

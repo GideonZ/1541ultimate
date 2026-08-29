@@ -163,16 +163,14 @@ int main(void)
           "an off machine is not watched before the frame path is known");
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_DISABLED);
     check(!power_should_watch_for_wake(0, true), "the setting decides, not the state");
-    // The setting is read on every call rather than remembered, so a change
-    // made in the menu takes effect at the next transition without the module
-    // being told a second time.
+    // The setting is read on every call, so a change in the menu takes effect
+    // at the next transition.
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
     check(power_should_watch_for_wake(0, true), "a setting changed since the last call is seen");
 
     printf("A machine that cold starts into the off state\n");
-    // Mode OFF is the default, so this is what a machine does after a real
-    // power loss: it comes up off, and it has to be watched from there on
-    // exactly like a machine switched off by hand.
+    // Mode OFF is the default, so a machine comes up off after a real power
+    // loss and must be watched exactly like one switched off by hand.
     given(POWERON_MODE_OFF, 1);
     (void)power_set_wake_on_wifi(WAKE_ON_WIFI_ENABLED);
     check_eq(power_initial_state(0), 0, "comes up off");

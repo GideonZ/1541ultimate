@@ -346,9 +346,9 @@ void cmd_set_wake_on_wifi(command_buf_t *buf)
         my_uart_transmit_packet(UART_CHAN, buf);
         return;
     }
-    uint8_t enabled = param->enabled; // read before the response overwrites the request
-    // The machine is on -- it just sent this -- so nothing is armed right now;
-    // the value is read again the next time the machine goes off.
+    uint8_t enabled = param->enabled; // before the response overwrites the request
+    // Nothing is armed while the machine is on; the value is read again when it
+    // next goes off.
     resp->esp_err = power_set_wake_on_wifi(enabled);
     buf->size = sizeof(rpc_espcmd_resp);
     my_uart_transmit_packet(UART_CHAN, buf);

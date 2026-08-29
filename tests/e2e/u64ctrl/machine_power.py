@@ -144,15 +144,10 @@ def recover_if_off(button: "PowerButton | None", api: UltimateApi,
                    up_timeout: float) -> None:
     """Get the machine back on, whatever left it off, including a failure.
 
-    Every scenario that ends with the machine off is followed by a press, but
-    only on the path where the scenario passed: `check()` re-raises, so a
-    failure between switching the machine off and that press skips it. What is
-    left behind is a device that answers nothing -- the setting restore fails,
-    and so does the runner's teardown and every suite after this one, none of
-    which look like the failure that caused it.
-
-    A no-op when the machine is up, so the suites can call it unconditionally
-    on their way out. It never turns a failure into a pass: it only presses.
+    `check()` re-raises, so a failure between switching the machine off and the
+    press that follows skips the press, leaving a device that answers nothing
+    for every later suite. A no-op when the machine is up, and it only presses,
+    so it can never turn a failure into a pass.
     """
     if button is None or alive(api):
         return

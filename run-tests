@@ -319,15 +319,11 @@ SUITES: Sequence[Suite] = (
     # REU with the CPU in turbo, which no other suite here comes close to.
     Suite("e2e", "doom-release", "tests/e2e/io/c64/doom_release_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
-    # Manual: the machine is put off over REST rather than by cutting mains, so
-    # this one needs no socket -- but its last scenario asserts that a packet is
-    # ignored, and leaves a machine only its power button can revive. Also needs
-    # the device on Wi-Fi and the harness in its broadcast domain, neither of
-    # which the suite can check for itself. Its actuators and its packet target
-    # come from the environment when they are not passed on the command line:
-    # U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD, U64_POWER_ON_CMD, U64_WOL_MAC,
-    # U64_WOL_BROADCAST, U64_WOL_PORT. The cold start scenario needs the two
-    # socket commands and is skipped without them.
+    # Manual: the last scenario asserts that a packet is ignored, so it leaves a
+    # machine only its power button can revive. Needs the device on Wi-Fi and the
+    # harness in its broadcast domain. Actuators and packet target may also come
+    # from U64_POWER_BUTTON_CMD, U64_POWER_OFF_CMD, U64_POWER_ON_CMD,
+    # U64_WOL_MAC, U64_WOL_BROADCAST, U64_WOL_PORT.
     Suite("e2e", "wake-on-wifi", "tests/e2e/u64ctrl/wake_on_wifi_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Manual: asserting what the machine does when its input power returns
