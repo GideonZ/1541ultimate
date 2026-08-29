@@ -338,6 +338,14 @@ void U64Machine :: poke_visible(uint16_t address, uint8_t byte)
 
     write_frozen_byte(ram, freezerMenu, address, byte, screen_backup, ram_backup);
 
+    // And one discarded read after, the flush dma_transfer_frozen documents: a
+    // write does not stall on the bus, so it can still be on its way out when
+    // after_memory_access puts the mode back, and is then lost. Without it the
+    // monitor's Go lost its $033C trampoline and its NMI vector, so the jump
+    // never armed and the target never ran: 6 of 24 measured on an Ultimate 64,
+    // every failure with the vector still $FE47 and the trampoline stale.
+    (void)ram[address];
+
     after_memory_access(0, freezerMenu, stopped_it);
 }
 
