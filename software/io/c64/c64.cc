@@ -467,7 +467,16 @@ void C64::stop(bool do_raster)
 
         ioWrite8(ITU_TIMER, 200); // 1 ms
 
-        for (w = 0; w < 100;) { // was 1500
+        // A 6510 that is executing writes every few cycles, so a safe R/Wn
+        // sequence arrives in microseconds when it is going to arrive at all.
+        // The budget below therefore only ever runs to its end on a machine
+        // where it is going to fail, and on that machine the STOP_COND_FORCE
+        // below produces the same stop anyway, just later. Waiting 100ms for it
+        // cost the Ultimate II+ about 100ms on every monitor redraw, which is
+        // 137ms a keystroke over Telnet against 29ms on a C64 Ultimate, where
+        // this path is not taken. Ten milliseconds is still four orders of
+        // magnitude more than a running CPU needs.
+        for (w = 0; w < 10;) { // was 1500, then 100
             if (C64_STOP & C64_HAS_STOPPED) {
                 stop_mode = 2;
                 break;
