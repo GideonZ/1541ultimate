@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
-# E2E: Verifies UCI network target socket reads: length handling and datagram delivery.
+# E2E: Verifies UCI network target socket reads and writes: length, delivery, framing.
 
-"""End-to-end check of the UCI network target's READ_SOCKET command.
+"""End-to-end check of the UCI network target's socket read and write commands.
 
 Regression guard for GideonZ/1541ultimate#802, reported as "a maxlen above 512
 silently returns no data". Everything here was measured on real hardware
 against the $DF1B-$DF1F registers; nothing is taken from the issue text or from
 the manuals, which are used only as the statement of the intended contract.
+
+The write side is GideonZ/1541ultimate#807, "a payload larger than one command
+leaves as several datagrams". WRITE_SOCKET sends whatever one command carries,
+and a command carries at most 892 payload bytes, so a 1000-byte message is two
+commands and two datagrams: a peer that expects one message receives two, in
+whatever order UDP hands them over and with either one free to go missing on
+its own. WRITE_SOCKET_CHUNK carries the payload over as many chunks as it
+takes, each naming the offset it starts at and the total it belongs to, and the
+firmware sends once, when the accumulation is complete. Those cases watch the
+wire rather than the command interface, because the reply to a write is a byte
+count, and a count of 893 is the same whether the bytes left as one datagram
+or as two.
 
 This host process is the network peer. It binds a UDP socket and a TCP
 listener, has the device open a socket back to it, learns the device's
@@ -38,7 +50,12 @@ device.
 Reads are kept small on purpose. Over the REST route the response queue is
 drained one DMA cycle per byte, so the size of the payload is the cost of the
 suite, and every property under test is visible at 64 bytes as clearly as at
-894.
+894. Writes cost the same way round, one register write per command byte, so
+the chunked cases cross the 888-byte chunk boundary by as little as they can
+rather than by as much as they could. The exception is
+chunked-write-full-size-datagram, which carries a full 1472-byte payload to
+completion: there the size is the property under test rather than the price of
+measuring one.
 
 Supported on any Ultimate whose FPGA provides the command interface. The suite
 enables the "Command Interface" setting and restores it on exit.
@@ -62,8 +79,8 @@ from report import (  # noqa: E402
     FAIL, Failure, OK, SKIP, check, check_ok, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok, warn)
 from uci import (  # noqa: E402
-    MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci, Wedged,
-    interface_present)
+    CMD_QUEUE_BYTES, MAX_BLOCK_BYTES, REPLY_QUEUE_BYTES, TARGET_NETWORK, Uci,
+    Wedged, interface_present)
 from uci_native import NativeUci  # noqa: E402
 
 CONFIG_CATEGORY = "C64 and Cartridge Settings"
@@ -77,13 +94,28 @@ NET_CMD_OPEN_UDP = 0x08
 NET_CMD_CLOSE_SOCKET = 0x09
 NET_CMD_READ_SOCKET = 0x10
 NET_CMD_WRITE_SOCKET = 0x11
+NET_CMD_WRITE_SOCKET_CHUNK = 0x16
 
 STATUS_OK = b"00,OK"
+STATUS_INVALID_PARAMS = b"81,INVALID PARAMS"
 STATUS_OUT_OF_RANGE = b"82,PARAMETER(S) OUT OF RANGE"
+# What any target answers for a command number it does not know, from
+# command_intf.cc. A firmware without WRITE_SOCKET_CHUNK answers this to every
+# chunked case below, so those name it rather than failing on a symptom of it.
+STATUS_UNKNOWN_COMMAND = b"21,UNKNOWN COMMAND"
 # Not in the network target document, but what the firmware answers when
 # lwip_recv returns -1. The number is the errno: 9 is EBADF for a handle that
 # was never opened, 11 is EAGAIN for an open socket with nothing pending.
 STATUS_NO_DATA_PREFIX = b"02,NO DATA"
+# What a write answers for a handle this target does not own, from
+# send_to_socket(): the number is the errno, 9 for EBADF. A chunked write that
+# a reset should have discarded reaches the send with a handle that reset
+# closed, so this is the refusal that says the payload outlived the reset.
+STATUS_SEND_ERROR_PREFIX = b"12,SEND ERROR"
+# The whole of that status for the one errno a client can reach deliberately: a
+# handle no OPEN command returned is not a socket this target owns, so the send
+# never happens and errno is EBADF.
+STATUS_SEND_ERROR_EBADF = STATUS_SEND_ERROR_PREFIX + b": 9"
 
 # A handle no OPEN command ever returned, so the socket can never supply data
 # and the length in the command is the only variable.
@@ -129,6 +161,39 @@ SPANNING_DATAGRAM = 1420
 TRUNCATED_REQUEST = 1000
 TRUNCATED_DATAGRAM = 1200
 
+# A write payload whose cost is the command's framing rather than its size.
+SMALL_WRITE = 64
+
+# The largest command the interface delivers, and from it the payload one write
+# can carry each way. command_protocol.vhd stops command_pointer on the last
+# byte of the command buffer while command_length is measured from it, so the
+# CMD_QUEUE_BYTES'th byte a client writes is never counted and a command carries
+# at most MAX_COMMAND_BYTES. The response queue reaches the same number for a
+# different reason, so it is not evidence for this one. A plain WRITE_SOCKET
+# spends three bytes on the target, the command and the handle; a chunk spends
+# seven, adding the offset it starts at and the total it belongs to.
+#
+# MAX_CHUNK_PAYLOAD is therefore not a limit the firmware has to enforce: a
+# longer chunk is a longer command than the interface will carry, so no client
+# can present one and nothing here can measure a refusal of it.
+MAX_COMMAND_BYTES = CMD_QUEUE_BYTES - 1
+PLAIN_WRITE_MAX = MAX_COMMAND_BYTES - 3
+MAX_CHUNK_PAYLOAD = MAX_COMMAND_BYTES - 7
+
+# The smallest payload that no single command of either kind could send: one
+# byte more than a plain WRITE_SOCKET carries, which is also five bytes more
+# than one chunk carries, so it needs this command and needs two chunks of it.
+# Crossing both boundaries by as little as possible is deliberate. The property
+# under test is that the firmware sends once rather than once per chunk, and
+# that is as visible at 893 bytes as at the 1472 a datagram could hold, for a
+# third of the register writes.
+CHUNKED_WRITE = PLAIN_WRITE_MAX + 1
+
+# The largest total a chunked write may announce. The payload leaves as one
+# datagram, so the most it can ever be is one unfragmented datagram, and a
+# larger announcement names a payload the device could never send.
+MAX_ANNOUNCED_TOTAL = UNFRAGMENTED_MAX
+
 # Where the drain of one reply block gives up. The response queue holds 896
 # bytes, so anything past that is the queue failing to end rather than a
 # longer block.
@@ -162,6 +227,16 @@ TESTS = [
     "tcp-read-is-lossless",
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
+    "chunked-write-arrives-as-one-datagram",
+    "chunked-write-full-size-datagram",
+    "chunked-write-zero-total",
+    "chunked-write-total-ceiling",
+    "chunked-write-refuses-unowned-socket",
+    "chunked-write-refuses-bad-chunks",
+    "chunked-write-refuses-offset-ahead",
+    "chunked-write-refuses-short-commands",
+    "chunked-write-discarded-by-abort",
+    "chunked-write-discarded-by-reset",
     "reset-closes-uci-sockets",
 ]
 
@@ -248,6 +323,80 @@ def describe_mismatch(actual: bytes, expected: bytes) -> str:
     return "identical"
 
 
+def describe_datagrams(arrived: List[bytes], expected: bytes) -> str:
+    """What reached the peer, against the one datagram that should have.
+
+    A payload that left as several datagrams is the defect a chunked write
+    exists to remove, and it is worth separating from one that left as one and
+    was assembled wrongly, so the concatenation is reported too.
+    """
+    if not arrived:
+        return f"nothing arrived; {len(expected)} bytes were expected"
+    if len(arrived) == 1:
+        return describe_mismatch(arrived[0], expected)
+    joined = b"".join(arrived)
+    return (f"{len(arrived)} datagrams arrived, of lengths {[len(d) for d in arrived]}; "
+            + ("concatenated they are the payload that was announced"
+               if joined == expected
+               else f"concatenated: {describe_mismatch(joined, expected)}"))
+
+
+def send_count(transaction) -> Optional[int]:
+    """How many bytes a write reported sending, from its two-byte reply.
+
+    None when the reply is not two bytes, which is a finding of its own: a
+    write either answers with the count or, while a payload is still
+    incomplete, with nothing at all.
+    """
+    return (int.from_bytes(transaction.data, "little", signed=True)
+            if len(transaction.data) == 2 else None)
+
+
+def require_implemented(transaction, what: str) -> None:
+    """Stop with the reason when this firmware has no such command.
+
+    A target that does not know a command number answers '21,UNKNOWN COMMAND'
+    with an empty reply. Without this, every chunked case would report a
+    missing datagram or a missing byte count, which is the symptom rather than
+    the cause.
+    """
+    if transaction.status_text == STATUS_UNKNOWN_COMMAND:
+        raise Failure(f"{what} answered {STATUS_UNKNOWN_COMMAND.decode()}: this firmware has "
+                      f"no WRITE_SOCKET_CHUNK (${NET_CMD_WRITE_SOCKET_CHUNK:02X}) command, so "
+                      f"a payload larger than one command still leaves as several datagrams")
+
+
+def require_nothing_sent(after: List[bytes], what: str) -> None:
+    """Nothing reached the wire, which is the other half of every refusal here.
+
+    A status of 81 with a datagram behind it is worse than no status at all, so
+    each refused chunk is confirmed on the command interface and on the wire.
+    """
+    if after:
+        raise Failure(f"{len(after)} datagram(s) of {[len(d) for d in after]} bytes left "
+                      f"the device on {what}. The refusal is only half of it: the bytes "
+                      f"that reached the wire are a message the client never wrote")
+
+
+def require_payload_open(started, premature: List[bytes], taken: int, total: int) -> None:
+    """The accumulation a case needs is in progress and nothing has been sent.
+
+    Every case that disturbs a payload part way through needs one part way
+    through. Without it the disturbing chunk continues a payload that was never
+    announced, which any firmware refuses, and the case passes whatever the
+    firmware does.
+    """
+    require_implemented(started, "the opening chunk of a chunked write")
+    if started.status_text != STATUS_OK:
+        raise Failure(f"the opening chunk of {taken} of {total} bytes answered "
+                      f"{started.status_text!r}, expected {STATUS_OK!r}; without it "
+                      f"there is no payload in progress for this case to disturb")
+    if premature:
+        raise Failure(f"{len(premature)} datagram(s) of {[len(d) for d in premature]} "
+                      f"bytes left the device on a chunk that carried {taken} of "
+                      f"{total} announced bytes")
+
+
 class Net:
     """The network target's commands, over the command interface."""
 
@@ -280,6 +429,22 @@ class Net:
 
     def write(self, handle: int, payload: bytes):
         return self.uci.transact(bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET, handle]) + payload)
+
+    def write_chunk_command(self, handle: int, offset: int, total: int,
+                            payload: bytes) -> bytes:
+        """One chunk of a payload of `total` bytes, starting at `offset`.
+
+        Every chunk repeats the handle and the total and names where it belongs,
+        so a chunk is self-describing: a chunk at offset 0 opens a payload and
+        announces how long it will be, and every later one has to agree with
+        what is in progress in all three fields before its bytes are taken.
+        """
+        return (bytes([TARGET_NETWORK, NET_CMD_WRITE_SOCKET_CHUNK, handle,
+                       offset & 0xFF, (offset >> 8) & 0xFF,
+                       total & 0xFF, (total >> 8) & 0xFF]) + payload)
+
+    def write_chunk(self, handle: int, offset: int, total: int, payload: bytes):
+        return self.uci.transact(self.write_chunk_command(handle, offset, total, payload))
 
     def read_command(self, handle: int, maxlen: int) -> bytes:
         return bytes([TARGET_NETWORK, NET_CMD_READ_SOCKET, handle,
@@ -417,6 +582,38 @@ class Peer:
         if self.udp_peer is None:
             raise Failure("the device's UDP source address is not known yet")
         self.udp.sendto(payload, self.udp_peer)
+
+    def collect_udp(self, settle: float = DELIVERY_SETTLE_SECONDS) -> List[bytes]:
+        """Every datagram the device sent here, over one settle window.
+
+        The only method in this class that watches the device emitting rather
+        than receiving. Everything else goes host to device and reads the
+        result back over the command interface, which cannot see datagram
+        boundaries at all: the reply to a write is a byte count, and 893 is 893
+        whether the bytes left as one datagram or as two.
+
+        The window always runs to its end rather than stopping at the first
+        datagram, because "exactly one arrived" is only established once a
+        second one has had its chance. It is the same wait the rest of the
+        suite spends in DELIVERY_SETTLE_SECONDS after a send, so watching the
+        wire costs nothing over settling for it.
+        """
+        if self.udp_peer is None:
+            raise Failure("the device's UDP source address is not known yet")
+        datagrams: List[bytes] = []
+        deadline = time.time() + settle
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return datagrams
+            self.udp.settimeout(remaining)
+            try:
+                # Larger than any datagram that can reach either end, so a
+                # datagram of an unexpected length is reported at its length
+                # rather than silently cut to the expected one.
+                datagrams.append(self.udp.recv(2048))
+            except socket.timeout:
+                return datagrams
 
     def accept_tcp(self) -> socket.socket:
         self.tcp.settimeout(PEER_TIMEOUT_SECONDS)
@@ -1077,6 +1274,1066 @@ def run_oversize_request_keeps_datagram(net: Net, peer: Peer) -> bool:
     return ok
 
 
+def run_chunked_write_one_datagram(net: Net, peer: Peer) -> bool:
+    """A payload larger than one command still leaves as a single datagram.
+
+    WRITE_SOCKET sends whatever one command carries, and a command carries at
+    most PLAIN_WRITE_MAX payload bytes, so a client with more than that to send
+    has to issue two of them. Two writes are two datagrams, and a peer that
+    expects one message receives two, in whatever order UDP hands them over and
+    with either one free to go missing on its own.
+
+    WRITE_SOCKET_CHUNK carries the payload over as many chunks as it takes and
+    the firmware holds the bytes, sending once when the accumulation reaches the
+    announced total. What leaves the device is then one datagram whatever the
+    command interface's own limit is.
+
+    Both properties are measured on the wire, because the command interface
+    cannot see the difference: one datagram of 893 bytes and two of 888 and 5
+    both answer with a count of 893.
+
+    The payload is pattern(), so a wrong assembly is wrong data rather than only
+    a wrong length: a second chunk placed at offset 0, or appended where the
+    first chunk started, gives the right number of bytes with the wrong ones in
+    them.
+    """
+    section("chunked-write-arrives-as-one-datagram")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        # One chunk that is a whole payload, which is the case a plain
+        # WRITE_SOCKET already handles. It has to stay indistinguishable from
+        # one, so that a client can use this command for every write it makes
+        # rather than choosing between two commands by size.
+        small = pattern(SMALL_WRITE)
+        whole = net.write_chunk(handle, 0, SMALL_WRITE, small)
+        arrived = peer.collect_udp()
+        with check(f"a {SMALL_WRITE}-byte payload that fits one chunk is sent like a plain "
+                   f"write"):
+            detail(f"status {whole.status_text!r}, reply {whole.data!r}, datagrams "
+                   f"{[len(d) for d in arrived]}")
+            require_implemented(whole, f"a {SMALL_WRITE}-byte one-chunk write")
+            if whole.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {whole.status_text!r}")
+            if send_count(whole) != SMALL_WRITE:
+                raise Failure(f"the reply reports {send_count(whole)}; a chunk that starts at "
+                              f"offset 0 and reaches its announced total is complete on its "
+                              f"own, so it sends and answers with the count, which is "
+                              f"{SMALL_WRITE}")
+            if arrived != [small]:
+                raise Failure(f"expected one datagram of {SMALL_WRITE} bytes: "
+                              f"{describe_datagrams(arrived, small)}")
+
+        payload = pattern(CHUNKED_WRITE)
+        head, tail = payload[:MAX_CHUNK_PAYLOAD], payload[MAX_CHUNK_PAYLOAD:]
+
+        first = net.write_chunk(handle, 0, CHUNKED_WRITE, head)
+        early = peer.collect_udp()
+        with check(f"the first {len(head)} bytes of a {CHUNKED_WRITE}-byte payload are taken "
+                   f"without anything leaving the device"):
+            detail(f"status {first.status_text!r}, reply {first.data!r}, datagrams "
+                   f"{[len(d) for d in early]}")
+            require_implemented(first, "the opening chunk of a chunked write")
+            if first.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {first.status_text!r}")
+            if first.data:
+                raise Failure(f"a chunk that does not complete its payload replied "
+                              f"{first.data!r}; nothing has been sent yet, so there is no "
+                              f"count to report and the reply is empty")
+            if early:
+                raise Failure(
+                    f"{len(early)} datagram(s) of {[len(d) for d in early]} bytes left the "
+                    f"device after {len(head)} of {CHUNKED_WRITE} announced bytes. Sending "
+                    f"per chunk is what the two plain writes this command replaces already "
+                    f"did, and it is the whole of what #807 reports")
+
+        last = net.write_chunk(handle, MAX_CHUNK_PAYLOAD, CHUNKED_WRITE, tail)
+        arrived = peer.collect_udp()
+        with check(f"a {CHUNKED_WRITE}-byte payload sent as {len(head)} + {len(tail)} arrives "
+                   f"as one datagram"):
+            detail(f"status {last.status_text!r}, reply {last.data!r}, datagrams "
+                   f"{[len(d) for d in arrived]}")
+            require_implemented(last, "the completing chunk of a chunked write")
+            if last.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {last.status_text!r}")
+            if send_count(last) != CHUNKED_WRITE:
+                raise Failure(f"the completing chunk reports {send_count(last)} bytes sent "
+                              f"rather than the {CHUNKED_WRITE} it announced; the count is "
+                              f"for the whole payload, not for the chunk that finished it")
+            if arrived != [payload]:
+                raise Failure(
+                    f"the payload did not arrive as one datagram of {CHUNKED_WRITE} bytes: "
+                    f"{describe_datagrams(arrived, payload)}. {CHUNKED_WRITE} bytes is one "
+                    f"more than the {PLAIN_WRITE_MAX} a plain WRITE_SOCKET can carry, so "
+                    f"there is no way to send this message as one datagram other than this "
+                    f"command")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_full_size_datagram(net: Net, peer: Peer) -> bool:
+    """The largest payload this command can carry, assembled and sent.
+
+    chunked-write-total-ceiling establishes that MAX_ANNOUNCED_TOTAL is
+    accepted as an announcement, and chunked-write-arrives-as-one-datagram
+    establishes that an accumulation assembles and leaves as one datagram.
+    Neither completes a payload larger than CHUNKED_WRITE, so the largest
+    datagram this command exists to produce is one the suite has never seen it
+    produce.
+
+    A firmware whose buffer is smaller than the total it accepts passes both of
+    those cases. The announcement is answered before a byte of it is copied
+    anywhere, and the CHUNKED_WRITE bytes the other case assembles fit any
+    buffer worth having; what such a firmware does on the chunk that runs past
+    the end of its buffer is not a status but whatever the memory after the
+    buffer belonged to. Catching that needs a payload carried to its announced
+    total, not one announced at it.
+
+    That costs MAX_ANNOUNCED_TOTAL register writes per route, which is why the
+    suite spends it once here rather than in every chunked case.
+
+    The oracle is the one chunked-write-arrives-as-one-datagram uses, for the
+    same reason: `arrived != [payload]` compares how many datagrams left and
+    every byte of the one that did in a single comparison, so a payload that
+    left as two, or as one of the right length with the second chunk placed at
+    the wrong offset in it, fails the same check.
+    """
+    section("chunked-write-full-size-datagram")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    # MAX_ANNOUNCED_TOTAL is 888 + 584: the fewest chunks the largest payload
+    # can be carried in, so what this case pays for is payload and not framing.
+    # Unseeded, as in chunked-write-arrives-as-one-datagram, so that
+    # describe_mismatch can name the offset a misplaced chunk was taken from.
+    payload = pattern(MAX_ANNOUNCED_TOTAL)
+    head, tail = payload[:MAX_CHUNK_PAYLOAD], payload[MAX_CHUNK_PAYLOAD:]
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        first = net.write_chunk(handle, 0, MAX_ANNOUNCED_TOTAL, head)
+        early = peer.collect_udp()
+        with check(f"the first {len(head)} bytes of a {MAX_ANNOUNCED_TOTAL}-byte payload are "
+                   f"taken without anything leaving the device"):
+            detail(f"status {first.status_text!r}, reply {first.data!r}, datagrams "
+                   f"{[len(d) for d in early]}")
+            require_implemented(first, f"the opening chunk of a {MAX_ANNOUNCED_TOTAL}-byte "
+                                       f"payload")
+            if first.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {first.status_text!r}")
+            if first.data:
+                raise Failure(f"a chunk that does not complete its payload replied "
+                              f"{first.data!r}; nothing has been sent yet, so there is no "
+                              f"count to report and the reply is empty")
+            if early:
+                raise Failure(
+                    f"{len(early)} datagram(s) of {[len(d) for d in early]} bytes left the "
+                    f"device after {len(head)} of {MAX_ANNOUNCED_TOTAL} announced bytes. The "
+                    f"largest payload is sent once, when it is complete, like any other")
+
+        last = net.write_chunk(handle, MAX_CHUNK_PAYLOAD, MAX_ANNOUNCED_TOTAL, tail)
+        arrived = peer.collect_udp()
+        with check(f"a {MAX_ANNOUNCED_TOTAL}-byte payload sent as {len(head)} + {len(tail)} "
+                   f"arrives as one datagram"):
+            detail(f"status {last.status_text!r}, reply {last.data!r}, datagrams "
+                   f"{[len(d) for d in arrived]}")
+            require_implemented(last, f"the completing chunk of a {MAX_ANNOUNCED_TOTAL}-byte "
+                                      f"payload")
+            if last.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {last.status_text!r}: "
+                    f"{MAX_ANNOUNCED_TOTAL} bytes is the largest unfragmented datagram and "
+                    f"the announcement of it is accepted, so the bytes it announced have to "
+                    f"be taken as well. A firmware that accepts the announcement and then "
+                    f"refuses the payload offers a size it cannot deliver")
+            if send_count(last) != MAX_ANNOUNCED_TOTAL:
+                raise Failure(f"the completing chunk reports {send_count(last)} bytes sent "
+                              f"rather than the {MAX_ANNOUNCED_TOTAL} it announced; a count "
+                              f"short of the announcement is a payload that lost bytes on "
+                              f"its way to the socket, whatever arrived on the wire")
+            if arrived != [payload]:
+                raise Failure(
+                    f"the payload did not arrive as one datagram of {MAX_ANNOUNCED_TOTAL} "
+                    f"bytes: {describe_datagrams(arrived, payload)}. This is the largest "
+                    f"datagram the command can produce and the only one the suite carries "
+                    f"to completion, so it is the only case that would show a buffer "
+                    f"smaller than the total the firmware accepts")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_zero_total(net: Net, peer: Peer) -> bool:
+    """A payload announced as no bytes at all is a payload, and it is sent.
+
+    Zero is not a case the command has to reject. A chunk at offset 0
+    announcing 0 bytes has reached its announced total the moment it arrives,
+    so it opens the payload and completes it in the same command, and what
+    leaves is an empty datagram.
+
+    That is deliberately the same thing a plain WRITE_SOCKET already does with
+    no data bytes: '$03 $11 <handle>' is a command whose payload length is 0,
+    and it sends an empty datagram. Keeping the two commands the same is the
+    point of this case. An empty datagram is a message rather than the absence
+    of one, and a client that uses WRITE_SOCKET_CHUNK for every write it makes,
+    which is what chunked-write-arrives-as-one-datagram's one-chunk check is
+    about, must not have to keep the other command around for the one message
+    this one cannot express.
+
+    So the two are measured against each other rather than against a written
+    expectation. The plain write runs first and establishes what this device
+    does with no data bytes; the chunked write then has to agree with it in the
+    status, in the count and on the wire.
+    """
+    section("chunked-write-zero-total")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        plain = net.write(handle, b"")
+        after_plain = peer.collect_udp()
+        with check("a plain WRITE_SOCKET with no data bytes sends one empty datagram"):
+            detail(f"status {plain.status_text!r}, reply {plain.data!r}, datagrams "
+                   f"{[len(d) for d in after_plain]}")
+            if plain.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {plain.status_text!r}")
+            if send_count(plain) != 0:
+                raise Failure(f"the reply reports {send_count(plain)}; the command carried "
+                              f"no data bytes, so the count of bytes sent is 0")
+            if after_plain != [b""]:
+                raise Failure(f"expected one datagram of 0 bytes: "
+                              f"{describe_datagrams(after_plain, b'')}. Without it there is "
+                              f"no behaviour here for the chunked write to be consistent "
+                              f"with")
+
+        chunked = net.write_chunk(handle, 0, 0, b"")
+        after_chunk = peer.collect_udp()
+        with check("a chunked write announced as 0 bytes completes at once and sends the "
+                   "same empty datagram"):
+            detail(f"status {chunked.status_text!r}, reply {chunked.data!r}, datagrams "
+                   f"{[len(d) for d in after_chunk]}")
+            require_implemented(chunked, "a chunked write announced as 0 bytes")
+            if chunked.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {chunked.status_text!r}: a payload of 0 "
+                    f"bytes has reached its announced total as it arrives, so this chunk "
+                    f"opens it and completes it at once. The plain write above answered "
+                    f"{plain.status_text!r} for the same empty message")
+            if send_count(chunked) != 0:
+                raise Failure(f"the reply reports {send_count(chunked)}; the payload was "
+                              f"announced as 0 bytes and none were carried, so the count is "
+                              f"0, which is what the plain write reported "
+                              f"({send_count(plain)})")
+            if after_chunk != [b""]:
+                raise Failure(
+                    f"expected one datagram of 0 bytes: "
+                    f"{describe_datagrams(after_chunk, b'')}. A firmware that holds a 0-byte "
+                    f"payload instead of sending it leaves an accumulation behind that no "
+                    f"chunk can ever complete, and the empty datagram the plain write above "
+                    f"put on the wire becomes a message this command cannot send")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_total_ceiling(net: Net, peer: Peer) -> bool:
+    """How large a payload a chunked write may announce.
+
+    The payload leaves as one datagram, so the most it can ever be is one
+    unfragmented datagram: MAX_ANNOUNCED_TOTAL, the same 1472 that bounds what
+    can arrive in the other direction. An announcement above it names a payload
+    the device could never send, and refusing it at the announcement is what
+    saves the client from spending a chunk's worth of register writes on a
+    payload that was doomed from its first byte.
+
+    Both sides of the boundary are measured. A firmware that refuses the
+    boundary itself passes any check that only tries to break it, and the
+    difference between the two is one character in the firmware.
+
+    Only the announcement is exercised here, not a payload of that size: the
+    accepted case opens a payload of MAX_ANNOUNCED_TOTAL bytes and hands over
+    the first few, which is what the boundary is about. Carrying all
+    MAX_ANNOUNCED_TOTAL of them to completion would cost that many register
+    writes per route to establish assembly, which
+    chunked-write-arrives-as-one-datagram already establishes for a third of
+    the price.
+    """
+    section("chunked-write-total-ceiling")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    opening = SMALL_WRITE // 2
+    over = MAX_ANNOUNCED_TOTAL + 1
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        refused = net.write_chunk(handle, 0, over, pattern(opening))
+        after_refusal = peer.collect_udp()
+        with check(f"a payload announced as {over} bytes is refused, and sends nothing"):
+            detail(f"status {refused.status_text!r}, reply {refused.data!r}, datagrams "
+                   f"{[len(d) for d in after_refusal]}")
+            require_implemented(refused, f"a chunked write announced as {over} bytes")
+            if refused.status_text != STATUS_OUT_OF_RANGE:
+                raise Failure(
+                    f"expected {STATUS_OUT_OF_RANGE!r}, got {refused.status_text!r}: "
+                    f"{MAX_ANNOUNCED_TOTAL} bytes is the largest unfragmented datagram, and "
+                    f"the payload leaves as one datagram, so a larger announcement names "
+                    f"something that could never be sent")
+            if refused.data:
+                raise Failure(f"a refused announcement replied {refused.data!r}; it sent "
+                              f"nothing, so it has no count to report")
+            if after_refusal:
+                raise Failure(f"{len(after_refusal)} datagram(s) of "
+                              f"{[len(d) for d in after_refusal]} bytes left the device on an "
+                              f"announcement that was refused")
+
+        accepted = net.write_chunk(handle, 0, MAX_ANNOUNCED_TOTAL, pattern(opening, seed=7))
+        after_accept = peer.collect_udp()
+        with check(f"a payload announced as {MAX_ANNOUNCED_TOTAL} bytes is accepted"):
+            detail(f"status {accepted.status_text!r}, reply {accepted.data!r}, datagrams "
+                   f"{[len(d) for d in after_accept]}")
+            require_implemented(accepted, f"a chunked write announced as "
+                                          f"{MAX_ANNOUNCED_TOTAL} bytes")
+            if accepted.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {accepted.status_text!r}: "
+                    f"{MAX_ANNOUNCED_TOTAL} bytes is a datagram the device can send, so it "
+                    f"is a payload a client may announce. A firmware that refuses it has "
+                    f"the comparison one off, and the largest message this command can "
+                    f"carry is then {MAX_ANNOUNCED_TOTAL - 1}")
+            if accepted.data:
+                raise Failure(f"a chunk carrying {opening} of {MAX_ANNOUNCED_TOTAL} announced "
+                              f"bytes replied {accepted.data!r}; the payload is not complete, "
+                              f"so nothing was sent and there is no count to report")
+            if after_accept:
+                raise Failure(f"{len(after_accept)} datagram(s) of "
+                              f"{[len(d) for d in after_accept]} bytes left the device on a "
+                              f"chunk that carried {opening} of {MAX_ANNOUNCED_TOTAL} bytes")
+
+        # That accepted announcement is still in progress. A chunk at offset 0
+        # would restart it anyway, but nothing after this belongs to it.
+        net.identify()
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_refuses_unowned_socket(net: Net, peer: Peer) -> bool:
+    """A chunked write to a socket this client never opened puts nothing on the wire.
+
+    The target owns the sockets it opened and refuses a write to any other
+    handle, which is what stops a program from writing to a socket that belongs
+    to the firmware or to a program that ran before it. Both write commands
+    send from the same place, so a chunked write meets that check as a plain
+    one does, but it meets it only at the end: the handle is carried by every
+    chunk and is a handle to send to only once the accumulation is complete.
+
+    Checking it there rather than at the announcement is the behaviour under
+    test and not an accident of it. A payload announced for a socket that is
+    open can have that socket closed while the accumulation is in progress, by
+    a CLOSE_SOCKET or by a reset, so the check at the send is the one that has
+    to be right; one at the announcement could only ever agree with it or be
+    wrong.
+
+    What must not happen is bytes on the wire. The accumulation here runs to
+    completion holding a handle that names nothing this target owns, and a
+    firmware that sends before it checks, or that checks the handle against
+    lwip rather than against what this target owns, sends a datagram on a
+    socket its client never opened.
+
+    NEVER_OPENED is the handle no OPEN command ever returned, so it is not one
+    this target owns. That premise is measured rather than assumed: the plain
+    WRITE_SOCKET below is refused for it first, which also fixes on this device
+    rather than from the document which refusal the chunked write has to give.
+    """
+    section("chunked-write-refuses-unowned-socket")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+    payload = pattern(SMALL_WRITE, seed=29)
+    try:
+        # The peer's address is learned over a socket this target does own.
+        # Nothing below writes to that socket, and it is where a datagram sent
+        # for the unowned handle would arrive if one were sent at all.
+        peer.learn_udp_peer(net, handle)
+
+        plain = net.write(NEVER_OPENED, payload)
+        after_plain = peer.collect_udp()
+        with check(f"a plain WRITE_SOCKET to handle {NEVER_OPENED} is refused, and sends "
+                   f"nothing"):
+            detail(f"status {plain.status_text!r}, reply {plain.data!r}, datagrams "
+                   f"{[len(d) for d in after_plain]}")
+            if plain.status_text != STATUS_SEND_ERROR_EBADF:
+                raise Failure(
+                    f"expected {STATUS_SEND_ERROR_EBADF!r}, got {plain.status_text!r}: "
+                    f"handle {NEVER_OPENED} was never returned by an OPEN command, so it is "
+                    f"not a socket this target owns. Without that refusal there is no "
+                    f"unowned handle for the chunked write below to name, and the case "
+                    f"measures nothing")
+            require_nothing_sent(after_plain, f"a plain write to handle {NEVER_OPENED}")
+
+        opening = net.write_chunk(NEVER_OPENED, 0, SMALL_WRITE, payload[:half])
+        premature = peer.collect_udp()
+        with check(f"a payload announced for handle {NEVER_OPENED} is taken while it is "
+                   f"still incomplete"):
+            detail(f"status {opening.status_text!r}, reply {opening.data!r}, datagrams "
+                   f"{[len(d) for d in premature]}")
+            require_implemented(opening, f"a chunked write announced for handle "
+                                         f"{NEVER_OPENED}")
+            if opening.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {opening.status_text!r}: the handle is a "
+                    f"socket to send to only where the payload is sent, which this chunk "
+                    f"does not reach. A firmware that refuses here has a second ownership "
+                    f"check, and the answer it gives cannot survive the socket being closed "
+                    f"while the accumulation is in progress")
+            if opening.data:
+                raise Failure(f"a chunk that does not complete its payload replied "
+                              f"{opening.data!r}; nothing has been sent, so there is no "
+                              f"count to report")
+            require_nothing_sent(premature, f"a chunk that carried {half} of {SMALL_WRITE} "
+                                            f"announced bytes for handle {NEVER_OPENED}")
+
+        completing = net.write_chunk(NEVER_OPENED, half, SMALL_WRITE, payload[half:])
+        after = peer.collect_udp()
+        with check(f"the completing chunk of a payload for handle {NEVER_OPENED} is refused, "
+                   f"and sends nothing"):
+            detail(f"status {completing.status_text!r}, reply {completing.data!r}, "
+                   f"datagrams {[len(d) for d in after]}")
+            require_implemented(completing, f"the completing chunk of a chunked write for "
+                                            f"handle {NEVER_OPENED}")
+            if completing.status_text != STATUS_SEND_ERROR_EBADF:
+                raise Failure(
+                    f"expected {STATUS_SEND_ERROR_EBADF!r}, got {completing.status_text!r}: "
+                    f"the payload is complete and the handle it names is not one this "
+                    f"target owns, so it is refused where it would have been sent, exactly "
+                    f"as the plain write of the same bytes was ({plain.status_text!r}). A "
+                    f"firmware that answers {STATUS_OK.decode()} here reports a send that "
+                    f"never happened, and one that answers "
+                    f"{STATUS_INVALID_PARAMS.decode()} reports the chunk as malformed when "
+                    f"every field in it agrees with the payload in progress")
+            if send_count(completing) != send_count(plain):
+                raise Failure(
+                    f"the refused chunked write reports {send_count(completing)} and the "
+                    f"refused plain write reports {send_count(plain)}; both are the same "
+                    f"failed send to the same handle, so a client that reads the count "
+                    f"cannot be told from it which command it used")
+            require_nothing_sent(after, f"a payload completed for handle {NEVER_OPENED}")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_refuses_bad_chunks(net: Net, peer: Peer) -> bool:
+    """A partial payload must never turn into a datagram by accident.
+
+    The command holds bytes between commands, which is state a client can leave
+    in any shape: it can contradict the offset it reached, contradict what it
+    announced, name a different socket half way through, hand over more bytes
+    than it announced, or simply walk away. None of those may put part of a
+    payload on the wire, and none may leave bytes behind for a later write to
+    carry.
+
+    Each case is refused on the command interface and confirmed on the wire,
+    because the two are separate failures: a status of 81 with a datagram
+    behind it is worse than no status at all.
+
+    Every bad chunk here is one that a firmware which does not check the field
+    under test would complete, so the accumulation reaches its announced total
+    and a datagram leaves. That is what makes these checks able to fail: a
+    chunk that could not have completed either way would be refused by a
+    firmware that checks nothing at all.
+
+    The chunks are short on both sides of the split. Nothing requires a
+    non-final chunk to be full, and a client streaming a payload as it produces
+    it will not fill one, so an accumulation is opened with half of a short
+    payload: the same state in progress for a fraction of the register writes a
+    full chunk would cost.
+    """
+    section("chunked-write-refuses-bad-chunks")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+
+    def open_partial(seed: int):
+        """Half a payload announced, so the next chunk meets one in progress.
+
+        A chunk at offset 0 opens a payload whatever was in progress before it,
+        so every case starts from the same state without depending on how the
+        case before it ended. Each case uses its own seed, so a datagram that
+        arrives late names the case it came from.
+        """
+        started = net.write_chunk(handle, 0, SMALL_WRITE, pattern(SMALL_WRITE, seed)[:half])
+        return started, peer.collect_udp()
+
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        # A chunk that starts where the accumulation is not. The payload it
+        # carries is the right length for the payload in progress, so a
+        # firmware that appends without looking at the offset completes it and
+        # sends, which is the assembly this case exists to rule out.
+        started, premature = open_partial(seed=1)
+        stray = half // 2
+        wrong_offset = net.write_chunk(handle, stray, SMALL_WRITE,
+                                       pattern(SMALL_WRITE, 1)[half:])
+        after_offset = peer.collect_udp()
+        with check(f"a chunk claiming offset {stray} of a payload that has reached {half} is "
+                   f"refused, and sends nothing"):
+            detail(f"status {wrong_offset.status_text!r}, reply {wrong_offset.data!r}, "
+                   f"datagrams {[len(d) for d in after_offset]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            if wrong_offset.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {wrong_offset.status_text!r}: "
+                    f"{half} bytes are held and the next chunk of this payload starts at "
+                    f"{half}, so a chunk claiming {stray} either repeats bytes already held "
+                    f"or is a chunk of some other payload. A firmware that appends it "
+                    f"regardless reaches {SMALL_WRITE} bytes and sends a datagram whose "
+                    f"middle is whichever copy landed last")
+            require_nothing_sent(after_offset, "a chunk that named the wrong offset")
+
+        # The refusal above also has to end the payload it refused. A client
+        # that gets an 81 has lost track of what the device holds, and bytes
+        # left behind become the head of whatever it announces next.
+        resumed = net.write_chunk(handle, half, SMALL_WRITE, pattern(SMALL_WRITE, 1)[half:])
+        after_resume = peer.collect_udp()
+        with check("a refused chunk ends the payload it was refused from"):
+            detail(f"status {resumed.status_text!r}, reply {resumed.data!r}, datagrams "
+                   f"{[len(d) for d in after_resume]}")
+            if resumed.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"the chunk that would have completed the payload answered "
+                    f"{resumed.status_text!r}, expected {STATUS_INVALID_PARAMS!r}: the chunk "
+                    f"before it was refused, which ends the accumulation, so there is no "
+                    f"longer a payload in progress at offset {half} for this one to continue")
+            require_nothing_sent(after_resume, "a chunk continuing a payload that a refusal "
+                                               "should have ended")
+
+        # The total is announced once and every chunk repeats it. A chunk that
+        # disagrees leaves the firmware with two lengths and no way to know
+        # which of them the client meant.
+        started, premature = open_partial(seed=2)
+        wrong_total = net.write_chunk(handle, half, SMALL_WRITE + 1,
+                                      pattern(SMALL_WRITE, 2)[half:])
+        after_total = peer.collect_udp()
+        with check(f"a chunk announcing {SMALL_WRITE + 1} bytes into a payload announced as "
+                   f"{SMALL_WRITE} is refused, and sends nothing"):
+            detail(f"status {wrong_total.status_text!r}, reply {wrong_total.data!r}, "
+                   f"datagrams {[len(d) for d in after_total]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            if wrong_total.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {wrong_total.status_text!r}: "
+                    f"the payload was announced as {SMALL_WRITE} bytes and this chunk calls "
+                    f"it {SMALL_WRITE + 1}. A firmware that takes the bytes anyway completes "
+                    f"the payload it already had and sends {SMALL_WRITE} bytes of a message "
+                    f"the client says is {SMALL_WRITE + 1} bytes long")
+            require_nothing_sent(after_total, "a chunk that named the wrong total")
+
+        # A payload belongs to the socket it was announced for. The other
+        # handle is a socket that is open and usable, so what separates it from
+        # the right one is only that it is not the one the payload was
+        # announced for; a handle that was never opened would leave a firmware
+        # free to refuse it for being closed rather than for being the wrong
+        # one, and the two refusals are not the same property.
+        other = net.open_udp(peer.ip, peer.udp_port)
+        try:
+            started, premature = open_partial(seed=3)
+            wrong_handle = net.write_chunk(other, half, SMALL_WRITE,
+                                           pattern(SMALL_WRITE, 3)[half:])
+            after_handle = peer.collect_udp()
+            with check(f"a chunk naming another open socket while a payload is in progress "
+                       f"is refused, and sends nothing"):
+                detail(f"payload opened on socket {handle}, continued on socket {other}: "
+                       f"status {wrong_handle.status_text!r}, reply {wrong_handle.data!r}, "
+                       f"datagrams {[len(d) for d in after_handle]}")
+                require_payload_open(started, premature, half, SMALL_WRITE)
+                if wrong_handle.status_text != STATUS_INVALID_PARAMS:
+                    raise Failure(
+                        f"expected {STATUS_INVALID_PARAMS!r}, got "
+                        f"{wrong_handle.status_text!r}: the payload was announced for socket "
+                        f"{handle}, so a chunk for socket {other} belongs to a payload that "
+                        f"was never announced. A firmware that takes it completes the "
+                        f"payload and sends it, to one socket or the other, and either is a "
+                        f"message on a connection its client never wrote to")
+                require_nothing_sent(after_handle, "a chunk that named a different socket")
+        finally:
+            net.close(other)
+
+        # More bytes than the announcement leaves room for.
+        started, premature = open_partial(seed=4)
+        overrun = net.write_chunk(handle, half, SMALL_WRITE, pattern(SMALL_WRITE, 4))
+        after_overrun = peer.collect_udp()
+        with check(f"a chunk of {SMALL_WRITE} bytes at offset {half} of a {SMALL_WRITE}-byte "
+                   f"payload is refused, and sends nothing"):
+            detail(f"status {overrun.status_text!r}, reply {overrun.data!r}, datagrams "
+                   f"{[len(d) for d in after_overrun]}")
+            detail(f"this chunk ends {half} bytes past the announcement, which says the "
+                   f"guard is applied rather than that {half} bytes matter. The overrun a "
+                   f"client can actually reach is larger: a payload announced as "
+                   f"{MAX_ANNOUNCED_TOTAL} accepts an offset of {MAX_ANNOUNCED_TOTAL - 1}, "
+                   f"and a full {MAX_CHUNK_PAYLOAD}-byte chunk there ends "
+                   f"{MAX_ANNOUNCED_TOTAL - 1 + MAX_CHUNK_PAYLOAD - MAX_ANNOUNCED_TOTAL} "
+                   f"bytes past the total the payload was sized by. Reaching that offset "
+                   f"costs {MAX_ANNOUNCED_TOTAL - 1} register writes of setup per route, "
+                   f"which this suite does not spend")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            if overrun.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {overrun.status_text!r}: "
+                    f"{half} bytes are held and this chunk carries {SMALL_WRITE} more, which "
+                    f"would put {half + SMALL_WRITE} bytes into a payload the client "
+                    f"announced as {SMALL_WRITE}. The announcement is the only size the "
+                    f"firmware has, so the bytes past it have nowhere of their own to go")
+            require_nothing_sent(after_overrun, "a chunk that ran past its announced total")
+
+        # A client can also simply stop. Any other command means the payload in
+        # progress has no one to finish it, so it ends there: the completing
+        # chunk that follows continues a payload that no longer exists, and the
+        # bytes it carries belong to no datagram.
+        #
+        # An abandoned payload that survives is the state that turns into a
+        # message nobody wrote: the next chunked write on this socket finds
+        # bytes already in place and sends them ahead of its own.
+        started, premature = open_partial(seed=5)
+        net.identify()
+        abandoned = net.write_chunk(handle, half, SMALL_WRITE, pattern(SMALL_WRITE, 5)[half:])
+        after_abandoned = peer.collect_udp()
+        with check("a payload is abandoned by any command that is not its next chunk"):
+            detail(f"{half} of {SMALL_WRITE} bytes taken, then NET_CMD_IDENTIFY, then the "
+                   f"chunk that would have completed it: status {abandoned.status_text!r}, "
+                   f"reply {abandoned.data!r}, datagrams "
+                   f"{[len(d) for d in after_abandoned]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            if abandoned.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {abandoned.status_text!r}: an "
+                    f"IDENTIFY came between the two chunks, which ends the payload, so this "
+                    f"chunk continues one that no longer exists. A firmware that answers "
+                    f"{STATUS_OK.decode()} here held those {half} bytes across a command "
+                    f"that had nothing to do with them, and holds them across any number of "
+                    f"commands and any length of time")
+            require_nothing_sent(after_abandoned, "a chunk continuing a payload that an "
+                                                  "intervening command should have ended")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_refuses_offset_ahead(net: Net, peer: Peer) -> bool:
+    """A chunk placed past the accumulation point would send memory nobody wrote.
+
+    chunked-write-refuses-bad-chunks measures a chunk claiming an offset behind
+    where the payload has reached, which is the direction a client reaches by
+    resending. This is the other direction, and the two are not the same
+    property: a firmware whose continuation test is 'offset >= write_offset'
+    rather than 'offset == write_offset' refuses every chunk that case presents
+    and takes this one. Only the equality refuses both.
+
+    What it would take is a hole. The bytes between where the accumulation
+    stopped and where this chunk claims to start are written by no chunk of
+    this payload, and they are sent all the same once the total is reached.
+    They are whatever the target's buffer held before, and that buffer is the
+    one READ_SOCKET reads datagrams into, so the hole is as likely to be the
+    last datagram some other peer sent this device as it is to be memory that
+    was never written at all. Either way it leaves the device on the wire,
+    inside a message whose client believes it wrote every byte.
+
+    Both sides of the boundary are measured, as chunked-write-total-ceiling
+    does it and the bad-chunk cases do not. An offset one past the accumulation
+    point is refused, and the accumulation point itself is taken and completes.
+    A case that only tries to break the comparison cannot tell a firmware that
+    refuses the right thing from one that refuses everything, and a firmware
+    that refused the equal offset as well would leave no way to continue a
+    payload at all.
+
+    The refused chunk is one that a firmware which does not check the offset
+    would complete: it carries exactly the bytes that reach the announced total
+    from the offset it claims, so the payload completes and the datagram with
+    the hole in it leaves. That is what makes this check able to fail.
+    """
+    section("chunked-write-refuses-offset-ahead")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+    # One byte past where the payload has reached: the smallest hole there is,
+    # so what the check measures is the comparison rather than the size of the
+    # gap. The chunk carries payload[ahead:], which is what a firmware that
+    # took it would need to reach SMALL_WRITE and send.
+    ahead = half + 1
+    payload = pattern(SMALL_WRITE, seed=31)
+    # The payload that has to assemble afterwards. A seed of its own, so a
+    # datagram carrying the first one's bytes is reported as the wrong payload
+    # rather than as the right one.
+    fresh = pattern(SMALL_WRITE, seed=37)
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        started = net.write_chunk(handle, 0, SMALL_WRITE, payload[:half])
+        premature = peer.collect_udp()
+        skipped = net.write_chunk(handle, ahead, SMALL_WRITE, payload[ahead:])
+        after_skip = peer.collect_udp()
+        with check(f"a chunk claiming offset {ahead} of a payload that has reached {half} is "
+                   f"refused, and sends nothing"):
+            detail(f"status {skipped.status_text!r}, reply {skipped.data!r}, datagrams "
+                   f"{[len(d) for d in after_skip]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            if skipped.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {skipped.status_text!r}: "
+                    f"{half} bytes are held and the next chunk of this payload starts at "
+                    f"{half}, so a chunk claiming {ahead} leaves byte {half} written by no "
+                    f"chunk at all. A firmware that takes it anyway reaches {SMALL_WRITE} "
+                    f"bytes, completes, and sends a datagram carrying the target's own "
+                    f"buffer in that hole. That buffer is where READ_SOCKET reads datagrams "
+                    f"into, so what leaves is memory this client never wrote and may never "
+                    f"have been entitled to")
+            require_nothing_sent(after_skip, f"a chunk that started {ahead - half} byte(s) "
+                                             f"past the accumulation")
+
+        # The refusal has to end the payload as well, exactly as the refusals
+        # in chunked-write-refuses-bad-chunks do. Bytes left behind are the
+        # head of whatever the client announces next, and this client has just
+        # been told its payload is in a state it cannot reason about.
+        resumed = net.write_chunk(handle, half, SMALL_WRITE, payload[half:])
+        after_resume = peer.collect_udp()
+        with check("a chunk refused for starting ahead ends the payload it was refused from"):
+            detail(f"status {resumed.status_text!r}, reply {resumed.data!r}, datagrams "
+                   f"{[len(d) for d in after_resume]}")
+            if resumed.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"the chunk that would have completed the payload answered "
+                    f"{resumed.status_text!r}, expected {STATUS_INVALID_PARAMS!r}: the chunk "
+                    f"before it was refused, which ends the accumulation, so there is no "
+                    f"payload in progress at offset {half} for this one to continue")
+            require_nothing_sent(after_resume, "a chunk continuing a payload that a refusal "
+                                               "should have ended")
+
+        # The other side of the boundary, and the proof that the refusals above
+        # left the target able to take a payload: a chunk at exactly the offset
+        # the accumulation has reached is taken, completes, and arrives whole.
+        opened = net.write_chunk(handle, 0, SMALL_WRITE, fresh[:half])
+        opened_early = peer.collect_udp()
+        completing = net.write_chunk(handle, half, SMALL_WRITE, fresh[half:])
+        arrived = peer.collect_udp()
+        with check(f"a chunk at exactly the offset the accumulation reached completes the "
+                   f"payload, and it arrives as one datagram"):
+            detail(f"status {completing.status_text!r}, reply {completing.data!r}, datagrams "
+                   f"{[len(d) for d in arrived]}")
+            require_payload_open(opened, opened_early, half, SMALL_WRITE)
+            if completing.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {completing.status_text!r}: {half} bytes "
+                    f"are held and this chunk starts at {half}, which is the one offset a "
+                    f"continuation may claim. A firmware that refuses it has the comparison "
+                    f"one off in the other direction, and no payload of more than one chunk "
+                    f"can ever be sent")
+            if send_count(completing) != SMALL_WRITE:
+                raise Failure(f"the completing chunk reports {send_count(completing)} rather "
+                              f"than {SMALL_WRITE}")
+            if arrived != [fresh]:
+                raise Failure(
+                    f"expected one datagram of {SMALL_WRITE} bytes: "
+                    f"{describe_datagrams(arrived, fresh)}. The two refusals above have to "
+                    f"leave the target able to take the next payload, and every byte of "
+                    f"this one has to come from a chunk: a hole where the refused chunk "
+                    f"would have put its bytes shows up here as the wrong bytes rather than "
+                    f"as a wrong length")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_refuses_short_commands(net: Net, peer: Peer) -> bool:
+    """A chunk command too short to carry its own header is refused.
+
+    Every field a chunk is read by lives in its first seven bytes: the target,
+    the command, the handle, the offset it starts at and the total it belongs
+    to. A command shorter than that names none of them, and the payload length
+    the firmware works out from it is negative.
+
+    That negative length is why this is measured rather than reviewed. The
+    offset and the total are read from bytes the FPGA never wrote for this
+    command: the command pointer goes back to the base of the command SRAM
+    between commands, but the SRAM itself is not cleared, so those bytes are
+    whatever the command before left there. Each short command here follows an
+    opening chunk, so the stale bytes read back as an offset of 0 and a total
+    the firmware accepts, and a firmware without the guard therefore opens a
+    payload and reaches its copy with a length of -4 rather than refusing
+    anything.
+
+    What that looks like from here is worth stating, because it is not a wrong
+    status. A copy of that length on a machine with no MMU does not return to
+    answer anything, so this case fails by the interface never coming back
+    rather than by reporting something else. Against firmware that has no
+    chunk command at all it reports that instead, which is what it does on the
+    unpatched build. Neither run demonstrates the guard rejecting a short
+    command cleanly; what they establish is that the guard is present and that
+    the header is there to read. That is the precondition the rest of the chunked cases rest on:
+    chunked-write-refuses-bad-chunks measures what the offset, total and handle
+    checks do, and all three are reached only once the header is known to be
+    there to read.
+
+    The refusal has to end the payload in progress as well. A short command is
+    still a chunk command, so it is not one of the commands that end a payload
+    on their way in, and the guard has to do it itself.
+
+    Seven bytes is the other side of the boundary: a chunk that carries no
+    payload, which is a client opening a payload and handing over none of it
+    yet, and it has to be taken.
+    """
+    section("chunked-write-refuses-short-commands")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+    payload = pattern(SMALL_WRITE, seed=9)
+    # The seven bytes every chunk starts with, as a chunk that opens a payload
+    # and carries none of it. The short commands below are its head, so each is
+    # this same command with its header cut off at a different point rather than
+    # a shape no client would ever produce.
+    header = net.write_chunk_command(handle, 0, SMALL_WRITE, b"")
+    truncated, almost = header[:3], header[:6]
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        started = net.write_chunk(handle, 0, SMALL_WRITE, payload[:half])
+        premature = peer.collect_udp()
+        cut = net.uci.transact(truncated)
+        after_cut = peer.collect_udp()
+        with check(f"a chunk command of {len(truncated)} bytes is refused, and sends nothing"):
+            detail(f"{truncated.hex(' ')}: status {cut.status_text!r}, reply {cut.data!r}, "
+                   f"datagrams {[len(d) for d in after_cut]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+            require_implemented(cut, f"a chunk command of {len(truncated)} bytes")
+            if cut.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {cut.status_text!r}: this "
+                    f"command carries the handle and nothing else, so the offset and the "
+                    f"total it would be read by are four bytes the FPGA never wrote, and "
+                    f"the payload length is {len(truncated)} - 7 = {len(truncated) - 7}. "
+                    f"The chunk before it announced offset 0, so a firmware that does not "
+                    f"measure the command reads that back as its own offset, opens a "
+                    f"payload, and copies {len(truncated) - 7} bytes as a length no "
+                    f"comparison against the announced total can reject")
+            if cut.data:
+                raise Failure(f"a refused command replied {cut.data!r}; it sent nothing, so "
+                              f"it has no count to report")
+            require_nothing_sent(after_cut, f"a chunk command of {len(truncated)} bytes")
+
+        completing = net.write_chunk(handle, half, SMALL_WRITE, payload[half:])
+        after_completing = peer.collect_udp()
+        with check("a short chunk command ends the payload that was in progress"):
+            detail(f"status {completing.status_text!r}, reply {completing.data!r}, "
+                   f"datagrams {[len(d) for d in after_completing]}")
+            if completing.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"the chunk that would have completed the payload answered "
+                    f"{completing.status_text!r}, expected {STATUS_INVALID_PARAMS!r}: the "
+                    f"short command before it was refused, and a refusal ends the "
+                    f"accumulation, so there is no payload in progress at offset {half} for "
+                    f"this chunk to continue. A short command is a chunk command, so it is "
+                    f"not one of the commands that end a payload on their way in and the "
+                    f"guard has to end it itself")
+            require_nothing_sent(after_completing, "a chunk continuing a payload that a "
+                                                   "short command should have ended")
+
+        whole = net.write_chunk(handle, 0, SMALL_WRITE, payload)
+        arrived = peer.collect_udp()
+        with check("a complete payload still assembles after a short command"):
+            detail(f"status {whole.status_text!r}, reply {whole.data!r}, datagrams "
+                   f"{[len(d) for d in arrived]}")
+            if whole.status_text != STATUS_OK:
+                raise Failure(f"expected {STATUS_OK!r}, got {whole.status_text!r}; the short "
+                              f"command was refused, which must leave the target able to "
+                              f"take the next payload")
+            if send_count(whole) != SMALL_WRITE:
+                raise Failure(f"the reply reports {send_count(whole)} rather than "
+                              f"{SMALL_WRITE}")
+            if arrived != [payload]:
+                raise Failure(f"expected one datagram of {SMALL_WRITE} bytes: "
+                              f"{describe_datagrams(arrived, payload)}")
+
+        # The two sides of the boundary. Six bytes is one short of the header,
+        # so the total it would be read by is half written by this command and
+        # half left over from the one before; seven is the header exactly.
+        clipped = net.uci.transact(almost)
+        after_clipped = peer.collect_udp()
+        with check(f"a chunk command of {len(almost)} bytes is refused, and sends nothing"):
+            detail(f"{almost.hex(' ')}: status {clipped.status_text!r}, reply "
+                   f"{clipped.data!r}, datagrams {[len(d) for d in after_clipped]}")
+            if clipped.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {clipped.status_text!r}: the "
+                    f"header is seven bytes and this command is {len(almost)}, so the top "
+                    f"byte of the total is one the FPGA never wrote and the payload length "
+                    f"is {len(almost) - 7}")
+            require_nothing_sent(after_clipped, f"a chunk command of {len(almost)} bytes")
+
+        opening = net.uci.transact(header)
+        after_opening = peer.collect_udp()
+        with check(f"a chunk command of exactly {len(header)} bytes is taken"):
+            detail(f"{header.hex(' ')}: status {opening.status_text!r}, reply "
+                   f"{opening.data!r}, datagrams {[len(d) for d in after_opening]}")
+            if opening.status_text != STATUS_OK:
+                raise Failure(
+                    f"expected {STATUS_OK!r}, got {opening.status_text!r}: {len(header)} "
+                    f"bytes is the header and no payload, which is a client announcing a "
+                    f"payload before it has produced any of it. Every field the chunk is "
+                    f"read by is present, so there is nothing short about it, and a "
+                    f"firmware that refuses it has the comparison one off")
+            if opening.data:
+                raise Failure(f"a chunk that carried none of its {SMALL_WRITE} announced "
+                              f"bytes replied {opening.data!r}; nothing was sent, so there "
+                              f"is no count to report")
+            require_nothing_sent(after_opening, f"a chunk carrying 0 of {SMALL_WRITE} "
+                                                f"announced bytes")
+    finally:
+        # Ends the payload that last chunk announced, along with the socket.
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_discarded_by_abort(net: Net, peer: Peer) -> bool:
+    """A payload part way through does not survive an abort.
+
+    The abort bit is how a client walks away from an exchange it no longer
+    wants, and the target is told about it so that it can let go of whatever it
+    was holding for that client. A reply spanning blocks is one such thing, and
+    multi-block-state-does-not-leak covers it. A payload part way through is the
+    other, and it is the one that turns into a message nobody wrote: the client
+    that comes back announces its own payload and finds bytes already in place.
+
+    The abort has to arrive with no command of its own in front of it, or it
+    measures nothing. Every command that is not a chunk already ends a payload
+    in progress on its way in, so an abort taken after a read would be that
+    discard rather than this one. The command the abort abandons is therefore a
+    chunk itself, and the one used is the opening chunk again: a chunk at offset
+    0 re-announces the payload it announced the first time, so the accumulation
+    is left exactly where the checked opening chunk left it. That first opening
+    chunk is sent normally and checked, because an abort probe reports how many
+    reply bytes it took and whether the interface came back, not what the target
+    answered.
+
+    A firmware that does not let go completes the payload on the next chunk and
+    sends it, to a socket that is still open, so this is measured on the wire as
+    well as on the status.
+    """
+    section("chunked-write-discarded-by-abort")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+    payload = pattern(SMALL_WRITE, seed=13)
+    opening = net.write_chunk_command(handle, 0, SMALL_WRITE, payload[:half])
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        started = net.uci.transact(opening)
+        premature = peer.collect_udp()
+        with check(f"a payload of {half} of {SMALL_WRITE} bytes is in progress"):
+            detail(f"socket {handle}: status {started.status_text!r}, reply "
+                   f"{started.data!r}, datagrams {[len(d) for d in premature]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+
+        taken, idle = net.uci.probe_abort(opening)
+        after_abort = peer.collect_udp()
+        with check("the opening chunk is abandoned by the abort bit"):
+            detail(f"the same opening chunk was sent again and abandoned after {taken} "
+                   f"reply byte(s), interface idle {idle}, datagrams "
+                   f"{[len(d) for d in after_abort]}")
+            if not idle:
+                raise Failure("the interface did not return to Idle after the abort, so the "
+                              "abort this case needs did not happen and nothing below it "
+                              "measures what it claims to")
+            require_nothing_sent(after_abort, f"a chunk that carried {half} of "
+                                              f"{SMALL_WRITE} announced bytes")
+
+        abandoned = net.write_chunk(handle, half, SMALL_WRITE, payload[half:])
+        after_abandoned = peer.collect_udp()
+        with check("an abort discards a chunked write that was in progress"):
+            detail(f"status {abandoned.status_text!r}, reply {abandoned.data!r}, datagrams "
+                   f"{[len(d) for d in after_abandoned]}")
+            if abandoned.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {abandoned.status_text!r}: the "
+                    f"client abandoned the exchange with {half} of {SMALL_WRITE} bytes "
+                    f"accumulated, which ends the payload, so this chunk continues one that "
+                    f"no longer exists. A firmware that answers {STATUS_OK.decode()} here "
+                    f"held those {half} bytes across a client walking away, and socket "
+                    f"{handle} is still open, so they leave as a datagram the moment "
+                    f"anything completes them")
+            require_nothing_sent(after_abandoned, "a chunk continuing a payload that an "
+                                                  "abort should have discarded")
+    finally:
+        net.close(handle)
+    return True
+
+
+def run_chunked_write_discarded_by_reset(net: Net, peer: Peer, reset) -> bool:
+    """A payload part way through does not survive a C64 reset.
+
+    The program that was sending it is gone, so the chunks that would have
+    completed it are never coming. What is left behind is a handle, a total and
+    an offset that the next program can match by accident: the reset closes the
+    sockets, lwip hands the low descriptors out again, and a stale handle then
+    names a live socket belonging to somebody else.
+
+    The completing chunk goes straight after the reset with no command between
+    it and the reset, and that is the whole design of this scenario. Every
+    command that is not a chunk ends a payload in progress on its way in, so a
+    sequence that re-opened a socket first would have discarded the
+    accumulation with the OPEN command and proved nothing about the reset.
+
+    That leaves both firmwares refusing the same chunk, and what separates them
+    is which refusal it is. One that discards on the reset holds no payload at
+    the offset this chunk names, so the chunk is refused by the offset check
+    before any socket is looked at: '81,INVALID PARAMS'. One that does not
+    discard matches the chunk in all three fields, completes the payload and
+    reaches the send, where the handle the reset closed is no longer one this
+    target owns: '12,SEND ERROR: 9'. The status is therefore the whole of what
+    tells "the accumulation is gone" from "only the socket is gone", and this
+    check reads it that way rather than treating any refusal as a pass.
+
+    A firmware that kept the sockets open across the reset as well is caught on
+    the wire instead: the payload then completes and leaves.
+    """
+    section("chunked-write-discarded-by-reset")
+    handle = net.open_udp(peer.ip, peer.udp_port)
+    half = SMALL_WRITE // 2
+    payload = pattern(SMALL_WRITE, seed=17)
+    try:
+        peer.learn_udp_peer(net, handle)
+
+        started = net.write_chunk(handle, 0, SMALL_WRITE, payload[:half])
+        premature = peer.collect_udp()
+        with check(f"a payload of {half} of {SMALL_WRITE} bytes is in progress"):
+            detail(f"socket {handle}: status {started.status_text!r}, reply "
+                   f"{started.data!r}, datagrams {[len(d) for d in premature]}")
+            require_payload_open(started, premature, half, SMALL_WRITE)
+
+        with check(f"reset the C64 with {half} of {SMALL_WRITE} bytes accumulated"):
+            net = reset()
+
+        completing = net.write_chunk(handle, half, SMALL_WRITE, payload[half:])
+        after = peer.collect_udp()
+        with check("a C64 reset discards a chunked write that was in progress"):
+            detail(f"status {completing.status_text!r}, reply {completing.data!r}, "
+                   f"datagrams {[len(d) for d in after]}")
+            require_implemented(completing, "the completing chunk of a chunked write")
+            if completing.status_text.startswith(STATUS_SEND_ERROR_PREFIX):
+                raise Failure(
+                    f"the completing chunk answered {completing.status_text!r}: the payload "
+                    f"survived the reset, matched this chunk in the handle, the offset and "
+                    f"the total, completed, and reached the send. The only thing that "
+                    f"stopped it there was socket {handle} having been closed by the same "
+                    f"reset. Nothing stops the next program: it opens a socket, lwip hands "
+                    f"back the descriptor this one had, and its first chunk at offset "
+                    f"{half} of {SMALL_WRITE} completes and sends the payload a program "
+                    f"that is no longer running abandoned")
+            if completing.status_text != STATUS_INVALID_PARAMS:
+                raise Failure(
+                    f"expected {STATUS_INVALID_PARAMS!r}, got {completing.status_text!r}: "
+                    f"the reset ends the payload that was in progress, so this chunk "
+                    f"continues one that no longer exists and is refused at the offset")
+            require_nothing_sent(after, "a chunk continuing a payload the reset should have "
+                                        "discarded")
+    finally:
+        net.close(handle)
+    return True
+
 def close_quietly(net: Net, handles: List[int]) -> None:
     """Close every handle a scenario opened; an error means it was already gone."""
     for handle in handles:
@@ -1173,7 +2430,9 @@ def build_driver(route: str, computer, busy_timeout: float):
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify how the UCI network target's READ_SOCKET handles the requested "
-                    "length and datagrams larger than it (GideonZ/1541ultimate#802)."
+                    "length and datagrams larger than it (GideonZ/1541ultimate#802), and "
+                    "how WRITE_SOCKET_CHUNK sends a payload larger than one command as a "
+                    "single datagram (GideonZ/1541ultimate#807)."
     )
     parser.add_argument("-H", "--host", default=os.environ.get("U64_HOST", "u64"))
     parser.add_argument("-p", "--password", default=os.environ.get("U64_PASS"))
@@ -1330,6 +2589,24 @@ def main() -> int:
                 run_oversize_request_keeps_datagram, net, peer)
             run(route, "multi-block-state-does-not-leak",
                 run_multi_block_state_does_not_leak, net, peer)
+            run(route, "chunked-write-arrives-as-one-datagram",
+                run_chunked_write_one_datagram, net, peer)
+            run(route, "chunked-write-full-size-datagram",
+                run_chunked_write_full_size_datagram, net, peer)
+            run(route, "chunked-write-zero-total",
+                run_chunked_write_zero_total, net, peer)
+            run(route, "chunked-write-total-ceiling",
+                run_chunked_write_total_ceiling, net, peer)
+            run(route, "chunked-write-refuses-unowned-socket",
+                run_chunked_write_refuses_unowned_socket, net, peer)
+            run(route, "chunked-write-refuses-bad-chunks",
+                run_chunked_write_refuses_bad_chunks, net, peer)
+            run(route, "chunked-write-refuses-offset-ahead",
+                run_chunked_write_refuses_offset_ahead, net, peer)
+            run(route, "chunked-write-refuses-short-commands",
+                run_chunked_write_refuses_short_commands, net, peer)
+            run(route, "chunked-write-discarded-by-abort",
+                run_chunked_write_discarded_by_abort, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""
@@ -1339,6 +2616,16 @@ def main() -> int:
                     native_started = True
                     return Net(build_driver(route, computer, args.busy_timeout))
                 return Net(rest_uci)
+
+            if "chunked-write-discarded-by-reset" in selected:
+                run(route, "chunked-write-discarded-by-reset",
+                    run_chunked_write_discarded_by_reset, net, peer, reset_and_reopen)
+                # The reset inside it ends the 6502 agent `net` wraps, so the
+                # native route needs a driver of its own for what follows. The
+                # REST route has nothing to rebuild and would only pay for
+                # another machine reset.
+                if route == "native":
+                    net = reset_and_reopen()
             # Last on purpose: on the native route the reset inside it ends
             # the 6502 agent that `net` wraps, so nothing can follow it here.
             run(route, "reset-closes-uci-sockets",
