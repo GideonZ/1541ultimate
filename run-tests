@@ -286,6 +286,12 @@ SUITES: Sequence[Suite] = (
     # name it accepts back for SIZE and DELE.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+    # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
+    # and leaves nothing behind. The regression check fails on firmware carrying
+    # #803; the control and the RAM-disk comparison beside it say whether a
+    # failure is that defect or something else.
+    Suite("e2e", "ftp-usb-integrity", "tests/e2e/network/ftp_usb_integrity_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
