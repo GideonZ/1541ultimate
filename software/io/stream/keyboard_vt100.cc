@@ -14,7 +14,7 @@ int Keyboard_VT100 :: getch()
 {
 	const short cursor[] = { KEY_UP, KEY_DOWN, KEY_RIGHT, KEY_LEFT };
 	const short numeric[] = {
-			0, KEY_HOME, KEY_INSERT, 0, KEY_END, KEY_PAGEUP, KEY_PAGEDOWN, 0, 0, 0,
+			0, KEY_HOME, KEY_INSERT, KEY_DELETE, KEY_END, KEY_PAGEUP, KEY_PAGEDOWN, 0, 0, 0,
 			0, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, 0, KEY_F6, KEY_F7, KEY_F8,
 			KEY_F9, KEY_F10, 0, KEY_F11, KEY_F12, 0, 0, 0, 0, 0, 0 };
 	const short function[] = { KEY_F1, KEY_F2, KEY_F3, KEY_F4 };
@@ -30,7 +30,14 @@ int Keyboard_VT100 :: getch()
         } else {
 		    charin = stream->get_char();
         }
-		if (charin == '\e') {
+		if (charin == 0x7F)
+			// A terminal sends DEL for its Backspace key; termios erase is ^?
+			// by default, and its forward Delete is ESC [ 3 ~, mapped above.
+			// Raw, this arrived as KEY_DELETE, which UIStringEdit applies at
+			// the cursor, so backspacing what was just typed did nothing: the
+			// cursor is at the end and there is nothing ahead of it.
+			ret = KEY_BACK;
+		else if (charin == '\e') {
 			escape_state = e_esc_escape;
 			escape_started_ms = getMsTimer();
 		}

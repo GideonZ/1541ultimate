@@ -116,6 +116,23 @@ TEST(Vt100Escape, ArrowKeyIsNotBrokenUpByAGapInsideIt)
 }
 
 // Every known sequence still decodes, with all its bytes available at once.
+// A terminal's Backspace key sends DEL, and its Delete key sends ESC [ 3 ~.
+// Passed through raw, DEL arrived as KEY_DELETE, which UIStringEdit applies at
+// the cursor: after typing into a prompt the cursor is at the end, nothing is
+// ahead of it, and backspacing what was just typed did nothing.
+TEST(Vt100Escape, TerminalBackspaceAndDeleteReachTheirOwnKeys)
+{
+	host_test_set_ms_timer(0);
+	ScriptedStream stream;
+	Keyboard_VT100 keyboard(&stream);
+
+	stream.feed(0x7F);
+	EXPECT_EQ(read_key(keyboard, 2), KEY_BACK);
+
+	stream.feed("\e[3~");
+	EXPECT_EQ(read_key(keyboard, 4), KEY_DELETE);
+}
+
 TEST(Vt100Escape, KnownSequencesStillDecode)
 {
 	host_test_set_ms_timer(0);
