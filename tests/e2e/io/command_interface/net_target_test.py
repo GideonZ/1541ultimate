@@ -391,7 +391,20 @@ class Peer:
 
         The probe is a datagram, so it can be lost; seen once in a dozen runs.
         A lost one is resent rather than counted against the firmware.
+
+        Anything already queued here is discarded first. A datagram left over
+        from an earlier scenario is read as this probe otherwise, and the
+        address learned is then a socket that is already closed, so every
+        send_udp that follows goes nowhere and the device reads report no data.
         """
+        self.udp.setblocking(False)
+        try:
+            while True:
+                self.udp.recvfrom(2048)
+        except OSError:
+            pass
+        finally:
+            self.udp.setblocking(True)
         for attempt in range(PROBE_ATTEMPTS):
             net.write(handle, b"PROBE")
             self.udp.settimeout(PEER_TIMEOUT_SECONDS)
