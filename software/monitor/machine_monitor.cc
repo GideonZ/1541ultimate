@@ -1637,10 +1637,9 @@ public:
     }
 };
 
-// Serves single-byte reads out of a block the backend filled in one call. The
-// range commands below walk memory a byte at a time, which on a backend that
-// stops the host machine per access is a stop per byte, about 100ms each on an
-// Ultimate II+L. Blocks are size-aligned, so one never crosses the 64K wrap.
+// Serves single-byte reads out of a block the backend filled in one call: a
+// byte-at-a-time walk costs one stop per byte, about 100ms each on an Ultimate
+// II+L. Blocks are size-aligned, so none crosses the 64K wrap.
 class MonitorBlockReader
 {
     MemoryBackend *backend;
@@ -1666,12 +1665,10 @@ public:
             uint32_t start = block;
             uint32_t end = block + MONITOR_READ_BLOCK - 1;
 
-            // Compare's second range can wrap past $FFFF, leaving last below
-            // first. Neither bound places this block then, so it is read whole;
-            // a block never crosses the wrap, so all of it is in range.
-            // Narrowing the window to `first` there is what must not happen:
-            // for an address below `first` it puts the start above the address
-            // being served, and the index below runs off the front of buffer.
+            // A wrapped range (Compare's second, past $FFFF) leaves last below
+            // first, so the bounds are ignored and the whole block is read; a
+            // block never crosses the wrap. Narrowing to `first` here would put
+            // base above an address below it, indexing before buffer.
             if (last >= first) {
                 if (first > start) {
                     start = first;
@@ -3579,10 +3576,9 @@ bool MachineMonitor :: follow_current(void)
     uint16_t target;
     uint8_t index;
 
-    // follow_target() walks the view a row at a time, one backend read per row.
-    // Unheld, that is a stop per row: on an Ultimate II+L one follow took 3.37s
-    // against 0.031s on an Ultimate 64 and 0.35s for a plain redraw on the same
-    // II+L. Held for the whole walk it costs one stop.
+    // follow_target() walks the view a row at a time, one read and so one stop
+    // each: on an Ultimate II+L one follow took 3.37s unheld against 0.031s on
+    // an Ultimate 64. Held, it costs one stop.
     MonitorReadBurst burst(backend);
 
     if (!follow_target(&target)) {
@@ -3982,10 +3978,8 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
-    // Paging asks which row the cursor is on before it moves, and answering
-    // walks the view an instruction at a time. Each step is a read the backend
-    // serves separately, so unheld this is one stop per row scanned, up to
-    // content_height + 64 of them.
+    // Paging asks which row the cursor is on, which scans the view an
+    // instruction at a time: unheld, one stop per row, up to content_height + 64.
     MonitorReadBurst burst(backend);
 
     for (int row = 0; row < max_scan; row++) {
@@ -4003,8 +3997,8 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
 
 uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
 {
-    // One read, and so one stop, per row paged over. Nested brackets are
-    // counted, so holding it here as well as in the callers below costs nothing.
+    // One read, and so one stop, per row paged over. Brackets nest, so holding
+    // it here as well as in the callers costs nothing.
     MonitorReadBurst burst(backend);
     while (rows > 0) {
         address = disasm_next_addr(address);
@@ -4079,8 +4073,7 @@ void MachineMonitor :: ensure_disasm_visible()
     if (state.view != MONITOR_VIEW_ASM) {
         return;
     }
-    // Walks from the top of the view to the cursor an instruction at a time,
-    // one read each, so it is held for the same reason as the walks above.
+    // Walks from the top of the view to the cursor, one read per instruction.
     MonitorReadBurst burst(backend);
     if (state.current_addr < state.base_addr) {
         state.base_addr = state.current_addr;
@@ -4107,9 +4100,8 @@ void MachineMonitor :: ensure_disasm_visible()
 
 void MachineMonitor :: step_disassembly(int lines)
 {
-    // Every line stepped is a disassembly probe, and the two helpers below
-    // walk the view again. Nested brackets are counted, so holding it once
-    // here leaves the machine stopped once for the whole move.
+    // Every line stepped probes the disassembly and the helpers walk the view
+    // again; brackets nest, so the whole move costs one stop.
     MonitorReadBurst burst(backend);
     while (lines < 0) {
         uint16_t current = state.current_addr;

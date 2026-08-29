@@ -195,8 +195,19 @@ class MonitorSession:
 
         shown = None
         for attempt in range(retypes + 1):
-            self.send_char(key)
-            wait_for_prompt(self, title)
+            # On a cartridge the key that opens the prompt is injected into the
+            # computer's matrix and read on the cartridge's own scan, which drops
+            # one occasionally. Retried on the same budget as the argument below.
+            for press in range(retypes + 1):
+                self.send_char(key)
+                try:
+                    wait_for_prompt(self, title)
+                    break
+                except Failure:
+                    if press == retypes:
+                        raise
+                    detail(f"{title}: the {key} key did not open the prompt, "
+                           f"pressing it again")
             # Not every prompt opens on a template that the first printable
             # key replaces wholesale. Hunt keeps its default range and takes
             # the needle after it, so typing into it appends; that one has to
@@ -226,6 +237,41 @@ class MonitorSession:
             + (f", {retypes + 1} times over" if retypes else "")
             + ". A character of the command did not reach the monitor as typed."
             f"\n{self.capture().text()}")
+
+    def retype_until_field_reads(self, title: str, text: str,
+                                 retypes: int = PROMPT_RETYPES) -> None:
+        """Type into a prompt that is already open, proving what arrived.
+
+        type_into_prompt covers prompts it must open first. RETURN is left to
+        the caller: committing in the same batch cannot check what arrived.
+        """
+        shown = None
+        for attempt in range(retypes + 1):
+            self.send_text(text, f"{title} {text}")
+            def field_reads(screen: Snapshot) -> bool:
+                try:
+                    return prompt_field(screen, title) == text
+                except Failure:
+                    return False  # the prompt is mid-redraw
+
+            snapshot = wait_until(self, field_reads)
+            try:
+                shown = prompt_field(snapshot, title)
+            except Failure:
+                raise Failure(
+                    f"the {title} prompt is not on screen after typing {text!r}"
+                    f"\n{snapshot.text()}")
+            if shown == text:
+                if attempt:
+                    detail(f"{title}: {text!r} had to be typed {attempt + 1} "
+                           f"times before the whole of it reached the monitor")
+                return
+            if attempt < retypes:
+                clear_prompt_field(self)
+        raise Failure(
+            f"{title}: the field reads {shown!r} after {text!r} was typed, "
+            f"{retypes + 1} times over. A character did not reach the monitor "
+            f"as typed.\n{self.capture().text()}")
 
     def run_prompt_command(self, key: str, title: str, text: str) -> Snapshot:
         """Type a verified argument into a command prompt and submit it.
@@ -1371,10 +1417,9 @@ def run_key_input_stress_test(session: MonitorSession, rounds: int) -> int:
                     f"round {round_index + 1} of {rounds}, after {verified} "
                     f"arguments arrived character for character: {failure}")
             session.send_key("ARROW_LEFT")
-            # Wait for the prompt to be gone, not just the monitor drawn under
-            # it. Every case reopens a prompt with the same title, so a stale one
-            # satisfies the next wait_for_prompt at once and the text goes into a
-            # closing prompt: "the field reads '1100' after '2200' was typed".
+            # Wait for the prompt to be gone, not just the monitor under it:
+            # every case reopens the same title, so a stale prompt satisfies the
+            # next wait_for_prompt and the text goes into a closing prompt.
             wait_until(session, lambda screen: title not in screen.text())
             wait_for_monitor(session, f"leaving the {title} prompt")
             verified += 1
@@ -2302,9 +2347,8 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             session.goto_run(f"{address:04X}")
             capture.clear()
             launched = time.monotonic()
-            # Collect until there is something to judge rather than for a fixed
-            # 0.60s window a slow-starting stream misses, which reports "no
-            # frame" for an unrelated reason. assert_frames_differ needs two.
+            # Collect until there are frames to judge, not for a fixed 0.60s
+            # window a slow-starting stream misses. assert_frames_differ needs two.
             frames = []
             video_deadline = time.monotonic() + VIDEO_CAPTURE_TIMEOUT_SECONDS
             while time.monotonic() < video_deadline:
@@ -2562,7 +2606,11 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     # monitor then asks for the file name.
     session.send_key("RIGHT")
     clear_prompt_field(session)
-    session.send_text(filename + "\r", f"save as {filename}")
+    # Read the name back before committing it: a dropped keystroke otherwise
+    # names a file nobody asked for. A save of MS90925.PRG lost its five digits
+    # and the popup read "SAVE MS.PRG", reported only as the file not found.
+    session.retype_until_field_reads("Save as", filename)
+    session.send_key("ENTER")
     snapshot = wait_for_screen_contains(session, "SAVE")
     # Dismissing this popup has the same two-burst redraw as other settled keys.
     return session.send_key("ENTER", settle=True)  # dismiss the confirmation popup
@@ -3610,8 +3658,7 @@ JIFFY_POLL_INTERVAL = 0.1
 def jiffy_clock_advances(host: str) -> bool:
     """Whether the KERNAL jiffy clock at $00A2 is still counting.
 
-    The KERNAL raster interrupt increments it about 60 times a second while the
-    machine runs and not at all while it is stopped, so this measures the C64.
+    The KERNAL raster interrupt increments it only while the machine runs.
     """
     first = read_rest_memory(host, 0x00A2, 1)[0]
     for _ in range(JIFFY_POLLS):
@@ -3624,8 +3671,7 @@ def jiffy_clock_advances(host: str) -> bool:
 def wait_for_running_machine(host: str, timeout: float = 10.0) -> bool:
     """Wait for the jiffy clock to start counting after a machine reset.
 
-    `reset_rest_machine` returns as soon as the device accepts the reset, but
-    the KERNAL takes a moment to reach the interrupt that drives the clock.
+    `reset_rest_machine` returns as soon as the device accepts the reset.
     """
     deadline = time.monotonic() + timeout
     while True:
@@ -3649,14 +3695,10 @@ def ui_freezes_machine(device_host: str, mode: str,
                        machine_was_running: bool) -> bool:
     """Whether this user interface stops the C64 while the monitor is up.
 
-    Measured, not inferred: owning `Interface Type` only says the device *can*
-    draw over a running machine. An Ultimate 64 draws the overlay only while a
-    display asserts HDMI hot-plug detect (ultimate.cc), so with no display it
-    freezes while the setting says it does not. The jiffy clock is read through
-    the device's own DMA, so it works whether or not the machine is held, while
-    a cartridge's companion computer reads open bus. Without the
-    `machine_was_running` control sample this cannot be measured, so the
-    setting is used instead.
+    Measured, not inferred from `Interface Type`: an Ultimate 64 draws its
+    overlay only while a display asserts HDMI hot-plug detect (ultimate.cc), so
+    with no display it freezes while the setting says otherwise. Falls back to
+    the setting when there is no `machine_was_running` control sample.
     """
     if mode == MODE_FREEZE:
         return True

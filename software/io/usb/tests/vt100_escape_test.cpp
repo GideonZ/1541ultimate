@@ -1,16 +1,6 @@
-// What Keyboard_VT100 does with an ESC byte.
-//
-// A terminal sends ESC alone for the ESC key and ESC plus more bytes for every
-// arrow, function and keypad key. The decoder reads one byte per getch() call,
-// so it cannot tell the two apart when it has only the ESC: it has to wait and
-// see whether anything follows. These tests hold the millisecond timer still
-// and advance it deliberately, so the waiting is exercised without any real
-// delay and without depending on how fast the machine running them is.
-//
-// The stream stands in for a socket or a UART. Both return -1 for "no byte
-// right now", and SocketStream::get_char() also returns it for each byte of a
-// Telnet IAC command it swallows, which is why the decoder measures the gap
-// instead of treating one -1 as proof the ESC was alone.
+// What Keyboard_VT100 does with an ESC byte: only the gap after it separates
+// the ESC key from an arrow or function sequence. The tests hold the
+// millisecond timer still and advance it deliberately, so no real time passes.
 
 // Ahead of the firmware headers: integer.h defines a `max` macro that the
 // standard containers cannot be parsed after.
@@ -19,10 +9,8 @@
 #include "host_test/host_test.h"
 #include "keyboard_vt100.h"
 
-// Stream::format() is defined in the header, so the compiler emits it into this
-// binary even though nothing here formats anything. The firmware's formatter
-// writes to a serial port that does not exist on a host, so the symbol is
-// satisfied rather than the whole of small_printf.cc being linked in.
+// Stream::format() is emitted from the header even though nothing here formats.
+// Satisfy its symbol rather than linking the firmware's small_printf.cc.
 int _my_vprintf(void (*)(char, void **), void **, const char *, va_list)
 {
 	return 0;
@@ -55,9 +43,8 @@ public:
 	bool empty(void) const { return bytes.empty(); }
 };
 
-// Poll the decoder until it produces a key or `polls` calls have gone by
-// without one. Every caller here knows how many bytes it fed, so a key that
-// needs more polls than that is a defect rather than a slow decoder.
+// Poll until a key comes out or `polls` calls have gone by. Callers know how
+// many bytes they fed, so needing more polls than that is a defect.
 int read_key(Keyboard_VT100& keyboard, int polls)
 {
 	for (int i = 0; i < polls; i++) {
@@ -106,10 +93,9 @@ TEST(Vt100Escape, ByteAfterEscapeIsKeptAndDeliveredNext)
 	EXPECT_EQ(read_key(keyboard, 2), 'x');
 }
 
-// The regression the earlier attempt at this caused: a decoder that announced
-// the ESC on the first -1 turned arrow keys into an ESC followed by two typed
-// characters. In the monitor, ESC leaves, so the keys that followed went
-// somewhere else entirely.
+// The regression an earlier attempt caused: delivering the ESC on the first -1
+// turned arrow keys into an ESC plus two typed characters, and in the monitor
+// ESC leaves.
 TEST(Vt100Escape, ArrowKeyIsNotBrokenUpByAGapInsideIt)
 {
 	host_test_set_ms_timer(0);
@@ -129,8 +115,7 @@ TEST(Vt100Escape, ArrowKeyIsNotBrokenUpByAGapInsideIt)
 	EXPECT_EQ(read_key(keyboard, 2), KEY_DOWN);
 }
 
-// Every sequence the decoder knows still decodes to its key, with the whole
-// sequence available from the start.
+// Every known sequence still decodes, with all its bytes available at once.
 TEST(Vt100Escape, KnownSequencesStillDecode)
 {
 	host_test_set_ms_timer(0);
@@ -167,9 +152,8 @@ TEST(Vt100Escape, SecondEscapeReleasesTheFirstAndIsMeasuredOnItsOwn)
 	EXPECT_EQ(keyboard.getch(), '\e');
 }
 
-// The millisecond timer is 16 bits and wraps about every 65 seconds. An ESC
-// pressed just before a wrap must still be delivered on the gap, not held until
-// the timer has come all the way round again.
+// The millisecond timer is 16 bits and wraps about every 65s; an ESC pressed
+// just before a wrap must still be delivered on the gap.
 TEST(Vt100Escape, GapIsMeasuredAcrossATimerWrap)
 {
 	host_test_set_ms_timer((uint16_t)(0 - (VT100_ESCAPE_ALONE_MS / 2)));

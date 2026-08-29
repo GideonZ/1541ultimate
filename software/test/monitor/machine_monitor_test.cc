@@ -9548,11 +9548,9 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
 
 static int test_ui_range_commands_read_in_blocks(void)
 {
-    // The C and H keys reach Compare and Hunt through the _collect entry
-    // points, not the _memory ones. A 256-byte Compare walking both sides is
-    // 512 single-byte reads, each a stop of about 100ms on an Ultimate II+L:
-    // measured at 58.58s against a 5s budget while only the _memory variants
-    // were batched, with the host tests green throughout.
+    // The C and H keys reach Compare and Hunt through the _collect entry points,
+    // not the _memory ones. Batching only _memory left the UI at 58.58s for a
+    // 256-byte Compare against a 5s budget, with the host tests green.
     FakeMemoryBackend backend;
     uint16_t addrs[8];
     const uint8_t needle[2] = { 0xAB, 0xCD };
@@ -9599,16 +9597,10 @@ static int test_ui_range_commands_read_in_blocks(void)
 
 static int test_compare_serves_a_range_that_wraps_past_ffff(void)
 {
-    // Compare takes a destination and a length, and monitor_parse_transfer
-    // bounds each field to four hex digits without checking that the
-    // destination plus the length stays inside 64K. So `C FF00-FFFF,FF80`
-    // is accepted and its second range runs FF80..FFFF then 0000..007F.
-    //
-    // The block reader is bounded by the range it is asked for, and on a
-    // wrapped range the last address is below the first, which makes that
-    // bound meaningless. It has to fall back to the block rather than clamp
-    // the window to a start above the address being read: doing that leaves
-    // the read indexing before the start of the buffer.
+    // `C FF00-FFFF,FF80` is accepted: monitor_parse_transfer bounds each field
+    // to four hex digits without checking dest + length stays inside 64K, so the
+    // second range wraps. The block reader must not clamp its window to `first`
+    // there, or a read below `first` indexes before the start of its buffer.
     FakeMemoryBackend backend;
     uint16_t addrs[8];
     int index;
@@ -9618,8 +9610,7 @@ static int test_compare_serves_a_range_that_wraps_past_ffff(void)
     for (index = 0; index < 0x10000; index++) {
         backend.memory[index] = (uint8_t)(index * 7);
     }
-    // One byte that differs, in the wrapped half, so the walk has to read
-    // past $FFFF and get the right answer there.
+    // One byte differs in the wrapped half, so the walk must read past $FFFF.
     backend.memory[0x0040] = (uint8_t)(backend.memory[0x0040] ^ 0xFF);
 
     for (index = 0; index < 0x100; index++) {
@@ -9642,13 +9633,9 @@ static int test_compare_serves_a_range_that_wraps_past_ffff(void)
 
 static int test_paging_reads_inside_a_bracket(void)
 {
-    // Paging is not a redraw, and the walks it makes are what a user waits
-    // for. page_disassembly asks disasm_visible_row where the cursor is, and
-    // that scans the view an instruction at a time, up to content_height + 64
-    // reads. Unheld, a backend that stops the host machine per access stops it
-    // once per row scanned: measured on an Ultimate II+L, over 1s per PGUP or
-    // PGDN against 180-210ms on an Ultimate 64, which is enough for the E2E
-    // suite to read a screen one keystroke stale.
+    // Paging is not a redraw: page_disassembly scans the view an instruction at
+    // a time via disasm_visible_row. Unheld on an Ultimate II+L that is over 1s
+    // per PGUP against 180-210ms on an Ultimate 64, enough to read a stale screen.
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
@@ -9661,8 +9648,7 @@ static int test_paging_reads_inside_a_bracket(void)
 
     BackendMachineMonitor monitor(&ui, &backend);
     monitor.init(&screen, &keyboard);
-    // The bracketing under test is on the key handlers, so the counters are
-    // taken from after the keys are polled, not from the opening redraw.
+    // The bracketing under test is on the key handlers, not the opening redraw.
     backend.block_reads_inside_redraw = 0;
     backend.block_reads_outside_redraw = 0;
     backend.redraw_begin_count = 0;
@@ -9693,10 +9679,9 @@ static int test_paging_reads_inside_a_bracket(void)
 
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
-    // Without the bracket, a backend that stops per access pays one stop per
-    // displayed row: about 100ms each on an Ultimate II+L, so 1.8s for an
-    // 18-row view against 0.15s. A host test can hold only the shape: one
-    // balanced bracket per redraw, every block read of that redraw inside it.
+    // Unbracketed, a backend that stops per access pays one stop per displayed
+    // row: 1.8s for an 18-row view on an Ultimate II+L against 0.15s. A host
+    // test can hold only the shape: one balanced bracket around every read.
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
@@ -9728,8 +9713,7 @@ static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
                backend.block_reads_outside_redraw);
         return 1;
     }
-    // The point of the bracket: many row reads share one. One bracket per row
-    // would leave this at one read each.
+    // The point of the bracket: many row reads share one, not one bracket each.
     if (expect(backend.block_reads_inside_redraw >= backend.redraw_begin_count * 4,
                "Each redraw bracket covered fewer than four row reads, so the "
                "reads are not being batched under one bracket.")) {

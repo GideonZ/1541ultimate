@@ -63,15 +63,11 @@ int Keyboard_VT100 :: getch()
 	case e_esc_escape:
 		charin = stream->get_char();
 		if (charin == -1) {
-			// Nothing has followed the ESC yet. Once the gap is longer than a
-			// terminal ever leaves inside one sequence, the ESC was the key.
-			//
-			// The gap is measured rather than taken from this single -1,
-			// because -1 does not mean "waited and nothing came". A polled UART
-			// returns it constantly, and SocketStream::get_char() also returns
-			// it for each byte of a Telnet IAC command it swallows, so a
-			// decoder that delivered the ESC on the first -1 would announce one
-			// that was really the start of an arrow key.
+			// Nothing has followed the ESC yet; a gap longer than any inside a
+			// sequence means the ESC was the key. The gap is measured, not taken
+			// from this -1: a polled UART returns -1 constantly, and
+			// SocketStream::get_char() returns it for each byte of a Telnet IAC
+			// command it swallows. Delivering on the first -1 broke arrow keys.
 			if ((uint16_t)(getMsTimer() - escape_started_ms) >= VT100_ESCAPE_ALONE_MS) {
 				escape_state = e_esc_idle;
 				ret = '\e';
@@ -92,14 +88,13 @@ int Keyboard_VT100 :: getch()
 			ret = KEY_CTRL_B;
 		} else {
 			if (charin == '\e') {
-				// A second ESC. The first is delivered now and the second takes
-				// its place, so it gets a gap of its own to be measured over.
+				// A second ESC: the first is delivered now, the second gets
+				// its own gap.
 				escape_started_ms = getMsTimer();
 			} else {
 				escape_state = e_esc_idle;
-				// Hand the byte back instead of dropping it. It is not part of
-				// any sequence this decoder knows, so it is a key somebody
-				// pressed straight after ESC.
+				// Not part of any sequence this decoder knows, so it is a key
+				// pressed straight after ESC. Hand it back rather than drop it.
 				return_unused(charin);
 			}
 			ret = '\e';
@@ -146,9 +141,8 @@ void Keyboard_VT100 :: push_head(int c)
     pending_char = c;
 }
 
-// Give a byte back that getch() read but could not use, without overwriting the
-// single slot: a key the user interface pushed on purpose outranks one this
-// decoder is merely handing back.
+// Give back a byte getch() could not use, without displacing the single slot:
+// a deliberate push_head() outranks a handed-back byte.
 void Keyboard_VT100 :: return_unused(int c)
 {
     if (c > 0 && !pending_char)

@@ -10,8 +10,8 @@ class U2MemoryBackend : public MemoryBackend
     C64 *machine;
     // Last sampled CIA2 port-A output; 0x03 is the VIC0 fallback before begin_session().
     uint8_t cached_cia2_porta;
-    // Whether begin_redraw was the call that stopped the machine, and how deep
-    // the bracket is, so that a nested caller cannot leave it stopped.
+    // Whether begin_redraw stopped the machine, and the bracket depth so a
+    // nested caller cannot leave it stopped.
     bool redraw_stopped_machine;
     int redraw_depth;
     uint8_t read_cia2_porta(void);

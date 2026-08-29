@@ -15,11 +15,10 @@ public:
     virtual void begin_session(void) { }
     virtual void end_session(void) { }
 
-    // Hold the host machine still for the length of one screen redraw. A
-    // redraw reads one row at a time, and a backend that stops the machine per
-    // access pays that stop per row: on an Ultimate II+L each costs about 100ms
-    // (C64::stop's safe R/Wn sequence never arrives, so it forces the stop),
-    // making an 18-row view 1.8s and eighteen stops instead of one.
+    // Hold the host machine still for one screen redraw. A redraw reads a row at
+    // a time, and a backend that stops per access pays a stop per row: about
+    // 100ms each on an Ultimate II+L (C64::stop's safe R/Wn sequence never
+    // arrives, so it forces the stop), so 1.8s for an 18-row view.
     virtual void begin_redraw(void) { }
     virtual void end_redraw(void) { }
 
