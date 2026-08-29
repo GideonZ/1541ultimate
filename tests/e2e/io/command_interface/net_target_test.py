@@ -157,6 +157,10 @@ SOCKET_CAP = 4
 # more can succeed only if the reset closed them.
 SOCKETS_LEFT_OPEN_AT_RESET = 4
 RESET_CYCLES = 3
+# How long this host is given to refuse a connection to a closed TCP port of
+# its own. A host that drops instead of refusing would leave the device
+# blocked in connect(), which the command interface reports as a wedge.
+REFUSAL_TIMEOUT_SECONDS = 1.0
 
 # The two ways of reaching the registers, described at the top of this file.
 ROUTES = ["rest", "native"]
@@ -172,6 +176,7 @@ TESTS = [
     "oversize-request-keeps-the-datagram",
     "multi-block-state-does-not-leak",
     "abandoned-sockets-are-bounded",
+    "failed-open-keeps-existing-sockets",
     "reset-closes-uci-sockets",
 ]
 
@@ -419,6 +424,35 @@ class Peer:
             pass
         finally:
             self.udp.setblocking(True)
+
+    def refused_tcp_port(self) -> Optional[int]:
+        """A TCP port on this host that refuses a connection at once, or None.
+
+        Bound and released, so the number is almost certainly free, and then
+        tried from this host. What the caller needs is not that the port is
+        closed but that connecting to it comes back quickly: a host that
+        silently drops would leave the device blocked in connect() for as
+        long as lwip retries, and the command interface reports that as a
+        wedge for every target. A caller that gets None skips.
+        """
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            probe.bind((self.ip, 0))
+            port = probe.getsockname()[1]
+        finally:
+            probe.close()
+        attempt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        attempt.settimeout(REFUSAL_TIMEOUT_SECONDS)
+        try:
+            attempt.connect((self.ip, port))
+        except ConnectionRefusedError:
+            return port
+        except OSError:
+            return None
+        finally:
+            attempt.close()
+        # Something accepted, so the port is not closed after all.
+        return None
 
     def send_udp(self, payload: bytes) -> None:
         if self.udp_peer is None:
@@ -1195,6 +1229,60 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
     return True
 
 
+def run_failed_open_keeps_sockets(net: Net, peer: Peer) -> Optional[bool]:
+    """An open that fails must not cost the client a socket it already holds.
+
+    The target closes its oldest socket to let a new one in. If it does that
+    before the new socket is known to be usable, a TCP connect that fails
+    destroys a live socket and creates nothing, and for TCP a refused or
+    unanswered connect is the ordinary outcome when a host is down rather
+    than an edge case: a client retrying a connection loses everything it
+    holds, one socket per attempt.
+
+    Run with the client at its cap, because that is the only state in which
+    the target has a reason to close anything.
+    """
+    section("failed-open-keeps-existing-sockets")
+    dead_port = peer.refused_tcp_port()
+    if dead_port is None:
+        check_start("this host refuses a connection on a closed TCP port")
+        check_skip("this host does not refuse a connection on a closed TCP port of its "
+                   "own, so a failing OPEN_TCP would block the device in connect() "
+                   "rather than come back with an error")
+        return None
+
+    handles: List[int] = []
+    ports: List[int] = []
+    try:
+        open_abandoned(net, peer, SOCKET_CAP, handles, ports)
+
+        with check(f"OPEN_TCP to closed port {dead_port} fails"):
+            try:
+                handle = net.open_tcp(peer.ip, dead_port)
+            except Failure as exc:
+                detail(f"OPEN_TCP answered {format_exception(exc)}")
+            else:
+                # It succeeded, so this port is not closed and the scenario
+                # never exercised a failing open. Give the socket back.
+                close_quietly(net, [handle])
+                raise Failure(f"OPEN_TCP to port {dead_port} succeeded, so nothing on "
+                              f"this host refused it and the failing open this "
+                              f"scenario needs did not happen")
+
+        with check(f"the {SOCKET_CAP} sockets already open survived the failed open"):
+            arrived = [source_port(net, peer, handle) for handle in handles]
+            detail(", ".join(f"handle {handles[n]} port {ports[n]} -> {arrived[n]}"
+                             for n in range(len(handles))))
+            lost = sorted(set(ports) - set(arrived))
+            if lost:
+                raise Failure(f"source ports {lost} stopped answering after an OPEN_TCP "
+                              f"that failed, so the target gave up a live socket for one "
+                              f"it never handed out")
+    finally:
+        close_quietly(net, handles)
+    return True
+
+
 def run_reset_closes_uci_sockets(net: Net, peer: Peer, reset, device) -> bool:
     """A C64 reset releases every socket a client left open.
 
@@ -1426,6 +1514,8 @@ def main() -> int:
                 run_multi_block_state_does_not_leak, net, peer)
             run(route, "abandoned-sockets-are-bounded",
                 run_abandoned_sockets_are_bounded, net, peer)
+            run(route, "failed-open-keeps-existing-sockets",
+                run_failed_open_keeps_sockets, net, peer)
 
             def reset_and_reopen(route=route):
                 """Reset the C64 and hand back a driver that reaches the target."""

@@ -80,6 +80,7 @@ class NetworkTarget : public CommandTarget {
     int socket_count;
 
     void track_socket(int socketnr);
+    void close_oldest_socket(void);
     void untrack_socket(int socketnr);
     bool owns_socket(int socketnr);
     void close_all_sockets(void);

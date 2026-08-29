@@ -209,23 +209,22 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		return;
 	}
 
-	// Freed before the new socket is taken, so the client never sees the
-	// pool run out before its own limit does. An open that then fails has
-	// still cost the client its oldest socket: the slot only exists once
-	// something has been closed.
-	//
-	// A loop rather than a single test so that track_socket() below is
-	// provably within the table. sockets[NET_MAX_SOCKETS] would be
-	// socket_count itself, so a count that ever exceeded the table would
-	// overwrite the count rather than fail where it could be seen.
-	// untrack_socket() removes exactly the entry named, so this terminates.
-	while (socket_count >= NET_MAX_SOCKETS) {
-		int oldest = sockets[0];
-		untrack_socket(oldest);
-		lwip_close(oldest);
-	}
-
+	// A socket is given up only for one that is going to be handed out, so an
+	// open that fails costs the client nothing. This matters for TCP, where a
+	// refused or unanswered connect() is the ordinary error path rather than
+	// an edge case: a client retrying a connection to a host that is down
+	// would otherwise lose every socket it holds, one per attempt.
 	int socket = socket(AF_INET, type, 0);
+	if (socket < 0 && socket_count >= NET_MAX_SOCKETS) {
+		// The pool is out while this client holds its full share of it, so
+		// the client gives up its oldest and tries once more. Once only: a
+		// second refusal is the rest of the device using the pool rather than
+		// this client, and retrying would close everything the client has for
+		// nothing. Below the cap the answer stays 85, because a pool the
+		// firmware itself filled is not the client's to pay for.
+		close_oldest_socket();
+		socket = socket(AF_INET, type, 0);
+	}
 	if (socket < 0) {
 		*status = &c_status_no_socket;
 		return;
@@ -246,6 +245,18 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
         return;
 	}
 
+	// The cap, applied now that the socket exists and is about to be handed
+	// out. Between socket() above and here the client holds one more than the
+	// cap, which only happens when the pool had room to spare: had it not,
+	// socket() would have failed and taken the evict-and-retry branch.
+	//
+	// A loop rather than a single test so that track_socket() is provably
+	// within the table. sockets[NET_MAX_SOCKETS] would be socket_count
+	// itself, so a count that ever exceeded the table would overwrite the
+	// count rather than fail where it could be seen.
+	while (socket_count >= NET_MAX_SOCKETS) {
+		close_oldest_socket();
+	}
 	track_socket(socket);
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
@@ -441,6 +452,18 @@ bool NetworkTarget :: owns_socket(int socketnr)
         }
     }
     return false;
+}
+
+void NetworkTarget :: close_oldest_socket(void)
+{
+    // untrack_socket() removes exactly the entry named, so a caller that
+    // loops on socket_count terminates.
+    if (socket_count == 0) {
+        return;
+    }
+    int oldest = sockets[0];
+    untrack_socket(oldest);
+    lwip_close(oldest);
 }
 
 void NetworkTarget :: close_all_sockets(void)
