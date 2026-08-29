@@ -25,12 +25,16 @@ class Keyboard_VT100 : public Keyboard
 	escape_state_t escape_state;
 	int escape_value;
     int pending_char;
+    // When the ESC that entered e_esc_escape was read, so a lone ESC can be told
+    // from a sequence whose remaining bytes have not arrived. See getch().
+    uint16_t escape_started_ms;
 public:
 	Keyboard_VT100(Stream *s) {
 		stream = s;
 		escape_state = e_esc_idle;
 		escape_value = 0;
         pending_char = 0;
+        escape_started_ms = 0;
 	}
 
     ~Keyboard_VT100() {
@@ -39,9 +43,15 @@ public:
 
     int  getch(void);
     void push_head(int);
+    void return_unused(int);
     void wait_free(void);
     void clear_buffer(void);
 };
+
+// How long an ESC waits for a following byte before it is delivered as the ESC
+// key; only this gap separates it from an arrow or function sequence. Kept under
+// the 200ms Telnet receive timeout in socket_gui.cc.
+#define VT100_ESCAPE_ALONE_MS 150
 
 /*
 1B 5B 31 31 7E f1  \e[11~

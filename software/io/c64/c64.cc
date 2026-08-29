@@ -467,7 +467,10 @@ void C64::stop(bool do_raster)
 
         ioWrite8(ITU_TIMER, 200); // 1 ms
 
-        for (w = 0; w < 100;) { // was 1500
+        // A running 6510 writes every few cycles, so a safe R/Wn sequence
+        // arrives in microseconds or not at all; running out the budget only
+        // happens where the STOP_COND_FORCE below produces the same stop anyway.
+        for (w = 0; w < 10;) { // was 1500
             if (C64_STOP & C64_HAS_STOPPED) {
                 stop_mode = 2;
                 break;
