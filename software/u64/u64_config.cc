@@ -163,10 +163,12 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
 #define CFG_SUPERCPU_DET      0x54
-// 0x55..0x5E are used by the USB HID store (io/usb/usb_hid_config.h) and
-// 0x56..0x63 by the audio selection store (io/audio/audio_select.cc); both are
-// different stores, but kept clear here to keep the ids readable side by side
+// 0x55..0x5E are items of this store too, declared in io/usb/usb_hid_config.h.
+// 0x56..0x63 belong to the audio store; unpack() matches ids across stores on
+// the same page, so they are kept clear here.
 #define CFG_POWERON_MODE      0x5F
+// The first id clear of both ranges above.
+#define CFG_WAKE_ON_WIFI      0x64
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -383,6 +385,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
 #if U64 == 2
     { CFG_POWERON_MODE,         CFG_TYPE_ENUM, "Power On After Power Loss",    "%s", poweron_modes, 0, 2, 0 },
+    { CFG_WAKE_ON_WIFI,         CFG_TYPE_ENUM, "Wake On Wi-Fi",                "%s", en_dis,       0,  1, 0 },
 #endif
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -914,6 +917,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
 #if U64 == 2
         cfg->set_change_hook(CFG_POWERON_MODE, U64Config::setPowerOnMode);
+        cfg->set_change_hook(CFG_WAKE_ON_WIFI, U64Config::setWakeOnWifi);
 #endif
 
         if (!isEliteBoard()) {
@@ -1392,16 +1396,67 @@ int U64Config :: setLedSelector(ConfigItem *it)
 }
 
 #if U64 == 2
-// What the machine does when the input power returns is decided by the control
-// module (ESP32), as that is the only part of the machine that is powered at
-// that moment. The setting is therefore stored in the NVS of that module; here
-// it is only presented to the user and pushed down on every change.
-int U64Config :: setPowerOnMode(ConfigItem *it)
+// A starved TX buffer makes BUFARGS answer 0, which is also what success
+// returns, so what the module holds is the only evidence a call arrived. A
+// second attempt separates a busy buffer from a module without the command.
+#define MODULE_ATTEMPTS 2
+
+// False when no answer carrying a known mode arrived, whatever the reason.
+static bool readPowerOnMode(uint8_t &mode, uint8_t &last_state)
 {
-    if(it) {
-        int retval = wifi_set_power_mode((uint8_t)it->getValue());
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        mode = 0xFF;
+        last_state = 0xFF;
+        if ((wifi_get_power_mode(&mode, &last_state) == 0) && (mode <= 2)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Reads back, because the write cannot report a starved buffer either.
+static bool writePowerOnMode(uint8_t mode)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_power_mode(mode);
         if (retval) {
             printf("Setting the power on behavior failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went missing.
+            return false;
+        }
+        uint8_t stored = 0xFF;
+        uint8_t last_state = 0xFF;
+        if ((wifi_get_power_mode(&stored, &last_state) == 0) && (stored == mode)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The control module (ESP32) is the only part powered when the input power
+// returns, so the setting lives in its NVS. Here it is only shown to the user
+// and pushed down on every change.
+int U64Config :: setPowerOnMode(ConfigItem *it)
+{
+    if (!it || writePowerOnMode((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // An item left at a refused value would tell the menu and the REST API that
+    // the machine will come up when it will not, so it follows the module.
+    // setValueQuietly(), or this hook runs again. Flash keeps what the user
+    // asked for, so the next boot pushes it down to a module that was busy.
+    uint8_t mode;
+    uint8_t last_state;
+    if (readPowerOnMode(mode, last_state)) {
+        it->setValueQuietly((int)mode);
+        printf("The control module did not take the power on behavior; it is still %d.\n", mode);
+        UserInterface :: postMessage("Power on behavior not stored.");
+    } else {
+        printf("The control module did not take the power on behavior and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_POWERON_MODE);
         }
     }
     return 0;
@@ -1418,13 +1473,14 @@ void U64Config :: pushPowerOnMode(void)
     if (!it) {
         return;
     }
-    uint8_t mode = 0xFF;
-    uint8_t last_state = 0xFF;
-    if (wifi_get_power_mode(&mode, &last_state) != 0) {
-        // A control module that predates these commands answers "not
-        // implemented", and cannot store the setting either. Offering a choice
-        // that quietly does nothing is worse than offering none.
-        printf("Control module does not support the power on behavior; disabling the setting.\n");
+    uint8_t mode;
+    uint8_t last_state;
+    if (!readPowerOnMode(mode, last_state)) {
+        // A module that predates these commands cannot store the setting, and
+        // one that cannot be reached looks the same from here. A choice that
+        // quietly does nothing is worse than no choice at all.
+        printf("No usable answer about the power on behavior from the control module; "
+               "disabling the setting.\n");
         u64_configurator->cfg->disable(CFG_POWERON_MODE);
         return;
     }
@@ -1435,6 +1491,86 @@ void U64Config :: pushPowerOnMode(void)
         return; // already in sync
     }
     setPowerOnMode(it);
+}
+
+// Read and written like the power on behavior above, and for the same reason.
+static bool readWakeOnWifi(uint8_t &enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        enabled = 0xFF;
+        if ((wifi_get_wake_on_wifi(&enabled) == 0) && (enabled <= 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool writeWakeOnWifi(uint8_t enabled)
+{
+    for (int attempt = 0; attempt < MODULE_ATTEMPTS; attempt++) {
+        int retval = wifi_set_wake_on_wifi(enabled);
+        if (retval) {
+            printf("Setting wake on Wi-Fi failed with error %d.\n", retval);
+            // An error is the module's own answer, not a call that went missing.
+            return false;
+        }
+        uint8_t stored = 0xFF;
+        if ((wifi_get_wake_on_wifi(&stored) == 0) && (stored == enabled)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The control module is the only part still listening while the machine is off,
+// so this setting lives in its NVS as well.
+int U64Config :: setWakeOnWifi(ConfigItem *it)
+{
+    if (!it || writeWakeOnWifi((uint8_t)it->getValue())) {
+        return 0;
+    }
+    // As above: the item follows the module, so "Enabled" means a machine that
+    // will wake; flash keeps what was asked for and the next boot tries again.
+    uint8_t enabled;
+    if (readWakeOnWifi(enabled)) {
+        it->setValueQuietly((int)enabled);
+        printf("The control module did not take wake on Wi-Fi; it is still %d.\n", enabled);
+        UserInterface :: postMessage("Wake on Wi-Fi not stored.");
+    } else {
+        printf("The control module did not take wake on Wi-Fi and does not answer; "
+               "disabling the setting.\n");
+        UserInterface :: postMessage("Control module does not answer.");
+        if (u64_configurator && u64_configurator->cfg) {
+            u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        }
+    }
+    return 0;
+}
+
+// The module may have been updated or replaced since the setting was last
+// changed, so bring the two in sync when it reports in.
+void U64Config :: pushWakeOnWifi(void)
+{
+    if (!u64_configurator || !u64_configurator->cfg) {
+        return;
+    }
+    ConfigItem *it = u64_configurator->cfg->find_item(CFG_WAKE_ON_WIFI);
+    if (!it) {
+        return;
+    }
+    uint8_t enabled;
+    if (!readWakeOnWifi(enabled)) {
+        printf("No usable answer about wake on Wi-Fi from the control module; "
+               "disabling the setting.\n");
+        u64_configurator->cfg->disable(CFG_WAKE_ON_WIFI);
+        return;
+    }
+    printf("Wake on Wi-Fi of the control module: %d\n", enabled);
+    u64_configurator->cfg->enable(CFG_WAKE_ON_WIFI);
+    if (enabled == (uint8_t)it->getValue()) {
+        return; // already in sync
+    }
+    setWakeOnWifi(it);
 }
 #endif
 
@@ -2746,9 +2882,14 @@ void U64Config :: setup_config_menu(void)
 #if U64 == 2
     grp = ConfigGroupCollection :: getGroup("Power Settings", SORT_ORDER_CFG_POWER);
     grp->append(cfg->find_item(CFG_POWERON_MODE));
+    grp->append(cfg->find_item(CFG_WAKE_ON_WIFI));
     grp->append(ConfigItem :: separator());
     grp->append(ConfigItem :: heading("'Last State' powers the machine up if"));
     grp->append(ConfigItem :: heading("it was on when the power was lost."));
+    grp->append(ConfigItem :: separator());
+    grp->append(ConfigItem :: heading("'Wake On Wi-Fi' switches it on when a"));
+    grp->append(ConfigItem :: heading("magic packet arrives. Only Wi-Fi can:"));
+    grp->append(ConfigItem :: heading("the wired jack is off with the machine."));
 #endif
 
     grp = ConfigGroupCollection :: getGroup("SID Player Behavior", SORT_ORDER_CFG_SIDPLAY);

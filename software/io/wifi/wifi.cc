@@ -258,9 +258,9 @@ void WiFi :: RunModeThread()
                 if (voltages.vbus < 8500) {
                     UserInterface :: postMessage("Low input voltage.");
                 }
-                // The module keeps the power on behavior in its own NVS; make
-                // sure it matches the setting of this machine.
+                // Both settings live in the module's NVS; keep them in sync.
                 U64Config :: pushPowerOnMode();
+                U64Config :: pushWakeOnWifi();
 #endif
                 RefreshRoot();
             }

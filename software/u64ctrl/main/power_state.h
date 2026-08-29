@@ -10,6 +10,7 @@
 #ifndef SOFTWARE_U64CTRL_MAIN_POWER_STATE_H_
 #define SOFTWARE_U64CTRL_MAIN_POWER_STATE_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -20,6 +21,12 @@
 #define POWERON_MODE_LAST_STATE 2  // power up if the machine was on when the power was lost
 #define POWERON_MODE_MAX        POWERON_MODE_LAST_STATE
 
+/* Whether a magic packet for the station MAC switches the machine on while it
+   is off. Also the enum values of the menu setting, so do not renumber. */
+#define WAKE_ON_WIFI_DISABLED   0  // (default)
+#define WAKE_ON_WIFI_ENABLED    1
+#define WAKE_ON_WIFI_MAX        WAKE_ON_WIFI_ENABLED
+
 /* Human readable name of a mode, for logging. Never returns NULL. */
 const char *power_mode_name(uint8_t mode);
 
@@ -28,6 +35,17 @@ uint8_t power_get_mode(void);
 
 /* Stores the behavior; ESP_ERR_INVALID_ARG for an unknown mode. */
 esp_err_t power_set_mode(uint8_t mode);
+
+/* Disabled when nothing was stored, and when what was stored is unknown. */
+uint8_t power_get_wake_on_wifi(void);
+
+/* Stores it; ESP_ERR_INVALID_ARG for anything but the two values above. */
+esp_err_t power_set_wake_on_wifi(uint8_t enabled);
+
+/* Whether the frame path should be watched for a magic packet right now.
+   `have_input_path` says whether wifi_init() has recorded the input function
+   the watcher chains to. Kept out of wifi_modem.c so a host build can test it. */
+bool power_should_watch_for_wake(int machine_on, bool have_input_path);
 
 /* Whether the machine was on the last time the power state was stored. */
 uint8_t power_get_last_state(void);

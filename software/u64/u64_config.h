@@ -150,6 +150,8 @@ public:
 #if U64 == 2
     static int setPowerOnMode(ConfigItem *it);
     static void pushPowerOnMode(void);
+    static int setWakeOnWifi(ConfigItem *it);
+    static void pushWakeOnWifi(void);
 #endif
     static int setCpuSpeed(ConfigItem *it);
 

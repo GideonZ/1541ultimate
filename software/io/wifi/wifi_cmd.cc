@@ -161,6 +161,28 @@ int wifi_get_power_mode(uint8_t *mode, uint8_t *last_state)
     }
     RETURN_ESP;
 }
+
+int wifi_set_wake_on_wifi(uint8_t enabled)
+{
+    BUFARGS(set_wake_on_wifi, CMD_SET_WAKE_ON_WIFI);
+    args->enabled = enabled;
+    TRANSMIT(espcmd);
+    RETURN_ESP;
+}
+
+int wifi_get_wake_on_wifi(uint8_t *enabled)
+{
+    BUFARGS(identify, CMD_GET_WAKE_ON_WIFI);
+    TRANSMIT(get_wake_on_wifi);
+    if (result->esp_err == 0) {
+        if (enabled) {
+            *enabled = result->enabled;
+        }
+    } else {
+        printf("Get Wake On WiFi returned %d as error code.\n", result->esp_err);
+    }
+    RETURN_ESP;
+}
 #endif
 
 int wifi_is_connected(uint8_t &status)

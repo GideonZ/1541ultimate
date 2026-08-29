@@ -14,6 +14,6 @@
 #define BUTTON_ON2 7
 
 void start_button_handler(int initial);
-void extern_button_event(uint8_t button);
+BaseType_t extern_button_event(uint8_t button);
 
 #endif
