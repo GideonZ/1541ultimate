@@ -831,6 +831,33 @@ def _live_cpu_bank_from_status(status: str) -> int:
     return int(value)
 
 
+def _status_line_after_redraw(session: "mt.MonitorSession", expected_bank: int,
+                              timeout: float = 8.0) -> str:
+    """The status row, read after provoking the redraw a REST reset does not.
+
+    The reset above arrives over REST rather than as a keystroke, so the monitor
+    has no reason to redraw and the row still on screen is the one drawn before
+    it, reporting the live bank captured at the last debug stop. DOWN then UP
+    moves the cursor one row and back, which redraws the row without changing
+    where the monitor is looking.
+    """
+    deadline = time.time() + timeout
+    snap = session.capture()
+    line = snap.line(mt.find_status_line(snap))
+    while True:
+        try:
+            if _live_cpu_bank_from_status(line) == expected_bank:
+                return line
+        except mt.Failure:
+            pass
+        if time.time() >= deadline:
+            return line
+        session.send_key("DOWN")
+        session.send_key("UP")
+        snap = session.capture()
+        line = snap.line(mt.find_status_line(snap))
+
+
 def _assert_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSession",
                                          context: str) -> None:
     screen = mt.read_rest_memory(rest_host, 0x0400, 1000)
@@ -838,8 +865,7 @@ def _assert_safe_banking_display_hygiene(rest_host: str, session: "mt.MonitorSes
         raise mt.Failure(f"{context}: C64 READY screen is not readable/deterministic")
 
     _reopen_monitor(session)
-    snap = session.capture()
-    line = snap.line(mt.find_status_line(snap))
+    line = _status_line_after_redraw(session, SAFE_CPU_PORT_LOW_BITS)
     live_bank = _live_cpu_bank_from_status(line)
     if live_bank != SAFE_CPU_PORT_LOW_BITS:
         raise mt.Failure(
