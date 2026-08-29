@@ -1361,9 +1361,8 @@ static const uint16_t FILL_BLOCK = 256;
 
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value)
 {
-    // write_block holds one stopped session per block. A byte at a time
-    // re-stops the machine between bytes: on an Ultimate II+L that costs about
-    // 100ms a byte and loses writes, leaving a 256-byte fill stuck at 239.
+    // write_block holds one stopped session per block. A byte at a time re-stops
+    // the machine between bytes, which on an Ultimate II+L also loses writes.
     uint8_t buffer[FILL_BLOCK];
     uint32_t length = (uint32_t)end - (uint32_t)start + 1;
     uint32_t done = 0;
@@ -1637,9 +1636,9 @@ public:
     }
 };
 
-// Serves single-byte reads out of a block the backend filled in one call: a
-// byte-at-a-time walk costs one stop per byte, about 100ms each on an Ultimate
-// II+L. Blocks are size-aligned, so none crosses the 64K wrap.
+// Serves single-byte reads out of a block the backend filled in one call, so a
+// walk costs one stop per block rather than one per byte. Blocks are
+// size-aligned, so none crosses the 64K wrap.
 class MonitorBlockReader
 {
     MemoryBackend *backend;
@@ -1666,8 +1665,7 @@ public:
             uint32_t end = block + MONITOR_READ_BLOCK - 1;
 
             // A wrapped range (Compare's second, past $FFFF) leaves last below
-            // first, so the bounds are ignored and the whole block is read; a
-            // block never crosses the wrap. Narrowing to `first` here would put
+            // first, so read the whole block: narrowing to `first` would put
             // base above an address below it, indexing before buffer.
             if (last >= first) {
                 if (first > start) {
@@ -3577,8 +3575,7 @@ bool MachineMonitor :: follow_current(void)
     uint8_t index;
 
     // follow_target() walks the view a row at a time, one read and so one stop
-    // each: on an Ultimate II+L one follow took 3.37s unheld against 0.031s on
-    // an Ultimate 64. Held, it costs one stop.
+    // each; held, the whole walk costs one stop.
     MonitorReadBurst burst(backend);
 
     if (!follow_target(&target)) {
@@ -4024,8 +4021,7 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
         return address;
     }
     // Each lead-in below disassembles forward over tens of instructions, one
-    // read and so one stop each: on an Ultimate II+L one press of UP in the
-    // Assembly view took 3.895s against 0.033s on an Ultimate 64.
+    // read and so one stop each.
     MonitorReadBurst burst(backend);
     for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
         uint16_t start = (uint16_t)(address - lead_in);

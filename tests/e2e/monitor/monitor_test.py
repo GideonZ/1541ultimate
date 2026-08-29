@@ -195,9 +195,8 @@ class MonitorSession:
 
         shown = None
         for attempt in range(retypes + 1):
-            # On a cartridge the key that opens the prompt is injected into the
-            # computer's matrix and read on the cartridge's own scan, which drops
-            # one occasionally. Retried on the same budget as the argument below.
+            # On a cartridge the opening key goes through the computer's matrix
+            # and the cartridge's own scan, which drops one occasionally.
             for press in range(retypes + 1):
                 self.send_char(key)
                 try:
@@ -242,8 +241,8 @@ class MonitorSession:
                                  retypes: int = PROMPT_RETYPES) -> None:
         """Type into a prompt that is already open, proving what arrived.
 
-        type_into_prompt covers prompts it must open first. RETURN is left to
-        the caller: committing in the same batch cannot check what arrived.
+        RETURN is left to the caller: committing in the same batch cannot check
+        what arrived.
         """
         shown = None
         for attempt in range(retypes + 1):
@@ -2607,8 +2606,7 @@ def monitor_save(session: MonitorSession, mem_range: str, enter_dirs: List[str],
     session.send_key("RIGHT")
     clear_prompt_field(session)
     # Read the name back before committing it: a dropped keystroke otherwise
-    # names a file nobody asked for. A save of MS90925.PRG lost its five digits
-    # and the popup read "SAVE MS.PRG", reported only as the file not found.
+    # names a file nobody asked for, reported only as the file not found.
     session.retype_until_field_reads("Save as", filename)
     session.send_key("ENTER")
     snapshot = wait_for_screen_contains(session, "SAVE")
@@ -3697,8 +3695,7 @@ def ui_freezes_machine(device_host: str, mode: str,
 
     Measured, not inferred from `Interface Type`: an Ultimate 64 draws its
     overlay only while a display asserts HDMI hot-plug detect (ultimate.cc), so
-    with no display it freezes while the setting says otherwise. Falls back to
-    the setting when there is no `machine_was_running` control sample.
+    with no display it freezes while the setting says otherwise.
     """
     if mode == MODE_FREEZE:
         return True

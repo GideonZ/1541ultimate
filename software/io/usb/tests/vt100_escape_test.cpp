@@ -80,8 +80,7 @@ TEST(Vt100Escape, LoneEscapeArrivesAfterTheGap)
 	EXPECT_EQ(keyboard.getch(), -1);
 }
 
-// The other half of the complaint: the byte that finally released the ESC used
-// to be swallowed.
+// The byte that releases the ESC must not be swallowed with it.
 TEST(Vt100Escape, ByteAfterEscapeIsKeptAndDeliveredNext)
 {
 	host_test_set_ms_timer(0);
@@ -93,9 +92,8 @@ TEST(Vt100Escape, ByteAfterEscapeIsKeptAndDeliveredNext)
 	EXPECT_EQ(read_key(keyboard, 2), 'x');
 }
 
-// The regression an earlier attempt caused: delivering the ESC on the first -1
-// turned arrow keys into an ESC plus two typed characters, and in the monitor
-// ESC leaves.
+// Delivering the ESC on the first -1 would turn an arrow key into an ESC plus
+// two typed characters, and in the monitor ESC leaves.
 TEST(Vt100Escape, ArrowKeyIsNotBrokenUpByAGapInsideIt)
 {
 	host_test_set_ms_timer(0);
@@ -115,11 +113,9 @@ TEST(Vt100Escape, ArrowKeyIsNotBrokenUpByAGapInsideIt)
 	EXPECT_EQ(read_key(keyboard, 2), KEY_DOWN);
 }
 
-// Every known sequence still decodes, with all its bytes available at once.
-// A terminal's Backspace key sends DEL, and its Delete key sends ESC [ 3 ~.
-// Passed through raw, DEL arrived as KEY_DELETE, which UIStringEdit applies at
-// the cursor: after typing into a prompt the cursor is at the end, nothing is
-// ahead of it, and backspacing what was just typed did nothing.
+// A terminal's Backspace key sends DEL and its Delete key sends ESC [ 3 ~. Raw,
+// DEL reaches KEY_DELETE, which UIStringEdit applies ahead of the cursor, and
+// there is nothing ahead of it at the end of a field.
 TEST(Vt100Escape, TerminalBackspaceAndDeleteReachTheirOwnKeys)
 {
 	host_test_set_ms_timer(0);

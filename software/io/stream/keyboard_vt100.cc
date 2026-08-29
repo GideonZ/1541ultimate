@@ -31,11 +31,9 @@ int Keyboard_VT100 :: getch()
 		    charin = stream->get_char();
         }
 		if (charin == 0x7F)
-			// A terminal sends DEL for its Backspace key; termios erase is ^?
-			// by default, and its forward Delete is ESC [ 3 ~, mapped above.
-			// Raw, this arrived as KEY_DELETE, which UIStringEdit applies at
-			// the cursor, so backspacing what was just typed did nothing: the
-			// cursor is at the end and there is nothing ahead of it.
+			// A terminal sends DEL for its Backspace key; forward Delete is
+			// ESC [ 3 ~, mapped above. As KEY_DELETE this edits ahead of the
+			// cursor, and nothing is ahead of it at the end of a field.
 			ret = KEY_BACK;
 		else if (charin == '\e') {
 			escape_state = e_esc_escape;
@@ -70,11 +68,9 @@ int Keyboard_VT100 :: getch()
 	case e_esc_escape:
 		charin = stream->get_char();
 		if (charin == -1) {
-			// Nothing has followed the ESC yet; a gap longer than any inside a
-			// sequence means the ESC was the key. The gap is measured, not taken
-			// from this -1: a polled UART returns -1 constantly, and
-			// SocketStream::get_char() returns it for each byte of a Telnet IAC
-			// command it swallows. Delivering on the first -1 broke arrow keys.
+			// Only the elapsed gap can tell a lone ESC from a sequence still
+			// arriving: -1 cannot, as a polled UART returns it constantly and
+			// SocketStream::get_char() returns it per swallowed Telnet IAC byte.
 			if ((uint16_t)(getMsTimer() - escape_started_ms) >= VT100_ESCAPE_ALONE_MS) {
 				escape_state = e_esc_idle;
 				ret = '\e';

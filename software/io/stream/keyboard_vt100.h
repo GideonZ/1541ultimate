@@ -48,10 +48,9 @@ public:
     void clear_buffer(void);
 };
 
-// How long an ESC waits for a byte to follow before it is delivered as the ESC
-// key. Only the gap separates it from an arrow, function or keypad sequence,
-// which a terminal writes in one call. Under the 200ms Telnet receive timeout
-// (socket_gui.cc), so a lone ESC costs one timed-out read rather than two.
+// How long an ESC waits for a following byte before it is delivered as the ESC
+// key; only this gap separates it from an arrow or function sequence. Kept under
+// the 200ms Telnet receive timeout in socket_gui.cc.
 #define VT100_ESCAPE_ALONE_MS 150
 
 /*

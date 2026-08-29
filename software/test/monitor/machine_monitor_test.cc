@@ -9549,8 +9549,7 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
 static int test_ui_range_commands_read_in_blocks(void)
 {
     // The C and H keys reach Compare and Hunt through the _collect entry points,
-    // not the _memory ones. Batching only _memory left the UI at 58.58s for a
-    // 256-byte Compare against a 5s budget, with the host tests green.
+    // not the _memory ones, so those are what has to read in blocks.
     FakeMemoryBackend backend;
     uint16_t addrs[8];
     const uint8_t needle[2] = { 0xAB, 0xCD };
@@ -9597,10 +9596,9 @@ static int test_ui_range_commands_read_in_blocks(void)
 
 static int test_compare_serves_a_range_that_wraps_past_ffff(void)
 {
-    // `C FF00-FFFF,FF80` is accepted: monitor_parse_transfer bounds each field
-    // to four hex digits without checking dest + length stays inside 64K, so the
-    // second range wraps. The block reader must not clamp its window to `first`
-    // there, or a read below `first` indexes before the start of its buffer.
+    // `C FF00-FFFF,FF80` is accepted, so the second range wraps past $FFFF. The
+    // block reader must not clamp its window to `first` there, or a read below
+    // `first` indexes before the start of its buffer.
     FakeMemoryBackend backend;
     uint16_t addrs[8];
     int index;
@@ -9634,8 +9632,7 @@ static int test_compare_serves_a_range_that_wraps_past_ffff(void)
 static int test_paging_reads_inside_a_bracket(void)
 {
     // Paging is not a redraw: page_disassembly scans the view an instruction at
-    // a time via disasm_visible_row. Unheld on an Ultimate II+L that is over 1s
-    // per PGUP against 180-210ms on an Ultimate 64, enough to read a stale screen.
+    // a time via disasm_visible_row, so it needs a bracket of its own.
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;
@@ -9680,8 +9677,8 @@ static int test_paging_reads_inside_a_bracket(void)
 static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
 {
     // Unbracketed, a backend that stops per access pays one stop per displayed
-    // row: 1.8s for an 18-row view on an Ultimate II+L against 0.15s. A host
-    // test can hold only the shape: one balanced bracket around every read.
+    // row. A host test can hold only the shape: one balanced bracket around
+    // every read.
     TestUserInterface ui;
     CaptureScreen screen;
     FakeMemoryBackend backend;

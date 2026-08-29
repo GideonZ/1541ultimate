@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 """Measure how long a Telnet keystroke takes to show up on the device's screen.
 
-One number per key kind, because they do not travel the same path. A printable
-character is decoded and delivered by Keyboard_VT100 on the byte that carries
-it. An arrow key is three bytes and is delivered on the third. ESC is one byte
-that means nothing until the decoder knows no more are coming, so it costs a
-gap that the others do not, and that gap is what this measures separately
-rather than averaging into the rest.
-
-The clock starts when the byte is written to the socket and stops when the
-device's own screen shows the effect, read over REST. That includes the
-device's redraw, which is the latency a person actually sees.
+One figure per key kind: a printable character arrives on the byte that carries
+it, an arrow key on the third of three, and a lone ESC only after the gap that
+tells it from a sequence. The clock runs from the socket write to the screen.
 
     python3 tests/perf/telnet_key_latency_perf_test.py -H u2@c64u
     python3 tests/perf/telnet_key_latency_perf_test.py -H c64u --samples 30
@@ -35,17 +28,14 @@ from report import (Failure, check, check_ok, detail,  # noqa: E402
 from ui_backend import make_backend  # noqa: E402
 import monitor_test as mt  # noqa: E402
 
-# What a key is allowed to cost, measured from the socket write to the screen
-# showing it. Generous against the numbers these were set from, because the
-# point is to catch a regression that makes the monitor feel slow, not to pin
-# the current figure.
+# What a key is allowed to cost, socket write to screen. Deliberately generous:
+# the point is to catch a regression that makes the monitor feel slow, not to
+# pin the current figure.
 BUDGET_PRINTABLE_MS = 700.0
 BUDGET_CURSOR_MS = 700.0
-# ESC cannot be delivered until the decoder is sure nothing follows it, so it
-# pays VT100_ESCAPE_ALONE_MS plus one Telnet receive timeout on top of the
-# redraw the others pay. Its budget is that sum with room, not a free pass:
-# a regression that made every key wait for the ESC gap would fail the two
-# budgets above, which is the case worth catching.
+# ESC pays VT100_ESCAPE_ALONE_MS plus one Telnet receive timeout on top of the
+# redraw the others pay, so its budget is larger. A regression that made every
+# key wait for that gap fails the two budgets above.
 BUDGET_ESC_MS = 1400.0
 
 
@@ -178,9 +168,8 @@ def main() -> int:
                           f"{BUDGET_CURSOR_MS:.0f}ms budget")
 
     with check("a lone ESC still arrives, and inside its own budget"):
-        # ESC has to wait out the gap that tells it apart from a sequence, so
-        # it is slower than the keys above by design. What matters is that it
-        # arrives at all, and that its cost stays bounded.
+        # ESC waits out the gap that tells it apart from a sequence, so it is
+        # slower by design; what matters is that it arrives at all.
         timings = []
         for _ in range(max(4, args.samples // 3)):
             session.send_char("J")
