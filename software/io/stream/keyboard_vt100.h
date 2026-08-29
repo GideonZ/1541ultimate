@@ -25,12 +25,17 @@ class Keyboard_VT100 : public Keyboard
 	escape_state_t escape_state;
 	int escape_value;
     int pending_char;
+    // When the ESC that put the decoder into e_esc_escape was read, so that an
+    // ESC nothing follows can be told from the start of a sequence whose
+    // remaining bytes have not arrived yet. See getch().
+    uint16_t escape_started_ms;
 public:
 	Keyboard_VT100(Stream *s) {
 		stream = s;
 		escape_state = e_esc_idle;
 		escape_value = 0;
         pending_char = 0;
+        escape_started_ms = 0;
 	}
 
     ~Keyboard_VT100() {
@@ -39,9 +44,21 @@ public:
 
     int  getch(void);
     void push_head(int);
+    void return_unused(int);
     void wait_free(void);
     void clear_buffer(void);
 };
+
+// How long an ESC waits for a byte to follow it before it is delivered as the
+// ESC key itself.
+//
+// A terminal sends ESC alone for the ESC key and ESC plus more for every arrow,
+// function and keypad key, and the two are only distinguishable by the gap that
+// follows. This is the gap: longer than any within one sequence, which a
+// terminal writes in a single call, and short enough not to be felt. The Telnet
+// receive timeout is 200ms (socket_gui.cc), so a lone ESC is delivered on the
+// first timed-out read rather than costing a second one.
+#define VT100_ESCAPE_ALONE_MS 150
 
 /*
 1B 5B 31 31 7E f1  \e[11~

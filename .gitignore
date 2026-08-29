@@ -63,6 +63,7 @@ software/io/usb/tests/usbHidKeyboardTest
 software/io/usb/tests/usbHidMouseTest
 software/io/usb/tests/usbHidSelectionTest
 software/io/usb/tests/usbKeyboardQueueTest
+software/io/usb/tests/vt100EscapeTest
 software/Debug
 software/Lean
 software/PathTest
