@@ -148,6 +148,11 @@ PROBE_ATTEMPTS = 3
 # CLOSE_SOCKET exhausts the pool on firmware that keeps every socket for ever.
 # On firmware that bounds what a client can hold open, every one succeeds.
 ABANDONED_SOCKETS = 8
+# NET_MAX_SOCKETS in software/io/network/network_target.h: how many sockets
+# the target keeps for a client before opening one more closes the oldest.
+# Repeated here rather than discovered, so that changing the cap in the
+# firmware has to be a deliberate change to this test as well.
+SOCKET_CAP = 4
 # How many sockets a reset has to release before opening ABANDONED_SOCKETS
 # more can succeed only if the reset closed them.
 SOCKETS_LEFT_OPEN_AT_RESET = 4
@@ -403,6 +408,17 @@ class Peer:
             return address
         raise Failure(f"no probe datagram arrived from handle {handle} in "
                       f"{PROBE_ATTEMPTS} attempts")
+
+    def drain_udp(self) -> None:
+        """Discard datagrams already queued here, so the next read is this one's."""
+        self.udp.setblocking(False)
+        try:
+            while True:
+                self.udp.recvfrom(2048)
+        except OSError:
+            pass
+        finally:
+            self.udp.setblocking(True)
 
     def send_udp(self, payload: bytes) -> None:
         if self.udp_peer is None:
@@ -1100,6 +1116,27 @@ def open_abandoned(net: Net, peer: Peer, count: int, handles: List[int],
             detail(f"handle {handle}, source port {port}")
 
 
+def source_port(net: Net, peer: Peer, handle: int) -> Optional[int]:
+    """The source port of a datagram written to `handle`, or None if none arrives.
+
+    Drains first, so a datagram left over from an earlier write is never read
+    as this one's, and repeats a lost datagram the way learn_udp_peer does.
+    None means the socket behind the handle did not put a datagram on the
+    wire: either WRITE_SOCKET refused the handle, or the socket is gone.
+    """
+    peer.drain_udp()
+    for _ in range(PROBE_ATTEMPTS):
+        if net.write(handle, b"WHICH").status_text != STATUS_OK:
+            return None
+        peer.udp.settimeout(DELIVERY_SETTLE_SECONDS)
+        try:
+            _, (_, port) = peer.udp.recvfrom(2048)
+        except socket.timeout:
+            continue
+        return port
+    return None
+
+
 def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
     """A client that never closes its sockets cannot exhaust the device.
 
@@ -1108,8 +1145,8 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
     loses track of its handles, or is simply restarted, takes the network
     target down for everyone until the device is power cycled. A bounded
     target keeps at most a fixed number of client sockets and lets a new one
-    in by closing the oldest, so an OPEN_UDP always succeeds and the first
-    socket opened is gone by the time the pool would have run out.
+    in by closing the oldest, so an OPEN_UDP always succeeds and only the
+    newest SOCKET_CAP sockets are still live afterwards.
     """
     section("abandoned-sockets-are-bounded")
     handles: List[int] = []
@@ -1117,23 +1154,42 @@ def run_abandoned_sockets_are_bounded(net: Net, peer: Peer) -> bool:
     try:
         open_abandoned(net, peer, ABANDONED_SOCKETS, handles, ports)
 
-        with check(f"the first of {ABANDONED_SOCKETS} abandoned sockets has been closed"):
-            # Its handle number may by now belong to a newer socket, so the
-            # test is not "the write fails" but "nothing arrives from the
-            # port the first socket had".
-            result = net.write(handles[0], b"STALE")
-            detail(f"WRITE_SOCKET on handle {handles[0]} answered {result.status_text!r}")
-            if result.status_text == STATUS_OK:
-                peer.udp.settimeout(DELIVERY_SETTLE_SECONDS)
-                try:
-                    _, (_, port) = peer.udp.recvfrom(2048)
-                except socket.timeout:
-                    port = None
-                detail(f"datagram source port {port}, first socket had {ports[0]}")
-                if port == ports[0]:
-                    raise Failure(f"the first socket opened is still live after "
-                                  f"{ABANDONED_SOCKETS} opens without a close; the "
-                                  f"target keeps every socket a client abandons")
+        with check(f"exactly the newest {SOCKET_CAP} of {ABANDONED_SOCKETS} "
+                   f"abandoned sockets are still live"):
+            # A handle number is not the identity of a socket here: lwip hands
+            # the number of a closed socket to the next one opened, so a write
+            # to an evicted socket's handle reaches whichever socket holds
+            # that number now. A source port is the identity, because two live
+            # sockets never share one. Writing to every handle and collecting
+            # the source ports that arrive therefore bounds the live set from
+            # both sides.
+            arrived = [source_port(net, peer, handle) for handle in handles]
+            detail(", ".join(f"#{n + 1} handle {handles[n]} port {ports[n]} "
+                             f"-> {arrived[n]}" for n in range(len(handles))))
+
+            # No port from an evicted socket may answer. This is what fails on
+            # firmware that keeps every socket, and also on firmware whose cap
+            # is larger than SOCKET_CAP.
+            evicted = set(ports[:ABANDONED_SOCKETS - SOCKET_CAP])
+            still_live = sorted(evicted.intersection(p for p in arrived if p is not None))
+            if still_live:
+                raise Failure(f"source ports {still_live} still answer after "
+                              f"{ABANDONED_SOCKETS} opens without a close, so the "
+                              f"target keeps more than {SOCKET_CAP} of a client's "
+                              f"sockets")
+
+            # And every port of the newest SOCKET_CAP has to answer. Their
+            # handles are the ones the target still holds, so each is a
+            # distinct live socket. This is what fails on firmware whose cap
+            # is smaller than SOCKET_CAP, or that evicts the newest rather
+            # than the oldest.
+            newest = set(ports[-SOCKET_CAP:])
+            reached = set(arrived[-SOCKET_CAP:])
+            missing = sorted(newest - reached)
+            if missing:
+                raise Failure(f"source ports {missing} did not answer, so the target "
+                              f"closed a socket that is not among the "
+                              f"{ABANDONED_SOCKETS - SOCKET_CAP} oldest")
     finally:
         close_quietly(net, handles)
     return True
