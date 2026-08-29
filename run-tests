@@ -336,6 +336,10 @@ SUITES: Sequence[Suite] = (
     # screen scan that stopped reading the field cannot report both as perfect.
     Suite("perf", "typing-speed", "tests/perf/typing_speed_perf_test.py",
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
+    # Reports one figure per kind of key, because a printable character, an
+    # arrow key and a lone ESC are delivered at different points in the decoder.
+    Suite("perf", "telnet-key-latency",
+          "tests/perf/telnet_key_latency_perf_test.py", "-H @HOST@ -p @PASS@"),
 
     # --------------------------------------------------------------- soak --
     # Creates disk images to measure whether the heap comes back, so it needs a
