@@ -2523,12 +2523,24 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
                                for _ in range(4)]
                 except Failure as exc:
                     computer_view, colours = -1, f"unreadable ({exc})"
-                monitor_still_up = monitor_header_address(session.capture()) is not None
+                # The KERNAL raster interrupt only counts while the 6510 runs,
+                # so this separates a machine the monitor left stopped from one
+                # that is running and simply never jumped.
+                running = jiffy_clock_advances(video_host)
+                try:
+                    monitor_still_up = (
+                        monitor_header_address(session.capture()) is not None)
+                except Failure:
+                    # A closed user interface answers nothing for the screen,
+                    # which is itself the answer this is asking for.
+                    monitor_still_up = False
                 raise Failure(
                     f"G ${address:04X} did not run the program: ${0xC200:04X} "
                     f"reads ${device_view:02X} on {rest_host} and "
                     f"${computer_view:02X} on {video_host}, expected $5A. "
-                    f"$D021 on {video_host} sampled {colours}. The monitor is "
+                    f"$D021 on {video_host} sampled {colours}. The 6510 is "
+                    f"{'running' if running else 'not running'} (jiffy clock at "
+                    f"$00A2 on {video_host}). The monitor is "
                     f"{'still on screen' if monitor_still_up else 'gone'}. "
                     f"{len(frames)} frame(s) were captured from {video_host}.")
             assert_frames_differ(visible, "G $C000 video")
@@ -4364,13 +4376,20 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("G executes finite loop and returns to monitor"):
         go_address = 0xC000 if is_u2 and frozen else 0x1000
+        # Where the user interface draws into the C64's own screen, which is
+        # every cartridge, a loop writing screen RAM overwrites the monitor as
+        # fast as it is drawn and it can never be read back. The sentinel goes
+        # somewhere the user interface does not use there.
+        sentinel = 0xC200 if is_u2 else 0x0400
         write_rest_memory(rest_host, go_address,
-                          bytes.fromhex("A9008D0004A9018D00044C") +
+                          bytes((0xA9, 0x00, 0x8D, sentinel & 0xFF, sentinel >> 8,
+                                 0xA9, 0x01, 0x8D, sentinel & 0xFF, sentinel >> 8,
+                                 0x4C)) +
                           go_address.to_bytes(2, "little"))
-        write_rest_memory(rest_host, 0x0400, bytes([0x20]))
+        write_rest_memory(rest_host, sentinel, bytes([0x20]))
         session.goto(f"{go_address:04X}")
         session.goto_run(f"{go_address:04X}")
-        wait_for_rest_byte(rest_host, 0x0400, 0x01)
+        wait_for_rest_byte(rest_host, sentinel, 0x01)
         session.enter_monitor()
 
     with check("G repeated execution updates RAM sentinel"):
