@@ -4380,7 +4380,10 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # every cartridge, a loop writing screen RAM overwrites the monitor as
         # fast as it is drawn and it can never be read back. The sentinel goes
         # somewhere the user interface does not use there.
-        sentinel = 0xC200 if is_u2 else 0x0400
+        # $C2F0, not $C200: this loop keeps running after the check, and
+        # "G repeated execution updates RAM sentinel" below writes its own
+        # fixture to $C200.
+        sentinel = 0xC2F0 if is_u2 else 0x0400
         write_rest_memory(rest_host, go_address,
                           bytes((0xA9, 0x00, 0x8D, sentinel & 0xFF, sentinel >> 8,
                                  0xA9, 0x01, 0x8D, sentinel & 0xFF, sentinel >> 8,

@@ -157,6 +157,26 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
             menu_response_to_action = MENU_HIDE;
         }
         if (do_go) {
+#if !defined(RUNS_ON_PC) && (!defined(U64) || !(U64))
+            // A cartridge has no second screen: its user interface is drawn on
+            // the C64 the program is about to take over. Deleting the monitor
+            // alone leaves the browser underneath present but never repainted,
+            // and machine:menu_screen still answers for it, so a caller cannot
+            // tell that user interface from a live one and types into a screen
+            // nothing is drawing. Tear it down, the way the Ultimate 64 path
+            // below does, so what is left is the running program and a menu
+            // button that opens a fresh menu.
+            C64 *cart_machine = C64::getMachine();
+            if (cart_machine && cart_machine->is_accessible()) {
+                release_host();
+                torn_down_host = true;
+                cart_machine->release_ownership();
+            } else if (host) {
+                release_host();
+                torn_down_host = true;
+                host->release_ownership();
+            }
+#endif
 #if defined(U64) && (U64) && !defined(RUNS_ON_PC)
             C64 *machine = C64::getMachine();
             bool staged_nmi = false;
