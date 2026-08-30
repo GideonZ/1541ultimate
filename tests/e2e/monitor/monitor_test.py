@@ -2511,11 +2511,26 @@ def run_asm_entry_round_trip_test(session: MonitorSession, rest_host: str,
             if not visible:
                 assert_not_black(frames[-1], "G $C000 video")
             if not executed:
+                # Both views of the same byte, because they can disagree: the
+                # device reads it over the cartridge bus, the computer through
+                # its own DMA. The colour register says whether the loop is
+                # spinning at all, and the screen says whether the monitor let
+                # go of the machine in the first place.
+                device_view = read_rest_memory(rest_host, 0xC200, 1)[0]
+                try:
+                    computer_view = read_rest_memory(video_host, 0xC200, 1)[0]
+                    colours = [read_rest_memory(video_host, 0xD021, 1)[0]
+                               for _ in range(4)]
+                except Failure as exc:
+                    computer_view, colours = -1, f"unreadable ({exc})"
+                monitor_still_up = monitor_header_address(session.capture()) is not None
                 raise Failure(
                     f"G ${address:04X} did not run the program: ${0xC200:04X} "
-                    f"never took $5A, so the loop at ${address:04X} never "
-                    f"executed its store. {len(frames)} frame(s) were captured "
-                    f"from {video_host}.")
+                    f"reads ${device_view:02X} on {rest_host} and "
+                    f"${computer_view:02X} on {video_host}, expected $5A. "
+                    f"$D021 on {video_host} sampled {colours}. The monitor is "
+                    f"{'still on screen' if monitor_still_up else 'gone'}. "
+                    f"{len(frames)} frame(s) were captured from {video_host}.")
             assert_frames_differ(visible, "G $C000 video")
     else:
         session.goto_run(f"{address:04X}")
