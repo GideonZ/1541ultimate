@@ -158,23 +158,25 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
         }
         if (do_go) {
 #if !defined(RUNS_ON_PC) && (!defined(U64) || !(U64))
-            // A cartridge has no second screen: its user interface is drawn on
-            // the C64 the program is about to take over. Deleting the monitor
-            // alone leaves the browser underneath present but never repainted,
-            // and machine:menu_screen still answers for it, so a caller cannot
-            // tell that user interface from a live one and types into a screen
-            // nothing is drawing. Tear it down, the way the Ultimate 64 path
-            // below does, so what is left is the running program and a menu
-            // button that opens a fresh menu.
+            // A cartridge drawn on the C64 has no second screen: its user
+            // interface is on the machine the program is about to take over.
+            // Deleting the monitor alone leaves the browser underneath present
+            // but never repainted, while machine:menu_screen still answers for
+            // it, so a caller cannot tell that user interface from a live one
+            // and types into a screen nothing is drawing. Hand the machine
+            // back, which also lets jump_to()'s own stop be the one it
+            // releases, instead of pulsing NMI at a halted 6510.
+            //
+            // Only where this user interface is the one drawn on the machine:
+            // `host == cart_machine` is the same test c64_render_target uses
+            // above. A telnet session's host is its stream, and it never froze
+            // the machine, so there is nothing here for it to hand back; a
+            // freeze another client owns is not this one's to release.
             C64 *cart_machine = C64::getMachine();
-            if (cart_machine && cart_machine->is_accessible()) {
+            if (cart_machine && host == cart_machine && cart_machine->is_accessible()) {
                 release_host();
                 torn_down_host = true;
                 cart_machine->release_ownership();
-            } else if (host) {
-                release_host();
-                torn_down_host = true;
-                host->release_ownership();
             }
 #endif
 #if defined(U64) && (U64) && !defined(RUNS_ON_PC)

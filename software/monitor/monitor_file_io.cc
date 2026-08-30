@@ -415,13 +415,6 @@ void monitor_io::jump_to(uint16_t address)
     machine->poke(c_monitor_nmi_vector + 1, (uint8_t)(c_monitor_jump_trampoline >> 8));
 
     machine->end_stopped_session(stopped_it);
-    // `stopped_it` says only whether this call made the stop. Where the machine
-    // was already stopped, that release returns it to nobody, and the pulse
-    // below reaches a halted 6510, which never takes an NMI: the monitor closes
-    // and the program never runs. Hand it back regardless of who stopped it.
-    if (machine->is_stopped()) {
-        machine->end_stopped_session(true);
-    }
     C64_MODE = C64_MODE_NMI;
     wait_ms(1);
     C64_MODE = MODE_NORMAL;
