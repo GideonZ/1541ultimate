@@ -758,15 +758,30 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
-/*
-    if (((uint32_t)buf) & 3) {
-    	printf("Bulk_out: Unaligned buffer %p (%d - len = %d)\n", buf, ((uint32_t)buf) & 3, len);
-    	dump_hex((void *)(((uint32_t)buf) & -4), 16);
-    	//while(1);
-    }
-*/
+	/* Issue #803. do_mem_read in the nano rounds a read up to whole words: it
+	   keeps the start address' byte offset and adds that, plus 3, to the
+	   length. A transfer whose last word is only partly wanted therefore makes
+	   the engine fetch a word the caller never asked for, and that word has
+	   been seen to reach the data written to a USB stick.
 
-    uint32_t addr = ((uint32_t)buf);
+	   Copy such a transfer to a buffer of our own. Two properties matter, and
+	   both were established on hardware:
+	     - the copy starts on a word boundary. Bouncing to an address that is
+	       just as misaligned as the original, with the same slack behind it,
+	       makes the corruption twice as bad instead of curing it.
+	     - the allocation has a spare word behind the rounded length, so the
+	       rounded read does not end exactly at the end of the block we own.
+	   get_mem() is malloc(), so the start is aligned for any fundamental type
+	   and no manual alignment is needed here. */
+	uint8_t *origbuf = (uint8_t *)buf;
+	uint8_t *newbuf = origbuf;
+
+	if (((((uint32_t)origbuf) & 3) + len) & 3) {
+		newbuf = new uint8_t[((len + 3) & ~3) + 4]; // get_mem panics, never returns 0
+		memcpy(newbuf, origbuf, len);
+	}
+
+    uint32_t addr = ((uint32_t)newbuf);
 	int total_trans = 0;
 
 	uint16_t result;
@@ -815,6 +830,10 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 
     // printf("Bulk out done: %d\n", total_trans);
     xSemaphoreGive(mutex);
+
+	if (newbuf != origbuf) {
+		delete[] newbuf;
+	}
 
     PROFILER_SUB = sub;
 	return total_trans;
