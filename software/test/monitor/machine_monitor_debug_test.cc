@@ -39,7 +39,6 @@ const char *save_from_memory(UserInterface *, const char *, const char *,
     return "NOT SUPPORTED";
 }
 void jump_to(uint16_t) { }
-void resume_to_context(const DebugContext &) { }
 }
 
 // Counts UserInterface::set_screen_title() calls; defined in
@@ -57,16 +56,12 @@ struct StubDebugSession : public DebugSession
     int trace_calls;
     int trace_at_calls;
     int out_calls;
-    int out_breakpoint_calls;
     int go_calls;
     int run_to_calls;
     int cleanup_calls;
     int cleanup_to_context_calls;
     int reset_cancel_calls;
-    int snapshot_calls;
     int claim_calls;
-    int refresh_calls;
-    int release_calls;
     uint16_t last_start_pc;
     uint16_t last_run_to_target;
     bool last_go_from_valid;
@@ -94,11 +89,10 @@ struct StubDebugSession : public DebugSession
         : over_calls(0), over_at_calls(0),
           over_breakpoint_calls(0), over_at_breakpoint_calls(0),
           trace_calls(0), trace_at_calls(0),
-          out_calls(0), out_breakpoint_calls(0),
+          out_calls(0),
           go_calls(0), run_to_calls(0), cleanup_calls(0),
           cleanup_to_context_calls(0), reset_cancel_calls(0),
-          snapshot_calls(0), claim_calls(0),
-          refresh_calls(0), release_calls(0),
+          claim_calls(0),
           last_start_pc(0), last_run_to_target(0),
           last_go_from_valid(false), last_go_from_pc(0),
           predict_bytes_valid(false),
@@ -132,7 +126,6 @@ struct StubDebugSession : public DebugSession
         return render_target_invalidated;
     }
     virtual Result snapshot(DebugContext *ctx) {
-        snapshot_calls++;
         if (snapshot_result == DBG_OK && ctx) {
             *ctx = next_ctx;
         }
@@ -187,7 +180,6 @@ struct StubDebugSession : public DebugSession
     }
     virtual Result step_out(const DebugContext &from,
                             const MonitorBreakpoints *, DebugContext *ctx) {
-        out_breakpoint_calls++;
         return step_out(from, ctx);
     }
     virtual Result go(const DebugContext &from, const MonitorBreakpoints *, uint16_t start_pc) {
@@ -249,12 +241,6 @@ struct StubDebugSession : public DebugSession
     virtual bool claim_debug_ownership(bool) {
         claim_calls++;
         return claim_allowed;
-    }
-    virtual void refresh_debug_ownership(void) {
-        refresh_calls++;
-    }
-    virtual void release_debug_ownership(void) {
-        release_calls++;
     }
 };
 
@@ -416,6 +402,7 @@ static const uint16_t FAKE_SPIN_HI       = 0x0389;
 static const uint16_t FAKE_RESUME_TRAMP  = FAKE_HANDLER_ADDR;
 static const uint16_t FAKE_TRAMPOLINE    = 0x038A;
 static const uint16_t FAKE_TRAMPOLINE_LEN = 38;
+static const uint16_t FAKE_NMI_VECTOR_LO = 0x0318; // mirrors NMI_VECTOR_LO
 static const uint16_t FAKE_NMI_VECTOR_HI = 0x0319; // mirrors NMI_VECTOR_HI
 static const uint16_t FAKE_NMI_TRAMP     = 0x03B0; // mirrors NMI_TRAMPOLINE_ADDR
 static const uint16_t FAKE_NMI_TRAMP_LEN = 24;
@@ -430,7 +417,7 @@ class FakeFreezeMachine : public BrkDebugSession
 {
 public:
     enum { MAX_RECORDED_BRK_PATCHES = 32 };
-    enum { MAX_RECORDED_FREEZE_RESTORE_POKES = 160 };
+    enum { MAX_RECORDED_VISIBLE_POKES = 160 };
 
     uint8_t ram[65536];
     bool frozen;
@@ -447,6 +434,8 @@ public:
     int contextless_breakpoint_launches;
     uint16_t contextless_breakpoint_launch_address;
     int brk_patch_writes;
+    bool nmi_restores_vector;
+    uint8_t saved_fake_nmi_vector[2];
     int delay_calls;
     // Milliseconds the modelled cancel-key poll costs per sentinel poll.
     // On Telnet the real poll blocks for the socket receive timeout.
@@ -454,9 +443,9 @@ public:
     int pokes_at_cancel;
     uint16_t last_brk_patch_addr;
     uint16_t brk_patch_addrs[MAX_RECORDED_BRK_PATCHES];
-    int freeze_restore_pokes;
-    uint16_t freeze_restore_addrs[MAX_RECORDED_FREEZE_RESTORE_POKES];
-    uint8_t freeze_restore_bytes[MAX_RECORDED_FREEZE_RESTORE_POKES];
+    int visible_pokes;
+    uint16_t visible_poke_addrs[MAX_RECORDED_VISIBLE_POKES];
+    uint8_t visible_poke_bytes[MAX_RECORDED_VISIBLE_POKES];
     // When false, delay_ms() does NOT raise the sentinel, so wait_for_sentinel
     // runs to its full timeout. Lets a test force the DBG_TIMEOUT path and then
     // re-arm to prove the run-window state (depth, freeze bracketing) recovered.
@@ -490,10 +479,10 @@ public:
           contextless_breakpoint_launch_supported(false),
           contextless_breakpoint_launches(0),
           contextless_breakpoint_launch_address(0),
-          brk_patch_writes(0), delay_calls(0), cancel_poll_cost_ms(0),
+          brk_patch_writes(0), nmi_restores_vector(true), delay_calls(0), cancel_poll_cost_ms(0),
           pokes_at_cancel(0),
           last_brk_patch_addr(0),
-          freeze_restore_pokes(0),
+          visible_pokes(0),
           sentinel_armed(true), stale_sentinel_during_nmi_setup(false),
           nmi_from_spin_times_out(false), reset_cancel_on_delay(false),
           monitor_reset_cancel_on_delay(false),
@@ -506,8 +495,8 @@ public:
     {
         memset(ram, 0, sizeof(ram));
         memset(brk_patch_addrs, 0, sizeof(brk_patch_addrs));
-        memset(freeze_restore_addrs, 0, sizeof(freeze_restore_addrs));
-        memset(freeze_restore_bytes, 0, sizeof(freeze_restore_bytes));
+        memset(visible_poke_addrs, 0, sizeof(visible_poke_addrs));
+        memset(visible_poke_bytes, 0, sizeof(visible_poke_bytes));
     }
 
     // Leaf cleanup while the fake hooks are still live (the abstract base
@@ -532,22 +521,22 @@ public:
         return true;
     }
 
-    void reset_freeze_restore_pokes(void)
+    void reset_visible_pokes(void)
     {
-        freeze_restore_pokes = 0;
-        memset(freeze_restore_addrs, 0, sizeof(freeze_restore_addrs));
-        memset(freeze_restore_bytes, 0, sizeof(freeze_restore_bytes));
+        visible_pokes = 0;
+        memset(visible_poke_addrs, 0, sizeof(visible_poke_addrs));
+        memset(visible_poke_bytes, 0, sizeof(visible_poke_bytes));
     }
 
     bool recorded_freeze_restore_poke(uint16_t address, uint8_t byte) const
     {
-        int n = freeze_restore_pokes;
-        if (n > MAX_RECORDED_FREEZE_RESTORE_POKES) {
-            n = MAX_RECORDED_FREEZE_RESTORE_POKES;
+        int n = visible_pokes;
+        if (n > MAX_RECORDED_VISIBLE_POKES) {
+            n = MAX_RECORDED_VISIBLE_POKES;
         }
         for (int i = 0; i < n; i++) {
-            if (freeze_restore_addrs[i] == address &&
-                    freeze_restore_bytes[i] == byte) {
+            if (visible_poke_addrs[i] == address &&
+                    visible_poke_bytes[i] == byte) {
                 return true;
             }
         }
@@ -614,22 +603,27 @@ protected:
     }
     virtual void poke_visible(uint16_t a, uint8_t b)
     {
+        // Keep what the NMI vector held before the redirect overwrote it, so
+        // pulse_nmi_and_release can put back what a serviced request would.
+        if (a == FAKE_NMI_VECTOR_LO) {
+            saved_fake_nmi_vector[0] = ram[a];
+        } else if (a == FAKE_NMI_VECTOR_HI) {
+            saved_fake_nmi_vector[1] = ram[a];
+        }
         ram[a] = b;
+        // Recorded so a test can say what a teardown wrote and when: the
+        // handler, the trampolines and the vectors all go back through here.
+        if (visible_pokes < MAX_RECORDED_VISIBLE_POKES) {
+            visible_poke_addrs[visible_pokes] = a;
+            visible_poke_bytes[visible_pokes] = b;
+        }
+        visible_pokes++;
         // nmi_redirect_to() writes the NMI vector while the CPU is stopped, just
         // before releasing it. Fire the modelled gap free-run BRK hit here so a
         // correct launch must still clear the sentinel afterwards.
         if (stale_sentinel_during_nmi_setup && a == FAKE_NMI_VECTOR_HI) {
             ram[FAKE_SENTINEL_ADDR] = 0xFF;
         }
-    }
-    virtual void poke_visible_preserving_freeze_restore(uint16_t a, uint8_t b)
-    {
-        if (freeze_restore_pokes < MAX_RECORDED_FREEZE_RESTORE_POKES) {
-            freeze_restore_addrs[freeze_restore_pokes] = a;
-            freeze_restore_bytes[freeze_restore_pokes] = b;
-        }
-        freeze_restore_pokes++;
-        poke_visible(a, b);
     }
     virtual void unfreeze_if_accessible(void)
     {
@@ -657,6 +651,14 @@ protected:
     virtual void pulse_nmi_and_release(bool)
     {
         nmi_pulses++;
+        // The redirect trampoline's first two instructions put the NMI vector
+        // back, so a CPU that services the request leaves it restored. Model
+        // that, or nothing here can tell a request that was taken from one
+        // that was not.
+        if (nmi_restores_vector) {
+            ram[FAKE_NMI_VECTOR_LO] = saved_fake_nmi_vector[0];
+            ram[FAKE_NMI_VECTOR_HI] = saved_fake_nmi_vector[1];
+        }
         if (nmi_from_spin_times_out &&
             nmi_pulses > 1 &&
             ram[FAKE_SPIN_LO] == (uint8_t)(FAKE_SPIN_JMP & 0xFF) &&
@@ -692,13 +694,13 @@ protected:
         advance_fake_ms_timer((uint16_t)(ms > 0 ? ms : 1));
         if (monitor_reset_cancel_on_delay && monitor_reset_cancel_target) {
             monitor_reset_cancel_target->request_debug_reset_cancel();
-            pokes_at_cancel = freeze_restore_pokes;
+            pokes_at_cancel = visible_pokes;
             monitor_reset_cancel_on_delay = false;
             return;
         }
         if (reset_cancel_on_delay) {
             request_reset_cancel();
-            pokes_at_cancel = freeze_restore_pokes;
+            pokes_at_cancel = visible_pokes;
             reset_cancel_on_delay = false;
             return;
         }
@@ -1185,13 +1187,6 @@ static bool fake_install_debug_stubs(FakeFreezeMachine &m, uint16_t addr)
 
 } // namespace
 
-static int trim_end(const char *s)
-{
-    int n = (int)strlen(s);
-    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\0')) n--;
-    return n;
-}
-
 static int expect_help_token_not_accented(CaptureScreen &screen, const char *needle,
                                           const char *message)
 {
@@ -1224,30 +1219,6 @@ static int find_row_with_address(CaptureScreen &screen, const char *address)
         }
     }
     return -1;
-}
-
-static int debug_visible_disasm_exists(CaptureScreen &screen,
-                                       const char *prefix,
-                                       const char *needle)
-{
-    char row[40];
-
-    for (int y = 4; y <= 22; y++) {
-        screen.get_slice(1, y, 38, row);
-        if ((!prefix || strstr(row, prefix) == row) &&
-            (!needle || strstr(row, needle) != NULL)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int expect_debug_visible_disasm(CaptureScreen &screen,
-                                       const char *prefix,
-                                       const char *needle,
-                                       const char *message)
-{
-    return expect(debug_visible_disasm_exists(screen, prefix, needle), message);
 }
 
 static int expect_breakpoint_label_only_accent(CaptureScreen &screen, int row_y,
@@ -2609,7 +2580,7 @@ static int test_external_reset_during_debug_wait_exits_without_reopen()
                "External reset during an active debug wait must unwind out of the monitor")) return 1;
     if (expect(backend.last_session != NULL,
                "Active trace must create the BRK debug session")) return 1;
-    if (expect(backend.last_session->freeze_restore_pokes > 0,
+    if (expect(backend.last_session->visible_pokes > 0,
                "External reset during debug wait must clean up the active session")) return 1;
     if (expect(backend.last_session->reset_calls == 0,
                "External reset during debug wait must not issue a second machine reset")) return 1;
@@ -3087,6 +3058,148 @@ static int test_breakpoint_popup_digit_jumps_to_slot()
     return 0;
 }
 
+// Both ways of picking a slot in the breakpoint popup, the digit shortcut and
+// RETURN, move the view to that breakpoint. Neither may take the debug context
+// with it: a Continue afterwards has to resume the captured stop, or reading
+// the breakpoint list would silently restart the program at the address the
+// user only wanted to look at.
+static int run_breakpoint_popup_jump_keeps_context(int pick_key, const char *how)
+{
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    DebugContext stopped;
+    debug_context_reset(&stopped);
+    stopped.valid = true;
+    stopped.pc = 0xE003;
+    backend.canned_snapshot = stopped;
+    backend.canned_snapshot_set = true;
+    backend.snapshot_result = DebugSession::DBG_OK;
+    backend.go_produces_snapshot = true;
+    backend.write(0xE000, 0xEA);
+    backend.write(0xE003, 0xEA);
+    backend.write(0x1000, 0xEA);
+
+    // Arm a breakpoint at $E000, take a captured stop with G, then read the
+    // list and pick that slot.
+    const int keys[] = {
+        'J', 'A', 'D', 'P',
+        'G',
+        KEY_CTRL_P, pick_key,
+        'G',
+        KEY_BREAK, KEY_BREAK
+    };
+    FakeKeyboard keyboard(keys, 10);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.set_prompt("E000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    for (int i = 0; i < 8; i++) {
+        if (expect(monitor.poll(0) == 0, "Breakpoint popup jump setup should stay in monitor")) return 1;
+    }
+    if (expect(backend.last_session != NULL, "Backend should have created a debug session")) return 1;
+    if (expect(backend.last_session->go_calls == 2, "Both G commands must reach the session")) return 1;
+    if (expect(backend.last_session->last_go_from_valid,
+               "Continue after a popup jump must still hold the captured context")) return 1;
+    if (expect(backend.last_session->last_go_from_pc == 0xE003,
+               "Continue after a popup jump must resume the captured PC")) return 1;
+    (void)how;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_breakpoint_popup_digit_jump_keeps_context()
+{
+    return run_breakpoint_popup_jump_keeps_context('0', "digit");
+}
+
+static int test_breakpoint_popup_return_jump_keeps_context()
+{
+    return run_breakpoint_popup_jump_keeps_context(KEY_RETURN, "RETURN");
+}
+
+// A reset taken while the session is parked removes the handler, the
+// trampolines and the patched bytes, because the KERNAL rebuilds the soft
+// vectors and the RAM they point into. The session must forget it installed
+// them: a launch afterwards that trusts its own flags skips reinstalling and
+// runs with the KERNAL's BRK vector, where nothing it arms can ever trap.
+static int test_reset_while_parked_makes_the_next_launch_reinstall()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+
+    // Park the session, which installs the handler and points the BRK vector
+    // at it.
+    uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, nop, false, &pred);
+    m.arm_capture_context(0x2001, 0xCB, 0, 0, 0, 0x24);
+    DebugContext parked;
+    if (expect(m.trace_at(0x2000, pred, &parked) == DebugSession::DBG_OK,
+               "parking step must complete")) return 1;
+    const uint16_t brk_vector_lo = 0x0316;
+    if (expect(m.ram[brk_vector_lo] != 0x66,
+               "the parked session must have taken the BRK vector")) return 1;
+
+    // The reset arrives from outside the monitor, then the KERNAL rebuilds the
+    // soft vectors as a real reset does.
+    m.request_reset_cancel();
+    m.ram[brk_vector_lo] = 0x66;
+    m.ram[brk_vector_lo + 1] = 0xFE;
+
+    // A launch afterwards has to put its handler back.
+    MonitorBreakpoints bps;
+    bps.allocate(0x2000, 0x07, MONITOR_BACKING_RAM);
+    DebugContext from;
+    debug_context_reset(&from);
+    m.go(from, &bps, 0x2000);
+    if (expect(m.ram[brk_vector_lo] != 0x66,
+               "a launch after a reset must reinstall the BRK handler")) return 1;
+    return 0;
+}
+
+static int test_reset_behind_the_session_makes_the_next_launch_reinstall()
+{
+    FakeFreezeMachine m(false);
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+
+    uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+    DebugPredictResult pred;
+    debug_predict(0x2000, nop, false, &pred);
+    m.arm_capture_context(0x2001, 0xCB, 0, 0, 0, 0x24);
+    DebugContext parked;
+    if (expect(m.trace_at(0x2000, pred, &parked) == DebugSession::DBG_OK,
+               "parking step must complete")) return 1;
+    const uint16_t brk_vector_lo = 0x0316;
+    if (expect(m.ram[brk_vector_lo] != 0x66,
+               "the parked session must have taken the BRK vector")) return 1;
+
+    // The reset button, a host reset and SYS 64738 rebuild the KERNAL's soft
+    // vectors without the monitor being told, so request_reset_cancel() is
+    // deliberately not called here.
+    m.ram[brk_vector_lo] = 0x66;
+    m.ram[brk_vector_lo + 1] = 0xFE;
+
+    MonitorBreakpoints bps;
+    bps.allocate(0x2000, 0x07, MONITOR_BACKING_RAM);
+    DebugContext from;
+    debug_context_reset(&from);
+    m.go(from, &bps, 0x2000);
+    if (expect(m.ram[brk_vector_lo] != 0x66,
+               "a launch after a reset the session never saw must reinstall "
+               "the BRK handler")) return 1;
+    return 0;
+}
+
 static int test_breakpoint_row_indicator_and_color()
 {
     TestUserInterface ui;
@@ -3227,6 +3340,50 @@ static int test_breakpoint_label_replaces_row_indicator()
 
     if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
     if (expect(monitor.poll(0) == 1, "Second RUN/STOP exits")) return 1;
+    monitor.deinit();
+    return 0;
+}
+
+static int test_poll_mode_is_off_while_debug_is_active()
+{
+    // Poll and Dbg share the same header columns, and P is the breakpoint key
+    // inside Debug, so a poll left running from before Debug was entered could
+    // neither be seen nor turned off. Entering Debug turns it off.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    TrackingDebugBackend backend;
+    monitor_reset_saved_state();
+
+    backend.snapshot_result = DebugSession::DBG_NOT_SUPPORTED;
+    backend.write(0xC000, 0xEA);
+
+    const int keys[] = { 'J', 'A', 'P', 'D', KEY_BREAK, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 6);
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+    ui.push_prompt("C000", 1);
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    char header[40];
+    for (int i = 0; i < 3; i++) {
+        if (expect(monitor.poll(0) == 0, "Poll/Debug setup should stay in monitor")) return 1;
+    }
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Poll") != NULL,
+               "P must turn poll mode on outside Debug")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "D must enter Debug")) return 1;
+    screen.get_slice(1, 3, 38, header);
+    if (expect(strstr(header, "Dbg") != NULL, "Debug must be active")) return 1;
+    if (expect(strstr(header, "Poll") == NULL,
+               "Entering Debug must turn poll mode off")) return 1;
+    if (expect(strstr(header, "PDbg") == NULL,
+               "The header must not run Poll and Dbg into one another")) return 1;
+
+    if (expect(monitor.poll(0) == 0, "RUN/STOP leaves Debug")) return 1;
+    if (expect(monitor.poll(0) == 1, "RUN/STOP leaves the monitor")) return 1;
     monitor.deinit();
     return 0;
 }
@@ -4816,6 +4973,69 @@ static int test_visible_rom_simple_linear_interprets_without_breakpoint()
                "Visible-ROM LDA zp must update PC, A, N, and Z")) return 1;
     if (expect(m.brk_patch_writes == brk_before && m.rom_patch_writes == rom_before,
                "Visible-ROM simple linear step must not install a breakpoint")) return 1;
+    return 0;
+}
+
+// A remote session drives the same live 6510 through the same fetch-lagging
+// visible-ROM aperture as a local one, so a linear step in the KERNAL takes the
+// same interpreted route. While that route was chosen by transport, a remote
+// step wrote a BRK into the KERNAL image and released the live CPU onto it two
+// cycles later.
+static int test_remote_visible_rom_linear_step_keeps_brk_out_of_rom_image()
+{
+    FakeVisibleRomMachine m(false);
+    m.allow_visible_rom_patching = true;
+    m.fetch_lags = true;
+    if (expect(m.claim_debug_ownership(true),
+               "Remote stakeholder must claim debug ownership")) return 1;
+
+    m.ram[0x2000] = 0xEA;
+    m.ram[0x2001] = 0xEA;
+    {
+        uint8_t nop[3] = { 0xEA, 0xEA, 0xEA };
+        DebugPredictResult park_pred;
+        debug_predict(0x2000, nop, false, &park_pred);
+        m.arm_capture_context(0x2001, 0xCB, 0, 0, 0, 0x24);
+        DebugContext parked;
+        if (expect(m.trace_at(0x2000, park_pred, &parked) == DebugSession::DBG_OK,
+                   "parking step must complete")) return 1;
+    }
+
+    // The shipped KERNAL at $E000: STA $56, then JSR $BC0F at $E002.
+    m.kernal_rom[0x0000] = 0x85;
+    m.kernal_rom[0x0001] = 0x56;
+    m.kernal_rom[0x0002] = 0x20;
+    m.kernal_rom[0x0003] = 0x0F;
+    m.kernal_rom[0x0004] = 0xBC;
+
+    DebugContext from;
+    debug_context_reset(&from);
+    from.valid = true;
+    from.pc = 0xE000;
+    from.sp = 0xCB;
+    from.a = 0x42;
+    from.sr = 0x24;
+    from.live_cpu_port_valid = true;
+    from.live_cpu_port = 0x07;
+
+    uint8_t bytes[3] = { 0x85, 0x56, 0x00 };
+    DebugPredictResult pred;
+    debug_predict(0xE000, bytes, false, &pred);
+
+    int brk_before = m.brk_patch_writes;
+    int rom_before = m.rom_patch_writes;
+    DebugContext out;
+    DebugSession::Result r = m.trace(from, pred, &out);
+    if (expect(r == DebugSession::DBG_OK,
+               "Remote visible-ROM linear step must complete")) return 1;
+    if (expect(out.pc == 0xE002,
+               "Remote visible-ROM linear step must report the ROM fall-through")) return 1;
+    if (expect(m.ram[0x0056] == 0x42,
+               "Remote visible-ROM STA zp must perform its store")) return 1;
+    if (expect(m.rom_patch_writes == rom_before,
+               "Remote visible-ROM linear step must not write the ROM image")) return 1;
+    if (expect(m.brk_patch_writes == brk_before,
+               "Remote visible-ROM linear step must not install a breakpoint")) return 1;
     return 0;
 }
 
@@ -6976,7 +7196,7 @@ static int test_freeze_cleanup_preserves_resume_bytes_across_unfreeze_restore()
     if (expect(m.over_at(0x2100, pred, &next) == DebugSession::DBG_OK,
                "Initial frozen step with CPU5 context must succeed")) return 1;
 
-    m.reset_freeze_restore_pokes();
+    m.reset_visible_pokes();
     m.cleanup();
 
     if (expect(m.recorded_freeze_restore_poke(FAKE_STORE_CPU_DDR, 0x37) &&
@@ -7228,18 +7448,18 @@ static int test_request_reset_cancel_clears_state_and_makes_handler_pokes_during
     m.sentinel_armed = false;
     m.reset_cancel_on_delay = true;
     debug_predict(0x2000, bytes, false, &pred);
-    int pokes_before = m.freeze_restore_pokes;
+    int pokes_before = m.visible_pokes;
     DebugSession::Result r = m.trace_at(0x2000, pred, &ctx);
     if (expect(r == DebugSession::DBG_RESET,
                "Sentinel wait must return DBG_RESET on external cancel")) return 1;
     // With synchronous teardown in request_reset_cancel(), the handler is
-    // uninstalled (via poke_visible_preserving_freeze_restore) during the
+    // uninstalled (via poke_visible) during the
     // delay_ms() call itself, before the second uninstall attempt from
     // wait_for_sentinel() (which becomes a no-op). The poke count must be
     // non-zero, proving teardown occurred.
-    if (expect(m.freeze_restore_pokes > pokes_before,
+    if (expect(m.visible_pokes > pokes_before,
                "request_reset_cancel must uninstall the handler (poke_visible calls expected)")) return 1;
-    if (expect(m.pokes_at_cancel == m.freeze_restore_pokes,
+    if (expect(m.pokes_at_cancel == m.visible_pokes,
                "All handler pokes must complete inside request_reset_cancel before machine reset fires")) return 1;
     if (expect(m.reset_calls == 0,
                "External reset cancellation must not issue a second machine reset")) return 1;
@@ -9111,9 +9331,14 @@ int main()
     RUN(test_breakpoint_mismatch_message_uses_view_target_and_live_cpu);
     RUN(test_breakpoint_popup_store_reuses_selected_slot);
     RUN(test_breakpoint_popup_digit_jumps_to_slot);
+    RUN(test_breakpoint_popup_digit_jump_keeps_context);
+    RUN(test_breakpoint_popup_return_jump_keeps_context);
+    RUN(test_reset_while_parked_makes_the_next_launch_reinstall);
+    RUN(test_reset_behind_the_session_makes_the_next_launch_reinstall);
     RUN(test_breakpoint_row_indicator_and_color);
     RUN(test_disabled_breakpoint_row_uses_regular_color);
     RUN(test_breakpoint_label_replaces_row_indicator);
+    RUN(test_poll_mode_is_off_while_debug_is_active);
     RUN(test_range_mode_falls_through_during_debug);
     RUN(test_source_indicators_are_three_chars);
     RUN(test_ctrl_p_opens_breakpoint_popup);
@@ -9150,6 +9375,7 @@ int main()
     RUN(test_step_out_prefers_live_stack_over_stale_traced_frame);
     RUN(test_step_out_unwinds_past_eight_nested_traces);
     RUN(test_visible_rom_simple_linear_interprets_without_breakpoint);
+    RUN(test_remote_visible_rom_linear_step_keeps_brk_out_of_rom_image);
     RUN(test_visible_rom_basic_loop_interprets_index_register_and_flags);
     RUN(test_over_rts_refuses_non_jsr_stack_target);
     RUN(test_traced_rts_uses_recorded_return_target_when_stack_is_unreliable);
