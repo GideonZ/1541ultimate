@@ -125,11 +125,6 @@ protected:
     {
         machine->poke_visible(address, byte);
     }
-    virtual void poke_visible_preserving_freeze_restore(uint16_t address,
-                                                        uint8_t byte)
-    {
-        machine->poke_visible_preserving_freeze_restore(address, byte);
-    }
     virtual void unfreeze_if_accessible(void)
     {
         if (machine && machine->is_accessible()) {
@@ -152,6 +147,14 @@ protected:
     }
     virtual void pulse_nmi_and_release(bool stopped_it)
     {
+        // The 6510 triggers on the falling edge, so a line another source is
+        // already holding low takes no new request: the write below changes
+        // nothing and the clear afterwards is what finally raises it. Reading
+        // the sense bit costs the C64 nothing, unlike a DMA access here.
+        if (C64_CLOCK_DETECT & C64_CD_NMI_SENSE) {
+            printf("MCM NMI launch: line already low (CLK=%b MODE=%b)\n",
+                   C64_CLOCK_DETECT, C64_MODE);
+        }
         // The redirect NMI must still be asserted when the CPU un-stops, which
         // is what end_stopped_session_nmi() does (plain resume() writes
         // C64_MODE = MODE_NORMAL before C64_STOP = 0, so the request is dropped
@@ -187,6 +190,16 @@ protected:
     virtual void delay_ms(int ms)
     {
         vTaskDelay(ms / portTICK_PERIOD_MS);
+    }
+    virtual void log_launch_timeout_state(void)
+    {
+        // The interrupt request is latched the moment it is asserted and holds
+        // until it is serviced, so a launch that never traps did not lose it in
+        // flight. Either the shared line was already low, in which case there
+        // was no edge to latch, or the machine was never released. These three
+        // registers separate the two, and reading them changes nothing.
+        printf("MCM launch watchdog: STOP=%b MODE=%b CLK=%b\n",
+               C64_STOP, C64_MODE, C64_CLOCK_DETECT);
     }
     virtual bool free_run_no_breakpoint(uint16_t address)
     {

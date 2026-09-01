@@ -17,12 +17,12 @@ protected:
     virtual void poke_cpu(uint16_t address, uint8_t byte, uint8_t cpu_port) = 0;
     virtual uint8_t peek_visible(uint16_t address) = 0;
     virtual uint8_t peek_run_marker(uint16_t address) { return peek_visible(address); }
+    // Called when a launch runs out its watchdog, before any recovery. A
+    // launch that never traps has left the machine in one of two states, and
+    // a backend that can read them says which: the request never produced an
+    // edge on the shared interrupt line, or the machine was never released.
+    virtual void log_launch_timeout_state(void) { }
     virtual void poke_visible(uint16_t address, uint8_t byte) = 0;
-    virtual void poke_visible_preserving_freeze_restore(uint16_t address,
-                                                        uint8_t byte)
-    {
-        poke_visible(address, byte);
-    }
     virtual void unfreeze_if_accessible(void) = 0;
     // A debug step must temporarily unfreeze the C64 to run the live CPU, then
     // re-freeze it before returning, or the monitor renders the live C64
@@ -90,6 +90,7 @@ public:
     virtual void set_cancel_keyboard(Keyboard *keyboard);
     virtual void set_run_window_refreeze_enabled(bool enabled);
     virtual void request_reset_cancel(void);
+    void forget_installed_state(void);
     virtual Result snapshot(DebugContext *ctx);
     // True while the BRK handler or spin loop owns the CPU.
     virtual bool is_debug_session_active(void) const {
@@ -226,12 +227,12 @@ private:
     // the refusal can name it; cleared on every successful table install.
     uint16_t blocking_bp_address;
     bool blocking_bp_valid;
+    // Skips every breakpoint at `skip_address` whatever its backing store, so
+    // the entry the run started from cannot report itself as the stop.
     bool context_at_breakpoint(const DebugContext &ctx,
                                const MonitorBreakpoints *breakpoints,
                                uint16_t skip_address,
-                               MonitorBackingStore skip_target,
-                               bool skip_address_valid,
-                               bool skip_all_at_address = false) const;
+                               bool skip_address_valid) const;
     void restore_patches(void);
     bool has_banked_ram_patch(void) const;
     bool has_high_memory_patch(void) const;
@@ -301,7 +302,7 @@ private:
                             uint8_t stop_sp, const MonitorBreakpoints *bps,
                             uint16_t skip_breakpoint_address,
                             bool skip_breakpoint_address_valid,
-                            DebugContext *out, uint8_t cpu_port);
+                            DebugContext *out);
 };
 
 #endif

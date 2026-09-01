@@ -283,13 +283,38 @@ void BrkDebugSession :: request_reset_cancel(void)
     if (run_window_depth > 0) {
         restore_patches();
         uninstall_handler();
-        cpu_parked_in_spin = false;
-        has_last_context = false;
-        debug_context_reset(&last_context);
-        has_resume_context = false;
-        debug_context_reset(&resume_context);
+    } else {
+        // Parked: writing here would land on the code the CPU is executing, so
+        // nothing is put back. The reset does that instead, and it also takes
+        // the handler, the trampolines and the patched bytes with it, since the
+        // KERNAL rebuilds the soft vectors and the RAM they point into. Forget
+        // them, or the next launch reads its own flags, skips reinstalling, and
+        // runs with the KERNAL's BRK vector, where nothing it arms can trap.
+        forget_installed_state();
     }
+    cpu_parked_in_spin = false;
+    has_last_context = false;
+    debug_context_reset(&last_context);
+    has_resume_context = false;
+    debug_context_reset(&resume_context);
     reset_cancel_requested = true;
+}
+
+// Drop every record of something installed in the machine, writing nothing.
+// For use where the machine is about to be reset: what these describe is gone
+// either way, and the flags are what decide whether the next session installs
+// it again.
+void BrkDebugSession :: forget_installed_state(void)
+{
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        patches[i].used = false;
+    }
+    handler_installed = false;
+    nmi_trampoline_installed = false;
+    hard_vector_installed = false;
+    hard_rom_vector_installed = false;
+    hard_nmi_vector_installed = false;
+    clear_return_targets();
 }
 
 bool BrkDebugSession :: claim_debug_ownership(bool remote)
@@ -389,6 +414,38 @@ void BrkDebugSession :: end_run_window(void)
 void BrkDebugSession :: save_and_install_handler(void)
 {
     if (handler_installed) {
+        // A reset taken underneath an open session rebuilds the KERNAL's soft
+        // vector table, which puts $0316/$0317 back on the KERNAL's own BRK
+        // handler at $FE66. This flag still records the install, so trusting it
+        // arms a BRK that traps into the KERNAL, leaves the sentinel clear and
+        // reports DEBUG TIMEOUT. Check the vector still names the handler, and
+        // put the handler back when it does not. The reset also runs before the
+        // monitor can be told about it: the reset button, a host reset and
+        // SYS 64738 all reach here the same way.
+        bool checked_it = begin_stopped_session();
+        uint8_t live_lo = peek_visible(BRK_VECTOR_LO);
+        uint8_t live_hi = peek_visible(BRK_VECTOR_HI);
+        if ((live_lo != (uint8_t)(HANDLER_ADDR & 0xFF)) ||
+            (live_hi != (uint8_t)(HANDLER_ADDR >> 8))) {
+            // The handler and its trampoline sit in the tape buffer, which the
+            // same reset leaves alone but a tape or BASIC operation does not.
+            // Both are constant, so rewriting them costs nothing and removes
+            // the second way this state can be stale.
+            for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
+                poke_visible((uint16_t)(HANDLER_ADDR + i), HANDLER_BYTES[i]);
+            }
+            for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
+                poke_visible((uint16_t)(TRAMPOLINE_ADDR + i),
+                             TRAMPOLINE_BYTES[i]);
+            }
+            poke_visible(BRK_VECTOR_LO, (uint8_t)(HANDLER_ADDR & 0xFF));
+            poke_visible(BRK_VECTOR_HI, (uint8_t)(HANDLER_ADDR >> 8));
+            // What the machine carried into this launch is what uninstalling
+            // must put back, not the value saved before the reset.
+            saved_brk_vector[0] = live_lo;
+            saved_brk_vector[1] = live_hi;
+        }
+        end_stopped_session(checked_it);
         if (!hard_vector_installed) {
             save_and_install_hard_vector();
         }
@@ -559,13 +616,13 @@ void BrkDebugSession :: uninstall_hard_vector(void)
         hard_rom_vector_installed = false;
     }
     for (int i = 0; i < HARD_BRK_STUB_BYTES_LEN; i++) {
-        poke_visible_preserving_freeze_restore(
+        poke_visible(
             (uint16_t)(HARD_BRK_STUB_ADDR + i),
             saved_hard_brk_stub_bytes[i]);
     }
-    poke_visible_preserving_freeze_restore(HARD_BRK_ORIG_VECTOR_LO,
+    poke_visible(HARD_BRK_ORIG_VECTOR_LO,
                                            saved_hard_brk_vector_ptr[0]);
-    poke_visible_preserving_freeze_restore(
+    poke_visible(
         (uint16_t)(HARD_BRK_ORIG_VECTOR_LO + 1),
         saved_hard_brk_vector_ptr[1]);
     hard_vector_installed = false;
@@ -581,27 +638,27 @@ void BrkDebugSession :: uninstall_handler(void)
     uninstall_hard_nmi_vector();
     uninstall_hard_vector();
     if (handler_installed) {
-        poke_visible_preserving_freeze_restore(BRK_VECTOR_LO,
+        poke_visible(BRK_VECTOR_LO,
                                                saved_brk_vector[0]);
-        poke_visible_preserving_freeze_restore(BRK_VECTOR_HI,
+        poke_visible(BRK_VECTOR_HI,
                                                saved_brk_vector[1]);
         for (int i = 0; i < HANDLER_BYTES_LEN; i++) {
-            poke_visible_preserving_freeze_restore(
+            poke_visible(
                 (uint16_t)(HANDLER_ADDR + i), saved_handler_bytes[i]);
         }
         for (int i = 0; i < TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible_preserving_freeze_restore(
+            poke_visible(
                 (uint16_t)(TRAMPOLINE_ADDR + i),
                 saved_handler_bytes[HANDLER_BYTES_LEN + i]);
         }
     }
     if (nmi_trampoline_installed) {
-        poke_visible_preserving_freeze_restore(NMI_VECTOR_LO,
+        poke_visible(NMI_VECTOR_LO,
                                                saved_nmi_vector[0]);
-        poke_visible_preserving_freeze_restore(NMI_VECTOR_HI,
+        poke_visible(NMI_VECTOR_HI,
                                                saved_nmi_vector[1]);
         for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible_preserving_freeze_restore(
+            poke_visible(
                 (uint16_t)(NMI_TRAMPOLINE_ADDR + i),
                 saved_nmi_trampoline_bytes[i]);
         }
@@ -715,8 +772,7 @@ BrkDebugSession::PatchInstallResult BrkDebugSession :: install_breakpoints(
 
 bool BrkDebugSession :: context_at_breakpoint(
     const DebugContext &ctx, const MonitorBreakpoints *bps,
-    uint16_t skip_address, MonitorBackingStore skip_target,
-    bool skip_address_valid, bool skip_all_at_address) const
+    uint16_t skip_address, bool skip_address_valid) const
 {
     if (!ctx.valid || !bps) {
         return false;
@@ -726,8 +782,7 @@ bool BrkDebugSession :: context_at_breakpoint(
         if (!bp || !bp->used || !bp->enabled) {
             continue;
         }
-        if (skip_address_valid && bp->address == skip_address &&
-                (skip_all_at_address || bp->target == skip_target)) {
+        if (skip_address_valid && bp->address == skip_address) {
             continue;
         }
         if (bp->address == ctx.pc &&
@@ -1031,6 +1086,25 @@ DebugSession::Result BrkDebugSession :: wait_for_sentinel(int timeout_ms)
         }
         delay_ms(5);
     }
+    // What the session believed it had installed. These are its own members, so
+    // reading them costs the C64 nothing: a launch that reports a handler it
+    // never reinstalled is a different defect from one whose interrupt was
+    // never serviced, and the two are indistinguishable from the outside.
+    int used_patches = 0;
+    for (int i = 0; i < MAX_PATCHES; i++) {
+        if (patches[i].used) used_patches++;
+    }
+    printf("MCM launch timeout: handler=%d nmitramp=%d hardvec=%d hardnmi=%d "
+           "patches=%d window=%d parked=%d\n",
+           handler_installed ? 1 : 0, nmi_trampoline_installed ? 1 : 0,
+           hard_vector_installed ? 1 : 0, hard_nmi_vector_installed ? 1 : 0,
+           used_patches, run_window_depth, cpu_parked_in_spin ? 1 : 0);
+    // What state the machine was left in. The backend reads its own registers,
+    // which costs the C64 nothing: a DMA read here would stop and resume the
+    // machine at the exact moment being reported on, and this branch has
+    // recorded before that extra accesses in that window change which failure
+    // appears.
+    log_launch_timeout_state();
     return DBG_TIMEOUT;
 }
 
@@ -1109,8 +1183,8 @@ void BrkDebugSession :: restore_cpu_port_registers(const DebugContext &from)
     if (!from.valid || !from.cpu_port_registers_valid) {
         return;
     }
-    poke_visible_preserving_freeze_restore(STORE_CPU_DDR, from.cpu_ddr);
-    poke_visible_preserving_freeze_restore(STORE_CPU_PORT,
+    poke_visible(STORE_CPU_DDR, from.cpu_ddr);
+    poke_visible(STORE_CPU_PORT,
                                            from.cpu_port_latch);
 }
 
@@ -1162,8 +1236,8 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
     if (resume_effective_port & 0x02) {
         resume_sr &= (uint8_t)~0x04;
     }
-    poke_visible_preserving_freeze_restore(0x0000, resume_ddr);
-    poke_visible_preserving_freeze_restore(0x0001, resume_port);
+    poke_visible(0x0000, resume_ddr);
+    poke_visible(0x0001, resume_port);
     const uint8_t bytes[] = {
         0xA9, resume_ddr,
         0x85, 0x00,
@@ -1183,34 +1257,34 @@ void BrkDebugSession :: resume_from_parked_context(const DebugContext &from)
         0x40
     };
     for (unsigned i = 0; i < sizeof(bytes); i++) {
-        poke_visible_preserving_freeze_restore((uint16_t)(HANDLER_ADDR + i),
+        poke_visible((uint16_t)(HANDLER_ADDR + i),
                                                bytes[i]);
     }
-    poke_visible_preserving_freeze_restore(SPIN_JMP, 0x4C);
-    poke_visible_preserving_freeze_restore(SPIN_OPERAND_LO,
+    poke_visible(SPIN_JMP, 0x4C);
+    poke_visible(SPIN_OPERAND_LO,
                                            (uint8_t)(HANDLER_ADDR & 0xFF));
-    poke_visible_preserving_freeze_restore(SPIN_OPERAND_HI,
+    poke_visible(SPIN_OPERAND_HI,
                                            (uint8_t)(HANDLER_ADDR >> 8));
     // Restore the interrupted program's soft vectors inside this same stopped
     // session so a live CPU sees them before leaving the spin loop. The
     // cassette-buffer scratch stays in place (the CPU is about to run its
     // restore stub); clearing handler_installed makes uninstall_handler() a no-op.
     if (handler_installed) {
-        poke_visible_preserving_freeze_restore(BRK_VECTOR_LO,
+        poke_visible(BRK_VECTOR_LO,
                                                saved_brk_vector[0]);
-        poke_visible_preserving_freeze_restore(BRK_VECTOR_HI,
+        poke_visible(BRK_VECTOR_HI,
                                                saved_brk_vector[1]);
         handler_installed = false;
     }
     uninstall_hard_nmi_vector();
     uninstall_hard_vector();
     if (nmi_trampoline_installed) {
-        poke_visible_preserving_freeze_restore(NMI_VECTOR_LO,
+        poke_visible(NMI_VECTOR_LO,
                                                saved_nmi_vector[0]);
-        poke_visible_preserving_freeze_restore(NMI_VECTOR_HI,
+        poke_visible(NMI_VECTOR_HI,
                                                saved_nmi_vector[1]);
         for (int i = 0; i < NMI_TRAMPOLINE_BYTES_LEN; i++) {
-            poke_visible_preserving_freeze_restore(
+            poke_visible(
                 (uint16_t)(NMI_TRAMPOLINE_ADDR + i),
                 saved_nmi_trampoline_bytes[i]);
         }
@@ -2115,7 +2189,7 @@ bool BrkDebugSession :: frozen_rom_run_unreliable(uint16_t launch_pc,
 DebugSession::Result BrkDebugSession :: parked_step_walk(
     const DebugContext &start, uint16_t stop_pc, uint8_t stop_sp,
     const MonitorBreakpoints *bps, uint16_t skip_breakpoint_address,
-    bool skip_breakpoint_address_valid, DebugContext *out, uint8_t cpu_port)
+    bool skip_breakpoint_address_valid, DebugContext *out)
 {
     // Interpreted steps are ~ms each, covering real KERNAL/BASIC helpers within
     // a few seconds; a legitimately longer callee stops mid-way with the
@@ -2131,11 +2205,8 @@ DebugSession::Result BrkDebugSession :: parked_step_walk(
             return DBG_OK;
         }
         uint8_t port = execution_cpu_port(&cur);
-        MonitorBackingStore skip_target = monitor_backing_store_for_cpu_port(
-            skip_breakpoint_address, port);
         if (context_at_breakpoint(cur, bps, skip_breakpoint_address,
-                                  skip_target, skip_breakpoint_address_valid,
-                                  true)) {
+                                  skip_breakpoint_address_valid)) {
             *out = cur;
             return DBG_OK;
         }
@@ -2212,18 +2283,20 @@ DebugSession::Result BrkDebugSession :: step_with_predict(
         if (r == DBG_OK && entered.valid) {
             return parked_step_walk(entered, pred.fall_through, from->sp,
                                     bps, skip_breakpoint_address,
-                                    skip_breakpoint_address_valid, out,
-                                    cpu_port);
+                                    skip_breakpoint_address_valid, out);
         }
     }
     // Linear instructions never change SP/PC beyond the fall-through: run them
     // from a plain-RAM trampoline copy (or interpret the simple ones) instead
-    // of fetching them through a lagging launch bank.
+    // of fetching them through a lagging launch bank. Which UI owns the
+    // session does not change which 6510 runs the step or which port serves
+    // its fetch, so a remote session takes the same route: releasing the live
+    // CPU onto a byte written into the visible-ROM image microseconds earlier
+    // races the fetch there too.
     if (pred.kind == DBG_PREDICT_LINEAR && out &&
             visible_rom_fetch_lags() &&
-            ((!debug_owner.remote &&
-              monitor_backing_store_is_visible_rom(
-                  monitor_backing_store_for_cpu_port(start_pc, cpu_port))) ||
+            (monitor_backing_store_is_visible_rom(
+                 monitor_backing_store_for_cpu_port(start_pc, cpu_port)) ||
              step_bank_is_ram_under_rom(start_pc, cpu_port))) {
         if (allow_linear_interpret) {
             Result interpreted = interpret_simple_linear(from, start_pc, pred, out,
@@ -2454,7 +2527,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
     if (frozen_rom_run_unreliable(from.pc, target, true, cpu_port)) {
         Result walked = parked_step_walk(from, target,
                                          (uint8_t)(from.sp + 2), bps,
-                                         from.pc, true, ctx, cpu_port);
+                                         from.pc, true, ctx);
         if (walked == DBG_OK && ctx->valid && ctx->pc == target) {
             pop_return_target(target);
         }
@@ -2485,7 +2558,7 @@ DebugSession::Result BrkDebugSession :: step_out(const DebugContext &from,
         pop_return_target(target);
     }
     if (result == DBG_OK && ctx->valid &&
-            context_at_breakpoint(*ctx, bps, from.pc, from_target, true, true)) {
+            context_at_breakpoint(*ctx, bps, from.pc, true)) {
         return DBG_OK;
     }
     if (result == DBG_OK && (!ctx->valid || ctx->pc != target)) {
@@ -2535,9 +2608,7 @@ DebugSession::Result BrkDebugSession :: go(const DebugContext &from,
         if (step_ctx.valid && step_ctx.pc == from.pc) {
             return DBG_OK;
         }
-        MonitorBackingStore from_target =
-            monitor_backing_store_for_cpu_port(from.pc, cpu_port);
-        if (context_at_breakpoint(step_ctx, bps, from.pc, from_target, true, true)) {
+        if (context_at_breakpoint(step_ctx, bps, from.pc, true)) {
             return DBG_OK;
         }
         DebugContext out;
