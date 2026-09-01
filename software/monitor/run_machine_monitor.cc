@@ -226,7 +226,16 @@ void UserInterface :: run_machine_monitor(MemoryBackend *backend)
 #endif
         }
         if (release_after_exit) {
-#if defined(U64) && (U64) && !defined(RUNS_ON_PC)
+            // Every target, not only the Ultimate 64. release_host() takes down
+            // the user interface objects; the freeze is what holds the CPU, and
+            // only release_ownership() -> C64::unfreeze() -> C64::resume()
+            // writes C64_STOP back to 0. On a cartridge the monitor's user
+            // interface is the freezer, so releasing the host alone left the
+            // 6510 DMA-held with nothing able to let it go: a host reset cannot
+            // reach the cartridge's own stop, and only reopening the cartridge
+            // menu cleared it. This is the hand-back the deferred-Go block
+            // above already performs.
+#if !defined(RUNS_ON_PC)
             C64 *machine = C64::getMachine();
             if (machine && machine->is_accessible()) {
                 release_host();
