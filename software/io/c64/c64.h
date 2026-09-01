@@ -72,6 +72,7 @@
 #define C64_MODE_UNRESET   0x08
 #define C64_MODE_NMI       0x10
 
+
 #define SERVE_WHILE_STOPPED 0x01
 
 #define STOP_COND_BADLINE  0x00

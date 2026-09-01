@@ -826,6 +826,31 @@ void C64::end_stopped_session(bool stopped_it)
     }
 }
 
+// While the freezer's menu is up it owns screen RAM, the 2KB above it and
+// color RAM, so a frozen access to any of the three is served from the copy
+// taken at freeze time, which restore_io() puts back on unfreeze. Returns
+// where in that copy `addr` lives, and where its range ends, or 0 for an
+// address the menu does not own.
+static uint8_t *frozen_backup_for(int addr, int *range_end,
+                                  uint32_t *screen_backup,
+                                  uint32_t *ram_backup,
+                                  uint32_t *color_backup)
+{
+    if ((addr >= 0x0400) && (addr < 0x0800)) {
+        *range_end = 0x0800;
+        return (uint8_t *)screen_backup + (addr - 0x0400);
+    }
+    if ((addr >= 0x0800) && (addr < 0x1000)) {
+        *range_end = 0x1000;
+        return (uint8_t *)ram_backup + (addr - 0x0800);
+    }
+    if ((addr >= 0xD800) && (addr < 0xDC00)) {
+        *range_end = 0xDC00;
+        return (uint8_t *)color_backup + (addr - 0xD800);
+    }
+    return 0;
+}
+
 // Unserialised, and known to be: two tasks reach this (UI via C64::peek/poke,
 // HTTP via machine:readmem/writemem), and an interleaved call can read the
 // other's already-restored mode and hand the bus back to Ultimax mid-transfer.
@@ -845,6 +870,8 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
         int addr = offset + pos;
         int remaining = length - pos;
         int chunk = remaining;
+        uint8_t *backup;
+        int backup_range_end = 0;
 
         if (ULTIMAX_HIDES_MEMORY(addr)) {
             // The freezer menu has its own ultimax cart banked in, which leaves
@@ -883,36 +910,28 @@ void C64::dma_transfer_frozen(uint16_t offset, uint8_t *buffer, int length, int 
                 wait_10us(2);
                 C64_MODE = saved_mode;
             }
-        } else if ((addr >= 0x0800) && (addr < 0x1000)) {
-            // The freezer menu uses this 2KB as its own scratch RAM, so serve
-            // reads/writes from the backup taken at freeze time instead: it is
-            // restored to real RAM on unfreeze, unlike the live (bypassed) range.
-            if ((0x1000 - addr) < chunk) {
-                chunk = 0x1000 - addr;
+        } else if ((backup = frozen_backup_for(addr, &backup_range_end,
+                                               screen_backup, ram_backup,
+                                               color_backup)) != 0) {
+            // The monitor's Hex view and machine:readmem/writemem both reach
+            // memory through this path, and they answer for these three
+            // ranges the same way C64::peek/poke and the U64's
+            // read_cpu_block/poke_cpu do: from the copy, so that a read and a
+            // write of one address see the same memory.
+            if ((backup_range_end - addr) < chunk) {
+                chunk = backup_range_end - addr;
             }
-            uint8_t *backup = ((uint8_t *)ram_backup) + (addr - 0x0800);
-            if (rw) {
-                memcpy(buffer + pos, backup, chunk);
-            } else {
-                memcpy(backup, buffer + pos, chunk);
-            }
-        } else if ((addr >= 0xD800) && (addr < 0xDC00)) {
-            // Same reasoning as the ram_backup range above, but for color RAM.
-            if ((0xDC00 - addr) < chunk) {
-                chunk = 0xDC00 - addr;
-            }
-            uint8_t *backup = ((uint8_t *)color_backup) + (addr - 0xD800);
             if (rw) {
                 memcpy(buffer + pos, backup, chunk);
             } else {
                 memcpy(backup, buffer + pos, chunk);
             }
         } else {
-            // Only $0000-$07FF, $D000-$D7FF and $DC00-$DFFF reach here; every
+            // Only $0000-$03FF, $D000-$D7FF and $DC00-$DFFF reach here; every
             // other address is claimed by a branch above.
             int next_boundary;
-            if (addr < 0x0800) {
-                next_boundary = 0x0800;
+            if (addr < 0x0400) {
+                next_boundary = 0x0400;
             } else if (addr < 0xD800) {
                 next_boundary = 0xD800;
             } else {
@@ -1228,10 +1247,12 @@ void C64::freeze(void)
     if (isFrozen)
         return;
 
-#if !U64
-    // Only backends without a readable 6510 port need this NMI stub; on the U64
-    // it would cost a stop/NMI/restore round trip and could swallow an NMI edge
-    // meant for the interrupted program. Dropped first, so this freeze shows
+#if !U64 && defined(MACHINE_MONITOR)
+    // The machine code monitor's banking display is the only reader of this,
+    // and only on a backend that cannot read the 6510 port directly. On the
+    // U64 it would cost a stop/NMI/restore round trip and could swallow an NMI
+    // edge meant for the interrupted program; in a build without the monitor
+    // nothing ever asks for the answer. Dropped first, so this freeze shows
     // its own banking or none, never the previous freeze's.
     invalidate_captured_cpu_port();
     capture_cpu_port_via_nmi();
