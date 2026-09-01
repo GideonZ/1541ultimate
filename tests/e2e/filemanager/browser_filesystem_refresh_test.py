@@ -1032,6 +1032,11 @@ ROWS_NEEDING_FIX = {
         "copy over an existing file from Telnet",
         "paste into the watched directory from Telnet",
     ),
+    machine_lib.BROWSER_REFRESH_FROM_MENU_WRITER: (
+        "write from the Menu",
+        "copy over an existing file from the Menu",
+        "paste into the watched directory from the Menu",
+    ),
 }
 
 

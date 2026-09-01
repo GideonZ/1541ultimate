@@ -213,15 +213,26 @@ BROWSER_REFRESH_ON_DIRECTORY_CHANGE = _fix(
     "open browser's listing without leaving and re-entering the directory",
     (C64U,))
 
-# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py. Only
-# one direction is affected, which is what makes it a distinct gap rather than
-# part of the two above: a write made from the Telnet browser did not reach
-# the on-screen menu browser, which went on showing the old size, while the
-# same write made from the menu or over FTP reached every observer including
-# the menu.
+# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py: a
+# write made from the Telnet browser did not reach the on-screen menu browser,
+# which went on showing the old size, while the same write made over FTP
+# reached every observer including the menu.
 BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
     "browser-refresh-from-telnet-writer",
     "a file written from the Telnet browser is re-read by the on-screen menu "
+    "browser, so both show the committed size",
+    (C64U,))
+
+# The same pair of browsers, the other way round, and a separate entry because
+# a machine can have one and not the other: when this gap was first written
+# down, a write made from the menu did reach the Telnet browser. Measured on a
+# C64 Ultimate 1.2.0, it does not: with the menu as the writer, the Telnet
+# observer showed each of wmenu1.d64, pmenu1.tst and vmenu1.tst at size 0 and
+# never re-read it, while the menu's own browser, FTP and REST all saw the
+# committed size, and an FTP writer reached the Telnet observer normally.
+BROWSER_REFRESH_FROM_MENU_WRITER = _fix(
+    "browser-refresh-from-menu-writer",
+    "a file written from the on-screen menu browser is re-read by the Telnet "
     "browser, so both show the committed size",
     (C64U,))
 
