@@ -323,6 +323,19 @@ MACHINE_HEAP_READING = _fix(
     "GET /v1/machine:heap reports the free and total heap",
     (C64U,))
 
+# The one entry here that names an FPGA core rather than firmware. A write to
+# $DF01 has to stop the CPU in its own cycle, or the register writes behind it
+# land on a transfer that is still running; tests/e2e/io/c64/reu_turbo_test.py
+# is the discriminator. Measured by swapping bitstreams on an Ultimate 64 with
+# the same Nios ELF after each: core 1.4E fails at round 0 while the same
+# program is clean at 1 MHz, and core 1.4F passes. A C64 Ultimate serves core
+# 1.4D, which is older than either, and fails the same way.
+REU_TURBO_STOPS_CPU_IN_CYCLE = _fix(
+    "reu-turbo-stops-cpu-in-cycle",
+    "a write to $DF01 stops the CPU in its own cycle, so an REU transfer "
+    "started at full speed returns what it was given",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
