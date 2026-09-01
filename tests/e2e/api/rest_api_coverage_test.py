@@ -321,6 +321,7 @@ def build_cases() -> List[Case]:
 
     def _config_write_path(ctx: Ctx) -> None:
         # The other accepted form: the value as a third path element.
+        ctx.require_fix(machine_lib.CONFIGS_SET_VALUE_IN_PATH)
         category, item, value = ctx.suite.config_target(ctx)
         ctx.api.configs.set_by_path(category, item, value)
         after = ctx.api.configs.current(category, item)
@@ -355,6 +356,7 @@ def build_cases() -> List[Case]:
     # Saving writes what is already in force, because no case changes a setting
     # without putting it back first, so the store ends where it started.
     def _flash_roundtrip(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash()
@@ -369,6 +371,7 @@ def build_cases() -> List[Case]:
          "happy", _flash_roundtrip, exclusive=True)
 
     def _flash_roundtrip_category(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash(category)
@@ -456,6 +459,7 @@ def build_cases() -> List[Case]:
          _readmem_bad)
 
     def _heap(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.MACHINE_HEAP_READING)
         reading = ctx.api.machine.heap()
         if reading is None:
             raise Failure("machine:heap is not on this firmware")

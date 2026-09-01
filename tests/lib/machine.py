@@ -293,6 +293,36 @@ CONFIGS_REFUSE_UNKNOWN_CATEGORY = _fix(
     "not have, rather than 200 with nothing in it",
     (C64U,))
 
+# Measured with tests/e2e/api/rest_api_coverage_test.py against a C64 Ultimate
+# 1.2.0: PUT /v1/configs/<store>/<item>/<value>, the form that carries the
+# value as a third path element, answers HTTP 400 "Function none requires
+# parameter value". Only the ?value= form is served there, so the route that
+# software/api/route_configs.cc names setConfigItemByPath does not exist yet.
+CONFIGS_SET_VALUE_IN_PATH = _fix(
+    "configs-set-value-in-path",
+    "PUT /v1/configs/<store>/<item>/<value> sets the item, rather than "
+    "refusing the request for want of a value argument",
+    (C64U,))
+
+# Measured the same way: PUT /v1/configs:load_from_flash closes the connection
+# on a C64 Ultimate 1.2.0, which reaches the client as
+# "[Errno 104] Connection reset by peer". The device answers again afterwards,
+# so this is the request failing rather than the machine going down, but a
+# check cannot tell a flash round trip happened.
+CONFIGS_FLASH_ROUNDTRIP = _fix(
+    "configs-flash-roundtrip",
+    "PUT /v1/configs:load_from_flash answers, so a save and load round trip "
+    "can be read back",
+    (C64U,))
+
+# The heap reading the health sweep already reports as absent on this machine:
+# GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
+# assert a plausible figure from it.
+MACHINE_HEAP_READING = _fix(
+    "machine-heap-reading",
+    "GET /v1/machine:heap reports the free and total heap",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
