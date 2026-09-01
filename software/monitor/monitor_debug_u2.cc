@@ -110,7 +110,7 @@ protected:
         // Machine is free-running from its pre-freeze PC; stop/un-stop it with
         // NMI asserted so it observes the edge on resume and vectors through
         // the nmi_redirect_to() trampoline. Same mechanism carries
-        // capture_cpu_port_via_nmi() on U2+L/C64U; see U2_CARTRIDGE_NMI.md.
+        // capture_cpu_port_via_nmi() on U2+L/C64U.
         bool stopped_it = machine->begin_stopped_session();
         machine->end_stopped_session_nmi(stopped_it);
     }

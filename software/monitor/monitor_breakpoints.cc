@@ -76,12 +76,6 @@ int MonitorBreakpoints :: allocate(uint16_t address, uint8_t cpu_port,
     return -1;
 }
 
-void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_port)
-{
-    store_slot(slot, address, cpu_port,
-               monitor_backing_store_for_cpu_port(address, cpu_port));
-}
-
 void MonitorBreakpoints :: store_slot(int slot, uint16_t address, uint8_t cpu_port,
                                       MonitorBackingStore target)
 {

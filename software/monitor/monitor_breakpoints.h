@@ -43,7 +43,6 @@ public:
     int allocate(uint16_t address, uint8_t cpu_port);
     int allocate(uint16_t address, uint8_t cpu_port, MonitorBackingStore target);
 
-    void store_slot(int slot, uint16_t address, uint8_t cpu_port);
     void store_slot(int slot, uint16_t address, uint8_t cpu_port, MonitorBackingStore target);
     void clear_slot(int slot);
     void set_enabled(int slot, bool enabled);

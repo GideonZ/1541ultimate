@@ -229,6 +229,12 @@ bool MachineMonitor :: debug_enter()
     }
     monitor_log_address("debug enter", state.current_addr);
     help_visible = false;
+    // Poll and Dbg occupy the same header columns, and P toggles a breakpoint
+    // once Debug owns the keyboard, so a poll left running from before Debug
+    // could be neither read nor turned off. It has nothing to show either: a
+    // parked machine changes only where a step changes it, and every step
+    // redraws.
+    poll_mode = false;
     debug_entry_addr = state.current_addr;
     DebugSession *session = ensure_debug_session();
     if (session && !session->claim_debug_ownership(screen && screen->prefers_full_refresh())) {
@@ -1014,11 +1020,6 @@ MonitorBackingStore MachineMonitor :: breakpoint_target_for_live_cpu(uint16_t ad
         monitor_backing_store_for_cpu_port(address, live_cpu_port);
 }
 
-bool MachineMonitor :: live_cpu_port_known(void) const
-{
-    return backend && backend->live_cpu_port_known();
-}
-
 bool MachineMonitor :: debug_observed_cpu_port_held(void) const
 {
     return backend && backend->has_debug_observed_cpu_port();
@@ -1146,6 +1147,13 @@ int MachineMonitor :: debug_breakpoint_popup_handle_key(int key)
             if (backend && backend->supports_cpu_banking()) {
                 backend->set_monitor_cpu_port(state.cpu_port);
             }
+            // Moves the view, not the program counter. apply_go_local() sets
+            // debug_cursor_override when it is given an address the cursor is
+            // not already on, and that override makes the next Continue start
+            // here instead of resuming the captured stop. Reading the
+            // breakpoint list must not cost the session its context, so the
+            // cursor is placed first and RETURN below does the same.
+            state.current_addr = bp->address;
             apply_go_local(bp->address);
             printf("MCM breakpoint jump %u $%04X\n", (unsigned)breakpoint_selected, bp->address);
             debug_close_breakpoint_popup();

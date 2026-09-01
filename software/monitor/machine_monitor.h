@@ -548,7 +548,6 @@ public:
     void request_debug_reset_cancel(void);
     void invalidate_live_cpu_port_view(void);
     bool is_debug_session_active(void) const;
-    bool live_cpu_port_known(void) const;
     bool debug_observed_cpu_port_held(void) const;
     void leave_debug_for_exit(void) { debug_leave(); }
     const char *debug_status_message(void) const { return debug_status_visible ? debug_status_text : ""; }
