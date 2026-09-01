@@ -37,6 +37,10 @@ _GOOD_STATUSES = ("PASS",)
 _NOT_RUN_STATUS = "PENDING"
 # Statuses that count as this run having found something.
 _FAILED_STATUSES = ("FAIL", "BLOCKED_WITH_EVIDENCE")
+# A cell this target cannot run at all. Not a failure and not a result: listing
+# one in the trend table would report the same six cells as findings on every
+# cartridge run.
+_NOT_APPLICABLE_STATUS = "SKIPPED_UNSUPPORTED"
 
 
 def _git(repo_root: Path, *args: str) -> str:
@@ -103,6 +107,8 @@ def _failures(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         if row.get("status") in _GOOD_STATUSES:
             continue
+        if row.get("status") == _NOT_APPLICABLE_STATUS:
+            continue
         failure = row.get("failure") or {}
         out.append({
             "cell_id": row.get("cell_id"),
@@ -159,6 +165,7 @@ def finish_run(root: Path, record: dict[str, Any], rows: list[dict[str, Any]],
         "cells_failed": statuses.get("FAIL", 0),
         "cells_blocked": statuses.get("BLOCKED_WITH_EVIDENCE", 0),
         "cells_not_run": statuses.get(_NOT_RUN_STATUS, 0),
+        "cells_skipped": statuses.get(_NOT_APPLICABLE_STATUS, 0),
         "status_counts": statuses,
         "opcode_status": opcode.get("opcode_requirement_status"),
         "opcode_count": opcode.get("opcode_count"),
@@ -213,6 +220,7 @@ def _run_markdown(record: dict[str, Any]) -> str:
         "",
         f"- Cells: {record.get('cells_passed')}/{record.get('cells_total')} passed, "
         f"{record.get('cells_failed')} failed, {record.get('cells_blocked')} blocked, "
+        f"{record.get('cells_skipped')} not supported on this target, "
         f"{record.get('cells_not_run')} not run",
         f"- Opcode gate: {record.get('opcode_status')} "
         f"({record.get('opcode_count')} opcodes)",

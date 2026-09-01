@@ -11,6 +11,7 @@ debugger matrix. It deliberately reuses the existing telnet, REST/local-UI, and
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -82,7 +83,48 @@ MEMORY_MODES = ("ram", "ram-under-rom", "rom", "ram-rom-ram", "ram-rur-rom-ram")
 # 32-level Step Into chain.
 TRAVERSAL_MODES = ("ram-rom-ram", "ram-rur-rom-ram")
 INTERFACES = ("telnet", "freeze", "overlay")
-FINAL_STATUSES = ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE")
+FINAL_STATUSES = ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE", "SKIPPED_UNSUPPORTED")
+
+# Memory modes whose entry breakpoint lands where a cartridge cannot place one.
+# U2MemoryBackend reports supports_cpu_banking() false, because a DMA read of
+# $0001 returns a mirror that is only refreshed at reset, so the monitor has no
+# bank view from which to place a RAM-under-ROM breakpoint; and
+# supports_visible_rom_patching() is overridden true only in the U64 backend, so
+# a BRK cannot be written into a visible ROM image. The firmware refuses both
+# with "BRK $xxxx IN ROM BLOCKS DEBUG", which is correct behaviour, not a
+# defect. The boundary-traversal modes are deliberately absent: their entry
+# breakpoint is in RAM, and they reach ROM by stepping, which is interpreted or
+# run from a RAM trampoline rather than patched.
+_NO_ROM_PATCH = ("a cartridge cannot write a breakpoint into a visible ROM "
+                 "image (supports_visible_rom_patching() is overridden true "
+                 "only in the U64 backend)")
+CARTRIDGE_UNSUPPORTED_MEMORY_MODES = {
+    "ram-under-rom":
+        "a cartridge monitor has no bank view to place a RAM-under-ROM "
+        "breakpoint from (supports_cpu_banking() is false)",
+    "rom": _NO_ROM_PATCH,
+    # These two start in RAM but their boundary walk steps into BASIC at
+    # $BC0F, which is a JSR. Stepping into a JSR sets a breakpoint on the
+    # call target, and that target is inside the ROM image, so the firmware
+    # answers DEBUG NOT SUPPORTED on a cartridge.
+    "ram-rom-ram": _NO_ROM_PATCH + ", which its boundary walk needs to step "
+                   "into the JSR at $BC0F",
+    "ram-rur-rom-ram": _NO_ROM_PATCH + ", which its boundary walk needs to "
+                      "step into the JSR at $BC0F",
+}
+
+
+def unsupported_cell_reason(args: argparse.Namespace, memory_mode: str):
+    """Why this target cannot run this memory mode, or None if it can.
+
+    Keyed on the split-session flag, which is set only for a U2+L in a C64U
+    host: the same signal select_bank() already uses to skip the bank view.
+    A single-host run gets None for every mode, so this can never hide a
+    failure on a machine that does support the operation.
+    """
+    if not getattr(args, "c64_host", None):
+        return None
+    return CARTRIDGE_UNSUPPORTED_MEMORY_MODES.get(memory_mode)
 
 DEFAULT_REPS = 3
 DEFAULT_STEP_INTO_DEPTH = 32
@@ -2052,15 +2094,80 @@ def screen_text(driver: BaseDriver) -> str:
 
 
 # Two concurrent runs of this suite must not pick the same VICE port.
-# run-tests hands each one an index in E2E_PORT_SLOT; a run started by hand
-# has no index and keeps port 6518, this suite's traditional default.
+# run-tests hands each of the runs it starts itself an index in E2E_PORT_SLOT,
+# but it numbers them from zero per invocation, so two run-tests invocations
+# (a u64 run and a u2@c64u run started separately) both offered slot 0 and
+# their VICE oracles fought over 127.0.0.1:6518. The loser reported
+# "VICE oracle setup failed: timed out", which reads as a device fault and is
+# not one. The slot below is therefore claimed rather than assumed:
+# E2E_PORT_SLOT is the preferred starting point, so a lone run keeps the
+# layout run-tests gave it, and any run that finds its preference taken moves
+# to the next free slot.
 VICE_PORT_BASE = 6518
 VICE_PORTS_PER_RUN = 8
+VICE_MAX_SLOTS = 16
+
+# Held open for the life of the process: closing the file drops the lock, and
+# the kernel drops it for us if the run is killed, so a crashed run leaves no
+# stale claim behind.
+_VICE_SLOT_LOCK_FDS: list[int] = []
+_VICE_SLOT: Optional[int] = None
+
+
+def _slot_ports_free(slot: int) -> bool:
+    """True when every port this slot owns can be bound right now.
+
+    The lock alone only excludes runs that take part in this protocol. A VICE
+    left behind by a killed run holds its port without holding a lock, which
+    is exactly the state that produced the timeouts, so the ports are probed
+    as well.
+    """
+    for offset in range(VICE_PORTS_PER_RUN):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            probe.bind(("127.0.0.1", VICE_PORT_BASE + slot * VICE_PORTS_PER_RUN + offset))
+        except OSError:
+            return False
+        finally:
+            probe.close()
+    return True
+
+
+def _claim_vice_slot() -> int:
+    global _VICE_SLOT
+    if _VICE_SLOT is not None:
+        return _VICE_SLOT
+    preferred = int(os.environ.get("E2E_PORT_SLOT", "0"))
+    lock_dir = Path(tempfile.gettempdir()) / "mcm-vice-slots"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    for step in range(VICE_MAX_SLOTS):
+        slot = (preferred + step) % VICE_MAX_SLOTS
+        fd = os.open(str(lock_dir / f"slot-{slot}.lock"),
+                     os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            continue
+        if not _slot_ports_free(slot):
+            os.close(fd)        # closing drops the lock
+            continue
+        os.truncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        _VICE_SLOT_LOCK_FDS.append(fd)
+        _VICE_SLOT = slot
+        if slot != preferred:
+            print(f"VICE port slot {preferred} was taken; using slot {slot} "
+                  f"(base port {VICE_PORT_BASE + slot * VICE_PORTS_PER_RUN})",
+                  flush=True)
+        return slot
+    raise GateError(
+        f"no free VICE port slot in {VICE_MAX_SLOTS} tries from "
+        f"{VICE_PORT_BASE}; another run or a leftover x64sc holds them all")
 
 
 def vice_port(offset: int) -> int:
-    slot = int(os.environ.get("E2E_PORT_SLOT", "0"))
-    return VICE_PORT_BASE + slot * VICE_PORTS_PER_RUN + offset
+    return VICE_PORT_BASE + _claim_vice_slot() * VICE_PORTS_PER_RUN + offset
 
 
 class ViceBinaryMonitor:
@@ -3346,12 +3453,13 @@ def progress_line(rows: list[dict[str, Any]], opcode_status: str) -> str:
     passed = sum(1 for r in rows if r["status"] == "PASS")
     failed = sum(1 for r in rows if r["status"] == "FAIL")
     blocked = sum(1 for r in rows if r["status"] == "BLOCKED_WITH_EVIDENCE")
+    skipped = sum(1 for r in rows if r["status"] == "SKIPPED_UNSUPPORTED")
     pending = sum(1 for r in rows if r["status"] == "PENDING")
-    completed = passed + failed + blocked
+    completed = passed + failed + blocked + skipped
     return (
         f"Matrix progress: completed={completed}/{total} passed={passed} "
-        f"failed={failed} blocked={blocked} pending={pending} inferred=0 invalid=0 "
-        f"1000_opcode={opcode_status}"
+        f"failed={failed} blocked={blocked} skipped={skipped} pending={pending} "
+        f"inferred=0 invalid=0 1000_opcode={opcode_status}"
     )
 
 
@@ -3594,7 +3702,8 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
                        hygiene: dict[str, Any]) -> str:
     rows = ledger.rows
     all_done = all(row["status"] in FINAL_STATUSES for row in rows)
-    all_pass = all(row["status"] == "PASS" for row in rows)
+    all_pass = all(row["status"] in ("PASS", "SKIPPED_UNSUPPORTED")
+                   for row in rows)
     genuine_failures = [row for row in rows
                         if row["status"] in ("FAIL", "BLOCKED_WITH_EVIDENCE")]
     masking_violations = COUNTERS.violations()
@@ -3619,10 +3728,11 @@ def write_final_report(args: argparse.Namespace, artifact_dir: Path, ledger: Led
             subset = [row for row in rows if str(row[key]) == value]
             counts = {status: sum(1 for row in subset if row["status"] == status)
                       for status in ("PASS", "FAIL", "BLOCKED_WITH_EVIDENCE",
-                                     "PENDING")}
+                                     "SKIPPED_UNSUPPORTED", "PENDING")}
             lines_out.append(
                 f"- `{value}`: PASS={counts['PASS']} FAIL={counts['FAIL']} "
                 f"BLOCKED_WITH_EVIDENCE={counts['BLOCKED_WITH_EVIDENCE']} "
+                f"SKIPPED_UNSUPPORTED={counts['SKIPPED_UNSUPPORTED']} "
                 f"PENDING={counts['PENDING']}"
             )
         return lines_out
@@ -4453,6 +4563,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     stopped_after_required_cell_failure = False
     for row in ledger.rows:
         if args.resume and row["status"] in FINAL_STATUSES:
+            print(progress_line(ledger.rows, opcode_status), flush=True)
+            continue
+        skip_reason = unsupported_cell_reason(args, row["memory_mode"])
+        if skip_reason:
+            row["status"] = "SKIPPED_UNSUPPORTED"
+            row["skip_reason"] = skip_reason
+            ledger.save()
+            cell_dir = Path(row["artifact_dir"])
+            cell_dir.mkdir(parents=True, exist_ok=True)
+            (cell_dir / "skipped.txt").write_text(
+                f"{row['cell_id']}: not run on this target.\n{skip_reason}\n",
+                encoding="utf-8")
+            print(f"{row['cell_id']}: SKIPPED ({skip_reason})", flush=True)
             print(progress_line(ledger.rows, opcode_status), flush=True)
             continue
         if args.fresh_deploy_between_cells:
