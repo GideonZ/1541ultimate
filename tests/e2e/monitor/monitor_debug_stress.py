@@ -115,6 +115,10 @@ class RestSession:
         # Type config, no monitor bank view, and one memory-source tag for
         # every row. The methods below name their own deviation.
         self.split = bool(c64_host)
+        # A resend re-executes the step if the first tap did land, so a
+        # mismatch that follows one is the harness's doing, not the
+        # debugger's. Counted so the two can be told apart.
+        self.step_resends = 0
 
     # --- low-level ---
     def lines(self):
@@ -228,10 +232,20 @@ class RestSession:
         ls = self.lines()
         return parse_footer(ls) if ls else None
 
-    def wait_footer_pc(self, pc, timeout=8.0, ctx=""):
+    def wait_footer_pc(self, pc, timeout=8.0, ctx="", sp=None):
         """Poll menu_screen ONCE per iteration (a double-fetch right after a step
         can transiently 404 the overlay menu_screen pipeline) until the debug
-        footer shows the expected PC."""
+        footer shows the expected PC.
+
+        `sp` disambiguates an address the program visits more than once. A JSR
+        nest passes through every address twice, once descending and once as the
+        RTS chain unwinds, and the two visits differ by the frame the JSR
+        pushed. Matching on PC alone therefore accepts whichever visit the
+        device happens to be showing, and the registers of the other one are
+        then compared against the oracle and reported as a register mismatch.
+        The caller knows the stack pointer the step must land on, so require it
+        too where it does.
+        """
         deadline = time.time() + timeout
         last = None
         while time.time() < deadline:
@@ -239,7 +253,7 @@ class RestSession:
             if ls:
                 f = parse_footer(ls)
                 last = f
-                if f and f.pc == pc:
+                if f and f.pc == pc and (sp is None or f.sp == sp):
                     return f
                 if f is None:
                     self._modal_in(ls, ctx or "wait_footer_pc")
@@ -247,7 +261,7 @@ class RestSession:
         raise StressError(f"{ctx}: footer PC did not reach {pc:04X} (last={last})\n{self.text()}")
 
     def progress_step(self, key, expected_pc, writes, max_resend=3,
-                      active_write_progress=False):
+                      active_write_progress=False, expected_sp=None):
         """Send a Step key and re-send it if the step makes no progress. The clean
         -stop release after a Go/entry intermittently re-traps the first step at the
         launch site without advancing (the documented B16 FPGA-aperture behaviour);
@@ -257,14 +271,21 @@ class RestSession:
         must be enabled only after a capability probe.
         Ordering is preserved: a tap is only ever followed by readmem (write steps)
         or by a footer GET (non-write steps), never by readmem->tap->menu_screen.
+        `expected_sp`, where the caller knows it, keeps this agreeing with
+        wait_footer_pc(): a footer still showing the previous step can carry the
+        same PC as the one being waited for when the program visits an address
+        twice, and treating that as progress skips a re-send that was needed.
         Returns True once progress is observed."""
         first_w = next(((a, v) for a, v in writes if a not in (0x0000, 0x0001)), None)
-        for _ in range(max_resend + 1):
+        for attempt in range(max_resend + 1):
+            if attempt:
+                self.step_resends += 1
             self.rest.tap([key])
             deadline = time.time() + 1.6
             while time.time() < deadline:
                 f = self.footer()
-                if f and f.pc == expected_pc:
+                if f and f.pc == expected_pc and (expected_sp is None
+                                                  or f.sp == expected_sp):
                     return True
                 if active_write_progress and first_w is not None:
                     if self.rest.read_mem(first_w[0], 1)[0] == (first_w[1] & 0xFF):
@@ -546,7 +567,7 @@ def sr_mask_compare(a, b):
     return (a & m) == (b & m)
 
 
-def assert_match(obs: Footer, cpu, ctx):
+def _footer_diffs(obs: Footer, cpu) -> list:
     diffs = []
     if obs.pc != cpu.pc:
         diffs.append(f"PC {cpu.pc:04X}!={obs.pc:04X}")
@@ -560,6 +581,27 @@ def assert_match(obs: Footer, cpu, ctx):
         diffs.append(f"SP {cpu.sp:02X}!={obs.sp:02X}")
     if not sr_mask_compare(obs.sr, cpu.p):
         diffs.append(f"SR {cpu.p:08b}!={obs.sr:08b}")
+    return diffs
+
+
+def assert_match(obs: Footer, cpu, ctx, refetch=None):
+    """Compare the debugger's register footer against the oracle.
+
+    `refetch` re-reads the footer once, and only when a mismatch is already in
+    hand. menu_screen can return the footer row while the debugger is writing
+    it, giving the PC and SP of the new stop beside a register value the
+    previous stop left behind; that reads as a one-register divergence which is
+    not one. A real divergence is still present on the second read, so this
+    cannot hide one, and the happy path pays for no extra read.
+    """
+    diffs = _footer_diffs(obs, cpu)
+    if diffs and refetch is not None:
+        again = refetch()
+        if again is not None:
+            confirmed = _footer_diffs(again, cpu)
+            if not confirmed:
+                return
+            diffs = confirmed
     if diffs:
         raise StressError(f"{ctx}: oracle/footer mismatch: {', '.join(diffs)}")
 
@@ -729,8 +771,10 @@ def run_program_session(sess, rng, instrs, seed, max_steps, jsonl, stats,
                 stats["writes_verified"] = stats.get("writes_verified", 0) + 1
         elif writes:
             stats["writes_deferred"] = stats.get("writes_deferred", 0) + len(writes)
-        f = sess.wait_footer_pc(cpu.pc, timeout=8.0, ctx=f"step {steps} {mnem}")
-        assert_match(f, cpu, f"step {steps} op={op:02X} {mnem} key={key}")
+        f = sess.wait_footer_pc(cpu.pc, timeout=8.0, ctx=f"step {steps} {mnem}",
+                                sp=cpu.sp)
+        assert_match(f, cpu, f"step {steps} op={op:02X} {mnem} key={key}",
+                 refetch=sess.footer)
         steps += 1
         stats["steps"] += 1
         stats["ops"][f"{op:02X}"] = stats["ops"].get(f"{op:02X}", 0) + 1
@@ -773,10 +817,12 @@ def run_jsr_session(sess, rng, depth, seed, jsonl, stats):
             raise StressError(f"jsr nest stepped outside program at {cpu.pc:04X}")
         cpu.step()
         min_sp = min(min_sp, cpu.sp)
-        if not sess.progress_step("t", cpu.pc, []):   # no writes; progress = footer PC
+        if not sess.progress_step("t", cpu.pc, [], expected_sp=cpu.sp):
             raise StressError(f"jsr step {steps}: no progress (want PC {cpu.pc:04X})")
-        f = sess.wait_footer_pc(cpu.pc, timeout=8.0, ctx=f"jsr step {steps}")
-        assert_match(f, cpu, f"jsr step {steps} depth={depth}")
+        f = sess.wait_footer_pc(cpu.pc, timeout=8.0, ctx=f"jsr step {steps}",
+                                sp=cpu.sp)
+        assert_match(f, cpu, f"jsr step {steps} depth={depth}",
+                 refetch=sess.footer)
         steps += 1
         stats["jsr_steps"] += 1
     # Coherence: descended below entry (real nesting) and unwound back to entry SP.
@@ -923,7 +969,9 @@ def main():
             f"not evidence ***")
         rc = 4
 
-    summary = {"t": "summary", **stats, "rc": rc, "final_alive": sess.alive(),
+    summary = {"t": "summary", **stats, "rc": rc,
+               "step_resends": sess.step_resends,
+               "final_alive": sess.alive(),
                "device_identity_start": identity_at_start,
                "device_identity_end": identity_at_end,
                "device_identity_changed": identity_changed}

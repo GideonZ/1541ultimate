@@ -231,13 +231,34 @@ def status_line(r: Rest):
 
 
 def select_monitor_bank(r: Rest, bank: int, label: str):
-    for _ in range(8):
+    """Cycle the monitor's bank view with `o` until it shows `bank`.
+
+    A screen read that comes back with no status line at all is a failed read,
+    not a wrong bank: it happens when the host is loaded enough that the fetch
+    returns truncated. Pressing `o` on that would cycle the view while blind,
+    walking away from the bank being asked for and reporting status='' once the
+    budget ran out. So an empty read is retried as a read, and only a status
+    that was actually parsed and shows the wrong bank spends a keypress.
+    """
+    presses = 0
+    blind_reads = 0
+    while presses < 8 and blind_reads < 8:
         status = status_line(r)
         if f"CPU{bank}" in status or f"O{bank}" in status:
             return
+        if not status:
+            blind_reads += 1
+            time.sleep(0.25)
+            continue
+        presses += 1
         r.send_text("o", settle=0.18)
         time.sleep(0.25)
-    raise Failure(f"{label}: could not select monitor bank {bank}; status={status_line(r)!r}")
+    final = status_line(r)
+    if f"CPU{bank}" in final or f"O{bank}" in final:
+        return
+    raise Failure(
+        f"{label}: could not select monitor bank {bank}; status={final!r} "
+        f"({presses} bank keys, {blind_reads} unreadable screens)")
 
 
 def line_for_address(r: Rest, addr: int):

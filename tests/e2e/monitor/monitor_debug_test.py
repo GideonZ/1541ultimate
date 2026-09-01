@@ -126,7 +126,19 @@ def _capture_lines(session: "mt.MonitorSession") -> list[str]:
 # header, and on a U2+L that took just under six seconds the first time, in a
 # second burst of output well after the keystroke's own redraw had gone quiet.
 # A single read lands between the two bursts and sees the old header.
-STATE_SETTLE_TIMEOUT_SECONDS = 12.0
+# How long a screen may take to settle into the state a check is waiting for.
+# 12s is the measured figure for a machine running one suite. Reading the
+# screen goes over the network to a device that renders it, so the budget is
+# spent on host scheduling as much as on the device: with a second suite (or
+# any other heavy job) sharing the machine, a settle that normally takes well
+# under a second can miss 12s, and _await_snapshot then returns the stale
+# snapshot and the caller reports "CPU label row not found" as though the
+# debugger had lost its footer. Raise this for a loaded or concurrent run
+# rather than editing the code:
+#
+#     MCM_STATE_SETTLE_SECONDS=30 ./run-tests -H u64 -s machine-code-monitor-matrix
+STATE_SETTLE_TIMEOUT_SECONDS = float(
+    os.environ.get("MCM_STATE_SETTLE_SECONDS", "12.0"))
 STATE_POLL_INTERVAL_SECONDS = 0.25
 
 
