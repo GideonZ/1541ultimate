@@ -1076,7 +1076,10 @@ class StubMenuDevice:
 
     def __init__(self, releases_on_reset: bool) -> None:
         self.releases_on_reset = releases_on_reset
+        # wedged: the menu button is ignored. deaf: injected keys are ignored,
+        # so an open menu cannot be closed by RUN/STOP. A reset clears both.
         self.wedged = True
+        self.deaf = False
         self.open = False
         self.resets = 0
         self.machine = self._Machine()
@@ -1085,14 +1088,18 @@ class StubMenuDevice:
         return self.open
 
     def press_menu_button(self):
-        if not self.wedged:
-            self.open = not self.open
+        if self.wedged:
+            return
+        if self.open and self.deaf:
+            # A UI task that has stopped reading keys ignores the button too.
+            return
+        self.open = not self.open
 
     def wait_menu(self, want_open):
         return self.open == want_open
 
     def tap(self, inputs):
-        if self.open and inputs == ["run_stop"]:
+        if self.open and not self.deaf and inputs == ["run_stop"]:
             self.open = False
 
     def screen(self):
@@ -1114,6 +1121,8 @@ class StubMenuDevice:
         self.resets += 1
         if self.releases_on_reset:
             self.wedged = False
+            self.deaf = False
+            self.open = False
 
 
 def run_ui_state_repair_checks():
@@ -1141,6 +1150,18 @@ def run_ui_state_repair_checks():
         expect("resets", device.resets, 1)
         expect("menu left closed", device.open, False)
         expect("menu reachable", ui_state.try_open_menu(device), True)
+
+    with check("a menu that will not close is repaired by resetting the machine"):
+        # The other wedge shape the gate meets: the menu opens, and then will
+        # not close again because the UI task has stopped reading keys.
+        # close_menu() raises from inside the round, which used to abandon
+        # repair() the same way a menu that would not open did.
+        device = StubMenuDevice(releases_on_reset=True)
+        device.wedged = False
+        device.deaf = True
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
 
     with check("a UI that the reset does not free is reported, not looped on"):
         device = StubMenuDevice(releases_on_reset=False)

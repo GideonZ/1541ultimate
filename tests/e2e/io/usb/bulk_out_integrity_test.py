@@ -43,7 +43,7 @@ The payload is self-describing: the 32-bit word at offset `o` holds
 was meant to carry, and a word that arrived from elsewhere in the file names
 where it came from.
 
-    ./run-tests --suite ftp-usb-integrity --manual c64u
+    ./run-tests --suite usb-bulk-out-integrity --manual c64u
 """
 
 import argparse
@@ -56,20 +56,20 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 
 import ftp as ftp_lib
 from report import (
     Failure, check, check_count, check_skip, check_start, detail,
     format_exception, section, suite_fail, suite_ok)
 
-SUITE = "ftp_usb_integrity_test"
+SUITE = "bulk_out_integrity_test"
 
 # One name per shape, and every upload deletes first. Measured, not assumed:
 # overwriting a file of the same size reuses the clusters it already owns, and
 # the defect does not appear. A newly created file reproduces it every time, so
 # a suite that let one check overwrite another's file would report a false pass.
-NAME = "ftp_usb_integrity_{shape}.bin"
+NAME = "usb_bulk_out_{shape}.bin"
 SIZE = 64 * 1024
 TAG = 0xA5
 

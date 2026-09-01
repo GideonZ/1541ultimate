@@ -265,6 +265,14 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
+    # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
+    # and leaves nothing behind. The regression check fails on firmware carrying
+    # #803; the control and the RAM-disk comparison beside it say whether a
+    # failure is that defect or something else. Clean on the 3.15 firmware this
+    # gate normally runs against, so it stays out of the default run.
+    Suite("e2e", "usb-bulk-out-integrity",
+          "tests/e2e/io/usb/bulk_out_integrity_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu
@@ -286,12 +294,6 @@ SUITES: Sequence[Suite] = (
     # name it accepts back for SIZE and DELE.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
-    # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
-    # and leaves nothing behind. The regression check fails on firmware carrying
-    # #803; the control and the RAM-disk comparison beside it say whether a
-    # failure is that defect or something else.
-    Suite("e2e", "ftp-usb-integrity", "tests/e2e/network/ftp_usb_integrity_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",

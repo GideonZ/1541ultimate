@@ -449,8 +449,9 @@ def usb_volumes(client: ftplib.FTP) -> List[str]:
     The device names a volume after the USB port its medium is in, so the stick
     a suite is meant to write to is /USB0 on one machine and /USB2 on the next.
     A suite that assumes /USB0 finds nothing on the second machine and skips
-    itself: that is how tests/e2e/network/ftp_usb_integrity_test.py reported OK
-    on a C64 Ultimate that reproduces GideonZ/1541ultimate#803 on every run.
+    itself: that is how the #803 reproduction in
+    tests/e2e/io/usb/bulk_out_integrity_test.py reported OK on a C64 Ultimate
+    that reproduces GideonZ/1541ultimate#803 on every run.
 
     Sorted by port number rather than by name, so /USB10 does not come between
     /USB1 and /USB2.

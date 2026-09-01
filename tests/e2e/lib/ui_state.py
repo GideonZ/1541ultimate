@@ -65,6 +65,17 @@ class Unrecoverable(RuntimeError):
     pass
 
 
+class UiWedged(Unrecoverable):
+    """The UI task is not answering the menu button or injected keys.
+
+    Told apart from the other things that stop this gate -- a device that has
+    gone off the network, a menu screen of the wrong size -- because it is the
+    one repair() has an answer for. Resetting the machine releases a wedged UI
+    task; it does nothing for a device that has stopped answering, and hiding a
+    transport fault behind four resets would only make it slower to report.
+    """
+
+
 class Device:
     """The device this gate drives, addressed through its target.
 
@@ -357,7 +368,7 @@ def try_open_menu(device: Device) -> bool:
 def open_menu(device: Device) -> List[str]:
     """Open the menu, unwinding a blocked UI task if the button does nothing."""
     if not try_open_menu(device):
-        raise Unrecoverable(
+        raise UiWedged(
             "the menu will not open; the UI task is blocked and RUN/STOP "
             "did not release it"
         )
@@ -387,7 +398,7 @@ def close_menu(device: Device) -> None:
         device.press_menu_button()
         if device.wait_menu(want_open=False):
             return
-    raise Unrecoverable("the menu will not close")
+    raise UiWedged("the menu will not close")
 
 
 def describe_open_menu(device: Device) -> str:
@@ -517,26 +528,33 @@ def repair(device: Device) -> None:
     abandoned with the device reported unhealthy.
     """
     for round_index in range(REPAIR_ROUNDS):
-        if not try_open_menu(device):
+        try:
+            if not try_open_menu(device):
+                device.reset_machine()
+                continue
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+            open_menu(device)
+            unwind(device)
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+            # Reopening runs appear(), which re-inits the root browser and reloads it.
+            open_menu(device)
+            close_menu(device)
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+        except UiWedged:
+            # The menu stopped answering part-way through a round: it would not
+            # close, or it would not reopen. Neither can be pressed past, and
+            # both are what the reset is for.
             device.reset_machine()
             continue
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
-        open_menu(device)
-        unwind(device)
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
-        # Reopening runs appear(), which re-inits the root browser and reloads it.
-        open_menu(device)
-        close_menu(device)
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
         if round_index >= 1:
             # Last resort: release the host and restart the machine, then reload.
             device.reset_machine()
