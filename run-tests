@@ -1463,19 +1463,25 @@ class Device:
             return False
 
 
-def capture_settings(target: targets_lib.Target, password: str,
-                     timeout: float) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
+def capture_settings(target: targets_lib.Target, password: str
+                     ) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
     """Read every setting each machine this target occupies is running with.
 
     One entry per machine, so a cartridge target captures the cartridge and
     the computer it is plugged into: both are configured, and a suite can
     change either. A machine that will not answer is reported and left out,
     because a settings read that fails is not a reason not to run the suites.
+
+    The client is given the short probe timeout rather than the run's, for the
+    same reason the health probe is: this is the first thing that touches the
+    device, and at the 30 second default a machine that accepts connections
+    and never answers would cost three retries a read, three reads a store and
+    twenty-odd stores before the first suite started.
     """
     captured: List[Tuple[UltimateApi, config_snapshot.Snapshot]] = []
     for host in target.resources:
         report.step_start(f"settings: capture {host}")
-        api = UltimateApi(host, password, timeout)
+        api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
         try:
             snapshot = config_snapshot.capture(host, api)
         except DEVICE_ERRORS as exc:
@@ -1485,8 +1491,6 @@ def capture_settings(target: targets_lib.Target, password: str,
         captured.append((api, snapshot))
         report.check_ok(f"{snapshot.item_count} settings in "
                         f"{len(snapshot.settings)} stores")
-        for store, reason in snapshot.unread:
-            report.detail(f"{store} was not captured: {reason}")
     return captured
 
 
@@ -3162,7 +3166,7 @@ def main(argv: List[str]) -> int:
     # Before anything this run changes, including the cartridge preference
     # below, so what is put back afterwards is the configuration the run found
     # rather than the one it set up for itself.
-    settings = (capture_settings(target, options.password, float(options.timeout))
+    settings = (capture_settings(target, options.password)
                 if args.restore_settings else [])
 
     try:

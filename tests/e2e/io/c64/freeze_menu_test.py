@@ -20,12 +20,9 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
-# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
-# the screen reader used to confirm which launcher row the cursor is on.
+# tests/lib holds the reporting rules every suite shares.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -34,7 +31,6 @@ from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
                     section, suite_fail, suite_ok, warn)
-from ui_backend import find_selected_row_rest  # noqa: E402  (tests/e2e/lib)
 
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
@@ -87,23 +83,6 @@ class RestSession:
         info = self.api.info()
         return machine_lib.identify(self.host, lambda: (info.product,
                                                         info.firmware_version))
-
-    def menu_rows(self) -> Optional[list]:
-        """The open menu as 25 rows of text, or None when it is closed."""
-        body = self.menu_screen_bytes()
-        if body is None:
-            return None
-        return self.api.machine.rows_of(body)
-
-    def selected_menu_row(self, rows) -> Optional[int]:
-        """Which row the menu's cursor is on, or None when it cannot be read."""
-        body = self.menu_screen_bytes()
-        if body is None:
-            return None
-        try:
-            return find_selected_row_rest(body[:SCREEN_CELLS], body[SCREEN_CELLS:], rows)
-        except Failure:
-            return None
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -438,53 +417,30 @@ def run_context_reopen(session: RestSession) -> None:
     close_menu(session)
 
 
-# The launcher's entries, for the machine that keeps its search there. Row 0
-# and row 1 are the title, and the status row is the last.
-LAUNCHER_ENTRY_ROWS = range(2, SCREEN_HEIGHT - 1)
-
-
 def open_search_entry(session: RestSession) -> None:
     """Put the machine's online-search entry under the cursor and open it.
 
     An Ultimate 64 and an Ultimate II+ keep it as the first entry of the task
-    menu, already selected when the menu opens. A C64 Ultimate keeps it in the
-    launcher, which RUN/STOP reaches from the root browser, and there the
-    cursor has to be moved onto it.
+    menu, already selected when the menu opens, and the key that opens that
+    menu is the machine's rather than a literal F5.
 
-    The launcher is never navigated by counting presses from an assumed
-    position: it lists what this machine can do, and pressing RETURN on the
-    wrong row opens something else. The row the entry is on and the row the
-    cursor is on are both read from the screen, and the landing is confirmed
-    before RETURN is sent.
+    A machine that keeps its search in a launcher instead is refused rather
+    than driven. The only machine that does is a C64 Ultimate, which cannot
+    reach this scenario at all: the suite skips on `freeze-menu-opens` and this
+    scenario skips again on `menu-button-closes-string-edit`, both of which
+    list it. A launcher route here would be code no run can execute, and
+    tests/e2e/io/c64/assembly64_test.py already drives that launcher for real.
     """
-    if not session.machine.search_in_launcher:
-        before = session.menu_screen_bytes()
-        wedge_aware(session, "opening the task menu",
-                    lambda: session.tap(session.machine.task_menu_key.lower()))
-        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
-            raise Failure("the task menu was not drawn")
-        return
-
-    wanted = session.machine.search_menu_entry
-    wedge_aware(session, "leaving the browser for the launcher",
-                lambda: session.tap("run_stop"))
-    rows = session.menu_rows()
-    if rows is None:
-        raise Failure("the menu closed on the way to the launcher")
-    row = next((n for n, text in enumerate(rows) if wanted in text), None)
-    if row is None:
-        raise Failure(f"the launcher does not offer {wanted!r}; screen was:\n"
-                      + "\n".join(rows))
-    cursor = session.selected_menu_row(LAUNCHER_ENTRY_ROWS)
-    if cursor is None:
-        raise Failure("the launcher's cursor row could not be read")
-    for _ in range(abs(row - cursor)):
-        session.tap_keys(["cursor_up_down"] if row > cursor
-                         else ["left_shift", "cursor_up_down"])
-    landed = session.selected_menu_row(LAUNCHER_ENTRY_ROWS)
-    if landed != row:
-        raise Failure(f"the launcher cursor is on row {landed}, not on {wanted!r} "
-                      f"at row {row}; refusing to press RETURN")
+    if session.machine.search_in_launcher:
+        raise Failure(
+            f"{session.machine.described} keeps "
+            f"{session.machine.search_menu_entry!r} in its launcher rather "
+            f"than its task menu, which this scenario does not drive")
+    before = session.menu_screen_bytes()
+    wedge_aware(session, "opening the task menu",
+                lambda: session.tap(session.machine.task_menu_key.lower()))
+    if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
+        raise Failure("the task menu was not drawn")
 
 
 def run_menu_button_in_form(session: RestSession) -> None:

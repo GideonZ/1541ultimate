@@ -1956,24 +1956,32 @@ JOYSTICK_SWAP_UNSWAPPED = "Normal"
 def unswapped_joystick_ports(session: RestInputSession):
     """Run the body with the joystick swapper off, and put it back afterwards.
 
-    A no-op on a machine that does not serve the item, which is an Ultimate
-    II+: it has no U64 Specific Settings store at all.
+    The setting belongs to the machine whose ports these are, which is the
+    C64-side computer. `session.api` is built from the target, and
+    Target.host_for sends everything but the keyboard and the streams to the
+    device under test, so on a cartridge target asking it would ask the
+    cartridge: an Ultimate II+ has no "U64 Specific Settings" store at all, the
+    read would fail, and the guard would quietly do nothing on the one target
+    where the ports really are somebody else's.
+
+    A no-op where the computer does not serve the item either.
     """
+    computer = UltimateApi(session.target.computer, session.password, session.timeout)
     try:
-        was = session.api.configs.current(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM)
+        was = computer.configs.current(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM)
     except Failure:
         was = ""
     if was and was != JOYSTICK_SWAP_UNSWAPPED:
-        detail(f"{JOYSTICK_SWAP_ITEM} is {was!r}; setting it to "
-               f"{JOYSTICK_SWAP_UNSWAPPED!r} for these checks")
-        session.api.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM,
-                                JOYSTICK_SWAP_UNSWAPPED)
+        detail(f"{JOYSTICK_SWAP_ITEM} on {session.target.computer} is {was!r}; "
+               f"setting it to {JOYSTICK_SWAP_UNSWAPPED!r} for these checks")
+        computer.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM,
+                             JOYSTICK_SWAP_UNSWAPPED)
     try:
         yield
     finally:
         if was and was != JOYSTICK_SWAP_UNSWAPPED:
             try:
-                session.api.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM, was)
+                computer.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM, was)
             except Failure as exc:
                 warn(f"could not put {JOYSTICK_SWAP_ITEM} back to {was!r}: {exc}")
 
@@ -2124,7 +2132,9 @@ def run_tests(session: RestInputSession, soak_duration_seconds: Optional[float] 
     wait_for_input_ready(session, timeout=15.0)
     reset_to_basic(session)
     if soak_duration_seconds is not None:
-        return run_soak_tests(session, soak_duration_seconds)
+        # The soak asserts the same CIA ports the joystick checks do.
+        with unswapped_joystick_ports(session):
+            return run_soak_tests(session, soak_duration_seconds)
     if wants_test(selected, "contract"):
         run_contract_tests(session)
     if wants_test(selected, "joystick"):

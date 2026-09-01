@@ -66,11 +66,6 @@ MENU_BUTTON_PATH = "/v1/machine:menu_button"
 # at; see tests/lib/machine.py.
 INFO_PATH = "/v1/info"
 
-# The browser is the launcher's first entry, so pressing Back to the top of
-# the list and then Return reaches it without reading the cursor. Which entry
-# that is, and whether there is a launcher at all, is a property of the
-# machine; see tests/lib/machine.py.
-LAUNCHER_ENTRY_LIMIT = 24
 # Enough to climb out of the deepest settings screen the launcher leads to and
 # then descend one level; a screen that is neither the browser nor the
 # launcher after this many steps is reported rather than looped on.
@@ -112,6 +107,10 @@ MENU_GLYPHS = {
 # Which colour Screen_VT100::set_color emits for the cursor row is not fixed
 # here: it belongs to the machine, and TelnetBackend._marked_row measures it.
 FRAME_CHARS = " |+-"
+# The rows a launcher's own entries can occupy: everything between its title
+# and its status row. Used to read the cursor there, where the browser's own
+# entry rows do not apply.
+LAUNCHER_ENTRY_ROWS = range(2, SCREEN_HEIGHT - 1)
 
 # A browser row's rendered size, as size_str.cc writes it: up to four digits
 # and an optional K or M. Never a menu item, so a label that looks like this
@@ -1216,8 +1215,13 @@ class RestBackend(Backend):
 
         The other two machines open the browser directly and this returns at
         once. Measured on a C64 Ultimate: RUN/STOP on the launcher closes the
-        whole menu, so the way back up is the Back key, and the browser entry
-        is the launcher's first, so no cursor read is needed to reach it.
+        whole menu, so the way back up is the Back key.
+
+        The cursor is moved onto the entry by reading which row it is on and
+        which row the cursor is on, not by pressing Back further than the list
+        is long. The launcher lists hardware actions, so a burst that
+        under-delivers would leave RETURN to fire whichever of them the cursor
+        stopped on.
         """
         entry = self.machine.launcher_browser_entry
         if entry is None:
@@ -1225,12 +1229,20 @@ class RestBackend(Backend):
         for _ in range(LAUNCHER_DESCENT_STEPS):
             if self._in_file_browser():
                 return
-            rows = self._decode(self._body()).lines
-            if any(entry in row for row in rows):
-                self.send_key_repeat("UP", LAUNCHER_ENTRY_LIMIT)
-                self.send_key("ENTER")
-            else:
+            cursor, rows = self.selection_and_rows(LAUNCHER_ENTRY_ROWS)
+            row = next((n for n, text in enumerate(rows) if entry in text), None)
+            if row is None:
                 self.send_key("LEFT")
+                continue
+            if row != cursor:
+                self.send_key_repeat("UP" if row < cursor else "DOWN",
+                                     abs(row - cursor))
+            landed, rows = self.selection_and_rows(LAUNCHER_ENTRY_ROWS)
+            if landed != row:
+                # A repaint between the two reads, or a key that did not
+                # arrive. Neither is a reason to press RETURN on a launcher.
+                continue
+            self.send_key("ENTER")
         raise Failure(
             f"could not reach the file browser: no {entry!r} entry and no "
             f"directory on the status row after {LAUNCHER_DESCENT_STEPS} steps")
@@ -2338,8 +2350,11 @@ class Browser:
         """
         if not self._seekable(prefix):
             return False
-        sent = self.backend.navigation.menu_text(prefix)
         try:
+            # Inside the try with the keys: reading the setting is a REST call
+            # of its own, and a transient there must fall through to the walk
+            # like any other seek failure rather than out of select_entry.
+            sent = self.backend.navigation.menu_text(prefix)
             self.backend.send_key_then_text("UP", sent, f"seek {prefix!r}")
         except Failure:
             return False

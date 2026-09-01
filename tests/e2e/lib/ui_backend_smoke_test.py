@@ -852,7 +852,10 @@ def assert_looks_like_root_browser(snapshot: Snapshot) -> None:
     # Ultimate 64 writes "Ultimate 64 Elite", a C64 Ultimate "COMMODORE 64
     # ULTIMATE". What is being checked is that the banner is there at all.
     snapshot.find_line_containing("ultimate", ignore_case=True)
-    snapshot.find_line_containing("/")
+    # The path row, not any line holding a "/": a C64 Ultimate's launcher
+    # status row reads "WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP", which holds
+    # two of them, so a substring test accepts the launcher as the browser.
+    path_row(snapshot)
 
 
 def path_row(snapshot: Snapshot) -> str:
@@ -871,8 +874,13 @@ def seek_to(backend: Backend, entry_rows: Sequence[int], character: str,
     Returns the snapshot the cursor was found in and its row. A single capture
     taken straight after the key would read the screen the key has not reached
     yet on a target where it travels through another machine's keyboard matrix.
+
+    The character goes out the way the browser's own quick-seek sends it, so
+    this exercises the respelling a machine set to WASD Cursors needs rather
+    than working only for the letters that transform leaves alone. See
+    tests/lib/navigation.py.
     """
-    snapshot = backend.send_char(character)
+    snapshot = backend.send_char(backend.navigation.menu_char(character))
     deadline = time.monotonic() + SEEK_TIMEOUT_SECONDS
     while True:
         row = backend.selected_row(entry_rows)

@@ -41,6 +41,18 @@ READ_ATTEMPTS = 3
 READ_PAUSE_SECONDS = 0.5
 
 
+class Unreadable(Failure):
+    """A store this machine would not describe. Ends the pass it happened in.
+
+    A device that accepts a connection and then never answers is a shape this
+    bench sees, and every read against it costs the client's whole timeout,
+    three times over inside rest.py and three times again here. Walking the
+    remaining stores would turn one stalled device into an hour of waiting
+    before the first suite, so the first store that will not answer ends the
+    capture and the restore alike.
+    """
+
+
 @dataclass(frozen=True)
 class Change:
     """One item whose value is not what it was when the snapshot was taken."""
@@ -52,6 +64,11 @@ class Change:
     now: object
 
     def __str__(self) -> str:
+        # A password item's value really is served in clear
+        # (software/api/route_configs.cc emits CFG_TYPE_STRPASS as a string),
+        # and this line reaches the run log and the generated report.
+        if self.item.lower().endswith("password"):
+            return f"{self.machine}: {self.store} / {self.item} (not shown)"
         return (f"{self.machine}: {self.store} / {self.item} "
                 f"{self.now!r} -> {self.was!r}")
 
@@ -61,10 +78,9 @@ class Snapshot:
     """What one machine's settings were at a moment in time."""
 
     machine: str
-    # store -> item -> value, holding only the stores that could be read.
+    # store -> item -> value, for every store this machine serves and this
+    # module does not skip.
     settings: Dict[str, Dict[str, object]]
-    # Stores the device listed but would not describe, and why.
-    unread: Tuple[Tuple[str, str], ...] = ()
 
     @property
     def item_count(self) -> int:
@@ -73,15 +89,16 @@ class Snapshot:
     def changes(self, api) -> List[Change]:
         """Every captured item whose value differs now, read store by store.
 
-        A store that cannot be read now is not reported as changed: nothing is
-        known about it, and a caller writing values back on that basis would
-        be guessing.
+        Raises `Unreadable` at the first store the device will not describe.
+        Nothing is known about that store, so a caller writing values back on
+        that basis would be guessing, and a device that has stopped answering
+        will not describe the rest either.
         """
         found: List[Change] = []
         for store, items in self.settings.items():
             current = _read_store(api, store)
             if current is None:
-                continue
+                raise Unreadable(f"{self.machine}: {store} could not be read")
             for item, was in items.items():
                 now = current.get(item)
                 if item in current and now != was:
@@ -128,48 +145,38 @@ def capture(machine: str, api, skip: Sequence[str] = VOLATILE_STORES) -> Snapsho
     """Read every setting `machine` serves, skipping the volatile stores.
 
     `machine` names the device for a message; `api` is the `UltimateApi`
-    pointed at it. A store the device lists but will not describe is recorded
-    in `unread` rather than raising, because a settings read that fails is not
-    a reason to abandon a hardware run.
+    pointed at it. The first store the device will not describe raises
+    `Unreadable`; see that class for why the rest are not tried.
     """
     try:
         stores = api.configs.category_names()
     except Failure as exc:
         raise Failure(f"{machine}: the settings could not be listed: {exc}") from exc
     settings: Dict[str, Dict[str, object]] = {}
-    unread: List[Tuple[str, str]] = []
     for store in stores:
         if store in skip:
             continue
-        try:
-            items = _read_store(api, store, raising=True)
-        except Failure as exc:
-            unread.append((store, str(exc)))
-            continue
+        items = _read_store(api, store)
         if items is None:
-            unread.append((store, "answered no items"))
-            continue
+            raise Unreadable(f"{machine}: {store} could not be read after "
+                             f"{READ_ATTEMPTS} attempts")
         settings[store] = items
-    return Snapshot(machine=machine, settings=settings, unread=tuple(unread))
+    return Snapshot(machine=machine, settings=settings)
 
 
-def _read_store(api, store: str, raising: bool = False) -> Optional[Dict[str, object]]:
+def _read_store(api, store: str) -> Optional[Dict[str, object]]:
     """One store's items and values, or None when it would not answer.
 
     Retried, because the device answers a config read empty while it is busy
     and an empty answer here would read as "this store has no settings".
     """
-    last: Optional[Failure] = None
     for attempt in range(READ_ATTEMPTS):
         try:
             items = api.configs.category(store)
-        except Failure as exc:
-            last = exc
+        except Failure:
             items = None
         if items:
             return dict(items)
         if attempt + 1 < READ_ATTEMPTS:
             time.sleep(READ_PAUSE_SECONDS)
-    if raising and last is not None:
-        raise last
     return None

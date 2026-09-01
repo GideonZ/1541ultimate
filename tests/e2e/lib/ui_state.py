@@ -57,8 +57,9 @@ REPAIR_ROUNDS = 4
 # Enough Back presses to climb out of the deepest settings screen a launcher
 # leads to, and one descent into the browser; see Device.enter_file_browser.
 LAUNCHER_DESCENT_STEPS = 10
-# Deeper than the launcher's own list, so Back reaches its first entry.
-LAUNCHER_ENTRY_LIMIT = 24
+# The rows a launcher's own entries can occupy: everything between its title
+# and its status row.
+LAUNCHER_ENTRY_ROWS = range(2, SCREEN_ROWS - 1)
 
 
 class Unrecoverable(RuntimeError):
@@ -121,9 +122,14 @@ class Device:
     def enter_file_browser(self) -> None:
         """Descend from a launcher into the file browser, where there is one.
 
-        A no-op on a machine whose menu button opens the browser itself. The
-        browser is the launcher's first entry, so Back to the top of the list
-        and then Return reaches it without reading the cursor.
+        A no-op on a machine whose menu button opens the browser itself.
+
+        The cursor is moved onto the entry by reading which row it is on and
+        which row the cursor is on, and the landing is confirmed before RETURN
+        is sent. This gate runs around every suite on the machine that has a
+        launcher, and a launcher lists hardware actions, so a burst of Back
+        presses that under-delivered would leave RETURN to fire whichever of
+        them the cursor stopped on.
         """
         entry = self.machine.launcher_browser_entry
         if entry is None:
@@ -132,12 +138,34 @@ class Device:
             rows = self.screen()
             if rows is None or not describe_path(rows):
                 return
-            if not any(entry in row for row in rows):
+            row = next((n for n, text in enumerate(rows) if entry in text), None)
+            if row is None:
                 self.tap(["left_shift", "cursor_left_right"])
                 continue
-            for _ in range(LAUNCHER_ENTRY_LIMIT):
-                self.tap(["left_shift", "cursor_up_down"])
+            cursor = self.selected_row()
+            if cursor is None:
+                # Nothing on screen says where the cursor is, so nothing here
+                # may press RETURN. Back out and let the loop look again.
+                self.tap(["left_shift", "cursor_left_right"])
+                continue
+            for _ in range(abs(row - cursor)):
+                self.tap(["cursor_up_down"] if row > cursor
+                         else ["left_shift", "cursor_up_down"])
+            if self.selected_row() != row:
+                continue
             self.tap(["return"])
+
+    def selected_row(self) -> Optional[int]:
+        """Which row the open menu marks as the cursor, or None when unreadable."""
+        body = self._request("GET", "/v1/machine:menu_screen")
+        if body is None or len(body) != SCREEN_BYTES:
+            return None
+        try:
+            return ui_backend.find_selected_row_rest(
+                body[:ui_backend.SCREEN_CELLS], body[ui_backend.SCREEN_CELLS:],
+                LAUNCHER_ENTRY_ROWS)
+        except Failure:
+            return None
 
     def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
         headers = {}

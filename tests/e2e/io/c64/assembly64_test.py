@@ -309,6 +309,22 @@ def open_search_entry_in_task_menu(device: Device) -> None:
     device.send_key("ENTER")
 
 
+def launcher_entry_row(device: Device) -> Optional[Tuple[int, int]]:
+    """(row of the search entry, row of the cursor), or None when either is gone.
+
+    Both come from one screen, because a repaint between two reads would make
+    the distance between them describe a screen that no longer exists. That is
+    the same rule Backend.selection_and_rows exists for.
+    """
+    try:
+        cursor, rows = device.backend.selection_and_rows(device.entry_rows)
+    except Failure:
+        return None
+    row = next((n for n, text in enumerate(rows)
+                if device.search_entry in text), None)
+    return None if row is None else (row, cursor)
+
+
 def open_search_entry_in_launcher(device: Device) -> None:
     """Leave the browser for the launcher and open the search entry there.
 
@@ -320,23 +336,21 @@ def open_search_entry_in_launcher(device: Device) -> None:
     machine can do, so an entry's row is not a constant.
     """
     device.send_key("RUNSTOP")
-    if not wait_until(lambda: row_of(device, device.search_entry) is not None,
+    if not wait_until(lambda: launcher_entry_row(device) is not None,
                       TASK_MENU_TIMEOUT):
         raise Failure(f"the launcher did not offer {device.search_entry!r}; "
                       f"screen was:\n{describe_screen(device)}")
-    row = row_of(device, device.search_entry)
-    cursor = device.cursor_row()
-    if cursor is None:
-        raise Failure(f"the launcher's cursor could not be read; screen was:"
-                      f"\n{describe_screen(device)}")
-    if row > cursor:
-        device.send_key_repeat("DOWN", row - cursor)
-    elif row < cursor:
-        device.send_key_repeat("UP", cursor - row)
-    landed = device.cursor_row()
-    if landed != row:
-        raise Failure(f"the launcher cursor is on row {landed}, not on "
-                      f"{device.search_entry!r} at row {row}")
+    found = launcher_entry_row(device)
+    if found is None:
+        raise Failure(f"{device.search_entry!r} left the launcher between two "
+                      f"reads; screen was:\n{describe_screen(device)}")
+    row, cursor = found
+    if row != cursor:
+        device.send_key_repeat("DOWN" if row > cursor else "UP", abs(row - cursor))
+    landed = launcher_entry_row(device)
+    if landed is None or landed[1] != row:
+        raise Failure(f"the launcher cursor is not on {device.search_entry!r} "
+                      f"at row {row}; screen was:\n{describe_screen(device)}")
     device.send_key("ENTER")
 
 
@@ -440,7 +454,13 @@ def at_root_browser(device: Device) -> bool:
     rows = device.rows()
     if rows is None:
         return False
-    text = "\n".join(rows)
+    # The outer frame comes off first. A C64 Ultimate draws its own file
+    # browser inside a framed window, so "any border character on screen"
+    # is true of its root listing and this could never be satisfied there:
+    # every scenario then walked until the menu closed instead of stopping at
+    # the browser. What identifies an overlay is a box drawn inside the
+    # listing, which survives the strip.
+    text = "\n".join(strip_frame(row) for row in rows)
     if "+" in text or "|" in text:
         return False
     return "Temp" in text

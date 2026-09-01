@@ -892,13 +892,27 @@ def run_bench_topology_checks(runner):
         with declared_computers(None):
             expect("nothing declared", targets.parse("u2").computer, "u2")
 
-    with check("a malformed declaration is ignored rather than fatal"):
-        for value in ("", "u2", "u2@", "@c64u", "u2@u2", "u2@not a host"):
+    with check("a declaration that says nothing about this device is ignored"):
+        for value in ("", "u2", "@c64u", "u2@u2", "u2b@c64u"):
             with declared_computers(value):
                 expect(f"{value!r}", targets.parse("u2").computer, "u2")
         with declared_computers("rubbish,u2@c64u"):
             expect("one good entry among rubbish",
                    targets.parse("u2").computer, "c64u")
+
+    with check("a declaration that names this device and no computer is fatal"):
+        # The alternative is the shape the variable exists to prevent: the
+        # cartridge silently treated as its own computer.
+        for value in ("u2@", "u2@not a host", "u2@-bad-"):
+            with declared_computers(value):
+                try:
+                    targets.parse("u2")
+                except targets.TargetError as exc:
+                    if targets.COMPUTERS_ENV not in str(exc):
+                        raise Failure(f"{value!r}: the message does not name "
+                                      f"{targets.COMPUTERS_ENV}: {exc}")
+                    continue
+                raise Failure(f"{value!r} was accepted")
 
     with check("two spellings of the same machines are one target"):
         with declared_computers("u2@c64u"):
@@ -1231,18 +1245,31 @@ class StubMenuDevice:
     """
 
     class _Machine:
-        back_presses_to_close_menu = 1
-        launcher_browser_entry = None
+        def __init__(self, launcher_entry):
+            self.launcher_browser_entry = launcher_entry
+            # A launcher sits between the browser and the closed menu, so
+            # leaving the browser takes one press more there.
+            self.back_presses_to_close_menu = 2 if launcher_entry else 1
 
-    def __init__(self, releases_on_reset: bool) -> None:
+    def __init__(self, releases_on_reset: bool,
+                 launcher_entry: "str | None" = None, ui_state=None) -> None:
         self.releases_on_reset = releases_on_reset
+        # The module under test, so the descent this stub records is the real
+        # one rather than a second copy of it written here.
+        self._ui_state = ui_state
+        self.launcher_entry = launcher_entry
+        # Where the launcher's cursor is, for the machine that has one. The
+        # browser entry is the first, so this starts away from it.
+        self.cursor = 5
+        self.in_browser = launcher_entry is None
+        self.returns = []
         # wedged: the menu button is ignored. deaf: injected keys are ignored,
         # so an open menu cannot be closed by RUN/STOP. A reset clears both.
         self.wedged = True
         self.deaf = False
         self.open = False
         self.resets = 0
-        self.machine = self._Machine()
+        self.machine = self._Machine(launcher_entry)
 
     def menu_is_open(self):
         return self.open
@@ -1258,15 +1285,45 @@ class StubMenuDevice:
     def wait_menu(self, want_open):
         return self.open == want_open
 
+    # The launcher's own rows, matching ui_state.LAUNCHER_ENTRY_ROWS.
+    _LAUNCHER_FIRST_ROW = 2
+
     def tap(self, inputs):
-        if self.open and not self.deaf and inputs == ["run_stop"]:
+        if self.deaf or not self.open:
+            return
+        if inputs == ["run_stop"]:
             self.open = False
+        elif inputs == ["cursor_up_down"]:
+            self.cursor += 1
+        elif inputs == ["left_shift", "cursor_up_down"]:
+            self.cursor = max(self._LAUNCHER_FIRST_ROW, self.cursor - 1)
+        elif inputs == ["return"] and not self.in_browser:
+            # RETURN on a launcher activates whatever the cursor is on, so what
+            # this records is exactly what a blind descent would get wrong.
+            self.returns.append(self.cursor)
+            if self.cursor == self._LAUNCHER_FIRST_ROW:
+                self.in_browser = True
 
     def screen(self):
         if not self.open:
             return None
-        # The root browser: blank listing rows, and the path on the status row.
-        return [" " * 40] * 24 + ["/".ljust(40)]
+        if self.in_browser:
+            # The root browser: blank listing rows, the path on the status row.
+            return [" " * 40] * 24 + ["/".ljust(40)]
+        # The launcher: its first entry is the browser, and its status row
+        # carries no path, which is how enter_file_browser tells them apart.
+        rows = [" " * 40] * 25
+        rows[self._LAUNCHER_FIRST_ROW] = self.launcher_entry.ljust(40)
+        rows[24] = "WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP".ljust(40)
+        return rows
+
+    def selected_row(self):
+        return None if not self.open else self.cursor
+
+    def enter_file_browser(self):
+        if self._ui_state is None:
+            return None
+        return self._ui_state.Device.enter_file_browser(self)
 
     def showing_ok_dialog(self):
         return False
@@ -1274,8 +1331,6 @@ class StubMenuDevice:
     def wait_screen_change(self, before):
         return before
 
-    def enter_file_browser(self):
-        return None
 
     def reset_machine(self):
         self.resets += 1
@@ -1322,6 +1377,21 @@ def run_ui_state_repair_checks():
         ui_state.repair(device)
         expect("resets", device.resets, 1)
         expect("menu left closed", device.open, False)
+
+    with check("a launcher is descended by reading the cursor, not by pressing blind"):
+        # The machine this repair path was written for keeps its browser inside
+        # a launcher of hardware actions, so RETURN may only ever be sent with
+        # the cursor read back. The stub records every row RETURN was pressed
+        # on; a blind burst that under-delivered would show up here as a
+        # RETURN on something else.
+        device = StubMenuDevice(releases_on_reset=True,
+                                launcher_entry="DISK FILE BROWSER",
+                                ui_state=ui_state)
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+        expect("RETURN only ever on the browser entry",
+               set(device.returns), {StubMenuDevice._LAUNCHER_FIRST_ROW})
 
     with check("a UI that the reset does not free is reported, not looped on"):
         device = StubMenuDevice(releases_on_reset=False)

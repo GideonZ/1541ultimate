@@ -255,16 +255,29 @@ def parse(token: str) -> Target:
 def _declared_computer(device: str) -> str:
     """The computer `U64_COMPUTERS` says `device` is plugged into, or "".
 
-    A malformed entry is ignored rather than fatal, and an entry naming the
-    device as its own computer is ignored too, because both would only stop a
-    run that the operator meant to point somewhere real.
+    An entry that does not name this device is skipped, and so is one naming
+    it as its own computer, because neither says anything about where this
+    device is.
+
+    An entry that does name this device and then does not name a host is
+    fatal. The operator plainly meant this device to be split, and the
+    alternative is the shape this variable exists to prevent: the device
+    treated as its own computer, answering machine:input with HTTP 501 for
+    every suite that presses a key, while the scheduler lets it run beside the
+    computer's own target.
     """
     for entry in (os.environ.get(COMPUTERS_ENV) or "").split(","):
         cartridge, separator, computer = entry.strip().partition(SEPARATOR)
-        if not separator or cartridge != device or cartridge == computer:
+        if not separator or cartridge.lower() != device.lower():
             continue
-        if _HOST_RE.match(computer):
-            return computer
+        if cartridge.lower() == computer.lower():
+            continue
+        if not _HOST_RE.match(computer):
+            raise TargetError(
+                f"{COMPUTERS_ENV} entry {entry.strip()!r} names {device!r} but "
+                f"not the computer it is plugged into: {computer!r} is not a "
+                f"valid host name")
+        return computer
     return ""
 
 

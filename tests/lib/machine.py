@@ -265,6 +265,20 @@ MENU_BUTTON_CLOSES_STRING_EDIT = _fix(
     "rather than being ignored until the field is left",
     (C64U,))
 
+# Measured with tests/e2e/api/create_disk_image_test.py against a C64 Ultimate
+# 1.2.0: the first PUT /v1/files/{path}:create_d64 timed out, and the device
+# then answered nothing at all, ICMP included, until it was power cycled. The
+# fix is in software/api/route_files.cc's enforce_diskname, where the name
+# duplicated with strdup used to be released with delete, which trips heap_4's
+# own assertion and stops the firmware. A run that reaches this check on a
+# machine without the fix loses the device and every suite after it, which is
+# why the whole suite is tagged rather than one case.
+FILES_CREATE_IMAGE_SURVIVES = _fix(
+    "files-create-image-survives",
+    "PUT /v1/files/{path}:create_* answers, rather than taking the device off "
+    "the network until it is power cycled",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

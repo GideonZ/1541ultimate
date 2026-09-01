@@ -98,10 +98,23 @@ two separate axes.
 
 **Capability** is what a machine is. A C64 Ultimate opens its menu on a launcher
 above the file browser, reaches the task menu with `F1` rather than `F5`, needs
-two Back presses to close its menu, and reserves `W`, `A`, `S` and `D` for
-browser navigation, so a quick-seek on a name starting with one of those letters
-would move the cursor instead of seeking. Ask `machine` for the property rather
-than branching on the product.
+two Back presses to close its menu, and searches CommoServe from that launcher
+where the other two search Assembly 64 from the task menu. Ask `machine` for the
+property rather than branching on the product.
+
+**Configuration** is what a person has set, and is read from the device rather
+than derived from the product. "Navigation Style" is the one that changes how
+the menu reads a typed letter: under `WASD Cursors`, which a C64 Ultimate ships
+with, `w`, `a`, `s` and `d` are cursor keys and `A` to `Z` are folded back to
+lowercase, so the way to type a literal letter is to send it shifted.
+[`tests/lib/navigation.py`](../lib/navigation.py) reads the setting and
+`Browser.type_menu_char` applies it, which covers a quick-seek prefix, a
+context-menu prefix and a popup's button key. Text typed into a field is not
+touched, because the string editor never sees the key mapper.
+
+The runner also reads every setting each machine is running with before the
+first suite and writes the differing ones back when the run ends, so a suite
+that changes one does not decide what the next run starts from.
 
 **Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
 firmware line that lags the Ultimate 64, so a check can be correct and still be
