@@ -794,7 +794,16 @@ def scenario_key_mashing(device: Device) -> None:
         device.type_text(SEARCH_TERM)
         device.send_key("ENTER")
         submit_query(device)
-        for key in ("DOWN", "ENTER", "RUNSTOP", "UP", device.task_menu_key, "ENTER"):
+        # Deliberately not this machine's task-menu key. These presses are
+        # noise a user makes while the form is busy, and the recovery
+        # afterwards expects to be at most one nested object away from the
+        # browser. On a C64 Ultimate the task-menu key is F1, so sending it
+        # here opened the task menu and the ENTER behind it activated the
+        # first category, leaving the UI several levels inside a menu of
+        # hardware actions that Back could not climb out of. F5 is Page Down
+        # there and the task menu on the other two, so it is noise on all of
+        # them.
+        for key in ("DOWN", "ENTER", "RUNSTOP", "UP", "F5", "ENTER"):
             try:
                 device.send_key(key)
             except Failure:
