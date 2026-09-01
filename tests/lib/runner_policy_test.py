@@ -28,6 +28,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import config_snapshot  # noqa: E402
 import health  # noqa: E402
 import interactions  # noqa: E402
 import targets  # noqa: E402
@@ -767,6 +768,105 @@ def run_target_grammar_checks():
         expect("slug", targets.parse("u64").slug, "u64")
 
 
+class ScriptedConfigs:
+    """A stand-in for api.configs backed by a dict, counting what it is asked.
+
+    `refuse` names items whose PUT raises, and `ignore` names items whose PUT
+    is accepted and then silently does nothing, which is what a device that
+    answers HTTP 200 and keeps the old value looks like.
+    """
+
+    def __init__(self, settings, refuse=(), ignore=()):
+        self.settings = {store: dict(items) for store, items in settings.items()}
+        self.refuse = set(refuse)
+        self.ignore = set(ignore)
+        self.writes = []
+
+    def category_names(self):
+        return list(self.settings)
+
+    def category(self, store):
+        if store not in self.settings:
+            raise Failure(f"no such store {store!r}")
+        return dict(self.settings[store])
+
+    def set(self, store, item, value):
+        self.writes.append((store, item, value))
+        if (store, item) in self.refuse:
+            raise Failure(f"{store}/{item} refused {value!r}")
+        if (store, item) not in self.ignore:
+            self.settings[store][item] = value
+
+
+class ScriptedApi:
+    def __init__(self, configs):
+        self.configs = configs
+
+
+SETTINGS = {
+    "User Interface Settings": {"Navigation Style": "WASD Cursors"},
+    "Audio Mixer": {"Vol Master": " 0 dB", "Vol Socket 1": " 0 dB"},
+    "Clock Settings": {"Seconds": 55},
+}
+
+
+def run_settings_restore_checks():
+    """The run puts back what it changed, and says what it could not."""
+    with check("the capture reads every store except the clock"):
+        configs = ScriptedConfigs(SETTINGS)
+        snapshot = config_snapshot.capture("u64", ScriptedApi(configs))
+        expect("stores", sorted(snapshot.settings),
+               ["Audio Mixer", "User Interface Settings"])
+        expect("items", snapshot.item_count, 3)
+        expect("the clock is not captured",
+               "Clock Settings" in snapshot.settings, False)
+
+    with check("a run that changed nothing writes nothing"):
+        configs = ScriptedConfigs(SETTINGS)
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        restored, refused = snapshot.restore(api)
+        expect("restored", restored, [])
+        expect("refused", refused, [])
+        expect("writes", configs.writes, [])
+
+    with check("only the items a suite changed are written back"):
+        configs = ScriptedConfigs(SETTINGS)
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        configs.settings["User Interface Settings"]["Navigation Style"] = "Quick Search"
+        configs.settings["Audio Mixer"]["Vol Master"] = "OFF"
+        configs.settings["Clock Settings"]["Seconds"] = 3
+        restored, refused = snapshot.restore(api)
+        expect("refused", refused, [])
+        expect("writes", sorted(configs.writes),
+               [("Audio Mixer", "Vol Master", " 0 dB"),
+                ("User Interface Settings", "Navigation Style", "WASD Cursors")])
+        expect("the clock was not written back",
+               configs.settings["Clock Settings"]["Seconds"], 3)
+        expect("described",
+               sorted(str(change) for change in restored),
+               ["u64: Audio Mixer / Vol Master 'OFF' -> ' 0 dB'",
+                "u64: User Interface Settings / Navigation Style "
+                "'Quick Search' -> 'WASD Cursors'"])
+
+    with check("a value the device will not take back is reported, not hidden"):
+        configs = ScriptedConfigs(SETTINGS,
+                                  refuse=[("Audio Mixer", "Vol Master")],
+                                  ignore=[("Audio Mixer", "Vol Socket 1")])
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        configs.settings["Audio Mixer"]["Vol Master"] = "OFF"
+        configs.settings["Audio Mixer"]["Vol Socket 1"] = "OFF"
+        restored, refused = snapshot.restore(api)
+        expect("restored", restored, [])
+        expect("refused", len(refused), 2)
+        # The one that answered success and kept the old value is the case a
+        # write-and-hope restore would call a success.
+        kept = [reason for change, reason in refused if change.item == "Vol Socket 1"]
+        expect("the silent one is named", kept, ["kept 'OFF'"])
+
+
 def run_resource_conflict_checks(runner):
     """Which targets may run at the same time, from the grammar alone."""
     cases = (
@@ -1080,6 +1180,7 @@ def main():
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
             run_target_grammar_checks()
+            run_settings_restore_checks()
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()

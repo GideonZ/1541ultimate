@@ -43,6 +43,7 @@ import pacing  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 import api as api_lib  # noqa: E402
+import config_snapshot  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -1393,6 +1394,60 @@ class Device:
             return False
 
 
+def capture_settings(target: targets_lib.Target, password: str,
+                     timeout: float) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
+    """Read every setting each machine this target occupies is running with.
+
+    One entry per machine, so a cartridge target captures the cartridge and
+    the computer it is plugged into: both are configured, and a suite can
+    change either. A machine that will not answer is reported and left out,
+    because a settings read that fails is not a reason not to run the suites.
+    """
+    captured: List[Tuple[UltimateApi, config_snapshot.Snapshot]] = []
+    for host in target.resources:
+        report.step_start(f"settings: capture {host}")
+        api = UltimateApi(host, password, timeout)
+        try:
+            snapshot = config_snapshot.capture(host, api)
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+            report.detail(f"{host} keeps whatever settings this run leaves it")
+            continue
+        captured.append((api, snapshot))
+        report.check_ok(f"{snapshot.item_count} settings in "
+                        f"{len(snapshot.settings)} stores")
+        for store, reason in snapshot.unread:
+            report.detail(f"{store} was not captured: {reason}")
+    return captured
+
+
+def restore_settings(
+        captured: Sequence[Tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
+    """Put back every setting the run changed, on each machine it captured.
+
+    Warnings only. The run has produced its verdict by the time this runs, and
+    a device that will not take a value back is a thing for the operator to
+    see rather than a reason to change what the suites decided.
+    """
+    for api, snapshot in captured:
+        report.step_start(f"settings: restore {snapshot.machine}")
+        try:
+            restored, refused = snapshot.restore(api)
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+            continue
+        if refused:
+            report.check_warn(f"{len(refused)} of "
+                              f"{len(restored) + len(refused)} not put back")
+        else:
+            report.check_ok("unchanged" if not restored
+                            else f"{len(restored)} put back")
+        for change in restored:
+            report.detail(str(change))
+        for change, reason in refused:
+            report.warn(f"settings: {change}: {reason}")
+
+
 def health_entry(check: "health.Check") -> Dict[str, object]:
     """One health check as a record, with its figures when it has any.
 
@@ -2225,6 +2280,15 @@ def build_parser() -> argparse.ArgumentParser:
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SECONDS",
                          help="Kill the recovery command after this long "
                               f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
+    health.add_argument("--no-restore-settings", dest="restore_settings",
+                         action="store_false", default=True,
+                         help="Leave the device's settings however the run "
+                              "left them. By default every setting each "
+                              "machine serves is read before the first suite "
+                              "and the ones that differ are written back "
+                              "afterwards, so the next run starts from the "
+                              "same configuration this one did. The read is "
+                              "15 to 23 requests per machine.")
     health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
                          help="Reduce health to reachable and drivable. Use "
@@ -2573,6 +2637,7 @@ CHILD_FORWARDED_VALUES = (
 )
 CHILD_FORWARDED_NEGATIVE = (
     ("health_check", "--no-health-check"),
+    ("restore_settings", "--no-restore-settings"),
     ("screens", "--no-screens"),
     ("record_video", "--no-record-video"),
     ("record_audio", "--no-record-audio"),
@@ -3000,27 +3065,33 @@ def main(argv: List[str]) -> int:
         if args.syslog else ""
     recording = start_recorder(args, target, device)
 
-    # Before any suite, because a cartridge whose computer has not handed its
-    # bus over fails later in ways that name neither the setting nor the
-    # computer. A no-op on a target that is its own computer.
-    if target.split:
-        report.step_start("cartridge: the computer prefers its external cartridge")
-        try:
-            changed = api_lib.ensure_cartridge_preference(
-                target, options.password, float(options.timeout))
-        except api_lib.CartridgePreferenceUnavailable as exc:
-            # Not a reason to end the run: a computer that cannot be asked is
-            # either not one that has the setting, such as the loopback
-            # stand-in the observability fixture runs against, or one whose
-            # own suites will report it.
-            report.check_warn(str(exc))
-        except DEVICE_ERRORS as exc:
-            report.check_fail(str(exc))
-            return EXIT_SUITE_FAILED
-        else:
-            report.check_ok(changed or "already set")
+    # Before anything this run changes, including the cartridge preference
+    # below, so what is put back afterwards is the configuration the run found
+    # rather than the one it set up for itself.
+    settings = (capture_settings(target, options.password, float(options.timeout))
+                if args.restore_settings else [])
 
     try:
+        # Before any suite, because a cartridge whose computer has not handed
+        # its bus over fails later in ways that name neither the setting nor
+        # the computer. A no-op on a target that is its own computer.
+        if target.split:
+            report.step_start("cartridge: the computer prefers its external cartridge")
+            try:
+                changed = api_lib.ensure_cartridge_preference(
+                    target, options.password, float(options.timeout))
+            except api_lib.CartridgePreferenceUnavailable as exc:
+                # Not a reason to end the run: a computer that cannot be asked
+                # is either not one that has the setting, such as the loopback
+                # stand-in the observability fixture runs against, or one whose
+                # own suites will report it.
+                report.check_warn(str(exc))
+            except DEVICE_ERRORS as exc:
+                report.check_fail(str(exc))
+                return EXIT_SUITE_FAILED
+            else:
+                report.check_ok(changed or "already set")
+
         results: List[Result] = []
         started = time.monotonic()
         stopped = False
@@ -3084,7 +3155,11 @@ def main(argv: List[str]) -> int:
         # In a finally, because whatever ends the run early is exactly when
         # this matters: an unstopped recorder leaves the device streaming to a
         # socket nobody is reading and leaves its ffmpeg children unreaped,
-        # and an unstopped collector holds its UDP port.
+        # an unstopped collector holds its UDP port, and settings a failing
+        # suite left behind decide what the next run starts from.
+        if settings:
+            print()
+            restore_settings(settings)
         stop_recorder(recording, options.output_dir, target.token)
         if collector is not None:
             finish_syslog(collector)

@@ -572,6 +572,18 @@ class ConfigsApi:
     def categories(self) -> Dict[str, object]:
         return _errors(self._rest.json("/v1/configs"), "configs")
 
+    def category_names(self) -> List[str]:
+        """Just the category names.
+
+        `categories()` hands back the whole answer, whose keys are "categories"
+        and "errors" rather than the names themselves, so iterating it gives
+        neither and the mistake only shows when a request is built from it.
+        """
+        listed = self.categories().get("categories")
+        if not isinstance(listed, list):
+            raise Failure("configs: no category list in the answer")
+        return [str(name) for name in listed]
+
     def category(self, category: str) -> Dict[str, object]:
         payload = _errors(self._rest.json(f"/v1/configs/{_quote(category)}"),
                           f"configs/{category}")
@@ -623,12 +635,7 @@ class ConfigsApi:
         Returns None when no store serves one, which is a reason for a suite
         to skip rather than to fail.
         """
-        names = self.categories().get("categories")
-        if not isinstance(names, list):
-            raise Failure(f"configs: no category list in the answer: {names!r}")
-        for category in names:
-            if not isinstance(category, str):
-                continue
+        for category in self.category_names():
             for item, value in self.category(category).items():
                 # The category listing carries every item's current value, so
                 # the candidates can be spotted without a request each. An item
