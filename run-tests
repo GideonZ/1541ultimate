@@ -297,10 +297,9 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "machine-code-monitor-debug",
           "tests/e2e/monitor/monitor_debug_test.py",
           "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode telnet",
-          # The RAM-under-KERNAL natural-exit lane is a firmware regression:
-          # after G it restores KERNAL banking instead of resuming the loop.
-          # Keep its focused evidence available, but do not let one known
-          # debugger defect make the general E2E gate red.
+          # Manual because of what it costs, not because of what it finds: 95
+          # checks and about 40 minutes on an Ultimate 64, most of it spent
+          # running programs on the 6510 and waiting for them to stop.
           manual=True),
     # The debugger gate. It runs the places the firmware genuinely takes a
     # different code path per UI transport, so one lane's result says nothing
@@ -309,11 +308,10 @@ SUITES: Sequence[Suite] = (
     # which lanes those are and the evidence for each; `--list-plan` prints the
     # same thing without touching a device.
     #
-    # Manual for the same reason machine-code-monitor-debug is: it includes
-    # that suite's natural-exit lane, so one known debugger defect would make
-    # the general E2E gate red. It is the suite to name before a merge, and it
-    # takes the two hosts as separate flags for the reason described on the
-    # matrix entry below.
+    # Manual for the same reason machine-code-monitor-debug is: about an hour
+    # on an Ultimate 64. It is the suite to name before a merge, and it takes
+    # the two hosts as separate flags for the reason described on the matrix
+    # entry below.
     Suite("e2e", "machine-code-monitor-regression",
           "tests/e2e/monitor/monitor_debug_regression_test.py",
           "--host @DEVICE@ --rest-host @DEVICE@ --c64-host @COMPUTER@ "

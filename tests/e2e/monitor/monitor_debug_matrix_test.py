@@ -96,15 +96,6 @@ U2_TRACE_OPCODES = 20
 # A contextless breakpoint entry can consume the firmware's full go() and
 # bounded relaunch budget, so the wait must outlast three 5-second windows.
 CONTEXTLESS_ENTRY_WAIT_S = 22.0
-OP_FIELDS = (
-    "step_over",
-    "step_into",
-    "step_out",
-    "continue_to_cursor",
-    "continue_to_breakpoint",
-    "continue",
-    "reset",
-)
 
 # These states distinguish every CPU-visible source in the three banked regions.
 # CPU0 and CPU4 intentionally expose the same all-RAM map: requiring their
@@ -877,7 +868,6 @@ class DebugInterfaceDriver:
     def continue_to_breakpoint(self, address: int): ...
     def continue_run(self): ...
     def reset_from_debug_ui(self): ...
-    def verify_liveness(self): ...
     def verify_hygiene(self): ...
     def breakpoint_slot_lines(self) -> list[str]: ...
 
@@ -1174,11 +1164,6 @@ class BaseDriver(DebugInterfaceDriver):
     def stack_return_at(self, sp: int) -> Optional[int]:
         stack = self.read_bytes(0x0100, 256)
         return stack[(sp + 1) & 0xFF] | (stack[(sp + 2) & 0xFF] << 8)
-
-    def verify_liveness(self):
-        if self.fixture is None:
-            raise HarnessBug("missing fixture for liveness")
-        self.wait_progress_change(self.fixture.progress, "post-continue liveness")
 
     def verify_hygiene(self):
         self.wait_rest_ready("hygiene")
@@ -2259,9 +2244,6 @@ class ViceBinaryMonitor:
 
     def advance_one(self, step_over: bool = False) -> None:
         self.command(0x71, bytes([1 if step_over else 0]) + struct.pack("<H", 1))
-
-    def execute_until_return(self) -> None:
-        self.command(0x73)
 
 
 class DualOracles:
@@ -3843,7 +3825,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                              "doc/research/machine-code-monitor/matrix-runs.")
     parser.add_argument("--no-run-ledger", action="store_true",
                         help="Do not record this run in the cross-run history.")
-    parser.add_argument("--jsonl", default="")
     parser.add_argument("--coverage-ledger", default="")
     parser.add_argument("--timeout", type=float, default=5.0)
     parser.add_argument("--skip-preflight", action="store_true",

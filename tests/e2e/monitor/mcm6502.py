@@ -274,13 +274,6 @@ class CPU6502:
         #                  add_cycle_on_page_cross)
         t: Dict[int, Tuple] = {}
 
-        def reg_load(setter):
-            def fn(addr, pc_op):
-                val = self._read(addr)
-                setter(val)
-                self._set_zn(val)
-            return fn
-
         # We define handlers inline per opcode group below. To keep this honest
         # and exhaustive, each opcode is registered explicitly.
 

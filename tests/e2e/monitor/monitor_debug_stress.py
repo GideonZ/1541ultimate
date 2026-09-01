@@ -273,15 +273,6 @@ class RestSession:
         return False
 
     # --- monitor lifecycle ---
-    def _jiffy_running(self):
-        """True if the C64 jiffy clock ($A2) advances => C64 is running (overlay);
-        False => C64 frozen (freeze mode). Reliable mode discriminator while the
-        monitor is open but NOT in debug."""
-        j0 = self.rest.read_mem(0x00A2, 1)[0]
-        time.sleep(0.4)
-        j1 = self.rest.read_mem(0x00A2, 1)[0]
-        return j0 != j1
-
     def set_ui_mode(self):
         """Ensure the configured UI mode through the same REST configuration path
         used by the maintained overlay lifecycle gate.
@@ -465,13 +456,6 @@ IMM = [
     ("AND", 0x29), ("ORA", 0x09), ("EOR", 0x49), ("CMP", 0xC9), ("CPX", 0xE0),
     ("CPY", 0xC0),
 ]
-ZP_RW = [  # read or rmw, operand = zp addr
-    ("LDA", 0xA5), ("LDX", 0xA6), ("LDY", 0xA4), ("ADC", 0x65), ("SBC", 0xE5),
-    ("AND", 0x25), ("ORA", 0x05), ("EOR", 0x45), ("CMP", 0xC5), ("BIT", 0x24),
-    ("INC", 0xE6), ("DEC", 0xC6), ("ASL", 0x06), ("LSR", 0x46), ("ROL", 0x26),
-    ("ROR", 0x66),
-]
-ZP_ST = [("STA", 0x85), ("STX", 0x86), ("STY", 0x84)]
 ABS_RW = [
     ("LDA", 0xAD), ("ADC", 0x6D), ("SBC", 0xED), ("AND", 0x2D), ("ORA", 0x0D),
     ("EOR", 0x4D), ("CMP", 0xCD), ("INC", 0xEE), ("DEC", 0xCE), ("ASL", 0x0E),
@@ -837,8 +821,6 @@ def main():
     ap.add_argument("--ui", default="freeze", choices=["freeze", "overlay"])
     ap.add_argument("--focus", default="all",
                     choices=["all", "steps", "jsr", "liveness"])
-    ap.add_argument("--banking", default="ram", choices=["ram"])  # RAM @ C000 (bank 7)
-    ap.add_argument("--instr-corpus", default="full")
     ap.add_argument("--iterations", type=int, default=20)
     ap.add_argument("--prog-len", type=int, default=40)
     ap.add_argument("--max-steps", type=int, default=200)

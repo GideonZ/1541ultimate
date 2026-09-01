@@ -1129,10 +1129,12 @@ def report_first_attempt_losses() -> None:
     if not FIRST_ATTEMPT_LOSSES:
         return
     detail(f"{len(FIRST_ATTEMPT_LOSSES)} write(s) in this run did not land on "
-           f"the first attempt and were not the monitor's write path: "
-           f"{', '.join(FIRST_ATTEMPT_LOSSES)}. Those are the intermittent in "
-           f"C64::dma_transfer_frozen, which the device's own machine:writemem "
-           f"shows at a comparable rate")
+           f"the first attempt: {', '.join(FIRST_ATTEMPT_LOSSES)}. The device's "
+           f"own machine:writemem placed the same bytes at the same addresses, "
+           f"so the loss is under the monitor rather than in it. Which "
+           f"addresses they are is the first thing to read: a repeated address "
+           f"is a range served from the wrong place, a scattered one is a "
+           f"dropped write")
 
 
 def assert_monitor_write_landed(device_host: str, address: int, expected: bytes,

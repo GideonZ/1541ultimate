@@ -209,7 +209,7 @@ SPLIT_CELLS: tuple[Cell, ...] = (
          "function of the repetition index, and repetition 3's program is the "
          "one that reproduced the torn debug-footer read, twice, where "
          "repetitions 1 and 2 passed.",
-         "doc/machine_code_monitor.md:815; U2_CARTRIDGE_NMI.md; "
+         "doc/machine_code_monitor.md:815; "
          "every recorded u2 matrix ledger holds this single row"),
 )
 

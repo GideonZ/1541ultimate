@@ -1026,6 +1026,28 @@ def capture_basic_freeze_evidence(rest_host: str, session: "mt.MonitorSession",
         print(f"      READY token present: {READY_SCREEN_TOKEN in screen}", flush=True)
     except Exception as exc:                                    # noqa: BLE001
         print(f"      runtime probe failed: {exc!r}", flush=True)
+    # Whether the 6510 is executing at all, which the jiffy alone cannot say: a
+    # CPU still parked in the debugger's spin loop and a CPU running with
+    # interrupts masked both leave the jiffy still. The BASIC editor drains NDX
+    # from its main loop, without an interrupt.
+    try:
+        alive = _basic_editor_consumes_keystroke(rest_host)
+        print(f"      BASIC editor drains NDX (CPU executing): {alive}", flush=True)
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"      editor probe failed: {exc!r}", flush=True)
+    # Last, because reading CIA1 $DC0D acknowledges the interrupt it reports:
+    # a standing timer interrupt that nothing has serviced would be cleared by
+    # this read, and a machine that then came back to life would look as if it
+    # had never stopped. $DC0D is the interrupt the jiffy runs on, $DC0E its
+    # timer control, and $D019/$D01A say whether a raster interrupt is latched
+    # and enabled.
+    try:
+        cia = mt.read_rest_memory(rest_host, 0xDC0D, 2)
+        vic = mt.read_rest_memory(rest_host, 0xD019, 2)
+        print(f"      cia1 $DC0D ICR={cia[0]:02X} CRA={cia[1]:02X}  "
+              f"vic $D019 IRR={vic[0]:02X} IMR={vic[1]:02X}", flush=True)
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"      interrupt-state probe failed: {exc!r}", flush=True)
     if reset_recovered is not None:
         print(f"      reset recovered: {reset_recovered} "
               f"({'power-cycle NOT required' if reset_recovered else 'POWER-CYCLE REQUIRED'})",
@@ -1058,6 +1080,11 @@ def prove_monitor_exit_basic_liveness_and_reentry(
     jiffy_ok, stream = _jiffy_keeps_advancing(rest_host) if require_jiffy else (True, [])
     editor_ok = _basic_editor_consumes_keystroke(rest_host) if require_editor else True
     progress_ok = progress_oracle() if progress_oracle else True
+    if os.environ.get("MCM_EXIT_EVIDENCE_ALWAYS") and jiffy_ok and editor_ok and progress_ok:
+        # The same dump on a run that passed. Comparing a failure against a
+        # success from the same soak is what separates the state the exit
+        # leaves behind from the state that was always there.
+        capture_basic_freeze_evidence(rest_host, session, f"{context} PASSED")
     if not (jiffy_ok and editor_ok and progress_ok):
         capture_basic_freeze_evidence(rest_host, session, context)
         recovered = None
@@ -1735,8 +1762,8 @@ SIGNATURE_REST_HOST = ""
 def _classify_execution_failure(session: "mt.MonitorSession", pc_before: str) -> str:
     """Which failure is this, measured rather than assumed.
 
-    The C64U host's missing cartridge-NMI forwarding has a specific signature
-    (tests/e2e/monitor/U2_CARTRIDGE_NMI.md): the 6510 stays alive and the
+    The C64U host's missing cartridge-NMI forwarding has a specific signature:
+    the 6510 stays alive and the
     debugger never arrives at the target. A check that fails some other way is
     an ordinary failure that happens to sit in the same area, and attributing it
     to the host would turn an unfixed defect into a permanent skip.
@@ -1800,8 +1827,8 @@ def _pc_wait_budget(after_go: bool = False) -> float:
     groups were reporting.
 
     A Go on the cartridge is slower again, and for a reason of its own: it runs
-    through the boot cartridge, which resets the C64 before the program starts
-    (tests/e2e/monitor/U2_CARTRIDGE_NMI.md). Measured in a full run, the stop at
+    through the boot cartridge, which resets the C64 before the program starts.
+    Measured in a full run, the stop at
     the breakpoint arrived after the twenty seconds a step is given, so the check
     that pressed Go reported no stop while the next check read the stop it had
     missed, and each check after that read the one before it.
@@ -3916,6 +3943,39 @@ def run_exit_liveness_reentry_tests(rest_host: str, session: "mt.MonitorSession"
         prove_monitor_exit_basic_liveness_and_reentry(
             rest_host, session, "KERNAL ROM step exit",
             require_jiffy=True, require_editor=False)
+
+    with mt.check("Exit-liveness: a debug session leaves $0800-$0FFF alone"):
+        # The freezer keeps its own copy of $0800-$0FFF while its menu is up and
+        # writes that copy back to RAM when the monitor is left, so anything the
+        # debugger puts into the copy reaches the user's memory on the way out.
+        # A BASIC program starts at $0801, which is why this range and not
+        # another. The pattern is written with the machine running, so it is in
+        # real RAM before the freeze takes its copy.
+        _reset_c64_core(rest_host)
+        pattern = bytes((0xA5 ^ (i & 0xFF)) for i in range(0x0800))
+        mt.write_rest_memory(rest_host, 0x0800, pattern)
+        time.sleep(0.5)
+        before = mt.read_rest_memory(rest_host, 0x0800, 0x0800)
+        if before != pattern:
+            raise mt.Failure(
+                "$0800-$0FFF would not hold the pattern before the debug "
+                "session, so this check could not run")
+        _reopen_monitor(session)
+        mt.write_rest_memory(rest_host, 0xC300, bytes([0xEA, 0xEA, 0xEA, 0x60]))
+        session.goto("C300"); session.send_char("A"); session.send_char("D")
+        _step_and_assert_pc(session, "D", 0xC301, "low-RAM hygiene step")
+        _ensure_no_debug(session)
+        session.send_key("CTRL_O")          # natural exit, no reset
+        time.sleep(1.0)
+        after = mt.read_rest_memory(rest_host, 0x0800, 0x0800)
+        changed = [0x0800 + i for i in range(0x0800) if after[i] != pattern[i]]
+        if changed:
+            shown = ", ".join(f"${a:04X} {pattern[a - 0x0800]:02X}->{after[a - 0x0800]:02X}"
+                              for a in changed[:8])
+            raise mt.Failure(
+                f"a debug session changed {len(changed)} byte(s) of $0800-$0FFF: "
+                f"{shown}" + (" ..." if len(changed) > 8 else ""))
+        _reopen_monitor(session)
 
     with mt.check("Exit-liveness: RETURN follow (non-executing) then natural exit stays live"):
         _reset_c64_core(rest_host)
