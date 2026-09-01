@@ -36,12 +36,12 @@ C=+R      Reset    C=+I     Interface
 F1/SH+SPC Page Up  F7/SPACE Page Down
 ```
 
-While the monitor is open, `C=+R` resets / breaks the machine. In Debug mode this reaches through any monitor mode, including Help, Edit, and popups; outside Debug it works from the ordinary monitor and memory views.
+While the monitor is open, `C=+R` resets / breaks the machine. In Debug mode this reaches through any monitor mode, including Help, Edit, and popups; outside Debug it works from the ordinary monitor and memory views. There is no confirmation. On hardware that cannot reach a reset the monitor shows `RESET UNAVAILABLE` and leaves the machine, the view and edit mode unchanged.
 
 To close the monitor:
 
 - Press `C=+O` again.
-- Press `X`, `RUN/STOP`, or `ESC` when no edit mode, Debug mode, or popup is active. In Debug mode, `RUN/STOP` leaves Debug first; in Edit mode it leaves Edit first.
+- Press `RUN/STOP`, `ESC`, or the C64's top-left `←` key when no edit mode, Debug mode, or popup is active. In Debug mode, `RUN/STOP` leaves Debug first; in Edit mode it leaves Edit first.
 
 ## Access Modes
 
@@ -52,6 +52,12 @@ The machine code monitor can be opened in three ways:
 | **UI Freeze Mode**  | Frozen                    | Monitor is visible     | You want full-screen monitor use, automatic freezing, or monitor output in the video stream. |
 | **UI Overlay Mode** | Running, but can be frozen with the `Z` shortcut or by stopping in Debug mode | Monitor is invisible | You want to use the monitor while the C64 keeps running.                                     |
 | **Telnet**     | Ditto                   | Monitor is invisible         | You want to use the monitor from another machine or in an automated way.                                            |
+
+While the machine is frozen, the firmware's own menu is using screen RAM, the 2 KB above it and color RAM for its
+display. The monitor reads and writes those three ranges, `$0400-$07FF`, `$0800-$0FFF` and `$D800-$DBFF`, in the copy
+taken at freeze time, which is put back when the machine unfreezes. So what you see and edit there is the frozen
+program's memory, not the menu that is on the screen in front of you, and an edit lands in the program when it
+resumes.
 
 ### Switching between UI Freeze and UI Overlay Modes
 
@@ -65,7 +71,7 @@ The machine code monitor screen has three fixed regions: header, body, and foote
 
 ```text
 +--------------------------------------+
-|MONITOR ASM $E011 Undc Frz Pl Dbg Edit|
+|MONITOR ASM $E011  Undoc Frz  Dbg EDIT|
 |...                                   |
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
@@ -77,16 +83,16 @@ The header shows the current monitor view, the cursor address, and any active mo
 
 Mode indicators may include any combination of the following:
 
-| Indicator | Meaning                                              |
-| --------- | ---------------------------------------------------- |
-| `Undc`    | Undocumented opcodes are decoded (Assembly view only) |
-| `Range`   | Range selection is active                            |
-| `Frz`     | Freeze is active                                     |
-| `Pl`      | Polling is active                                    |
-| `Dbg`     | Debug mode is active                                 |
-| `Edit`    | Edit mode is active                                  |
+| Indicator | Meaning                                               |
+| --------- | ----------------------------------------------------- |
+| `Undoc`   | Undocumented opcodes are decoded (Assembly view only) |
+| `Range`   | Range selection is active                             |
+| `Frz`     | Freeze is active                                      |
+| `Poll`    | Polling is active                                     |
+| `Dbg`     | Debug mode is active                                  |
+| `EDIT`    | Edit mode is active                                   |
 
-`Undc` and `Range` share one slot in the header, so only one of them is shown at a time.
+Each indicator has a fixed slot, counted back from the right edge of the header. `Undoc` and `Range` share one slot, so only one of them is shown at a time. `Poll` and `Dbg` share a slot too, and entering Debug turns poll off, so only one of those is ever shown.
 
 ### Body
 
@@ -114,7 +120,14 @@ Common footer values include:
 | `$A`, `$D`, `$E` | Show how the monitor view maps the main ROM/RAM regions.                                                                                   |
 | `VIC0` to `VIC3` | Identify the selected VIC bank. The following address shows its base address.                                                              |
 
-On hardware without monitor-side bank selection the footer reads `CPU VIEW  CPU BANK N/A  VIC N/A`.
+The footer takes one of four forms, depending on what the hardware offers:
+
+| Hardware                          | Footer                                                                        |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| CPU bank and VIC bank selection    | `CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000`, or `C7O5 ...` when the two banks differ |
+| VIC bank selection only            | The same line once the live CPU port is known, and `CPU VIEW  VIC0 $0000` until then |
+| CPU bank selection only            | `CPU7  VIC N/A`, or `C7O5  VIC N/A`                                            |
+| Neither                            | `CPU VIEW  CPU BANK N/A  VIC N/A`                                              |
 
 For full details, see [CPU and VIC Bank Display](#cpu-and-vic-bank-display).
 
@@ -167,7 +180,15 @@ Assembly view shows decoded 6510 instructions, their instruction bytes, and the 
 
 The highlighted address is the disassembly root: rows below it are decoded forward from that address, while rows above it are context only. Changing bytes before the highlighted address can refresh the context rows, but it does not change the instruction phase at the highlighted address. To inspect a different phase deliberately, move the root with the cursor keys or jump to the desired address.
 
-The tag at the right end of each row names the memory source the byte was read from: `[RAM]`, `[BAS]`, `[KRN]`, `[CHR]`, or `[I/O]`. On the U2 cartridge, where the monitor reads whatever the CPU currently sees, every row is tagged `[CPU]`.
+The tag at the right end of each row names the memory source the byte was read from: `[RAM]`, `[BAS]`, `[KRN]`, `[CHR]`, or `[I/O]`. The tag is three characters inside the brackets, so the column stays aligned across a bank boundary.
+
+On the U2+ cartridge the monitor reads through the CPU-visible aperture, so it can only name a source once it knows the 6510's port. Until then every row is tagged `[CPU]`.
+
+`$D000-$DFFF` is shown as `DATA` rows of two bytes each while I/O or character ROM is banked in. An I/O read returns a live register, so a decoded instruction length there would change on every redraw, and character ROM holds bitmaps that never were code. With RAM banked in, the same addresses are disassembled normally, so the rule follows the banked source rather than the address range. `DATA` rows are grouped from the start of the region, so where a row begins does not depend on how the view arrived there.
+
+A `DATA` row is edited like any other row. `E` enters edit mode with the cursor on the first byte, each displayed byte is its own edit position, two hex digits complete one byte, and `Left` / `Right` step from byte to byte and on into the row above or below. There is no mnemonic to pick on a `DATA` row, so a letter key does nothing there. `[I/O]` is writable; `[CHR]` is ROM and refuses the write. `DEL` clears a `DATA` row's bytes to `$00`, where on a decoded instruction it writes `NOP`.
+
+The two-byte row is how the bytes are shown, not what a range is made of. A range anchored with `R` on a `DATA` byte covers the bytes between its ends: anchoring on `$D001`, moving right to `$D002` and pressing `R` copies those two bytes and nothing else. A range that starts on a decoded instruction still takes that instruction whole, so a range may cross between code and data without either end losing bytes.
 
 Assembly view also allows you to assemble instructions inline (in `E`dit mode) and to debug code (in `D`ebug mode).
 
@@ -178,24 +199,24 @@ Example:
 ```text
 +--------------------------------------+
 |MONITOR ASM $E011                     |
-|DFF9 FF           ???            [I/O]|
-|DFFA 00           BRK            [I/O]|
-|DFFB 00           BRK            [I/O]|
-|DFFC FF           ???            [I/O]|
-|DFFD 00           BRK            [I/O]|
-|DFFE 00           BRK            [I/O]|
-|DFFF 00           BRK            [I/O]|
-|E000 85 56        STA $56        [KRN]|
-|E002 20 0F BC     JSR $BC0F      [KRN]|
-|E005 A5 61        LDA $61        [KRN]|
-|E007 C9 88        CMP #$88       [KRN]|
-|E009 90 03        BCC $E00E      [KRN]|
-|E00B 20 D4 BA     JSR $BAD4      [KRN]|
-|E00E 20 CC BC     JSR $BCCC      [KRN]|
-|E011 A5 07        LDA $07        [KRN]|
-|E013 18           CLC            [KRN]|
-|E014 69 81        ADC #$81       [KRN]|
-|E016 F0 F3        BEQ $E00B      [KRN]|
+|DFF6 00 8D     DATA 00 8D        [I/O]|
+|DFF8 02 92     DATA 02 92        [I/O]|
+|DFFA C6 F7     DATA C6 F7        [I/O]|
+|DFFC 00 A5     DATA 00 A5        [I/O]|
+|DFFE 00 A5     DATA 00 A5        [I/O]|
+|E000 85 56     STA $56           [KRN]|
+|E002 20 0F BC  JSR $BC0F         [KRN]|
+|E005 A5 61     LDA $61           [KRN]|
+|E007 C9 88     CMP #$88          [KRN]|
+|E009 90 03     BCC $E00E         [KRN]|
+|E00B 20 D4 BA  JSR $BAD4         [KRN]|
+|E00E 20 CC BC  JSR $BCCC         [KRN]|
+|E011 A5 07     LDA $07           [KRN]|
+|E013 18        CLC               [KRN]|
+|E014 69 81     ADC #$81          [KRN]|
+|E016 F0 F3     BEQ $E00B         [KRN]|
+|E018 38        SEC               [KRN]|
+|E019 E9 01     SBC #$01          [KRN]|
 |CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
 +--------------------------------------+
 ```
@@ -379,7 +400,7 @@ Binary width details:
 - `O`: cycle the monitor-view CPU port banking, `CPU0`..`CPU7`. This changes the monitor view only; it does not write `$0001`.
 - `Shift+O`: cycle the VIC bank override.
 - `Z`: toggle freeze.
-- `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet.
+- `P`: toggle poll mode in the local monitor. Poll mode is unavailable over telnet, and entering Debug turns it off.
 
 Addresses in command prompts are hexadecimal.
 
@@ -425,6 +446,8 @@ C7O5 $A:RAM $D:I/O $E:RAM VIC0 $0000
 After a machine reset, the next fresh monitor open syncs its view bank to the live CPU execution bank, so re-entry shows the memory the CPU is actually running.
 
 An ordinary monitor close/reopen with no reset in between preserves a manually selected `O` view bank.
+
+`CPU0` to `CPU7` are shorthand for the three 6510 port memory-configuration bits at `$0001`: `LORAM`, `HIRAM`, and `CHAREN`.
 
 In the normal no-cartridge configuration, the `$A`, `$D`, and `$E` fields describe how the selected monitor view maps the main ROM/RAM regions:
 
@@ -580,6 +603,20 @@ The monitor includes direct bulk memory commands:
 
 `Transfer` normally copies bytes only. When the optional program range is supplied, the monitor treats that range as 6502 code and amends every 16-bit absolute operand whose value points into the moved source range so it points at the destination copy. This applies to all absolute operands, not just `JMP` and `JSR`.
 
+```text
+T C000-C0FF,C100,C000-C07F
+```
+
+Absolute, absolute-indexed and indirect operands pointing inside the copied source range are adjusted to the corresponding destination address. Relative branches, zero-page operands, references outside the copied range and incomplete instructions are left unchanged.
+
+The program range is independent of the range being copied. It may be shorter than the copy, longer than it, or somewhere else entirely, which is what lets a pointer that is not itself moving be brought with the block:
+
+```text
+T C000-C005,C010,C000-C008
+```
+
+Here the first two instructions are copied to `$C010` while the program range covers a third instruction that stays where it is. An instruction wholly inside the copy is rewritten in the copy, because that is the version being relocated. An instruction wholly outside it is rewritten where it stands, which keeps a jump table correct. An instruction whose three bytes straddle the end of the copy is left alone, since writing its operand would put one byte in the copy and the other in the original.
+
 `Hunt` and `Compare` open a result picker with these controls:
 
 | Key                       | Action                    |
@@ -696,18 +733,18 @@ Default slots are aimed at common C64 locations:
 +--------------------------------------+
 |BOOKMARKS                             |
 |                                      |
-|0 ZP      $0000 HEX  8 CPU7 VIC0      |
-|1 SCREEN  $0400 SCR 32 CPU7 VIC0      |
-|2 BASIC   $0801 ASM    CPU7 VIC0      |
-|3 BASROM  $A000 ASM    CPU7 VIC0      |
-|4 HIRAM   $C000 ASM    CPU7 VIC0      |
-|5 VIC     $D000 HEX  8 CPU7 VIC0      |
-|6 SID     $D400 HEX  8 CPU7 VIC0      |
-|7 CIA1    $DC00 BIN  1 CPU7 VIC0      |
-|8 CIA2    $DD00 BIN  1 CPU7 VIC0      |
-|9 KERNAL  $E000 ASM    CPU7 VIC0      |
+|0 ZP     $0000 HEX  8 CPU7 VIC0       |
+|1 SCREEN $0400 SCR 32 CPU7 VIC0       |
+|2 BASIC  $0801 ASM    CPU7 VIC0       |
+|3 BASROM $A000 ASM    CPU7 VIC0       |
+|4 HIRAM  $C000 ASM    CPU7 VIC0       |
+|5 VIC    $D000 HEX  8 CPU7 VIC0       |
+|6 SID    $D400 HEX  8 CPU7 VIC0       |
+|7 CIA1   $DC00 BIN  1 CPU7 VIC0       |
+|8 CIA2   $DD00 BIN  1 CPU7 VIC0       |
+|9 KERNAL $E000 ASM    CPU7 VIC0       |
 |                                      |
-|0-9/RET:Jmp  S:Set  L:Label  DEL:Reset|
+|0-9/RET Jmp  S Set  L Label  DEL Reset|
 +--------------------------------------+
 ```
 
@@ -717,7 +754,7 @@ Debug is a modal state layered on the Assembly view. It adds breakpoints, single
 
 ### Starting and ending a Debug session
 
-Press `D` outside Debug. The monitor switches to Assembly view, shows `Dbg` in the header, and reserves the bottom two rows for the CPU footer.
+Press `D` outside Debug. The monitor switches to Assembly view, shows `Dbg` in the header, and reserves the bottom two rows for the CPU footer. Poll mode is turned off, because `P` is the breakpoint key inside Debug and a parked machine changes only where a step changes it.
 
 Entering Debug executes nothing and does not stop the C64. There is no captured CPU state yet, so the footer is blank and the first execution command starts at the Assembly cursor address, not at the address the C64 is currently executing. To attach to running code, use breakpoint+Go: set a breakpoint and press `G`.
 
@@ -727,7 +764,7 @@ To end the session:
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `C=+D`              | Leave Debug, stay in the monitor                                                                           |
 | `RUN/STOP` or `ESC` | Leave Debug, stay in the monitor. With Edit also active, the first press leaves Edit and the second Debug   |
-| `X` or `C=+O`       | Leave Debug and close the monitor                                                                          |
+| `C=+O`              | Leave Debug and close the monitor                                                                          |
 | `C=+R`              | Reset the machine. Debug is re-entered afterwards with no captured context                                 |
 
 Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug session can be active at a time across all front ends. If another front end already owns the debugger, entering Debug shows `DEBUG IN USE`. An owner that has not been seen for 3 seconds is cleaned up and its ownership taken over.
@@ -739,14 +776,14 @@ Debug is available in UI Freeze, UI Overlay, and Telnet mode. Only one Debug ses
 | `D`           | Enter Debug, no execution                | Step Over                      |
 | `T`           | Transfer memory                          | Step Into                      |
 | `U`           | Undoc / Case toggle                      | Step Out                       |
-| `G`           | Go / execute                             | Go                             |
-| `K`           | (unassigned)                             | Run to cursor                  |
+| `G`           | Go / execute                             | Continue                       |
+| `K`           | (unassigned)                             | Continue To Cursor             |
 | `R`           | Range mode                               | Range mode                     |
 | `P`           | Poll                                     | Toggle breakpoint at the cursor |
 | `C=+P`        | Breakpoint list, if any breakpoint exists | Breakpoint list                |
 | `C=+D`        | (unassigned)                             | Leave Debug                    |
 | `RUN/STOP`    | Close the monitor                        | Leave Edit first, then Debug   |
-| `X`, `C=+O`   | Close the monitor                        | Close the monitor              |
+| `C=+O`        | Close the monitor                        | Close the monitor              |
 | `C=+R`        | Reset / break the machine                | Reset / break the machine      |
 | `O`           | CPU bank cycle                           | CPU bank cycle                 |
 | `RETURN`      | Assembly follow / return                 | Assembly follow / return       |
@@ -812,7 +849,7 @@ A breakpoint or a step landing in either range is refused with `PATCH FAILED`. `
 
 A breakpoint can be valid but invisible to the CPU. Setting one where the live banking does not map that source shows `BRK <target>, CPU <current>; not mapped now`. The breakpoint is in `<target>`, and the running program has to bank `<target>` in before it can be hit. `<current>` reflects the machine's last known banking, taken at a reset or at the latest Debug stop, so a free-running program that changes `$01` afterwards is only picked up at its next stop.
 
-On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched into the volatile U64 ROM image, so ROM code is step-capable without copying ROMs into C64 RAM or writing flash. The patched bytes are restored when the breakpoint is removed and when the session ends. RAM-under-KERNAL breakpoints work when KERNAL is banked out. On an Ultimate II cartridge, C64 ROM is read-only, and a breakpoint there is refused with `DEBUG NOT SUPPORTED`.
+On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched into the volatile U64 ROM image, so ROM code is step-capable without copying ROMs into C64 RAM or writing flash. The patched bytes are restored when the breakpoint is removed and when the session ends. RAM-under-KERNAL breakpoints work when KERNAL is banked out. On an Ultimate II+ cartridge, C64 ROM is read-only. An armed breakpoint in visible ROM blocks the session, reported as `BRK $xxxx IN ROM BLOCKS DEBUG`, or as `A BRK IN ROM BLOCKS DEBUG` where the address is not known. A step whose own landing site falls in ROM is refused with `DEBUG NOT SUPPORTED`.
 
 `C=+P` opens the breakpoint list. The popup help row uses the abbreviations in parentheses to fit the line:
 
@@ -827,7 +864,7 @@ On the Ultimate 64, breakpoints in BASIC, KERNAL, and character ROM are patched 
 | `DEL`                | Clear the selected slot (`Res`)                     |
 | `RUN/STOP` or `C=+P` | Close the popup                                     |
 
-Jumping to a slot also restores the CPU view bank the breakpoint was set in.
+A digit and `Return` do the same thing: both move the view to the slot's address and restore the CPU view bank the breakpoint was set in. Neither disturbs the captured CPU state, so a Continue afterwards resumes the stop the debugger is holding rather than restarting at the address you were looking at.
 
 ### What each Debug command does
 
@@ -836,8 +873,8 @@ Jumping to a slot also restores the CPU view bank the breakpoint was set in.
 | Step Over     | `D` | Executes the instruction at the program counter. For a `JSR` it plants a breakpoint at the return site and lets the whole subroutine run, so a call into ROM or RAM under ROM completes without any manual breakpoint. Any other instruction is a single step, exactly like Step Into. |
 | Step Into     | `T` | Executes exactly one instruction. A `JSR` lands on the first instruction of the callee.                                                                                                                                        |
 | Step Out      | `U` | Runs to the caller of the current subroutine and stops there.                                                                                                                                                                  |
-| Go            | `G` | Resumes the program. With at least one enabled breakpoint it stops at the first one hit and Debug stays open. With no enabled breakpoint the CPU is handed back to full-speed execution; the local UI closes the monitor as it does so, while a Telnet session stays open on the running machine. |
-| Run to cursor | `K` | Plants a temporary breakpoint at the Assembly cursor address and runs until it is reached. Enabled breakpoints on the way still stop the run.                                                                                   |
+| Continue      | `G` | Resumes the program. With at least one enabled breakpoint it stops at the first one hit and Debug stays open. With no enabled breakpoint the CPU is handed back to full-speed execution; the local UI closes the monitor as it does so, while a Telnet session stays open on the running machine. |
+| Continue To Cursor | `K` | Plants a temporary breakpoint at the Assembly cursor address and runs until it is reached. Enabled breakpoints on the way still stop the run.                                                                                   |
 
 All five follow the live CPU bank from `$0001`.
 
@@ -871,7 +908,7 @@ Two side effects are worth knowing when a step is completed while the CPU is par
 
 In UI Freeze mode a Step Over of a `JSR` into visible ROM, and a Step Out out of visible ROM, are completed instruction by instruction while the CPU stays parked rather than free-running the frozen machine. The walk stops early, reporting the context it actually reached, if it hits an enabled breakpoint, an instruction it cannot step (`BRK` or an undocumented opcode), or its budget of 8192 instructions. Press Step Over, Step Out, or `G` again to continue.
 
-On an Ultimate II cartridge, `BRK` breakpoints and steps only work where the code is in writable RAM. Stepping visible ROM code is not available. See [Hardware support](#hardware-support).
+On an Ultimate II+ cartridge, `BRK` breakpoints and steps only work where the code is in writable RAM. Stepping visible ROM code is not available. See [Hardware support](#hardware-support).
 
 ### Debug messages
 
@@ -888,14 +925,15 @@ Messages fit within 38 characters. The two that offer guidance appear on the bot
 | `RETURN NOT REACHED`                | The Step Out run did not stop at the caller. Set a breakpoint at the return address and use `G` instead.                     |
 | `DEBUG TIMEOUT`                     | No breakpoint was reached within the run budget. The program was released and the debugger stopped waiting for it.           |
 | `DEBUG CANCELLED`                   | A run was abandoned from the keyboard.                                                                                       |
-| `DEBUG NOT SUPPORTED`               | The hardware cannot do this, for example a visible-ROM patch on an Ultimate II cartridge.                                    |
+| `DEBUG NOT SUPPORTED`               | The hardware cannot do this, for example a step whose landing site is in visible ROM on an Ultimate II+ cartridge.            |
+| `BRK $xxxx IN ROM BLOCKS DEBUG`     | An armed breakpoint sits in visible ROM, which the cartridge cannot patch. Clear it, or move it into RAM. `A BRK IN ROM BLOCKS DEBUG` is the same message where the address is not known. |
 | `DEBUG IN USE`                      | Another front end owns the debugger. Close its session, or wait 3 seconds if it is unresponsive.                             |
 | `NO FREE BRK SLOT`                  | All 10 breakpoint slots are used. Clear one with `P` or from the `C=+P` list.                                                |
 | `BRK <target>, CPU <current>; not mapped now` | The breakpoint is set in a memory source the live banking does not map. It only fires once the program banks `<target>` in. |
 
 ### Leaving Debug and interrupt state
 
-Leaving Debug always hands the CPU back to a live runtime. The debugger restores everything it patched: `BRK` opcodes in RAM and in the volatile U64 ROM image, the BRK, IRQ, and NMI vectors, the `$00`/`$01` banking registers, and the cassette-buffer region used by the handler and trampolines.
+Leaving Debug always hands the CPU back to a live runtime. The debugger restores everything it patched: `BRK` opcodes in RAM and in the volatile U64 ROM image, the BRK, IRQ, and NMI vectors, the `$00`/`$01` banking registers, and the cassette-buffer region used by the handler and trampolines. Outside `$035D`-`$03FB` and the `$0340` scratch area, a session leaves C64 RAM as it found it.
 
 Interrupt state on resume follows the banking of the resumed program:
 
@@ -936,17 +974,19 @@ The whole page is one header row, at most 17 text rows and the paging row, which
 
 ### Hardware support
 
-| Capability                                        | U64 (Elite)                       | U2 / U2+ cartridge                                    |
+The monitor is built into the Ultimate II+, the Ultimate II+L, the Ultimate 64 and the Ultimate 64 II. The original Ultimate II does not carry it.
+
+| Capability                                        | U64 (Elite)                       | U2+ / U2+L cartridge                                  |
 | ------------------------------------------------- | --------------------------------- | ------------------------------------------------------ |
 | Memory view, edit, fill, compare                  | Yes                               | Yes                                                    |
 | `G` jump to address                               | Yes                               | Yes                                                    |
 | BRK-based step / over / into / out                | Yes                               | Yes, in writable RAM                                   |
 | Breakpoints in C64 RAM                            | Yes                               | Yes                                                    |
 | Breakpoints in BASIC / KERNAL / CHAR ROM          | Yes, volatile U64 ROM-image patch | Not available, C64 ROM is read-only from the cartridge  |
-| Per-row memory source tag (`[KRN]`, `[RAM]`, ...) | Yes                               | Not available, every row is tagged `[CPU]`             |
-| Monitor-side CPU bank selection (`O`)             | Yes                               | Not available, footer shows `CPU BANK N/A`             |
-| Monitor-side VIC bank selection (`SH+O`)          | Yes                               | Not available, footer shows `VIC N/A`                  |
+| Per-row memory source tag (`[KRN]`, `[RAM]`, ...) | Yes                               | Yes, once the live CPU port is known; `[CPU]` until then |
+| Monitor-side CPU bank selection (`O`)             | Yes                               | Not available; the footer reports the live CPU port instead |
+| Monitor-side VIC bank selection (`SH+O`)          | Yes                               | Yes                                                    |
 | Freeze toggle (`Z`)                               | Yes                               | Not available                                          |
 | REST `/v1/machine` memory API                     | Yes                               | Yes                                                    |
 
-On the cartridge, the debugger launches a step by pulsing the cartridge NMI line. A U2+L plugged into a C64U host does not step, because that host does not forward the cartridge NMI to its internal 6510. On a real C64 the NMI arrives and stepping works.
+On the cartridge, the debugger launches a step by pulsing the cartridge NMI line. The cartridge asserts that line correctly, so stepping works in a host that passes it to the 6510. A U2+L plugged into a C64 Ultimate host does not step, because that host forwards cartridge DMA and reset but not the cartridge NMI, and no bus-operation-mode or interrupt-sharing setting changes it.

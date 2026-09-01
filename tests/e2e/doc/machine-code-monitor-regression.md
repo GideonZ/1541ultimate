@@ -1,8 +1,8 @@
-# Which debugger lanes are worth running before a merge, and why
+# The machine code monitor debugger regression gate
 
-## Why this was derived
+## The suites this gate selects from
 
-The Machine Code Monitor debugger has three registered E2E suites:
+The machine code monitor debugger has three registered E2E suites:
 
 | suite | what it runs | measured wall clock on a U64 |
 | --- | --- | --- |
@@ -10,37 +10,33 @@ The Machine Code Monitor debugger has three registered E2E suites:
 | `machine-code-monitor-debug` | 21 semantic groups, ~95 checks, Telnet only | 28-50 min |
 | `machine-code-monitor-matrix` | 5 memory modes x 3 UI transports x 3 repetitions = 45 cells, plus a closing random-program run | 74-82 min for a clean 45/45 |
 
-Running all three before a merge is over two hours of hardware time, so in
-practice none of them ran, and debugger regressions were found by whoever next
-opened the monitor. Two of the three are marked `manual` for that reason.
+Running all three before a merge is over two hours of hardware time. Two of the
+three are marked `manual` for that cost.
 
-`machine-code-monitor-regression` is the fourth: a selection out of the other
-three, chosen so that dropping a lane cannot hide a defect the dropped lane was
-the only one able to find. It owns no test logic. Every check it runs is
-executed by `monitor_debug_matrix_test.py` or `monitor_debug_test.py`; the
-suite is the selection, plus one check nothing else performed (below).
+`machine-code-monitor-regression` is the fourth suite: a selection out of the
+other three, chosen so that dropping a lane cannot hide a defect the dropped
+lane was the only one able to find. It owns no test logic. Every check it runs
+is executed by `monitor_debug_matrix_test.py` or `monitor_debug_test.py`. The
+suite is the selection, plus one check nothing else performs (section 6).
 
-This document records how the selection was derived, so that a later reader can
-challenge it with the same evidence rather than re-deriving it. `--list-plan`
-prints the selection itself without touching a device.
+Sections 1 to 4 hold the evidence the selection rests on, so a later reader can
+challenge it against the same measurements. `--list-plan` prints the selection
+itself without touching a device.
 
 ## Run it
 
 ```bash
-./run-tests -H u64 --manual -s machine-code-monitor-regression
-./run-tests -H u2@c64u --manual -s machine-code-monitor-regression
+./run-tests u64 --manual -s machine-code-monitor-regression
+./run-tests u2@c64u --manual -s machine-code-monitor-regression
 
 # the plan and its reasoning, no device involved
 python3 tests/e2e/monitor/monitor_debug_regression_test.py \
     --host u64 --rest-host u64 --list-plan
 ```
 
-The suite is registered `manual` for the same reason
-`machine-code-monitor-debug` is: it includes that suite's natural-exit lane,
-which carries a known open defect, so a `manual` registration keeps one known
-debugger defect from turning the general E2E gate red. It is the suite to name
-explicitly before a merge. When the natural-exit lane is green on both targets,
-the registration can move to `auto` by deleting `manual=True`.
+The suite is registered `manual` for the same reason `machine-code-monitor-debug`
+is: about an hour of hardware time on an Ultimate 64, which is too much to spend
+on every sweep. It is the suite to name explicitly before a merge.
 
 ## What was measured, and where the evidence came from
 
@@ -48,9 +44,9 @@ Four independent sources, each of which answers a different question.
 
 | source | question it answers |
 | --- | --- |
-| The firmware, read down from the key dispatcher to the step primitives | Where does the same debugger operation take a *different code path* depending on the UI? |
-| The matrix run ledgers - 36 recorded runs across `doc/research/machine-monitor/matrix-runs/` and `doc/research/machine-code-monitor/matrix-runs/`, plus 189 artifact ledgers | Which cells have *actually failed*, how often, and on which repetition? |
-| The branch's commit history - 41 commits since the merge-base plus the two pre-squash backup branches, 116 commits between them | What has broken before, what was fixed twice, and what condition triggers it? |
+| The firmware, read down from the key dispatcher to the step primitives | Where does the same debugger operation take a different code path depending on the UI? |
+| The matrix run ledgers: 36 recorded runs across `doc/research/machine-monitor/matrix-runs/` and `doc/research/machine-code-monitor/matrix-runs/`, plus 189 artifact ledgers | Which cells have failed, how often, and on which repetition? |
+| The recorded debugger defects on this branch | Which failure modes exist, and what condition triggers each one? |
 | Per-cell phase timestamps in surviving `cell.log` artifacts | What does each lane cost? |
 
 ## 1. Where the firmware actually branches on the UI
@@ -88,7 +84,7 @@ gate. Four do:
 | Continue with breakpoints armed | any | **yes** - all three reach the same call |
 | **Continue with no breakpoint armed** | any | **no** - three distinct paths: Freeze can defer the hand-back out of the monitor entirely (`machine_monitor_debug_impl.inc:866`), Freeze and Overlay otherwise fuse Continue with closing the monitor (`:887`), Telnet stays open and re-snapshots (`:910`) |
 | ROM patch write and store selection | visible ROM | **yes** - address and CPU port only |
-| ROM patch *original* read, and the install verify | visible ROM | **no** - both gated on `machine_is_frozen()` (`monitor_debug_u64.cc:215`, `monitor_debug_brk_session.cc:637`) |
+| The read of the byte a ROM patch displaces, and the install verify | visible ROM | **no** - both gated on `machine_is_frozen()` (`monitor_debug_u64.cc:215`, `monitor_debug_brk_session.cc:637`) |
 | any step that runs the live CPU | any | **partly** - Freeze adds unfreeze/refreeze plus a staged NMI plus a chrome restore around every run |
 
 Reading that table gives the transport requirement directly:
@@ -107,7 +103,7 @@ That last point matters because the transports are not equally observant.
 and Freeze the harness will not read device memory while a Debug session is
 active, because a REST read is not a proven oracle for a live target there. So
 those lanes validate PC, SP, A, X, Y and flags from the on-screen footer and
-from the two instruction oracles, but they do **not** prove the pushed return
+from the two instruction oracles, but they do not prove the pushed return
 address on the stack, and they do not confirm the fixture's sentinel writes.
 Telnet does. Telnet is therefore where a memory mode's depth is worth buying,
 and Overlay and Freeze are where a transport's own path is worth buying.
@@ -139,7 +135,7 @@ Three signatures account for almost all of it:
    defect specific to bank-switching fixtures.
 3. **`rom/telnet` repetition 1 BLOCKED** - 5 hits, all with the same message:
    the KERNAL at `$E000` was not the canonical `STA $56 / JSR $BC0F` path. This
-   is **not** a debugger defect in that run. It is contamination: an earlier
+   is not a debugger defect in that run. It is contamination: an earlier
    suite left the volatile KERNAL image corrupt, and the ROM cell's precondition
    check is the first thing downstream to notice. `AGENTS.md` records the same
    thing happening across suites - `machine-code-monitor-debug` passed 89/89
@@ -185,13 +181,13 @@ So repetitions are not dropped. They are spent where a repeat-only failure has
 actually been recorded, and only on Overlay and Freeze, which cost a third of a
 Telnet lane. Telnet lanes run once.
 
-Note also what repetition is *not* needed for. The straight-call block - 32
-consecutive `JSR`s to the same helper, stepped with Step Over, with the stack
-pointer returning to the same value each time - already drives 32 arm / park /
-resume / disarm cycles from an identical state inside a single cell, with the
-expected PC, SP and A exact at every position. That is the detector for a
-leaked breakpoint slot or a park/resume that drifts the stack, and it does not
-get better by running the cell again.
+Repetition is not what covers repeated arm and disarm cycles. The straight-call
+block does that inside a single cell: 32 consecutive `JSR`s to the same helper,
+stepped with Step Over, with the stack pointer returning to the same value each
+time. It drives 32 arm, park, resume and disarm cycles from an identical state,
+with the expected PC, SP and A exact at every position. That is the detector for
+a leaked breakpoint slot or a park and resume that drifts the stack, and running
+the cell again does not improve it.
 
 ## 4. What each lane costs
 
@@ -232,7 +228,7 @@ random-program run. Every memory mode is represented; no mode is deferred.
 All five memory modes are run. The three regions the debugger works in - plain
 RAM, RAM under ROM, visible ROM - and the two ways a developer crosses between
 them each cost real effort to get working, and none is inferable from another's
-result. What the selection cuts is how many *transports* a mode is repeated on.
+result. What the selection cuts is how many transports a mode is repeated on.
 
 | cell | reps | what only this lane has |
 | --- | --- | --- |
@@ -253,19 +249,19 @@ read the C64's own screen and jiffy clock while the machine is meant to be
 running, and an Overlay or Freeze UI holding the machine invalidates all of
 them.
 
-| group | what only this group has | history |
+| group | what only this group has | defect it detects |
 | --- | --- | --- |
-| `exit-liveness-reentry` | Leaving Debug and closing the monitor with **no reset**. Every matrix cell ends in a Reset, so this is the only natural exit exercised anywhere. | commit `24aebf99`: the stepper runs with `I=1` and that mask leaked into the hand-back, leaving BASIC with a dead cursor, keyboard and jiffy. A reset cleared it, which is why it hid. |
-| `debug` | 27 cheap UI-contract checks: which key toggles a breakpoint, which key falls through to Range mode, the popup chord, the refusal of an 11th breakpoint without evicting the other ten, the footer layout, the reset chord. | commits `4e7aedbf` and `9dd32e8e` each remapped a key and broke the harness drivers. |
-| `refusal` | Over on BRK, RTS and RTI with no captured context; Out outside a traced subroutine saying NOT IN SUBROUTINE rather than PATCH FAILED; an undocumented NOP decoded but not stepped; RTI restoring the stacked PC and flags. | commit `d66c1214`: undocumented opcodes were executed as the documented instruction sharing their bit pattern. |
-| `page-cross` | Taken and not-taken branches across a page, and `JMP ($xxFF)` following the real page-wrap target. | commit `7091f16e`. |
-| `rom-breakpoints` | Set, hit, remove and then step a breakpoint in the BASIC and KERNAL stores - the operation that writes into the volatile FPGA ROM image and has to put it back. | commits `e298ab3f`, `d4434c19`, `8ff6a405`, `0ed125a8`. |
-| `banked-breakpoints` | A KERNAL-store and a RAM-under-KERNAL breakpoint at the same `$E000` with the program banked out, and the cleanup that restores both stores. | commits `dd535e9a` and `08c6989e` - see the ROM fence below. |
-| `repeat-redebug` | Cancelling and re-entering Debug repeatedly against a running loop, in RAM and with KERNAL banked out. The ownership and reopen-state path, not the stepping path. | commits `ab86bd8f`, `35f90fe6`, `fc9826db`, `8d7ae9d4` - a leaked `debug_owner` left the monitor stuck showing `Dbg`, surviving both monitor teardown and a machine reset. |
-| `banked-continue-no-breakpoints` | Continue with an empty table at `$01=$00`, `$35` and `$37`. The matrix reaches `$35` and `$37`; CPU0 - all RAM, no I/O - is reached nowhere else. Also proves a Continue *with* breakpoints leaves the live backing store intact. | commits `2af4728d` and `c6773f10`: Go with no breakpoint fell to an NMI trampoline that has no handler when KERNAL is banked out. |
-| `side-effect-step` | Step Over must execute what it steps over: the store lands, the subroutine's side effect happens, the skipped branch's store does not. The dual-oracle traces compare CPU state, not every write. | - |
-| `breakpoint-reentry` | Continue issued from the breakpoint the CPU is already stopped on: step off once and re-arm, not trap on itself forever. | commit `8ff6a405`. |
-| `brk-orchestrator` | The plain-RAM smoke over Telnet, end to end in about half a minute: load a program, Continue to a breakpoint with known registers, Step Over a NOP, Step Into the JSR, Step Out, and prove the cleanup put the user's bytes back under the breakpoint. | - |
+| `exit-liveness-reentry` | Leaving Debug and closing the monitor with no reset. Every matrix cell ends in a Reset, so this is the only natural exit exercised anywhere. | The stepper runs with `I=1`, and that mask leaking into the hand-back leaves BASIC with a dead cursor, keyboard and jiffy. A reset clears it, so only a natural exit can see it (`24aebf99`). |
+| `debug` | 27 cheap UI-contract checks: which key toggles a breakpoint, which key falls through to Range mode, the popup chord, the refusal of an 11th breakpoint without evicting the other ten, the footer layout, the reset chord. | A remapped Debug key that the harness drivers still send under the old binding (`4e7aedbf`, `9dd32e8e`). |
+| `refusal` | Over on BRK, RTS and RTI with no captured context; Out outside a traced subroutine saying NOT IN SUBROUTINE rather than PATCH FAILED; an undocumented NOP decoded but not stepped; RTI restoring the stacked PC and flags. | An undocumented opcode executed as the documented instruction sharing its bit pattern (`d66c1214`). |
+| `page-cross` | Taken and not-taken branches across a page, and `JMP ($xxFF)` following the real page-wrap target. | A page-wrap target the step prediction resolves to the wrong address (`7091f16e`). |
+| `rom-breakpoints` | Set, hit, remove and then step a breakpoint in the BASIC and KERNAL stores, the operation that writes into the volatile FPGA ROM image and has to put it back. | A ROM-image patch that is not restored on removal (`e298ab3f`, `d4434c19`, `8ff6a405`, `0ed125a8`). |
+| `banked-breakpoints` | A KERNAL-store and a RAM-under-KERNAL breakpoint at the same `$E000` with the program banked out, and the cleanup that restores both stores. | A displaced byte saved from the wrong store and written back into the other, as described in section 6 (`dd535e9a`, `08c6989e`). |
+| `repeat-redebug` | Cancelling and re-entering Debug repeatedly against a running loop, in RAM and with KERNAL banked out. The ownership and reopen-state path, not the stepping path. | A leaked `debug_owner` that leaves the monitor stuck showing `Dbg` through both monitor teardown and a machine reset (`ab86bd8f`, `35f90fe6`, `fc9826db`, `8d7ae9d4`). |
+| `banked-continue-no-breakpoints` | Continue with an empty table at `$01=$00`, `$35` and `$37`. The matrix reaches `$35` and `$37`; CPU0, all RAM and no I/O, is reached nowhere else. It also proves a Continue with breakpoints leaves the live backing store intact. | Continue with no breakpoint falling to an NMI trampoline that has no handler when KERNAL is banked out (`2af4728d`, `c6773f10`). |
+| `side-effect-step` | Step Over must execute what it steps over: the store lands, the subroutine's side effect happens, the skipped branch's store does not. The dual-oracle traces compare CPU state, not every write. | A Step Over that reports the right CPU state without performing the memory writes. |
+| `breakpoint-reentry` | Continue issued from the breakpoint the CPU is already stopped on: step off once and re-arm, not trap on itself forever. | A Continue that re-traps on the breakpoint it started from (`8ff6a405`). |
+| `brk-orchestrator` | The plain-RAM smoke over Telnet, end to end in about half a minute: load a program, Continue to a breakpoint with known registers, Step Over a NOP, Step Into the JSR, Step Out, and prove the cleanup put the user's bytes back under the breakpoint. | A break in the ordinary RAM debugging path, caught in 30 seconds rather than in a full cell. |
 
 `nested-out` and `step-out-target` are not in this list because the matrix
 preflight already runs them, so the gate gets them for free.
@@ -274,8 +270,9 @@ preflight already runs them, so the gate gets them for free.
 
 `run_opcode_volume` shells out to `monitor_debug_stress.py`, which generates
 random programs and steps them through the Overlay UI against the independent
-6510 interpreter. It is the strongest differential evidence in the tree, and it
-is what found the undocumented-opcode and page-wrap defects.
+6510 interpreter. It is the only differential
+oracle in the tree that generates its own programs, and it is where the
+undocumented-opcode and page-wrap defects were found.
 
 The gate runs it with 6 random programs rather than the matrix's 12. Measured,
 12 programs land 2592 verified instructions in 15-22 minutes against a
@@ -333,10 +330,10 @@ the gate already asserts, and dropped for that reason rather than for cost.
 | `rom-single-step` | The `rom` cells step the live ROM path linearly on all three transports and trace 100 instructions of it. |
 | `kernal-basic-breakpoint` | Its BASIC-store breakpoint duplicates `rom-breakpoints`; its `$E002` to `$BC0F` continue is the `rom` cells' Continue. |
 | `cleanup-exit`, `ram-edit`, `edit-visibility` | Monitor-editor and exit behaviour that `machine-code-monitor` covers, and that suite already runs in the ordinary sweep. |
-| Plain RAM and `ram-rom-ram` on transports other than Overlay | Section 1 shows RAM stepping and control-flow steps take the same path on all three transports. Both modes *are* run, on Overlay. |
+| Plain RAM and `ram-rom-ram` on transports other than Overlay | Section 1 shows RAM stepping and control-flow steps take the same path on all three transports. Both modes are run, on Overlay. |
 | 31 of the 45 matrix cell runs | Section 1 shows their result is predicted by a lane that is run. |
 
-### Residual overlap, stated rather than claimed away
+### Residual overlap
 
 The debug suite's finest selector is the group, so a group cannot be taken
 apart. Three of the ten selected groups carry a check that a selected cell also
@@ -345,8 +342,8 @@ covers:
 | group | overlapping check | why the group is kept anyway |
 | --- | --- | --- |
 | `rom-breakpoints` | The KERNAL-store half overlaps the `rom` cells' Continue-to-breakpoint. | The BASIC-store half is the only breakpoint armed in `$A000-$BFFF` anywhere in the gate. |
-| `banked-breakpoints` | Arming one store at `$E000` overlaps the `ram-under-rom` cells. | Arming a KERNAL-store and a RAM-under-KERNAL breakpoint at the *same* address at once, and restoring both, is unique. |
-| `banked-continue-no-breakpoints` | The `$01=$35` and `$01=$37` Continues overlap the `ram-under-rom` and `rom` cells. | `$01=$00` - all RAM, no I/O - is reached nowhere else, and neither is a Continue *with* breakpoints proving the live backing store survived. |
+| `banked-breakpoints` | Arming one store at `$E000` overlaps the `ram-under-rom` cells. | Arming a KERNAL-store and a RAM-under-KERNAL breakpoint at one address at once, and restoring both, is unique. |
+| `banked-continue-no-breakpoints` | The `$01=$35` and `$01=$37` Continues overlap the `ram-under-rom` and `rom` cells. | `$01=$00` - all RAM, no I/O - is reached nowhere else, and neither is a Continue that has breakpoints armed, proving the live backing store survived. |
 
 That is about 4 duplicated checks out of roughly 71, near two minutes of the
 60. Removing them would mean either forking a group, which is the duplication
@@ -369,22 +366,20 @@ a BRK into the volatile FPGA ROM image and records the byte it displaced so
 removal can put it back. That read went through `peek_cpu(addr, cpu_port)`, and
 `cpu_port` cannot re-bank the aperture on this hardware: RAM `$00/$01` on a U64
 is a DMA-only mirror of the 6510's port, so the aperture answers from whatever
-the *running program* has mapped. Arm a breakpoint in the KERNAL store while
+the running program has mapped. Arm a breakpoint in the KERNAL store while
 the program runs at `$01=$35` and the debugger saves the RAM byte hiding under
 `$E000`, then writes that byte into the KERNAL image on removal. It was measured
 on hardware: `$E000` left holding `$EE`, the first byte of the scenario's
 `INC $D020` payload, where the KERNAL's `STA $56` puts `$85`. It survives a
 machine reset. Only a firmware restart reloads the images.
 
-It was fixed twice in one day - `dd535e9a` widened the cached read inside
-`read_patch_byte()`, which over-applied because that function also feeds step
-prediction and disassembly, and `08c6989e` then split the two responsibilities
-into a separate `read_patch_original_byte()`.
+`read_patch_original_byte()` is the read that has to answer from the store the
+breakpoint is in. It is separate from `read_patch_byte()`, which feeds step
+prediction and disassembly and has to answer from the live aperture.
 
 Nothing asserts the result. The matrix's `rom` cell checks the KERNAL head as a
-*precondition* and blocks when it is wrong, which names the run that inherited
-the damage rather than the run that caused it - which is precisely how the same
-corruption was first found, half an hour and one suite later.
+precondition and blocks when it is wrong, which names the run that inherited the
+damage rather than the run that caused it.
 
 `RomImageFence` reads the `$E000` and `$A000` heads after a reset before the
 gate touches the debugger, and again after it has finished. It compares against
@@ -400,8 +395,7 @@ closed by this work.
 
 ## 7. What this gate does not cover
 
-Stated explicitly, because coverage inferred from absence is how a gap becomes
-permanent. Each of these is in the full matrix or the full debug suite.
+Each of these is in the full matrix or the full debug suite.
 
 | not covered | why it is safe to defer |
 | --- | --- |
@@ -411,7 +405,7 @@ permanent. Each of these is in the full matrix or the full debug suite.
 | A third repetition anywhere | Repetition 3 has produced one recorded failure that repetition 2 did not. |
 | 10 of the 21 semantic groups | `kernal-basic-breakpoint`, `deep-trace`, `jsr-runcursor-rts`, `flags`, `cleanup-exit`, `ram-edit`, `edit-visibility`, `rom-single-step`, `nested-out`, `step-out-target`. The last two run anyway inside the matrix preflight; the rest assert a property some matrix cell asserts against two oracles. |
 | The random-program run's headroom | 6 programs rather than 12, as described above. |
-| The monitor itself | `machine-code-monitor` is registered `auto` and already runs in the ordinary sweep. The recommended pre-merge command is `./run-tests -H <target> --manual -s machine-code-monitor -s machine-code-monitor-regression`. |
+| The monitor itself | `machine-code-monitor` is registered `auto` and already runs in the ordinary sweep. The recommended pre-merge command is `./run-tests <target> --manual -s machine-code-monitor -s machine-code-monitor-regression`. |
 
 Two known-open items are inside the gate and will fail it if they recur, which
 is intended, but they are not this gate's to fix:
@@ -428,9 +422,8 @@ is intended, but they are not this gate's to fix:
 
 ## 8. Confounds that must not be read as debugger defects
 
-Every one of these has been filed as a firmware defect at least once, and each
-cost days. They are listed because a gate that does not know about them
-manufactures failures.
+Each of these has been filed as a firmware defect at least once and was none.
+A gate read without them in mind manufactures failures.
 
 | confound | effect |
 | --- | --- |
@@ -438,7 +431,7 @@ manufactures failures.
 | A full-budget poll nested inside a retry loop that owns its own budget | The loop runs once, value waits sample the footer once, and every check reports the previous check's PC. Indistinguishable from slow firmware. Seven failures were about to be filed. Pass `timeout=0.0` for a single read. |
 | Python `AttributeError`/`NameError`/`TypeError` classified as `VALID_DEBUGGER_DEFECT` | Two harness bugs killed every lane and were reported as debugger defects. 2/15 aborted became 15/15 PASS. |
 | Telnet load degradation within one run | Late groups intermittently miss breakpoints or break the pipe; every group passes on fresh firmware. A redeploy is recovery, never a pass. |
-| `$02A7 == 1` read as "the installed BRK fired" | It means *a* BRK fired. A runaway that hits a stray `$00` sets it too. Only "did the step reach the expected PC" is trustworthy. |
+| `$02A7 == 1` read as "the installed BRK fired" | It means some BRK fired, not the installed one. A runaway that hits a stray `$00` sets it too. Only "did the step reach the expected PC" is trustworthy. |
 | Instrumented builds | Extra DMA peeks between BRK commit and CPU release deterministically change which failure mode appears. Never use an instrumented build as the pass/fail oracle. |
 | A reset-and-retry loop around a debugger launch | Turns an intermittent defect into a green result. `monitor_harness_test.py` enforces this structurally, over the AST, and the matrix declares prohibited counters. |
 | Endurance wedges | On a U64, REST dies while ICMP still answers. On a C64 Ultimate, `menu_button` returns 200 and the menu never opens while every health check passes; only mains power clears it, and it cascades into several unrelated-looking suite failures. |
@@ -473,8 +466,7 @@ session, so there is no measured baseline to scale from.
 - After any change to `monitor_debug_brk_session.cc`, `machine_monitor.cc` or a
   backend's patch or memory paths, where the transport-transfer argument in
   section 1 is exactly what the change may have invalidated.
-- After a merge from `upstream/test-merge`. Four consecutive commits on this
-  branch exist only to repair debugger behaviour an upstream merge deleted; one
-  of them removed 4168 lines from the monitor and its tests. An upstream merge
-  is a regression event for this branch, not a routine one.
+- After a merge from `upstream/test-merge`. A merge that resolves a conflict in
+  favour of one side deletes the other side's debugger behaviour without
+  failing to build, so treat an upstream merge as a regression event.
 - When a lane this gate defers is the lane under suspicion.
