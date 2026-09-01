@@ -205,11 +205,14 @@ def run_contract(session: RestClient, args: argparse.Namespace,
             raise Failure("expected HTTP 200 or 404, got %d" % status)
         detail("HTTP %d" % status)
 
-    with check("a rejected call matches the document"):
-        status, _, _ = session.request("GET", "/v1/machine:readmem",
-                                       params={"address": "D020", "length": 0})
-        if status != 400:
-            raise Failure("expected HTTP 400 for a zero length read, got %d" % status)
+    label = "a rejected call matches the document"
+    if not machine.skip_without_fix(machine_lib.READMEM_REJECTS_ZERO_LENGTH, label):
+        with check(label):
+            status, _, _ = session.request("GET", "/v1/machine:readmem",
+                                           params={"address": "D020", "length": 0})
+            if status != 400:
+                raise Failure(
+                    "expected HTTP 400 for a zero length read, got %d" % status)
 
     with check("a refused call matches the document"):
         if not args.password:
