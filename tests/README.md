@@ -41,6 +41,18 @@ from. A target occupies the machines it names, and two targets that share one
 never run at the same time: `u64` and `u2@c64u` run together, while `c64u` and
 `u2@c64u` take turns. `-o DIR` gives each target a subdirectory of its own.
 
+A bench where a cartridge is permanently in one computer can say so once
+instead of spelling it out on every command line:
+
+```sh
+export U64_COMPUTERS=u2@c64u
+./run-tests u2 c64u          # u2 means the u2 in the c64u, so these take turns
+```
+
+Two tokens that name the same pair of machines are one target: with that
+variable set, `./run-tests u2@c64u c64u u2` runs two targets and says it
+dropped the third spelling.
+
 The same token is accepted wherever a device is named, including by a suite
 started by hand:
 
@@ -126,6 +138,7 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
 | `U64_DMA_PORT` | DMA control port | `64` |
 | `U64_MODE` | Default UI profile: `overlay`, `freeze` or `telnet` | `overlay` |
+| `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]` | none |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
 the suites drive the on-device UI.

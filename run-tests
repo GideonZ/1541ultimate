@@ -2907,7 +2907,14 @@ def run_targets(args: argparse.Namespace,
 
 
 def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
-    """Every target this run was asked for, validated before anything starts."""
+    """Every target this run was asked for, validated before anything starts.
+
+    Two tokens that resolve to the same pair of machines are one target. With
+    `U64_COMPUTERS=u2@c64u` set, `u2` and `u2@c64u` are two spellings of the
+    same cartridge in the same computer, and running both would run every
+    suite twice against the same hardware while the scheduler kept them apart.
+    The first spelling is the one kept, and the run says which one it dropped.
+    """
     tokens = list(args.targets) or [args.host]
     resolved: List[targets_lib.Target] = []
     for token in tokens:
@@ -2917,6 +2924,13 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
             die(str(exc))
         if any(target.token == other.token for other in resolved):
             die(f"{target.token} is named twice")
+        same = next((other for other in resolved
+                     if (other.device, other.computer) == (target.device, target.computer)),
+                    None)
+        if same is not None:
+            report.warn(f"{target.token} names the same machines as "
+                        f"{same.token}; running it once")
+            continue
         resolved.append(target)
     return resolved
 

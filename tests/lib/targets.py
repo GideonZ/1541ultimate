@@ -21,10 +21,19 @@ the same from the runner down to a suite started by hand:
     ./run-tests u2@c64u
     python3 tests/e2e/monitor/monitor_test.py -H u2@c64u
 
-Nothing here knows any host names. A target is whatever was typed, and the
-physical resources a target owns are its own host names, which is what lets
-the runner decide that two targets cannot run at the same time without a list
-of devices to consult.
+A bench where a cartridge is permanently in one computer can say so once,
+instead of every command line spelling it out:
+
+    export U64_COMPUTERS=u2@c64u
+    ./run-tests u2                 the same two machines as u2@c64u
+
+Without that, `u2` on its own means a u2 that is its own computer, which no
+cartridge is. See COMPUTERS_ENV.
+
+Nothing here knows any host names. A target is whatever was typed, plus what
+the environment says about this bench, and the physical resources a target
+owns are its own host names, which is what lets the runner decide that two
+targets cannot run at the same time without a list of devices to consult.
 """
 
 from __future__ import annotations
@@ -92,6 +101,19 @@ INPUT_PATH = "/v1/machine:input"
 # `streams:start` sent to a cartridge fails and the picture that shows what
 # the cartridge is doing is the computer's anyway.
 STREAM_PREFIX = "/v1/streams/"
+
+# Which computer a cartridge is plugged into, for the bench it is plugged into
+# it on. A cartridge named on its own is otherwise taken to be its own
+# computer, which no cartridge is: it answers machine:input with HTTP 501, so
+# every suite that presses a key fails, and the scheduler does not know it is
+# sharing a machine with the computer's own target.
+#
+# The value is a comma-separated list in the same grammar a target uses, so
+# `U64_COMPUTERS=u2@c64u` says that `u2` means the u2 in the c64u. It is an
+# environment variable rather than a table here because it describes one
+# bench's cabling, which is not a property of the tree, and it is read per
+# parse for the same reason the ports are.
+COMPUTERS_ENV = "U64_COMPUTERS"
 
 # Conservative, and deliberately not a host-name authority: it rejects the
 # things a mistyped target actually looks like (an empty half, a stray space,
@@ -211,7 +233,7 @@ def parse(token: str) -> Target:
         raise TargetError(
             f"{raw!r} does not name the cartridge; the form is "
             f"cartridge{SEPARATOR}computer")
-    computer = computer or device
+    computer = computer or _declared_computer(device) or device
     for part in (device, computer):
         if not _HOST_RE.match(part):
             raise TargetError(f"{raw!r} is not a valid host name: {part!r}")
@@ -228,6 +250,22 @@ def parse(token: str) -> Target:
                   video_port=_port(VIDEO_PORT_ENV, VIDEO_PORT),
                   audio_group=_address(AUDIO_GROUP_ENV, AUDIO_GROUP),
                   audio_port=_port(AUDIO_PORT_ENV, AUDIO_PORT))
+
+
+def _declared_computer(device: str) -> str:
+    """The computer `U64_COMPUTERS` says `device` is plugged into, or "".
+
+    A malformed entry is ignored rather than fatal, and an entry naming the
+    device as its own computer is ignored too, because both would only stop a
+    run that the operator meant to point somewhere real.
+    """
+    for entry in (os.environ.get(COMPUTERS_ENV) or "").split(","):
+        cartridge, separator, computer = entry.strip().partition(SEPARATOR)
+        if not separator or cartridge != device or cartridge == computer:
+            continue
+        if _HOST_RE.match(computer):
+            return computer
+    return ""
 
 
 def _address(variable: str, default: str) -> str:

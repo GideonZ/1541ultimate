@@ -867,6 +867,66 @@ def run_settings_restore_checks():
         expect("the silent one is named", kept, ["kept 'OFF'"])
 
 
+def run_bench_topology_checks(runner):
+    """A cartridge that is always in one computer, declared once for the bench."""
+    parser = runner.build_parser()
+
+    with check("a cartridge named alone takes the computer the bench declares"):
+        with declared_computers("u2@c64u"):
+            target = targets.parse("u2")
+            expect("device", target.device, "u2")
+            expect("computer", target.computer, "c64u")
+            expect("resources", sorted(target.resources), ["c64u", "u2"])
+            expect("input", target.host_for("/v1/machine:input"), "c64u")
+            expect("it now shares a machine with the computer's own target",
+                   target.conflicts_with(targets.parse("c64u")), True)
+
+    with check("an undeclared cartridge is unchanged, and so is a spelt-out one"):
+        with declared_computers("u2@c64u"):
+            expect("another cartridge", targets.parse("u2b").computer, "u2b")
+            expect("spelt out", targets.parse("u2@u64").computer, "u64")
+        # Explicitly unset rather than merely restored: this suite runs as a
+        # child of the runner, which exports the variable to every suite it
+        # starts, so "what the environment happened to hold" is not the same
+        # thing as "nothing declared".
+        with declared_computers(None):
+            expect("nothing declared", targets.parse("u2").computer, "u2")
+
+    with check("a malformed declaration is ignored rather than fatal"):
+        for value in ("", "u2", "u2@", "@c64u", "u2@u2", "u2@not a host"):
+            with declared_computers(value):
+                expect(f"{value!r}", targets.parse("u2").computer, "u2")
+        with declared_computers("rubbish,u2@c64u"):
+            expect("one good entry among rubbish",
+                   targets.parse("u2").computer, "c64u")
+
+    with check("two spellings of the same machines are one target"):
+        with declared_computers("u2@c64u"):
+            args = parser.parse_args(["u2@c64u", "c64u", "u2"])
+            resolved = runner.resolve_targets(args)
+            expect("tokens", [t.token for t in resolved], ["u2@c64u", "c64u"])
+
+
+@contextlib.contextmanager
+def declared_computers(value):
+    """Run the body with U64_COMPUTERS set to `value`, or unset when it is None.
+
+    The environment is put back either way.
+    """
+    before = os.environ.get(targets.COMPUTERS_ENV)
+    if value is None:
+        os.environ.pop(targets.COMPUTERS_ENV, None)
+    else:
+        os.environ[targets.COMPUTERS_ENV] = value
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop(targets.COMPUTERS_ENV, None)
+        else:
+            os.environ[targets.COMPUTERS_ENV] = before
+
+
 def run_resource_conflict_checks(runner):
     """Which targets may run at the same time, from the grammar alone."""
     cases = (
@@ -1180,6 +1240,7 @@ def main():
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
             run_target_grammar_checks()
+            run_bench_topology_checks(runner)
             run_settings_restore_checks()
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
