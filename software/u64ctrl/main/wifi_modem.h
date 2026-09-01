@@ -24,6 +24,7 @@ esp_err_t wifi_scan(ultimate_ap_records_t *ult_records);
 esp_err_t wifi_clear_aps(void);
 void enable_hook();
 void disable_hook();
+void wake_on_wifi_update(int machine_on);
 uint8_t wifi_get_connection();
 void wifi_send_connected_event();
 

@@ -467,7 +467,10 @@ void C64::stop(bool do_raster)
 
         ioWrite8(ITU_TIMER, 200); // 1 ms
 
-        for (w = 0; w < 100;) { // was 1500
+        // A running 6510 writes every few cycles, so a safe R/Wn sequence
+        // arrives in microseconds or not at all; running out the budget only
+        // happens where the STOP_COND_FORCE below produces the same stop anyway.
+        for (w = 0; w < 10;) { // was 1500
             if (C64_STOP & C64_HAS_STOPPED) {
                 stop_mode = 2;
                 break;
@@ -985,6 +988,18 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
+    if (backupIsValid) {
+        // Already frozen. backup_io() asserts on this, and a failed
+        // configASSERT spins with interrupts off, so the whole device
+        // stops answering and needs a power cycle. Two menu_button
+        // presses in quick succession reach here, which is one REST call
+        // issued twice. Declining the second freeze keeps the backup that
+        // is already held, which is the one restore_io() has to put back.
+        printf("C64::freeze: already frozen, ignoring\n");
+        isFrozen = true;   // the two have to agree, see unfreeze()
+        return;
+    }
+
     frozen_mode = C64_MODE;
     stop(true);
     backup_io();
@@ -1105,6 +1120,19 @@ void C64::unfreeze()
 {
     if (!isFrozen)
         return;
+
+    if (!backupIsValid) {
+        // Nothing left to put back: something else already restored it
+        // while isFrozen stayed set. A reset issued with the menu open
+        // takes that path, because closing the menu restores the
+        // registers before MENU_C64_RESET calls this. restore_io()
+        // asserts on it, and a failed configASSERT spins with
+        // interrupts off, so the device stops answering and needs a
+        // power cycle. Clear the flag and let the caller carry on.
+        printf("C64::unfreeze: no backup held, nothing to restore\n");
+        isFrozen = false;
+        return;
+    }
 
     if (!phi2_present())
         return;

@@ -103,6 +103,7 @@ VPATH +=	$(PATH_SW)/6502/sidcrt/target
 VPATH +=	$(PATH_SW)/u64
 VPATH +=    $(PATH_SW)/application/update_u2p
 VPATH +=    $(PATH_SW)/../html
+VPATH +=    $(PATH_SW)/../doc/api
 VPATH +=	$(PATH_SW)/u64ctrl/main
 VPATH +=	$(PATH_SW)/u64ctrl/build/bootloader
 VPATH +=	$(PATH_SW)/u64ctrl/build/partition_table
@@ -118,7 +119,8 @@ SRCS_6502 =
 
 SRCS_BIN =  chars.bin 1541.bin 1571.bin 1581.bin snds1541.bin snds1571.bin snds1581.bin bootloader.bin partition-table.bin u64ctrl.bin
 
-SRCS_HTML = index.html
+SRCS_HTML = index.html api.html
+SRCS_YAML = rest_api_openapi_u64.yaml
 
 SRCS_IEC = 
 

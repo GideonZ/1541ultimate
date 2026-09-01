@@ -9546,6 +9546,183 @@ static int test_hunt_prompt_uppercases_outside_quotes_only(void)
     return 0;
 }
 
+static int test_ui_range_commands_read_in_blocks(void)
+{
+    // The C and H keys reach Compare and Hunt through the _collect entry points,
+    // not the _memory ones, so those are what has to read in blocks.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    const uint8_t needle[2] = { 0xAB, 0xCD };
+    int index;
+
+    for (index = 0; index < 0x100; index++) {
+        backend.memory[0xC800 + index] = (uint8_t)index;
+        backend.memory[0xCA00 + index] = (uint8_t)index;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_compare_collect(&backend, 0xC800, 0xC8FF, 0xCA00, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Compare read memory a byte at a time, so a backend that stops "
+               "the machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Compare did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+
+    backend.single_read_count = 0;
+    backend.block_read_count = 0;
+    monitor_hunt_collect(&backend, 0xC800, 0xC8FF, needle, 2, addrs, 8);
+    if (expect(backend.single_read_count == 0,
+               "Hunt read memory a byte at a time, so a backend that stops the "
+               "machine per access stops it once per byte.")) {
+        printf("  %d single reads, %d block reads\n",
+               backend.single_read_count, backend.block_read_count);
+        return 1;
+    }
+    if (expect(backend.block_read_count > 0 && backend.block_read_count <= 8,
+               "Hunt did not read its 256 bytes in a handful of blocks.")) {
+        printf("  %d block reads\n", backend.block_read_count);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_compare_serves_a_range_that_wraps_past_ffff(void)
+{
+    // `C FF00-FFFF,FF80` is accepted, so the second range wraps past $FFFF. The
+    // block reader must not clamp its window to `first` there, or a read below
+    // `first` indexes before the start of its buffer.
+    FakeMemoryBackend backend;
+    uint16_t addrs[8];
+    int index;
+    int expected = 0;
+    int got;
+
+    for (index = 0; index < 0x10000; index++) {
+        backend.memory[index] = (uint8_t)(index * 7);
+    }
+    // One byte differs in the wrapped half, so the walk must read past $FFFF.
+    backend.memory[0x0040] = (uint8_t)(backend.memory[0x0040] ^ 0xFF);
+
+    for (index = 0; index < 0x100; index++) {
+        uint16_t left = (uint16_t)(0xFF00 + index);
+        uint16_t right = (uint16_t)(0xFF80 + index);
+        if (backend.memory[left] != backend.memory[right]) {
+            expected++;
+        }
+    }
+
+    got = monitor_compare_collect(&backend, 0xFF00, 0xFFFF, 0xFF80, addrs, 8);
+    if (expect(got == expected,
+               "Compare over a range that wraps past $FFFF did not report the "
+               "differences a byte-by-byte walk of the same two ranges finds.")) {
+        printf("  reported %d, a byte-by-byte walk finds %d\n", got, expected);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_paging_reads_inside_a_bracket(void)
+{
+    // Paging is not a redraw: page_disassembly scans the view an instruction at
+    // a time via disasm_visible_row, so it needs a bracket of its own.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { 'a', KEY_PAGEDOWN, KEY_PAGEUP, KEY_BREAK };
+    FakeKeyboard keyboard(keys, 4);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+    // The bracketing under test is on the key handlers, not the opening redraw.
+    backend.block_reads_inside_redraw = 0;
+    backend.block_reads_outside_redraw = 0;
+    backend.redraw_begin_count = 0;
+    backend.redraw_end_count = 0;
+    for (int i = 0; i < 4; i++) {
+        if (monitor.poll(0) != 0) {
+            break;
+        }
+    }
+
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "Paging read memory outside a bracket, so a backend that stops "
+               "the host machine per access pays one stop per row scanned.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "A paging bracket was left open.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "A paging bracket was not balanced.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_a_redraw_takes_one_bracket_around_all_of_its_reads(void)
+{
+    // Unbracketed, a backend that stops per access pays one stop per displayed
+    // row. A host test can hold only the shape: one balanced bracket around
+    // every read.
+    TestUserInterface ui;
+    CaptureScreen screen;
+    FakeMemoryBackend backend;
+    const int keys[] = { KEY_BREAK };
+    FakeKeyboard keyboard(keys, 1);
+    monitor_reset_saved_state();
+
+    ui.screen = &screen;
+    ui.keyboard = &keyboard;
+
+    BackendMachineMonitor monitor(&ui, &backend);
+    monitor.init(&screen, &keyboard);
+
+    if (expect(backend.redraw_begin_count >= 1,
+               "Drawing the monitor opened no redraw bracket.")) return 1;
+    if (expect(backend.redraw_begin_count == backend.redraw_end_count,
+               "The redraw bracket was not balanced, so a backend that stops "
+               "the machine would leave it stopped.")) {
+        printf("  begin=%d end=%d\n", backend.redraw_begin_count,
+               backend.redraw_end_count);
+        return 1;
+    }
+    if (expect(backend.redraw_depth == 0,
+               "The redraw bracket was left open.")) return 1;
+    if (expect(backend.block_reads_outside_redraw == 0,
+               "A redraw read memory outside its bracket, which is a stop the "
+               "backend then pays on its own.")) {
+        printf("  inside=%d outside=%d\n", backend.block_reads_inside_redraw,
+               backend.block_reads_outside_redraw);
+        return 1;
+    }
+    // The point of the bracket: many row reads share one, not one bracket each.
+    if (expect(backend.block_reads_inside_redraw >= backend.redraw_begin_count * 4,
+               "Each redraw bracket covered fewer than four row reads, so the "
+               "reads are not being batched under one bracket.")) {
+        printf("  %d block reads across %d brackets\n",
+               backend.block_reads_inside_redraw, backend.redraw_begin_count);
+        return 1;
+    }
+    // Close the monitor, leaving no more state behind than the tests above.
+    monitor.poll(0);
+    return 0;
+}
+
 int main()
 {
     if (test_disassembler()) return 1;
@@ -9661,6 +9838,10 @@ int main()
     if (test_assembly_data_range_is_byte_addressable()) return 1;
     if (test_assembly_data_delete_clears_bytes()) return 1;
     if (test_hunt_prompt_uppercases_outside_quotes_only()) return 1;
+    if (test_ui_range_commands_read_in_blocks()) return 1;
+    if (test_compare_serves_a_range_that_wraps_past_ffff()) return 1;
+    if (test_a_redraw_takes_one_bracket_around_all_of_its_reads()) return 1;
+    if (test_paging_reads_inside_a_bracket()) return 1;
 
     puts("machine_monitor_test: OK");
     return 0;

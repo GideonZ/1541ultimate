@@ -8,6 +8,7 @@
 #include "network_target.h"
 #include "network_interface.h"
 #include "socket.h"
+#include "lwip/opt.h"
 #include "netdb.h"
 #include <errno.h>
 #include <stdio.h>
@@ -29,10 +30,13 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[CMD_MAX_REPLY_LEN];
     status_message.message = new uint8_t[CMD_MAX_STATUS_LEN];
+    socket_count = 0;
+    discard_read_reply();
 }
 
 NetworkTarget::~NetworkTarget()
 {
+    close_all_sockets();
     delete[] data_message.message;
     delete[] status_message.message;
 }
@@ -41,6 +45,12 @@ NetworkTarget::~NetworkTarget()
 void NetworkTarget :: parse_command(Message *command, Message **reply, Message **status)
 {
     NetworkInterface *interface;
+
+    // The command interface only accepts a command while it is idle, so a
+    // reply that is still being handed out cannot normally be interrupted by
+    // one. Dropping it here as well means no path into this target can hand a
+    // client bytes left over from an earlier read.
+    discard_read_reply();
 
     switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
@@ -221,6 +231,14 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
         return;
 	}
 
+	// The table has room for every socket lwip can create, so this cannot
+	// fail. Refusing rather than writing past the table keeps that a check
+	// instead of an assumption.
+	if (!track_socket(socket)) {
+		*status = &c_status_no_socket;
+		lwip_close(socket);
+		return;
+	}
 	*reply = &data_message;
 	this->data_message.message[0] = (uint8_t)socket;
 	this->data_message.length = 1;
@@ -237,34 +255,106 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 	uint8_t socketnr = command->message[2];
 	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
 
-    if (length > (CMD_MAX_REPLY_LEN-2)) {
+    // A complete unfragmented IPv4 UDP datagram is the most this command can
+    // ever return, so that is what it accepts. Anything larger cannot arrive.
+    if (length > NET_MAX_SOCKET_READ) {
         *status = &c_status_param_out_of_range;
         *reply = &c_message_empty;
         return;
     }
 
     *reply = &data_message;
-	int ret = lwip_recv(socketnr, &data_message.message[2], length, 0);
+    // The whole payload is received here, into a buffer that outlives this
+    // call, so that a reply spanning several blocks never has to go back to
+    // the socket. A second receive on a datagram socket would take the next
+    // datagram rather than the rest of this one.
+    //
+    // lwip_recvmsg rather than lwip_recv: on a datagram socket it returns the
+    // length of the datagram itself and sets MSG_TRUNC when it did not fit,
+    // where lwip_recv reports only what was copied and drops the rest without
+    // a trace. On a stream socket the two behave the same way.
+    struct iovec iov;
+    struct msghdr msg;
+    iov.iov_base = buffer;
+    iov.iov_len = length;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_recvmsg(socketnr, &msg, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
+    // The header is the number of bytes this reply carries, which is what the
+    // network target document specifies and what existing clients read. On a
+    // reply that spans blocks it is still the total, not the part in the first
+    // block, so a client that concatenates the blocks gets exactly the reply a
+    // large enough response queue would have delivered in one.
+    int copied = (ret > (int)length) ? (int)length : ret;
     data_message.length = 2;
     data_message.last_part = true;
-    data_message.message[0] = (ret & 0xFF);
-    data_message.message[1] = (ret & 0xFF00) >> 8;
+    data_message.message[0] = (copied & 0xFF);
+    data_message.message[1] = (copied & 0xFF00) >> 8;
 
     // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
 	if (ret == 0) {
+		untrack_socket(socketnr);
 		lwip_close(socketnr);
 		*status = &c_status_socket_closed;
 		return;
 	}
 	if (ret > 0) {
-		data_message.length = ret + 2;
-		*status = &c_status_ok;
+		Message *result = &c_status_ok;
+		if (msg.msg_flags & MSG_TRUNC) {
+			// The datagram was longer than the caller asked for and the rest is
+			// gone. Reporting that on the status channel leaves the reply itself
+			// unchanged, so a client that does not look is no worse off than
+			// before, and one that does can tell a short datagram from a
+			// truncated one.
+			sprintf((char *)this->status_message.message, "04,DATAGRAM TRUNCATED: %d", ret);
+			this->status_message.length = strlen((char *)this->status_message.message);
+			result = &status_message;
+		}
+		start_read_reply(copied, result, reply, status);
 		return;
 	}
 	*status = &status_message;
 	sprintf((char *)this->status_message.message, "02,NO DATA: %d", errno);
 	this->status_message.length = strlen((char *)this->status_message.message);
 }
+
+void NetworkTarget :: start_read_reply(int payload_length, Message *result, Message **reply, Message **status)
+{
+    read_total = payload_length;
+    read_offset = 0;
+    read_status = result;
+
+    int chunk = (payload_length > NET_FIRST_BLOCK_PAYLOAD) ? NET_FIRST_BLOCK_PAYLOAD : payload_length;
+    memcpy(&data_message.message[2], buffer, chunk);
+    read_offset = chunk;
+    data_message.length = chunk + 2;
+    data_message.last_part = (read_offset >= read_total);
+
+    *reply = &data_message;
+    // The command has one result and reports it once, on the block that ends
+    // the reply. An intermediate block leaves the status queue empty rather
+    // than repeating the text, so a client that appends the status of every
+    // block ends up with exactly the text a single block reply would give it.
+    *status = data_message.last_part ? read_status : &c_message_empty;
+    if (data_message.last_part) {
+        discard_read_reply();
+    }
+}
+
+void NetworkTarget :: discard_read_reply(void)
+{
+    read_total = 0;
+    read_offset = 0;
+    read_status = &c_status_ok;
+}
+
 #include "dump_hex.h"
 void NetworkTarget :: write_socket(Message *command, Message **reply, Message **status)
 {
@@ -272,7 +362,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
     uint8_t *src = &command->message[3];
 
     int length = command->length - 3;
-    int ret = lwip_send(socketnr, src, length, 0);
+    int ret;
+    if (owns_socket(socketnr)) {
+        ret = lwip_send(socketnr, src, length, 0);
+    } else {
+        errno = EBADF;
+        ret = -1;
+    }
     // printf("Writing %d bytes to socket %d resulted in %d\n", length, socketnr, ret);
     // dump_hex_relative(src, length);
 
@@ -294,7 +390,13 @@ void NetworkTarget :: write_socket(Message *command, Message **reply, Message **
 void NetworkTarget :: close_socket(Message *command, Message **reply, Message **status)
 {
     uint8_t socketnr = command->message[2];
-    int result = lwip_close(socketnr);
+    int result = -1;
+    if (owns_socket(socketnr)) {
+        untrack_socket(socketnr);
+        result = lwip_close(socketnr);
+    } else {
+        errno = EBADF;
+    }
     *reply = &c_message_empty;
     if (result < 0) {
         *status = &status_message;
@@ -305,13 +407,94 @@ void NetworkTarget :: close_socket(Message *command, Message **reply, Message **
     }
 }
 
-void NetworkTarget :: get_more_data(Message **reply, Message **status)
+// A socket handed to the client without a table entry would survive a C64
+// reset, which is the defect in #808, so the table must cover every descriptor
+// lwip can return. lwip's NUM_SOCKETS is MEMP_NUM_NETCONN, tested here rather
+// than including lwip's private socket header.
+static_assert(NET_MAX_SOCKETS >= MEMP_NUM_NETCONN,
+              "the socket table is smaller than the number of lwip sockets");
+
+bool NetworkTarget :: track_socket(int socketnr)
 {
-	*reply = &c_message_empty;
-	*status = &c_status_net_no_data;
+    if (socket_count >= NET_MAX_SOCKETS) {
+        return false;
+    }
+    sockets[socket_count++] = socketnr;
+    return true;
 }
 
-void NetworkTarget :: abort(void)
+void NetworkTarget :: untrack_socket(int socketnr)
 {
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            socket_count--;
+            for (; i < socket_count; i++) {
+                sockets[i] = sockets[i + 1];
+            }
+            return;
+        }
+    }
+}
 
+bool NetworkTarget :: owns_socket(int socketnr)
+{
+    for (int i = 0; i < socket_count; i++) {
+        if (sockets[i] == socketnr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void NetworkTarget :: close_all_sockets(void)
+{
+    for (int i = 0; i < socket_count; i++) {
+        lwip_close(sockets[i]);
+    }
+    socket_count = 0;
+}
+
+void NetworkTarget :: c64_reset(void)
+{
+    // abort() also drops the reply, but it does not run when the reset's
+    // queue post was dropped. Without this the next program could be handed
+    // what is left of the previous one's read over Data More.
+    discard_read_reply();
+    close_all_sockets();
+}
+
+void NetworkTarget :: get_more_data(Message **reply, Message **status)
+{
+    if (read_offset >= read_total) {
+        // Nothing was left pending, so this is a client asking for a block
+        // that was never announced.
+        *reply = &c_message_empty;
+        *status = &c_status_net_no_data;
+        return;
+    }
+
+    int chunk = read_total - read_offset;
+    if (chunk > NET_MAX_REPLY_BLOCK) {
+        chunk = NET_MAX_REPLY_BLOCK;
+    }
+    // A continuation block is payload only. The header went out with the first
+    // block and already counted these bytes.
+    memcpy(data_message.message, &buffer[read_offset], chunk);
+    read_offset += chunk;
+    data_message.length = chunk;
+    data_message.last_part = (read_offset >= read_total);
+
+    *reply = &data_message;
+    *status = data_message.last_part ? read_status : &c_message_empty;
+    if (data_message.last_part) {
+        discard_read_reply();
+    }
+}
+
+void NetworkTarget :: abort(int a)
+{
+    // `a` counts the bytes the client took from the block it abandoned. They
+    // are its business; what is left of the payload goes away with the
+    // transaction, which is what a datagram read means anyway.
+    discard_read_reply();
 }

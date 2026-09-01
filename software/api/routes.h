@@ -2,6 +2,7 @@
 #define ROUTES_H
 
 #include "cli.h"
+#include "api_doc.h"
 #include "indexed_list.h"
 #include "stream_textlog.h"
 #include "stream_ramfile.h"
@@ -130,20 +131,35 @@ public:
 
     void html_response(int code, const char *title, const char *fmt, ...)
     {
-        const char *return_str = return_codestr(code);
+        // Framed the same way as json_response: the document alone goes in the
+        // body, and the status line and headers go into resp->_buf with
+        // resp->_index set to their length.
+        //
+        // This used to write the whole HTTP message, status line included, into
+        // the body stream and leave resp->_index alone. The server then sent
+        // whatever was already in the header buffer and the real status line
+        // arrived as the first bytes of the body, so the status the caller saw
+        // was not the one asked for here. Content-Length was missing too, and
+        // the content type read "text_html".
         StreamRamFile *log = new StreamRamFile(HTTP_BUFFER_SIZE);
-        log->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text_html\r\n\r\n", code, return_str);
 
         va_list ap;
         log->format("<html><body><h1>%s</h1>\n<p>", title);
         va_start(ap, fmt);
         log->format_ap(fmt, ap);
         va_end(ap);
+        log->format("</p></body></html>\r\n");
 
-        log->format("</p></body></html>\r\n\r\n");
-        // resp->_index = (size_t)log.getLength();
         resp->BodyContext = log;
         resp->BodyCB = &stream_body;
+
+        StreamTextLog *hdr = new StreamTextLog(HTTP_BUFFER_SIZE, (char *)resp->_buf);
+        const char *return_str = return_codestr(code);
+        hdr->format("HTTP/1.1 %d %s\r\nConnection: close\r\nContent-Type: text/html\r\n",
+                    code, return_str);
+        hdr->format("Content-Length: %d\r\n\r\n", log->getLength());
+        resp->_index = hdr->getLength();
+        delete hdr; // no longer needed
     }
 
     void error(const char *fmt, ...)
@@ -212,7 +228,14 @@ public:
         // clear temporaries
         if (temporaries) {
             for(int i=0; i<temporaries->get_elements(); i++) {
-                delete (*temporaries)[i];
+                // These strings come from strdup(), so they must be released
+                // through free(). The linker wraps malloc/free (see
+                // software/system/memory_wrap.cc), and a wrapped allocation
+                // carries a size header in front of the pointer the caller
+                // gets. delete maps to a bare vPortFree() with no such
+                // adjustment, so it hands heap_4 an address that is not a block
+                // start and trips its allocated-bit assert.
+                free((void *)(*temporaries)[i]);
             }
             delete temporaries;
             temporaries = NULL;
@@ -238,6 +261,8 @@ public:
         ClearArgs();
     }
 
+    // Takes ownership of a string allocated with malloc()/strdup(). ClearAll()
+    // releases it with free(); do not pass memory obtained from new.
     void temporary(const char *im_trash)
     {
         if (!temporaries) {

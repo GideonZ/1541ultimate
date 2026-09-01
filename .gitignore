@@ -63,6 +63,7 @@ software/io/usb/tests/usbHidKeyboardTest
 software/io/usb/tests/usbHidMouseTest
 software/io/usb/tests/usbHidSelectionTest
 software/io/usb/tests/usbKeyboardQueueTest
+software/io/usb/tests/vt100EscapeTest
 software/Debug
 software/Lean
 software/PathTest
@@ -296,3 +297,4 @@ tools/64tass/*.o
 python/grab*
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2.vhd
 fpga/cpu_unit/rvlite/vhdl_source/bootrom_pkg_u2_loader.vhd
+.gstack/

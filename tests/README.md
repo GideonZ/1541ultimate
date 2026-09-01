@@ -74,7 +74,11 @@ pip install -r tests/requirements.txt
 
 | Package | Needed by |
 | --- | --- |
+| `openapi-python-client` | `e2e/api/openapi_contract_test.py`, generates a client from the OpenAPI document |
+| `openapi-schema-validator` | `tests/lib/openapi_contract.py`, checks device answers against the document |
+| `openapi-spec-validator` | `e2e/api/openapi_contract_test.py`, and `make openapi_validate`, which check the documents themselves against OpenAPI 3.1. Pinned in `tools/openapi/requirements.txt`, which this file includes, because the make target is a build gate |
 | `Pillow` | `e2e/api/input_test.py`, `e2e/io/printer/printer_test.py` |
+| `PyYAML` | `tests/lib/openapi_contract.py`, reads `doc/api/rest_api_openapi_*.yaml` |
 | `pyftpdlib` | `e2e/filesystem/ftp_client_test.py` |
 | `pytesseract` | `e2e/io/printer/printer_test.py`, only under `--stage verify` |
 | `ffmpeg`, `ffprobe` | `./run-tests --record` only. Not Python packages. The lossless default needs the `libx264rgb` encoder, which keeps the frames pixel exact; a build without it is refused at startup rather than after half an hour of capture. |

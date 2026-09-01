@@ -1355,12 +1355,25 @@ MonitorError monitor_parse_hunt(const char *text, uint16_t *start, uint16_t *end
     return MONITOR_OK;
 }
 
+// How much of a fill one write_block call carries: small enough for the
+// monitor's stack, large enough to stop the host machine once per block.
+static const uint16_t FILL_BLOCK = 256;
+
 void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint8_t value)
 {
-    uint16_t address = start;
-    do {
-        backend->write(address, value);
-    } while (address++ != end);
+    // write_block holds one stopped session per block. A byte at a time re-stops
+    // the machine between bytes, which on an Ultimate II+L also loses writes.
+    uint8_t buffer[FILL_BLOCK];
+    uint32_t length = (uint32_t)end - (uint32_t)start + 1;
+    uint32_t done = 0;
+
+    memset(buffer, value, sizeof(buffer));
+    while (done < length) {
+        uint32_t left = length - done;
+        uint16_t chunk = (left > FILL_BLOCK) ? FILL_BLOCK : (uint16_t)left;
+        backend->write_block((uint16_t)(start + done), buffer, chunk);
+        done += chunk;
+    }
 }
 
 // How much of a range one read_block or write_block call carries. A block is
@@ -1369,6 +1382,10 @@ void monitor_fill_memory(MemoryBackend *backend, uint16_t start, uint16_t end, u
 // larger blocks mean fewer stops. It is bounded rather than the whole range
 // because the machine is held stopped for the length of one call.
 static const uint32_t TRANSFER_BLOCK = 4096;
+
+// Block size for the commands that walk a range a byte at a time: on the stack,
+// so smaller than TRANSFER_BLOCK, and a power of two so none crosses the 64K wrap.
+static const uint32_t MONITOR_READ_BLOCK = 256;
 
 // Read a range into a buffer. Addresses wrap at $FFFF, which is what lets
 // $0000-$FFFF name the whole 64K.
@@ -1598,6 +1615,75 @@ int monitor_transfer_memory_relocate(MemoryBackend *backend, uint16_t start, uin
     return rewritten;
 }
 
+// Holds the host machine still across a burst of reads that is not a redraw:
+// navigation walks the view a row at a time before it draws anything. Scoped,
+// so an early return cannot leave the machine stopped.
+class MonitorReadBurst
+{
+    MemoryBackend *backend;
+public:
+    explicit MonitorReadBurst(MemoryBackend *backend) : backend(backend)
+    {
+        if (backend) {
+            backend->begin_redraw();
+        }
+    }
+    ~MonitorReadBurst()
+    {
+        if (backend) {
+            backend->end_redraw();
+        }
+    }
+};
+
+// Serves single-byte reads out of a block the backend filled in one call, so a
+// walk costs one stop per block rather than one per byte. Blocks are
+// size-aligned, so none crosses the 64K wrap.
+class MonitorBlockReader
+{
+    MemoryBackend *backend;
+    uint8_t buffer[MONITOR_READ_BLOCK];
+    uint32_t first;
+    uint32_t last;
+    uint32_t base;
+    uint16_t held;
+    bool filled;
+
+public:
+    // `first` and `last` bound what the caller will actually ask for, so a
+    // sixteen-byte Compare costs one short read rather than 256 bytes a side.
+    MonitorBlockReader(MemoryBackend *backend, uint16_t first, uint16_t last)
+        : backend(backend), first(first), last(last), base(0), held(0),
+          filled(false) { }
+
+    uint8_t read(uint16_t address)
+    {
+        uint32_t block = (uint32_t)address & ~(uint32_t)(MONITOR_READ_BLOCK - 1);
+
+        if (!filled || address < base || address >= base + held) {
+            uint32_t start = block;
+            uint32_t end = block + MONITOR_READ_BLOCK - 1;
+
+            // A wrapped range (Compare's second, past $FFFF) leaves last below
+            // first, so read the whole block: narrowing to `first` would put
+            // base above an address below it, indexing before buffer.
+            if (last >= first) {
+                if (first > start) {
+                    start = first;
+                }
+                if (last < end) {
+                    end = last;
+                }
+            }
+            base = start;
+            held = (uint16_t)(end - start + 1);
+            backend->read_block((uint16_t)base, buffer, held);
+            filled = true;
+        }
+        return buffer[address - base];
+    }
+};
+
 int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end, uint16_t dest, char *out, int out_len)
 {
     // Both ends, as Transfer, Fill, Hunt and Save all do.
@@ -1606,9 +1692,12 @@ int monitor_compare_memory(MemoryBackend *backend, uint16_t start, uint16_t end,
     int count = 0;
     int pos = 0;
 
+    MonitorBlockReader left(backend, start, (uint16_t)(start + length - 1));
+    MonitorBlockReader right(backend, dest, (uint16_t)(dest + length - 1));
+
     out[0] = 0;
     for (index = 0; index < length; index++) {
-        if (backend->read((uint16_t)(start + index)) != backend->read((uint16_t)(dest + index))) {
+        if (left.read((uint16_t)(start + index)) != right.read((uint16_t)(dest + index))) {
             pos = append_line_address(out, out_len, pos, (uint16_t)(start + index));
             count++;
         }
@@ -1627,8 +1716,13 @@ int monitor_compare_collect(MemoryBackend *backend, uint16_t start, uint16_t end
     int count = 0;
 
     if (max_addrs <= 0) return 0;
+
+    // Block reader as in monitor_compare_memory; this is what the C key calls.
+    MonitorBlockReader left(backend, start, (uint16_t)(start + length - 1));
+    MonitorBlockReader right(backend, dest, (uint16_t)(dest + length - 1));
+
     for (index = 0; index < length; index++) {
-        if (backend->read((uint16_t)(start + index)) != backend->read((uint16_t)(dest + index))) {
+        if (left.read((uint16_t)(start + index)) != right.read((uint16_t)(dest + index))) {
             if (count < max_addrs) {
                 out_addrs[count] = (uint16_t)(start + index);
             }
@@ -1651,11 +1745,13 @@ int monitor_hunt_collect(MemoryBackend *backend, uint16_t start, uint16_t end, c
     if ((uint32_t)needle_len > limit) {
         return 0;
     }
+    MonitorBlockReader reader(backend, start, end);
+
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
         int i;
         for (i = 0; i < needle_len; i++) {
-            if (backend->read((uint16_t)(start + index + i)) != needle[i]) {
+            if (reader.read((uint16_t)(start + index + i)) != needle[i]) {
                 matched = 0;
                 break;
             }
@@ -1683,11 +1779,13 @@ int monitor_hunt_memory(MemoryBackend *backend, uint16_t start, uint16_t end, co
         append_text(out, out_len, pos, "No matches\n");
         return 0;
     }
+    MonitorBlockReader reader(backend, start, end);
+
     for (index = 0; index + (uint32_t)needle_len <= limit; index++) {
         int matched = 1;
         int i;
         for (i = 0; i < needle_len; i++) {
-            if (backend->read((uint16_t)(start + index + i)) != needle[i]) {
+            if (reader.read((uint16_t)(start + index + i)) != needle[i]) {
                 matched = 0;
                 break;
             }
@@ -3476,6 +3574,10 @@ bool MachineMonitor :: follow_current(void)
     uint16_t target;
     uint8_t index;
 
+    // follow_target() walks the view a row at a time, one read and so one stop
+    // each; held, the whole walk costs one stop.
+    MonitorReadBurst burst(backend);
+
     if (!follow_target(&target)) {
         return false;
     }
@@ -3489,6 +3591,9 @@ bool MachineMonitor :: return_current(void)
 {
     ReturnStackEntry entry;
     uint8_t index;
+
+    // Same as follow_current() above: restoring a location re-reads the view.
+    MonitorReadBurst burst(backend);
 
     if (!return_stack_pop(&entry, &index)) {
         return false;
@@ -3826,6 +3931,7 @@ uint8_t MachineMonitor :: asm_edit_part_count(uint16_t address)
 
 uint16_t MachineMonitor :: disasm_prev_addr(uint16_t address)
 {
+    MonitorReadBurst burst(backend);
     if (address == 0x0000) {
         return 0xFFFF;
     }
@@ -3845,6 +3951,9 @@ uint16_t MachineMonitor :: disasm_prev_visible_addr(uint16_t address)
 {
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
+
+    // Same as disasm_rewind_rows below: a row at a time, one read per row.
+    MonitorReadBurst burst(backend);
 
     for (int row = 0; (addr != address) && (row < max_scan); row++) {
         uint16_t next = disasm_next_addr(addr);
@@ -3866,6 +3975,10 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
     uint16_t addr = state.base_addr;
     int max_scan = (content_height > 0 ? content_height : 1) + 64;
 
+    // Paging asks which row the cursor is on, which scans the view an
+    // instruction at a time: unheld, one stop per row, up to content_height + 64.
+    MonitorReadBurst burst(backend);
+
     for (int row = 0; row < max_scan; row++) {
         uint8_t len = disasm_length(addr);
         if (len == 0) {
@@ -3881,6 +3994,9 @@ int MachineMonitor :: disasm_visible_row(uint16_t address) const
 
 uint16_t MachineMonitor :: disasm_advance_rows(uint16_t address, int rows)
 {
+    // One read, and so one stop, per row paged over. Brackets nest, so holding
+    // it here as well as in the callers costs nothing.
+    MonitorReadBurst burst(backend);
     while (rows > 0) {
         address = disasm_next_addr(address);
         rows--;
@@ -3904,6 +4020,9 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
     if (rows <= 0) {
         return address;
     }
+    // Each lead-in below disassembles forward over tens of instructions, one
+    // read and so one stop each.
+    MonitorReadBurst burst(backend);
     for (int lead_in = rows * 3 + 16; lead_in <= rows * 3 + 64; lead_in += 16) {
         uint16_t start = (uint16_t)(address - lead_in);
         uint16_t addr = start;
@@ -3930,6 +4049,8 @@ uint16_t MachineMonitor :: disasm_rewind_rows(uint16_t address, int rows)
 
 void MachineMonitor :: restore_disasm_cursor_row(int row)
 {
+    // Rewinds to find the top row and then walks back down to the cursor.
+    MonitorReadBurst burst(backend);
     if (row < 0) {
         ensure_disasm_visible();
         return;
@@ -3948,6 +4069,8 @@ void MachineMonitor :: ensure_disasm_visible()
     if (state.view != MONITOR_VIEW_ASM) {
         return;
     }
+    // Walks from the top of the view to the cursor, one read per instruction.
+    MonitorReadBurst burst(backend);
     if (state.current_addr < state.base_addr) {
         state.base_addr = state.current_addr;
         return;
@@ -3973,6 +4096,9 @@ void MachineMonitor :: ensure_disasm_visible()
 
 void MachineMonitor :: step_disassembly(int lines)
 {
+    // Every line stepped probes the disassembly and the helpers walk the view
+    // again; brackets nest, so the whole move costs one stop.
+    MonitorReadBurst burst(backend);
     while (lines < 0) {
         uint16_t current = state.current_addr;
         uint16_t prev = disasm_prev_visible_addr(current);
@@ -4965,6 +5091,10 @@ int MachineMonitor :: hunt_picker_handle_key(int key)
 
 void MachineMonitor :: draw()
 {
+    // One stop for the whole redraw, not one per row (MemoryBackend::begin_redraw).
+    if (backend) {
+        backend->begin_redraw();
+    }
     draw_header();
     if (help_visible) {
         draw_help();
@@ -4994,6 +5124,10 @@ void MachineMonitor :: draw()
     // row to the full window width, so a popup that reaches that row would
     // lose it. The popup is the thing the user is looking at, so it wins.
     draw_popup_overlays();
+    // Every read is made, so let the machine go before pushing the screen out.
+    if (backend) {
+        backend->end_redraw();
+    }
     if (screen) {
         screen->sync();
     }

@@ -147,6 +147,12 @@ public:
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);
+#if U64 == 2
+    static int setPowerOnMode(ConfigItem *it);
+    static void pushPowerOnMode(void);
+    static int setWakeOnWifi(ConfigItem *it);
+    static void pushWakeOnWifi(void);
+#endif
     static int setCpuSpeed(ConfigItem *it);
 
     static void SetResampleFilter(t_video_mode mode);

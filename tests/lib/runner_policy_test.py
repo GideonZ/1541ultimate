@@ -1223,6 +1223,117 @@ def run_ui_state_routing_checks():
                ui_state.Device("u64", None, 1.0).computer_menu_open(), False)
 
 
+class StubMenuDevice:
+    """A device whose UI task ignores the menu button until it is reset.
+
+    Enough of ui_state.Device for repair() to run against: a menu flag, a clean
+    root browser screen, and a RUN/STOP that closes the menu once it is open.
+    """
+
+    class _Machine:
+        back_presses_to_close_menu = 1
+        launcher_browser_entry = None
+
+    def __init__(self, releases_on_reset: bool) -> None:
+        self.releases_on_reset = releases_on_reset
+        # wedged: the menu button is ignored. deaf: injected keys are ignored,
+        # so an open menu cannot be closed by RUN/STOP. A reset clears both.
+        self.wedged = True
+        self.deaf = False
+        self.open = False
+        self.resets = 0
+        self.machine = self._Machine()
+
+    def menu_is_open(self):
+        return self.open
+
+    def press_menu_button(self):
+        if self.wedged:
+            return
+        if self.open and self.deaf:
+            # A UI task that has stopped reading keys ignores the button too.
+            return
+        self.open = not self.open
+
+    def wait_menu(self, want_open):
+        return self.open == want_open
+
+    def tap(self, inputs):
+        if self.open and not self.deaf and inputs == ["run_stop"]:
+            self.open = False
+
+    def screen(self):
+        if not self.open:
+            return None
+        # The root browser: blank listing rows, and the path on the status row.
+        return [" " * 40] * 24 + ["/".ljust(40)]
+
+    def showing_ok_dialog(self):
+        return False
+
+    def wait_screen_change(self, before):
+        return before
+
+    def enter_file_browser(self):
+        return None
+
+    def reset_machine(self):
+        self.resets += 1
+        if self.releases_on_reset:
+            self.wedged = False
+            self.deaf = False
+            self.open = False
+
+
+def run_ui_state_repair_checks():
+    """A UI that ignores the menu button has to reach the reset that frees it.
+
+    repair() escalates keystrokes, then a menu reload, then a machine reset.
+    Every rung but the last needs an open menu, so a menu that will not open at
+    all has only the reset left. It used to be unreachable: the first open_menu
+    of round 0 raised, repair() unwound, and the run was abandoned with the
+    device reported unhealthy. Observed on a C64 Ultimate that answered REST,
+    ran the C64 and served FTP while machine:menu_button returned 200 and
+    machine:menu_screen stayed at 404; one machine:reset released it.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ui_state_under_test",
+        os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py"))
+    ui_state = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui_state)
+
+    with check("a menu that will not open is repaired by resetting the machine"):
+        device = StubMenuDevice(releases_on_reset=True)
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+        expect("menu reachable", ui_state.try_open_menu(device), True)
+
+    with check("a menu that will not close is repaired by resetting the machine"):
+        # The other wedge shape the gate meets: the menu opens, and then will
+        # not close again because the UI task has stopped reading keys.
+        # close_menu() raises from inside the round, which used to abandon
+        # repair() the same way a menu that would not open did.
+        device = StubMenuDevice(releases_on_reset=True)
+        device.wedged = False
+        device.deaf = True
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+
+    with check("a UI that the reset does not free is reported, not looped on"):
+        device = StubMenuDevice(releases_on_reset=False)
+        try:
+            ui_state.repair(device)
+        except ui_state.Unrecoverable as exc:
+            expect("message", "the menu will not open" in str(exc), True)
+        else:
+            raise Failure("repair() returned on a device whose menu never opened")
+        expect("resets", device.resets, ui_state.REPAIR_ROUNDS)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
                                      if __doc__ else "")
@@ -1245,6 +1356,7 @@ def main():
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()
+            run_ui_state_repair_checks()
             run_suite_url_routing_checks()
             run_exit_status_checks(runner)
             run_recovery_gating_checks(runner)
