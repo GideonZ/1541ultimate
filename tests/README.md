@@ -147,6 +147,23 @@ when a suite is started by hand. One name each, used by every suite:
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
 the suites drive the on-device UI.
 
+## Settings a run changes
+
+Before the first suite the runner reads every setting each machine the target
+occupies is running with, and when the run ends, however it ends, it writes
+back the ones that differ. A cartridge target captures both machines. That is
+what makes a suite's failure independent of what ran before it: the next run
+starts from the configuration this one found.
+
+Clock Settings is left alone, because it is a real-time clock rather than a
+preference. `PUT /v1/configs/<store>/<item>` sets the value and effectuates it
+without writing flash, so neither the capture nor the restore changes what the
+machine boots with. `--no-restore-settings` turns the whole thing off.
+
+The restore only warns. The run has produced its verdict by then, and a machine
+that will not take a value back is something for the operator to see rather
+than a reason to change what the suites decided.
+
 ## When a run goes wrong
 
 By default the run continues through every selected suite, so one failure does
@@ -230,6 +247,7 @@ until you ask for it:
 | `--recover-timeout` | How long the command may take | 900s |
 | `--no-retry` | Recover, but do not run the suite again | off, so it does retry |
 | `--no-health-check` | Health means "it answers", nothing more | off, so the sweep runs |
+| `--no-restore-settings` | Leave the settings however the run left them | off, so they are put back |
 
 A suite is repeated only while the device is what failed it, so repetition
 needs no count of its own: `--recover-max-per-suite` is both how many times a

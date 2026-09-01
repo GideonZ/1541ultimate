@@ -160,7 +160,8 @@ HANDLER_PATHS: Dict[Tuple[str, str, str], List[str]] = {
     ("PUT", "files", "create_dnp"): ["/v1/files/{path}:create_dnp"],
     ("GET", "configs", "none"): ["/v1/configs", "/v1/configs/{category}",
                                  "/v1/configs/{category}/{item}"],
-    ("PUT", "configs", "none"): ["/v1/configs/{category}/{item}"],
+    ("PUT", "configs", "none"): ["/v1/configs/{category}/{item}",
+                                 "/v1/configs/{category}/{item}/{value}"],
     ("POST", "configs", "none"): ["/v1/configs"],
     ("PUT", "configs", "save_to_flash"): ["/v1/configs:save_to_flash",
                                           "/v1/configs/{category}:save_to_flash"],
@@ -324,7 +325,7 @@ def build_cases() -> List[Case]:
         after = ctx.api.configs.current(category, item)
         if after != value:
             raise Failure(f"wrote {value!r} through the path form, reads {after!r}")
-    case(("PUT", "/v1/configs/{category}/{item}"),
+    case(("PUT", "/v1/configs/{category}/{item}/{value}"),
          "the value-in-path form sets the same item", "happy", _config_write_path,
          exclusive=True)
 

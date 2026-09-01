@@ -366,19 +366,33 @@ def try_open_menu(device: Device) -> bool:
 
 
 def open_menu(device: Device) -> List[str]:
-    """Open the menu, unwinding a blocked UI task if the button does nothing."""
-    if not try_open_menu(device):
-        raise UiWedged(
-            "the menu will not open; the UI task is blocked and RUN/STOP "
-            "did not release it"
-        )
-    # A C64 Ultimate's menu button opens a launcher, not the browser, and it
-    # reopens wherever it was last left. Everything below expects the browser.
-    device.enter_file_browser()
-    rows = device.screen()
-    if rows is None:
-        raise Unrecoverable("menu reported open but returned no screen")
-    return rows
+    """Open the menu, unwinding a blocked UI task if the button does nothing.
+
+    Tried twice, because the descent into the browser can itself close the
+    menu. `enter_file_browser` walks Back towards the launcher, and on a
+    machine whose launcher entry it cannot find on screen it presses Back
+    until the menu is gone, which is a screen that read as an open menu on the
+    way in and as no menu on the way out. Reopening is what that costs; a
+    machine that does it twice is not racing, and is handed to repair() as a
+    wedge so the reset at the end of the round can have it.
+    """
+    for attempt in range(2):
+        if not try_open_menu(device):
+            raise UiWedged(
+                "the menu will not open; the UI task is blocked and RUN/STOP "
+                "did not release it"
+            )
+        # A C64 Ultimate's menu button opens a launcher, not the browser, and
+        # it reopens wherever it was last left. Everything below expects the
+        # browser.
+        device.enter_file_browser()
+        rows = device.screen()
+        if rows is not None:
+            return rows
+    raise UiWedged(
+        "the menu reported open and then returned no screen, twice; the UI "
+        "task is not holding a browser the gate can read"
+    )
 
 
 def close_menu(device: Device) -> None:
