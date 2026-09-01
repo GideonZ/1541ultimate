@@ -139,13 +139,13 @@ static bool run_u64_debug_nmi_trampoline(U64Machine *machine,
     }
 
     for (unsigned i = 0; i < pos; i++) {
-        machine->poke_visible_preserving_freeze_restore(
+        machine->poke_visible(
             (uint16_t)(c_monitor_jump_trampoline + i), trampoline[i]);
     }
-    machine->poke_visible_preserving_freeze_restore(
+    machine->poke_visible(
         c_monitor_nmi_vector + 0,
         (uint8_t)(c_monitor_jump_trampoline & 0xFF));
-    machine->poke_visible_preserving_freeze_restore(
+    machine->poke_visible(
         c_monitor_nmi_vector + 1,
         (uint8_t)(c_monitor_jump_trampoline >> 8));
     if (install_hard_nmi) {
