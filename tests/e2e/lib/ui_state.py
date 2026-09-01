@@ -333,24 +333,34 @@ def describe(rows: List[str]) -> str:
     return describe_path(rows)
 
 
+def try_open_menu(device: Device) -> bool:
+    """Whether the menu could be opened, unwinding a blocked UI task first.
+
+    Reports rather than raises, because repair() has one more thing to try
+    after this fails and cannot try it while an exception is on its way out.
+    """
+    if device.menu_is_open():
+        return True
+    device.press_menu_button()
+    if device.wait_menu(want_open=True):
+        return True
+    # The button is ignored while the UI task sits in a modal. Back out
+    # of it; a 404 from menu_screen does not prove the UI is idle.
+    for _ in range(UNWIND_PRESSES):
+        device.tap(["run_stop"])
+        if device.menu_is_open():
+            return True
+    device.press_menu_button()
+    return device.wait_menu(want_open=True)
+
+
 def open_menu(device: Device) -> List[str]:
     """Open the menu, unwinding a blocked UI task if the button does nothing."""
-    if not device.menu_is_open():
-        device.press_menu_button()
-        if not device.wait_menu(want_open=True):
-            # The button is ignored while the UI task sits in a modal. Back out
-            # of it; a 404 from menu_screen does not prove the UI is idle.
-            for _ in range(UNWIND_PRESSES):
-                device.tap(["run_stop"])
-                if device.menu_is_open():
-                    break
-            if not device.menu_is_open():
-                device.press_menu_button()
-                if not device.wait_menu(want_open=True):
-                    raise Unrecoverable(
-                        "the menu will not open; the UI task is blocked and RUN/STOP "
-                        "did not release it"
-                    )
+    if not try_open_menu(device):
+        raise Unrecoverable(
+            "the menu will not open; the UI task is blocked and RUN/STOP "
+            "did not release it"
+        )
     # A C64 Ultimate's menu button opens a launcher, not the browser, and it
     # reopens wherever it was last left. Everything below expects the browser.
     device.enter_file_browser()
@@ -495,8 +505,21 @@ def repair(device: Device) -> None:
     browser reloads its listing, then reset the machine. A root browser showing
     no items cannot be fixed by keystrokes, because there is nothing to back out
     of; only a reload repopulates it.
+
+    A menu that will not open at all skips straight to the reset, because every
+    rung below it needs an open menu to work on. Observed on a C64 Ultimate,
+    which answered REST, ran the C64 and served FTP while machine:menu_button
+    returned 200 and machine:menu_screen stayed at 404 through repeated presses
+    and RUN/STOP: the UI task was blocked somewhere no keystroke reaches. One
+    machine:reset released it, and the menu opened on the next press. Before
+    this, the first open_menu of round 0 raised instead, so the reset this
+    function keeps as its last resort was never reached and the whole run was
+    abandoned with the device reported unhealthy.
     """
     for round_index in range(REPAIR_ROUNDS):
+        if not try_open_menu(device):
+            device.reset_machine()
+            continue
         open_menu(device)
         if not describe_open_menu(device):
             home_cursor(device)

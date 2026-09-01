@@ -265,11 +265,6 @@ SUITES: Sequence[Suite] = (
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
-    # Only reproduces on firmware carrying #803; clean on the 3.15 firmware
-    # this gate normally runs against, so it stays out of the default run.
-    Suite("e2e", "usb-bulk-out-integrity",
-          "tests/e2e/io/usb/bulk_out_integrity_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
     # Drives the UCI control and SoftIEC targets over $DF1B-$DF1F; reproduces #740.
     # A #740 regression leaves the interface stuck in Command Busy for every target
     # until the firmware restarts, so run it after the suites that drive the menu

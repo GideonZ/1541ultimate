@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ftplib
 import io
+import re
 import time
 from contextlib import contextmanager
 from typing import Callable, Iterable, Iterator, List, Optional
@@ -440,3 +441,24 @@ def purge_directory(client: ftplib.FTP, directory: str,
     if refused:
         raise Failure(f"FTP could not delete in {directory}: {'; '.join(refused)}")
     return removed
+
+
+def usb_volumes(client: ftplib.FTP) -> List[str]:
+    """The physical USB volumes the device serves, as paths, lowest port first.
+
+    The device names a volume after the USB port its medium is in, so the stick
+    a suite is meant to write to is /USB0 on one machine and /USB2 on the next.
+    A suite that assumes /USB0 finds nothing on the second machine and skips
+    itself: that is how tests/e2e/network/ftp_usb_integrity_test.py reported OK
+    on a C64 Ultimate that reproduces GideonZ/1541ultimate#803 on every run.
+
+    Sorted by port number rather than by name, so /USB10 does not come between
+    /USB1 and /USB2.
+    """
+    found = []
+    for entry in names(client, "/"):
+        name = entry.rsplit("/", 1)[-1]
+        match = re.fullmatch(r"USB(\d+)", name)
+        if match:
+            found.append((int(match.group(1)), f"/{name}"))
+    return [path for _, path in sorted(found)]
