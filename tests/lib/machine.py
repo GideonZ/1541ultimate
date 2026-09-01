@@ -251,6 +251,20 @@ CFG_LOADS_UNKNOWN_AND_PADDED = _fix(
     "values, loads without being reported as an error",
     (C64U,))
 
+# Measured with tests/e2e/io/c64/assembly64_test.py against a C64 Ultimate
+# 1.2.0, driving the CommoServe query form: with the cursor in the form's Name
+# field, PUT /v1/machine:menu_button answered HTTP 200 and the menu stayed
+# open for the full 15 seconds the check waits. Firmware with the fix polls the
+# button from inside UserInterface::string_edit, so the menu closes. RUN/STOP
+# still leaves the field on the machine without it, which is what the suites
+# recover with, but a check that presses the button and waits proves nothing
+# there except that the fix is absent.
+MENU_BUTTON_CLOSES_STRING_EDIT = _fix(
+    "menu-button-closes-string-edit",
+    "the menu button closes the menu while a modal edit field has focus, "
+    "rather than being ignored until the field is left",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
@@ -350,6 +364,46 @@ class Machine:
         return "CommoServe" if self.kind == C64U else "Assembly 64"
 
     @property
+    def search_menu_entry(self) -> str:
+        """The menu entry that opens the online search's query form.
+
+        Both services draw the same form: a column of criteria fields over a
+        "<<  Submit  >>" button. Where the entry lives differs, which is what
+        `search_in_launcher` says.
+        """
+        return "COMMOSERVE FILE SEARCH" if self.kind == C64U else "Assembly 64"
+
+    @property
+    def search_in_launcher(self) -> bool:
+        """Whether the search entry is in the launcher or in the task menu.
+
+        A C64 Ultimate lists "COMMOSERVE FILE SEARCH" as the launcher's second
+        entry, under the file browser, and its task menu has no search entry at
+        all. The other two put "Assembly 64" first in the task menu and have no
+        launcher.
+        """
+        return self.kind == C64U
+
+    @property
+    def search_form_title(self) -> str:
+        """The title the online search's query form draws."""
+        return ("CommoServe File Search" if self.kind == C64U
+                else "Assembly 64 Query Form")
+
+    @property
+    def min_search_result_rows(self) -> int:
+        """How many rows a result list has to fill to be one at all.
+
+        The two services do not hold the same corpus, and the count is the
+        service's business rather than the firmware's, so this is the floor
+        below which the screen is more likely to be an incidental match than a
+        listing. Measured live with the term "turrican": Assembly 64 answered
+        with 20 matching rows, and CommoServe with the single entry "Turrican
+        intro speech (Tel_Jeroen)".
+        """
+        return 1 if self.kind == C64U else 3
+
+    @property
     def task_menu_key(self) -> str:
         """The key that opens the task menu over the file browser.
 
@@ -361,22 +415,10 @@ class Machine:
         """
         return "F1" if self.kind == C64U else "F5"
 
-    @property
-    def browser_navigation_letters(self) -> str:
-        """Letters the file browser treats as movement rather than as a search.
-
-        Empty where every printable character starts a quick-seek, which is an
-        Ultimate 64 and an Ultimate II+. A C64 Ultimate says "WASD=NAV" on its
-        status row and means it, so those four letters have to be kept out of
-        any seek prefix: they are not merely ignored, they act. Measured on one
-        at the root browser, each from a fresh cursor with the seek string
-        cleared: 'a' left the browser for the launcher, 's' moved the cursor
-        down a row, and at /Temp/ a single 'd' opened the selected disk image.
-        A seek for a name beginning with 'd' therefore entered that image
-        instead of selecting it, and a seek for one holding 'w' then 'a'
-        walked out of the browser and closed the menu.
-        """
-        return "wasd" if self.kind == C64U else ""
+    # Which letters the file browser reads as cursor movement is not here: it
+    # follows the "Navigation Style" setting, which every machine offers and a
+    # person can change, so it is read from the device. See
+    # tests/lib/navigation.py.
 
     @property
     def page_up_key(self) -> str:

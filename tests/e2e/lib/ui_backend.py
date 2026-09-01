@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.join(
 import api as api_lib
 import interactions
 import machine as machine_lib
+import navigation as navigation_lib
 import pacing
 import rest as rest_lib
 import screens as screen_spool
@@ -200,6 +201,41 @@ def fetch_product(host: str, password: Optional[str],
     return str(payload.get("product", "")), str(payload.get("firmware_version", ""))
 
 
+def fetch_navigation_style(host: str, password: Optional[str],
+                           timeout: float) -> str:
+    """The device's "Navigation Style" setting, over plain REST.
+
+    Free of any backend for the same reason fetch_product is: the setting
+    decides what a typed letter means on both transports, and a Telnet session
+    has no way to ask for it.
+
+    Answers "" where the device does not serve the item, which is a device
+    old enough to predate the setting and behaves as Quick Search does. A
+    device that cannot be reached at all raises, because guessing wrong here
+    turns every typed letter in the menu into a cursor movement.
+    """
+    path = f"{CONFIGS_PATH}/{urllib.parse.quote(navigation_lib.CONFIG_CATEGORY)}" \
+           f"/{urllib.parse.quote(navigation_lib.CONFIG_ITEM)}"
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(rest_lib.url_for(host, path), headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout, idempotent=True) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return ""
+        raise Failure(f"{path} on {host} failed: {exc}")
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise Failure(f"{path} on {host} failed: {exc}")
+    entry = payload.get(navigation_lib.CONFIG_CATEGORY)
+    if isinstance(entry, dict):
+        entry = entry.get(navigation_lib.CONFIG_ITEM)
+    if not isinstance(entry, dict):
+        return ""
+    current = entry.get("current")
+    return current if isinstance(current, str) else ""
+
+
 class NoCursorDrawn(Failure):
     """The screen carries no cursor marker, which a repaint can leave briefly."""
 
@@ -308,6 +344,16 @@ class Backend:
         return machine_lib.identify(self.machine_host, self._fetch_product)
 
     @property
+    def navigation(self) -> navigation_lib.Navigation:
+        """How this device's menu reads a typed letter, asked once of it.
+
+        A setting rather than a property of the model, so it is read from the
+        device's configuration and not derived from the product name. See
+        tests/lib/navigation.py.
+        """
+        return navigation_lib.identify(self.machine_host, self._fetch_navigation_style)
+
+    @property
     def machine_host(self) -> str:
         """The host that answers for the device under test."""
         raise NotImplementedError
@@ -315,6 +361,11 @@ class Backend:
     def _fetch_product(self) -> str:
         """The product string of `machine_host`, over REST on either transport."""
         return fetch_product(self.machine_host, self.machine_password, self.timeout)
+
+    def _fetch_navigation_style(self) -> str:
+        """The "Navigation Style" of `machine_host`, over REST on either transport."""
+        return fetch_navigation_style(self.machine_host, self.machine_password,
+                                      self.timeout)
 
     @property
     def machine_password(self) -> Optional[str]:
@@ -2149,6 +2200,16 @@ class Browser:
         """
         self.backend.send_text(text, f"type {text!r}")
 
+    # -- characters the menu itself reads --
+    #
+    # A quick-seek prefix and a popup's button key are commands to the menu,
+    # not text, so they pass through UserInterface::keymapper and have to be
+    # spelled the way the machine's Navigation Style setting expects. The two
+    # methods above stay verbatim: they are what a suite types into a string
+    # field, which the keymapper never sees. See tests/lib/navigation.py.
+    def type_menu_char(self, character: str) -> None:
+        self.backend.send_char(self.backend.navigation.menu_char(character))
+
     # -- navigation --
     def go_to_root(self) -> None:
         for _ in range(12):
@@ -2240,13 +2301,6 @@ class Browser:
     def _seekable(self, prefix: str) -> bool:
         if not prefix:
             return False
-        # Some machines bind letters in the browser to movement instead of to
-        # the search, and typing one there acts rather than seeks. Walking is
-        # then the only way to reach the entry, which is what select_entry
-        # falls back to. See Machine.browser_navigation_letters.
-        reserved = self.backend.machine.browser_navigation_letters
-        if reserved and any(ch.lower() in reserved for ch in prefix):
-            return False
         # A seek costs the firmware one keystroke per character, and a jump
         # within the visible listing costs at most one per row, so a prefix
         # longer than the screen can never be the cheaper of the two.
@@ -2285,8 +2339,9 @@ class Browser:
         """
         if not self._seekable(prefix):
             return False
+        sent = self.backend.navigation.menu_text(prefix)
         try:
-            self.backend.send_key_then_text("UP", prefix, f"seek {prefix!r}")
+            self.backend.send_key_then_text("UP", sent, f"seek {prefix!r}")
         except Failure:
             return False
         return self.selected_text().startswith(prefix)
@@ -2405,7 +2460,7 @@ class Browser:
             label = matches[0]
         prefix, delta = plan_overlay_navigation(labels, label)
         for character in prefix:
-            self.type_char(character)
+            self.type_menu_char(character)
         if delta:
             self.press_many("DOWN" if delta > 0 else "UP", abs(delta))
         self.press("ENTER")
@@ -2439,8 +2494,14 @@ class Browser:
         self.choose_overlay_item(self.wait_for_overlay(before), item)
 
     def press_popup_button(self, key: str) -> None:
-        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel."""
-        self.type_char(key)
+        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel.
+
+        "All" is one of the four letters WASD Cursors binds to a cursor key,
+        so the key goes through the navigation transform: typed raw on a
+        machine set to WASD Cursors it moves the highlight left instead of
+        pressing the button.
+        """
+        self.type_menu_char(key)
 
     def wait_for_text(self, text: str, timeout: float = 8.0) -> None:
         deadline = time.monotonic() + timeout

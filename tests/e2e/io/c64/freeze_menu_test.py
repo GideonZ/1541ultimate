@@ -20,9 +20,12 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional, Tuple
 
-# tests/lib holds the reporting rules every suite shares.
+# tests/lib holds the reporting rules every suite shares; tests/e2e/lib holds
+# the screen reader used to confirm which launcher row the cursor is on.
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
@@ -31,6 +34,7 @@ from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
 from rest import header_value, json_object  # noqa: E402  (needs tests/lib first)
 from report import (Failure, check, check_skip, check_start, detail, format_exception,
                     section, suite_fail, suite_ok, warn)
+from ui_backend import find_selected_row_rest  # noqa: E402  (tests/e2e/lib)
 
 
 MENU_SCREEN_PATH = "/v1/machine:menu_screen"
@@ -53,8 +57,9 @@ JIFFY_SETTLE_SECONDS = 5.0
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_TOGGLE_TIMEOUT_SECONDS = 5.0
-# The form is fetched from the Assembly 64 server, so it is slower than a redraw.
-FORM_TITLE = "Assembly 64 Query Form"
+# The query form is fetched from a third-party server, so it is slower than a
+# redraw. Which server, and where the menu keeps the entry that opens it,
+# depends on the machine; see Machine.search_form_title.
 FORM_OPEN_TIMEOUT_SECONDS = 20.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -82,6 +87,23 @@ class RestSession:
         info = self.api.info()
         return machine_lib.identify(self.host, lambda: (info.product,
                                                         info.firmware_version))
+
+    def menu_rows(self) -> Optional[list]:
+        """The open menu as 25 rows of text, or None when it is closed."""
+        body = self.menu_screen_bytes()
+        if body is None:
+            return None
+        return self.api.machine.rows_of(body)
+
+    def selected_menu_row(self, rows) -> Optional[int]:
+        """Which row the menu's cursor is on, or None when it cannot be read."""
+        body = self.menu_screen_bytes()
+        if body is None:
+            return None
+        try:
+            return find_selected_row_rest(body[:SCREEN_CELLS], body[SCREEN_CELLS:], rows)
+        except Failure:
+            return None
 
     def url(self, path: str, params: Optional[Dict[str, object]] = None) -> str:
         query = ""
@@ -416,34 +438,85 @@ def run_context_reopen(session: RestSession) -> None:
     close_menu(session)
 
 
-def run_menu_button_in_form(session: RestSession) -> None:
-    """The menu button must still close the menu from inside the Assembly 64 form.
+# The launcher's entries, for the machine that keeps its search there. Row 0
+# and row 1 are the title, and the status row is the last.
+LAUNCHER_ENTRY_ROWS = range(2, SCREEN_HEIGHT - 1)
 
-    F5 opens the task menu, whose first entry is Assembly 64 and is already under
-    the cursor. RETURN opens its query form and a second RETURN enters the Name
-    field, which puts the UI task inside UserInterface::string_edit. That loop
-    tested only host->exists(), while the loop that polls the menu button lives in
-    run_once() and is not running, so the button did nothing and the menu could
-    not be opened again until the device was rebooted. machine:menu_screen answers
-    404 throughout, because C64::is_accessible() reports isFrozen, so nothing can
-    detect the condition from outside.
+
+def open_search_entry(session: RestSession) -> None:
+    """Put the machine's online-search entry under the cursor and open it.
+
+    An Ultimate 64 and an Ultimate II+ keep it as the first entry of the task
+    menu, already selected when the menu opens. A C64 Ultimate keeps it in the
+    launcher, which RUN/STOP reaches from the root browser, and there the
+    cursor has to be moved onto it.
+
+    The launcher is never navigated by counting presses from an assumed
+    position: it lists what this machine can do, and pressing RETURN on the
+    wrong row opens something else. The row the entry is on and the row the
+    cursor is on are both read from the screen, and the landing is confirmed
+    before RETURN is sent.
+    """
+    if not session.machine.search_in_launcher:
+        before = session.menu_screen_bytes()
+        wedge_aware(session, "opening the task menu",
+                    lambda: session.tap(session.machine.task_menu_key.lower()))
+        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
+            raise Failure("the task menu was not drawn")
+        return
+
+    wanted = session.machine.search_menu_entry
+    wedge_aware(session, "leaving the browser for the launcher",
+                lambda: session.tap("run_stop"))
+    rows = session.menu_rows()
+    if rows is None:
+        raise Failure("the menu closed on the way to the launcher")
+    row = next((n for n, text in enumerate(rows) if wanted in text), None)
+    if row is None:
+        raise Failure(f"the launcher does not offer {wanted!r}; screen was:\n"
+                      + "\n".join(rows))
+    cursor = session.selected_menu_row(LAUNCHER_ENTRY_ROWS)
+    if cursor is None:
+        raise Failure("the launcher's cursor row could not be read")
+    for _ in range(abs(row - cursor)):
+        session.tap_keys(["cursor_up_down"] if row > cursor
+                         else ["left_shift", "cursor_up_down"])
+    landed = session.selected_menu_row(LAUNCHER_ENTRY_ROWS)
+    if landed != row:
+        raise Failure(f"the launcher cursor is on row {landed}, not on {wanted!r} "
+                      f"at row {row}; refusing to press RETURN")
+
+
+def run_menu_button_in_form(session: RestSession) -> None:
+    """The menu button must still close the menu from inside the query form.
+
+    The machine's online-search entry opens a query form, and a RETURN there
+    enters the Name field, which puts the UI task inside
+    UserInterface::string_edit. That loop tested only host->exists(), while the
+    loop that polls the menu button lives in run_once() and is not running, so
+    the button did nothing and the menu could not be opened again until the
+    device was rebooted. machine:menu_screen answers 404 throughout, because
+    C64::is_accessible() reports isFrozen, so nothing can detect the condition
+    from outside.
 
     The modal helpers now poll the button. They also drop a press that predates
     the modal, otherwise one still latched from opening the menu would close the
     editor before a single character was accepted.
     """
-    section("the menu button works inside the Assembly 64 query form")
+    title = session.machine.search_form_title
+    section(f"the menu button works inside the {title}")
+    if session.machine.skip_without_fix(
+            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
+            "the menu button closes the menu from inside the edit field"):
+        return
     prepare(session, ENABLED)
     open_menu(session)
-    with check("open the task menu"):
-        before = session.menu_screen_bytes()
-        wedge_aware(session, "opening the task menu", lambda: session.tap("f5"))
-        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
-            raise Failure("the task menu was not drawn")
-    with check("open the Assembly 64 query form"):
+    with check(f"put the cursor on {session.machine.search_menu_entry!r}"):
+        open_search_entry(session)
+    with check(f"open the {title}"):
         wedge_aware(session, "opening the query form", lambda: session.tap("return"))
-        if not session.wait_form_title(FORM_TITLE, FORM_OPEN_TIMEOUT_SECONDS):
-            raise Failure(f"{FORM_TITLE!r} did not appear")
+        if not session.wait_form_title(title, FORM_OPEN_TIMEOUT_SECONDS):
+            raise Failure(f"{title!r} did not appear")
     with check("enter the form's first edit field"):
         wedge_aware(session, "entering the edit field", lambda: session.tap("return"))
         if not session.menu_is_open():
@@ -468,11 +541,11 @@ def run_menu_button_in_form(session: RestSession) -> None:
         for _ in range(6):
             if not session.menu_is_open():
                 break
-            if not session.form_visible(FORM_TITLE):
+            if not session.form_visible(title):
                 break
             session.tap("run_stop")
-        if session.form_visible(FORM_TITLE):
-            raise Failure(f"{FORM_TITLE!r} is still on screen")
+        if session.form_visible(title):
+            raise Failure(f"{title!r} is still on screen")
     if session.menu_is_open():
         close_menu(session)
     else:

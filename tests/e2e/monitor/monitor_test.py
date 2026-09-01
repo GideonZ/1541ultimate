@@ -30,6 +30,7 @@ from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, v
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
+    Browser,
     strip_frame,
     MODE_FREEZE,
     MODE_TELNET,
@@ -42,6 +43,13 @@ from ui_backend import (
 )
 
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
+
+# The browser rows and status row the menu route below reads, for the machines
+# that need it. Only the task menu drawn over the browser is read there, and
+# that overlay is found by its own frame rather than by these rows, so one
+# layout serves both transports.
+MENU_ENTRY_ROWS = range(2, 24)
+MENU_STATUS_ROW = 24
 
 # Per-request timeout for this suite's own REST calls, which are all small
 # reads and writes against a device that is otherwise idle.
@@ -306,11 +314,16 @@ class MonitorSession:
         if monitor_is_up(snapshot):
             return snapshot
 
-        snapshot = self.send_key("F5")
-        snapshot = self.send_char("D")
-        snapshot = self.send_key("ENTER")
-        snapshot = self.send_key("DOWN")
-        snapshot = self.send_key("ENTER")
+        # The menu route, for a device that did not take the shortcut. Driven
+        # by reading the labels the menu drew rather than by a fixed run of
+        # keys: the task-menu key is F5 on an Ultimate 64 and an Ultimate II+
+        # and F1 on a C64 Ultimate, where F5 is Page Down, and the position of
+        # a category in the menu is not the same on all three. A fixed run of
+        # keys therefore pressed RETURN on whatever entry it happened to land
+        # on, which on a menu of hardware actions is not a thing to guess at.
+        menu = Browser(self.backend, MENU_ENTRY_ROWS, MENU_STATUS_ROW)
+        menu.invoke_task_action("Developer", "Machine Code Monitor")
+        snapshot = wait_until(self, monitor_is_up)
         find_any_status_line(snapshot)
         return snapshot
 

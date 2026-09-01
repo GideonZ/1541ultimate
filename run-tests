@@ -189,6 +189,12 @@ SUITES: Sequence[Suite] = (
     # than weeks later when somebody opens the artifact to diagnose something
     # else and finds an empty document.
     Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: which keys go out for a machine that reads 'w',
+    # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
+    # device. A C64 Ultimate ships with that reading, and getting it wrong
+    # turns a quick-seek into a walk down the listing and a popup's All button
+    # into a cursor move, neither of which reads as a keyboard problem.
+    Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", ""),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on

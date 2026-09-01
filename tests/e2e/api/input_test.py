@@ -2,6 +2,7 @@
 # E2E: Verifies REST keyboard and joystick injection in the C64 and menu UI.
 
 import argparse
+import contextlib
 import http.client
 import json
 import os
@@ -26,7 +27,8 @@ import pacing
 import rest as rest_lib
 import targets
 from api import UltimateApi
-from report import Failure, check, check_count, detail, format_exception, suite_fail, suite_ok
+from report import (Failure, check, check_count, detail, format_exception,
+                    suite_fail, suite_ok, warn)
 from vic_video import MULTICAST_GROUP, VIDEO_PORT, VicStreamCapture
 
 TEST_CHOICES = (
@@ -1940,7 +1942,48 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
         assert_state_empty(session)
 
 
+# The setting that decides which physical port an injected joystick event
+# reaches. Every assertion below reads the two CIA ports and names which is
+# which, so a machine left on anything but "Normal" fails all of them with a
+# message about the ports rather than about the setting. Measured on an
+# Ultimate 64 left on "Swapped": port 2 fire read back as port 1.
+JOYSTICK_SWAP_STORE = "U64 Specific Settings"
+JOYSTICK_SWAP_ITEM = "Joystick Swapper"
+JOYSTICK_SWAP_UNSWAPPED = "Normal"
+
+
+@contextlib.contextmanager
+def unswapped_joystick_ports(session: RestInputSession):
+    """Run the body with the joystick swapper off, and put it back afterwards.
+
+    A no-op on a machine that does not serve the item, which is an Ultimate
+    II+: it has no U64 Specific Settings store at all.
+    """
+    try:
+        was = session.api.configs.current(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM)
+    except Failure:
+        was = ""
+    if was and was != JOYSTICK_SWAP_UNSWAPPED:
+        detail(f"{JOYSTICK_SWAP_ITEM} is {was!r}; setting it to "
+               f"{JOYSTICK_SWAP_UNSWAPPED!r} for these checks")
+        session.api.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM,
+                                JOYSTICK_SWAP_UNSWAPPED)
+    try:
+        yield
+    finally:
+        if was and was != JOYSTICK_SWAP_UNSWAPPED:
+            try:
+                session.api.configs.set(JOYSTICK_SWAP_STORE, JOYSTICK_SWAP_ITEM, was)
+            except Failure as exc:
+                warn(f"could not put {JOYSTICK_SWAP_ITEM} back to {was!r}: {exc}")
+
+
 def run_joystick_tests(session: RestInputSession) -> None:
+    with unswapped_joystick_ports(session):
+        run_joystick_checks(session)
+
+
+def run_joystick_checks(session: RestInputSession) -> None:
     session.post_events([{"kind": "release_all"}])
 
     with check("joystick port 2 fire keeps Anykey buttons 2 and 3 released"):
