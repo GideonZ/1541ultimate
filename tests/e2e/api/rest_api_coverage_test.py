@@ -303,6 +303,7 @@ def build_cases() -> List[Case]:
          _config_item)
 
     def _config_unknown(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_REFUSE_UNKNOWN_CATEGORY)
         ctx.refuse_status("GET", "/v1/configs/No%20Such%20Category", allow=(404,))
     case(("GET", "/v1/configs/{category}"), "refuses an unknown category",
          "negative", _config_unknown)
@@ -427,6 +428,10 @@ def build_cases() -> List[Case]:
     for kind, extra in (("d64", {"tracks": 35}), ("d71", {}), ("d81", {}),
                         ("dnp", {"tracks": 1})):
         def _create(ctx: Ctx, kind=kind, extra=extra) -> None:
+            # Even the refusal reaches enforce_diskname, which is where the
+            # firmware without this fix stops answering, so the negative case
+            # takes the device down just as the happy one does.
+            ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
             create = getattr(ctx.api.files, f"create_{kind}")
             ctx.refused("PUT", f"/v1/files/{{path}}:create_{kind}",
                         lambda: create(f"{MISSING}.{kind}", **extra))
@@ -820,6 +825,7 @@ class SuiteRunner:
             if self._image_ready:
                 return
             if ctx.api.files.info(MOUNT_IMAGE) is None:
+                ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
                 ctx.api.files.create_d64(MOUNT_IMAGE, diskname="restapi")
             self._image_ready = True
 

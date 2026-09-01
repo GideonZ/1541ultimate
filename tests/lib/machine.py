@@ -279,6 +279,16 @@ FILES_CREATE_IMAGE_SURVIVES = _fix(
     "the network until it is power cycled",
     (C64U,))
 
+# Measured with tests/e2e/api/rest_api_coverage_test.py: GET
+# /v1/configs/No%20Such%20Category answers HTTP 404 on firmware with the fix,
+# and HTTP 200 with an empty errors list on a C64 Ultimate 1.2.0, so a caller
+# cannot tell a store it does not have from one that is empty.
+CONFIGS_REFUSE_UNKNOWN_CATEGORY = _fix(
+    "configs-refuse-unknown-category",
+    "GET /v1/configs/<store> answers HTTP 404 for a store this machine does "
+    "not have, rather than 200 with nothing in it",
+    (C64U,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"

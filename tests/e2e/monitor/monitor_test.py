@@ -51,6 +51,11 @@ SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapsho
 MENU_ENTRY_ROWS = range(2, 24)
 MENU_STATUS_ROW = 24
 
+# Deeper than the monitor stacks views, so Back reaches the top from any of
+# them, and shallow enough that a screen which never gets there is reported
+# rather than pressed at until the monitor closes.
+MONITOR_VIEW_LAYERS = 4
+
 # Per-request timeout for this suite's own REST calls, which are all small
 # reads and writes against a device that is otherwise idle.
 REST_TIMEOUT_SECONDS = 5.0
@@ -3639,6 +3644,32 @@ def run_assembly_data_rows_test(session: MonitorSession) -> None:
         raise Failure(f"the row below $D000 must be a DATA row too: {below!r}")
 
 
+def ensure_u2_cpu_view(session: MonitorSession) -> Snapshot:
+    """Bring an Ultimate II+'s monitor back to the view its footer belongs to.
+
+    The monitor reopens in whichever view it was last left in, and only the CPU
+    view draws the "CPU VIEW  VICn $nnnn" footer this suite reads the VIC bank
+    from; a memory view draws the bank-and-mapping footer instead. Measured on
+    an Ultimate II+L that had been left in "MONITOR HEX $0801": the first check
+    of the run failed on all three attempts, against a monitor that was working
+    perfectly.
+
+    Back is pressed only while that footer is absent, and the screen is read
+    before every press, so a monitor already at the top view is never pressed
+    past it into closing.
+    """
+    for _ in range(MONITOR_VIEW_LAYERS):
+        snapshot = session.capture()
+        try:
+            find_u2_footer_line(snapshot)
+            return snapshot
+        except Failure:
+            session.send_key("ARROW_LEFT")
+    raise Failure(
+        f"the monitor would not return to its CPU view in "
+        f"{MONITOR_VIEW_LAYERS} Back presses; screen was\n{session.capture().text()}")
+
+
 def assert_u2_footer_consistent(snapshot: Snapshot) -> int:
     """Return the U2 VIC bank after checking that its base address agrees."""
     line_index = find_u2_footer_line(snapshot)
@@ -3729,7 +3760,7 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
 
     with check("initial CPU7/KERNAL monitor status"):
         if is_u2:
-            assert_u2_footer_consistent(session.capture())
+            assert_u2_footer_consistent(ensure_u2_cpu_view(session))
         else:
             ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
 
