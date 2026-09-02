@@ -2195,7 +2195,8 @@ def main(argv=None):
         except Exception as exc:
             warn(f"cleanup error: {exc}")
         if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
-            session.require_ok("PUT", "/v1/machine:reset", description="reset")
+            # force: this suite drives FTP throughout, which REST cannot see.
+            session.api.machine.reset(force=True, wait=False)
         fails = print_summary(ctx, crashed)
         server.cleanup()
 

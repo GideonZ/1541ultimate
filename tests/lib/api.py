@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import pacing
 import targets
 from report import Failure
+import rest
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
 DRIVE_SLOTS = ("a", "b")
@@ -208,8 +209,9 @@ class MachineApi:
         # first suite in a fresh process does not reset a machine nothing has
         # touched since. Any mutating call clears the assumption by advancing
         # the counter past it.
-        self._reset_at: Optional[int] = (
-            rest.mutations if os.environ.get("U64_DEVICE_RESET") == "1" else None)
+        self._reset_at: Optional[Tuple[int, int]] = (
+            self._counts()
+            if os.environ.get("U64_DEVICE_RESET") == "1" else None)
 
     def _act(self, action: str) -> None:
         code, _, body = self._rest.request("PUT", f"/v1/machine:{action}")
@@ -233,6 +235,20 @@ class MachineApi:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(READY_POLL_SECONDS)
+
+    def _counts(self) -> Tuple[int, int]:
+        """What has moved the machine, seen from this client and the process.
+
+        Two counters, because either can be the one that saw it. This client's
+        own is what a caller injecting a transport gets, and it is what the
+        runner tests drive. The process-wide one in rest.py catches the case
+        the first cannot: a suite that mutates through one object and resets
+        through another, where a per-client count would be zero and a reset
+        that was needed would be skipped as a no-op.
+
+        A reset is a no-op only when neither has moved.
+        """
+        return (getattr(self._rest, "mutations", 0), rest.mutation_count())
 
     def reset(self, force: bool = False, wait: bool = True,
               timeout: float = READY_TIMEOUT_SECONDS) -> bool:
@@ -260,7 +276,7 @@ class MachineApi:
         another route entirely (FTP, Telnet, the DMA control port) should pass
         `force`, since those are invisible here.
         """
-        if not force and self._reset_at == self._rest.mutations:
+        if not force and self._reset_at == self._counts():
             return True
         # Blank the top of the screen first, so the READY left by the previous
         # boot cannot be mistaken for this one. Without it the wait returns
@@ -268,19 +284,19 @@ class MachineApi:
         if wait:
             self.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
         self._act("reset")
-        self._reset_at = self._rest.mutations
+        self._reset_at = self._counts()
         if not wait:
             return False
         ready = self.wait_until_ready(timeout)
         # The blanking write and the reset both counted as mutations, so the
         # bookkeeping is restored to "reset, and untouched since".
-        self._reset_at = self._rest.mutations
+        self._reset_at = self._counts()
         return ready
 
     @property
     def was_just_reset(self) -> bool:
         """Whether this client reset the device and nothing has moved it since."""
-        return self._reset_at is not None and self._reset_at == self._rest.mutations
+        return self._reset_at is not None and self._reset_at == self._counts()
 
     def reboot(self) -> None:
         self._act("reboot")

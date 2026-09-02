@@ -57,6 +57,30 @@ ACTION_TEXT_CHARS = 300
 Response = Tuple[int, Dict[str, str], bytes]
 
 
+# How many requests that could have moved the machine have gone out of this
+# process, by any route this module offers. Counted here rather than per client
+# because a suite that mutates through one object and resets through another
+# would otherwise reset against a counter that had seen nothing, and the reset
+# it needed would be skipped as a no-op. GETs do not count: reading memory, the
+# menu screen or a config value leaves the machine as it was.
+#
+# api.MachineApi.reset is the one place that acts on this. See its docstring
+# for why resetting twice in a row is worth avoiding at all.
+_mutations = 0
+
+
+def mutation_count() -> int:
+    """Requests so far that could have changed what a reset would clear."""
+    return _mutations
+
+
+def note_mutation(method: str) -> None:
+    """Count `method` if it could have moved the machine."""
+    global _mutations
+    if method.upper() != "GET":
+        _mutations += 1
+
+
 def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
     """Whether a failed attempt may be repeated. The only copy of this rule.
 
@@ -208,6 +232,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     """
     method = request.get_method()
     path = path_of(request.full_url)
+    note_mutation(method)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
         started = time.monotonic()
@@ -248,6 +273,7 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     """
     target = targets.resolve(host)
     host = target.host_for(path)
+    note_mutation(method)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
         connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
@@ -431,6 +457,7 @@ class RestClient:
         target = self.url(path, params)
         if method.upper() != "GET":
             self.mutations += 1
+        note_mutation(method)
         request = urllib.request.Request(target, data=body, headers=sent_headers,
                                          method=method)
         # `idempotent` lets a caller opt a non-GET call into the same retry,

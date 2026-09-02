@@ -68,6 +68,63 @@ def attribute_path(node):
     return tuple(reversed(parts))
 
 
+# The reset rule has one implementation, api.MachineApi.reset, which skips a
+# reset that cannot change anything: nothing mutating has reached the device
+# since the last one. Two resets in a row are otherwise routine, because one
+# suite ends with a reset and the next begins with one, and each costs the
+# machine a reboot and the run a wait.
+#
+# A suite that sends the request itself bypasses that, so sending it directly
+# is what this looks for. A caller that reached the device by FTP, Telnet or
+# the DMA port, which the REST transport cannot see, passes force=True instead
+# of going around the rule.
+RESET_PATH = "/v1/machine:reset"
+RESET_ADVICE = ("sends " + RESET_PATH + " directly; call api.machine.reset() "
+                "so the no-op reset is skipped, with force=True if the device "
+                "was reached by FTP, Telnet or the DMA port")
+
+# The suites whose subject is the reset itself, or which have no API client to
+# call. Each needs a reason.
+RESET_EXEMPT = {
+    # This file names the route in order to look for it.
+    os.path.join(TESTS, "lib", "check_transport_usage.py"):
+        "names the route so it can find it",
+    # Calls every route in the published surface, reset included, and its
+    # subject is the route table rather than the machine's state.
+    os.path.join(TESTS, "e2e", "api", "rest_api_coverage_test.py"):
+        "exercises every published route, including this one",
+    # Drives the reset as the thing under test: it is what releases a menu the
+    # firmware left holding the machine.
+    os.path.join(TESTS, "e2e", "lib", "ui_state.py"):
+        "the reset is the repair this module exists to perform",
+    # Measures what a reset does to an abandoned Telnet session, so it has to
+    # issue one whatever the transport last saw.
+    os.path.join(TESTS, "e2e", "network", "telnet_stale_session_test.py"):
+        "the reset is the stimulus its subject responds to",
+}
+
+
+# A send, not a mention. The path appears legitimately as a constant, in a
+# route-coverage table and in the runner tests' fixtures; what this looks for
+# is the path passed to a call alongside a method that changes the machine.
+MUTATING_METHODS = {"PUT", "POST"}
+
+
+def reset_offenders(path, tree):
+    """Direct sends of the reset route, which bypass the one guard."""
+    if os.path.abspath(path) in RESET_EXEMPT:
+        return []
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        literals = [a.value for a in list(node.args) + [k.value for k in node.keywords]
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        if RESET_PATH in literals and MUTATING_METHODS & set(literals):
+            found.append((node.lineno, RESET_ADVICE))
+    return found
+
+
 def offenders(path):
     try:
         tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
@@ -148,6 +205,24 @@ def main():
             for line, what in offenders(path):
                 problems.append((os.path.relpath(path, ROOT), line, what))
 
+    # The reset rule is checked over every file, including the ones exempt from
+    # the transport rule: reaching the transport directly is a separate
+    # question from sending a reset the guard cannot see.
+    resets = []
+    for base, _dirs, files in os.walk(TESTS):
+        if "__pycache__" in base:
+            continue
+        for name in sorted(files):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(base, name)
+            try:
+                tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+            except SyntaxError:
+                continue
+            for line, what in reset_offenders(path, tree):
+                resets.append((os.path.relpath(path, ROOT), line, what))
+
     if problems:
         suite_fail("check_transport_usage",
                    f"{len(problems)} direct HTTP call(s) bypass tests/lib/rest.py")
@@ -155,6 +230,14 @@ def main():
             detail(f"{path}:{line} calls {what}")
         detail("Use rest.RestClient, rest.retrying_urlopen or "
                "rest.retrying_http_request; they share rest.may_retry.")
+        return 1
+
+    if resets:
+        suite_fail("check_transport_usage",
+                   f"{len(resets)} direct machine:reset send(s) bypass the "
+                   "one guard against resetting twice in a row")
+        for path, line, what in resets:
+            detail(f"{path}:{line} {what}")
         return 1
 
     suite_ok("check_transport_usage", f"{scanned} files")

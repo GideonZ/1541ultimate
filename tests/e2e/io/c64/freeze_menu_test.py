@@ -124,9 +124,8 @@ class RestSession:
         return status == 200
 
     def reset(self) -> None:
-        status, _, body = self.request("PUT", "/v1/machine:reset")
-        if status != 200:
-            raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
+        # Through the API, which skips a reset that cannot change anything.
+        self.api.machine.reset(wait=False)
         time.sleep(1.0)
 
     def close_menu_from_anywhere(self) -> None:

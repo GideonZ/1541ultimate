@@ -654,7 +654,10 @@ def main():
 
     try:
         client.close_menu_from_anywhere()
-        client.require_ok("PUT", "/v1/machine:reset", description="machine reset")
+        # force: this suite reaches the device over FTP as well, which the
+        # REST transport cannot see, so it cannot tell whether a reset is a
+        # no-op.
+        client.api.machine.reset(force=True, wait=False)
         time.sleep(1.0)
 
         if args.no_config_change:

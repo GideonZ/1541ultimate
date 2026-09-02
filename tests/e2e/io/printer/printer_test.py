@@ -1116,7 +1116,8 @@ def main():
 
     if args.reset_after_run and client.is_alive(timeout=5.0):
         check_start("reset after run")
-        client.require_ok("PUT", "/v1/machine:reset", description="machine:reset")
+        # force: the printer is driven over its own socket, not REST.
+        client.api.machine.reset(force=True, wait=False)
         check_ok()
 
     section("summary")

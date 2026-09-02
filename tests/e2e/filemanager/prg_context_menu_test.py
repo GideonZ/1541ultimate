@@ -272,9 +272,9 @@ class Machine:
             raise Failure(f"writemem ${address:04X} failed with HTTP {status}: {body[:120]!r}")
 
     def reset(self) -> None:
-        status, _, _ = self.session.request("PUT", "/v1/machine:reset")
-        if status != 200:
-            raise Failure(f"machine:reset failed with HTTP {status}")
+        # force: this suite seeds its fixtures over FTP, which the REST
+        # transport cannot see, so it cannot judge the reset a no-op.
+        self.session.machine.reset(force=True, wait=False)
         # Wait for the BASIC cold start to finish. Freezing before it has run
         # its NEW leaves the boot sequence to wipe the program area and the
         # BASIC pointers the moment the machine is released again.

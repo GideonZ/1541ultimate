@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import ftp as ftp_lib
 import rest as rest_lib
+from api import UltimateApi
 import targets
 from report import Failure, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
@@ -297,7 +298,9 @@ def reset_machine(host: str, password: str) -> None:
     )
     with rest_lib.retrying_urlopen(request, 10.0, idempotent=True):
         pass
-    rest_json(host, password, "PUT", "/v1/machine:reset")
+    # force: this suite reaches the device over FTP as well, which the REST
+    # transport cannot see, so it cannot judge the reset a no-op.
+    UltimateApi(host, password).machine.reset(force=True, wait=False)
     time.sleep(0.5)
 
 

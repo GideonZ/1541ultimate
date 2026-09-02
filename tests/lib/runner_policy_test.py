@@ -678,6 +678,28 @@ def run_reset_guard_checks():
         m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
+    with check("a mutation through another object still warrants a reset"):
+        # The case a per-client counter cannot see, and the reason rest.py
+        # counts process-wide: a suite that changes the machine through one
+        # object and resets through another. Counting only what this client
+        # sent would call the reset a no-op and skip a reset that was needed.
+        import rest as rest_module
+        rest, m = machine()
+        m.reset(wait=False)
+        before = sum(1 for _, p in rest.sent if p.endswith("reset"))
+        rest_module.note_mutation("PUT")
+        m.reset(wait=False)
+        expect("the second reset was sent",
+               sum(1 for _, p in rest.sent if p.endswith("reset")), before + 1)
+
+    with check("a GET through another object does not warrant a reset"):
+        import rest as rest_module
+        rest, m = machine()
+        m.reset(wait=False)
+        rest_module.note_mutation("GET")
+        m.reset(wait=False)
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
+
     with check("a mutating call between two resets warrants the second"):
         rest, m = machine()
         m.reset(wait=False)
