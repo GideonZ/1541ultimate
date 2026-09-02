@@ -41,6 +41,7 @@ import concurrent.futures
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -4474,6 +4475,14 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
             raise Failure(problem)
         video_port = made._sockets[0][1].getsockname()[1]
         audio_port = made._sockets[1][1].getsockname()[1]
+        # The sender and the recorder are the same machine here, so a datagram
+        # is dropped whenever the recorder is not scheduled before the kernel
+        # buffer fills. Under three device runs at once this test reported six
+        # of twenty frames lost and then passed on the retry, which measures
+        # the load on the test host rather than the recorder. A buffer big
+        # enough for the whole burst takes the host's scheduling out of it.
+        for _, sock in made._sockets:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
         video = UdpSender("127.0.0.1", video_port)
         audio = UdpSender("127.0.0.1", audio_port)
         for number in range(20):
