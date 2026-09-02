@@ -55,7 +55,7 @@ FTP_USER = "user"
 FTP_DEFAULT_PASSWORD = "password"
 
 TEMP_PATH = "/Temp/"
-FIXTURE_PREFIX = "prgmenu"
+FIXTURE_PREFIX = "pm"
 # 16 characters: the longest name a CBM directory entry can hold. Together with
 # the ".prg" the browser appends this is the longest name the boot-cart loader
 # ever sees, which is exactly the case that used to overflow its name buffer.
@@ -588,7 +588,11 @@ class Fixtures:
         # loader has to shorten it for the C64 without overrunning its own
         # buffer, so this is the fixture that catches that overrun.
         stem = f"{FIXTURE_PREFIX}{token}_long_"
-        self.long_prg = stem + "0123456789" * ((LONG_NAME_LENGTH - len(stem)) // 10) + ".prg"
+        # Padded to exactly LONG_NAME_LENGTH rather than to a whole number of
+        # ten-character runs, so the name this suite is named after keeps its
+        # length when the fixture prefix changes.
+        filler = LONG_NAME_LENGTH - len(stem) - len(".prg")
+        self.long_prg = stem + ("0123456789" * (filler // 10 + 1))[:filler] + ".prg"
         self.long_prefix = stem
 
     def seed(self, host: str, password: str) -> None:
@@ -1019,7 +1023,7 @@ def scenario_long_name_run(machine: Machine, fixtures: Fixtures, location, host,
 
 
 SCENARIOS = [
-    ("long-name", "Run a PRG with a 101 character name", scenario_long_name_run, PlainLocation),
+    ("long-name", f"Run a PRG with a {LONG_NAME_LENGTH} character name", scenario_long_name_run, PlainLocation),
     ("dma-plain", "DMA a plain PRG", scenario_dma_runnable, PlainLocation),
     ("dma-disk", "DMA a PRG inside a D64", scenario_dma_runnable, DiskLocation),
     ("real-run", "Real Run a PRG inside a D64", scenario_real_run, DiskLocation),
