@@ -47,6 +47,19 @@ DEFAULT_TIMEOUT = 10.0
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
+
+def retry_pause(attempt: int) -> float:
+    """How long to wait before attempt `attempt` + 1, counting from zero.
+
+    The pause grows, because the two things it has to cover are not the same
+    length. A device that is busy answers again within a moment, and a flat
+    half second covers that. A wireless link that has dropped takes seconds to
+    come back, and an Ultimate II+L has no wired interface at all: measured
+    during a run, three attempts a half second apart all failed with
+    EHOSTUNREACH and the next check, a second later, passed.
+    """
+    return TRANSPORT_RETRY_PAUSE_SECONDS * (1 + 2 * attempt)
+
 # How much of what a request carried, or of what the device said back, is kept
 # in one action record. Enough for the firmware's own error sentence and for a
 # key batch, short enough that a suite hammering a refusing endpoint does not
@@ -245,7 +258,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
             last_exc = exc
             sent = not isinstance(exc, urllib.error.URLError)
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
-                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                time.sleep(retry_pause(attempt))
                 continue
             record_action(method, path, started, attempt + 1, None, None, exc)
             break
@@ -289,7 +302,7 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
         except (OSError, http.client.HTTPException) as exc:
             last_exc = exc
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
-                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                time.sleep(retry_pause(attempt))
                 continue
             record_action(method, path, started, attempt + 1, None, None, exc)
             raise
@@ -494,7 +507,7 @@ class RestClient:
                                         fault=interactions.fault_of(exc),
                                         error=format_exception(exc),
                                         sent=outbound, connection="new")
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                    time.sleep(retry_pause(attempt))
                     continue
                 record_action(method, path, started, attempt + 1, None, None, exc,
                               params=params, payload=payload, call=call,
