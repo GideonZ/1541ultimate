@@ -2525,9 +2525,19 @@ class Browser:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")
         if category not in categories:
             raise Failure(f"task menu has no {category!r}; it offers {categories}")
-        self.press_many("DOWN", categories.index(category))
         before = self.rows()
-        self.press("ENTER")
+        # Picked the same way the item below it is, rather than by pressing
+        # DOWN as many times as the category's index into the parsed labels.
+        # That index is only the row offset if the parse started exactly at the
+        # cursor, and overlay_items is known to prepend an entry that is really
+        # the listing underneath showing through: measured on an Ultimate 64 it
+        # returned ['Up', 'Assembly 64', ...], and on u2@c64u the extra entry
+        # opened Configuration where Developer was asked for, whose flash
+        # actions then read as a menu missing its debug-log entries.
+        # choose_overlay_item plans a quick-seek and a walk from where that
+        # seek lands, both measured in the same list, so an entry the parse
+        # added at the front cancels out of the difference.
+        self.choose_overlay_item(categories, category)
         self.choose_overlay_item(self.wait_for_overlay(before), item)
 
     def press_popup_button(self, key: str) -> None:
