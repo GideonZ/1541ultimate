@@ -67,9 +67,7 @@ KEYBOARD_ECHO_PROGRAM = bytes(
     )
 )
 MENU_KEY_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_KEY_SETTLE", "0.30"))
-MENU_HOLD_SECONDS = float(os.environ.get("U64_INPUT_MENU_HOLD_SECONDS", "1.2"))
 MENU_POST_RELEASE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_POST_RELEASE_SETTLE", "0.35"))
-MENU_NAV_PREPARE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_PREPARE_SETTLE", "0.15"))
 # Bounds on the menu waits below, not expected durations: each of those waits
 # returns as soon as the menu screen shows the state it asked for, and these
 # only decide when to give up and report what the screen held instead.
@@ -79,21 +77,14 @@ MENU_NAV_PREPARE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_NAV_PREPA
 # closing. MENU_STEP_TIMEOUT covers one cursor key moving the highlight by one
 # entry, and is also what a highlight that has stopped at the end of a list
 # costs before the walk turns around, so it is deliberately short.
-# MENU_SELECT_TIMEOUT bounds a whole walk to a named entry.
 MENU_STATE_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STATE_TIMEOUT", "10.0"))
 MENU_STEP_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STEP_TIMEOUT", "1.5"))
-MENU_SELECT_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_SELECT_TIMEOUT", "45.0"))
 MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0.25"))
-MENU_CONFIG_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_CONFIG_SETTLE", "0.20"))
-MENU_SHIFT_BATCH_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
 RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
 MENU_EVIDENCE_DIR = os.environ.get("U64_INPUT_MENU_EVIDENCE_DIR")
-MODEM_SETTINGS_CATEGORY = "Modem Settings"
-MODEM_OFFLINE_TEXT_ITEM = "Modem Offline Text"
-DEFAULT_MODEM_OFFLINE_TEXT = "/flash/offline.txt"
 # machine:menu_screen serves 25 rows of 40 screen codes, followed by the same
 # number of colour bytes. The firmware draws the highlighted entry in colour 1,
 # so one request reads both the text and which entry is selected. The window
@@ -1236,32 +1227,6 @@ def menu_row_with(rows: List[str], label: str) -> Optional[int]:
     return None
 
 
-def menu_is_settings_root(rows: List[str]) -> bool:
-    """Whether the settings category list is on top, rather than the file browser.
-
-    BrowsableConfigRoot in software/userinterface/config_menu.h gives that one
-    list section headers written as "-- Peripherals --", unconditionally, so
-    this holds on any machine. The file browser lists file and directory names
-    and has no such row, and the items inside one category head their sections
-    with a plain name such as "Handshaking".
-    """
-    for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
-        text = rows[row].strip()
-        if text.startswith("-- ") and text.endswith(" --"):
-            return True
-    return False
-
-
-def menu_editor_is_open(rows: List[str], label: str) -> bool:
-    """Whether the value editor for `label` is drawn over the settings list.
-
-    The editor is a window with the item's name as its title, drawn over the
-    list the item is still listed in, so the name is on screen twice while it
-    is open and once when it is not.
-    """
-    return sum(1 for row in rows if label in row) > 1
-
-
 def wait_for_menu(session: RestInputSession, predicate, description: str,
                   timeout: float = MENU_STATE_TIMEOUT_SECONDS):
     """Poll the menu screen until `predicate(rows, colours)` returns non-None.
@@ -1317,61 +1282,6 @@ def wait_for_menu_selection_change(session: RestInputSession,
         time.sleep(pacing.POLL_INTERVAL_SECONDS)
 
 
-def select_menu_entry(session: RestInputSession, label: str) -> None:
-    """Move the highlight onto the entry whose row holds `label`.
-
-    Reading the highlight back after every key is what makes this work on more
-    than one machine. Fixed press counts do not: they encode one machine's
-    settings list, and an Ultimate II+L has fourteen settings categories, so
-    the nineteen cursor-down presses this replaced stopped on the last of them,
-    "Network Settings". The suite then typed into "Time Server 1" while reading
-    "Modem Offline Text" back, and reported the empty value it had set itself.
-    """
-    deadline = time.monotonic() + MENU_SELECT_TIMEOUT_SECONDS
-    descending = True
-    reversed_once = False
-    while True:
-        rows, current = wait_for_menu_selection(
-            session, f"a highlighted entry while looking for {label!r}")
-        if label in current[1]:
-            return
-        target = menu_row_with(rows, label)
-        if target is not None:
-            descending = target > current[0]
-        # The REST API uses C64 matrix names: cursor-up is shifted cursor-down.
-        keys = ["cursor_up_down"] if descending else ["left_shift", "cursor_up_down"]
-        session.post_events([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
-        if wait_for_menu_selection_change(session, current) is None:
-            if reversed_once or target is not None:
-                raise Failure(
-                    f"Could not reach {label!r}: the highlight stopped on "
-                    f"{current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
-            # Nothing moved, so this is the end of the list and the entry is on
-            # the other side of where the highlight started.
-            reversed_once = True
-            descending = not descending
-        if time.monotonic() >= deadline:
-            raise Failure(
-                f"Timed out after {MENU_SELECT_TIMEOUT_SECONDS:g}s moving the highlight to "
-                f"{label!r}; it is on {current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
-
-
-def clear_menu_editor_field(session: RestInputSession, character_count: int) -> None:
-    if character_count <= 0:
-        return
-    delete_events = [
-        {"kind": "keyboard", "inputs": ["inst_del"], "transition": "tap"}
-        for _ in range(character_count)
-    ]
-    session.post_events(delete_events)
-    time.sleep(max(0.35, character_count * 0.12))
-
-
-def type_menu_editor_text(session: RestInputSession, text: str, settle: float = 0.6) -> None:
-    session.post_events(keyboard_tap_events_for_menu_text(text))
-    time.sleep(settle)
-
-
 def get_config_value(session: RestInputSession, category: str, item: str) -> str:
     body = session.json_request("GET", "/v1/configs/" + urllib.parse.quote(category, safe=""))
     store = body.get(category)
@@ -1396,88 +1306,12 @@ def set_config_value(session: RestInputSession, category: str, item: str, value:
         raise Failure(f"Failed to set config {category}/{item}: {response}")
 
 
-def read_offline_text_field(session: RestInputSession) -> str:
-    return get_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM)
-
-
-def save_offline_text_evidence(tag: str, value: str) -> None:
-    save_menu_note(tag, f"{MODEM_OFFLINE_TEXT_ITEM}: {value}")
-
-
 def open_menu(session: RestInputSession) -> None:
     """Bring the menu up, unless it is already showing."""
     if session.menu_screen_open():
         return
     session.put("menu_button")
     wait_for_menu(session, lambda rows, colours: True, "the menu to open")
-
-
-def navigate_to_modem_offline_text_editor(session: RestInputSession) -> None:
-    session.post_events([{"kind": "release_all"}])
-    time.sleep(MENU_NAV_PREPARE_SETTLE_SECONDS)
-    open_menu(session)
-    menu_keyboard_f2_tap(session, 0.0)
-    wait_for_menu(session, lambda rows, colours: menu_is_settings_root(rows) or None,
-                  "F2 to replace the file browser with the settings categories")
-    select_menu_entry(session, MODEM_SETTINGS_CATEGORY)
-    menu_keyboard_tap(session, ["return"], 0.0)
-    # The category's own name is on the category list and on none of its item
-    # lists, so that name being gone is what says the items are now on screen.
-    # The wanted item is not what is waited for, because a category with more
-    # items than the window has rows opens scrolled to its first one.
-    wait_for_menu(
-        session,
-        lambda rows, colours: (menu_row_with(rows, MODEM_SETTINGS_CATEGORY) is None) or None,
-        f"return to open the {MODEM_SETTINGS_CATEGORY!r} items")
-    select_menu_entry(session, MODEM_OFFLINE_TEXT_ITEM)
-    open_menu_editor(session)
-
-
-def read_menu_editor_window(frame: FrameText, row: int, col: int, width: int = 20) -> str:
-    return frame.lines[row][col:col + width]
-
-
-def save_menu_editor_value(session: RestInputSession, tag: str) -> str:
-    menu_keyboard_tap(session, ["return"], 0.0)
-    # BrowsableConfigItem::requestString in software/userinterface/config_menu.h
-    # stores the edited value when its string_box returns, so the editor window
-    # having gone from the screen says the value is there to be read back.
-    # Measured on u2@c64u over five saves: the configuration already held the
-    # new value on the first read that saw the window closed, 76ms to 154ms
-    # after the return key was posted, and once 56ms before that.
-    wait_for_menu_editor(session, want_open=False)
-    session.post_events([{"kind": "release_all"}])
-    value = read_offline_text_field(session)
-    save_offline_text_evidence(tag, value)
-    assert_state_empty(session)
-    return value
-
-
-def wait_for_menu_editor(session: RestInputSession, want_open: bool) -> None:
-    state = "open" if want_open else "closed"
-    wait_for_menu(
-        session,
-        lambda rows, colours: (menu_editor_is_open(rows, MODEM_OFFLINE_TEXT_ITEM) == want_open) or None,
-        f"the {MODEM_OFFLINE_TEXT_ITEM!r} editor window to be {state}")
-
-
-def open_menu_editor(session: RestInputSession) -> None:
-    """Press return on the highlighted item and wait for its editor window."""
-    menu_keyboard_tap(session, ["return"], 0.0)
-    wait_for_menu_editor(session, want_open=True)
-
-
-def restore_offline_text_field(session: RestInputSession) -> None:
-    set_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM, DEFAULT_MODEM_OFFLINE_TEXT)
-    save_offline_text_evidence("menu_editor_restored", DEFAULT_MODEM_OFFLINE_TEXT)
-
-
-def open_modem_offline_text_editor(session: RestInputSession, initial_value: str) -> None:
-    session.post_events([{"kind": "release_all"}])
-    assert_state_empty(session)
-    set_config_value(session, MODEM_SETTINGS_CATEGORY, MODEM_OFFLINE_TEXT_ITEM, initial_value)
-    time.sleep(MENU_CONFIG_SETTLE_SECONDS)
-    navigate_to_modem_offline_text_editor(session)
 
 
 def soak_special_key_edge_case(session: RestInputSession) -> None:
@@ -1833,110 +1667,272 @@ def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[s
             run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0, offset)
 
 
+# The rename dialog the menu-editor checks type into. Reached from the file
+# browser's context menu on its first entry, which every machine here offers
+# Rename on, and abandoned with RUN/STOP so nothing is renamed.
+#
+# It replaced "Modem Settings" / "Modem Offline Text", which cost a REST config
+# write to seed each value, two select_menu_entry scans (the category list and
+# then the item list, each reading the highlight back after every key), a
+# commit, and a config restore at the end. None of that was about the thing
+# under test, which is what the keyboard puts into a UIStringEdit.
+RENAME_DIALOG_TITLE = "Give a new name.."
+# The context menu a directory entry offers: Enter, Copy to..., Move to...,
+# Rename, Delete. The first is what starts selected, and "Rename" is the only
+# item beginning with 'r', so one keystroke reaches it. 'r' is not one of the
+# letters a machine set to WASD Cursors reads as a cursor key, so it needs no
+# respelling; see tests/lib/navigation.py for the ones that do.
+RENAME_MENU_FIRST_ITEM = "Enter"
+RENAME_MENU_ITEM = "Rename"
+RENAME_MENU_ITEM_KEY = "r"
+
+# How long to hold a key to see it repeat. The firmware repeats after
+# first_delay and then every repeat_speed tick (keyboard_usb.cc), and measured
+# on an Ultimate 64 through this field the boundary is sharp: 0.25s and 0.30s
+# give one character every time, 0.40s gives two, 0.50s three, 0.60s four, and
+# 1.20s ten. 0.6s is comfortably past the first repeat and still leaves the
+# marker checks a run they cannot mistake for a single press. It was 1.2s.
+MENU_REPEAT_HOLD_SECONDS = float(
+    os.environ.get("U64_INPUT_MENU_REPEAT_HOLD", "0.6"))
+# The dialog draws its title, a blank line, then the field. A C64 Ultimate
+# draws the whole browser inside a frame and this dialog inside that, so the
+# field is found from the title rather than from the last framed row.
+RENAME_FIELD_ROWS_BELOW_TITLE = 2
+
+
+def rename_dialog_title_row(rows: List[str]) -> Optional[int]:
+    return next((i for i, row in enumerate(rows) if RENAME_DIALOG_TITLE in row), None)
+
+
+def read_rename_field(session: RestInputSession) -> str:
+    """What the rename field holds, read while it is still open.
+
+    A more direct oracle than the old one: it is the editor's own buffer rather
+    than the value a commit wrote somewhere else, so nothing between the
+    keyboard and the field can hide a defect.
+    """
+    screen = read_menu_screen(session)
+    if screen is None:
+        raise Failure("the menu closed while the rename field was being read")
+    value = _field_of(screen[0])
+    if value is None:
+        raise Failure(f"the {RENAME_DIALOG_TITLE!r} dialog is not on screen")
+    return value
+
+
+def selected_row_with(rows: List[str], colours: List[List[int]], label: str,
+                      marking: List[int]) -> Optional[int]:
+    """The row holding `label` if it carries `marking`, else None."""
+    row = menu_row_with(rows, label)
+    if row is None or sorted(set(colours[row])) != marking:
+        return None
+    return row
+
+
+def open_rename_editor(session: RestInputSession) -> None:
+    """Open the rename dialog on the browser's first entry, and empty it.
+
+    The context menu is drawn as an overlay over the right-hand columns rather
+    than as a full-width list, so select_menu_entry cannot read its highlight:
+    that scanner looks for one marked row across the whole width, which here is
+    the browser's own selection underneath. The overlay is picked by letter
+    instead, which is what the browser offers and what ui_backend does with the
+    same menu.
+
+    The landing is confirmed before RETURN is sent, and that matters: this menu
+    also holds Delete, so committing on an unverified highlight is not a thing
+    to do on a drive entry.
+    """
+    session.post_events([{"kind": "release_all"}])
+    open_menu(session)
+    # No F2 here: the menu opens on the file browser, which is what this wants.
+    menu_keyboard_tap(session, ["return"], 0.0)
+    # "Enter" is the first item and starts selected, so its marking is what a
+    # selected row in this overlay looks like on whatever machine this is.
+    marking = wait_for_menu(
+        session,
+        lambda rows, colours: (
+            sorted(set(colours[menu_row_with(rows, RENAME_MENU_FIRST_ITEM)]))
+            if menu_row_with(rows, RENAME_MENU_FIRST_ITEM) is not None else None),
+        f"the context menu, with {RENAME_MENU_FIRST_ITEM!r} selected")
+    menu_keyboard_tap(session, [RENAME_MENU_ITEM_KEY], MENU_TYPE_SETTLE_SECONDS)
+    wait_for_menu(
+        session,
+        lambda rows, colours: selected_row_with(rows, colours, RENAME_MENU_ITEM, marking),
+        f"{RENAME_MENU_ITEM!r} to become the selected context-menu item")
+    menu_keyboard_tap(session, ["return"], 0.0)
+    wait_for_menu(session,
+                  lambda rows, colours: (rename_dialog_title_row(rows) is not None) or None,
+                  f"the {RENAME_DIALOG_TITLE!r} dialog to open")
+    clear_rename_field(session)
+
+
+def wait_for_rename_field_matching(session: RestInputSession, predicate,
+                                   description: str) -> str:
+    """Wait until the field satisfies `predicate`, and answer what it holds.
+
+    For the steps whose exact result is not known in advance: a repeat run is
+    however many characters the hold produced, but the marker that has to land
+    after it is known, so that is what is waited for.
+    """
+    return wait_for_menu(
+        session,
+        lambda rows, colours: (
+            _field_of(rows)
+            if _field_of(rows) is not None and predicate(_field_of(rows))
+            else None),
+        description)
+
+
+def wait_for_rename_field(session: RestInputSession, expected: str) -> None:
+    """Wait until the field reads `expected`, rather than sleeping a settle.
+
+    Every step below that types something whose result is known waits for that
+    result. A fixed settle is both slower, because it always pays its full
+    length, and weaker, because a machine slower than it fails the check for a
+    reason that has nothing to do with what is being checked.
+    """
+    wait_for_menu(
+        session,
+        lambda rows, colours: (True if _field_of(rows) == expected else None),
+        f"the rename field to read {expected!r}")
+
+
+def _field_of(rows: List[str]) -> Optional[str]:
+    title = rename_dialog_title_row(rows)
+    if title is None:
+        return None
+    return rows[title + RENAME_FIELD_ROWS_BELOW_TITLE].strip("|").strip()
+
+
+def type_into_rename_field(session: RestInputSession, text: str, expected: str) -> None:
+    """Type `text` and wait for the field to read `expected`."""
+    session.post_events(keyboard_tap_events_for_menu_text(text))
+    wait_for_rename_field(session, expected)
+
+
+def clear_rename_field(session: RestInputSession) -> None:
+    """Empty the field with one keystroke.
+
+    Shift plus CLR/HOME is KEY_CLEAR, which UIStringEdit answers by emptying
+    its whole buffer whatever the length (software/userinterface/ui_elements.cc),
+    so this costs one key whatever the name it is replacing.
+    """
+    session.post_events([{"kind": "keyboard",
+                          "inputs": ["left_shift", "clr_home"],
+                          "transition": "tap"}])
+    wait_for_rename_field(session, "")
+
+
+def close_rename_editor(session: RestInputSession) -> None:
+    """Abandon the rename. Nothing is renamed and nothing needs restoring."""
+    menu_keyboard_tap(session, ["run_stop"], 0.0)
+    wait_for_menu(session,
+                  lambda rows, colours: (rename_dialog_title_row(rows) is None) or None,
+                  f"the {RENAME_DIALOG_TITLE!r} dialog to close")
+    session.post_events([{"kind": "release_all"}])
+
+
 def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[str]] = None) -> None:
+    """What the keyboard puts into a menu string editor.
+
+    Three scenarios sharing one editor session, against the browser's rename
+    dialog, abandoned at the end with RUN/STOP. They were seven against a
+    config item that had to be seeded over REST, navigated to through two menu
+    levels and restored afterwards. What they check is unchanged; where they
+    check it, how many editor sessions it takes and how long they wait are not.
+    """
     session.post_events([{"kind": "release_all"}])
     assert_state_empty(session)
-    original_offline_text = read_offline_text_field(session)
-    save_offline_text_evidence("menu_original_value", original_offline_text)
+    opened = False
+
+    def editor() -> None:
+        """Open the dialog on first use, and empty it on every use."""
+        nonlocal opened
+        if not opened:
+            open_rename_editor(session)
+            opened = True
+        else:
+            clear_rename_field(session)
+
     try:
-        open_modem_offline_text_editor(session, "")
-        editor_open = True
-        editor_value = ""
-
-        def prepare_editor(initial_value: str = "") -> None:
-            nonlocal editor_open, editor_value
-            if not editor_open:
-                open_menu_editor(session)
-            clear_menu_editor_field(session, len(editor_value))
-            if initial_value:
-                type_menu_editor_text(session, initial_value)
-            editor_open = True
-            editor_value = initial_value
-
-        def save_editor_value(tag: str) -> str:
-            nonlocal editor_open, editor_value
-            value = save_menu_editor_value(session, tag)
-            editor_open = False
-            editor_value = value
-            return value
-
         if wants_test(selected, "menu-shift"):
-            with check("menu editor accepts an unshifted control character"):
-                prepare_editor()
-                menu_keyboard_tap(session, ["a"], MENU_TYPE_SETTLE_SECONDS)
-                lower_value = save_editor_value("menu_lowercase_control")
-                if lower_value != "a":
-                    raise Failure(f"Lowercase control write produced {lower_value!r} instead of 'a'.")
-
-            with check("menu editor keeps separate-batch shift active across POSTs"):
-                prepare_editor()
-                menu_keyboard_transition(session, ["left_shift"], "press", MENU_SHIFT_BATCH_SETTLE_SECONDS)
-                menu_keyboard_tap(session, ["a"], MENU_SHIFT_BATCH_SETTLE_SECONDS)
-                menu_keyboard_transition(session, ["left_shift"], "release", MENU_SHIFT_BATCH_SETTLE_SECONDS)
-                separate_value = save_editor_value("menu_shift_separate_batches")
-                if separate_value != "A":
-                    raise Failure(f"Separate-batch shift write produced {separate_value!r} instead of 'A'.")
+            # One session, two facts: a letter arrives unshifted, and a shift
+            # pressed in its own request is still held when the letter arrives
+            # in the next one. Checked separately this opened the editor twice
+            # to prove something the pair proves together, and the pair also
+            # shows the two compose.
+            with check("menu editor takes a letter, and a shift held across requests"):
+                editor()
+                type_into_rename_field(session, "a", "a")
+                menu_keyboard_transition(session, ["left_shift"], "press", 0.0)
+                menu_keyboard_tap(session, ["a"], 0.0)
+                menu_keyboard_transition(session, ["left_shift"], "release", 0.0)
+                wait_for_rename_field(session, "aA")
 
         if wants_test(selected, "menu-repeat-printable"):
-            with check("menu editor repeats a held printable key"):
-                prepare_editor()
-                menu_keyboard_transition(session, ["c"], "press", 0.1)
-                time.sleep(MENU_HOLD_SECONDS)
-                menu_keyboard_transition(session, ["c"], "release", 0.1)
+            # Repeat starting and repeat stopping are one question asked of one
+            # hold: hold the key, release it, wait past where a further repeat
+            # would land, then type a marker. A run of 'c' says it repeated and
+            # the marker sitting last says it stopped.
+            with check("menu editor repeats a held printable key and stops on release"):
+                editor()
+                menu_keyboard_transition(session, ["c"], "press", 0.0)
+                time.sleep(MENU_REPEAT_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["c"], "release", 0.0)
                 time.sleep(MENU_POST_RELEASE_SETTLE_SECONDS)
-                repeated_value = save_editor_value("menu_printable_repeat")
-                if len(repeated_value) < 2 or set(repeated_value) != {"c"}:
-                    raise Failure(f"Held printable key produced {repeated_value!r} instead of a repeated run of 'c'.")
-
-            with check("menu editor stops printable repeat after release"):
-                prepare_editor()
-                menu_keyboard_transition(session, ["c"], "press", 0.1)
-                time.sleep(MENU_HOLD_SECONDS)
-                menu_keyboard_transition(session, ["c"], "release", 0.1)
-                time.sleep(0.60)
-                menu_keyboard_tap(session, ["z"], MENU_TYPE_SETTLE_SECONDS)
-                time.sleep(0.60)
-                stopped_value = save_editor_value("menu_printable_repeat_stopped")
-                if len(stopped_value) < 3 or set(stopped_value[:-1]) != {"c"} or not stopped_value.endswith("z"):
-                    raise Failure(f"Printable repeat did not stop before the marker key: {stopped_value!r}.")
+                menu_keyboard_tap(session, ["z"], 0.0)
+                value = wait_for_rename_field_matching(
+                    session, lambda field: field.endswith("z"),
+                    "the marker 'z' to land after the repeated run")
+                save_menu_note("menu_printable_repeat", value)
+                if len(value) < 3 or set(value[:-1]) != {"c"} or not value.endswith("z"):
+                    raise Failure(f"Expected a repeated run of 'c' ended by the "
+                                  f"marker 'z', got {value!r}.")
 
         if wants_test(selected, "menu-repeat-cursor"):
-            with check("menu editor accepts a single cursor-left control"):
-                prepare_editor("ABCD")
-                menu_keyboard_tap(session, ["left_shift", "cursor_left_right"], 0.2)
+            # The same question for a control key, which takes a different path
+            # through the decoder. A single tap is the control: the held one has
+            # to move the cursor further than it did, and the two markers have
+            # to end up adjacent, which says the repeat had stopped before the
+            # first of them.
+            with check("menu editor repeats a held cursor control and stops on release"):
+                editor()
+                type_into_rename_field(session, "ABCD", "ABCD")
+                menu_keyboard_tap(session, ["left_shift", "cursor_left_right"], 0.0)
+                session.post_events(keyboard_tap_events_for_menu_text("Z"))
+                tapped = wait_for_rename_field_matching(
+                    session, lambda field: "Z" in field,
+                    "the marker to land after a single cursor-left")
+
+
+                clear_rename_field(session)
+                type_into_rename_field(session, "ABCD", "ABCD")
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"],
+                                         "press", 0.0)
+                time.sleep(MENU_REPEAT_HOLD_SECONDS)
+                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"],
+                                         "release", 0.0)
                 time.sleep(MENU_POST_RELEASE_SETTLE_SECONDS)
-                type_menu_editor_text(session, "Z", 0.4)
-                control_value = save_editor_value("menu_cursor_single_tap")
-
-            with check("menu editor repeats a held cursor-left control"):
-                prepare_editor("ABCD")
-                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "press", 0.1)
-                time.sleep(MENU_HOLD_SECONDS)
-                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "release", 0.1)
-                time.sleep(0.10)
-                type_menu_editor_text(session, "Z", 0.4)
-                short_value = save_editor_value("menu_cursor_repeat_short_wait")
-                if short_value == control_value:
-                    raise Failure("Held cursor-left matched the single-tap result; no repeated menu navigation was observed.")
-
-            with check("menu editor stops cursor repeat after release"):
-                prepare_editor("ABCD")
-                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "press", 0.1)
-                time.sleep(MENU_HOLD_SECONDS)
-                menu_keyboard_transition(session, ["left_shift", "cursor_left_right"], "release", 0.1)
-                time.sleep(0.60)
-                type_menu_editor_text(session, "Z", 0.4)
-                time.sleep(0.60)
-                type_menu_editor_text(session, "Y", 0.4)
-                stopped_cursor_value = save_editor_value("menu_cursor_repeat_stopped")
-                if "ZY" not in stopped_cursor_value:
-                    raise Failure(f"Cursor repeat moved between post-release markers: {stopped_cursor_value!r}.")
-
+                session.post_events(keyboard_tap_events_for_menu_text("ZY"))
+                held = wait_for_rename_field_matching(
+                    session, lambda field: field.count("Y") == 1,
+                    "both markers to land after the repeated cursor run")
+                save_menu_note("menu_cursor_repeat", f"tapped={tapped} held={held}")
+                if held == tapped:
+                    raise Failure(f"A held cursor-left landed where a single tap "
+                                  f"did ({held!r}); no repeat was observed.")
+                if "ZY" not in held:
+                    raise Failure(f"The cursor kept moving between the markers, "
+                                  f"so the repeat did not stop: {held!r}.")
     finally:
-        try:
-            restore_offline_text_field(session)
-        except Exception:
-            pass
+        # Nothing to restore: the rename is abandoned with RUN/STOP, so no name
+        # was changed and no configuration item was written.
+        if opened:
+            try:
+                close_rename_editor(session)
+            except Failure:
+                pass
         session.close_menu_from_anywhere()
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
