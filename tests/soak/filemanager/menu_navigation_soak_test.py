@@ -73,6 +73,10 @@ ENTRY_BODY = bytes([0x01, 0x08]) + b"\x00" * 30
 # key can hide is a field that kept a tail of the old value.
 FIELD_VALUES = ("n1.prg", "navsoak_medium_name.prg", "n2.prg")
 
+# The Telnet session's own browser layout, which is not the 40x25 one.
+TELNET_ENTRY_ROWS = range(2, 23)
+TELNET_STATUS_ROW = 23
+
 
 def entry_name(index: int) -> str:
     return f"F{index:02d}.PRG"
@@ -174,8 +178,15 @@ def main() -> int:
         pacing.remember_key_drain(targets.device_of(target.input_host),
                                   args.key_drain)
     fixture = Fixture(targets.device_of(target), args.root)
+    # Telnet is not constrained to the physical 40x25 display and renders this
+    # listing at its own geometry. page_rows reads the page stride off
+    # entry_rows, and the firmware takes it from the same window
+    # (window->get_size_y()/2), so the two only agree when the suite says what
+    # the Telnet geometry is rather than letting the REST one stand in.
     browser = ui_backend.make_browser(args.mode, args.host,
-                                      args.password or None, args.timeout)
+                                      args.password or None, args.timeout,
+                                      telnet_entry_rows=TELNET_ENTRY_ROWS,
+                                      telnet_status_row=TELNET_STATUS_ROW)
     failures: List[str] = []
 
     def failed(label: str, reason: str) -> None:
@@ -186,8 +197,13 @@ def main() -> int:
         fixture.build()
         browser.backend.ensure_ready()
         stride = browser.page_rows()
-        detail(f"page key moves {stride} rows; "
-               f"{browser.backend.key_drain_seconds * 1000:.0f} ms charged per key")
+        # Only the REST backend charges a per-key drain; Telnet writes bytes to
+        # a stream and reads the redraw back, so it has no such number.
+        charged = getattr(browser.backend, "key_drain_seconds", None)
+        detail(f"page key moves {stride} of {len(list(browser.entry_rows))} "
+               "listing rows"
+               + (f"; {charged * 1000:.0f} ms charged per key"
+                  if charged is not None else "; this transport charges none"))
         browser.go_to_root()
         browser.go_to_directory(fixture.path)
 
