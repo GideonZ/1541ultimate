@@ -12,5 +12,6 @@ openapi-schema-validator # tests/lib/openapi_contract.py, checks device answers 
 -r ../tools/openapi/requirements.txt  # openapi-spec-validator, pinned there because `make openapi_validate` is a gate
 Pillow                   # e2e/api/input_test.py, e2e/io/printer/printer_test.py
 pyftpdlib                # e2e/filesystem/ftp_client_test.py
+selenium                 # e2e/web/theme_test.py, drives an installed Chrome and Firefox
 pytesseract              # e2e/io/printer/printer_test.py, only under --stage verify
 PyYAML                   # tests/lib/openapi_contract.py, reads doc/api/rest_api_openapi_*.yaml

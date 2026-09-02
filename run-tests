@@ -228,6 +228,12 @@ SUITES: Sequence[Suite] = (
     # told apart by watching a real device, which never produces them on
     # demand. Scripted bursts can.
     Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", "", profile=profiles.QUICK),
+    # Also needs no device: the two pages the device serves decide their theme
+    # in the browser, and both read sessionStorage above the code that installs
+    # their handlers, so a browser set to block site data cost the whole page.
+    # Manual because it drives an installed Chrome and Firefox through Selenium,
+    # which no other suite needs and CI does not provide.
+    Suite("e2e", "web-theme", "tests/e2e/web/theme_test.py", "", manual=True),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
