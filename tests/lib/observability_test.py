@@ -4959,8 +4959,15 @@ def a_suite_console_reaches_the_log_and_the_terminal() -> str:
         with open(made.path("127.0.0.1", "overlay-held.log"), "rb") as handle:
             saved = handle.read()
         expect("no escape bytes", b"\x1b" in saved, False)
-        expect("in order", saved,
-               b"[01] coloured ... OK (20 rows, 0.000s)\n"
+        # The check's duration is whatever the machine was doing at the time,
+        # so it is blanked rather than asserted. Comparing it byte for byte
+        # failed a whole run against a `0.002s` where a quiet machine had
+        # produced `0.000s`, which says nothing about what this case is for:
+        # that every line a suite printed reached its log, in order, with no
+        # escape bytes.
+        timed = re.sub(rb"\d+\.\d+s", b"Ns", saved)
+        expect("in order", timed,
+               b"[01] coloured ... OK (20 rows, Ns)\n"
                b"to stderr\nno trailing newline\n")
         for wanted in ("coloured", "to stderr", "no trailing newline"):
             if wanted not in made.stdout:
