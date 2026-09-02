@@ -950,6 +950,76 @@ def declared_computers(value):
             os.environ[targets.COMPUTERS_ENV] = before
 
 
+def run_move_rows_checks():
+    """The page-key decomposition, over every remainder, without a device.
+
+    `Browser.move_rows` turns a row distance into page keys plus single steps.
+    The split is arithmetic, so it is checked here rather than by pressing keys
+    on hardware: a soak that walked every distance spent four minutes on a
+    cartridge target re-proving what these cases prove in milliseconds. What
+    the device still has to answer is that a page key really moves a stride and
+    clamps at the ends, which tests/soak/filemanager/menu_navigation_soak_test.py
+    checks at the boundaries.
+    """
+    import ui_backend
+
+    class _Stub:
+        """A Browser with a known stride and a backend that records keys."""
+
+        sent = []
+
+        def __init__(self, stride):
+            self.entry_rows = range(0, stride * 2)
+            self.backend = self
+            self.machine = self
+            self.page_up_key = "PGUP"
+            self.page_down_key = "PGDN"
+            self.sent = []
+
+        def page_rows(self):
+            return ui_backend.Browser.page_rows(self)
+
+        def send_key_sequence(self, keys, label):
+            self.sent = list(keys)
+            return None
+
+    move_rows = ui_backend.Browser.move_rows
+    page_rows = ui_backend.Browser.page_rows
+
+    with check("move_rows spends page keys before single steps"):
+        for stride in (5, 11, 30):
+            stub = _Stub(stride)
+            expect(f"stride {stride}", page_rows(stub), stride)
+            for distance in range(1, stride * 3 + 2):
+                for sign, page, step in ((1, "PGDN", "DOWN"), (-1, "PGUP", "UP")):
+                    stub.sent = []
+                    move_rows(stub, sign * distance)
+                    pages, singles = divmod(distance, stride)
+                    wanted = [page] * pages + [step] * singles
+                    if stub.sent != wanted:
+                        raise Failure(
+                            f"stride {stride}, {sign * distance} rows: sent "
+                            f"{stub.sent}, expected {wanted}")
+
+    with check("the keys sent always add up to the rows asked for"):
+        # The property that matters: a cheaper spelling has to be the same
+        # movement. A split that dropped the remainder would pass a check that
+        # only counted keys.
+        for stride in (5, 11, 30):
+            stub = _Stub(stride)
+            for distance in range(0, stride * 3 + 2):
+                stub.sent = []
+                move_rows(stub, distance)
+                covered = sum(stride if key == "PGDN" else 1 for key in stub.sent)
+                expect(f"stride {stride}, {distance} rows", covered, distance)
+
+    with check("a zero move sends nothing at all"):
+        stub = _Stub(11)
+        stub.sent = ["stale"]
+        expect("returns without sending", move_rows(stub, 0), None)
+        expect("nothing was sent", stub.sent, ["stale"])
+
+
 def run_profile_checks(runner):
     """What each profile selects, and that the ladder is really a ladder."""
     with check("the profiles are ordered and cumulative"):
@@ -1533,6 +1603,7 @@ def main():
             run_bench_topology_checks(runner)
             run_settings_restore_checks()
             run_profile_checks(runner)
+            run_move_rows_checks()
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()

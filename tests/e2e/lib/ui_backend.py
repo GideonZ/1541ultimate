@@ -321,6 +321,26 @@ class Backend:
             snapshot = self.send_key(key)
         return snapshot
 
+    # The key that empties a string edit field in one keystroke, or None where
+    # the transport cannot produce one. Read by Browser.fill_edit_field, which
+    # falls back to counted BACKSPACE taps.
+    clear_field_key: Optional[str] = None
+
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        """Several different keys as one batch, where the transport can.
+
+        send_key_repeat already batches, but only one key repeated. Moving a
+        cursor a given number of rows takes a mix -- page keys for the bulk of
+        the distance and single steps for the remainder -- and sending that as
+        two batches costs two round trips and two settles, which is most of
+        what the page keys just saved.
+        """
+        snapshot = self.capture()
+        for key in keys:
+            snapshot = self.send_key(key)
+        snapshot.last_command = label
+        return snapshot
+
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         """One key followed by a string, as a single batch where possible.
 
@@ -471,6 +491,14 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "ESC": ["run_stop"],
     "DEL": ["inst_del"],
     "BACKSPACE": ["inst_del"],
+    # Shift+CLR/HOME, which the C64 shifted keymap turns into KEY_CLEAR
+    # (software/io/c64/keyboard_c64.cc, keymap_shifted row 6 col 3). A string
+    # field empties its whole buffer on it in one keystroke
+    # (software/userinterface/ui_elements.cc, case KEY_CLEAR), so it replaces
+    # a run of BACKSPACE taps. Telnet has no way to send it: the VT100 decoder
+    # has no sequence that produces KEY_CLEAR, which is why clearing a field
+    # still has a BACKSPACE path.
+    "CLEAR": ["left_shift", "clr_home"],
     "RUNSTOP": ["run_stop"],
     # The C64's top-left left-arrow key, which the monitor treats as Back
     # except where it is edit data. Deliberately its own action rather than an
@@ -1039,7 +1067,10 @@ class RestBackend(Backend):
         # What one key of a batch costs on this target. A cartridge target
         # pays the computer's matrix tap rate rather than the device's own key
         # queue; see tests/lib/pacing.py.
-        self.key_drain_seconds = pacing.key_drain_seconds(self.target.split)
+        # A property rather than a value: pacing keeps what a machine was
+        # measured to need, by host, and a measurement taken during the run
+        # has to reach the batches sent after it.
+        self._key_drain_host = targets.device_of(self.target.input_host)
         # The foreground colour this machine marks the cursor row with, once a
         # screen has shown it unambiguously. See find_cursor_colour.
         self._cursor_colour: Optional[int] = None
@@ -1087,6 +1118,16 @@ class RestBackend(Backend):
         # The handle says where the device is, ports included, so one builder
         # answers for every caller here.
         return rest_lib.url_for(self.target, path, params)
+
+    @property
+    def key_drain_seconds(self) -> float:
+        """What one key of a batch costs on this target.
+
+        Keyed on the machine whose keyboard the keys actually cross, which on
+        a cartridge target is the computer rather than the device under test.
+        See tests/lib/pacing.py.
+        """
+        return pacing.key_drain_seconds(self.target.split, self._key_drain_host)
 
     @property
     def machine_host(self) -> str:
@@ -1448,6 +1489,23 @@ class RestBackend(Backend):
         events = [{"kind": "keyboard", "inputs": list(combo), "transition": "tap"} for _ in range(count)]
         self._post_events(events)
         return self._settle(before, min_drain=count * self.key_drain_seconds)
+
+    clear_field_key = "CLEAR"
+
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        if not keys:
+            return self.capture()
+        events = []
+        for key in keys:
+            combo = KEY_ALIASES.get(key)
+            if combo is None:
+                raise Failure(f"Unknown key alias {key!r} for RestBackend")
+            events.append({"kind": "keyboard", "inputs": list(combo),
+                           "transition": "tap"})
+        self.last_command = label
+        before = self._menu_screen_body()
+        self._post_events(events)
+        return self._settle(before, min_drain=len(events) * self.key_drain_seconds)
 
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         combo = KEY_ALIASES.get(key)
@@ -1945,6 +2003,20 @@ class TelnetBackend(Backend):
         self._send(payload * count, f"{key} x{count}")
         return self.capture()
 
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        if not keys:
+            return self.capture()
+        payload = b""
+        for key in keys:
+            one = TELNET_KEY_BYTES.get(key)
+            if one is None:
+                raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
+            payload += one
+        self.last_command = label
+        self._expect_redraw = True
+        self._send(payload, label)
+        return self.capture()
+
     def _send(self, payload: bytes, what: str) -> None:
         """Write to the session, and remember what for the interaction log.
 
@@ -2250,9 +2322,84 @@ class Browser:
                 self.backend.ensure_ready()
         raise Failure(f"could not return to '/'; now at {self.current_path()!r}")
 
+    # -- moving the cursor a given number of rows --
+    #
+    # The browser binds a page key to half a window
+    # (TreeBrowser::handle_key, state->up/down(window->get_size_y()/2)), and
+    # the window is the listing area, so one page key is worth
+    # len(entry_rows) // 2 single steps. Which physical key that is depends on
+    # the machine: F1/F7 on an Ultimate 64 and an Ultimate II+, F3/F5 on a
+    # C64 Ultimate, which Machine.page_up_key and page_down_key answer.
+    #
+    # For a cartridge target the keys are injected into the computer's matrix
+    # but read by the cartridge's firmware, so the roles are the cartridge's.
+    # backend.machine already asks the device rather than the computer, so
+    # nothing here needs to allow for it.
+    def page_rows(self) -> int:
+        """How many rows one page key moves, for this transport's window."""
+        return max(1, len(self.entry_rows) // 2)
+
+    def move_rows(self, rows: int) -> Optional[Snapshot]:
+        """Move the cursor `rows` rows, down when positive, in one request.
+
+        The displacement is exactly `rows` either way: the page keys carry
+        whole strides and single steps carry the remainder, so this is a
+        cheaper spelling of press_many rather than a different movement. On a
+        cartridge target, where each injected key costs a fixed drain, a
+        22-row advance falls from 22 keys to 12.
+
+        One request for the mixed sequence, not one per kind: splitting it
+        would pay a second round trip and a second settle, which is most of
+        what the page keys save.
+        """
+        if rows == 0:
+            return None
+        step = "DOWN" if rows > 0 else "UP"
+        page = (self.backend.machine.page_down_key if rows > 0
+                else self.backend.machine.page_up_key)
+        pages, singles = divmod(abs(rows), self.page_rows())
+        keys = [page] * pages + [step] * singles
+        return self.backend.send_key_sequence(
+            keys, f"{step} x{abs(rows)} rows")
+
+    # How many rounds of page keys go_to_top will send before giving up. Six
+    # rounds of a 22-row window is 132 rows, past any listing a suite builds.
+    TOP_ROUNDS = 6
+
     def go_to_top(self, count: int = 14) -> None:
-        # Deeper than any listing a suite builds, and than the root menu.
-        self.press_many("UP", count)
+        """Put the cursor on the first entry of the listing.
+
+        This used to send `count` UP keys and stop, which reaches the top only
+        when the cursor was already within `count` rows of it. Everything
+        built on it inherited that: select_entry's scan started wherever the
+        cursor happened to be rather than at the top, so an entry above that
+        point was not in the part of the listing it searched.
+
+        Page keys make the honest version affordable. Each round covers a
+        whole window for two keystrokes, and the rounds stop as soon as one
+        changes nothing, which is what being at the top looks like. A cursor
+        already at the top costs one request, the same as before.
+
+        `count` is the least it will move, kept so a caller that wants a known
+        minimum rewind still gets one.
+        """
+        stride = self.page_rows()
+        rows = max(stride * 2, -(-count // stride) * stride)
+        # One read before the first round, so a cursor already at the top
+        # costs one round rather than two. Compared this way rather than
+        # through backend.last_key_changed, which only the REST backend
+        # maintains, and against a read that costs far less than the fourteen
+        # keystrokes this replaces.
+        previous = tuple(self.backend.capture().lines)
+        for _ in range(self.TOP_ROUNDS):
+            snapshot = self.move_rows(-rows)
+            if snapshot is None:
+                return
+            screen = tuple(snapshot.lines)
+            # A round that changed nothing is what the top looks like.
+            if screen == previous:
+                return
+            previous = screen
 
     def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0) -> None:
         """Put the cursor on the listing entry starting with `prefix`.
@@ -2295,7 +2442,7 @@ class Browser:
                     return
                 # Not on this screen. Move a screenful further in, in one
                 # request, and look again.
-                self.press_many("DOWN", visible - 1)
+                self.move_rows(visible - 1)
                 if not self.backend.last_key_changed:
                     # Nothing moved, so this is the end of the listing and the
                     # entry is not in it.
@@ -2371,10 +2518,11 @@ class Browser:
         row, rows = self.backend.selection_and_rows(self.entry_rows)
         for index in self.entry_rows:
             if index < len(rows) and strip_frame(rows[index]).startswith(prefix):
-                if index > row:
-                    self.press_many("DOWN", index - row)
-                elif index < row:
-                    self.press_many("UP", row - index)
+                # Same listing, so the page keys apply here too, and this
+                # jump is up to a whole window long. The landing is read back
+                # below either way, which is what makes the cheaper spelling
+                # safe to use on a jump the caller depends on.
+                self.move_rows(index - row)
                 return self.selected_text().startswith(prefix)
         return False
 
@@ -2567,8 +2715,20 @@ class Browser:
         raise Failure(f"{text!r} never went away; screen was:\n{self.screen()}")
 
     def fill_edit_field(self, text: str, clear_taps: int = 0) -> None:
+        """Replace a string field's contents with `text` and accept it.
+
+        `clear_taps` says how much there could be to remove, and is only used
+        where the field has to be emptied one character at a time. Where the
+        transport can send KEY_CLEAR the whole buffer goes in one keystroke
+        whatever its length, which is the difference between one key and up to
+        64 on a machine that drains injected keys at 100ms each.
+        """
         if clear_taps:
-            self.press_many("BACKSPACE", clear_taps)
+            clear = self.backend.clear_field_key
+            if clear:
+                self.press(clear)
+            else:
+                self.press_many("BACKSPACE", clear_taps)
         self.type_text(text)
         self.press("ENTER")
 
