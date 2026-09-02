@@ -224,6 +224,14 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 # page keys on the bulk of a jump: on u2@c64u the same 38-row landing costs 8
 # keys instead of 38, and its median fell from 2173ms to 820ms.
 #
+# That is also why no run measures this for itself. A probe at the start of a
+# run could only measure how fast keys arrive, which the sweep shows does not
+# decide whether they are read correctly, and it would charge every run that
+# never touches a keyboard for the privilege. The measurement belongs in the
+# soak, which has a real read-back oracle and is run when a machine's firmware
+# changes; remember_key_drain below is how it holds a swept value for the
+# length of one process.
+#
 # Measured end to end through the ordinary send path on u2@c64u: at 0.1 a
 # 12-key batch cost 120ms a key, at 0.06 it cost 84ms, and typing a 12
 # character string cost the same. The u64, which needs no matrix crossing,
