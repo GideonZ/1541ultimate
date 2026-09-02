@@ -1021,6 +1021,18 @@ def row_short_write(ctx: Context, name: str) -> None:
 # The rows that cannot converge without a given firmware fix. Kept beside the
 # rows themselves so a label renamed below is renamed here too.
 ROWS_NEEDING_FIX = {
+    # These three hold the FTP data connection open on purpose and look through
+    # every observer while it is open, because the create notification fires
+    # when the file is opened and the size only when it is closed. That needs a
+    # fourth socket: the Telnet session, the FTP control, the FTP data
+    # connection, and then whatever the observer looks through. A C64 Ultimate
+    # serves three across Telnet and FTP, and the observer's own read is what
+    # the device resets. See machine.SERVES_FOUR_TELNET_FTP_SOCKETS.
+    machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS: (
+        "create from FTP",
+        "write from FTP",
+        "short write commits consistently",
+    ),
     machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
         "rename under observer-queue pressure from the Menu",
         "rename under observer-queue pressure from Telnet",
