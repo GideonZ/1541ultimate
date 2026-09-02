@@ -256,7 +256,21 @@ class Device:
         would leave the device dirty for every suite that follows. The stale
         client the reset has to survive is created by switching the Interface
         Type under an open menu, which ui_backend.RestBackend no longer does.
+
+        On a cartridge target both menus have to be shut, not just the
+        cartridge's. menu_is_open and press_menu_button are routed to the
+        device under test, so closing "the menu" here left the computer's own
+        UI holding the machine, and the release then tore down the computer
+        rather than the cartridge. Measured on u2@c64u: the C64 Ultimate went
+        off the network entirely, ICMP included, during the UI-state repair
+        that follows a suite, and needed mains power. The computer's menu is
+        closed first for that reason, and a computer that will not shut it is
+        reported rather than reset at.
         """
+        if self.target.split:
+            clear = getattr(self, "clear_computer_menu", None)
+            if clear is not None:
+                clear()
         for _ in range(2):
             if not self.menu_is_open():
                 break

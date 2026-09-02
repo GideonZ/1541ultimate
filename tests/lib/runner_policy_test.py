@@ -768,6 +768,14 @@ def run_target_grammar_checks():
         expect("slug", targets.parse("u64").slug, "u64")
 
 
+class _SplitTarget:
+    """Just enough of targets.Target for the cartridge branch of reset_machine."""
+
+    split = True
+    device = "u2"
+    computer = "c64u"
+
+
 class ScriptedConfigs:
     """A stand-in for api.configs backed by a dict, counting what it is asked.
 
@@ -1254,6 +1262,13 @@ class StubMenuDevice:
     def __init__(self, releases_on_reset: bool,
                  launcher_entry: "str | None" = None, ui_state=None) -> None:
         self.releases_on_reset = releases_on_reset
+        # For the cartridge branch: whether the computer has its own menu up,
+        # and the order the reset did things in.
+        self.computer_menu = False
+        self.order = []
+        self.target = None
+        self.password = None
+        self.timeout = 1.0
         # The module under test, so the descent this stub records is the real
         # one rather than a second copy of it written here.
         self._ui_state = ui_state
@@ -1332,6 +1347,27 @@ class StubMenuDevice:
         return before
 
 
+    def clear_computer_menu(self):
+        self.order.append("computer-menu")
+        self.computer_menu = False
+
+    def press_menu_button(self):
+        if self.wedged:
+            return
+        if self.open and self.deaf:
+            return
+        self.open = not self.open
+
+    def _request(self, method, path, payload=None):
+        if path.endswith(":reset"):
+            self.order.append("reset")
+            self.resets += 1
+            if self.releases_on_reset:
+                self.wedged = False
+                self.deaf = False
+                self.open = False
+        return None
+
     def reset_machine(self):
         self.resets += 1
         if self.releases_on_reset:
@@ -1392,6 +1428,23 @@ def run_ui_state_repair_checks():
         expect("menu left closed", device.open, False)
         expect("RETURN only ever on the browser entry",
                set(device.returns), {StubMenuDevice._LAUNCHER_FIRST_ROW})
+
+    with check("a cartridge target shuts the computer's menu before resetting"):
+        # MENU_C64_RESET releases the machine from whichever UserInterface
+        # holds it, and that teardown takes a device off the network when the
+        # UI it releases is not the active one. On a cartridge target the menu
+        # calls are routed to the cartridge, so resetting without shutting the
+        # computer's own menu tore down the computer: measured on u2@c64u, the
+        # C64 Ultimate went off the network entirely and needed mains power.
+        device = StubMenuDevice(releases_on_reset=True, ui_state=ui_state)
+        device.target = _SplitTarget()
+        device.computer_menu = True
+        device.reset_machine = lambda: ui_state.Device.reset_machine(device)
+        device.reset_machine()
+        expect("the computer's menu was shut first", device.computer_menu, False)
+        expect("and shut before the reset, not after",
+               device.order.index("computer-menu") < device.order.index("reset"),
+               True)
 
     with check("a UI that the reset does not free is reported, not looped on"):
         device = StubMenuDevice(releases_on_reset=False)
