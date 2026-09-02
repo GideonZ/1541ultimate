@@ -14,7 +14,10 @@ What it covers, and why each one is here:
 - `ping`   the device is on the network at all. Distinguishes a wedged service
            from a device that has gone.
 - `rest`   `/v1/version`. Nearly every suite drives the device through this.
-- `ftp`    port 21 answers with its `220` banner. The file suites need it.
+- `ftp`    port 21 answers, and a listing comes back over a data connection.
+           The banner alone is not enough: a device out of data connections
+           still answers `220` and still takes commands, and only the PASV
+           every transfer needs fails.
 - `telnet` port 23 accepts a connection. Proven harmless to the UI: measured at
            about 45ms, and the menu state and the running C64 are unchanged
            afterwards, because nothing is sent and the socket is closed at once.
@@ -46,6 +49,7 @@ moving raster is reported as an observation rather than a fault.
 from __future__ import annotations
 
 import http.client
+import ftplib
 import socket
 import struct
 import subprocess
@@ -231,6 +235,34 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         return ""
 
 
+def _ftp(host: str, port: int, password: str = "") -> str:
+    """Prove FTP can still carry a transfer, not just answer its banner.
+
+    A C64 Ultimate that has run out of data connections still answers `220`
+    and still accepts commands: what fails is the PASV that every transfer
+    needs, with `425 Can't open data connection`. Measured on the bench after
+    a standard run, every store failed that way for the rest of the run while
+    the banner check reported the device healthy, so the runner kept going and
+    seven further suites failed on a device it had already been told about.
+    A listing is the cheapest thing that opens a data connection.
+    """
+    started = time.monotonic()
+    client = ftplib.FTP(timeout=SOCKET_TIMEOUT_SECONDS)
+    try:
+        client.connect(host, port)
+        client.login("ultimate", password or "ultimate")
+        client.set_pasv(True)
+        client.nlst("/")
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+    interactions.record("ftp", "nlst /", host=host,
+                        ms=round((time.monotonic() - started) * 1000.0, 1))
+    return ""
+
+
 def _dma_identify(host: str, port: int) -> str:
     started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
@@ -350,7 +382,7 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     if not skip("rest"):
         checks.append(_timed("rest", lambda: api.version() and ""))
     if not skip("ftp"):
-        checks.append(_timed("ftp", lambda: _banner(host, target.ftp_port, b"220")))
+        checks.append(_timed("ftp", lambda: _ftp(host, target.ftp_port, password)))
     if not skip("telnet"):
         checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
     if not skip("ident"):
