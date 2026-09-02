@@ -620,6 +620,23 @@ def enter_field(device: Device, label: str) -> None:
     device.send_key("ENTER")
 
 
+def clear_field(device: Device, taps: int = 40) -> None:
+    """Empty a string editor that is already open.
+
+    KEY_CLEAR empties UIStringEdit's buffer whatever its length, so where the
+    transport can spell it this is one injected key instead of forty. That
+    matters on a cartridge, where every key crosses the host's keyboard matrix:
+    forty deletions is where the field was left with characters still in it,
+    and the query that should have been refused as empty was sent instead and
+    took 46s to come back.
+    """
+    clear = getattr(device.backend, "clear_field_key", None)
+    if clear:
+        device.send_key(clear)
+    else:
+        device.send_key_repeat("DEL", taps)
+
+
 def submit_query(device: Device) -> None:
     """RETURN on the Submit row at the bottom of the form runs the query."""
     row = row_of(device, SUBMIT_LABEL)
@@ -763,7 +780,7 @@ def scenario_overlong_and_empty(device: Device) -> None:
             check_skip("submitting an empty query wedges the popup it raises; no known recovery over telnet")
         else:
             enter_field(device, NAME_FIELD)
-            device.send_key_repeat("DEL", 40)
+            clear_field(device)
             device.send_key("ENTER")
             submit_query(device)
             if not wait_until(lambda: EMPTY_QUERY_MESSAGE in device.text(), QUERY_TIMEOUT):
