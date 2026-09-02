@@ -347,6 +347,19 @@ REU_TURBO_STOPS_CPU_IN_CYCLE = _fix(
     "started at full speed returns what it was given",
     (C64U,))
 
+# The one entry where the machine is behind the tree rather than beside it.
+# This branch's monitor has no Debug mode: "Dbg" appears nowhere in
+# software/monitor/, and the key is reserved so that pressing D changes
+# nothing. The Ultimate II+L on this bench runs a flashed 3.15 that still has
+# it, and answers D by putting "Dbg" in the monitor header. Both report
+# firmware 3.15, so the version cannot tell them apart; only the behaviour can.
+# Reflashing that machine from this tree closes the gap and the entry goes.
+MONITOR_D_KEY_RESERVED = _fix(
+    "monitor-d-key-reserved",
+    "the monitor reserves D for a future Debug mode and opens nothing with "
+    "it, rather than entering the Debug mode this branch removed",
+    (U2,))
+
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
 ASSUME_ALL = "all"
