@@ -235,36 +235,55 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         return ""
 
 
-def _ftp(host: str, port: int, password: str = "") -> str:
-    """Prove FTP can still carry a transfer, not just answer its banner.
-
-    A C64 Ultimate that has run out of data connections still answers `220`
-    and still accepts commands: what fails is the PASV that every transfer
-    needs, with `425 Can't open data connection`. Measured on the bench after
-    a standard run, every store failed that way for the rest of the run while
-    the banner check reported the device healthy, so the runner kept going and
-    seven further suites failed on a device it had already been told about.
-    A listing is the cheapest thing that opens a data connection.
-    """
-    started = time.monotonic()
+def _ftp_listing(host: str, port: int, password: str, passive: bool) -> None:
+    """One listing over a data connection, in the mode asked for."""
     client = ftplib.FTP(timeout=SOCKET_TIMEOUT_SECONDS)
     try:
         client.connect(host, port)
         client.login("ultimate", password or "ultimate")
-        client.set_pasv(True)
+        client.set_pasv(passive)
         client.nlst("/")
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def _ftp(host: str, port: int, password: str = "") -> str:
+    """Prove FTP can still carry a transfer, not just answer its banner.
+
+    The suites transfer in passive mode, which is ftplib's default, so that is
+    what the sweep proves. A device whose data path has stopped working still
+    answers `220` and still takes commands, and only the transfer fails.
+    Measured on a C64 Ultimate part-way through a standard run: every passive
+    transfer was reset from then on while the banner check called the device
+    healthy, so the runner kept feeding it suites and seven more failed for a
+    reason that had nothing to do with them.
+
+    When passive fails, active mode is tried as well, because which of the two
+    failed says what is wrong: both failing is a device that cannot transfer at
+    all, and passive alone failing is a device whose passive listener is gone
+    while its files are still readable. A listing is the cheapest thing that
+    opens a data connection either way.
+    """
+    started = time.monotonic()
+    try:
+        _ftp_listing(host, port, password, passive=True)
     except (*ftplib.all_errors, EOFError) as exc:
         # Every one of these has to leave the sweep as a failed check. An
         # ftplib error that is not one _timed catches escapes the sweep
         # instead, and the runner then dies part-way through a run rather than
         # reporting a degraded device: a listener that closes without its
         # banner raises EOFError, which killed the whole run.
-        raise RuntimeError(f"{type(exc).__name__}: {exc}".strip(": ")) from exc
-    finally:
+        detail = f"{type(exc).__name__}: {exc}".strip(": ")
         try:
-            client.close()
-        except Exception:
-            pass
+            _ftp_listing(host, port, password, passive=False)
+        except (*ftplib.all_errors, EOFError):
+            raise RuntimeError(f"no data connection at all, {detail}") from exc
+        raise RuntimeError(
+            f"passive transfers are refused and active ones work, {detail}"
+        ) from exc
     interactions.record("ftp", "nlst /", host=host,
                         ms=round((time.monotonic() - started) * 1000.0, 1))
     return ""
