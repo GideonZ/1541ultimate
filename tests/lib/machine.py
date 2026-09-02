@@ -244,11 +244,22 @@ BROWSER_REFRESH_FROM_MENU_WRITER = _fix(
 # monitor names "Open monitor", "Close monitor" and "Leave edit" instead.
 # Tagged once for the suite rather than per check, because nearly every check
 # depends on some part of it.
+#
+# The Ultimate II+L on this bench is here for the same reason and not because
+# it is a cartridge: its flashed 3.15 predates this tree's monitor rework, and
+# Back leaves the monitor from a memory view instead of returning a layer.
+# Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
+# screen, and the check that retypes a command argument uses that key, so the
+# checks behind it ran against a browser and failed on a monitor that was
+# working. It also still answers D with the Debug mode this tree removed; see
+# MONITOR_D_KEY_RESERVED. Reflashing that machine from this tree closes both,
+# and 17 checks of the suite pass there in the meantime, so this entry costs
+# real coverage and should go as soon as it can.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
     "the machine code monitor offers the Back action and the layer model that "
     "tests/e2e/monitor/monitor_test.py drives",
-    (C64U,))
+    (C64U, U2))
 
 # Measured with tests/e2e/filemanager/cfg_unknown_items_test.py and
 # cfg_whitespace_test.py. A .cfg saved on one machine and loaded on another
