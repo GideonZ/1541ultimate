@@ -546,14 +546,24 @@ class Machine:
     def rest_workers(self) -> int:
         """How many REST calls this machine can be asked for at once.
 
+        Two machines are asked for one at a time, for different reasons.
+
         An Ultimate II+ has no wired interface, so every call crosses its
         wireless link. Measured on an Ultimate II+L in a C64 Ultimate: three
         concurrent workers through a 77-route sweep took the cartridge off the
         network entirely for several minutes, with ping getting no answer at
-        all, and it came back by itself as soon as the load stopped. The other
-        two machines answer on Ethernet and are unaffected.
+        all, and it came back by itself as soon as the load stopped.
+
+        A C64 Ultimate 1.2.0 mixes two answers together under three workers.
+        Measured on the bench: a request for `/v1/help` came back with status
+        404 carrying another request's whole 200 response as its body, headers
+        and all. That is a firmware defect and asking for one call at a time
+        does not fix it, it only stops this sweep tripping over it; the checks
+        themselves all still run.
+
+        An Ultimate 64 answers three at a time and is unaffected.
         """
-        return 1 if self.kind == U2 else 3
+        return 1 if self.kind in (U2, C64U) else 3
 
     @property
     def task_menu_key(self) -> str:

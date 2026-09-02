@@ -4650,16 +4650,17 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             else:
                 video.send(video_packets(number, number * 68,
                                          pattern=(number // 5) % 16))
-            # The interval is a floor, not the whole wait. It has to stay,
-            # because the recorder writes at a frame rate and sending faster
-            # than that maps several sent frames onto one written one, which
-            # makes the still and the written frame two different pictures for
-            # a reason that is not a defect. On top of it, the send waits for
-            # the recorder to have taken the frame: a frame is 68 datagrams on
-            # loopback, and a burst that outruns the reader is dropped by the
-            # kernel, which is what three copies of this suite on one host do
-            # to each other.
-            next_send = time_lib.monotonic() + 0.05
+            # Sent at the rate the recorder writes at, so each frame sent is
+            # one frame written and which source frame lands at a given index
+            # is not a matter of timing. Sending faster maps several sent
+            # frames onto one written one, and which of them survives depends
+            # on how busy the host is: with three targets running this suite at
+            # once, the still and the frame at its own recorded position came
+            # back as two different pictures with nothing lost on the way in.
+            # On top of the interval, the send waits for the recorder to have
+            # taken the frame, because a frame is 68 datagrams on loopback and
+            # a burst that outruns the reader is dropped by the kernel.
+            next_send = time_lib.monotonic() + 1.0 / 5
             taken = time_lib.monotonic() + 5.0
             while (made._assembler.counts()["frames_completed"] <= number
                    and time_lib.monotonic() < taken):
