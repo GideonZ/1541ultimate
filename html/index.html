@@ -853,8 +853,13 @@ $(document).ready(async function () {
     const themes = (() =>  {
         const themeNames = ['lightmode', 'darkmode' /*, 'purple-theme' */ ];
 
-        const themedSelectors = [ 'body', '#left-nav', '#banner', 'a', 'div#left-nav a', '#banner',
-            '#left-nav', '#darkmode-button', '#lightmode-button'
+        const themedSelectors = [
+            'body',
+            '#left-nav',
+            '#banner',
+            'a',
+            '#darkmode-button',
+            '#lightmode-button'
         ];
 
         // theme: darkmode, lightmode, ...purple-theme...etc.
@@ -862,19 +867,19 @@ $(document).ready(async function () {
         const setTheme = (themeName) => { removeThemes(); $(themedSelectors.join(',')).addClass(themeName); };
         const setLightMode = () => { setTheme('lightmode'); };
         const setDarkMode = () => { setTheme('darkmode'); };
-        const initDisplayMode = () => { 
+        const initDisplayMode = () => {
             if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) { setDarkMode(); return; }
             setLightMode();
         };
-        
+
         return {
              initDisplayMode, setTheme, setLightMode, setDarkMode
-         };        
+         };
     })();
 
     $('#darkmode-button').on('click', () => themes.setDarkMode() );
     $('#lightmode-button').on('click', () => themes.setLightMode() );
-    
+
     themes.initDisplayMode();
 
     // Kick off login/welcome screen as needed
@@ -1394,25 +1399,25 @@ function disassembler(startInt, byteArray) {
         text-align: left;
         padding: 10px;
         font-size: 24px;
-        display: flex; 
+        display: flex;
         align-items: center;
     }
     #banner.darkmode {
         background: linear-gradient(to bottom, #222, #444)
     }
     #bannertitle {
-        flex-grow: 1; 
+        flex-grow: 1;
         text-align: left;
     }
     #bannerspacer
     {
-        flex-grow: 2; 
+        flex-grow: 2;
         text-align: center;
     }
     #bannertheme-selectors
     {
-        flex-grow: 0; 
-        margin-left: 40px; 
+        flex-grow: 0;
+        margin-left: 40px;
         text-align: right;
         width:24px;
         height:24px;
@@ -1437,8 +1442,8 @@ function disassembler(startInt, byteArray) {
     div#left-nav a:hover {
         background-color: #beffff;
     }
-    div#left-nav a:hover.darkmode {
-        color:burlywood;
+    div#left-nav a.darkmode:hover {
+        color: burlywood;
         background-color: dimgray;
     }
     #login {
