@@ -862,25 +862,50 @@ $(document).ready(async function () {
             '#lightmode-button'
         ];
 
+        // Reading or writing sessionStorage throws a SecurityError in a browser
+        // that is set to block site data. This code runs before the login and
+        // welcome screens are started, so an unguarded throw here would leave the
+        // page with its navigation still hidden. The theme is not worth that.
+        const readTheme = () => {
+            try {
+                return sessionStorage.getItem('theme');
+            } catch (e) {
+                return null;
+            }
+        };
+        const writeTheme = (themeName) => {
+            try {
+                sessionStorage.setItem('theme', themeName);
+            } catch (e) {
+                // A browser that refuses to store the theme still gets to show it.
+            }
+        };
+
         // theme: darkmode, lightmode, ...purple-theme...etc.
         const removeThemes = () => themeNames.forEach(themeName => $(themedSelectors.join(',')).removeClass(themeName));
         const setTheme = (themeName, save = true) => {
             removeThemes();
             $(themedSelectors.join(',')).addClass(themeName);
             if (save) {
-                sessionStorage.setItem('theme', themeName);
+                writeTheme(themeName);
             }
         };
         const setLightMode = () => { setTheme('lightmode'); };
         const setDarkMode = () => { setTheme('darkmode'); };
+        // Only a theme the reader picked is stored. Following the browser's
+        // setting is not a choice, so it is applied without being stored, which
+        // leaves a later change of that setting free to take effect.
         const initDisplayMode = () => {
-        const savedTheme = sessionStorage.getItem('theme');
+            const savedTheme = readTheme();
             if (savedTheme && themeNames.includes(savedTheme)) {
                 setTheme(savedTheme, false);
                 return;
             }
-            if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) { setDarkMode(); return; }
-            setLightMode();
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme('darkmode', false);
+                return;
+            }
+            setTheme('lightmode', false);
         };
 
         return {
