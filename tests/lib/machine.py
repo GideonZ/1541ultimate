@@ -161,6 +161,19 @@ READMEM_REJECTS_ZERO_LENGTH = _fix(
     "with an empty body",
     (C64U,))
 
+# What the machine:measure leak check of tests/e2e/api/readmem_writemem_test.py
+# asserts, and the second reason a check must not run without the fix: the
+# unsupported path allocated 64KB before answering 501 and never freed it, so
+# the 25 calls the check makes leak 1.6MB. On a C64 Ultimate 1.2.0 that
+# exhausts the heap and the device stops answering REST, ICMP and FTP
+# altogether; recovery is a mains power cycle by hand. Observed on 2026-09-02,
+# where the check reported FAIL after 91s and took the machine with it.
+MEASURE_FREES_ITS_BUFFER = _fix(
+    "measure-frees-its-buffer",
+    "GET /v1/machine:measure frees its buffer when it answers 501, so "
+    "repeating an unsupported call does not exhaust the heap",
+    (C64U,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP
@@ -213,15 +226,26 @@ BROWSER_REFRESH_ON_DIRECTORY_CHANGE = _fix(
     "open browser's listing without leaving and re-entering the directory",
     (C64U,))
 
-# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py. Only
-# one direction is affected, which is what makes it a distinct gap rather than
-# part of the two above: a write made from the Telnet browser did not reach
-# the on-screen menu browser, which went on showing the old size, while the
-# same write made from the menu or over FTP reached every observer including
-# the menu.
+# Measured with tests/e2e/filemanager/browser_filesystem_refresh_test.py: a
+# write made from the Telnet browser did not reach the on-screen menu browser,
+# which went on showing the old size, while the same write made over FTP
+# reached every observer including the menu.
 BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
     "browser-refresh-from-telnet-writer",
     "a file written from the Telnet browser is re-read by the on-screen menu "
+    "browser, so both show the committed size",
+    (C64U,))
+
+# The same pair of browsers, the other way round, and a separate entry because
+# a machine can have one and not the other: when this gap was first written
+# down, a write made from the menu did reach the Telnet browser. Measured on a
+# C64 Ultimate 1.2.0, it does not: with the menu as the writer, the Telnet
+# observer showed each of wmenu1.d64, pmenu1.tst and vmenu1.tst at size 0 and
+# never re-read it, while the menu's own browser, FTP and REST all saw the
+# committed size, and an FTP writer reached the Telnet observer normally.
+BROWSER_REFRESH_FROM_MENU_WRITER = _fix(
+    "browser-refresh-from-menu-writer",
+    "a file written from the on-screen menu browser is re-read by the Telnet "
     "browser, so both show the committed size",
     (C64U,))
 
@@ -233,11 +257,22 @@ BROWSER_REFRESH_FROM_TELNET_WRITER = _fix(
 # monitor names "Open monitor", "Close monitor" and "Leave edit" instead.
 # Tagged once for the suite rather than per check, because nearly every check
 # depends on some part of it.
+#
+# The Ultimate II+L on this bench is here for the same reason and not because
+# it is a cartridge: its flashed 3.15 predates this tree's monitor rework, and
+# Back leaves the monitor from a memory view instead of returning a layer.
+# Measured on u2@c64u: one ARROW_LEFT from the hex view put the file browser on
+# screen, and the check that retypes a command argument uses that key, so the
+# checks behind it ran against a browser and failed on a monitor that was
+# working. It also still answers D with the Debug mode this tree removed; see
+# MONITOR_D_KEY_RESERVED. Reflashing that machine from this tree closes both,
+# and 17 checks of the suite pass there in the meantime, so this entry costs
+# real coverage and should go as soon as it can.
 MONITOR_EXIT_AND_BACK_KEYS = _fix(
     "monitor-exit-and-back-keys",
     "the machine code monitor offers the Back action and the layer model that "
     "tests/e2e/monitor/monitor_test.py drives",
-    (C64U,))
+    (C64U, U2))
 
 # Measured with tests/e2e/filemanager/cfg_unknown_items_test.py and
 # cfg_whitespace_test.py. A .cfg saved on one machine and loaded on another
@@ -250,6 +285,104 @@ CFG_LOADS_UNKNOWN_AND_PADDED = _fix(
     "a CFG naming an item this machine does not have, or holding padded "
     "values, loads without being reported as an error",
     (C64U,))
+
+# Measured with tests/e2e/io/c64/assembly64_test.py against a C64 Ultimate
+# 1.2.0, driving the CommoServe query form: with the cursor in the form's Name
+# field, PUT /v1/machine:menu_button answered HTTP 200 and the menu stayed
+# open for the full 15 seconds the check waits. Firmware with the fix polls the
+# button from inside UserInterface::string_edit, so the menu closes. RUN/STOP
+# still leaves the field on the machine without it, which is what the suites
+# recover with, but a check that presses the button and waits proves nothing
+# there except that the fix is absent.
+MENU_BUTTON_CLOSES_STRING_EDIT = _fix(
+    "menu-button-closes-string-edit",
+    "the menu button closes the menu while a modal edit field has focus, "
+    "rather than being ignored until the field is left",
+    (C64U,))
+
+# Measured with tests/e2e/api/create_disk_image_test.py against a C64 Ultimate
+# 1.2.0: the first PUT /v1/files/{path}:create_d64 timed out, and the device
+# then answered nothing at all, ICMP included, until it was power cycled. The
+# fix is c90d834a in software/api/routes.h: `ArgsURI::ClearAll` released the
+# disk name that `enforce_diskname` had duplicated with strdup using delete,
+# which reaches heap_4 with an address that is not a block start. The
+# rest-api-coverage cases that only ask for a refusal take the device down the
+# same way, because the name is duplicated before the path is checked.
+#
+# A run that reaches one of these on a machine without the fix loses the device
+# and every suite after it, so the whole of create-disk-image is tagged rather
+# than one case in it.
+FILES_CREATE_IMAGE_SURVIVES = _fix(
+    "files-create-image-survives",
+    "PUT /v1/files/{path}:create_* answers, rather than taking the device off "
+    "the network until it is power cycled",
+    (C64U,))
+
+# Measured with tests/e2e/api/rest_api_coverage_test.py: GET
+# /v1/configs/No%20Such%20Category answers HTTP 404 on firmware with the fix,
+# and HTTP 200 with an empty errors list on a C64 Ultimate 1.2.0, so a caller
+# cannot tell a store it does not have from one that is empty.
+CONFIGS_REFUSE_UNKNOWN_CATEGORY = _fix(
+    "configs-refuse-unknown-category",
+    "GET /v1/configs/<store> answers HTTP 404 for a store this machine does "
+    "not have, rather than 200 with nothing in it",
+    (C64U,))
+
+# Measured with tests/e2e/api/rest_api_coverage_test.py against a C64 Ultimate
+# 1.2.0: PUT /v1/configs/<store>/<item>/<value>, the form that carries the
+# value as a third path element, answers HTTP 400 "Function none requires
+# parameter value". Only the ?value= form is served there, so the route that
+# software/api/route_configs.cc names setConfigItemByPath does not exist yet.
+CONFIGS_SET_VALUE_IN_PATH = _fix(
+    "configs-set-value-in-path",
+    "PUT /v1/configs/<store>/<item>/<value> sets the item, rather than "
+    "refusing the request for want of a value argument",
+    (C64U,))
+
+# Measured the same way: PUT /v1/configs:load_from_flash closes the connection
+# on a C64 Ultimate 1.2.0, which reaches the client as
+# "[Errno 104] Connection reset by peer". The device answers again afterwards,
+# so this is the request failing rather than the machine going down, but a
+# check cannot tell a flash round trip happened.
+CONFIGS_FLASH_ROUNDTRIP = _fix(
+    "configs-flash-roundtrip",
+    "PUT /v1/configs:load_from_flash answers, so a save and load round trip "
+    "can be read back",
+    (C64U,))
+
+# The heap reading the health sweep already reports as absent on this machine:
+# GET /v1/machine:heap is not served by a C64 Ultimate 1.2.0, so nothing can
+# assert a plausible figure from it.
+MACHINE_HEAP_READING = _fix(
+    "machine-heap-reading",
+    "GET /v1/machine:heap reports the free and total heap",
+    (C64U,))
+
+# The one entry here that names an FPGA core rather than firmware. A write to
+# $DF01 has to stop the CPU in its own cycle, or the register writes behind it
+# land on a transfer that is still running; tests/e2e/io/c64/reu_turbo_test.py
+# is the discriminator. Measured by swapping bitstreams on an Ultimate 64 with
+# the same Nios ELF after each: core 1.4E fails at round 0 while the same
+# program is clean at 1 MHz, and core 1.4F passes. A C64 Ultimate serves core
+# 1.4D, which is older than either, and fails the same way.
+REU_TURBO_STOPS_CPU_IN_CYCLE = _fix(
+    "reu-turbo-stops-cpu-in-cycle",
+    "a write to $DF01 stops the CPU in its own cycle, so an REU transfer "
+    "started at full speed returns what it was given",
+    (C64U,))
+
+# The one entry where the machine is behind the tree rather than beside it.
+# This branch's monitor has no Debug mode: "Dbg" appears nowhere in
+# software/monitor/, and the key is reserved so that pressing D changes
+# nothing. The Ultimate II+L on this bench runs a flashed 3.15 that still has
+# it, and answers D by putting "Dbg" in the monitor header. Both report
+# firmware 3.15, so the version cannot tell them apart; only the behaviour can.
+# Reflashing that machine from this tree closes the gap and the entry goes.
+MONITOR_D_KEY_RESERVED = _fix(
+    "monitor-d-key-reserved",
+    "the monitor reserves D for a future Debug mode and opens nothing with "
+    "it, rather than entering the Debug mode this branch removed",
+    (U2,))
 
 # Every fix at once, for a sweep that asks whether the lagging line has caught
 # up rather than about one behaviour.
@@ -350,6 +483,46 @@ class Machine:
         return "CommoServe" if self.kind == C64U else "Assembly 64"
 
     @property
+    def search_menu_entry(self) -> str:
+        """The menu entry that opens the online search's query form.
+
+        Both services draw the same form: a column of criteria fields over a
+        "<<  Submit  >>" button. Where the entry lives differs, which is what
+        `search_in_launcher` says.
+        """
+        return "COMMOSERVE FILE SEARCH" if self.kind == C64U else "Assembly 64"
+
+    @property
+    def search_in_launcher(self) -> bool:
+        """Whether the search entry is in the launcher or in the task menu.
+
+        A C64 Ultimate lists "COMMOSERVE FILE SEARCH" as the launcher's second
+        entry, under the file browser, and its task menu has no search entry at
+        all. The other two put "Assembly 64" first in the task menu and have no
+        launcher.
+        """
+        return self.kind == C64U
+
+    @property
+    def search_form_title(self) -> str:
+        """The title the online search's query form draws."""
+        return ("CommoServe File Search" if self.kind == C64U
+                else "Assembly 64 Query Form")
+
+    @property
+    def min_search_result_rows(self) -> int:
+        """How many rows a result list has to fill to be one at all.
+
+        The two services do not hold the same corpus, and the count is the
+        service's business rather than the firmware's, so this is the floor
+        below which the screen is more likely to be an incidental match than a
+        listing. Measured live with the term "turrican": Assembly 64 answered
+        with 20 matching rows, and CommoServe with the single entry "Turrican
+        intro speech (Tel_Jeroen)".
+        """
+        return 1 if self.kind == C64U else 3
+
+    @property
     def task_menu_key(self) -> str:
         """The key that opens the task menu over the file browser.
 
@@ -361,22 +534,10 @@ class Machine:
         """
         return "F1" if self.kind == C64U else "F5"
 
-    @property
-    def browser_navigation_letters(self) -> str:
-        """Letters the file browser treats as movement rather than as a search.
-
-        Empty where every printable character starts a quick-seek, which is an
-        Ultimate 64 and an Ultimate II+. A C64 Ultimate says "WASD=NAV" on its
-        status row and means it, so those four letters have to be kept out of
-        any seek prefix: they are not merely ignored, they act. Measured on one
-        at the root browser, each from a fresh cursor with the seek string
-        cleared: 'a' left the browser for the launcher, 's' moved the cursor
-        down a row, and at /Temp/ a single 'd' opened the selected disk image.
-        A seek for a name beginning with 'd' therefore entered that image
-        instead of selecting it, and a seek for one holding 'w' then 'a'
-        walked out of the browser and closed the menu.
-        """
-        return "wasd" if self.kind == C64U else ""
+    # Which letters the file browser reads as cursor movement is not here: it
+    # follows the "Navigation Style" setting, which every machine offers and a
+    # person can change, so it is read from the device. See
+    # tests/lib/navigation.py.
 
     @property
     def page_up_key(self) -> str:

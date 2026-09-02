@@ -36,14 +36,17 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
+import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402
 import pacing  # noqa: E402
+import profiles  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 import api as api_lib  # noqa: E402
+import config_snapshot  # noqa: E402
 from api import UltimateApi  # noqa: E402
 from report import Failure  # noqa: E402
 
@@ -148,8 +151,14 @@ class Suite:
     one way, is a per-suite call documented next to its entry below.
 
     `manual` marks a suite that needs an operator decision, extra privileges, a
-    long wall-clock wait, or a device setting it changes, so it runs only when
-    named with -s or when --manual is given.
+    long wall-clock wait, or a device setting it changes, so it runs only from
+    the deep profile up, or when named with -s.
+
+    `profile` is the shallowest profile that runs this suite, in the vocabulary
+    of tests/lib/profiles.py. It is the suite's own tag: it says what the suite
+    costs, and each profile decides what to do with that. A suite that does not
+    say defaults to `standard`, which is the merge gate, so a new suite is
+    covered by CI without anyone having to remember to tag it.
     """
 
     category: str
@@ -157,6 +166,19 @@ class Suite:
     path: str
     args: str
     manual: bool = False
+    profile: str = profiles.STANDARD
+
+    @property
+    def needs_device(self) -> bool:
+        """Whether this suite is handed a device at all.
+
+        A suite whose argument template names no host never contacts one, so
+        the health sweep and the UI-state gate in front of it can only cost
+        time: it cannot be affected by the device's state and cannot leave it
+        dirty. Eight of the e2e suites are in that position, four of them in
+        the smoke profile, where the gates were most of the run.
+        """
+        return "@HOST@" in self.args
 
 
 # Every executable test under tests/ is listed here; there is no exception.
@@ -167,86 +189,95 @@ SUITES: Sequence[Suite] = (
     # HTTP client again. Seven had, each with the retry rule wrong in its own
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
-    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", ""),
+    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", "", profile=profiles.SMOKE),
     # Needs no device either: CI skips the ESP32 build on a cache hit, so a
     # project missing from the cache key gets its previous binary handed back
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
-    Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", ""),
+    Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", "", profile=profiles.SMOKE),
     # Needs no device either: machine:input has an event limit and a body-size
     # limit, and a request that breaks either is refused. Splitting on the
     # count alone sent a 64-keypress field clear as one 4110-byte request and
     # failed every context-menu action that types into a field, with a message
     # about the request rather than about the keys.
-    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", ""),
+    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", "", profile=profiles.SMOKE),
     # Also needs no device: it checks the two decisions this runner makes when
     # a run goes wrong - when the recovery command may fire, and what status the
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
-    Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", "", profile=profiles.QUICK),
     # Also needs no device: --validate-openapi puts this validator in the path
     # of every REST call the gate makes, where a wrong verdict looks exactly
     # like a firmware defect. Its decisions are pinned against the committed
     # documents and answers written by hand.
-    Suite("e2e", "openapi-validator", "tests/lib/openapi_contract_test.py", ""),
+    Suite("e2e", "openapi-validator", "tests/lib/openapi_contract_test.py", "", profile=profiles.QUICK),
     # Also needs no device: the observability harness watches a run and by
     # design cannot change a verdict, so nothing else notices when it breaks.
     # A run whose report generator has stopped rendering fails here, rather
     # than weeks later when somebody opens the artifact to diagnose something
     # else and finds an empty document.
     Suite("e2e", "observability", "tests/lib/observability_test.py", ""),
+    # Also needs no device: which keys go out for a machine that reads 'w',
+    # 'a', 's' and 'd' as cursor keys is decided before anything reaches the
+    # device. A C64 Ultimate ships with that reading, and getting it wrong
+    # turns a quick-seek into a walk down the listing and a popup's All button
+    # into a cursor move, neither of which reads as a keyboard problem.
+    Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on
     # demand. Scripted bursts can.
-    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", ""),
+    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", "", profile=profiles.QUICK),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
     # scattered across every suite that depends on it.
     Suite("e2e", "ui-backend-smoke", "tests/e2e/lib/ui_backend_smoke_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
+    # No --test: the stages are chosen by the profile, so smoke runs one round
+    # trip and everything from quick up runs all six. Naming "all" here made the
+    # suite ignore the profile entirely.
     Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Creates every disk-image kind and reads the device back after each one.
     # A create that answers 200 and then takes the device down is the defect
     # this catches, so it runs early: a dead device makes every later suite
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
     # more than any single probe. Runs in about a second.
     Suite("e2e", "rest-api-coverage", "tests/e2e/api/rest_api_coverage_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # The REST API described by doc/api/rest_api_openapi_*.yaml, held to the
     # device: the documents are checked as OpenAPI, a client is generated from
     # them, and the answers are validated against them. --validate-openapi
     # extends that last part to every suite above and below.
     Suite("e2e", "openapi-contract", "tests/e2e/api/openapi_contract_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Drives the menu, a Telnet session and FTP at once to check they converge
     # on the same filesystem state, so it is not mode-switchable by design.
     Suite("e2e", "browser-filesystem-refresh",
           "tests/e2e/filemanager/browser_filesystem_refresh_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "ftp-client", "tests/e2e/filesystem/ftp_client_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-load-path-trim", "tests/e2e/api/prg_load_path_trim_test.py",
-          "-H @HOST@ -p @PASS@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ --mode @MODE@", profile=profiles.QUICK),
     Suite("e2e", "temp-auto-cleanup", "tests/e2e/filemanager/temp_auto_cleanup_test.py",
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Manual: loading a partial .cfg is supposed to leave the stores it does
     # not name alone, and that no longer holds. Measured on a C64 Ultimate
     # 1.2.0, a file naming one store listed nineteen in its loader
@@ -264,9 +295,18 @@ SUITES: Sequence[Suite] = (
     # one: nobody types "Vol Master= 0 dB" with the leading space.
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
-    Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
-    # Only reproduces on firmware carrying #803; clean on the 3.15 firmware
-    # this gate normally runs against, so it stays out of the default run.
+    Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
+    # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
+    # and leaves nothing behind. The regression check fails on firmware carrying
+    # #803; the control and the RAM-disk comparison beside it say whether a
+    # failure is that defect or something else.
+    #
+    # It is expected to fail on a C64 Ultimate and to pass on an Ultimate 64 and
+    # an Ultimate II+: the fix is not in the C64 Ultimate's firmware yet. That
+    # red is deliberate and is not declared as a firmware gap, because a skip
+    # would stop reporting the defect this suite exists to watch. Clean on the
+    # 3.15 firmware the gate normally runs against, and it stays out of the
+    # default run either way.
     Suite("e2e", "usb-bulk-out-integrity",
           "tests/e2e/io/usb/bulk_out_integrity_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
@@ -281,22 +321,20 @@ SUITES: Sequence[Suite] = (
     # device's network peer, so it binds two ports and needs the device to be
     # able to reach it; the scenarios that need that skip where it cannot.
     Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.DEEP),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
     # under --mode telnet.
     Suite("e2e", "machine-code-monitor", "tests/e2e/monitor/monitor_test.py",
-          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@"),
+          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@", profile=profiles.DEEP),
     # The device's own FTP server: a name it reports in a listing has to be a
     # name it accepts back for SIZE and DELE.
+    # In smoke because nothing else there touches a filesystem. The rest of
+    # that profile proves the device answers, renders its menu, takes injected
+    # keys and reads and writes memory; without this, a device whose storage
+    # had stopped working would pass it. 0.8s of checking.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
-    # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
-    # and leaves nothing behind. The regression check fails on firmware carrying
-    # #803; the control and the RAM-disk comparison beside it say whether a
-    # failure is that defect or something else.
-    Suite("e2e", "ftp-usb-integrity", "tests/e2e/network/ftp_usb_integrity_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", manual=True),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
@@ -304,7 +342,7 @@ SUITES: Sequence[Suite] = (
     # Drives the Assembly 64 UI against the live service, mostly with negative
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Measures the keystroke injection every other suite depends on: a lost key
     # fails whichever check was typing at the time and names no rate, so this
     # names one. One batch of the largest size the input API accepts, which is
@@ -354,6 +392,12 @@ SUITES: Sequence[Suite] = (
     # screen scan that stopped reading the field cannot report both as perfect.
     Suite("perf", "typing-speed", "tests/perf/typing_speed_perf_test.py",
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
+    # One route at a time, and one network path at a time. What the runner
+    # spends between suites is REST calls and waits, and a run log cannot say
+    # which of the two a given second was. Give it an address rather than a
+    # name to measure a particular interface.
+    Suite("perf", "rest-latency", "tests/perf/rest_latency_perf_test.py",
+          "-H @HOST@ -p @PASS@"),
     # Reports one figure per kind of key, because a printable character, an
     # arrow key and a lone ESC are delivered at different points in the decoder.
     Suite("perf", "telnet-key-latency",
@@ -376,6 +420,13 @@ SUITES: Sequence[Suite] = (
     # entry #766 adds at the top of this block.
     Suite("soak", "prg-context-menu-leak",
           "tests/soak/filemanager/prg_context_menu_leak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # The browser's two navigation shortcuts, against an oracle that knows
+    # where the cursor should have landed: files named for their own index.
+    # A page-key jump that lands one row out and a field that kept a tail of
+    # its old value both read as some other suite picking the wrong file.
+    Suite("soak", "menu-navigation",
+          "tests/soak/filemanager/menu_navigation_soak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Drives the Assembly 64 search browser, for the same reason: its query
     # path is not reachable over REST. Skips when the Assembly 64 service is
@@ -1459,6 +1510,64 @@ class Device:
             return False
 
 
+def capture_settings(target: targets_lib.Target, password: str
+                     ) -> List[Tuple[UltimateApi, config_snapshot.Snapshot]]:
+    """Read every setting each machine this target occupies is running with.
+
+    One entry per machine, so a cartridge target captures the cartridge and
+    the computer it is plugged into: both are configured, and a suite can
+    change either. A machine that will not answer is reported and left out,
+    because a settings read that fails is not a reason not to run the suites.
+
+    The client is given the short probe timeout rather than the run's, for the
+    same reason the health probe is: this is the first thing that touches the
+    device, and at the 30 second default a machine that accepts connections
+    and never answers would cost three retries a read, three reads a store and
+    twenty-odd stores before the first suite started.
+    """
+    captured: List[Tuple[UltimateApi, config_snapshot.Snapshot]] = []
+    for host in target.resources:
+        report.step_start(f"settings: capture {host}")
+        api = UltimateApi(host, password, DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
+        try:
+            snapshot = config_snapshot.capture(host, api)
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+            report.detail(f"{host} keeps whatever settings this run leaves it")
+            continue
+        captured.append((api, snapshot))
+        report.check_ok(f"{snapshot.item_count} settings in "
+                        f"{len(snapshot.settings)} stores")
+    return captured
+
+
+def restore_settings(
+        captured: Sequence[Tuple[UltimateApi, config_snapshot.Snapshot]]) -> None:
+    """Put back every setting the run changed, on each machine it captured.
+
+    Warnings only. The run has produced its verdict by the time this runs, and
+    a device that will not take a value back is a thing for the operator to
+    see rather than a reason to change what the suites decided.
+    """
+    for api, snapshot in captured:
+        report.step_start(f"settings: restore {snapshot.machine}")
+        try:
+            restored, refused = snapshot.restore(api)
+        except DEVICE_ERRORS as exc:
+            report.check_warn(str(exc))
+            continue
+        if refused:
+            report.check_warn(f"{len(refused)} of "
+                              f"{len(restored) + len(refused)} not put back")
+        else:
+            report.check_ok("unchanged" if not restored
+                            else f"{len(restored)} put back")
+        for change in restored:
+            report.detail(str(change))
+        for change, reason in refused:
+            report.warn(f"settings: {change}: {reason}")
+
+
 def health_entry(check: "health.Check") -> Dict[str, object]:
     """One health check as a record, with its figures when it has any.
 
@@ -1808,11 +1917,14 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                 open(transcript, "w").close()
         environment["E2E_JSONL"] = path
 
-    if suite.category == "e2e":
+    if suite.category == "e2e" and suite.needs_device:
         # E2E suites share one device and one UI object stack, so each starts
         # from the documented state rather than from whatever the last one
         # left. Reaching that state is part of health, not a check beside it:
         # a device can answer every request and still be impossible to drive.
+        #
+        # A suite that is handed no device is exempt, because there is nothing
+        # for it to share. See Suite.needs_device.
         if not device.ensure_healthy(f"{suite.name}:",
                                extra=lambda: ui_state_ready(options, suite.name)):
             report.suite_fail(suite.name, "precondition: the device is unhealthy", 0.0)
@@ -1847,8 +1959,20 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     # Attribution only: the precondition owns the state, so leaving the browser
     # elsewhere is not a defect. Naming who left what is what makes an
     # inherited failure traceable to its cause; it does not change the verdict.
-    if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name,
-                                                     attempt=attempt):
+    # Device-free suites are exempt: they are handed no device, so they cannot
+    # have left one outside the documented state. Checking anyway cost a gate
+    # per suite and reported "UI state check failed after transport-usage" when
+    # the device was in trouble for reasons that suite could not have caused.
+    #
+    # The verify and the ensure before the next suite do run the same check
+    # twice, and merging them into one boundary gate was tried. It saved about
+    # a second of a fifteen second smoke run and changed what the runner
+    # records: seven suites that had been OK came back WARN, and the golden
+    # observability document and two of its cases disagreed with the run. The
+    # saving did not pay for that, so the two stay separate.
+    if (suite.category == "e2e" and suite.needs_device
+            and not ui_state_gate("verify", options, suite.name,
+                                  attempt=attempt)):
         # `elapsed` is passed for the same reason the OK/FAIL lines above pass
         # it: report._suite_line falls back to the time since the harness
         # process started when it is given no duration, so a WARN printed an
@@ -1975,16 +2099,29 @@ def chosen_categories(args: argparse.Namespace) -> List[str]:
     return chosen or ["e2e"]
 
 
-def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite]:
+def selected_suites(category: str, names: List[str], manual: bool,
+                    profile: str = profiles.DEFAULT) -> List[Suite]:
+    """The suites this run covers, in registry order.
+
+    A suite named with -s runs whatever the profile says, because naming one is
+    a more specific instruction than choosing a bundle. Everything else has to
+    be shallow enough for the profile, and a suite registered `manual` also
+    needs a profile that includes those.
+    """
     chosen = []
+    wants_manual = manual or profiles.includes_manual(profile)
     for suite in SUITES:
         if suite.category != category:
             continue
         if names:
             if suite.name in names:
                 chosen.append(suite)
-        elif not suite.manual or manual:
-            chosen.append(suite)
+            continue
+        if suite.manual and not wants_manual:
+            continue
+        if not profiles.includes(suite.profile, profile):
+            continue
+        chosen.append(suite)
     return chosen
 
 
@@ -2032,7 +2169,7 @@ def record_plan(args: argparse.Namespace, categories: Sequence[str],
     """
     sequence = []
     for category in categories:
-        chosen = selected_suites(category, args.suite, args.manual)
+        chosen = selected_suites(category, args.suite, args.manual, args.profile)
         for mode in (modes if category == "e2e" else [""]):
             for suite in chosen:
                 # The label is what names this run of the suite everywhere
@@ -2223,6 +2360,24 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-l", "--list", action="store_true",
                       help="List every registered suite with its category "
                            "and path, then exit.")
+    selection.add_argument("--list-profiles", nargs="?", const="", metavar="NAMES",
+                      help="Show which suites each profile selects, as a "
+                           "matrix, then exit. Give a comma-separated list of "
+                           "profile names to compare only those. Scenario and "
+                           "check counts and durations are not shown, because "
+                           "the registry does not know them; add --measured "
+                           "to fold in what recorded runs did.")
+    selection.add_argument("--measured", action="append", metavar="PROFILE=DIR",
+                      default=[],
+                      help="A profile name and a `-o` output directory that "
+                           "profile produced. Repeatable. Adds a table per "
+                           "profile of what each suite actually ran on each "
+                           "machine, and how long it took.")
+    selection.add_argument("--format", choices=("text", "json", "markdown"),
+                      default="text",
+                      help="How --list-profiles writes its answer: aligned "
+                           "text, JSON for a script, or Markdown tables "
+                           "(default: text).")
 
     e2e = parser.add_argument_group(
         "e2e options",
@@ -2231,11 +2386,13 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Run only this suite. Repeatable, and it selects "
                           "manual suites as well. The names are in --list.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
-                     default=DEFAULT_MODE, metavar="LIST",
+                     default="", metavar="LIST",
                      help="Drive the suites through this UI transport: "
                           "overlay, freeze, telnet, a comma-separated list, "
                           "or all. Each transport is a full pass over the "
-                          f"selected suites (default: {DEFAULT_MODE}).")
+                          "selected suites. Defaults to what the profile "
+                          "sweeps, which is overlay up to standard and all "
+                          "three from deep.")
     e2e.add_argument("--manual", action="store_true",
                      help="Also run the suites kept out of the default run: "
                           "those needing an operator, root, or a long wait.")
@@ -2249,7 +2406,18 @@ def build_parser() -> argparse.ArgumentParser:
                           "OpenAPI document in doc/api, for every suite. The "
                           "openapi-contract suite does this for itself either "
                           "way; this extends it to the whole run.")
-    e2e.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
+    e2e.add_argument("--profile", choices=list(profiles.ORDER),
+                     default=profiles.DEFAULT,
+                     help="How much of the tree to cover, shallowest first: "
+                          + ", ".join(profiles.ORDER)
+                          + f" (default: {profiles.DEFAULT}). A profile is a "
+                            "named bundle: which suites and scenarios run, "
+                            "which UI transports are swept, and whether the "
+                            "suites an ordinary run leaves out are included. "
+                            "-s names a suite whatever the profile says, and "
+                            "-m overrides the transports it would sweep.")
+    e2e.add_argument("--soak-duration", "--soak-profile", dest="soak_profile",
+                     choices=("stress", "soak"), default="stress",
                      help="Set how long the network soak runs: stress takes "
                           "about two minutes, soak twelve hours (default: "
                           "stress).")
@@ -2284,9 +2452,9 @@ def build_parser() -> argparse.ArgumentParser:
                               "whether the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
                          default=DEFAULT_RECOVER_MAX_PER_SUITE, metavar="N",
-                         help="Allow one suite this many recoveries, which is "
-                              "also the number of extra attempts it gets "
-                              f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}).")
+                         help="Allow one suite this many recoveries "
+                              f"(default: {DEFAULT_RECOVER_MAX_PER_SUITE}). "
+                              "How many times a suite is run is --attempts.")
     health.add_argument("--recover-max-total", type=int,
                          default=DEFAULT_RECOVER_MAX_TOTAL, metavar="N",
                          help="Allow the whole run this many recoveries; "
@@ -2296,6 +2464,15 @@ def build_parser() -> argparse.ArgumentParser:
                          default=DEFAULT_RECOVER_TIMEOUT_SECONDS, metavar="SECONDS",
                          help="Kill the recovery command after this long "
                               f"(default: {DEFAULT_RECOVER_TIMEOUT_SECONDS:g}).")
+    health.add_argument("--no-restore-settings", dest="restore_settings",
+                         action="store_false", default=True,
+                         help="Leave the device's settings however the run "
+                              "left them. By default every setting each "
+                              "machine serves is read before the first suite "
+                              "and the ones that differ are written back "
+                              "afterwards, so the next run starts from the "
+                              "same configuration this one did. The read is "
+                              "15 to 23 requests per machine.")
     health.add_argument("--no-health-check", dest="health_check",
                          action="store_false", default=True,
                          help="Reduce health to reachable and drivable. Use "
@@ -2419,23 +2596,72 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_modes(raw: str) -> List[str]:
+def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> List[str]:
+    """The transports to sweep: what -m named, or what the profile sweeps."""
     if raw.strip() == "all":
         return list(MODES)
     modes = [m.strip() for m in raw.split(",") if m.strip()]
     for mode in modes:
         if mode not in MODES:
-            die(f"unknown profile: {mode} (expected {', '.join(MODES)} or all)")
-    return modes or [DEFAULT_MODE]
+            die(f"unknown mode: {mode} (expected {', '.join(MODES)} or all)")
+    return modes or list(profiles.modes_for(profile))
 
 
 def print_listing() -> None:
+    print("Profiles, shallowest first. A suite runs from its own profile up.")
+    for name in profiles.ORDER:
+        modes = ", ".join(profiles.modes_for(name))
+        manual = ", with the manual suites" if profiles.includes_manual(name) else ""
+        marker = "  (default)" if name == profiles.DEFAULT else ""
+        print(f"  {name:<11} {modes}{manual}{marker}")
     for category in CATEGORIES:
         print(f"\n{category}:")
         for suite in SUITES:
             if suite.category == category:
-                print("  %-28s %-58s %s"
-                      % (suite.name, suite.path, "manual" if suite.manual else "auto"))
+                print("  %-28s %-11s %-52s %s"
+                      % (suite.name, suite.profile, suite.path,
+                         "manual" if suite.manual else "auto"))
+
+
+def print_profiles(names: str, measured: Sequence[str], fmt: str) -> None:
+    """Answer --list-profiles, optionally folding in recorded runs.
+
+    The static half is exact and comes from the registry. The measured half is
+    the only source for scenario counts, check counts and durations: a check is
+    a call made while a suite runs, and how many happen depends on the machine.
+    Nothing here estimates either, which is why a profile with no recorded run
+    shows structure and no numbers rather than a guess.
+    """
+    wanted = [n.strip() for n in names.split(",") if n.strip()] if names else []
+    for name in wanted:
+        try:
+            profiles.parse(name)
+        except profiles.UnknownProfile as exc:
+            die(str(exc))
+    cover = coverage.build(SUITES, CATEGORIES, wanted or profiles.ORDER)
+
+    runs = []
+    for pair in measured:
+        if "=" not in pair:
+            die(f"--measured wants PROFILE=DIR, got {pair!r}")
+        profile, directory = pair.split("=", 1)
+        if not os.path.isdir(directory):
+            die(f"--measured {profile}: {directory!r} is not a directory")
+        runs.append((profile, coverage.read_run(directory)))
+
+    if fmt == "json":
+        payload = coverage.static_payload(cover)
+        if runs:
+            payload["measured"] = coverage.measured_payload(runs)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    print(coverage.render_static(cover))
+    if runs:
+        print()
+        print("Measured, from the recorded runs named with --measured.")
+        print("Each cell is checks (seconds) for that suite on that machine.")
+        print()
+        print(coverage.render_measured(runs, markdown=(fmt == "markdown")))
 
 
 def plural(count: int, noun: str) -> str:
@@ -2623,6 +2849,7 @@ def apply_colour_choice(choice: str) -> None:
 CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
                          "record")
 CHILD_FORWARDED_VALUES = (
+    ("profile", "--profile"),
     ("modes", "--mode"),
     ("password", "--password"),
     ("timeout", "--timeout"),
@@ -2644,6 +2871,7 @@ CHILD_FORWARDED_VALUES = (
 )
 CHILD_FORWARDED_NEGATIVE = (
     ("health_check", "--no-health-check"),
+    ("restore_settings", "--no-restore-settings"),
     ("screens", "--no-screens"),
     ("record_video", "--no-record-video"),
     ("record_audio", "--no-record-audio"),
@@ -2657,8 +2885,11 @@ CHILD_FORWARDED_NEGATIVE = (
 # assume_fix and validate_openapi reach every child through the environment
 # instead, because a suite started by hand has to be able to set them the same
 # way (see machine.ASSUME_ENV and openapi_contract.ENV_FLAG).
+# --list-profiles, --measured and --format answer a question and exit without
+# starting a suite at all, so there is no child to forward them to.
 CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
-                          "assume_fix", "validate_openapi")
+                          "assume_fix", "validate_openapi",
+                          "list_profiles", "measured", "format")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
@@ -2801,7 +3032,7 @@ def run_targets(args: argparse.Namespace,
         # planned, and a run killed while that target was still waiting leaves
         # no record that it was ever going to run. Each child records the same
         # plan for itself.
-        record_plan(args, chosen_categories(args), resolve_modes(args.modes),
+        record_plan(args, chosen_categories(args), resolve_modes(args.modes, args.profile),
                     targets=[t.token for t in wanted])
     collector = start_syslog(args, wanted)
     if collector is not None:
@@ -2913,7 +3144,14 @@ def run_targets(args: argparse.Namespace,
 
 
 def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
-    """Every target this run was asked for, validated before anything starts."""
+    """Every target this run was asked for, validated before anything starts.
+
+    Two tokens that resolve to the same pair of machines are one target. With
+    `U64_COMPUTERS=u2@c64u` set, `u2` and `u2@c64u` are two spellings of the
+    same cartridge in the same computer, and running both would run every
+    suite twice against the same hardware while the scheduler kept them apart.
+    The first spelling is the one kept, and the run says which one it dropped.
+    """
     tokens = list(args.targets) or [args.host]
     resolved: List[targets_lib.Target] = []
     for token in tokens:
@@ -2923,6 +3161,13 @@ def resolve_targets(args: argparse.Namespace) -> List[targets_lib.Target]:
             die(str(exc))
         if any(target.token == other.token for other in resolved):
             die(f"{target.token} is named twice")
+        same = next((other for other in resolved
+                     if (other.device, other.computer) == (target.device, target.computer)),
+                    None)
+        if same is not None:
+            report.warn(f"{target.token} names the same machines as "
+                        f"{same.token}; running it once")
+            continue
         resolved.append(target)
     return resolved
 
@@ -2948,12 +3193,20 @@ def main(argv: List[str]) -> int:
             die(str(exc))
         os.environ[machine_lib.ASSUME_ENV] = " ".join(sorted(assumed))
 
+    # Exported rather than passed on: the suites are child processes, and a
+    # scenario that tags itself reads the profile at import. Same convention as
+    # machine.ASSUME_ENV.
+    os.environ[profiles.ENV] = args.profile
+
     if args.validate_openapi:
         # Exported the same way, and for the same reason: the suites are child
         # processes, and tests/lib/rest.py is where every one of them makes its
         # calls. See tests/lib/openapi_contract.py.
         os.environ[openapi_contract.ENV_FLAG] = "1"
 
+    if args.list_profiles is not None:
+        print_profiles(args.list_profiles, args.measured, args.format)
+        raise SystemExit(EXIT_OK)
     if args.list:
         print_listing()
         return 0
@@ -2969,7 +3222,7 @@ def main(argv: List[str]) -> int:
         return run_targets(args, wanted)
     target = wanted[0]
 
-    modes = resolve_modes(args.modes)
+    modes = resolve_modes(args.modes, args.profile)
 
     known = {suite.name for suite in SUITES}
     for wanted in args.suite:
@@ -3043,6 +3296,8 @@ def main(argv: List[str]) -> int:
                   + ("" if not target.split else
                      f"  (device {target.device}, computer {target.computer})"))
     report.detail(f"categories: {', '.join(categories)}")
+    report.detail(f"profile:    {args.profile}"
+                  + ("" if args.profile != profiles.DEFAULT else " (default)"))
     if "e2e" in categories:
         report.detail(f"modes:      {', '.join(modes)}")
     if "soak" in categories:
@@ -3077,34 +3332,40 @@ def main(argv: List[str]) -> int:
         if args.syslog else ""
     recording = start_recorder(args, target, device)
 
-    # Before any suite, because a cartridge whose computer has not handed its
-    # bus over fails later in ways that name neither the setting nor the
-    # computer. A no-op on a target that is its own computer.
-    if target.split:
-        report.step_start("cartridge: the computer prefers its external cartridge")
-        try:
-            changed = api_lib.ensure_cartridge_preference(
-                target, options.password, float(options.timeout))
-        except api_lib.CartridgePreferenceUnavailable as exc:
-            # Not a reason to end the run: a computer that cannot be asked is
-            # either not one that has the setting, such as the loopback
-            # stand-in the observability fixture runs against, or one whose
-            # own suites will report it.
-            report.check_warn(str(exc))
-        except DEVICE_ERRORS as exc:
-            report.check_fail(str(exc))
-            return EXIT_SUITE_FAILED
-        else:
-            report.check_ok(changed or "already set")
+    # Before anything this run changes, including the cartridge preference
+    # below, so what is put back afterwards is the configuration the run found
+    # rather than the one it set up for itself.
+    settings = (capture_settings(target, options.password)
+                if args.restore_settings else [])
 
     try:
+        # Before any suite, because a cartridge whose computer has not handed
+        # its bus over fails later in ways that name neither the setting nor
+        # the computer. A no-op on a target that is its own computer.
+        if target.split:
+            report.step_start("cartridge: the computer prefers its external cartridge")
+            try:
+                changed = api_lib.ensure_cartridge_preference(
+                    target, options.password, float(options.timeout))
+            except api_lib.CartridgePreferenceUnavailable as exc:
+                # Not a reason to end the run: a computer that cannot be asked
+                # is either not one that has the setting, such as the loopback
+                # stand-in the observability fixture runs against, or one whose
+                # own suites will report it.
+                report.check_warn(str(exc))
+            except DEVICE_ERRORS as exc:
+                report.check_fail(str(exc))
+                return EXIT_SUITE_FAILED
+            else:
+                report.check_ok(changed or "already set")
+
         results: List[Result] = []
         started = time.monotonic()
         stopped = False
         device_unhealthy = False
 
         for index, category in enumerate(categories):
-            suites = selected_suites(category, args.suite, args.manual)
+            suites = selected_suites(category, args.suite, args.manual, args.profile)
             if not suites:
                 continue
             # The device needs a moment between categories. The perf benchmark
@@ -3161,7 +3422,11 @@ def main(argv: List[str]) -> int:
         # In a finally, because whatever ends the run early is exactly when
         # this matters: an unstopped recorder leaves the device streaming to a
         # socket nobody is reading and leaves its ffmpeg children unreaped,
-        # and an unstopped collector holds its UDP port.
+        # an unstopped collector holds its UDP port, and settings a failing
+        # suite left behind decide what the next run starts from.
+        if settings:
+            print()
+            restore_settings(settings)
         stop_recorder(recording, options.output_dir, target.token)
         if collector is not None:
             finish_syslog(collector)

@@ -59,6 +59,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
+import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     char_to_combo, find_selected_row_rest, measure_cursor_colour)
@@ -97,7 +98,6 @@ K_HOME = ["clr_home"]                 # KEY_HOME -> clear selected form field
 K_CLEAR = ["left_shift", "clr_home"]  # KEY_CLEAR -> reload all form fields
 K_DEL = ["inst_del"]
 K_F2 = ["left_shift", "f1"]
-K_F5 = ["f5"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
 def assert_or_warn(assertions_enabled, condition, message):
@@ -327,6 +327,21 @@ class MenuDriver:
         self.s = session
         self.verbose_menu = verbose_menu
         self.last_input = ""
+
+    @property
+    def task_menu_key(self):
+        """The matrix key that opens the task menu on this machine.
+
+        F5 on an Ultimate 64 and an Ultimate II+, F1 on a C64 Ultimate, where
+        F5 is Page Down and pressing it over a short listing does nothing at
+        all. A step that pressed F5 there read the browser it was still looking
+        at as a task menu with no Create category, and reported the node as
+        unsupported by the UI rather than failing. See tests/lib/machine.py.
+        """
+        info = self.s.api.info()
+        machine = machine_lib.identify(
+            self.s.host, lambda: (info.product, info.firmware_version))
+        return [machine.task_menu_key.lower()]
 
     # -- low level ---------------------------------------------------------
     def tap(self, inputs, settle=KEY_SETTLE_SECONDS):
@@ -1315,7 +1330,7 @@ def create_remote_dir(ctx, alias, dirname):
     d, server = ctx.d, ctx.server
     enter_host_root(ctx, alias)
     since = server.log_len()
-    d.tap(K_F5, settle=MENU_SETTLE_SECONDS)     # Tasks menu (right-side popup)
+    d.tap(d.task_menu_key, settle=MENU_SETTLE_SECONDS)  # Tasks menu (right-side popup)
     screen = d.screen()
     if not screen.contains("Create"):
         d.tap(K_RUNSTOP)
@@ -2180,7 +2195,8 @@ def main(argv=None):
         except Exception as exc:
             warn(f"cleanup error: {exc}")
         if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
-            session.require_ok("PUT", "/v1/machine:reset", description="reset")
+            # force: this suite drives FTP throughout, which REST cannot see.
+            session.api.machine.reset(force=True, wait=False)
         fails = print_summary(ctx, crashed)
         server.cleanup()
 

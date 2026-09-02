@@ -146,10 +146,17 @@ class RestSession(RestClient):
     def reset_to_clean_slate(self) -> None:
         self.release_all_input()
         self.close_menu_from_anywhere()
-        status, _, body = self.request("PUT", "/v1/machine:reset")
-        if status != 200:
-            raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
-        time.sleep(0.5)
+        # Through the API, which skips a reset that cannot change anything:
+        # one suite ends with a reset and the next begins with one, and each
+        # costs the machine a reboot. wait=False because nothing here needs
+        # the BASIC prompt.
+        self.machine.reset(wait=False)
+        # A tenth of a second, not half. What this has to cover is the reset
+        # being applied before the menu is opened over it, and nothing this
+        # suite checks depends on the C64 having reached the BASIC prompt: it
+        # reads the menu's own character matrix, which the firmware draws
+        # whatever the machine is doing.
+        time.sleep(0.1)
 
 
 def require_error(label: str, body: bytes, message: str) -> None:

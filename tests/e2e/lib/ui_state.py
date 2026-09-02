@@ -57,12 +57,24 @@ REPAIR_ROUNDS = 4
 # Enough Back presses to climb out of the deepest settings screen a launcher
 # leads to, and one descent into the browser; see Device.enter_file_browser.
 LAUNCHER_DESCENT_STEPS = 10
-# Deeper than the launcher's own list, so Back reaches its first entry.
-LAUNCHER_ENTRY_LIMIT = 24
+# The rows a launcher's own entries can occupy: everything between its title
+# and its status row.
+LAUNCHER_ENTRY_ROWS = range(2, SCREEN_ROWS - 1)
 
 
 class Unrecoverable(RuntimeError):
     pass
+
+
+class UiWedged(Unrecoverable):
+    """The UI task is not answering the menu button or injected keys.
+
+    Told apart from the other things that stop this gate -- a device that has
+    gone off the network, a menu screen of the wrong size -- because it is the
+    one repair() has an answer for. Resetting the machine releases a wedged UI
+    task; it does nothing for a device that has stopped answering, and hiding a
+    transport fault behind four resets would only make it slower to report.
+    """
 
 
 class Device:
@@ -110,9 +122,14 @@ class Device:
     def enter_file_browser(self) -> None:
         """Descend from a launcher into the file browser, where there is one.
 
-        A no-op on a machine whose menu button opens the browser itself. The
-        browser is the launcher's first entry, so Back to the top of the list
-        and then Return reaches it without reading the cursor.
+        A no-op on a machine whose menu button opens the browser itself.
+
+        The cursor is moved onto the entry by reading which row it is on and
+        which row the cursor is on, and the landing is confirmed before RETURN
+        is sent. This gate runs around every suite on the machine that has a
+        launcher, and a launcher lists hardware actions, so a burst of Back
+        presses that under-delivered would leave RETURN to fire whichever of
+        them the cursor stopped on.
         """
         entry = self.machine.launcher_browser_entry
         if entry is None:
@@ -121,12 +138,34 @@ class Device:
             rows = self.screen()
             if rows is None or not describe_path(rows):
                 return
-            if not any(entry in row for row in rows):
+            row = next((n for n, text in enumerate(rows) if entry in text), None)
+            if row is None:
                 self.tap(["left_shift", "cursor_left_right"])
                 continue
-            for _ in range(LAUNCHER_ENTRY_LIMIT):
-                self.tap(["left_shift", "cursor_up_down"])
+            cursor = self.selected_row()
+            if cursor is None:
+                # Nothing on screen says where the cursor is, so nothing here
+                # may press RETURN. Back out and let the loop look again.
+                self.tap(["left_shift", "cursor_left_right"])
+                continue
+            for _ in range(abs(row - cursor)):
+                self.tap(["cursor_up_down"] if row > cursor
+                         else ["left_shift", "cursor_up_down"])
+            if self.selected_row() != row:
+                continue
             self.tap(["return"])
+
+    def selected_row(self) -> Optional[int]:
+        """Which row the open menu marks as the cursor, or None when unreadable."""
+        body = self._request("GET", "/v1/machine:menu_screen")
+        if body is None or len(body) != SCREEN_BYTES:
+            return None
+        try:
+            return ui_backend.find_selected_row_rest(
+                body[:ui_backend.SCREEN_CELLS], body[ui_backend.SCREEN_CELLS:],
+                LAUNCHER_ENTRY_ROWS)
+        except Failure:
+            return None
 
     def _request(self, method: str, path: str, payload=None) -> Optional[bytes]:
         headers = {}
@@ -179,13 +218,27 @@ class Device:
         return self.screen() is not None
 
     def press_menu_button(self) -> None:
+        """Ask the menu to toggle. Waiting for it is the caller's job.
+
+        This used to sleep MENU_SETTLE_SECONDS afterwards, and every one of the
+        six callers already follows it with `wait_menu`, which polls for the
+        state it wants and returns as soon as it sees it. The sleep was
+        therefore waiting for something that was about to be waited for again,
+        and the gate makes several presses per suite.
+
+        Measured with tests/perf/rest_latency_perf_test.py, a toggle becomes
+        visible in 75ms on a wired Ultimate 64, 64ms on its wireless address
+        and 168ms on an Ultimate II+L. wait_menu polls every
+        pacing.POLL_INTERVAL_SECONDS against a budget of
+        MENU_TOGGLE_TIMEOUT_SECONDS, so it covers all three and the 538ms tail
+        the same measurement saw, which the fixed 250ms sleep did not.
+        """
         try:
             self._request("PUT", "/v1/machine:menu_button")
         except Unrecoverable:
             # The toggle may or may not have been applied. Callers decide by
             # reading the state back, which answers it either way.
             pass
-        time.sleep(MENU_SETTLE_SECONDS)
 
     def tap(self, inputs: List[str]) -> None:
         try:
@@ -217,7 +270,21 @@ class Device:
         would leave the device dirty for every suite that follows. The stale
         client the reset has to survive is created by switching the Interface
         Type under an open menu, which ui_backend.RestBackend no longer does.
+
+        On a cartridge target both menus have to be shut, not just the
+        cartridge's. menu_is_open and press_menu_button are routed to the
+        device under test, so closing "the menu" here left the computer's own
+        UI holding the machine, and the release then tore down the computer
+        rather than the cartridge. Measured on u2@c64u: the C64 Ultimate went
+        off the network entirely, ICMP included, during the UI-state repair
+        that follows a suite, and needed mains power. The computer's menu is
+        closed first for that reason, and a computer that will not shut it is
+        reported rather than reset at.
         """
+        if self.target.split:
+            clear = getattr(self, "clear_computer_menu", None)
+            if clear is not None:
+                clear()
         for _ in range(2):
             if not self.menu_is_open():
                 break
@@ -333,31 +400,55 @@ def describe(rows: List[str]) -> str:
     return describe_path(rows)
 
 
+def try_open_menu(device: Device) -> bool:
+    """Whether the menu could be opened, unwinding a blocked UI task first.
+
+    Reports rather than raises, because repair() has one more thing to try
+    after this fails and cannot try it while an exception is on its way out.
+    """
+    if device.menu_is_open():
+        return True
+    device.press_menu_button()
+    if device.wait_menu(want_open=True):
+        return True
+    # The button is ignored while the UI task sits in a modal. Back out
+    # of it; a 404 from menu_screen does not prove the UI is idle.
+    for _ in range(UNWIND_PRESSES):
+        device.tap(["run_stop"])
+        if device.menu_is_open():
+            return True
+    device.press_menu_button()
+    return device.wait_menu(want_open=True)
+
+
 def open_menu(device: Device) -> List[str]:
-    """Open the menu, unwinding a blocked UI task if the button does nothing."""
-    if not device.menu_is_open():
-        device.press_menu_button()
-        if not device.wait_menu(want_open=True):
-            # The button is ignored while the UI task sits in a modal. Back out
-            # of it; a 404 from menu_screen does not prove the UI is idle.
-            for _ in range(UNWIND_PRESSES):
-                device.tap(["run_stop"])
-                if device.menu_is_open():
-                    break
-            if not device.menu_is_open():
-                device.press_menu_button()
-                if not device.wait_menu(want_open=True):
-                    raise Unrecoverable(
-                        "the menu will not open; the UI task is blocked and RUN/STOP "
-                        "did not release it"
-                    )
-    # A C64 Ultimate's menu button opens a launcher, not the browser, and it
-    # reopens wherever it was last left. Everything below expects the browser.
-    device.enter_file_browser()
-    rows = device.screen()
-    if rows is None:
-        raise Unrecoverable("menu reported open but returned no screen")
-    return rows
+    """Open the menu, unwinding a blocked UI task if the button does nothing.
+
+    Tried twice, because the descent into the browser can itself close the
+    menu. `enter_file_browser` walks Back towards the launcher, and on a
+    machine whose launcher entry it cannot find on screen it presses Back
+    until the menu is gone, which is a screen that read as an open menu on the
+    way in and as no menu on the way out. Reopening is what that costs; a
+    machine that does it twice is not racing, and is handed to repair() as a
+    wedge so the reset at the end of the round can have it.
+    """
+    for attempt in range(2):
+        if not try_open_menu(device):
+            raise UiWedged(
+                "the menu will not open; the UI task is blocked and RUN/STOP "
+                "did not release it"
+            )
+        # A C64 Ultimate's menu button opens a launcher, not the browser, and
+        # it reopens wherever it was last left. Everything below expects the
+        # browser.
+        device.enter_file_browser()
+        rows = device.screen()
+        if rows is not None:
+            return rows
+    raise UiWedged(
+        "the menu reported open and then returned no screen, twice; the UI "
+        "task is not holding a browser the gate can read"
+    )
 
 
 def close_menu(device: Device) -> None:
@@ -377,7 +468,7 @@ def close_menu(device: Device) -> None:
         device.press_menu_button()
         if device.wait_menu(want_open=False):
             return
-    raise Unrecoverable("the menu will not close")
+    raise UiWedged("the menu will not close")
 
 
 def describe_open_menu(device: Device) -> str:
@@ -495,25 +586,45 @@ def repair(device: Device) -> None:
     browser reloads its listing, then reset the machine. A root browser showing
     no items cannot be fixed by keystrokes, because there is nothing to back out
     of; only a reload repopulates it.
+
+    A menu that will not open at all skips straight to the reset, because every
+    rung below it needs an open menu to work on. Observed on a C64 Ultimate,
+    which answered REST, ran the C64 and served FTP while machine:menu_button
+    returned 200 and machine:menu_screen stayed at 404 through repeated presses
+    and RUN/STOP: the UI task was blocked somewhere no keystroke reaches. One
+    machine:reset released it, and the menu opened on the next press. Before
+    this, the first open_menu of round 0 raised instead, so the reset this
+    function keeps as its last resort was never reached and the whole run was
+    abandoned with the device reported unhealthy.
     """
     for round_index in range(REPAIR_ROUNDS):
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
-        open_menu(device)
-        unwind(device)
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
-        # Reopening runs appear(), which re-inits the root browser and reloads it.
-        open_menu(device)
-        close_menu(device)
-        open_menu(device)
-        if not describe_open_menu(device):
-            home_cursor(device)
-            return
+        try:
+            if not try_open_menu(device):
+                device.reset_machine()
+                continue
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+            open_menu(device)
+            unwind(device)
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+            # Reopening runs appear(), which re-inits the root browser and reloads it.
+            open_menu(device)
+            close_menu(device)
+            open_menu(device)
+            if not describe_open_menu(device):
+                home_cursor(device)
+                return
+        except UiWedged:
+            # The menu stopped answering part-way through a round: it would not
+            # close, or it would not reopen. Neither can be pressed past, and
+            # both are what the reset is for.
+            device.reset_machine()
+            continue
         if round_index >= 1:
             # Last resort: release the host and restart the machine, then reload.
             device.reset_machine()

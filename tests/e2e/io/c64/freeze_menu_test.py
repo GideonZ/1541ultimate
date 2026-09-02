@@ -53,8 +53,9 @@ JIFFY_SETTLE_SECONDS = 5.0
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_TOGGLE_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
 MENU_TOGGLE_TIMEOUT_SECONDS = 5.0
-# The form is fetched from the Assembly 64 server, so it is slower than a redraw.
-FORM_TITLE = "Assembly 64 Query Form"
+# The query form is fetched from a third-party server, so it is slower than a
+# redraw. Which server, and where the menu keeps the entry that opens it,
+# depends on the machine; see Machine.search_form_title.
 FORM_OPEN_TIMEOUT_SECONDS = 20.0
 SCREEN_WIDTH = 40
 SCREEN_HEIGHT = 25
@@ -123,9 +124,8 @@ class RestSession:
         return status == 200
 
     def reset(self) -> None:
-        status, _, body = self.request("PUT", "/v1/machine:reset")
-        if status != 200:
-            raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
+        # Through the API, which skips a reset that cannot change anything.
+        self.api.machine.reset(wait=False)
         time.sleep(1.0)
 
     def close_menu_from_anywhere(self) -> None:
@@ -416,34 +416,62 @@ def run_context_reopen(session: RestSession) -> None:
     close_menu(session)
 
 
-def run_menu_button_in_form(session: RestSession) -> None:
-    """The menu button must still close the menu from inside the Assembly 64 form.
+def open_search_entry(session: RestSession) -> None:
+    """Put the machine's online-search entry under the cursor and open it.
 
-    F5 opens the task menu, whose first entry is Assembly 64 and is already under
-    the cursor. RETURN opens its query form and a second RETURN enters the Name
-    field, which puts the UI task inside UserInterface::string_edit. That loop
-    tested only host->exists(), while the loop that polls the menu button lives in
-    run_once() and is not running, so the button did nothing and the menu could
-    not be opened again until the device was rebooted. machine:menu_screen answers
-    404 throughout, because C64::is_accessible() reports isFrozen, so nothing can
-    detect the condition from outside.
+    An Ultimate 64 and an Ultimate II+ keep it as the first entry of the task
+    menu, already selected when the menu opens, and the key that opens that
+    menu is the machine's rather than a literal F5.
+
+    A machine that keeps its search in a launcher instead is refused rather
+    than driven. The only machine that does is a C64 Ultimate, which cannot
+    reach this scenario at all: the suite skips on `freeze-menu-opens` and this
+    scenario skips again on `menu-button-closes-string-edit`, both of which
+    list it. A launcher route here would be code no run can execute, and
+    tests/e2e/io/c64/assembly64_test.py already drives that launcher for real.
+    """
+    if session.machine.search_in_launcher:
+        raise Failure(
+            f"{session.machine.described} keeps "
+            f"{session.machine.search_menu_entry!r} in its launcher rather "
+            f"than its task menu, which this scenario does not drive")
+    before = session.menu_screen_bytes()
+    wedge_aware(session, "opening the task menu",
+                lambda: session.tap(session.machine.task_menu_key.lower()))
+    if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
+        raise Failure("the task menu was not drawn")
+
+
+def run_menu_button_in_form(session: RestSession) -> None:
+    """The menu button must still close the menu from inside the query form.
+
+    The machine's online-search entry opens a query form, and a RETURN there
+    enters the Name field, which puts the UI task inside
+    UserInterface::string_edit. That loop tested only host->exists(), while the
+    loop that polls the menu button lives in run_once() and is not running, so
+    the button did nothing and the menu could not be opened again until the
+    device was rebooted. machine:menu_screen answers 404 throughout, because
+    C64::is_accessible() reports isFrozen, so nothing can detect the condition
+    from outside.
 
     The modal helpers now poll the button. They also drop a press that predates
     the modal, otherwise one still latched from opening the menu would close the
     editor before a single character was accepted.
     """
-    section("the menu button works inside the Assembly 64 query form")
+    title = session.machine.search_form_title
+    section(f"the menu button works inside the {title}")
+    if session.machine.skip_without_fix(
+            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
+            "the menu button closes the menu from inside the edit field"):
+        return
     prepare(session, ENABLED)
     open_menu(session)
-    with check("open the task menu"):
-        before = session.menu_screen_bytes()
-        wedge_aware(session, "opening the task menu", lambda: session.tap("f5"))
-        if not session.wait_screen_changes(before, MENU_TOGGLE_TIMEOUT_SECONDS):
-            raise Failure("the task menu was not drawn")
-    with check("open the Assembly 64 query form"):
+    with check(f"put the cursor on {session.machine.search_menu_entry!r}"):
+        open_search_entry(session)
+    with check(f"open the {title}"):
         wedge_aware(session, "opening the query form", lambda: session.tap("return"))
-        if not session.wait_form_title(FORM_TITLE, FORM_OPEN_TIMEOUT_SECONDS):
-            raise Failure(f"{FORM_TITLE!r} did not appear")
+        if not session.wait_form_title(title, FORM_OPEN_TIMEOUT_SECONDS):
+            raise Failure(f"{title!r} did not appear")
     with check("enter the form's first edit field"):
         wedge_aware(session, "entering the edit field", lambda: session.tap("return"))
         if not session.menu_is_open():
@@ -468,11 +496,11 @@ def run_menu_button_in_form(session: RestSession) -> None:
         for _ in range(6):
             if not session.menu_is_open():
                 break
-            if not session.form_visible(FORM_TITLE):
+            if not session.form_visible(title):
                 break
             session.tap("run_stop")
-        if session.form_visible(FORM_TITLE):
-            raise Failure(f"{FORM_TITLE!r} is still on screen")
+        if session.form_visible(title):
+            raise Failure(f"{title!r} is still on screen")
     if session.menu_is_open():
         close_menu(session)
     else:

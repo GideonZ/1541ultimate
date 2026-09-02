@@ -30,6 +30,7 @@ from av_stream import AvStreamCapture, assert_frames_differ, assert_not_black, v
 from report import Failure, check, check_skip, detail, format_exception, section, suite_fail, suite_ok
 from ui_backend import (
     Backend,
+    Browser,
     strip_frame,
     MODE_FREEZE,
     MODE_TELNET,
@@ -42,6 +43,13 @@ from ui_backend import (
 )
 
 SNAPSHOT_FILE = Path(__file__).with_name("snapshots").joinpath("expected_snapshots.json")
+
+# The browser rows and status row the menu route below reads, for the machines
+# that need it. Only the task menu drawn over the browser is read there, and
+# that overlay is found by its own frame rather than by these rows, so one
+# layout serves both transports.
+MENU_ENTRY_ROWS = range(2, 24)
+MENU_STATUS_ROW = 24
 
 # Per-request timeout for this suite's own REST calls, which are all small
 # reads and writes against a device that is otherwise idle.
@@ -351,11 +359,16 @@ class MonitorSession:
         if monitor_is_up(snapshot):
             return snapshot
 
-        snapshot = self.send_key("F5")
-        snapshot = self.send_char("D")
-        snapshot = self.send_key("ENTER")
-        snapshot = self.send_key("DOWN")
-        snapshot = self.send_key("ENTER")
+        # The menu route, for a device that did not take the shortcut. Driven
+        # by reading the labels the menu drew rather than by a fixed run of
+        # keys: the task-menu key is F5 on an Ultimate 64 and an Ultimate II+
+        # and F1 on a C64 Ultimate, where F5 is Page Down, and the position of
+        # a category in the menu is not the same on all three. A fixed run of
+        # keys therefore pressed RETURN on whatever entry it happened to land
+        # on, which on a menu of hardware actions is not a thing to guess at.
+        menu = Browser(self.backend, MENU_ENTRY_ROWS, MENU_STATUS_ROW)
+        menu.invoke_task_action("Developer", "Machine Code Monitor")
+        snapshot = wait_until(self, monitor_is_up)
         find_any_status_line(snapshot)
         return snapshot
 
@@ -2799,6 +2812,28 @@ def assert_help_open(snapshot: Snapshot, why: str) -> None:
         raise Failure(f"{why}: help did not open\n{snapshot.text()}")
 
 
+def open_help(session: MonitorSession, why: str) -> Snapshot:
+    """Press ? until help is showing, and answer the screen it is showing on.
+
+    A keystroke injected into a cartridge target travels through the
+    computer's keyboard matrix and one occasionally does not arrive; measured
+    on u2@c64u, where this check failed with "help did not open" against a
+    monitor that opened it immediately afterwards.
+
+    The screen is read before every press, so a ? is never sent at help that is
+    already open: ? is also what closes it.
+    """
+    for attempt in range(2):
+        screen = session.send_char("?")
+        if HELP_MARKER in screen.text():
+            if attempt:
+                detail("the help key had to be pressed twice; the first one "
+                       "did not reach the machine")
+            return screen
+    assert_help_open(screen, why)
+    return screen
+
+
 def assert_help_closed(snapshot: Snapshot, why: str) -> None:
     if HELP_MARKER in snapshot.text():
         raise Failure(f"{why}: help is still open\n{snapshot.text()}")
@@ -2851,8 +2886,7 @@ def run_help_layout_test(session: MonitorSession) -> None:
     as a screen that merely still contains the right words in the wrong
     place.
     """
-    screen = session.send_char("?")
-    assert_help_open(screen, "opening help for the layout check")
+    screen = open_help(session, "opening help for the layout check")
 
     if "Undo" in screen.text() and "Undoc" not in screen.text():
         raise Failure(f"U is described as Undo rather than Undoc/Case\n{screen.text()}")
@@ -3709,14 +3743,80 @@ def ui_freezes_machine(device_host: str, mode: str,
     return not jiffy_clock_advances(device_host)
 
 
+# The modal a monitor raises when the CPU bank cannot be changed.
+CPU_BANK_UNAVAILABLE = "CPU BANK UNAVAILABLE"
+
+
+def monitor_cycles_cpu_bank(session: MonitorSession) -> bool:
+    """Whether pressing 'o' actually moves this monitor's CPU bank.
+
+    Drawing the banking footer and being able to bank are not the same thing,
+    and the difference is exactly the shape a defect report takes when it is
+    missed. Measured on an Ultimate II+L in a C64 Ultimate: the footer reads
+    "CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000", so the monitor looks like it
+    banks, but 'o' raises a "CPU BANK UNAVAILABLE" popup and the bank stays
+    put. A check that then writes to $A000 and reads it back sees the BASIC
+    ROM, because $A000 is still ROM, and reads as a write that did not land.
+
+    Probed rather than declared, because it is cheap and the answer is
+    unambiguous: one keypress, and the popup either appears or does not. The
+    popup is dismissed either way, and the bank is left wherever the press put
+    it, which every caller normalises with ensure_status.
+    """
+    screen = session.send_char("o")
+    if CPU_BANK_UNAVAILABLE in screen.text():
+        session.send_key("ENTER")
+        return False
+    return True
+
+
+def monitor_banks_cpu(session: MonitorSession) -> bool:
+    """Whether this monitor's backend selects the CPU bank itself.
+
+    MachineMonitor draws its status line from what the backend can do rather
+    than from the product (software/monitor/machine_monitor.cc): a backend
+    whose supports_cpu_banking() is false gets the VIC-only
+    "CPU VIEW  VICn $nnnn" footer, and one that banks for itself gets the full
+    "CPUn $A:.. $D:.. $E:.. VICn $nnnn" line. Everything below that used to
+    branch on "is this an Ultimate II+" was really asking this, and the two
+    are not the same: an Ultimate II+L in a C64 Ultimate has been seen drawing
+    the full line, at which point the U2-shaped assertions cannot pass and the
+    checks that were skipped for want of banking should have run.
+    """
+    text = session.capture().text()
+    if STATUS_LINE_RE.search(text):
+        return True
+    if U2_STATUS_LINE_RE.search(text):
+        return False
+    raise Failure(f"the monitor drew neither status footer:\n{text}")
+
+
 def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
               control: str, video_host: str, files_host: str, live_host: str,
               frozen: bool, device_host: str) -> None:
     snapshots = load_snapshots()
+    # Measured from the screen rather than taken from the product; see
+    # monitor_banks_cpu. `is_u2` stays for the things that really are about
+    # the product, such as which address a cartridge can run code from.
+    banks_cpu = monitor_banks_cpu(session)
+    cycles_bank = banks_cpu and monitor_cycles_cpu_bank(session)
+    detail("this monitor's backend "
+           + ("selects the CPU bank itself" if banks_cpu
+              else "reads whatever the CPU sees")
+           + ("; the bank can be changed" if cycles_bank
+              else "; the bank cannot be changed"))
 
     with check("initial CPU7/KERNAL monitor status"):
-        if is_u2:
-            assert_u2_footer_consistent(session.capture())
+        # Which footer the monitor draws is decided by what its backend can
+        # do, not by the product and not by the view. MachineMonitor's status
+        # line (software/monitor/machine_monitor.cc) writes "CPU VIEW  VICn
+        # $nnnn" only when supports_cpu_banking() is false, and the full
+        # bank-and-mapping line otherwise. An Ultimate II+L has been seen
+        # both ways, so the assertion follows the screen: a run that branched
+        # on the product alone failed against a monitor that was working.
+        screen = session.capture()
+        if U2_STATUS_LINE_RE.search(screen.text()):
+            assert_u2_footer_consistent(screen)
         else:
             ensure_status(session, snapshots["status_cpu31"]["contains"]["22"])
 
@@ -3740,7 +3840,7 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # The tag identity is a property of the machine: only a backend that
         # selects the bank itself can say KRN. A cartridge reads whatever the
         # CPU sees and says CPU. The fixed column is asserted on both.
-        assert_source_column_is_fixed(screen, "CPU" if is_u2 else "KRN")
+        assert_source_column_is_fixed(screen, "KRN" if banks_cpu else "CPU")
 
         # D is reserved for a future Debug mode and opens nothing. The manual
         # deliberately does not mention the key, so this check and its host
@@ -3751,13 +3851,15 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         # Read the title row, which names the view and the address, rather than
         # the whole screen: the screen also carries a status row and an edit
         # cursor, and neither is what this asserts.
-        before = monitor_header(session.capture())
-        session.send_char("D")
-        after = monitor_header(session.capture())
-        if after != before:
-            raise Failure(
-                f"D is reserved for Debug mode and must change nothing: the "
-                f"monitor header read {before!r} and now reads {after!r}")
+        if not session.backend.machine.missing_fix(
+                machine_lib.MONITOR_D_KEY_RESERVED):
+            before = monitor_header(session.capture())
+            session.send_char("D")
+            after = monitor_header(session.capture())
+            if after != before:
+                raise Failure(
+                    f"D is reserved for Debug mode and must change nothing: the "
+                    f"monitor header read {before!r} and now reads {after!r}")
 
         screen = session.goto("E013")
         screen = session.send_char("A")
@@ -3770,8 +3872,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         assert_rest_matches_row(screen, 4, 0xE010, rest_host)
 
     with check("CPU6 RAM under BASIC write/read"):
-        if is_u2:
-            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        if not cycles_bank:
+            check_skip("this monitor cannot change the CPU bank: 'o' answers "
+                       f"{CPU_BANK_UNAVAILABLE!r}")
         else:
             screen = ensure_view(session, "HEX ")
             session.goto("A000")
@@ -3781,8 +3884,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
             assert_contains(screen, 4, snapshots["ram_a000"]["contains"]["4"])
 
     with check("CPU5 RAM under KERNAL status"):
-        if is_u2:
-            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        if not cycles_bank:
+            check_skip("this monitor cannot change the CPU bank: 'o' answers "
+                       f"{CPU_BANK_UNAVAILABLE!r}")
         else:
             session.goto("E000")
             screen = cycle_cpu_bank_from_cpu7(session, snapshots["status_cpu29"]["contains"]["22"], 6)
@@ -3803,10 +3907,16 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         first_content_row = content_rows[0]
         last_content_row = content_rows[-1]
         assert_ascii_width(screen, first_content_row)
-        if is_u2:
+        if not banks_cpu:
             assert_u2_footer_consistent(screen)
-        else:
+        elif cycles_bank:
             assert_status_contains(screen, snapshots["status_cpu29"]["contains"]["22"])
+        else:
+            # The bank named here is the one the checks above left behind, and
+            # they are skipped where the bank cannot be moved. What this check
+            # is for is the ASCII view's width and scrolling, so the footer
+            # only has to be a footer.
+            find_any_status_line(screen)
 
         screen = session.send_key("DOWN")
         assert_highlight(screen, [(6, first_content_row + 1)], "DOWN")
@@ -3844,8 +3954,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         run_main_ram_edge_sweep_test(session, rest_host, frozen)
 
     with check("a hex edit reaches RAM under BASIC, KERNAL and top of memory"):
-        if is_u2:
-            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        if not cycles_bank:
+            check_skip("this monitor cannot change the CPU bank: 'o' answers "
+                       f"{CPU_BANK_UNAVAILABLE!r}")
         else:
             run_cpu_banked_ram_edit_test(session, rest_host, frozen)
 
@@ -3887,8 +3998,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         run_hunt_quoted_text_test(session, rest_host)
 
     with check("CPU bank cycling reaches CHAR and RAM mappings"):
-        if is_u2:
-            check_skip("U2 has no monitor-selected CPU banking (supports_cpu_banking()==false)")
+        if not cycles_bank:
+            check_skip("this monitor cannot change the CPU bank: 'o' answers "
+                       f"{CPU_BANK_UNAVAILABLE!r}")
         else:
             session.goto("A000")
             screen = ensure_status(session, snapshots["status_cpu27"]["contains"]["22"])
@@ -3899,8 +4011,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
             assert_status_contains(screen, snapshots["status_cpu30"]["contains"]["22"])
 
     with check("U2 VIC-bank selection persists after leaving Freeze"):
-        if not is_u2:
-            check_skip("U2-only: exercises the VIC-only footer form (supports_cpu_banking()==false)")
+        if banks_cpu:
+            check_skip("exercises the VIC-only footer form, which a backend "
+                       "that banks for itself does not draw")
         else:
             default_bank = 0
             requested = 1
@@ -3982,9 +4095,9 @@ def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
         run_hunt_refuses_a_reversed_range_test(session)
 
     with check("Assembly shows I/O as two-byte DATA rows"):
-        if is_u2:
-            check_skip("U2+L reports one source for the whole CPU view, so it "
-                       "has no I/O or CHAR region to show as data")
+        if not banks_cpu:
+            check_skip("this backend reports one source for the whole CPU "
+                       "view, so it has no I/O or CHAR region to show as data")
         else:
             run_assembly_data_rows_test(session)
 
