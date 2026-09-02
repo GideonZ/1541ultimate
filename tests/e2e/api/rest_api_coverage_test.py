@@ -967,6 +967,20 @@ class SuiteRunner:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
 
     @property
+    def workers(self) -> int:
+        """Concurrent workers, capped by what the machine's link can take.
+
+        The default is what a machine on Ethernet answers comfortably. An
+        Ultimate II+ has only a wireless link, and three workers through this
+        sweep took one off the network for several minutes; see
+        machine.Machine.rest_workers. An explicit -w is obeyed as given,
+        because someone asking for a number is asking to measure that number.
+        """
+        if self.args.workers != DEFAULT_WORKERS:
+            return self.args.workers
+        return min(self.args.workers, self.machine.rest_workers)
+
+    @property
     def machine(self) -> machine_lib.Machine:
         """Which machine this is, for the checks that need a firmware fix."""
         info = self.api.info()
@@ -1104,7 +1118,7 @@ class SuiteRunner:
                 for _ in range(self.args.repeat):
                     task(case)
         else:
-            with ThreadPoolExecutor(max_workers=self.args.workers) as pool:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 for _ in range(self.args.repeat):
                     if self.dead.is_set():
                         break
@@ -1162,7 +1176,7 @@ class SuiteRunner:
 
         section("operations")
         detail(f"{len(self.cases)} cases x{self.args.repeat}, {self.args.order}"
-               + (f", {self.args.workers} workers"
+               + (f", {self.workers} workers"
                   if self.args.order == "concurrent" else ""))
         return self.run_cases()
 

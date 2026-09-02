@@ -543,6 +543,19 @@ class Machine:
         return 1 if self.kind == C64U else 3
 
     @property
+    def rest_workers(self) -> int:
+        """How many REST calls this machine can be asked for at once.
+
+        An Ultimate II+ has no wired interface, so every call crosses its
+        wireless link. Measured on an Ultimate II+L in a C64 Ultimate: three
+        concurrent workers through a 77-route sweep took the cartridge off the
+        network entirely for several minutes, with ping getting no answer at
+        all, and it came back by itself as soon as the load stopped. The other
+        two machines answer on Ethernet and are unaffected.
+        """
+        return 1 if self.kind == U2 else 3
+
+    @property
     def task_menu_key(self) -> str:
         """The key that opens the task menu over the file browser.
 
