@@ -264,7 +264,12 @@ class RestOracle:
 
 
 class FtpObserver:
-    """Pull observer: LIST on a session that never changes directory."""
+    """Pull observer: it LISTs the fixture directory on every look.
+
+    It holds a session that stays in the fixture directory, so a look costs a
+    LIST and nothing else. It is not created at all on a machine that cannot
+    afford the socket; see where it is built.
+    """
 
     name = "FTP"
 
@@ -411,8 +416,10 @@ class Context:
                                              self.timeout))
 
     def observers(self, exclude: Sequence[str] = ()) -> List[object]:
-        assert self.menu is not None and self.telnet is not None and self.ftp_observer is not None
-        every = [BrowserObserver(self.menu), BrowserObserver(self.telnet), self.ftp_observer]
+        assert self.menu is not None and self.telnet is not None
+        every = [BrowserObserver(self.menu), BrowserObserver(self.telnet)]
+        if self.ftp_observer is not None:
+            every.append(self.ftp_observer)
         return [observer for observer in every if observer.name not in exclude]
 
     def converge(
@@ -1238,8 +1245,21 @@ def open_observers(ctx: Context) -> None:
     )
     ctx.telnet.go_to_directory(f"Temp/{ctx.test_dir}")
 
-    ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
     ctx.ftp_driver = ftp_connect(ctx.host, ctx.password)
+    if ctx.machine.missing_fix(machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS):
+        # Three sockets is exactly what a Telnet session and one FTP transfer
+        # need, so watching the directory over FTP as well leaves no margin:
+        # any socket the device has not finished releasing makes the next one
+        # the fourth, and it is reset. The rows still run and are still
+        # checked, by the Menu, by Telnet and by the REST oracle, which is the
+        # one that says what actually committed. What is lost on this machine
+        # is the FTP column of the matrix, not the rows.
+        ctx.ftp_observer = None
+        detail(f"not watching over FTP: {ctx.machine.kind} serves three "
+               "concurrent Telnet and FTP sockets, and a Telnet session plus "
+               "one transfer already needs all three")
+    else:
+        ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
 
 
 def close_observers(ctx: Context) -> None:
@@ -1268,7 +1288,13 @@ def main() -> int:
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
+        # 30s, matching what run-tests passes. It was 5s, which is below
+        # pacing.TELNET_SETTLE_GAP_SECONDS: a committed Telnet prompt is
+        # settled by waiting six seconds of quiet, so every Telnet send_text
+        # in this suite timed out before it could succeed. That made the suite
+        # unrunnable by hand while passing under the runner, which is the worst
+        # way for a default to be wrong.
+        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
     )
     parser.add_argument("--test-dir", default=default_test_dir())
     parser.add_argument(
