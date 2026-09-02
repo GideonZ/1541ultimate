@@ -3249,6 +3249,7 @@ def the_capture_is_taken_before_the_state_gate() -> str:
     menu, so a capture taken after it shows the harness's own tidying rather
     than what the suite left. The order is a fact about one function, which is
     why it is checked as one.
+
     """
     with open(RUNNER_PATH, encoding="utf-8") as handle:
         text = handle.read()
@@ -4706,7 +4707,12 @@ runner = importlib.util.module_from_spec(spec)
 loader.exec_module(runner)
 
 with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
-    runner.SUITES = tuple(runner.Suite(**entry) for entry in json.load(handle))
+    # The shallowest profile, so a scripted registry is never filtered by the
+    # profile the fixture happens to run under. These stubs stand in for the
+    # whole tree; which of them run is the fixture's business, not a bundle's.
+    runner.SUITES = tuple(
+        runner.Suite(**dict(entry, profile=runner.profiles.SMOKE))
+        for entry in json.load(handle))
 
 # The double serves REST, FTP, Telnet and the DMA control port. It does not
 # fake the on-device UI object stack, which is what this gate drives.
@@ -4959,8 +4965,15 @@ def a_suite_console_reaches_the_log_and_the_terminal() -> str:
         with open(made.path("127.0.0.1", "overlay-held.log"), "rb") as handle:
             saved = handle.read()
         expect("no escape bytes", b"\x1b" in saved, False)
-        expect("in order", saved,
-               b"[01] coloured ... OK (20 rows, 0.000s)\n"
+        # The check's duration is whatever the machine was doing at the time,
+        # so it is blanked rather than asserted. Comparing it byte for byte
+        # failed a whole run against a `0.002s` where a quiet machine had
+        # produced `0.000s`, which says nothing about what this case is for:
+        # that every line a suite printed reached its log, in order, with no
+        # escape bytes.
+        timed = re.sub(rb"\d+\.\d+s", b"Ns", saved)
+        expect("in order", timed,
+               b"[01] coloured ... OK (20 rows, Ns)\n"
                b"to stderr\nno trailing newline\n")
         for wanted in ("coloured", "to stderr", "no trailing newline"):
             if wanted not in made.stdout:

@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import ftp as ftp_lib
 import rest as rest_lib
+from api import UltimateApi
 import targets
 from report import Failure, check, format_exception, suite_fail, suite_ok
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
@@ -217,6 +218,14 @@ def clear_rename_field(browser: Browser, batch: int = 20, max_batches: int = 8) 
     if title_row is None:
         raise Failure("Rename prompt title not found; cannot locate its field row")
     field_row = title_row + 2
+    # KEY_CLEAR empties the buffer whatever its length, which is one keystroke
+    # against the eight batches of twenty an 85-character name needs. The
+    # read-back below is unchanged and still decides: this only changes what
+    # is tried first, and Telnet has no clear key so it goes straight to the
+    # batches.
+    clear_key = browser.backend.clear_field_key
+    if clear_key:
+        browser.press(clear_key)
     for _ in range(max_batches):
         if not strip_frame(browser.rows()[field_row]).strip():
             return
@@ -289,7 +298,9 @@ def reset_machine(host: str, password: str) -> None:
     )
     with rest_lib.retrying_urlopen(request, 10.0, idempotent=True):
         pass
-    rest_json(host, password, "PUT", "/v1/machine:reset")
+    # force: this suite reaches the device over FTP as well, which the REST
+    # transport cannot see, so it cannot judge the reset a no-op.
+    UltimateApi(host, password).machine.reset(force=True, wait=False)
     time.sleep(0.5)
 
 

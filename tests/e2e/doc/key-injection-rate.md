@@ -226,12 +226,51 @@ once today, which is why it had not been seen.
 `tests/lib/input_batching_test.py` covers both limits and needs no device.
 Making the splitter count events only makes it fail on the long-key case.
 
-The pacing constants in `tests/lib/pacing.py` were left alone, and the
-measurements say why: `SPLIT_KEY_DRAIN_SECONDS` is 100 ms, which is exactly the
-delivery rate measured for a cartridge target on both destinations, so it is
-neither optimistic nor wasteful. `KEY_DRAIN_SECONDS` is 20 ms for a device
-target, below the 51 ms measured for the u64 menu, which is safe because every
-suite polls for the state it expects rather than trusting the wait alone.
+`KEY_DRAIN_SECONDS` is 20 ms for a device target, below the 51 ms measured for
+the u64 menu, which is safe because every suite polls for the state it expects
+rather than trusting the wait alone. `SPLIT_KEY_DRAIN_SECONDS` is 60 ms; the
+next section is why it is not the 100 ms measured above.
+
+## What the charged drain does and does not control
+
+`SPLIT_KEY_DRAIN_SECONDS` was set to 100 ms to match the delivery rate measured
+for a cartridge target. That conflated two different things. The rate above is
+how fast the firmware delivers a batch. The constant is how long the harness
+waits before reading the result, and the two are not the same number: the whole
+batch is posted in one request and drains at the firmware's own rate whatever
+is charged here, and `RestBackend._settle` spends time watching the screen
+first, so the constant only tops that up.
+
+Sweeping it settles what it is worth. Six settings from 30 ms to 100 ms a key
+were run on `u2@c64u` through
+`tests/soak/filemanager/menu_navigation_soak_test.py`, which jumps a known
+distance in a listing of files named for their own index and reads back where
+the cursor landed. That fails on a lost key rather than on a slow one, which is
+the failure the constant is supposed to prevent.
+
+| Charged | Wrong landings, out of 30 movements |
+| ---: | --- |
+| 30 ms | 0 |
+| 40 ms | 0 |
+| 50 ms | 1 |
+| 60 ms | 2 |
+| 80 ms | 0 |
+| 100 ms | 2 |
+
+The two cleanest passes are the two fastest settings and the slowest setting
+lost two, so the loss does not follow the charge. What it follows is how many
+keys the movement took: every wrong landing but one came from a burst of 12 to
+38 single cursor keys, and across the sweep a key went missing a few times in a
+thousand at every setting.
+
+The constant therefore stays at 60 ms, which is what this tree's own firmware
+ticks measure, and no finer tuning is attempted because the sweep shows there
+is nothing there to tune. The lever that does move both speed and reliability
+is the number of keys a movement takes. `Browser.move_rows` spends page keys on
+the bulk of a jump and single steps on the remainder, in one request: on
+`u2@c64u` a 38-row landing costs 8 keys instead of 38, and its median time fell
+from 2173 ms to 820 ms. `Browser.fill_edit_field` empties a string field with
+one KEY_CLEAR instead of up to 64 backspaces, for the same reason.
 
 ## What a keystroke costs the harness
 

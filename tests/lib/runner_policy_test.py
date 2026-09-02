@@ -21,6 +21,8 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
+import shutil
 import argparse
 import os
 import re
@@ -28,6 +30,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import config_snapshot  # noqa: E402
+import profiles  # noqa: E402
 import health  # noqa: E402
 import interactions  # noqa: E402
 import targets  # noqa: E402
@@ -674,6 +678,28 @@ def run_reset_guard_checks():
         m.reset(wait=False)
         expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
 
+    with check("a mutation through another object still warrants a reset"):
+        # The case a per-client counter cannot see, and the reason rest.py
+        # counts process-wide: a suite that changes the machine through one
+        # object and resets through another. Counting only what this client
+        # sent would call the reset a no-op and skip a reset that was needed.
+        import rest as rest_module
+        rest, m = machine()
+        m.reset(wait=False)
+        before = sum(1 for _, p in rest.sent if p.endswith("reset"))
+        rest_module.note_mutation("PUT")
+        m.reset(wait=False)
+        expect("the second reset was sent",
+               sum(1 for _, p in rest.sent if p.endswith("reset")), before + 1)
+
+    with check("a GET through another object does not warrant a reset"):
+        import rest as rest_module
+        rest, m = machine()
+        m.reset(wait=False)
+        rest_module.note_mutation("GET")
+        m.reset(wait=False)
+        expect("resets sent", sum(1 for _, p in rest.sent if p.endswith("reset")), 1)
+
     with check("a mutating call between two resets warrants the second"):
         rest, m = machine()
         m.reset(wait=False)
@@ -765,6 +791,377 @@ def run_target_grammar_checks():
     with check("a target's output path is safe to use as a file name"):
         expect("slug", targets.parse("u2@c64u").slug, "u2-at-c64u")
         expect("slug", targets.parse("u64").slug, "u64")
+
+
+class _SplitTarget:
+    """Just enough of targets.Target for the cartridge branch of reset_machine."""
+
+    split = True
+    device = "u2"
+    computer = "c64u"
+
+
+class ScriptedConfigs:
+    """A stand-in for api.configs backed by a dict, counting what it is asked.
+
+    `refuse` names items whose PUT raises, and `ignore` names items whose PUT
+    is accepted and then silently does nothing, which is what a device that
+    answers HTTP 200 and keeps the old value looks like.
+    """
+
+    def __init__(self, settings, refuse=(), ignore=()):
+        self.settings = {store: dict(items) for store, items in settings.items()}
+        self.refuse = set(refuse)
+        self.ignore = set(ignore)
+        self.writes = []
+
+    def category_names(self):
+        return list(self.settings)
+
+    def category(self, store):
+        if store not in self.settings:
+            raise Failure(f"no such store {store!r}")
+        return dict(self.settings[store])
+
+    def set(self, store, item, value):
+        self.writes.append((store, item, value))
+        if (store, item) in self.refuse:
+            raise Failure(f"{store}/{item} refused {value!r}")
+        if (store, item) not in self.ignore:
+            self.settings[store][item] = value
+
+
+class ScriptedApi:
+    def __init__(self, configs):
+        self.configs = configs
+
+
+SETTINGS = {
+    "User Interface Settings": {"Navigation Style": "WASD Cursors"},
+    "Audio Mixer": {"Vol Master": " 0 dB", "Vol Socket 1": " 0 dB"},
+    "Clock Settings": {"Seconds": 55},
+}
+
+
+def run_settings_restore_checks():
+    """The run puts back what it changed, and says what it could not."""
+    with check("the capture reads every store except the clock"):
+        configs = ScriptedConfigs(SETTINGS)
+        snapshot = config_snapshot.capture("u64", ScriptedApi(configs))
+        expect("stores", sorted(snapshot.settings),
+               ["Audio Mixer", "User Interface Settings"])
+        expect("items", snapshot.item_count, 3)
+        expect("the clock is not captured",
+               "Clock Settings" in snapshot.settings, False)
+
+    with check("a run that changed nothing writes nothing"):
+        configs = ScriptedConfigs(SETTINGS)
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        restored, refused = snapshot.restore(api)
+        expect("restored", restored, [])
+        expect("refused", refused, [])
+        expect("writes", configs.writes, [])
+
+    with check("only the items a suite changed are written back"):
+        configs = ScriptedConfigs(SETTINGS)
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        configs.settings["User Interface Settings"]["Navigation Style"] = "Quick Search"
+        configs.settings["Audio Mixer"]["Vol Master"] = "OFF"
+        configs.settings["Clock Settings"]["Seconds"] = 3
+        restored, refused = snapshot.restore(api)
+        expect("refused", refused, [])
+        expect("writes", sorted(configs.writes),
+               [("Audio Mixer", "Vol Master", " 0 dB"),
+                ("User Interface Settings", "Navigation Style", "WASD Cursors")])
+        expect("the clock was not written back",
+               configs.settings["Clock Settings"]["Seconds"], 3)
+        expect("described",
+               sorted(str(change) for change in restored),
+               ["u64: Audio Mixer / Vol Master 'OFF' -> ' 0 dB'",
+                "u64: User Interface Settings / Navigation Style "
+                "'Quick Search' -> 'WASD Cursors'"])
+
+    with check("a value the device will not take back is reported, not hidden"):
+        configs = ScriptedConfigs(SETTINGS,
+                                  refuse=[("Audio Mixer", "Vol Master")],
+                                  ignore=[("Audio Mixer", "Vol Socket 1")])
+        api = ScriptedApi(configs)
+        snapshot = config_snapshot.capture("u64", api)
+        configs.settings["Audio Mixer"]["Vol Master"] = "OFF"
+        configs.settings["Audio Mixer"]["Vol Socket 1"] = "OFF"
+        restored, refused = snapshot.restore(api)
+        expect("restored", restored, [])
+        expect("refused", len(refused), 2)
+        # The one that answered success and kept the old value is the case a
+        # write-and-hope restore would call a success.
+        kept = [reason for change, reason in refused if change.item == "Vol Socket 1"]
+        expect("the silent one is named", kept, ["kept 'OFF'"])
+
+
+def run_bench_topology_checks(runner):
+    """A cartridge that is always in one computer, declared once for the bench."""
+    parser = runner.build_parser()
+
+    with check("a cartridge named alone takes the computer the bench declares"):
+        with declared_computers("u2@c64u"):
+            target = targets.parse("u2")
+            expect("device", target.device, "u2")
+            expect("computer", target.computer, "c64u")
+            expect("resources", sorted(target.resources), ["c64u", "u2"])
+            expect("input", target.host_for("/v1/machine:input"), "c64u")
+            expect("it now shares a machine with the computer's own target",
+                   target.conflicts_with(targets.parse("c64u")), True)
+
+    with check("an undeclared cartridge is unchanged, and so is a spelt-out one"):
+        with declared_computers("u2@c64u"):
+            expect("another cartridge", targets.parse("u2b").computer, "u2b")
+            expect("spelt out", targets.parse("u2@u64").computer, "u64")
+        # Explicitly unset rather than merely restored: this suite runs as a
+        # child of the runner, which exports the variable to every suite it
+        # starts, so "what the environment happened to hold" is not the same
+        # thing as "nothing declared".
+        with declared_computers(None):
+            expect("nothing declared", targets.parse("u2").computer, "u2")
+
+    with check("a declaration that says nothing about this device is ignored"):
+        for value in ("", "u2", "@c64u", "u2@u2", "u2b@c64u"):
+            with declared_computers(value):
+                expect(f"{value!r}", targets.parse("u2").computer, "u2")
+        with declared_computers("rubbish,u2@c64u"):
+            expect("one good entry among rubbish",
+                   targets.parse("u2").computer, "c64u")
+
+    with check("a declaration that names this device and no computer is fatal"):
+        # The alternative is the shape the variable exists to prevent: the
+        # cartridge silently treated as its own computer.
+        for value in ("u2@", "u2@not a host", "u2@-bad-"):
+            with declared_computers(value):
+                try:
+                    targets.parse("u2")
+                except targets.TargetError as exc:
+                    if targets.COMPUTERS_ENV not in str(exc):
+                        raise Failure(f"{value!r}: the message does not name "
+                                      f"{targets.COMPUTERS_ENV}: {exc}")
+                    continue
+                raise Failure(f"{value!r} was accepted")
+
+    with check("two spellings of the same machines are one target"):
+        with declared_computers("u2@c64u"):
+            args = parser.parse_args(["u2@c64u", "c64u", "u2"])
+            resolved = runner.resolve_targets(args)
+            expect("tokens", [t.token for t in resolved], ["u2@c64u", "c64u"])
+
+
+@contextlib.contextmanager
+def declared_computers(value):
+    """Run the body with U64_COMPUTERS set to `value`, or unset when it is None.
+
+    The environment is put back either way.
+    """
+    before = os.environ.get(targets.COMPUTERS_ENV)
+    if value is None:
+        os.environ.pop(targets.COMPUTERS_ENV, None)
+    else:
+        os.environ[targets.COMPUTERS_ENV] = value
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop(targets.COMPUTERS_ENV, None)
+        else:
+            os.environ[targets.COMPUTERS_ENV] = before
+
+
+def run_move_rows_checks():
+    """The page-key decomposition, over every remainder, without a device.
+
+    `Browser.move_rows` turns a row distance into page keys plus single steps.
+    The split is arithmetic, so it is checked here rather than by pressing keys
+    on hardware: a soak that walked every distance spent four minutes on a
+    cartridge target re-proving what these cases prove in milliseconds. What
+    the device still has to answer is that a page key really moves a stride and
+    clamps at the ends, which tests/soak/filemanager/menu_navigation_soak_test.py
+    checks at the boundaries.
+    """
+    import ui_backend
+
+    class _Stub:
+        """A Browser with a known stride and a backend that records keys."""
+
+        sent = []
+
+        def __init__(self, stride):
+            self.entry_rows = range(0, stride * 2)
+            self.backend = self
+            self.machine = self
+            self.page_up_key = "PGUP"
+            self.page_down_key = "PGDN"
+            self.sent = []
+
+        def page_rows(self):
+            return ui_backend.Browser.page_rows(self)
+
+        def send_key_sequence(self, keys, label):
+            self.sent = list(keys)
+            return None
+
+    move_rows = ui_backend.Browser.move_rows
+    page_rows = ui_backend.Browser.page_rows
+
+    with check("move_rows spends page keys before single steps"):
+        for stride in (5, 11, 30):
+            stub = _Stub(stride)
+            expect(f"stride {stride}", page_rows(stub), stride)
+            for distance in range(1, stride * 3 + 2):
+                for sign, page, step in ((1, "PGDN", "DOWN"), (-1, "PGUP", "UP")):
+                    stub.sent = []
+                    move_rows(stub, sign * distance)
+                    pages, singles = divmod(distance, stride)
+                    wanted = [page] * pages + [step] * singles
+                    if stub.sent != wanted:
+                        raise Failure(
+                            f"stride {stride}, {sign * distance} rows: sent "
+                            f"{stub.sent}, expected {wanted}")
+
+    with check("the keys sent always add up to the rows asked for"):
+        # The property that matters: a cheaper spelling has to be the same
+        # movement. A split that dropped the remainder would pass a check that
+        # only counted keys.
+        for stride in (5, 11, 30):
+            stub = _Stub(stride)
+            for distance in range(0, stride * 3 + 2):
+                stub.sent = []
+                move_rows(stub, distance)
+                covered = sum(stride if key == "PGDN" else 1 for key in stub.sent)
+                expect(f"stride {stride}, {distance} rows", covered, distance)
+
+    with check("a zero move sends nothing at all"):
+        stub = _Stub(11)
+        stub.sent = ["stale"]
+        expect("returns without sending", move_rows(stub, 0), None)
+        expect("nothing was sent", stub.sent, ["stale"])
+
+
+def run_coverage_checks(runner):
+    """--list-profiles: exact where it can be, silent where it cannot.
+
+    The static half must agree with what the runner actually selects, because
+    two implementations of "which suites does this profile run" would drift.
+    The measured half must never invent a number: the registry does not know
+    how many checks a suite will make or how long it will take, and a
+    plausible wrong figure is worse than a blank.
+    """
+    import coverage
+
+    cover = coverage.build(runner.SUITES, runner.CATEGORIES)
+
+    with check("the matrix agrees with what the runner selects"):
+        for profile in profiles.ORDER:
+            for category in runner.CATEGORIES:
+                selected = [s.name for s in runner.selected_suites(
+                    category, [], profiles.includes_manual(profile), profile)]
+                expect(f"{profile}/{category}",
+                       cover.in_category(profile, category), selected)
+
+    with check("a suite run is counted once per transport swept"):
+        for profile in profiles.ORDER:
+            expect(f"{profile}", cover.passes(profile),
+                   len(cover.included[profile]) * len(profiles.modes_for(profile)))
+
+    with check("the static view names no duration and no check count"):
+        text = coverage.render_static(cover)
+        payload = coverage.static_payload(cover)
+        for banned in ("seconds", "duration", "checks", "scenarios"):
+            for profile in payload["profiles"].values():
+                if banned in profile:
+                    raise Failure(
+                        f"the static payload carries {banned!r}, which the "
+                        "registry cannot know")
+        expect("says where the numbers come from", "--measured" in text, True)
+
+    with check("measured counts come from the run records"):
+        directory = os.path.join(tempfile.mkdtemp(), "run")
+        target = os.path.join(directory, "u64")
+        os.makedirs(target)
+        with open(os.path.join(target, "run.jsonl"), "w") as handle:
+            for name, seconds, attempt in (("alpha", 1.5, 1), ("alpha", 2.5, 2),
+                                           ("beta", 4.0, 1)):
+                handle.write(json.dumps({
+                    "kind": "suite", "suite": "run-tests", "name": name,
+                    "seconds": seconds, "verdict": "OK", "attempt": attempt}) + "\n")
+        with open(os.path.join(target, "overlay-alpha.jsonl"), "w") as handle:
+            # Two attempts in one file: the second is the one the run kept.
+            for checks in (3, 7):
+                handle.write(json.dumps({"kind": "scenario", "suite": "alpha"}) + "\n")
+                handle.write(json.dumps({
+                    "kind": "suite", "suite": "alpha", "checks": checks}) + "\n")
+        data = coverage.read_run(directory)["u64"]
+        expect("every attempt is charged", round(data["alpha"].seconds, 1), 4.0)
+        expect("the last attempt's checks are kept", data["alpha"].checks, 7)
+        expect("scenarios restart with each attempt", data["alpha"].scenarios, 1)
+        expect("attempts are reported", data["alpha"].attempts, 2)
+        expect("a suite with no per-suite file still has its seconds",
+               data["beta"].seconds, 4.0)
+        expect("and no invented counts", (data["beta"].checks, data["beta"].scenarios),
+               (0, 0))
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def run_profile_checks(runner):
+    """What each profile selects, and that the ladder is really a ladder."""
+    with check("the profiles are ordered and cumulative"):
+        seen = set()
+        for name in profiles.ORDER:
+            suites = {s.name for s in runner.selected_suites("e2e", [], False, name)}
+            missing = seen - suites
+            if missing:
+                raise Failure(f"{name} drops {sorted(missing)}, so the profiles "
+                              "are not cumulative and a scenario cannot name "
+                              "the shallowest one that includes it")
+            seen = suites
+        expect("every suite is reachable",
+               seen >= {s.name for s in runner.SUITES if s.category == "e2e"},
+               True)
+
+    with check("a suite named with -s runs whatever the profile says"):
+        # Naming a suite is more specific than choosing a bundle, so it wins.
+        deep_only = [s.name for s in runner.SUITES
+                     if s.category == "e2e" and s.profile == profiles.DEEP]
+        expect("there is a deep-only suite to test with", bool(deep_only), True)
+        chosen = runner.selected_suites("e2e", deep_only[:1], False, profiles.SMOKE)
+        expect("named suite runs", [s.name for s in chosen], deep_only[:1])
+
+    with check("the manual suites arrive with the deep profile, not before"):
+        for name in (profiles.SMOKE, profiles.QUICK, profiles.STANDARD):
+            chosen = runner.selected_suites("e2e", [], False, name)
+            if any(s.manual for s in chosen):
+                raise Failure(f"{name} runs a manual suite")
+        for name in (profiles.DEEP, profiles.EXHAUSTIVE):
+            chosen = runner.selected_suites("e2e", [], False, name)
+            if not any(s.manual for s in chosen):
+                raise Failure(f"{name} runs no manual suite")
+
+    with check("the transports widen with depth, and -m still overrides"):
+        widths = [len(profiles.modes_for(name)) for name in profiles.ORDER]
+        if widths != sorted(widths):
+            raise Failure(f"the mode sweep is not monotonic: {widths}")
+        expect("-m wins", runner.resolve_modes("telnet", profiles.EXHAUSTIVE),
+               ["telnet"])
+        expect("no -m takes the profile's sweep",
+               runner.resolve_modes("", profiles.QUICK),
+               list(profiles.modes_for(profiles.QUICK)))
+
+    with check("an unknown profile is refused, naming the real ones"):
+        try:
+            profiles.parse("enormous")
+        except profiles.UnknownProfile as exc:
+            for name in profiles.ORDER:
+                if name not in str(exc):
+                    raise Failure(f"the message does not name {name!r}: {exc}")
+        else:
+            raise Failure("'enormous' was accepted")
 
 
 def run_resource_conflict_checks(runner):
@@ -1063,6 +1460,218 @@ def run_ui_state_routing_checks():
                ui_state.Device("u64", None, 1.0).computer_menu_open(), False)
 
 
+class StubMenuDevice:
+    """A device whose UI task ignores the menu button until it is reset.
+
+    Enough of ui_state.Device for repair() to run against: a menu flag, a clean
+    root browser screen, and a RUN/STOP that closes the menu once it is open.
+    """
+
+    class _Machine:
+        def __init__(self, launcher_entry):
+            self.launcher_browser_entry = launcher_entry
+            # A launcher sits between the browser and the closed menu, so
+            # leaving the browser takes one press more there.
+            self.back_presses_to_close_menu = 2 if launcher_entry else 1
+
+    def __init__(self, releases_on_reset: bool,
+                 launcher_entry: "str | None" = None, ui_state=None) -> None:
+        self.releases_on_reset = releases_on_reset
+        # For the cartridge branch: whether the computer has its own menu up,
+        # and the order the reset did things in.
+        self.computer_menu = False
+        self.order = []
+        self.target = None
+        self.password = None
+        self.timeout = 1.0
+        # The module under test, so the descent this stub records is the real
+        # one rather than a second copy of it written here.
+        self._ui_state = ui_state
+        self.launcher_entry = launcher_entry
+        # Where the launcher's cursor is, for the machine that has one. The
+        # browser entry is the first, so this starts away from it.
+        self.cursor = 5
+        self.in_browser = launcher_entry is None
+        self.returns = []
+        # wedged: the menu button is ignored. deaf: injected keys are ignored,
+        # so an open menu cannot be closed by RUN/STOP. A reset clears both.
+        self.wedged = True
+        self.deaf = False
+        self.open = False
+        self.resets = 0
+        self.machine = self._Machine(launcher_entry)
+
+    def menu_is_open(self):
+        return self.open
+
+    def press_menu_button(self):
+        if self.wedged:
+            return
+        if self.open and self.deaf:
+            # A UI task that has stopped reading keys ignores the button too.
+            return
+        self.open = not self.open
+
+    def wait_menu(self, want_open):
+        return self.open == want_open
+
+    # The launcher's own rows, matching ui_state.LAUNCHER_ENTRY_ROWS.
+    _LAUNCHER_FIRST_ROW = 2
+
+    def tap(self, inputs):
+        if self.deaf or not self.open:
+            return
+        if inputs == ["run_stop"]:
+            self.open = False
+        elif inputs == ["cursor_up_down"]:
+            self.cursor += 1
+        elif inputs == ["left_shift", "cursor_up_down"]:
+            self.cursor = max(self._LAUNCHER_FIRST_ROW, self.cursor - 1)
+        elif inputs == ["return"] and not self.in_browser:
+            # RETURN on a launcher activates whatever the cursor is on, so what
+            # this records is exactly what a blind descent would get wrong.
+            self.returns.append(self.cursor)
+            if self.cursor == self._LAUNCHER_FIRST_ROW:
+                self.in_browser = True
+
+    def screen(self):
+        if not self.open:
+            return None
+        if self.in_browser:
+            # The root browser: blank listing rows, the path on the status row.
+            return [" " * 40] * 24 + ["/".ljust(40)]
+        # The launcher: its first entry is the browser, and its status row
+        # carries no path, which is how enter_file_browser tells them apart.
+        rows = [" " * 40] * 25
+        rows[self._LAUNCHER_FIRST_ROW] = self.launcher_entry.ljust(40)
+        rows[24] = "WASD=NAV F1=MENU F3/F5=PGUP/DN F7=HELP".ljust(40)
+        return rows
+
+    def selected_row(self):
+        return None if not self.open else self.cursor
+
+    def enter_file_browser(self):
+        if self._ui_state is None:
+            return None
+        return self._ui_state.Device.enter_file_browser(self)
+
+    def showing_ok_dialog(self):
+        return False
+
+    def wait_screen_change(self, before):
+        return before
+
+
+    def clear_computer_menu(self):
+        self.order.append("computer-menu")
+        self.computer_menu = False
+
+    def press_menu_button(self):
+        if self.wedged:
+            return
+        if self.open and self.deaf:
+            return
+        self.open = not self.open
+
+    def _request(self, method, path, payload=None):
+        if path.endswith(":reset"):
+            self.order.append("reset")
+            self.resets += 1
+            if self.releases_on_reset:
+                self.wedged = False
+                self.deaf = False
+                self.open = False
+        return None
+
+    def reset_machine(self):
+        self.resets += 1
+        if self.releases_on_reset:
+            self.wedged = False
+            self.deaf = False
+            self.open = False
+
+
+def run_ui_state_repair_checks():
+    """A UI that ignores the menu button has to reach the reset that frees it.
+
+    repair() escalates keystrokes, then a menu reload, then a machine reset.
+    Every rung but the last needs an open menu, so a menu that will not open at
+    all has only the reset left. It used to be unreachable: the first open_menu
+    of round 0 raised, repair() unwound, and the run was abandoned with the
+    device reported unhealthy. Observed on a C64 Ultimate that answered REST,
+    ran the C64 and served FTP while machine:menu_button returned 200 and
+    machine:menu_screen stayed at 404; one machine:reset released it.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "ui_state_under_test",
+        os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py"))
+    ui_state = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui_state)
+
+    with check("a menu that will not open is repaired by resetting the machine"):
+        device = StubMenuDevice(releases_on_reset=True)
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+        expect("menu reachable", ui_state.try_open_menu(device), True)
+
+    with check("a menu that will not close is repaired by resetting the machine"):
+        # The other wedge shape the gate meets: the menu opens, and then will
+        # not close again because the UI task has stopped reading keys.
+        # close_menu() raises from inside the round, which used to abandon
+        # repair() the same way a menu that would not open did.
+        device = StubMenuDevice(releases_on_reset=True)
+        device.wedged = False
+        device.deaf = True
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+
+    with check("a launcher is descended by reading the cursor, not by pressing blind"):
+        # The machine this repair path was written for keeps its browser inside
+        # a launcher of hardware actions, so RETURN may only ever be sent with
+        # the cursor read back. The stub records every row RETURN was pressed
+        # on; a blind burst that under-delivered would show up here as a
+        # RETURN on something else.
+        device = StubMenuDevice(releases_on_reset=True,
+                                launcher_entry="DISK FILE BROWSER",
+                                ui_state=ui_state)
+        ui_state.repair(device)
+        expect("resets", device.resets, 1)
+        expect("menu left closed", device.open, False)
+        expect("RETURN only ever on the browser entry",
+               set(device.returns), {StubMenuDevice._LAUNCHER_FIRST_ROW})
+
+    with check("a cartridge target shuts the computer's menu before resetting"):
+        # MENU_C64_RESET releases the machine from whichever UserInterface
+        # holds it, and that teardown takes a device off the network when the
+        # UI it releases is not the active one. On a cartridge target the menu
+        # calls are routed to the cartridge, so resetting without shutting the
+        # computer's own menu tore down the computer: measured on u2@c64u, the
+        # C64 Ultimate went off the network entirely and needed mains power.
+        device = StubMenuDevice(releases_on_reset=True, ui_state=ui_state)
+        device.target = _SplitTarget()
+        device.computer_menu = True
+        device.reset_machine = lambda: ui_state.Device.reset_machine(device)
+        device.reset_machine()
+        expect("the computer's menu was shut first", device.computer_menu, False)
+        expect("and shut before the reset, not after",
+               device.order.index("computer-menu") < device.order.index("reset"),
+               True)
+
+    with check("a UI that the reset does not free is reported, not looped on"):
+        device = StubMenuDevice(releases_on_reset=False)
+        try:
+            ui_state.repair(device)
+        except ui_state.Unrecoverable as exc:
+            expect("message", "the menu will not open" in str(exc), True)
+        else:
+            raise Failure("repair() returned on a device whose menu never opened")
+        expect("resets", device.resets, ui_state.REPAIR_ROUNDS)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
                                      if __doc__ else "")
@@ -1080,9 +1689,15 @@ def main():
         with tempfile.TemporaryDirectory(dir=os.path.dirname(RUNNER_PATH)) as tmpdir:
             set_fixture_records(os.path.join(tmpdir, "fixture-records.jsonl"))
             run_target_grammar_checks()
+            run_bench_topology_checks(runner)
+            run_settings_restore_checks()
+            run_profile_checks(runner)
+            run_move_rows_checks()
+            run_coverage_checks(runner)
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()
+            run_ui_state_repair_checks()
             run_suite_url_routing_checks()
             run_exit_status_checks(runner)
             run_recovery_gating_checks(runner)

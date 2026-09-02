@@ -47,11 +47,12 @@ sys.path.insert(0, os.path.join(
 import api as api_lib
 import interactions
 import machine as machine_lib
+import navigation as navigation_lib
 import pacing
 import rest as rest_lib
 import screens as screen_spool
 import targets
-from report import Failure
+from report import Failure, detail
 from menu import wait_screen_changes, wait_screen_settled
 
 SCREEN_WIDTH = 40
@@ -65,11 +66,6 @@ MENU_BUTTON_PATH = "/v1/machine:menu_button"
 # at; see tests/lib/machine.py.
 INFO_PATH = "/v1/info"
 
-# The browser is the launcher's first entry, so pressing Back to the top of
-# the list and then Return reaches it without reading the cursor. Which entry
-# that is, and whether there is a launcher at all, is a property of the
-# machine; see tests/lib/machine.py.
-LAUNCHER_ENTRY_LIMIT = 24
 # Enough to climb out of the deepest settings screen the launcher leads to and
 # then descend one level; a screen that is neither the browser nor the
 # launcher after this many steps is reported rather than looped on.
@@ -111,6 +107,10 @@ MENU_GLYPHS = {
 # Which colour Screen_VT100::set_color emits for the cursor row is not fixed
 # here: it belongs to the machine, and TelnetBackend._marked_row measures it.
 FRAME_CHARS = " |+-"
+# The rows a launcher's own entries can occupy: everything between its title
+# and its status row. Used to read the cursor there, where the browser's own
+# entry rows do not apply.
+LAUNCHER_ENTRY_ROWS = range(2, SCREEN_HEIGHT - 1)
 
 # A browser row's rendered size, as size_str.cc writes it: up to four digits
 # and an optional K or M. Never a menu item, so a label that looks like this
@@ -200,6 +200,41 @@ def fetch_product(host: str, password: Optional[str],
     return str(payload.get("product", "")), str(payload.get("firmware_version", ""))
 
 
+def fetch_navigation_style(host: str, password: Optional[str],
+                           timeout: float) -> str:
+    """The device's "Navigation Style" setting, over plain REST.
+
+    Free of any backend for the same reason fetch_product is: the setting
+    decides what a typed letter means on both transports, and a Telnet session
+    has no way to ask for it.
+
+    Answers "" where the device does not serve the item, which is a device
+    old enough to predate the setting and behaves as Quick Search does. A
+    device that cannot be reached at all raises, because guessing wrong here
+    turns every typed letter in the menu into a cursor movement.
+    """
+    path = f"{CONFIGS_PATH}/{urllib.parse.quote(navigation_lib.CONFIG_CATEGORY)}" \
+           f"/{urllib.parse.quote(navigation_lib.CONFIG_ITEM)}"
+    headers = {"X-Password": password} if password else {}
+    request = urllib.request.Request(rest_lib.url_for(host, path), headers=headers)
+    try:
+        with rest_lib.retrying_urlopen(request, timeout, idempotent=True) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return ""
+        raise Failure(f"{path} on {host} failed: {exc}")
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise Failure(f"{path} on {host} failed: {exc}")
+    entry = payload.get(navigation_lib.CONFIG_CATEGORY)
+    if isinstance(entry, dict):
+        entry = entry.get(navigation_lib.CONFIG_ITEM)
+    if not isinstance(entry, dict):
+        return ""
+    current = entry.get("current")
+    return current if isinstance(current, str) else ""
+
+
 class NoCursorDrawn(Failure):
     """The screen carries no cursor marker, which a repaint can leave briefly."""
 
@@ -286,6 +321,26 @@ class Backend:
             snapshot = self.send_key(key)
         return snapshot
 
+    # The key that empties a string edit field in one keystroke, or None where
+    # the transport cannot produce one. Read by Browser.fill_edit_field, which
+    # falls back to counted BACKSPACE taps.
+    clear_field_key: Optional[str] = None
+
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        """Several different keys as one batch, where the transport can.
+
+        send_key_repeat already batches, but only one key repeated. Moving a
+        cursor a given number of rows takes a mix -- page keys for the bulk of
+        the distance and single steps for the remainder -- and sending that as
+        two batches costs two round trips and two settles, which is most of
+        what the page keys just saved.
+        """
+        snapshot = self.capture()
+        for key in keys:
+            snapshot = self.send_key(key)
+        snapshot.last_command = label
+        return snapshot
+
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         """One key followed by a string, as a single batch where possible.
 
@@ -308,6 +363,16 @@ class Backend:
         return machine_lib.identify(self.machine_host, self._fetch_product)
 
     @property
+    def navigation(self) -> navigation_lib.Navigation:
+        """How this device's menu reads a typed letter, asked once of it.
+
+        A setting rather than a property of the model, so it is read from the
+        device's configuration and not derived from the product name. See
+        tests/lib/navigation.py.
+        """
+        return navigation_lib.identify(self.machine_host, self._fetch_navigation_style)
+
+    @property
     def machine_host(self) -> str:
         """The host that answers for the device under test."""
         raise NotImplementedError
@@ -315,6 +380,11 @@ class Backend:
     def _fetch_product(self) -> str:
         """The product string of `machine_host`, over REST on either transport."""
         return fetch_product(self.machine_host, self.machine_password, self.timeout)
+
+    def _fetch_navigation_style(self) -> str:
+        """The "Navigation Style" of `machine_host`, over REST on either transport."""
+        return fetch_navigation_style(self.machine_host, self.machine_password,
+                                      self.timeout)
 
     @property
     def machine_password(self) -> Optional[str]:
@@ -421,6 +491,14 @@ KEY_ALIASES: Dict[str, List[str]] = {
     "ESC": ["run_stop"],
     "DEL": ["inst_del"],
     "BACKSPACE": ["inst_del"],
+    # Shift+CLR/HOME, which the C64 shifted keymap turns into KEY_CLEAR
+    # (software/io/c64/keyboard_c64.cc, keymap_shifted row 6 col 3). A string
+    # field empties its whole buffer on it in one keystroke
+    # (software/userinterface/ui_elements.cc, case KEY_CLEAR), so it replaces
+    # a run of BACKSPACE taps. Telnet has no way to send it: the VT100 decoder
+    # has no sequence that produces KEY_CLEAR, which is why clearing a field
+    # still has a BACKSPACE path.
+    "CLEAR": ["left_shift", "clr_home"],
     "RUNSTOP": ["run_stop"],
     # The C64's top-left left-arrow key, which the monitor treats as Back
     # except where it is edit data. Deliberately its own action rather than an
@@ -989,7 +1067,10 @@ class RestBackend(Backend):
         # What one key of a batch costs on this target. A cartridge target
         # pays the computer's matrix tap rate rather than the device's own key
         # queue; see tests/lib/pacing.py.
-        self.key_drain_seconds = pacing.key_drain_seconds(self.target.split)
+        # A property rather than a value: pacing keeps what a machine was
+        # measured to need, by host, and a measurement taken during the run
+        # has to reach the batches sent after it.
+        self._key_drain_host = targets.device_of(self.target.input_host)
         # The foreground colour this machine marks the cursor row with, once a
         # screen has shown it unambiguously. See find_cursor_colour.
         self._cursor_colour: Optional[int] = None
@@ -1037,6 +1118,16 @@ class RestBackend(Backend):
         # The handle says where the device is, ports included, so one builder
         # answers for every caller here.
         return rest_lib.url_for(self.target, path, params)
+
+    @property
+    def key_drain_seconds(self) -> float:
+        """What one key of a batch costs on this target.
+
+        Keyed on the machine whose keyboard the keys actually cross, which on
+        a cartridge target is the computer rather than the device under test.
+        See tests/lib/pacing.py.
+        """
+        return pacing.key_drain_seconds(self.target.split, self._key_drain_host)
 
     @property
     def machine_host(self) -> str:
@@ -1165,8 +1256,13 @@ class RestBackend(Backend):
 
         The other two machines open the browser directly and this returns at
         once. Measured on a C64 Ultimate: RUN/STOP on the launcher closes the
-        whole menu, so the way back up is the Back key, and the browser entry
-        is the launcher's first, so no cursor read is needed to reach it.
+        whole menu, so the way back up is the Back key.
+
+        The cursor is moved onto the entry by reading which row it is on and
+        which row the cursor is on, not by pressing Back further than the list
+        is long. The launcher lists hardware actions, so a burst that
+        under-delivers would leave RETURN to fire whichever of them the cursor
+        stopped on.
         """
         entry = self.machine.launcher_browser_entry
         if entry is None:
@@ -1174,12 +1270,20 @@ class RestBackend(Backend):
         for _ in range(LAUNCHER_DESCENT_STEPS):
             if self._in_file_browser():
                 return
-            rows = self._decode(self._body()).lines
-            if any(entry in row for row in rows):
-                self.send_key_repeat("UP", LAUNCHER_ENTRY_LIMIT)
-                self.send_key("ENTER")
-            else:
+            cursor, rows = self.selection_and_rows(LAUNCHER_ENTRY_ROWS)
+            row = next((n for n, text in enumerate(rows) if entry in text), None)
+            if row is None:
                 self.send_key("LEFT")
+                continue
+            if row != cursor:
+                self.send_key_repeat("UP" if row < cursor else "DOWN",
+                                     abs(row - cursor))
+            landed, rows = self.selection_and_rows(LAUNCHER_ENTRY_ROWS)
+            if landed != row:
+                # A repaint between the two reads, or a key that did not
+                # arrive. Neither is a reason to press RETURN on a launcher.
+                continue
+            self.send_key("ENTER")
         raise Failure(
             f"could not reach the file browser: no {entry!r} entry and no "
             f"directory on the status row after {LAUNCHER_DESCENT_STEPS} steps")
@@ -1386,6 +1490,23 @@ class RestBackend(Backend):
         self._post_events(events)
         return self._settle(before, min_drain=count * self.key_drain_seconds)
 
+    clear_field_key = "CLEAR"
+
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        if not keys:
+            return self.capture()
+        events = []
+        for key in keys:
+            combo = KEY_ALIASES.get(key)
+            if combo is None:
+                raise Failure(f"Unknown key alias {key!r} for RestBackend")
+            events.append({"kind": "keyboard", "inputs": list(combo),
+                           "transition": "tap"})
+        self.last_command = label
+        before = self._menu_screen_body()
+        self._post_events(events)
+        return self._settle(before, min_drain=len(events) * self.key_drain_seconds)
+
     def send_key_then_text(self, key: str, text: str, label: str) -> Snapshot:
         combo = KEY_ALIASES.get(key)
         if combo is None:
@@ -1433,6 +1554,18 @@ class RestBackend(Backend):
 # The monitor's right-side header flags are otherwise truncated by this emulator.
 WIDTH = 60
 HEIGHT = 24  # Screen_VT100::get_size_y(); the 25th physical row is never used
+
+# Where the browser draws its listing in a Telnet session, which is not where
+# it draws it on the 40x25 display: one row fewer, because the session is one
+# row shorter. Every suite that drives the browser over Telnet used to carry
+# its own copy of these two numbers, and a suite that forgot them got the
+# REST layout instead. That mattered once Browser.page_rows started reading
+# the page stride off the listing height: 22 rows gives a stride of 11 and 21
+# gives 10, and the firmware takes its own from the same window
+# (TreeBrowser::handle_key, window->get_size_y()/2), so the wrong one puts
+# every paged jump a row out per page key.
+TELNET_ENTRY_ROWS = range(2, HEIGHT - 1)
+TELNET_STATUS_ROW = HEIGHT - 1
 
 ALT_CHARSET_MAP = {
     "l": "+", "k": "+", "m": "+", "j": "+", "q": "-", "x": "|",
@@ -1738,6 +1871,11 @@ class TelnetBackend(Backend):
 
     def capture(self) -> Snapshot:
         self._drain_until_idle(timeout=self.timeout)
+        # A redraw that sent no bytes drew nothing, which is this transport's
+        # answer to the question RestBackend._settle answers by comparing two
+        # screens. Maintained on both so a caller can ask either one whether
+        # the last key did anything; see Browser.go_to_top.
+        self.last_key_changed = self._last_drain_bytes > 0
         return self.screen.snapshot(self.last_command)
 
     @property
@@ -1880,6 +2018,20 @@ class TelnetBackend(Backend):
         self.last_command = f"{key} x{count}"
         self._expect_redraw = True
         self._send(payload * count, f"{key} x{count}")
+        return self.capture()
+
+    def send_key_sequence(self, keys: Sequence[str], label: str) -> Snapshot:
+        if not keys:
+            return self.capture()
+        payload = b""
+        for key in keys:
+            one = TELNET_KEY_BYTES.get(key)
+            if one is None:
+                raise Failure(f"Unknown key alias {key!r} for TelnetBackend")
+            payload += one
+        self.last_command = label
+        self._expect_redraw = True
+        self._send(payload, label)
         return self.capture()
 
     def _send(self, payload: bytes, what: str) -> None:
@@ -2148,6 +2300,16 @@ class Browser:
         """
         self.backend.send_text(text, f"type {text!r}")
 
+    # -- characters the menu itself reads --
+    #
+    # A quick-seek prefix and a popup's button key are commands to the menu,
+    # not text, so they pass through UserInterface::keymapper and have to be
+    # spelled the way the machine's Navigation Style setting expects. The two
+    # methods above stay verbatim: they are what a suite types into a string
+    # field, which the keymapper never sees. See tests/lib/navigation.py.
+    def type_menu_char(self, character: str) -> None:
+        self.backend.send_char(self.backend.navigation.menu_char(character))
+
     # -- navigation --
     def go_to_root(self) -> None:
         for _ in range(12):
@@ -2177,9 +2339,78 @@ class Browser:
                 self.backend.ensure_ready()
         raise Failure(f"could not return to '/'; now at {self.current_path()!r}")
 
+    # -- moving the cursor a given number of rows --
+    #
+    # The browser binds a page key to half a window
+    # (TreeBrowser::handle_key, state->up/down(window->get_size_y()/2)), and
+    # the window is the listing area, so one page key is worth
+    # len(entry_rows) // 2 single steps. Which physical key that is depends on
+    # the machine: F1/F7 on an Ultimate 64 and an Ultimate II+, F3/F5 on a
+    # C64 Ultimate, which Machine.page_up_key and page_down_key answer.
+    #
+    # For a cartridge target the keys are injected into the computer's matrix
+    # but read by the cartridge's firmware, so the roles are the cartridge's.
+    # backend.machine already asks the device rather than the computer, so
+    # nothing here needs to allow for it.
+    def page_rows(self) -> int:
+        """How many rows one page key moves, for this transport's window."""
+        return max(1, len(self.entry_rows) // 2)
+
+    def move_rows(self, rows: int) -> Optional[Snapshot]:
+        """Move the cursor `rows` rows, down when positive, in one request.
+
+        The displacement is exactly `rows` either way: the page keys carry
+        whole strides and single steps carry the remainder, so this is a
+        cheaper spelling of press_many rather than a different movement. On a
+        cartridge target, where each injected key costs a fixed drain, a
+        22-row advance falls from 22 keys to 12.
+
+        One request for the mixed sequence, not one per kind: splitting it
+        would pay a second round trip and a second settle, which is most of
+        what the page keys save.
+        """
+        if rows == 0:
+            return None
+        step = "DOWN" if rows > 0 else "UP"
+        page = (self.backend.machine.page_down_key if rows > 0
+                else self.backend.machine.page_up_key)
+        pages, singles = divmod(abs(rows), self.page_rows())
+        keys = [page] * pages + [step] * singles
+        return self.backend.send_key_sequence(
+            keys, f"{step} x{abs(rows)} rows")
+
+    # How many rounds of page keys go_to_top will send before giving up. Six
+    # rounds of a 22-row window is 132 rows, past any listing a suite builds.
+    TOP_ROUNDS = 6
+
     def go_to_top(self, count: int = 14) -> None:
-        # Deeper than any listing a suite builds, and than the root menu.
-        self.press_many("UP", count)
+        """Put the cursor on the first entry of the listing.
+
+        This used to send `count` UP keys and stop, which reaches the top only
+        when the cursor was already within `count` rows of it. Everything
+        built on it inherited that: select_entry's scan started wherever the
+        cursor happened to be rather than at the top, so an entry above that
+        point was not in the part of the listing it searched.
+
+        Page keys make the honest version affordable. Each round covers a
+        whole window for two keystrokes, and the rounds stop as soon as one
+        changes nothing, which is what being at the top looks like. A cursor
+        already at the top costs one request, the same as before.
+
+        `count` is the least it will move, kept so a caller that wants a known
+        minimum rewind still gets one.
+        """
+        stride = self.page_rows()
+        rows = max(stride * 2, -(-count // stride) * stride)
+        # A round that changed nothing is what the top of the listing looks
+        # like. Read from the send itself rather than from a screen this method
+        # captures for the purpose: an extra read per rewind put 12% more
+        # requests on the wire across a full run, and this device serves four
+        # connections at a time.
+        for _ in range(self.TOP_ROUNDS):
+            self.move_rows(-rows)
+            if not self.backend.last_key_changed:
+                return
 
     def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0) -> None:
         """Put the cursor on the listing entry starting with `prefix`.
@@ -2222,7 +2453,7 @@ class Browser:
                     return
                 # Not on this screen. Move a screenful further in, in one
                 # request, and look again.
-                self.press_many("DOWN", visible - 1)
+                self.move_rows(visible - 1)
                 if not self.backend.last_key_changed:
                     # Nothing moved, so this is the end of the listing and the
                     # entry is not in it.
@@ -2238,13 +2469,6 @@ class Browser:
     # entry under the cursor instead of searching.
     def _seekable(self, prefix: str) -> bool:
         if not prefix:
-            return False
-        # Some machines bind letters in the browser to movement instead of to
-        # the search, and typing one there acts rather than seeks. Walking is
-        # then the only way to reach the entry, which is what select_entry
-        # falls back to. See Machine.browser_navigation_letters.
-        reserved = self.backend.machine.browser_navigation_letters
-        if reserved and any(ch.lower() in reserved for ch in prefix):
             return False
         # A seek costs the firmware one keystroke per character, and a jump
         # within the visible listing costs at most one per row, so a prefix
@@ -2285,7 +2509,11 @@ class Browser:
         if not self._seekable(prefix):
             return False
         try:
-            self.backend.send_key_then_text("UP", prefix, f"seek {prefix!r}")
+            # Inside the try with the keys: reading the setting is a REST call
+            # of its own, and a transient there must fall through to the walk
+            # like any other seek failure rather than out of select_entry.
+            sent = self.backend.navigation.menu_text(prefix)
+            self.backend.send_key_then_text("UP", sent, f"seek {prefix!r}")
         except Failure:
             return False
         return self.selected_text().startswith(prefix)
@@ -2301,10 +2529,11 @@ class Browser:
         row, rows = self.backend.selection_and_rows(self.entry_rows)
         for index in self.entry_rows:
             if index < len(rows) and strip_frame(rows[index]).startswith(prefix):
-                if index > row:
-                    self.press_many("DOWN", index - row)
-                elif index < row:
-                    self.press_many("UP", row - index)
+                # Same listing, so the page keys apply here too, and this
+                # jump is up to a whole window long. The landing is read back
+                # below either way, which is what makes the cheaper spelling
+                # safe to use on a jump the caller depends on.
+                self.move_rows(index - row)
                 return self.selected_text().startswith(prefix)
         return False
 
@@ -2404,7 +2633,7 @@ class Browser:
             label = matches[0]
         prefix, delta = plan_overlay_navigation(labels, label)
         for character in prefix:
-            self.type_char(character)
+            self.type_menu_char(character)
         if delta:
             self.press_many("DOWN" if delta > 0 else "UP", abs(delta))
         self.press("ENTER")
@@ -2424,22 +2653,61 @@ class Browser:
         self.backend.enter_file_browser()
         self.press(self.backend.machine.task_menu_key)
 
+    def open_task_menu(self, attempts: int = 2) -> List[str]:
+        """Open the task menu and return its categories, retrying a lost key.
+
+        A keystroke injected into a cartridge target travels through the
+        computer's keyboard matrix, and one of them occasionally does not
+        arrive: measured on u2@c64u, where a run failed with "no task menu
+        appeared" against a screen still showing the browser it had been on,
+        and the same suite passed on its next attempt.
+
+        wait_for_overlay has already waited out the overlay-draw timeout by the
+        time it answers nothing, so an empty result means the menu is not
+        opening rather than not open yet, and pressing the key again is safe:
+        it cannot close a menu that was never drawn.
+        """
+        for attempt in range(attempts):
+            before = self.rows()
+            self.press_task_menu()
+            categories = self.wait_for_overlay(before)
+            if categories:
+                if attempt:
+                    detail("the task-menu key had to be pressed twice; the "
+                           "first one did not reach the machine")
+                return categories
+        return []
+
     def invoke_task_action(self, category: str, item: str) -> None:
-        before = self.rows()
-        self.press_task_menu()
-        categories = self.wait_for_overlay(before)
+        categories = self.open_task_menu()
         if not categories:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")
         if category not in categories:
             raise Failure(f"task menu has no {category!r}; it offers {categories}")
-        self.press_many("DOWN", categories.index(category))
         before = self.rows()
-        self.press("ENTER")
+        # Picked the same way the item below it is, rather than by pressing
+        # DOWN as many times as the category's index into the parsed labels.
+        # That index is only the row offset if the parse started exactly at the
+        # cursor, and overlay_items is known to prepend an entry that is really
+        # the listing underneath showing through: measured on an Ultimate 64 it
+        # returned ['Up', 'Assembly 64', ...], and on u2@c64u the extra entry
+        # opened Configuration where Developer was asked for, whose flash
+        # actions then read as a menu missing its debug-log entries.
+        # choose_overlay_item plans a quick-seek and a walk from where that
+        # seek lands, both measured in the same list, so an entry the parse
+        # added at the front cancels out of the difference.
+        self.choose_overlay_item(categories, category)
         self.choose_overlay_item(self.wait_for_overlay(before), item)
 
     def press_popup_button(self, key: str) -> None:
-        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel."""
-        self.type_char(key)
+        """Popups are keyed: o=Ok, y=Yes, n=No, a=All, c=Cancel.
+
+        "All" is one of the four letters WASD Cursors binds to a cursor key,
+        so the key goes through the navigation transform: typed raw on a
+        machine set to WASD Cursors it moves the highlight left instead of
+        pressing the button.
+        """
+        self.type_menu_char(key)
 
     def wait_for_text(self, text: str, timeout: float = 8.0) -> None:
         deadline = time.monotonic() + timeout
@@ -2458,8 +2726,20 @@ class Browser:
         raise Failure(f"{text!r} never went away; screen was:\n{self.screen()}")
 
     def fill_edit_field(self, text: str, clear_taps: int = 0) -> None:
+        """Replace a string field's contents with `text` and accept it.
+
+        `clear_taps` says how much there could be to remove, and is only used
+        where the field has to be emptied one character at a time. Where the
+        transport can send KEY_CLEAR the whole buffer goes in one keystroke
+        whatever its length, which is the difference between one key and up to
+        64 on a machine that drains injected keys at 100ms each.
+        """
         if clear_taps:
-            self.press_many("BACKSPACE", clear_taps)
+            clear = self.backend.clear_field_key
+            if clear:
+                self.press(clear)
+            else:
+                self.press_many("BACKSPACE", clear_taps)
         self.type_text(text)
         self.press("ENTER")
 
@@ -2537,7 +2817,10 @@ def make_browser(
         telnet_width=telnet_width, telnet_height=telnet_height,
     )
     if mode == MODE_TELNET:
-        rows = telnet_entry_rows if telnet_entry_rows is not None else entry_rows
-        status = telnet_status_row if telnet_status_row is not None else status_row
+        # Falling back to the Telnet layout rather than the 40x25 one, so a
+        # caller that does not name it still gets the geometry its session
+        # actually has. See TELNET_ENTRY_ROWS.
+        rows = telnet_entry_rows if telnet_entry_rows is not None else TELNET_ENTRY_ROWS
+        status = telnet_status_row if telnet_status_row is not None else TELNET_STATUS_ROW
         return Browser(backend, rows, status)
     return Browser(backend, entry_rows, status_row)

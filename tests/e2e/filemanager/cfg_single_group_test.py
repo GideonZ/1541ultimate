@@ -34,8 +34,8 @@ from report import (Failure, check, check_skip, check_start, format_exception,
 from ui_backend import add_mode_argument, make_browser
 
 
-CFG_NAME = "cfg-single-group-e2e.cfg"
-LOG_NAME = "cfg-single-group-e2e.log"
+CFG_NAME = "cfg-sgrp.cfg"
+LOG_NAME = "cfg-sgrp.log"
 ENTRY_ROWS = range(2, 24)
 STATUS_ROW = 24
 TELNET_ENTRY_ROWS = range(2, 23)

@@ -66,6 +66,8 @@ sys.path.insert(0, os.path.join(
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 
+import machine as machine_lib                                      # noqa: E402
+import targets                                                     # noqa: E402
 from api import UltimateApi                                        # noqa: E402
 from assembler import assemble                                     # noqa: E402
 from report import (Failure, check, check_ok, check_skip,          # noqa: E402
@@ -284,6 +286,17 @@ def run(args) -> Optional[str]:
     check_ok(f"{info.product}, firmware {info.firmware_version}, "
              f"FPGA {info.fpga_version}, core "
              f"{info.extra.get('core_version', '?')}")
+
+    # The core, not the firmware, decides this one. Reported the same way a
+    # machine without an REU is, so the runner's closing line says why.
+    machine = machine_lib.identify(
+        targets.device_of(args.host),
+        lambda: (info.product, info.firmware_version))
+    missing = machine.missing_fix(machine_lib.REU_TURBO_STOPS_CPU_IN_CYCLE)
+    if missing:
+        check_start("the REU round trip is clean at full speed")
+        check_skip(missing)
+        return missing
 
     prg = assemble(SOURCE, DEFINES)
     detail(f"assembled {os.path.relpath(SOURCE, REPO_ROOT)} with "

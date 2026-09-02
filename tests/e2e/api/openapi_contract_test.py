@@ -33,7 +33,9 @@ from typing import Optional
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402  (needs tests/lib on sys.path first)
+import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from report import (Failure, check, check_skip, check_warn, detail,
                     format_exception, suite_fail, suite_ok)
 from rest import RestClient
@@ -171,20 +173,28 @@ def run_served_documents(session: RestClient, profile: str) -> None:
             raise Failure("/api.html does not point at the document")
 
 
-def run_contract(session: RestClient, args: argparse.Namespace) -> None:
+def run_contract(session: RestClient, args: argparse.Namespace,
+                 machine: machine_lib.Machine) -> None:
     """Every call here is checked against the document by the seam in rest.py."""
     calls = (
         ("GET", "/v1/version", None),
         ("GET", "/v1/info", None),
-        ("GET", "/v1/machine:heap", None),
+        # Not served at all on a machine that lacks the heap reading, where it
+        # answers 404 and the document declares only 200 and 403.
+        ("GET", "/v1/machine:heap", None, machine_lib.MACHINE_HEAP_READING),
         ("GET", "/v1/drives", None),
         ("GET", "/v1/configs", None),
         ("GET", "/v1/configs/Drive%20A%20Settings", None),
         ("GET", "/v1/configs/Drive%20A%20Settings/*", None),
         ("GET", "/v1/machine:readmem", {"address": BORDER_COLOUR_ADDRESS, "length": 2}),
     )
-    for method, path, params in calls:
-        with check("%s %s matches the document" % (method, path)):
+    for call in calls:
+        method, path, params = call[:3]
+        needs_fix = call[3] if len(call) > 3 else None
+        label = "%s %s matches the document" % (method, path)
+        if needs_fix and machine.skip_without_fix(needs_fix, label):
+            continue
+        with check(label):
             status, _, _ = session.request(method, path, params=params)
             if status != 200:
                 raise Failure("expected HTTP 200, got %d" % status)
@@ -195,11 +205,14 @@ def run_contract(session: RestClient, args: argparse.Namespace) -> None:
             raise Failure("expected HTTP 200 or 404, got %d" % status)
         detail("HTTP %d" % status)
 
-    with check("a rejected call matches the document"):
-        status, _, _ = session.request("GET", "/v1/machine:readmem",
-                                       params={"address": "D020", "length": 0})
-        if status != 400:
-            raise Failure("expected HTTP 400 for a zero length read, got %d" % status)
+    label = "a rejected call matches the document"
+    if not machine.skip_without_fix(machine_lib.READMEM_REJECTS_ZERO_LENGTH, label):
+        with check(label):
+            status, _, _ = session.request("GET", "/v1/machine:readmem",
+                                           params={"address": "D020", "length": 0})
+            if status != 400:
+                raise Failure(
+                    "expected HTTP 400 for a zero length read, got %d" % status)
 
     with check("a refused call matches the document"):
         if not args.password:
@@ -222,11 +235,14 @@ def main() -> int:
     info = session.json("/v1/info")
     profile = openapi_contract.profile_of(info)
     detail("%s is described by the %s document" % (info.get("product", args.host), profile))
+    machine = machine_lib.identify(
+        targets.device_of(args.host),
+        lambda: (str(info.get("product", "")), str(info.get("firmware_version", ""))))
 
     run_served_documents(session, profile)
     with tempfile.TemporaryDirectory(prefix="openapi-client-") as workspace:
         run_generated_client(session, args, profile, pathlib.Path(workspace))
-        run_contract(session, args)
+        run_contract(session, args, machine)
 
     suite_ok("openapi_contract_test")
     return 0

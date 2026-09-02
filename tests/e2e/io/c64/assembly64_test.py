@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-# E2E: drives the Assembly 64 search UI against the live remote server.
+# E2E: drives the machine's online file search against the live remote server.
 
-"""Assembly 64 end to end, through the menu, against the real service.
+"""The online file search, end to end, through the menu, against the real service.
 
-Queries really are sent to the Assembly 64 server. The point is not to prove the
-server works: it is to prove a user can drive it through the UI and, above all,
-that the UI survives being driven badly. The form is the one place in the menu
-that blocks on a network fetch and owns a modal edit field, and it is reached by
-a single RETURN on the first entry of the F5 task menu, so a user lands in it by
-accident easily.
+Which service that is depends on the machine: an Ultimate 64 and an Ultimate II+
+search Assembly 64, and a C64 Ultimate searches CommoServe. The two draw the same
+query form and differ in where the menu keeps the entry, so one set of scenarios
+covers both; see Device.form_title and Device.search_in_launcher.
+
+Queries really are sent to that server. The point is not to prove the server
+works: it is to prove a user can drive it through the UI and, above all, that the
+UI survives being driven badly. The form is the one place in the menu that blocks
+on a network fetch and owns a modal edit field, and it is one RETURN away from a
+freshly opened menu, so a user lands in it by accident easily.
 
 Most checks are therefore negative: abort mid-query, hammer keys during a fetch,
 leave the edit field by the menu button, submit nothing, overrun the field. After
 each one the device must still be responsive, the menu must still open, and the
 browser must still be reachable.
 
-Requires the device to have a working network route to the Assembly 64 service.
-The suite skips, rather than fails, when the service cannot be reached, so a
-broken uplink is not reported as a firmware defect.
+Requires the device to have a working network route to that service. The suite
+skips, rather than fails, when the service cannot be reached, so a broken uplink
+is not reported as a firmware defect.
 """
 import argparse
 import os
@@ -33,13 +37,13 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import machine as machine_lib
 import rest as rest_lib
 import targets
 from report import (
     Failure,
     check,
     check_skip,
-    check_start,
     detail,
     section,
     suite_fail,
@@ -59,9 +63,7 @@ from ui_backend import (
 MENU_BUTTON_PATH = "/v1/machine:menu_button"
 
 MENU_TOGGLE_TIMEOUT = 6.0
-FORM_TITLE = "Assembly 64 Query Form"
 NAME_FIELD = "Name:"
-TASK_MENU_ENTRY = "Assembly 64"
 SUBMIT_LABEL = "<<"
 EMPTY_MARKER = "< No Items >"
 # AssemblySearchForm refuses a query with no criteria, with a modal popup.
@@ -83,10 +85,8 @@ UNWIND_BUDGET = 60.0
 UNWIND_STEP_TIMEOUT = 6.0
 # Longer than the 26-character edit limit in AssemblySearchForm::change().
 OVERLONG_TEXT = "abcdefghijklmnopqrstuvwxyz0123456789"
-# A term the Assembly 64 corpus has many entries for.
+# A term both corpora have many entries for.
 SEARCH_TERM = "turrican"
-# Enough rows to distinguish a result list from an incidental match.
-MIN_RESULT_ROWS = 3
 ENTRY_ROWS = range(1, 24)
 STATUS_ROW = 24
 # Telnet renders the same form in its 24-row remote session, one row shorter
@@ -117,6 +117,30 @@ class Device:
     @property
     def entry_rows(self) -> range:
         return TELNET_ENTRY_ROWS if self.mode == MODE_TELNET else ENTRY_ROWS
+
+    # -- the online search, which is a different service on each machine --
+    #
+    # An Ultimate 64 and an Ultimate II+ search Assembly 64, reached from the
+    # first entry of the task menu. A C64 Ultimate searches CommoServe,
+    # reached from its launcher, and its task menu has no search entry at all.
+    # Both services draw the same query form, so every scenario below runs
+    # unchanged on all three once the name and the way in come from the
+    # machine. See tests/lib/machine.py.
+    @property
+    def form_title(self) -> str:
+        return self.backend.machine.search_form_title
+
+    @property
+    def search_entry(self) -> str:
+        return self.backend.machine.search_menu_entry
+
+    @property
+    def search_in_launcher(self) -> bool:
+        return self.backend.machine.search_in_launcher
+
+    @property
+    def task_menu_key(self) -> str:
+        return self.backend.machine.task_menu_key
 
     @property
     def status_row(self) -> int:
@@ -193,7 +217,7 @@ class Device:
         return wait_until(lambda: self.menu_is_open() == want_open, timeout)
 
     def form_visible(self) -> bool:
-        return FORM_TITLE in self.text()
+        return self.form_title in self.text()
 
     def screen_changed(self, before: Snapshot) -> bool:
         current = self.screen()
@@ -240,12 +264,12 @@ def press_menu_button(device: Device) -> None:
 
 
 def task_menu_ready(device: Device) -> bool:
-    """The task menu is drawn, with Assembly 64 as its (default) entry.
+    """The task menu is drawn, with the search as its (default) entry.
 
     Waiting for the screen merely to change is not enough. The browser refreshes
     drive status by itself, so a change can happen before the task menu exists,
     and RETURN would then open whatever the browser cursor is on instead. The
-    Assembly 64 text can only come from the task menu itself, and it is always
+    The entry's text can only come from the task menu itself, and it is always
     the menu's first, default-selected category on a freshly opened, not yet
     navigated menu (exactly the state open_query_form calls this in), so its
     presence alone is a strong enough signal without needing to also identify
@@ -261,7 +285,7 @@ def task_menu_ready(device: Device) -> bool:
     column-0/1 marker check. Both are real, transport-specific limits of
     colour-based selection detection, not something to paper over here.
     """
-    return row_of(device, TASK_MENU_ENTRY) is not None
+    return row_of(device, device.search_entry) is not None
 
 
 def describe_screen(device: Device) -> str:
@@ -273,26 +297,80 @@ def describe_screen(device: Device) -> str:
     return "\n".join(lines) or "    (screen is blank)"
 
 
+def open_search_entry_in_task_menu(device: Device) -> None:
+    """The task menu's first entry is the search, so open it and press RETURN.
+
+    RETURN is only sent once that entry is on screen, so the sequence does not
+    depend on how long the task menu takes to build.
+    """
+    device.send_key(device.task_menu_key)
+    if not wait_until(lambda: task_menu_ready(device), TASK_MENU_TIMEOUT):
+        raise Failure(f"the task menu did not offer {device.search_entry!r}")
+    device.send_key("ENTER")
+
+
+def launcher_entry_row(device: Device) -> Optional[Tuple[int, int]]:
+    """(row of the search entry, row of the cursor), or None when either is gone.
+
+    Both come from one screen, because a repaint between two reads would make
+    the distance between them describe a screen that no longer exists. That is
+    the same rule Backend.selection_and_rows exists for.
+    """
+    try:
+        cursor, rows = device.backend.selection_and_rows(device.entry_rows)
+    except Failure:
+        return None
+    row = next((n for n, text in enumerate(rows)
+                if device.search_entry in text), None)
+    return None if row is None else (row, cursor)
+
+
+def open_search_entry_in_launcher(device: Device) -> None:
+    """Leave the browser for the launcher and open the search entry there.
+
+    RUN/STOP at the root browser leaves the browser rather than closing the
+    menu, which is where the launcher's own entries appear (see
+    Machine.back_presses_to_close_menu). The cursor is then moved by reading
+    which row the entry is on and which row the cursor is on, rather than by
+    counting presses from an assumed position: the launcher lists what this
+    machine can do, so an entry's row is not a constant.
+    """
+    device.send_key("RUNSTOP")
+    if not wait_until(lambda: launcher_entry_row(device) is not None,
+                      TASK_MENU_TIMEOUT):
+        raise Failure(f"the launcher did not offer {device.search_entry!r}; "
+                      f"screen was:\n{describe_screen(device)}")
+    found = launcher_entry_row(device)
+    if found is None:
+        raise Failure(f"{device.search_entry!r} left the launcher between two "
+                      f"reads; screen was:\n{describe_screen(device)}")
+    row, cursor = found
+    if row != cursor:
+        device.send_key_repeat("DOWN" if row > cursor else "UP", abs(row - cursor))
+    landed = launcher_entry_row(device)
+    if landed is None or landed[1] != row:
+        raise Failure(f"the launcher cursor is not on {device.search_entry!r} "
+                      f"at row {row}; screen was:\n{describe_screen(device)}")
+    device.send_key("ENTER")
+
+
 def open_query_form(device: Device) -> None:
-    """F5, RETURN: Assembly 64 is the first task-menu entry.
+    """Open the machine's online-search query form, from wherever it lives.
 
-    RETURN is only sent once that entry is on screen and selected, so the sequence
-    does not depend on how long the task menu takes to build.
-
-    Opening the form is a request to the Assembly 64 service, so it is retried
-    once. A single slow or dropped fetch is a property of a third-party server,
-    not something this suite should report as a firmware defect.
+    Opening the form is a request to a third-party service, so it is retried
+    once. A single slow or dropped fetch is a property of that server, not
+    something this suite should report as a firmware defect.
     """
     for _ in range(FORM_OPEN_ATTEMPTS):
         unwind_to_root(device, "opening the query form")
-        device.send_key("F5")
-        if not wait_until(lambda: task_menu_ready(device), TASK_MENU_TIMEOUT):
-            raise Failure(f"the task menu did not offer {TASK_MENU_ENTRY!r}")
-        device.send_key("ENTER")
+        if device.search_in_launcher:
+            open_search_entry_in_launcher(device)
+        else:
+            open_search_entry_in_task_menu(device)
         if wait_until(device.form_visible, FORM_OPEN_TIMEOUT):
             return
     raise Skip(
-        f"{FORM_TITLE!r} did not appear within {FORM_OPEN_TIMEOUT:.0f}s on "
+        f"{device.form_title!r} did not appear within {FORM_OPEN_TIMEOUT:.0f}s on "
         f"{FORM_OPEN_ATTEMPTS} attempts; the service is most likely unreachable "
         f"from the device. Last screen:\n{describe_screen(device)}"
     )
@@ -304,7 +382,7 @@ def leave_form(device: Device) -> None:
         if not device.menu_is_open() or not device.form_visible():
             return
         device.send_key("RUNSTOP")
-    raise Failure(f"{FORM_TITLE!r} would not close")
+    raise Failure(f"{device.form_title!r} would not close")
 
 
 def unwind_to_root(device: Device, what: str) -> None:
@@ -314,7 +392,7 @@ def unwind_to_root(device: Device, what: str) -> None:
     the menu once the root browser has focus; Telnet remains connected but loses
     its selected menu row at that same boundary.
 
-    What is on screen cannot be used for this. An Assembly 64 result list reports
+    What is on screen cannot be used for this. A result list reports
     the same "/" path as the root browser and has no form title, so a check on the
     path and the title stops on the result list and leaves it in place. Closing
     the menu is not a substitute either: it does not pop anything off the stack,
@@ -359,7 +437,7 @@ def unwind_to_root(device: Device, what: str) -> None:
 def at_root_browser(device: Device) -> bool:
     """The actual root listing, not merely a screen that also reports "/".
 
-    An Assembly 64 result list reports the same "/" path as the root browser
+    A result list reports the same "/" path as the root browser
     (see unwind_to_root's docstring), so the path alone cannot tell them
     apart; the root listing always shows its fixed "Temp" entry, a result
     list never does. That alone is not enough either: an overlay (the task
@@ -376,7 +454,13 @@ def at_root_browser(device: Device) -> bool:
     rows = device.rows()
     if rows is None:
         return False
-    text = "\n".join(rows)
+    # The outer frame comes off first. A C64 Ultimate draws its own file
+    # browser inside a framed window, so "any border character on screen"
+    # is true of its root listing and this could never be satisfied there:
+    # every scenario then walked until the menu closed instead of stopping at
+    # the browser. What identifies an overlay is a box drawn inside the
+    # listing, which survives the strip.
+    text = "\n".join(strip_frame(row) for row in rows)
     if "+" in text or "|" in text:
         return False
     return "Temp" in text
@@ -476,7 +560,7 @@ def telnet_field_row(device: Device, entry_rows: Sequence[int]) -> Optional[int]
     marker = device.backend.selected_sgr
     if rows is None or marker is None:
         return None
-    title_row = row_of(device, FORM_TITLE)
+    title_row = row_of(device, device.form_title)
     for row in entry_rows:
         if row == title_row:
             continue
@@ -548,8 +632,8 @@ def submit_query(device: Device) -> None:
 # ---------------------------------------------------------------- happy path
 
 def scenario_open_and_leave(device: Device) -> None:
-    section("the form opens from the task menu and closes again")
-    with check("open the Assembly 64 query form"):
+    section("the form opens from the menu and closes again")
+    with check(f"open the {device.form_title}"):
         open_query_form(device)
     with check("the form leaves cleanly with RUN/STOP"):
         leave_form(device)
@@ -559,7 +643,7 @@ def scenario_open_and_leave(device: Device) -> None:
 
 
 def scenario_query_returns_results(device: Device) -> None:
-    section("a real query is sent to the Assembly 64 service")
+    section(f"a real query is sent to {device.backend.machine.search_service}")
     with check("open the form and enter the first field"):
         open_query_form(device)
         before = device.screen()
@@ -597,11 +681,13 @@ def scenario_query_returns_results(device: Device) -> None:
             # An empty corpus is the service's business, not the firmware's. What
             # this suite owns is that the UI left the form and stayed usable.
             detail("the service returned no matches")
-        elif len(matches) < MIN_RESULT_ROWS:
+        elif len(matches) < device.backend.machine.min_search_result_rows:
             raise Failure(
                 f"only {len(matches)} result rows mention {SEARCH_TERM!r}, which "
                 "does not look like a result list"
             )
+        else:
+            detail(f"{len(matches)} result rows mention {SEARCH_TERM!r}")
     recover(device, "running a query")
 
 
@@ -609,6 +695,10 @@ def scenario_query_returns_results(device: Device) -> None:
 
 def scenario_menu_button_in_edit_field(device: Device) -> None:
     section("the menu button must work from inside the edit field")
+    if device.backend.machine.skip_without_fix(
+            machine_lib.MENU_BUTTON_CLOSES_STRING_EDIT,
+            "the menu button works from inside the edit field"):
+        return
     if device.mode == MODE_TELNET:
         with check("the menu button works from inside the edit field"):
             check_skip(
@@ -704,6 +794,15 @@ def scenario_key_mashing(device: Device) -> None:
         device.type_text(SEARCH_TERM)
         device.send_key("ENTER")
         submit_query(device)
+        # Deliberately not this machine's task-menu key. These presses are
+        # noise a user makes while the form is busy, and the recovery
+        # afterwards expects to be at most one nested object away from the
+        # browser. On a C64 Ultimate the task-menu key is F1, so sending it
+        # here opened the task menu and the ENTER behind it activated the
+        # first category, leaving the UI several levels inside a menu of
+        # hardware actions that Back could not climb out of. F5 is Page Down
+        # there and the task menu on the other two, so it is noise on all of
+        # them.
         for key in ("DOWN", "ENTER", "RUNSTOP", "UP", "F5", "ENTER"):
             try:
                 device.send_key(key)
@@ -783,25 +882,14 @@ def main() -> int:
         # The form box is not drawn against the physical 40-column edge the
         # way REST/Overlay's is; at the standard width it renders positioned
         # far enough right that its own title ("Assembly 64 Query Form")
-        # runs past column 40 and gets truncated, exactly like the file
+        # runs past column 40 and is truncated, exactly like the file
         # browser needs a wider Telnet session (see
         # browser_long_filename_test.py's TELNET_WIDTH).
         telnet_width=60,
     )
     device = Device(backend, args.mode, args.host, password, args.timeout)
-    # Which online search a machine offers is a property of the product, not
-    # of its firmware version: a C64 Ultimate serves CommoServe from its
-    # launcher and has no Assembly 64 entry at all, so every scenario here
-    # asks for something that machine does not have. Reported once, with the
-    # name of what it does serve, rather than as eighteen failures.
-    offered = backend.machine.search_service
-    if offered != TASK_MENU_ENTRY:
-        check_start(f"this machine offers {TASK_MENU_ENTRY}")
-        check_skip(f"this machine searches {offered} instead, which this suite "
-                   f"does not drive")
-        suite_ok("assembly64_test")
-        backend.close()
-        return 0
+    detail(f"this machine searches {backend.machine.search_service}, from "
+           + ("its launcher" if device.search_in_launcher else "its task menu"))
 
     try:
         for name in names:

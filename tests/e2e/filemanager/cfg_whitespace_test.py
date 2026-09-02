@@ -43,7 +43,7 @@ from report import (Failure, check, check_skip, check_start, detail,
                     format_exception, section, suite_fail, suite_ok)
 from ui_backend import add_mode_argument, make_browser
 
-CFG_NAME = "cfg-space-e2e.cfg"
+CFG_NAME = "cfg-sp.cfg"
 
 ENTRY_ROWS = range(2, 24)
 STATUS_ROW = 24
