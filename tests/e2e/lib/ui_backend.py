@@ -1555,6 +1555,18 @@ class RestBackend(Backend):
 WIDTH = 60
 HEIGHT = 24  # Screen_VT100::get_size_y(); the 25th physical row is never used
 
+# Where the browser draws its listing in a Telnet session, which is not where
+# it draws it on the 40x25 display: one row fewer, because the session is one
+# row shorter. Every suite that drives the browser over Telnet used to carry
+# its own copy of these two numbers, and a suite that forgot them got the
+# REST layout instead. That mattered once Browser.page_rows started reading
+# the page stride off the listing height: 22 rows gives a stride of 11 and 21
+# gives 10, and the firmware takes its own from the same window
+# (TreeBrowser::handle_key, window->get_size_y()/2), so the wrong one puts
+# every paged jump a row out per page key.
+TELNET_ENTRY_ROWS = range(2, HEIGHT - 1)
+TELNET_STATUS_ROW = HEIGHT - 1
+
 ALT_CHARSET_MAP = {
     "l": "+", "k": "+", "m": "+", "j": "+", "q": "-", "x": "|",
     "t": "+", "u": "+", "v": "+", "w": "+", "n": "+",
@@ -2806,7 +2818,10 @@ def make_browser(
         telnet_width=telnet_width, telnet_height=telnet_height,
     )
     if mode == MODE_TELNET:
-        rows = telnet_entry_rows if telnet_entry_rows is not None else entry_rows
-        status = telnet_status_row if telnet_status_row is not None else status_row
+        # Falling back to the Telnet layout rather than the 40x25 one, so a
+        # caller that does not name it still gets the geometry its session
+        # actually has. See TELNET_ENTRY_ROWS.
+        rows = telnet_entry_rows if telnet_entry_rows is not None else TELNET_ENTRY_ROWS
+        status = telnet_status_row if telnet_status_row is not None else TELNET_STATUS_ROW
         return Browser(backend, rows, status)
     return Browser(backend, entry_rows, status_row)

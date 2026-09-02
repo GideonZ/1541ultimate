@@ -73,10 +73,6 @@ ENTRY_BODY = bytes([0x01, 0x08]) + b"\x00" * 30
 # key can hide is a field that kept a tail of the old value.
 FIELD_VALUES = ("n1.prg", "navsoak_medium_name.prg", "n2.prg")
 
-# The Telnet session's own browser layout, which is not the 40x25 one.
-TELNET_ENTRY_ROWS = range(2, 23)
-TELNET_STATUS_ROW = 23
-
 
 def entry_name(index: int) -> str:
     return f"F{index:02d}.PRG"
@@ -178,15 +174,11 @@ def main() -> int:
         pacing.remember_key_drain(targets.device_of(target.input_host),
                                   args.key_drain)
     fixture = Fixture(targets.device_of(target), args.root)
-    # Telnet is not constrained to the physical 40x25 display and renders this
-    # listing at its own geometry. page_rows reads the page stride off
-    # entry_rows, and the firmware takes it from the same window
-    # (window->get_size_y()/2), so the two only agree when the suite says what
-    # the Telnet geometry is rather than letting the REST one stand in.
+    # make_browser gives a Telnet session its own listing geometry, which
+    # page_rows needs: the stride is half the listing height, and Telnet's is
+    # one row shorter than the 40x25 display's.
     browser = ui_backend.make_browser(args.mode, args.host,
-                                      args.password or None, args.timeout,
-                                      telnet_entry_rows=TELNET_ENTRY_ROWS,
-                                      telnet_status_row=TELNET_STATUS_ROW)
+                                      args.password or None, args.timeout)
     failures: List[str] = []
 
     def failed(label: str, reason: str) -> None:
