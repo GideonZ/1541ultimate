@@ -64,7 +64,7 @@ to drive it.
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
 | `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power, and waking the machine from off over Wi-Fi |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), the recorder that composes a run's video (`recorder.py`, with the stream, band, glyph and VIC-text modules beside it), the smoke test of the UI backend itself (`ui_backend_smoke_test.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
@@ -96,8 +96,10 @@ and `c64u` take turns because both need the C64 Ultimate.
 transports are swept, and whether the manual suites are included. The ladder is
 `smoke`, `quick` (the default), `standard`, `deep`, `exhaustive`, and it is
 cumulative, so a suite names the shallowest profile that runs it and every
-deeper profile picks it up. `--list` prints the ladder and each suite's profile,
-and [tests/README.md](../README.md) has the measured durations.
+deeper profile picks it up. `--list` prints the ladder and each suite's
+profile, `--list-profiles` prints the matrix of which profile selects which
+suite, and [tests/README.md](../README.md) has the measured durations and the
+same matrix.
 
 A suite declares its profile in the `SUITES` table in `run-tests`. A scenario
 inside a suite declares its own with one line, the same shape as a firmware-fix
@@ -163,8 +165,9 @@ a backport before editing the table, run the tagged checks anyway:
 ```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
-(`telnet`, `freeze`, `overlay`; default `overlay`) for suites that support
-switching. Use `-s` for isolation rather than invoking a suite directly, so
+(`telnet`, `freeze`, `overlay`) for suites that support switching. With no
+`-m`, the transports the profile sweeps are used, which is `overlay` up to
+`standard`. Use `-s` for isolation rather than invoking a suite directly, so
 selection, arguments and logs stay consistent.
 
 Preserve combined stdout and stderr, keeping the runner's exit status:
@@ -192,9 +195,12 @@ set -o pipefail
 - Suites marked `manual` need an operator decision, elevated host privileges or
   a long run. `--all` is not a routine smoke-test option.
 
-The runner establishes the documented UI state before each suite and performs
-one final release, menu close and reset afterwards. A failure in that teardown
-fails the run.
+The runner establishes the documented UI state before each suite that is
+handed a device, and performs one final release, menu close and reset
+afterwards. A failure in that teardown fails the run. A suite whose registry
+entry names no host is exempt from both the state gate and the health sweep:
+it is handed no device, so it can neither be affected by the device's state nor
+leave it dirty.
 
 ## Rules for adding or changing a suite
 

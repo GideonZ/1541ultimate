@@ -9,6 +9,7 @@ produce is the result rather than a pass or a fail, so they are registered in
 | `temp_auto_cleanup_perf_test.py` | Managed `/Temp` upload latency and throughput, with the device's Temp Auto Cleanup and Temp Subfolders settings enabled, then disabled |
 | `typing_speed_perf_test.py` | The two ways the tree types into a menu field, compared on speed and on whether the characters survive |
 | `telnet_key_latency_perf_test.py` | What one Telnet keystroke costs, reported separately for a printable character, an arrow key and a lone ESC |
+| `rest_latency_perf_test.py` | What a single REST call costs, one route at a time. The runner spends real time on the health sweep and the UI-state gate before every suite, and both are made of REST calls |
 
 `pacing.SPLIT_KEY_DRAIN_SECONDS` is not established here. Two instruments
 outside this directory already cover it, each with a better oracle than a
@@ -37,6 +38,17 @@ tests/perf/temp_auto_cleanup_perf_test.py -H u64 -p PASSWORD \
 
 `--help` is authoritative for stage selection, warmup and measured counts,
 duration, and the disabled-stage upload cap.
+
+Give `rest_latency_perf_test.py` an address rather than a name. An Ultimate 64
+answers on both its wired and its wireless address and an Ultimate II+L has
+only wireless, so a figure measured on one path says nothing about the other
+until both are measured, and the address is what makes it explicit which one
+was used.
+
+```sh
+tests/perf/rest_latency_perf_test.py -H 192.168.1.15   # u64, wired
+tests/perf/rest_latency_perf_test.py -H 192.168.1.71   # u64, wireless
+```
 
 ## Safety
 

@@ -29,9 +29,9 @@ rather than list every profile it appears in.
 Those are measured rather than intended, from a full Ultimate 64 run on
 2026-09-02: every suite this file selects, at its own recorded duration,
 multiplied by the transports the profile sweeps. They move when the tree does,
-and the arithmetic is in the `profile budgets` check in
-tests/lib/runner_policy_test.py so a suite that grows past its profile is
-noticed rather than discovered.
+so treat them as the shape of the ladder rather than as a promise: what a run
+actually cost is in its own summary, and `run-tests --list-profiles --measured`
+reads it back out of recorded runs.
 
 A suite or scenario declares the shallowest profile that includes it:
 

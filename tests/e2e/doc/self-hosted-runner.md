@@ -222,11 +222,15 @@ The exit status carries the outcome, so nothing has to parse the console:
 
 | Status | Meaning |
 | --- | --- |
-| 0 | Every suite passed and no device needed recovering |
-| 1 | A suite failed |
-| 2 | The command line was wrong |
-| 3 | Every suite passed, but a device had to be recovered |
+| 0 | Every suite passed first time, and nothing needed recovering |
+| 1 | Every suite passed, but at least one needed more than one attempt |
+| 2 | Every suite passed, but a device had to be recovered |
+| 3 | A suite failed every attempt it was given |
 | 4 | A device could not be made healthy, and the run was abandoned |
+| 64 | The command line was invalid |
 
-3 is not 0 on purpose: a device that had to be brought back mid-run is not the
-same result as one that did not.
+The first five are a severity scale in numeric order, so a job step may compare
+the status with an ordering operator: `[ $? -le 2 ]` tolerates a retry and a
+recovery and nothing worse. 1 and 2 are not 0 on purpose: a suite that needed a
+second attempt, and a device that had to be brought back mid-run, are not the
+same result as a run that needed neither.
