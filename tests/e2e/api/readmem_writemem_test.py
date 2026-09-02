@@ -193,13 +193,27 @@ class RestSession:
         status, _, body = self.request("PUT", MENU_BUTTON_PATH)
         if status != 200:
             raise Failure(f"menu_button failed with HTTP {status}: {body[:160]!r}")
-        time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
 
     def set_menu_open(self, want_open: bool) -> None:
-        if self.menu_screen_open() != want_open:
-            self.press_menu_button()
-        if self.menu_screen_open() != want_open:
-            raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
+        """Put the menu in the wanted state, waiting only until it is there.
+
+        This used to sleep MENU_TOGGLE_SETTLE_SECONDS after the press and then
+        read the state once, which was wrong in both directions: it always paid
+        the full wait, and a toggle slower than it failed the suite outright.
+        A toggle becomes visible in 64 to 168ms depending on the machine and
+        its network path, with a 538ms tail on the slowest, all measured by
+        tests/perf/rest_latency_perf_test.py.
+        """
+        if self.menu_screen_open() == want_open:
+            return
+        self.press_menu_button()
+        deadline = time.monotonic() + pacing.MENU_TOGGLE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            if self.menu_screen_open() == want_open:
+                return
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        raise Failure(f"menu did not reach expected open={want_open} state after "
+                      f"pressing the menu button")
 
     def close_menu_from_anywhere(self) -> None:
         self.api.machine.close_menu_from_anywhere()
@@ -425,7 +439,14 @@ def run_selfcheck(
             # plugged into by running its own stub on that computer's CPU, and
             # that stub keeps using zero page and the stack. Measured rather
             # than assumed, so the same comparison holds on both.
-            frozen_noise = probe_live_noise(session, samples=3, interval=0.4)
+            # 0.1s between samples, not 0.4s. What this looks for is a byte
+            # the freeze stub is still touching, and that stub runs on the
+            # computer's own CPU: zero page and the stack move every few
+            # microseconds while it does. The gap only has to be longer than
+            # that, and three samples 0.4s apart spent 0.8s of every run
+            # sleeping to observe something that changes a hundred thousand
+            # times in the first tenth of a second.
+            frozen_noise = probe_live_noise(session, samples=3, interval=0.1)
             frozen_noise -= unreachable
             noise_addrs |= frozen_noise
             detail(f"{len(frozen_noise)} address(es) change on their own while frozen"
@@ -667,6 +688,7 @@ OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
 # stage measured 1.5s of it, which is the difference between a smoke profile
 # that gets run after a reflash and one that does not.
 SMOKE_TESTS = ["selfcheck-freeze"]
+
 
 # The stages that read memory while the C64 is running, so an address that
 # changes on its own has to be known about first. Freeze halts the CPU, so

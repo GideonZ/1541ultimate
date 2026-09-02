@@ -218,13 +218,27 @@ class Device:
         return self.screen() is not None
 
     def press_menu_button(self) -> None:
+        """Ask the menu to toggle. Waiting for it is the caller's job.
+
+        This used to sleep MENU_SETTLE_SECONDS afterwards, and every one of the
+        six callers already follows it with `wait_menu`, which polls for the
+        state it wants and returns as soon as it sees it. The sleep was
+        therefore waiting for something that was about to be waited for again,
+        and the gate makes several presses per suite.
+
+        Measured with tests/perf/rest_latency_perf_test.py, a toggle becomes
+        visible in 75ms on a wired Ultimate 64, 64ms on its wireless address
+        and 168ms on an Ultimate II+L. wait_menu polls every
+        pacing.POLL_INTERVAL_SECONDS against a budget of
+        MENU_TOGGLE_TIMEOUT_SECONDS, so it covers all three and the 538ms tail
+        the same measurement saw, which the fixed 250ms sleep did not.
+        """
         try:
             self._request("PUT", "/v1/machine:menu_button")
         except Unrecoverable:
             # The toggle may or may not have been applied. Callers decide by
             # reading the state back, which answers it either way.
             pass
-        time.sleep(MENU_SETTLE_SECONDS)
 
     def tap(self, inputs: List[str]) -> None:
         try:
@@ -697,6 +711,11 @@ def diagnose(device: Device) -> List[str]:
     return lines
 
 
+# The UI was dirty and has been put back. Not a failure: the run continues, and
+# the caller reports it against the suite that left it that way.
+EXIT_REPAIRED = 3
+
+
 def report_failure(message: str, device: Device) -> None:
     print(message)
     for line in diagnose(device):
@@ -736,7 +755,12 @@ def main() -> int:
             report_failure(f"UI state still dirty{who}: {problem}", device)
             return 1
         print("UI state repaired")
-        return 0
+        # Distinct from 0, because "it was already clean" and "it was dirty and
+        # I fixed it" are different answers and the caller acts on both: the
+        # second names a suite that left the device outside the documented
+        # state, which is reported against that suite. One exit status for both
+        # is what made a single boundary gate impossible.
+        return EXIT_REPAIRED
     except Unrecoverable as exc:
         try:
             report_failure(f"UI state check failed{who}: {exc}", device)

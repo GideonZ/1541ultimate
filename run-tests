@@ -73,6 +73,10 @@ DEFAULT_PASSWORD = os.environ.get("U64_PASS", "")
 DEFAULT_TIMEOUT = "30.0"
 
 UI_STATE_TOOL = os.path.join(ROOT, "tests", "e2e", "lib", "ui_state.py")
+# What the gate exits with when the UI was dirty and it put it back. See
+# tests/e2e/lib/ui_state.py; the run goes on, and the suite that left it that
+# way is named.
+UI_STATE_REPAIRED = 3
 
 # How long a device gets to come back before the run gives up on it, and how
 # often to ask. Comfortably past the roughly 18 seconds the device needs to
@@ -323,8 +327,12 @@ SUITES: Sequence[Suite] = (
           "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@", profile=profiles.DEEP),
     # The device's own FTP server: a name it reports in a listing has to be a
     # name it accepts back for SIZE and DELE.
+    # In smoke because nothing else there touches a filesystem. The rest of
+    # that profile proves the device answers, renders its menu, takes injected
+    # keys and reads and writes memory; without this, a device whose storage
+    # had stopped working would pass it. 0.8s of checking.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
@@ -382,6 +390,12 @@ SUITES: Sequence[Suite] = (
     # screen scan that stopped reading the field cannot report both as perfect.
     Suite("perf", "typing-speed", "tests/perf/typing_speed_perf_test.py",
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
+    # One route at a time, and one network path at a time. What the runner
+    # spends between suites is REST calls and waits, and a run log cannot say
+    # which of the two a given second was. Give it an address rather than a
+    # name to measure a particular interface.
+    Suite("perf", "rest-latency", "tests/perf/rest_latency_perf_test.py",
+          "-H @HOST@ -p @PASS@"),
     # Reports one figure per kind of key, because a printable character, an
     # arrow key and a lone ESC are delivered at different points in the decoder.
     Suite("perf", "telnet-key-latency",
@@ -1615,7 +1629,31 @@ def ui_state_gate(action: str, options: Options, label: str = "",
         environment.pop("E2E_ATTEMPT", None)
     result = subprocess.run(command, env=environment,
                             stdout=subprocess.DEVNULL if quiet else None)
-    return result.returncode == 0
+    return result.returncode in (0, UI_STATE_REPAIRED)
+
+
+def ui_state_was_dirty(action: str, options: Options, label: str = "",
+                       attempt: Optional[int] = None) -> Tuple[bool, bool]:
+    """Run the gate and answer (the UI is clean now, it had been dirty).
+
+    One gate at a suite boundary has to answer both, because the two drive
+    different things: whether the run can go on, and whether the suite that
+    just finished left the device outside the documented state.
+    """
+    command = [sys.executable, UI_STATE_TOOL, "-H", options.host, "--action", action]
+    if options.password:
+        command += ["-p", options.password]
+    if label:
+        command += ["--label", label]
+    environment = dict(os.environ)
+    environment["E2E_TARGET"] = options.host
+    if attempt is not None:
+        environment["E2E_ATTEMPT"] = str(attempt)
+    else:
+        environment.pop("E2E_ATTEMPT", None)
+    result = subprocess.run(command, env=environment)
+    return result.returncode in (0, UI_STATE_REPAIRED), \
+        result.returncode == UI_STATE_REPAIRED
 
 
 def ui_state_ready(options: Options, label: str) -> str:
@@ -1943,15 +1981,30 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
     # Attribution only: the precondition owns the state, so leaving the browser
     # elsewhere is not a defect. Naming who left what is what makes an
     # inherited failure traceable to its cause; it does not change the verdict.
-    if suite.category == "e2e" and not ui_state_gate("verify", options, suite.name,
-                                                     attempt=attempt):
+    # One gate at each boundary, not two. This used to `verify` here and
+    # `ensure` again before the next suite, and `ensure` starts by running the
+    # same `verify`: the identical state was read twice, in two processes, with
+    # only the read-only health sweep in between. `ensure` with this suite's
+    # name does both jobs, because it reports which suite left the device dirty
+    # before it repairs it, which is the whole point of checking here rather
+    # than only before the next suite.
+    #
+    # Device-free suites are exempt for the same reason they skip the
+    # precondition: they are handed no device, so they cannot have left one
+    # outside the documented state. Checking anyway cost a gate per suite and
+    # reported "UI state check failed after transport-usage" when the device
+    # was in trouble for reasons that suite could not have caused.
+    clean, had_been_dirty = (True, False)
+    if suite.category == "e2e" and suite.needs_device:
+        clean, had_been_dirty = ui_state_was_dirty(
+            "ensure", options, suite.name, attempt=attempt)
+    if had_been_dirty or not clean:
         # `elapsed` is passed for the same reason the OK/FAIL lines above pass
         # it: report._suite_line falls back to the time since the harness
         # process started when it is given no duration, so a WARN printed an
         # hour into a run read as an hour-long suite.
         report.suite_warn(suite.name, "left the device UI outside the documented state",
                           elapsed, **fields)
-        ui_state_gate("ensure", options, suite.name, quiet=True, attempt=attempt)
         if verdict == report.OK:
             verdict = report.WARN
 

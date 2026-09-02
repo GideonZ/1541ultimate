@@ -149,7 +149,12 @@ class RestSession(RestClient):
         status, _, body = self.request("PUT", "/v1/machine:reset")
         if status != 200:
             raise Failure(f"machine reset failed with HTTP {status}: {body[:160]!r}")
-        time.sleep(0.5)
+        # A tenth of a second, not half. What this has to cover is the reset
+        # being applied before the menu is opened over it, and nothing this
+        # suite checks depends on the C64 having reached the BASIC prompt: it
+        # reads the menu's own character matrix, which the firmware draws
+        # whatever the machine is doing.
+        time.sleep(0.1)
 
 
 def require_error(label: str, body: bytes, message: str) -> None:
