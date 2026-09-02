@@ -159,7 +159,7 @@ Binary view shows each byte as eight bits, using `.` for a cleared bit and `*` f
 
 Because C64 sprite data uses 3 bytes per row, binary view supports multiple `W`idth modes for viewing bytes in different groupings.
 
-The top status line shows the current byte address followed by the selected bit number, for example `$DC00/7`. Bit 7 is the most significant bit on the left, and bit 0 is the least significant bit on the right.
+The top status line shows the current byte address followed by the selected bit number, for example `$D00C/7`. Bit 7 is the most significant bit on the left, and bit 0 is the least significant bit on the right.
 
 Example:
 
