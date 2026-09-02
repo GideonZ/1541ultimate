@@ -217,6 +217,14 @@ def clear_rename_field(browser: Browser, batch: int = 20, max_batches: int = 8) 
     if title_row is None:
         raise Failure("Rename prompt title not found; cannot locate its field row")
     field_row = title_row + 2
+    # KEY_CLEAR empties the buffer whatever its length, which is one keystroke
+    # against the eight batches of twenty an 85-character name needs. The
+    # read-back below is unchanged and still decides: this only changes what
+    # is tried first, and Telnet has no clear key so it goes straight to the
+    # batches.
+    clear_key = browser.backend.clear_field_key
+    if clear_key:
+        browser.press(clear_key)
     for _ in range(max_batches):
         if not strip_frame(browser.rows()[field_row]).strip():
             return
