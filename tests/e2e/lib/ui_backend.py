@@ -1871,6 +1871,11 @@ class TelnetBackend(Backend):
 
     def capture(self) -> Snapshot:
         self._drain_until_idle(timeout=self.timeout)
+        # A redraw that sent no bytes drew nothing, which is this transport's
+        # answer to the question RestBackend._settle answers by comparing two
+        # screens. Maintained on both so a caller can ask either one whether
+        # the last key did anything; see Browser.go_to_top.
+        self.last_key_changed = self._last_drain_bytes > 0
         return self.screen.snapshot(self.last_command)
 
     @property
@@ -2397,21 +2402,15 @@ class Browser:
         """
         stride = self.page_rows()
         rows = max(stride * 2, -(-count // stride) * stride)
-        # One read before the first round, so a cursor already at the top
-        # costs one round rather than two. Compared this way rather than
-        # through backend.last_key_changed, which only the REST backend
-        # maintains, and against a read that costs far less than the fourteen
-        # keystrokes this replaces.
-        previous = tuple(self.backend.capture().lines)
+        # A round that changed nothing is what the top of the listing looks
+        # like. Read from the send itself rather than from a screen this method
+        # captures for the purpose: an extra read per rewind put 12% more
+        # requests on the wire across a full run, and this device serves four
+        # connections at a time.
         for _ in range(self.TOP_ROUNDS):
-            snapshot = self.move_rows(-rows)
-            if snapshot is None:
+            self.move_rows(-rows)
+            if not self.backend.last_key_changed:
                 return
-            screen = tuple(snapshot.lines)
-            # A round that changed nothing is what the top looks like.
-            if screen == previous:
-                return
-            previous = screen
 
     def select_entry(self, prefix: str, max_steps: int = 30, timeout: float = 3.0) -> None:
         """Put the cursor on the listing entry starting with `prefix`.
