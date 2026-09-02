@@ -576,6 +576,12 @@ def row_rename_ftp(ctx: Context, old: str, new: str) -> None:
     drop_names(ctx, names)
 
 
+# Long enough for a browser to drain a queue's worth of events at its poll
+# rate, short enough that it is not a wait anyone notices. Only the two rows
+# that deliberately overflow the queue pay it.
+QUEUE_DRAIN_SECONDS = 0.6
+
+
 def row_rename_under_event_pressure(ctx: Context, browser: FilesystemRefreshBrowser, origin: str,
                                     old: str, new: str, noise: Sequence[str]) -> None:
     """Rename while the observer queue is being filled behind the context menu.
@@ -614,6 +620,13 @@ def row_rename_under_event_pressure(ctx: Context, browser: FilesystemRefreshBrow
     finally:
         for name in noise:
             ftp_try(lambda n=name: ctx.ftp_driver.delete(f"{ctx.source_path}/{n}"))
+        # Removing the noise raises one event per file, and the queue holds 8
+        # (observer.h:27), so the two deletions drop_names is about to make can
+        # be the ones putEvent() discards. A browser would then still show this
+        # row's file and the next row's baseline would fail on a name it had
+        # never heard of. Waiting lets the browsers drain what the noise
+        # raised, so the teardown's own deletions fit.
+        time.sleep(QUEUE_DRAIN_SECONDS)
     drop_names(ctx, names)
 
 
