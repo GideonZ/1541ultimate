@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
@@ -650,10 +651,27 @@ OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                            "overlay-to-freeze", "freeze-to-overlay"]
 
 
+# What the smoke profile runs when no stage is named: one write-and-read round
+# trip in Freeze. It is the cheapest thing that proves both routes work at all,
+# and Freeze halts the CPU, so it is also the one stage that needs no
+# live-noise probe. The whole suite measured 28s on an Ultimate 64 and this
+# stage measured 1.5s of it, which is the difference between a smoke profile
+# that gets run after a reflash and one that does not.
+SMOKE_TESTS = ["selfcheck-freeze"]
+
+# The stages that read memory while the C64 is running, so an address that
+# changes on its own has to be known about first. Freeze halts the CPU, so
+# nothing in FREEZE_ONLY_TESTS needs the probe.
+NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
+                         "overlay-to-freeze", "freeze-to-overlay"]
+
+
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
     all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
                  "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
+        if not profiles.includes(profiles.QUICK):
+            return list(SMOKE_TESTS)
         return all_tests
     expanded: List[str] = []
     for name in selected:
@@ -745,7 +763,12 @@ def main() -> int:
             results["bounds"] = run_bounds(session)
 
         noise_addrs: Set[int] = set()
-        if interface_selectable:
+        # Eight full 64KB reads, so it is only worth paying where a stage
+        # actually reads memory with the CPU running.
+        if interface_selectable and not any(t in NOISE_DEPENDENT_TESTS for t in tests):
+            detail("skipping the live-noise probe: no selected stage reads "
+                   "memory while the C64 is running")
+        elif interface_selectable:
             with check("switch to Overlay on HDMI to probe live background activity"):
                 session.set_interface_type(INTERFACE_OVERLAY)
             with check("probe addresses that change on their own while the C64 runs"):

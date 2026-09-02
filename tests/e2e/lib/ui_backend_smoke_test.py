@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import machine
 import pacing
+import profiles  # noqa: E402
 import rest as rest_lib
 import targets
 from report import Failure, check, format_exception, section, suite_fail, suite_ok
@@ -988,17 +989,28 @@ def main() -> int:
         section("Cursor row under a framed window")
         run_overlay_row_checks()
 
-        section("Telnet backend")
-        with check("Telnet: connect, navigate, teardown"):
-            run_telnet_smoke(args.host, args.telnet_port, args.password, args.timeout)
-
-        section("REST backend, Interface Type = Freeze")
-        with check("REST/Freeze: connect, navigate, teardown"):
-            run_rest_smoke(args.host, args.password, args.timeout, "Freeze")
-
+        # Overlay first, and unconditionally: it is the transport every
+        # profile sweeps, so it is the one a run is certain to depend on.
         section("REST backend, Interface Type = Overlay on HDMI")
         with check("REST/Overlay: connect, navigate, teardown"):
             run_rest_smoke(args.host, args.password, args.timeout, "Overlay on HDMI")
+
+        # The other two cost about 2.5s each, which was most of this suite, and
+        # neither transport is swept by the smoke profile. They still run from
+        # quick up, so the facade is proved on all three before anything built
+        # on it does: what smoke drops is proving transports it will not use.
+        section("Telnet backend")
+        if not profiles.skip_below(profiles.QUICK,
+                                   "Telnet: connect, navigate, teardown"):
+            with check("Telnet: connect, navigate, teardown"):
+                run_telnet_smoke(args.host, args.telnet_port, args.password,
+                                 args.timeout)
+
+        section("REST backend, Interface Type = Freeze")
+        if not profiles.skip_below(profiles.QUICK,
+                                   "REST/Freeze: connect, navigate, teardown"):
+            with check("REST/Freeze: connect, navigate, teardown"):
+                run_rest_smoke(args.host, args.password, args.timeout, "Freeze")
     except Failure as exc:
         suite_fail("ui_backend_smoke_test", str(exc))
         return 1
