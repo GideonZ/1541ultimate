@@ -41,6 +41,7 @@ import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import openapi_contract  # noqa: E402
 import pacing  # noqa: E402
+import profiles  # noqa: E402
 import report  # noqa: E402
 import targets as targets_lib  # noqa: E402
 import api as api_lib  # noqa: E402
@@ -149,8 +150,14 @@ class Suite:
     one way, is a per-suite call documented next to its entry below.
 
     `manual` marks a suite that needs an operator decision, extra privileges, a
-    long wall-clock wait, or a device setting it changes, so it runs only when
-    named with -s or when --manual is given.
+    long wall-clock wait, or a device setting it changes, so it runs only from
+    the deep profile up, or when named with -s.
+
+    `profile` is the shallowest profile that runs this suite, in the vocabulary
+    of tests/lib/profiles.py. It is the suite's own tag: it says what the suite
+    costs, and each profile decides what to do with that. A suite that does not
+    say defaults to `standard`, which is the merge gate, so a new suite is
+    covered by CI without anyone having to remember to tag it.
     """
 
     category: str
@@ -158,6 +165,7 @@ class Suite:
     path: str
     args: str
     manual: bool = False
+    profile: str = profiles.STANDARD
 
 
 # Every executable test under tests/ is listed here; there is no exception.
@@ -168,28 +176,28 @@ SUITES: Sequence[Suite] = (
     # HTTP client again. Seven had, each with the retry rule wrong in its own
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
-    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", ""),
+    Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", "", profile=profiles.SMOKE),
     # Needs no device either: CI skips the ESP32 build on a cache hit, so a
     # project missing from the cache key gets its previous binary handed back
     # forever. raw_u64 was, for a misspelling, and the firmware change that
     # exposed it had already been merged before anyone noticed.
-    Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", ""),
+    Suite("e2e", "esp-depends", "tests/lib/esp_depends_test.py", "", profile=profiles.SMOKE),
     # Needs no device either: machine:input has an event limit and a body-size
     # limit, and a request that breaks either is refused. Splitting on the
     # count alone sent a 64-keypress field clear as one 4110-byte request and
     # failed every context-menu action that types into a field, with a message
     # about the request rather than about the keys.
-    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", ""),
+    Suite("e2e", "input-batching", "tests/lib/input_batching_test.py", "", profile=profiles.SMOKE),
     # Also needs no device: it checks the two decisions this runner makes when
     # a run goes wrong - when the recovery command may fire, and what status the
     # run exits with. Both only show themselves on a run that has already gone
     # badly, which is the worst time to find out one of them is wrong.
-    Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", ""),
+    Suite("e2e", "runner-policy", "tests/lib/runner_policy_test.py", "", profile=profiles.QUICK),
     # Also needs no device: --validate-openapi puts this validator in the path
     # of every REST call the gate makes, where a wrong verdict looks exactly
     # like a firmware defect. Its decisions are pinned against the committed
     # documents and answers written by hand.
-    Suite("e2e", "openapi-validator", "tests/lib/openapi_contract_test.py", ""),
+    Suite("e2e", "openapi-validator", "tests/lib/openapi_contract_test.py", "", profile=profiles.QUICK),
     # Also needs no device: the observability harness watches a run and by
     # design cannot change a verdict, so nothing else notices when it breaks.
     # A run whose report generator has stopped rendering fails here, rather
@@ -201,59 +209,59 @@ SUITES: Sequence[Suite] = (
     # device. A C64 Ultimate ships with that reading, and getting it wrong
     # turns a quick-seek into a walk down the listing and a popup's All button
     # into a cursor move, neither of which reads as a keyboard problem.
-    Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", ""),
+    Suite("e2e", "navigation-keys", "tests/lib/navigation_test.py", "", profile=profiles.SMOKE),
     # Also needs no device: the Telnet backend decides a redraw is over by
     # watching the stream go quiet, and the three waits that do that cannot be
     # told apart by watching a real device, which never produces them on
     # demand. Scripted bursts can.
-    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", ""),
+    Suite("e2e", "telnet-drain", "tests/e2e/lib/telnet_drain_test.py", "", profile=profiles.QUICK),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
     # scattered across every suite that depends on it.
     Suite("e2e", "ui-backend-smoke", "tests/e2e/lib/ui_backend_smoke_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Creates every disk-image kind and reads the device back after each one.
     # A create that answers 200 and then takes the device down is the defect
     # this catches, so it runs early: a dead device makes every later suite
     # fail for a reason that is not its own.
     Suite("e2e", "create-disk-image", "tests/e2e/api/create_disk_image_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Calls every endpoint the firmware registers, and fails when one is
     # neither probed nor excluded with a reason. The lockup that prompted it
     # shipped because no suite called that route at all, so the gate matters
     # more than any single probe. Runs in about a second.
     Suite("e2e", "rest-api-coverage", "tests/e2e/api/rest_api_coverage_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # The REST API described by doc/api/rest_api_openapi_*.yaml, held to the
     # device: the documents are checked as OpenAPI, a client is generated from
     # them, and the answers are validated against them. --validate-openapi
     # extends that last part to every suite above and below.
     Suite("e2e", "openapi-contract", "tests/e2e/api/openapi_contract_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-context-menu", "tests/e2e/filemanager/prg_context_menu_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     Suite("e2e", "browser-long-filename", "tests/e2e/filemanager/browser_long_filename_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Drives the menu, a Telnet session and FTP at once to check they converge
     # on the same filesystem state, so it is not mode-switchable by design.
     Suite("e2e", "browser-filesystem-refresh",
           "tests/e2e/filemanager/browser_filesystem_refresh_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     Suite("e2e", "ftp-client", "tests/e2e/filesystem/ftp_client_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     Suite("e2e", "prg-load-path-trim", "tests/e2e/api/prg_load_path_trim_test.py",
-          "-H @HOST@ -p @PASS@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ --mode @MODE@", profile=profiles.QUICK),
     Suite("e2e", "temp-auto-cleanup", "tests/e2e/filemanager/temp_auto_cleanup_test.py",
           "-H @HOST@ -p @PASS@ --mode @MODE@"),
     Suite("e2e", "cfg-single-group", "tests/e2e/filemanager/cfg_single_group_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Manual: loading a partial .cfg is supposed to leave the stores it does
     # not name alone, and that no longer holds. Measured on a C64 Ultimate
     # 1.2.0, a file naming one store listed nineteen in its loader
@@ -271,7 +279,7 @@ SUITES: Sequence[Suite] = (
     # one: nobody types "Vol Master= 0 dB" with the leading space.
     Suite("e2e", "cfg-whitespace", "tests/e2e/filemanager/cfg_whitespace_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
-    Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@"),
+    Suite("e2e", "printer", "tests/e2e/io/printer/printer_test.py", "-H @HOST@ -p @PASS@", profile=profiles.QUICK),
     # Writes a 64 KiB file to real USB media, so it needs a stick in the machine
     # and leaves nothing behind. The regression check fails on firmware carrying
     # #803; the control and the RAM-disk comparison beside it say whether a
@@ -291,16 +299,16 @@ SUITES: Sequence[Suite] = (
     # device's network peer, so it binds two ports and needs the device to be
     # able to reach it; the scenarios that need that skip where it cannot.
     Suite("e2e", "uci-net-target", "tests/e2e/io/command_interface/net_target_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.DEEP),
     # Two checks that are genuinely about the Telnet transport itself (a
     # concurrent poll-mode connection, per-keystroke output volume) only run
     # under --mode telnet.
     Suite("e2e", "machine-code-monitor", "tests/e2e/monitor/monitor_test.py",
-          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@"),
+          "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@", profile=profiles.DEEP),
     # The device's own FTP server: a name it reports in a listing has to be a
     # name it accepts back for SIZE and DELE.
     Suite("e2e", "ftp-server", "tests/e2e/network/ftp_server_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.QUICK),
     # Needs passwordless "sudo -n ip" plus an --iface/--victim-ip for this LAN,
     # and waits ~75s for the device to reap the sessions.
     Suite("e2e", "telnet-stale-session", "tests/e2e/network/telnet_stale_session_test.py",
@@ -308,7 +316,7 @@ SUITES: Sequence[Suite] = (
     # Drives the Assembly 64 UI against the live service, mostly with negative
     # cases. Skips rather than fails when the service is unreachable.
     Suite("e2e", "assembly64", "tests/e2e/io/c64/assembly64_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@", profile=profiles.QUICK),
     # Measures the keystroke injection every other suite depends on: a lost key
     # fails whichever check was typing at the time and names no rate, so this
     # names one. One batch of the largest size the input API accepts, which is
@@ -2037,16 +2045,29 @@ def chosen_categories(args: argparse.Namespace) -> List[str]:
     return chosen or ["e2e"]
 
 
-def selected_suites(category: str, names: List[str], manual: bool) -> List[Suite]:
+def selected_suites(category: str, names: List[str], manual: bool,
+                    profile: str = profiles.DEFAULT) -> List[Suite]:
+    """The suites this run covers, in registry order.
+
+    A suite named with -s runs whatever the profile says, because naming one is
+    a more specific instruction than choosing a bundle. Everything else has to
+    be shallow enough for the profile, and a suite registered `manual` also
+    needs a profile that includes those.
+    """
     chosen = []
+    wants_manual = manual or profiles.includes_manual(profile)
     for suite in SUITES:
         if suite.category != category:
             continue
         if names:
             if suite.name in names:
                 chosen.append(suite)
-        elif not suite.manual or manual:
-            chosen.append(suite)
+            continue
+        if suite.manual and not wants_manual:
+            continue
+        if not profiles.includes(suite.profile, profile):
+            continue
+        chosen.append(suite)
     return chosen
 
 
@@ -2094,7 +2115,7 @@ def record_plan(args: argparse.Namespace, categories: Sequence[str],
     """
     sequence = []
     for category in categories:
-        chosen = selected_suites(category, args.suite, args.manual)
+        chosen = selected_suites(category, args.suite, args.manual, args.profile)
         for mode in (modes if category == "e2e" else [""]):
             for suite in chosen:
                 # The label is what names this run of the suite everywhere
@@ -2293,11 +2314,13 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Run only this suite. Repeatable, and it selects "
                           "manual suites as well. The names are in --list.")
     e2e.add_argument("-m", "--mode", "--modes", dest="modes",
-                     default=DEFAULT_MODE, metavar="LIST",
+                     default="", metavar="LIST",
                      help="Drive the suites through this UI transport: "
                           "overlay, freeze, telnet, a comma-separated list, "
                           "or all. Each transport is a full pass over the "
-                          f"selected suites (default: {DEFAULT_MODE}).")
+                          "selected suites. Defaults to what the profile "
+                          "sweeps, which is overlay up to standard and all "
+                          "three from deep.")
     e2e.add_argument("--manual", action="store_true",
                      help="Also run the suites kept out of the default run: "
                           "those needing an operator, root, or a long wait.")
@@ -2311,7 +2334,18 @@ def build_parser() -> argparse.ArgumentParser:
                           "OpenAPI document in doc/api, for every suite. The "
                           "openapi-contract suite does this for itself either "
                           "way; this extends it to the whole run.")
-    e2e.add_argument("--soak-profile", choices=("stress", "soak"), default="stress",
+    e2e.add_argument("--profile", choices=list(profiles.ORDER),
+                     default=profiles.DEFAULT,
+                     help="How much of the tree to cover, shallowest first: "
+                          + ", ".join(profiles.ORDER)
+                          + f" (default: {profiles.DEFAULT}). A profile is a "
+                            "named bundle: which suites and scenarios run, "
+                            "which UI transports are swept, and whether the "
+                            "suites an ordinary run leaves out are included. "
+                            "-s names a suite whatever the profile says, and "
+                            "-m overrides the transports it would sweep.")
+    e2e.add_argument("--soak-duration", "--soak-profile", dest="soak_profile",
+                     choices=("stress", "soak"), default="stress",
                      help="Set how long the network soak runs: stress takes "
                           "about two minutes, soak twelve hours (default: "
                           "stress).")
@@ -2490,23 +2524,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_modes(raw: str) -> List[str]:
+def resolve_modes(raw: str, profile: str = profiles.DEFAULT) -> List[str]:
+    """The transports to sweep: what -m named, or what the profile sweeps."""
     if raw.strip() == "all":
         return list(MODES)
     modes = [m.strip() for m in raw.split(",") if m.strip()]
     for mode in modes:
         if mode not in MODES:
-            die(f"unknown profile: {mode} (expected {', '.join(MODES)} or all)")
-    return modes or [DEFAULT_MODE]
+            die(f"unknown mode: {mode} (expected {', '.join(MODES)} or all)")
+    return modes or list(profiles.modes_for(profile))
 
 
 def print_listing() -> None:
+    print("Profiles, shallowest first. A suite runs from its own profile up.")
+    for name in profiles.ORDER:
+        modes = ", ".join(profiles.modes_for(name))
+        manual = ", with the manual suites" if profiles.includes_manual(name) else ""
+        marker = "  (default)" if name == profiles.DEFAULT else ""
+        print(f"  {name:<11} {modes}{manual}{marker}")
     for category in CATEGORIES:
         print(f"\n{category}:")
         for suite in SUITES:
             if suite.category == category:
-                print("  %-28s %-58s %s"
-                      % (suite.name, suite.path, "manual" if suite.manual else "auto"))
+                print("  %-28s %-11s %-52s %s"
+                      % (suite.name, suite.profile, suite.path,
+                         "manual" if suite.manual else "auto"))
 
 
 def plural(count: int, noun: str) -> str:
@@ -2694,6 +2736,7 @@ def apply_colour_choice(choice: str) -> None:
 CHILD_FORWARDED_FLAGS = ("e2e", "perf", "soak", "all", "manual", "syslog",
                          "record")
 CHILD_FORWARDED_VALUES = (
+    ("profile", "--profile"),
     ("modes", "--mode"),
     ("password", "--password"),
     ("timeout", "--timeout"),
@@ -2873,7 +2916,7 @@ def run_targets(args: argparse.Namespace,
         # planned, and a run killed while that target was still waiting leaves
         # no record that it was ever going to run. Each child records the same
         # plan for itself.
-        record_plan(args, chosen_categories(args), resolve_modes(args.modes),
+        record_plan(args, chosen_categories(args), resolve_modes(args.modes, args.profile),
                     targets=[t.token for t in wanted])
     collector = start_syslog(args, wanted)
     if collector is not None:
@@ -3034,6 +3077,11 @@ def main(argv: List[str]) -> int:
             die(str(exc))
         os.environ[machine_lib.ASSUME_ENV] = " ".join(sorted(assumed))
 
+    # Exported rather than passed on: the suites are child processes, and a
+    # scenario that tags itself reads the profile at import. Same convention as
+    # machine.ASSUME_ENV.
+    os.environ[profiles.ENV] = args.profile
+
     if args.validate_openapi:
         # Exported the same way, and for the same reason: the suites are child
         # processes, and tests/lib/rest.py is where every one of them makes its
@@ -3055,7 +3103,7 @@ def main(argv: List[str]) -> int:
         return run_targets(args, wanted)
     target = wanted[0]
 
-    modes = resolve_modes(args.modes)
+    modes = resolve_modes(args.modes, args.profile)
 
     known = {suite.name for suite in SUITES}
     for wanted in args.suite:
@@ -3129,6 +3177,8 @@ def main(argv: List[str]) -> int:
                   + ("" if not target.split else
                      f"  (device {target.device}, computer {target.computer})"))
     report.detail(f"categories: {', '.join(categories)}")
+    report.detail(f"profile:    {args.profile}"
+                  + ("" if args.profile != profiles.DEFAULT else " (default)"))
     if "e2e" in categories:
         report.detail(f"modes:      {', '.join(modes)}")
     if "soak" in categories:
@@ -3196,7 +3246,7 @@ def main(argv: List[str]) -> int:
         device_unhealthy = False
 
         for index, category in enumerate(categories):
-            suites = selected_suites(category, args.suite, args.manual)
+            suites = selected_suites(category, args.suite, args.manual, args.profile)
             if not suites:
                 continue
             # The device needs a moment between categories. The perf benchmark

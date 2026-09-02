@@ -90,6 +90,27 @@ sharing a machine never run at the same time. `./run-tests u64 u2@c64u c64u`
 runs all three supported machines: `u64` proceeds throughout, while `u2@c64u`
 and `c64u` take turns because both need the C64 Ultimate.
 
+## How much runs
+
+`--profile` selects a named bundle: which suites and scenarios run, which UI
+transports are swept, and whether the manual suites are included. The ladder is
+`smoke`, `quick` (the default), `standard`, `deep`, `exhaustive`, and it is
+cumulative, so a suite names the shallowest profile that runs it and every
+deeper profile picks it up. `--list` prints the ladder and each suite's profile,
+and [tests/README.md](../README.md) has the measured durations.
+
+A suite declares its profile in the `SUITES` table in `run-tests`. A scenario
+inside a suite declares its own with one line, the same shape as a firmware-fix
+tag:
+
+```python
+if profiles.skip_below(profiles.STANDARD, LABEL):
+    return
+```
+
+An untagged suite is `standard`, so a new suite is covered by the merge gate
+without anyone having to remember to tag it.
+
 ## How the machines differ
 
 Suites do not test for product names. [`tests/lib/machine.py`](../lib/machine.py)

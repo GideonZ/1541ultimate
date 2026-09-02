@@ -12,7 +12,7 @@ unit tests live next to their owning code, such as `software/api/tests/`,
 | [`lib/`](lib/) | Support code shared by all three categories, plus the two gate checks that need no device. |
 
 `./run-tests <target>` runs the E2E gate. Add `--perf`, `--soak` or `--all`
-to run more, and `-m` to repeat the E2E suites in more than one UI profile:
+to run more, and `-m` to repeat the E2E suites in more than one UI mode:
 `./run-tests --all -m all` runs everything. See `./run-tests --help`.
 
 ## Targets
@@ -123,8 +123,10 @@ so a command line reads the same wherever it is typed:
 `--mode` means the UI transport and nothing else. Two suites used the same word
 for something of their own and have been renamed: `printer_test.py` takes
 `--print-mode` for bitmap or text, and the network soak takes `--correctness`.
-The only other "profile" in the tree is `run-tests --soak-profile`, which
-chooses between the two-minute and twelve-hour soak.
+"Profile" now means one thing throughout: the named bundle `--profile` selects,
+described under "How much runs" below. The flag that chooses between the
+two-minute and twelve-hour network soak is `--soak-duration`, which is what it
+actually selects; `--soak-profile` still works as an alias.
 
 ## Naming the device
 
@@ -141,7 +143,7 @@ when a suite is started by hand. One name each, used by every suite:
 | `U64_FTP_PORT` | FTP port | `21` |
 | `U64_TELNET_PORT` | Telnet port for the UI transport | `23` |
 | `U64_DMA_PORT` | DMA control port | `64` |
-| `U64_MODE` | Default UI profile: `overlay`, `freeze` or `telnet` | `overlay` |
+| `U64_MODE` | Default UI mode: `overlay`, `freeze` or `telnet` | `overlay` |
 | `U64_COMPUTERS` | Which computer each cartridge is plugged into, as `u2@c64u[,...]` | none |
 
 `tests/lib/pacing.py` documents the `U64_UI_*` variables that change how fast
@@ -163,6 +165,42 @@ machine boots with. `--no-restore-settings` turns the whole thing off.
 The restore only warns. The run has produced its verdict by then, and a machine
 that will not take a value back is something for the operator to see rather
 than a reason to change what the suites decided.
+
+## How much runs: profiles
+
+A **profile** is a named bundle of configuration chosen when the run starts,
+the way Maven's `-P` and Spring's `@Profile` are: it decides which suites and
+scenarios run, which UI transports are swept, and whether the suites an
+ordinary run leaves out are included. What an individual suite or scenario
+declares about itself is a **tag**, the way JUnit 5's `@Tag`, TestNG's groups,
+NUnit's categories, xUnit's traits, pytest's markers and CTest's labels are.
+
+Profiles are ordered and cumulative, so a suite names the shallowest profile
+that includes it and every deeper profile picks it up:
+
+| `--profile` | Measured | Transports | When you reach for it |
+| --- | ---: | --- | --- |
+| `smoke` | 1 min | overlay | After a deploy, a reflash, or a wedge recovery |
+| `quick` | 5 min | overlay | **The default.** Before pushing |
+| `standard` | 15 min | overlay | The merge gate, and CI on a pull request |
+| `deep` | 60 min | overlay, freeze | Nightly. Adds the manual suites |
+| `exhaustive` | 90 min | all three | Before a release, or chasing a ghost |
+
+The durations are measured rather than intended: every suite the profile
+selects, at the duration it recorded on a full Ultimate 64 run, multiplied by
+the transports swept. `run-tests --list` prints the ladder and each suite's own
+profile.
+
+Two things always win over the profile, because they are more specific
+instructions: `-s/--suite` runs a suite whatever the profile says, and
+`-m/--mode` overrides the transports the profile would sweep.
+
+```sh
+./run-tests                             # quick, the default
+./run-tests --profile smoke u64         # is the device alive and drivable
+./run-tests --profile deep u64          # nightly, both transports, manual too
+./run-tests --profile smoke -s ftp-client u64   # -s wins over the profile
+```
 
 ## When a run goes wrong
 
@@ -247,6 +285,8 @@ until you ask for it:
 | `--recover-timeout` | How long the command may take | 900s |
 | `--no-retry` | Recover, but do not run the suite again | off, so it does retry |
 | `--no-health-check` | Health means "it answers", nothing more | off, so the sweep runs |
+| `--profile` | How much of the tree to cover | `quick` |
+| `--soak-duration` | How long the network soak runs (was `--soak-profile`) | `stress` |
 | `--no-restore-settings` | Leave the settings however the run left them | off, so they are put back |
 
 A suite is repeated only while the device is what failed it, so repetition

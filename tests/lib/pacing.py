@@ -198,7 +198,22 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 # character, so a prefix whose leading characters match a different entry parks
 # the cursor on that entry until the rest of the prefix arrives, and the check
 # that reads it there concludes the search failed.
-SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.1)
+#
+# 60ms, not the 100ms the hardware paragraph above describes, because the
+# figure that matters is the one the harness can be read at rather than the
+# one the firmware advertises. Bisected on u2@c64u with
+# browser-long-filename, which types a name into a field and reads it back:
+# 0.06 passed three times, 0.05 passed, 0.04 failed, 0.03 failed. 0.06 is one
+# step back from the boundary and is also what this tree's own firmware ticks
+# measure (REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS 2 plus REST_TAP_GAP_TICKS 1,
+# 60.7ms a key in tests/e2e/doc/key-injection-rate.md), so a computer flashed
+# from this tree and one still on the released 1.2.0 are both covered.
+#
+# Measured end to end through the ordinary send path on u2@c64u: at 0.1 a
+# 12-key batch cost 120ms a key, at 0.06 it cost 84ms, and typing a 12
+# character string cost the same. The u64, which needs no matrix crossing,
+# runs at 25ms a key for cursors and 31ms for text.
+SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.06)
 
 
 def key_drain_seconds(split: bool) -> float:

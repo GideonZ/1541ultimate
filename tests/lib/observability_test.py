@@ -4706,7 +4706,12 @@ runner = importlib.util.module_from_spec(spec)
 loader.exec_module(runner)
 
 with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
-    runner.SUITES = tuple(runner.Suite(**entry) for entry in json.load(handle))
+    # The shallowest profile, so a scripted registry is never filtered by the
+    # profile the fixture happens to run under. These stubs stand in for the
+    # whole tree; which of them run is the fixture's business, not a bundle's.
+    runner.SUITES = tuple(
+        runner.Suite(**dict(entry, profile=runner.profiles.SMOKE))
+        for entry in json.load(handle))
 
 # The double serves REST, FTP, Telnet and the DMA control port. It does not
 # fake the on-device UI object stack, which is what this gate drives.

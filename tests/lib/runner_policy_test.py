@@ -29,6 +29,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config_snapshot  # noqa: E402
+import profiles  # noqa: E402
 import health  # noqa: E402
 import interactions  # noqa: E402
 import targets  # noqa: E402
@@ -949,6 +950,61 @@ def declared_computers(value):
             os.environ[targets.COMPUTERS_ENV] = before
 
 
+def run_profile_checks(runner):
+    """What each profile selects, and that the ladder is really a ladder."""
+    with check("the profiles are ordered and cumulative"):
+        seen = set()
+        for name in profiles.ORDER:
+            suites = {s.name for s in runner.selected_suites("e2e", [], False, name)}
+            missing = seen - suites
+            if missing:
+                raise Failure(f"{name} drops {sorted(missing)}, so the profiles "
+                              "are not cumulative and a scenario cannot name "
+                              "the shallowest one that includes it")
+            seen = suites
+        expect("every suite is reachable",
+               seen >= {s.name for s in runner.SUITES if s.category == "e2e"},
+               True)
+
+    with check("a suite named with -s runs whatever the profile says"):
+        # Naming a suite is more specific than choosing a bundle, so it wins.
+        deep_only = [s.name for s in runner.SUITES
+                     if s.category == "e2e" and s.profile == profiles.DEEP]
+        expect("there is a deep-only suite to test with", bool(deep_only), True)
+        chosen = runner.selected_suites("e2e", deep_only[:1], False, profiles.SMOKE)
+        expect("named suite runs", [s.name for s in chosen], deep_only[:1])
+
+    with check("the manual suites arrive with the deep profile, not before"):
+        for name in (profiles.SMOKE, profiles.QUICK, profiles.STANDARD):
+            chosen = runner.selected_suites("e2e", [], False, name)
+            if any(s.manual for s in chosen):
+                raise Failure(f"{name} runs a manual suite")
+        for name in (profiles.DEEP, profiles.EXHAUSTIVE):
+            chosen = runner.selected_suites("e2e", [], False, name)
+            if not any(s.manual for s in chosen):
+                raise Failure(f"{name} runs no manual suite")
+
+    with check("the transports widen with depth, and -m still overrides"):
+        widths = [len(profiles.modes_for(name)) for name in profiles.ORDER]
+        if widths != sorted(widths):
+            raise Failure(f"the mode sweep is not monotonic: {widths}")
+        expect("-m wins", runner.resolve_modes("telnet", profiles.EXHAUSTIVE),
+               ["telnet"])
+        expect("no -m takes the profile's sweep",
+               runner.resolve_modes("", profiles.QUICK),
+               list(profiles.modes_for(profiles.QUICK)))
+
+    with check("an unknown profile is refused, naming the real ones"):
+        try:
+            profiles.parse("enormous")
+        except profiles.UnknownProfile as exc:
+            for name in profiles.ORDER:
+                if name not in str(exc):
+                    raise Failure(f"the message does not name {name!r}: {exc}")
+        else:
+            raise Failure("'enormous' was accepted")
+
+
 def run_resource_conflict_checks(runner):
     """Which targets may run at the same time, from the grammar alone."""
     cases = (
@@ -1476,6 +1532,7 @@ def main():
             run_target_grammar_checks()
             run_bench_topology_checks(runner)
             run_settings_restore_checks()
+            run_profile_checks(runner)
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()
