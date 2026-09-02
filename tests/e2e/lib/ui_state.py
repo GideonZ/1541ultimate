@@ -711,11 +711,6 @@ def diagnose(device: Device) -> List[str]:
     return lines
 
 
-# The UI was dirty and has been put back. Not a failure: the run continues, and
-# the caller reports it against the suite that left it that way.
-EXIT_REPAIRED = 3
-
-
 def report_failure(message: str, device: Device) -> None:
     print(message)
     for line in diagnose(device):
@@ -755,12 +750,7 @@ def main() -> int:
             report_failure(f"UI state still dirty{who}: {problem}", device)
             return 1
         print("UI state repaired")
-        # Distinct from 0, because "it was already clean" and "it was dirty and
-        # I fixed it" are different answers and the caller acts on both: the
-        # second names a suite that left the device outside the documented
-        # state, which is reported against that suite. One exit status for both
-        # is what made a single boundary gate impossible.
-        return EXIT_REPAIRED
+        return 0
     except Unrecoverable as exc:
         try:
             report_failure(f"UI state check failed{who}: {exc}", device)

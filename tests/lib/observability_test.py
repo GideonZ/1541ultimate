@@ -3249,6 +3249,7 @@ def the_capture_is_taken_before_the_state_gate() -> str:
     menu, so a capture taken after it shows the harness's own tidying rather
     than what the suite left. The order is a fact about one function, which is
     why it is checked as one.
+
     """
     with open(RUNNER_PATH, encoding="utf-8") as handle:
         text = handle.read()
