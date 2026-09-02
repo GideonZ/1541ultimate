@@ -272,6 +272,20 @@ def build_cases() -> List[Case]:
             raise Failure(f"product or firmware missing: {info}")
     case(("GET", "/v1/info"), "names product and firmware", "happy", _info)
 
+    def _info_macs(ctx: Ctx) -> None:
+        info = ctx.api.info()
+        found = {k: v for k, v in info.extra.items()
+                 if k in ("ethernet_mac", "wifi_mac")}
+        for key, value in found.items():
+            if not re.fullmatch(r"([0-9A-F]{2}:){5}[0-9A-F]{2}", str(value)):
+                raise Failure(f"{key} is not a MAC address: {value!r}")
+        # The request that just answered arrived over one of the interfaces, so
+        # at least one of them has to know its own address.
+        if not found:
+            raise Failure(f"no interface address reported: {info}")
+    case(("GET", "/v1/info"), "reports the interface MAC addresses", "happy",
+         _info_macs)
+
     def _help(ctx: Ctx) -> None:
         if not ctx.api.help("version"):
             raise Failure("the help page was empty")

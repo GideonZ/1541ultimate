@@ -194,6 +194,22 @@ SCHEMAS = {
                         "type": "string",
                         "description": "Omitted when the device has no unique id configured.",
                     },
+                    "ethernet_mac": {
+                        "type": "string",
+                        "description": (
+                            "MAC address of the wired interface, upper case, colon separated. "
+                            "Omitted while the interface has not started and its address is "
+                            "not known."
+                        ),
+                    },
+                    "wifi_mac": {
+                        "type": "string",
+                        "description": (
+                            "MAC address of the Wi-Fi interface, upper case, colon separated. "
+                            "Omitted on hardware without a Wi-Fi module, and while the module "
+                            "has not started and its address is not known."
+                        ),
+                    },
                 },
             },
         ]
