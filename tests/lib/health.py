@@ -253,6 +253,13 @@ def _ftp(host: str, port: int, password: str = "") -> str:
         client.login("ultimate", password or "ultimate")
         client.set_pasv(True)
         client.nlst("/")
+    except (*ftplib.all_errors, EOFError) as exc:
+        # Every one of these has to leave the sweep as a failed check. An
+        # ftplib error that is not one _timed catches escapes the sweep
+        # instead, and the runner then dies part-way through a run rather than
+        # reporting a degraded device: a listener that closes without its
+        # banner raises EOFError, which killed the whole run.
+        raise RuntimeError(f"{type(exc).__name__}: {exc}".strip(": ")) from exc
     finally:
         try:
             client.close()

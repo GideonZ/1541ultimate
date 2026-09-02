@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -1410,6 +1412,42 @@ def a_harness_edited_mid_run_is_reported() -> str:
     import tempfile
 
     runner = load_runner()
+    # One target per process, three targets at once, one checkout between
+    # them, and every copy appends the same line to the same file. Without the
+    # lock a copy reads its "before" hash while another copy has the file
+    # edited, then makes the identical edit itself and hashes the same thing
+    # twice. The whole check is held, first hash included, because that first
+    # hash is what the rest is compared against. Taking turns costs
+    # milliseconds: each copy edits and restores at once.
+    with exclusive("harness-hash"):
+        return _harness_hash_edit(runner)
+
+
+@contextlib.contextmanager
+def exclusive(name: str):
+    """Hold a lock shared by every copy of this suite on this machine.
+
+    The runner gives each target its own process, so three targets run three
+    copies of this suite at the same time on one host. A case that measures
+    something about the host, rather than about the device, cannot share it:
+    the frame-exact recorder cases lose datagrams and drop frames under the
+    other two copies' load, and the harness-hash case has one checkout to edit
+    between them. Taking turns costs seconds and makes them mean something.
+    """
+    path = os.path.join(tempfile.gettempdir(), f"e2e-obs-{name}.lock")
+    with open(path, "w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _harness_hash_edit(runner) -> str:
+    """Hash, edit, hash, restore, hash. Called with the edit lock held."""
+    import shutil
+    import tempfile
+
     before = runner.harness_hash()
     if not before:
         raise Skipped("git does not answer in this checkout")
@@ -4463,7 +4501,8 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
 
     if recorder_lib.encoder_available():
         raise Skipped(recorder_lib.encoder_available())
-    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+    with exclusive("recorder"), DeviceDouble() as double, \
+            tempfile.TemporaryDirectory() as directory:
         made = recorder_lib.Recorder(directory, "127.0.0.1",
                                      UltimateApi(double.target(), timeout=5.0),
                                      recorder_lib.Options(fps=5))
@@ -4475,12 +4514,10 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
             raise Failure(problem)
         video_port = made._sockets[0][1].getsockname()[1]
         audio_port = made._sockets[1][1].getsockname()[1]
-        # The sender and the recorder are the same machine here, so a datagram
-        # is dropped whenever the recorder is not scheduled before the kernel
-        # buffer fills. Under three device runs at once this test reported six
-        # of twenty frames lost and then passed on the retry, which measures
-        # the load on the test host rather than the recorder. A buffer big
-        # enough for the whole burst takes the host's scheduling out of it.
+        # A frame is 68 datagrams and the kernel's receive buffer is capped by
+        # net.core.rmem_max whatever is asked for, so a bigger buffer alone
+        # does not stop a burst outrunning the reader. It is still asked for,
+        # because it costs nothing and covers one frame's worth of jitter.
         for _, sock in made._sockets:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
         video = UdpSender("127.0.0.1", video_port)
@@ -4488,7 +4525,17 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
         for number in range(20):
             video.send(video_packets(number, number * 68, pattern=number % 16))
             audio.send(audio_packets(number * 13, 13))
-            time_lib.sleep(0.04)
+            # Wait for the recorder to take the frame rather than sending the
+            # next one on a fixed interval. The sender and the recorder are
+            # the same machine, and a frame is 68 datagrams, so a burst that
+            # outruns the reader is dropped by the kernel however big the
+            # receive buffer is: with three device runs going at once this
+            # reported five of twenty frames lost and passed on the retry,
+            # which measures the load on the test host and not the recorder.
+            taken = time_lib.monotonic() + 5.0
+            while (made._assembler.counts()["frames_completed"] <= number
+                   and time_lib.monotonic() < taken):
+                time_lib.sleep(0.005)
         video.close()
         audio.close()
         time_lib.sleep(0.4)
@@ -4557,7 +4604,8 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
     except ImportError:
         raise Skipped("PIL is not installed, so no still image is written")
 
-    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+    with exclusive("recorder"), DeviceDouble() as double, \
+            tempfile.TemporaryDirectory() as directory:
         # A suite record, so the recorder has an identity to file stills under.
         with open(os.path.join(directory, "overlay-fixture.jsonl"), "w",
                   encoding="utf-8") as handle:
@@ -4597,7 +4645,17 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             else:
                 video.send(video_packets(number, number * 68,
                                          pattern=(number // 5) % 16))
-            time_lib.sleep(0.05)
+            # Wait for the recorder to take the frame rather than sending the
+            # next one on a fixed interval. A frame is 68 datagrams on
+            # loopback, so a burst that outruns the reader is dropped by the
+            # kernel, and a dropped frame makes the still and the frame the
+            # recording holds at that position two different pictures. With
+            # three copies of this suite running at once that failed twice in
+            # three, which measures the load on the test host.
+            taken = time_lib.monotonic() + 5.0
+            while (made._assembler.counts()["frames_completed"] <= number
+                   and time_lib.monotonic() < taken):
+                time_lib.sleep(0.005)
         video.close()
         time_lib.sleep(0.5)
         capture = made.stop()

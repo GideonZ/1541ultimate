@@ -237,7 +237,7 @@ class DeviceDouble:
             target=self._http.serve_forever, kwargs={"poll_interval": 0.005},
             name="double-http", daemon=True)
         self._http_thread.start()
-        self._ftp = _BannerListener(b"220 Ultimate FTP\r\n")
+        self._ftp = _FtpListener()
         self._telnet = _BannerListener(b"")
         self._dma = _DmaListener()
 
@@ -553,6 +553,85 @@ class _BannerListener:
             self.socket.close()
         except OSError:
             pass
+
+
+class _FtpListener(_BannerListener):
+    """Enough FTP for the health check: greet, log in, and list over PASV.
+
+    The sweep no longer proves FTP by its banner alone, because a device out of
+    data connections still sends one. It asks for a listing, so the double has
+    to be able to give it one or every sweep against the double fails.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(b"220 Ultimate FTP\r\n")
+
+    def _serve(self) -> None:
+        while self.running:
+            try:
+                connection, _ = self.socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            refusing = self.refuse or (self.refuse_flag
+                                       and os.path.exists(self.refuse_flag))
+            if refusing:
+                connection.close()
+                continue
+            threading.Thread(target=self._session, args=(connection,),
+                             daemon=True).start()
+
+    def _session(self, connection: "socket.socket") -> None:
+        data_socket = None
+        try:
+            connection.settimeout(2.0)
+            connection.sendall(self.banner)
+            while True:
+                line = connection.recv(512)
+                if not line:
+                    return
+                command = line.decode("ascii", "replace").strip().upper()
+                if command.startswith("USER"):
+                    connection.sendall(b"331 Password required\r\n")
+                elif command.startswith("PASS"):
+                    connection.sendall(b"230 Logged in\r\n")
+                elif command.startswith("TYPE"):
+                    connection.sendall(b"200 Type set\r\n")
+                elif command.startswith("PASV"):
+                    data_socket = socket.socket()
+                    data_socket.bind((LOOPBACK, 0))
+                    data_socket.listen(1)
+                    data_socket.settimeout(2.0)
+                    port = data_socket.getsockname()[1]
+                    connection.sendall(
+                        ("227 Entering Passive Mode (127,0,0,1,%d,%d)\r\n"
+                         % (port >> 8, port & 0xFF)).encode("ascii"))
+                elif command.startswith(("NLST", "LIST")):
+                    if data_socket is None:
+                        connection.sendall(b"425 Use PASV first\r\n")
+                        continue
+                    connection.sendall(b"150 Opening data connection\r\n")
+                    try:
+                        transfer, _ = data_socket.accept()
+                        transfer.sendall(b"Temp\r\n")
+                        transfer.close()
+                    except (socket.timeout, OSError):
+                        pass
+                    data_socket.close()
+                    data_socket = None
+                    connection.sendall(b"226 Transfer complete\r\n")
+                elif command.startswith("QUIT"):
+                    connection.sendall(b"221 Goodbye\r\n")
+                    return
+                else:
+                    connection.sendall(b"200 Ok\r\n")
+        except (OSError, socket.timeout):
+            return
+        finally:
+            if data_socket is not None:
+                data_socket.close()
+            connection.close()
 
 
 class _DmaListener(_BannerListener):
