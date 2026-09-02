@@ -745,3 +745,5 @@ def reset(count_from: Optional[int] = None) -> None:
     _scenario = None
     _suite_started = time.monotonic()
     _pending.clear()
+
+# written by a test, removed immediately

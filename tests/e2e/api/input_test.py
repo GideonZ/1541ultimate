@@ -85,6 +85,11 @@ MENU_SELECT_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_SELECT_TIMEOU
 MENU_STEP_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STEP_TIMEOUT", "1.5"))
 MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0.25"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
+# How long a shift pressed in its own request is given to reach the machine
+# before the next request's letter. See the shift scenario for why this one
+# cannot be replaced by waiting for the result.
+MENU_SHIFT_BATCH_SETTLE_SECONDS = float(
+    os.environ.get("U64_INPUT_MENU_SHIFT_BATCH_SETTLE", "0.30"))
 KEYBOARD_RATE_BATCH_SIZE = 8
 MENU_VIDEO_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_VIDEO_TIMEOUT", "6.0"))
 RESET_APPLY_SECONDS = float(os.environ.get("U64_RESET_APPLY_SECONDS", "3.0"))
@@ -2090,9 +2095,19 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
             with check("menu editor takes a letter, and a shift held across requests"):
                 editor()
                 type_into_rename_field(session, "a", "a")
-                menu_keyboard_transition(session, ["left_shift"], "press", 0.0)
-                menu_keyboard_tap(session, ["a"], 0.0)
-                menu_keyboard_transition(session, ["left_shift"], "release", 0.0)
+                # These three keep a settle, unlike everything else here, and
+                # the settle is the subject rather than an accident. On a
+                # cartridge target every injected event rewrites the whole
+                # keyboard matrix of the computer the cartridge is plugged
+                # into, so a shift pressed in one request has to have been
+                # applied before the next request's letter arrives or the
+                # letter's own matrix replaces it. Posted back to back with no
+                # gap, an Ultimate II+L read 'aa' where 'aA' was typed.
+                menu_keyboard_transition(session, ["left_shift"], "press",
+                                         MENU_SHIFT_BATCH_SETTLE_SECONDS)
+                menu_keyboard_tap(session, ["a"], MENU_SHIFT_BATCH_SETTLE_SECONDS)
+                menu_keyboard_transition(session, ["left_shift"], "release",
+                                         MENU_SHIFT_BATCH_SETTLE_SECONDS)
                 wait_for_rename_field(session, "aA")
 
         if wants_test(selected, "menu-repeat-printable"):
@@ -2154,13 +2169,18 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
         # Nothing to restore: the rename is abandoned with RUN/STOP, so no name
         # was changed and no configuration item was written.
         if opened:
+            # Two attempts, not one: sharing a try meant that when closing the
+            # dialog raised, the browser was never put back and the next suite
+            # started inside the RAM disk. browser-long-filename then could not
+            # find its fixture directory, whose path it builds from the root,
+            # and ftp-client could not find "Remote FTP Servers", which lives
+            # there. Restoring the root is what the next suite depends on, so
+            # it runs whether or not the dialog closed cleanly.
             try:
                 close_rename_editor(session)
-                # Back to the root: this suite descends into the RAM disk, and
-                # the next one starts wherever this leaves the browser. Left
-                # inside it, ftp-client could not find "Remote FTP Servers",
-                # which lives at the root, and spent its cleanup budget
-                # looking.
+            except Failure:
+                pass
+            try:
                 go_to_browser_root(session)
             except Failure:
                 pass
