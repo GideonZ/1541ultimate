@@ -862,10 +862,8 @@ $(document).ready(async function () {
             '#lightmode-button'
         ];
 
-        // Reading or writing sessionStorage throws a SecurityError in a browser
-        // that is set to block site data. This code runs before the login and
-        // welcome screens are started, so an unguarded throw here would leave the
-        // page with its navigation still hidden. The theme is not worth that.
+        // sessionStorage throws where the browser blocks site data, and the
+        // login screen is started after this, so both sides are guarded.
         const readTheme = () => {
             try {
                 return sessionStorage.getItem('theme');
@@ -877,7 +875,6 @@ $(document).ready(async function () {
             try {
                 sessionStorage.setItem('theme', themeName);
             } catch (e) {
-                // A browser that refuses to store the theme still gets to show it.
             }
         };
 
@@ -892,9 +889,8 @@ $(document).ready(async function () {
         };
         const setLightMode = () => { setTheme('lightmode'); };
         const setDarkMode = () => { setTheme('darkmode'); };
-        // Only a theme the reader picked is stored. Following the browser's
-        // setting is not a choice, so it is applied without being stored, which
-        // leaves a later change of that setting free to take effect.
+        // Only a picked theme is stored, so a later change of the browser
+        // setting applies.
         const initDisplayMode = () => {
             const savedTheme = readTheme();
             if (savedTheme && themeNames.includes(savedTheme)) {
