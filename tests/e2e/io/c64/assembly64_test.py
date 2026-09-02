@@ -782,10 +782,26 @@ def scenario_overlong_and_empty(device: Device) -> None:
             enter_field(device, NAME_FIELD)
             clear_field(device)
             device.send_key("ENTER")
+            # Read the field back before submitting. A query that still holds
+            # the previous check's text is a real search, which takes tens of
+            # seconds to come back and then reports no warning, so without this
+            # the failure says the warning never appeared and not that the
+            # field was never emptied.
+            row = row_of(device, NAME_FIELD)
+            rows = device.rows() or []
+            value = ""
+            if row is not None and row < len(rows):
+                value = strip_frame(rows[row]).split(NAME_FIELD, 1)[-1].strip()
+            if value:
+                raise Failure(
+                    f"the {NAME_FIELD!r} field still holds {value!r}, so the "
+                    "query submitted below would not have been an empty one"
+                )
             submit_query(device)
             if not wait_until(lambda: EMPTY_QUERY_MESSAGE in device.text(), QUERY_TIMEOUT):
                 raise Failure(
-                    f"submitting an empty query did not report {EMPTY_QUERY_MESSAGE!r}"
+                    f"submitting an empty query did not report "
+                    f"{EMPTY_QUERY_MESSAGE!r}; screen was:\n{device.text()}"
                 )
     with check("the warning is dismissed and the form is still usable"):
         if device.mode == MODE_TELNET:
