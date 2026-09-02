@@ -853,7 +853,7 @@ $(document).ready(async function () {
     const themes = (() =>  {
         const themeNames = ['lightmode', 'darkmode' /*, 'purple-theme' */ ];
 
-        const themedSelectors = [ 'body', '#left-nav', '#banner', 'a:-webkit-any-link', 'div#left-nav a', '#banner', 
+        const themedSelectors = [ 'body', '#left-nav', '#banner', 'a', 'div#left-nav a', '#banner',
             '#left-nav', '#darkmode-button', '#lightmode-button'
         ];
 
@@ -1622,7 +1622,7 @@ function disassembler(startInt, byteArray) {
     border: 2px solid var(--background);
 }
 
-a:-webkit-any-link.darkmode {
+a.darkmode {
     color: yellow;
 }
 div#left-nav a.darkmode {
