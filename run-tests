@@ -234,8 +234,11 @@ SUITES: Sequence[Suite] = (
     # scattered across every suite that depends on it.
     Suite("e2e", "ui-backend-smoke", "tests/e2e/lib/ui_backend_smoke_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
+    # No --test: the stages are chosen by the profile, so smoke runs one round
+    # trip and everything from quick up runs all six. Naming "all" here made the
+    # suite ignore the profile entirely.
     Suite("e2e", "readmem-writemem", "tests/e2e/api/readmem_writemem_test.py",
-          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@", profile=profiles.SMOKE),
     Suite("e2e", "menu-screen", "tests/e2e/api/menu_screen_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --test all", profile=profiles.SMOKE),
     Suite("e2e", "input", "tests/e2e/api/input_test.py",

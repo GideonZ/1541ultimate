@@ -631,9 +631,18 @@ def run_bounds(session: RestSession) -> bool:
     # supports bus measurement, then returned 501 without freeing it. Bus timing
     # measurement is off by default on U2 builds (commit 8155daec), so on those
     # devices the leaking path is the only path this endpoint ever takes.
+    measure_label = (f"{MEASURE_LEAK_REPEATS} unsupported machine:measure "
+                     "calls leave readmem working")
+    if session.machine.skip_without_fix(
+            machine_lib.MEASURE_FREES_ITS_BUFFER, measure_label):
+        # Not a check this machine merely fails: without the fix the 25 calls
+        # leak 1.6MB, which exhausts a C64 Ultimate's heap and takes it off the
+        # network until someone power cycles it by hand.
+        return True
+
     status, _, _ = session.request("GET", MEASURE_PATH)
     if status == 501:
-        with check(f"{MEASURE_LEAK_REPEATS} unsupported machine:measure calls leave readmem working"):
+        with check(measure_label):
             for _ in range(MEASURE_LEAK_REPEATS):
                 session.request("GET", MEASURE_PATH)
             session.readmem(0, MEM_SIZE)

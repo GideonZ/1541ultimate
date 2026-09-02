@@ -161,6 +161,19 @@ READMEM_REJECTS_ZERO_LENGTH = _fix(
     "with an empty body",
     (C64U,))
 
+# What the machine:measure leak check of tests/e2e/api/readmem_writemem_test.py
+# asserts, and the second reason a check must not run without the fix: the
+# unsupported path allocated 64KB before answering 501 and never freed it, so
+# the 25 calls the check makes leak 1.6MB. On a C64 Ultimate 1.2.0 that
+# exhausts the heap and the device stops answering REST, ICMP and FTP
+# altogether; recovery is a mains power cycle by hand. Observed on 2026-09-02,
+# where the check reported FAIL after 91s and took the machine with it.
+MEASURE_FREES_ITS_BUFFER = _fix(
+    "measure-frees-its-buffer",
+    "GET /v1/machine:measure frees its buffer when it answers 501, so "
+    "repeating an unsupported call does not exhaust the heap",
+    (C64U,))
+
 # Measured with tests/e2e/io/c64/freeze_menu_test.py, and the reason that
 # suite must not run without the fix: on firmware without it, opening the menu
 # while Interface Type is Freeze stops the device answering REST, ICMP and FTP
