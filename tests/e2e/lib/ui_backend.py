@@ -52,7 +52,7 @@ import pacing
 import rest as rest_lib
 import screens as screen_spool
 import targets
-from report import Failure
+from report import Failure, detail
 from menu import wait_screen_changes, wait_screen_settled
 
 SCREEN_WIDTH = 40
@@ -2494,10 +2494,33 @@ class Browser:
         self.backend.enter_file_browser()
         self.press(self.backend.machine.task_menu_key)
 
+    def open_task_menu(self, attempts: int = 2) -> List[str]:
+        """Open the task menu and return its categories, retrying a lost key.
+
+        A keystroke injected into a cartridge target travels through the
+        computer's keyboard matrix, and one of them occasionally does not
+        arrive: measured on u2@c64u, where a run failed with "no task menu
+        appeared" against a screen still showing the browser it had been on,
+        and the same suite passed on its next attempt.
+
+        wait_for_overlay has already waited out the overlay-draw timeout by the
+        time it answers nothing, so an empty result means the menu is not
+        opening rather than not open yet, and pressing the key again is safe:
+        it cannot close a menu that was never drawn.
+        """
+        for attempt in range(attempts):
+            before = self.rows()
+            self.press_task_menu()
+            categories = self.wait_for_overlay(before)
+            if categories:
+                if attempt:
+                    detail("the task-menu key had to be pressed twice; the "
+                           "first one did not reach the machine")
+                return categories
+        return []
+
     def invoke_task_action(self, category: str, item: str) -> None:
-        before = self.rows()
-        self.press_task_menu()
-        categories = self.wait_for_overlay(before)
+        categories = self.open_task_menu()
         if not categories:
             raise Failure(f"no task menu appeared; screen was:\n{self.screen()}")
         if category not in categories:
