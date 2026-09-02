@@ -736,8 +736,17 @@ def main() -> int:
 
     try:
         session.close_menu_from_anywhere()
-        if not args.no_reset:
+        # The reset costs a 5s settle plus a wait for zero page to stop
+        # moving, which was six of this suite's eleven seconds at smoke. It is
+        # there to give the six stages a machine in a known state to start
+        # from; the one stage smoke runs is a Freeze round trip, which halts
+        # the CPU and compares memory against what it just wrote, so nothing
+        # about it depends on what the machine was doing beforehand.
+        if not args.no_reset and profiles.includes(profiles.QUICK):
             run_reset(session)
+        elif not args.no_reset:
+            detail("skipping the reset: the Freeze round trip this profile "
+                   "runs does not depend on the machine's prior state")
 
         with check("read User Interface Settings config"):
             ui_config = session.get_config(CONFIG_CATEGORY)
@@ -806,7 +815,8 @@ def main() -> int:
         try:
             if not args.no_reset:
                 session.set_menu_open(False)
-                session.api.machine.reset(force=True)
+                if profiles.includes(profiles.QUICK):
+                    session.api.machine.reset(force=True)
             if not args.keep_config and original_interface:
                 session.set_interface_type(original_interface)
                 detail(f"restored Interface Type to {original_interface!r}")
