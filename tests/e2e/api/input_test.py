@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import ftp as ftp_lib
+import machine as machine_lib
 import pacing
 import rest as rest_lib
 import targets
@@ -78,6 +80,8 @@ MENU_POST_RELEASE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_POST_REL
 # entry, and is also what a highlight that has stopped at the end of a list
 # costs before the walk turns around, so it is deliberately short.
 MENU_STATE_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STATE_TIMEOUT", "10.0"))
+# MENU_SELECT_TIMEOUT bounds a whole walk to a named entry.
+MENU_SELECT_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_SELECT_TIMEOUT", "45.0"))
 MENU_STEP_TIMEOUT_SECONDS = float(os.environ.get("U64_INPUT_MENU_STEP_TIMEOUT", "1.5"))
 MENU_EXIT_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_EXIT_SETTLE", "0.25"))
 MENU_TYPE_SETTLE_SECONDS = float(os.environ.get("U64_INPUT_MENU_TYPE_SETTLE", "0.25"))
@@ -94,10 +98,11 @@ MENU_SCREEN_BYTES = 2000
 MENU_SCREEN_COLS = 40
 MENU_SCREEN_ROWS = 25
 MENU_SELECTED_COLOUR = 0x01
-MENU_LABEL_COLUMN = 1
 # The rows a settings list occupies: row 0 is the version banner, rows 1 and 2
 # and row 23 are the window frame, and row 24 is the status line.
-MENU_LIST_FIRST_ROW = 3
+# The file browser puts its first entry a row above where the settings list
+# and the launcher put theirs, so the scan starts at the higher of the two.
+MENU_LIST_FIRST_ROW = 2
 MENU_LIST_LAST_ROW = 22
 FONT_PATH = Path(__file__).resolve().parents[3] / "roms" / "chars.bin"
 FONT_BYTES = FONT_PATH.read_bytes()[: 256 * 8]
@@ -193,6 +198,18 @@ class RestInputSession:
         # For the calls this suite makes no assertion about, so that the menu
         # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
+
+    @property
+    def machine(self) -> machine_lib.Machine:
+        """Which machine this is, asked once of the device.
+
+        The three answer the menu differently -- a C64 Ultimate puts a
+        launcher above the file browser -- so a suite that has to allow for
+        that asks here rather than being told on the command line.
+        """
+        info = self.api.info()
+        return machine_lib.identify(
+            self.host, lambda: (info.product, info.firmware_version))
 
     def url(self, path: str, params: Optional[Dict[str, Any]] = None) -> str:
         query = ""
@@ -697,20 +714,21 @@ def keyboard_echo_byte_name(value: int) -> str:
 # How much text the keyboard echo stress cases send, and so how long they take:
 # the rate is the subject, so the duration is length/rate and nothing else.
 #
-# mixed_alphabet_text repeats every 26 characters, so 26 already contains every
-# character it can produce; 52 sends each of them twice, which is what shows the
-# delivery holding up rather than merely starting. It was 200, which was the
-# same 26 characters seven more times over and cost 20s of a run that people
-# wait for. Sustained delivery over a long train has its own check, "keyboard
-# long repeated tap train drains fully without sticky state".
-ECHO_ALPHABET_LENGTH = 52
+# mixed_alphabet_text repeats every 26 characters, so 26 is every character it
+# can produce, once each. That is the floor: fewer stops exercising part of the
+# keymap, which is the whole point of using the alphabet here rather than one
+# repeated letter. It was 52, which sent each character twice, and 200 before
+# that. Sustained delivery over a long train has its own check, "keyboard long
+# repeated tap train drains fully without sticky state".
+ECHO_ALPHABET_LENGTH = 26
 # alternating_text produces only two distinct characters, so length buys
-# repetition rather than coverage. 60 is chosen for the time it takes at the
-# fastest rate this file drives: three seconds at 20 Hz, which is long enough
-# for a rate the device cannot keep up with to drop something. It was 100,
-# which was five seconds for the same evidence. The 5 Hz case keeps its own
-# smaller count, because 60 there would be twelve seconds on its own.
-ECHO_ALTERNATING_LENGTH = 60
+# repetition rather than coverage and can be cut much harder than the alphabet
+# above. 20 is one second at 20 Hz, still long enough for a device that cannot
+# keep up to drop one. It was 60.
+ECHO_ALTERNATING_LENGTH = 20
+# The slow case runs at a quarter of that rate, so it carries its own smaller
+# count: 8 characters is 1.6s at 5 Hz, where 20 would be four seconds.
+ECHO_SLOW_ALTERNATING_LENGTH = 8
 
 
 def mixed_alphabet_text(length: int) -> str:
@@ -1211,10 +1229,29 @@ def read_menu_screen(session: RestInputSession) -> Optional[Tuple[List[str], Lis
     return rows, colours
 
 
+# The column a list row's own text starts in is not the same on every screen a
+# suite drives. The settings list and the launcher indent by one; the file
+# browser does not indent at all and starts a row higher; and a C64 Ultimate
+# draws a frame around the whole thing, so its column zero is frame on every
+# row and says nothing about the selection. Reading the colour at a fixed
+# column therefore found the highlight on some screens and not others: the
+# browser's was missed on an Ultimate 64, where the entry is at column zero.
+MENU_FRAME_CHARS = "|+-"
+
+
+def menu_label_column(text: str) -> Optional[int]:
+    """The column where a list row's own text begins, past any frame."""
+    for column, character in enumerate(text):
+        if character != " " and character not in MENU_FRAME_CHARS:
+            return column
+    return None
+
+
 def menu_selection(rows: List[str], colours: List[List[int]]) -> Optional[Tuple[int, str]]:
     """The highlighted entry as (row, text), or None when nothing is highlighted."""
     for row in range(MENU_LIST_FIRST_ROW, MENU_LIST_LAST_ROW + 1):
-        if rows[row].strip() and colours[row][MENU_LABEL_COLUMN] == MENU_SELECTED_COLOUR:
+        column = menu_label_column(rows[row])
+        if column is not None and colours[row][column] == MENU_SELECTED_COLOUR:
             return row, rows[row]
     return None
 
@@ -1500,7 +1537,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         echo_offset = run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_ALTERNATING_LENGTH), 20.0, echo_offset)
 
     with check("keyboard 5 Hz alternating ab echo has no missed presses"):
-        run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0, echo_offset)
+        run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_SLOW_ALTERNATING_LENGTH), 5.0, echo_offset)
 
     with check("keyboard single letter reaches the live C64 matrix"):
         session.post_events([{"kind": "release_all"}])
@@ -1664,7 +1701,7 @@ def run_keyboard_echo_tests(session: RestInputSession, selected: Optional[List[s
 
     if wants_test(selected, "keyboard-echo-ab-5hz"):
         with check("keyboard 5 Hz alternating ab echo has no missed presses"):
-            run_keyboard_echo_stress_case(session, alternating_text("a", "b", 20), 5.0, offset)
+            run_keyboard_echo_stress_case(session, alternating_text("a", "b", ECHO_SLOW_ALTERNATING_LENGTH), 5.0, offset)
 
 
 # The rename dialog the menu-editor checks type into. Reached from the file
@@ -1682,9 +1719,25 @@ RENAME_DIALOG_TITLE = "Give a new name.."
 # item beginning with 'r', so one keystroke reaches it. 'r' is not one of the
 # letters a machine set to WASD Cursors reads as a cursor key, so it needs no
 # respelling; see tests/lib/navigation.py for the ones that do.
-RENAME_MENU_FIRST_ITEM = "Enter"
+# Bound on the launcher descent, which is a loop over "read where the entry
+# is, move the highlight one step, look again".
+LAUNCHER_DESCENT_STEPS = 24
+# Deeper than any directory this suite enters, which is one.
+BROWSER_ROOT_STEPS = 8
+# A file of this suite's own, in the RAM disk, renamed and then not renamed.
+# A drive entry was used first and it did open the dialog, but renaming a drive
+# is not what the dialog is for and a drive with no media does not offer it at
+# all: on a C64 Ultimate the first entry is an empty SD slot whose context menu
+# holds only Enter and Copy to... A file makes the subject unambiguous on every
+# machine, and it costs one FTP store.
+RENAME_TARGET_DIR = "Temp"
+RENAME_TARGET_PATH = "/Temp"
+RENAME_TARGET_FILE = "inpfld.prg"
+# Two bytes of load address is a valid PRG and nothing here reads it back.
+RENAME_TARGET_BYTES = bytes([0x01, 0x08])
 RENAME_MENU_ITEM = "Rename"
-RENAME_MENU_ITEM_KEY = "r"
+# Longer than the longest context menu here, which is nine items for a program.
+OVERLAY_SELECT_STEPS = 14
 
 # How long to hold a key to see it repeat. The firmware repeats after
 # first_delay and then every repeat_speed tick (keyboard_usb.cc), and measured
@@ -1720,13 +1773,170 @@ def read_rename_field(session: RestInputSession) -> str:
     return value
 
 
-def selected_row_with(rows: List[str], colours: List[List[int]], label: str,
-                      marking: List[int]) -> Optional[int]:
-    """The row holding `label` if it carries `marking`, else None."""
+def overlay_label_colour(rows: List[str], colours: List[List[int]],
+                         label: str) -> Optional[int]:
+    """The colour the context menu draws `label` in, or None if it is absent.
+
+    Read at the label's own first column, not across the row. The context menu
+    is an overlay in the right-hand columns, so on a C64 Ultimate, which draws
+    the browser inside a frame, every one of its rows also carries browser text
+    in its own colours. Comparing whole-row colour sets therefore compares the
+    listing underneath as much as the menu, and the selected item was missed.
+    Measured there: the selected item's label is colour 1 and the others are
+    colour 12, whatever the row holds.
+    """
     row = menu_row_with(rows, label)
-    if row is None or sorted(set(colours[row])) != marking:
+    if row is None:
         return None
-    return row
+    return colours[row][rows[row].index(label)]
+
+
+def select_menu_entry(session: RestInputSession, label: str) -> None:
+    """Move the highlight onto the entry whose row holds `label`.
+
+    Reading the highlight back after every key is what makes this work on more
+    than one machine. Fixed press counts do not: they encode one machine's
+    settings list, and an Ultimate II+L has fourteen settings categories, so
+    the nineteen cursor-down presses this replaced stopped on the last of them,
+    "Network Settings". The suite then typed into "Time Server 1" while reading
+    "Modem Offline Text" back, and reported the empty value it had set itself.
+    """
+    deadline = time.monotonic() + MENU_SELECT_TIMEOUT_SECONDS
+    descending = True
+    reversed_once = False
+    while True:
+        rows, current = wait_for_menu_selection(
+            session, f"a highlighted entry while looking for {label!r}")
+        if label in current[1]:
+            return
+        target = menu_row_with(rows, label)
+        if target is not None:
+            descending = target > current[0]
+        # The REST API uses C64 matrix names: cursor-up is shifted cursor-down.
+        keys = ["cursor_up_down"] if descending else ["left_shift", "cursor_up_down"]
+        session.post_events([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+        if wait_for_menu_selection_change(session, current) is None:
+            if reversed_once or target is not None:
+                raise Failure(
+                    f"Could not reach {label!r}: the highlight stopped on "
+                    f"{current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
+            # Nothing moved, so this is the end of the list and the entry is on
+            # the other side of where the highlight started.
+            reversed_once = True
+            descending = not descending
+        if time.monotonic() >= deadline:
+            raise Failure(
+                f"Timed out after {MENU_SELECT_TIMEOUT_SECONDS:g}s moving the highlight to "
+                f"{label!r}; it is on {current[1].strip()!r}. Menu screen was:\n" + "\n".join(rows))
+
+
+def in_file_browser(rows: List[str]) -> bool:
+    """Whether the file browser is what the menu is showing.
+
+    The browser puts the directory it is showing on the status row and nothing
+    else does, so a leading "/" identifies it on every machine.
+    """
+    return rows[MENU_SCREEN_ROWS - 1].lstrip().startswith("/")
+
+
+def enter_file_browser(session: RestInputSession) -> None:
+    """Leave the menu showing the file browser, whatever it opened on.
+
+    A C64 Ultimate does not put the browser behind the menu button: the button
+    opens a launcher whose entries are the browser, the online search and the
+    settings screens. The other two machines open the browser directly, and
+    there this returns at once.
+
+    The launcher lists hardware actions, so the entry is reached by reading
+    which row it is on and moving the highlight there, never by a fixed burst
+    that could leave RETURN on whichever entry the cursor stopped at. Same
+    reasoning as RestBackend.enter_file_browser in tests/e2e/lib/ui_backend.py.
+    """
+    entry = session.machine.launcher_browser_entry
+    if entry is None:
+        return
+    for _ in range(LAUNCHER_DESCENT_STEPS):
+        rows, _colours = wait_for_menu(
+            session, lambda rows, colours: (rows, colours), "the menu screen")
+        if in_file_browser(rows):
+            return
+        row = menu_row_with(rows, entry)
+        if row is None:
+            menu_keyboard_tap(session, ["arrow_left"], MENU_KEY_SETTLE_SECONDS)
+            continue
+        rows, cursor = wait_for_menu_selection(
+            session, f"a highlighted launcher entry while looking for {entry!r}")
+        if cursor[0] != row:
+            menu_keyboard_tap(
+                session, ["left_shift", "cursor_up_down"] if row < cursor[0]
+                else ["cursor_up_down"], MENU_KEY_SETTLE_SECONDS)
+            continue
+        menu_keyboard_tap(session, ["return"], MENU_KEY_SETTLE_SECONDS)
+    raise Failure(f"could not reach the file browser: no {entry!r} entry and no "
+                  f"directory on the status row after {LAUNCHER_DESCENT_STEPS} steps")
+
+
+def make_rename_fixture(host: str) -> None:
+    """Put the file the rename dialog is opened on into the RAM disk."""
+    with ftp_lib.session(host) as client:
+        ftp_lib.store(client, f"{RENAME_TARGET_PATH}/{RENAME_TARGET_FILE}",
+                      RENAME_TARGET_BYTES)
+
+
+def remove_rename_fixture(host: str) -> None:
+    with ftp_lib.session(host, directory=RENAME_TARGET_PATH) as client:
+        ftp_lib.delete_quietly(client, RENAME_TARGET_FILE)
+
+
+def go_to_browser_root(session: RestInputSession) -> None:
+    """Back the browser out to "/", wherever it was left.
+
+    The precondition gate leaves it there between suites, but this suite
+    descends into the RAM disk itself, so a second scenario, a retry, or a run
+    started by hand must not depend on where the last one stopped.
+    """
+    for _ in range(BROWSER_ROOT_STEPS):
+        rows, _colours = wait_for_menu(
+            session, lambda rows, colours: (rows, colours), "the browser screen")
+        if rows[MENU_SCREEN_ROWS - 1].split()[0] == "/":
+            return
+        menu_keyboard_tap(session, ["left_shift", "cursor_left_right"],
+                          MENU_KEY_SETTLE_SECONDS)
+    raise Failure(f"the browser did not reach '/' in {BROWSER_ROOT_STEPS} steps")
+
+
+def select_overlay_item(session: RestInputSession, label: str) -> None:
+    """Move the context menu's highlight onto `label`.
+
+    One step at a time, checking after each, rather than by letter. The letter
+    is ambiguous on the menu this opens: a program file offers Run, Load, DMA,
+    View, Hex View, Copy to..., Move to..., Rename and Delete, and 'r' matches
+    Run, which is already selected, so the keypress moved nothing.
+
+    Checking after every step also means the highlight is known to be on the
+    wanted item before RETURN is sent, which matters on a menu that also holds
+    Delete.
+    """
+    for _ in range(OVERLAY_SELECT_STEPS):
+        rows, colours = wait_for_menu(
+            session,
+            lambda rows, colours: (
+                (rows, colours)
+                if overlay_label_colour(rows, colours, label) is not None else None),
+            f"the context menu, offering {label!r}")
+        if overlay_label_colour(rows, colours, label) == MENU_SELECTED_COLOUR:
+            return
+        menu_keyboard_tap(session, ["cursor_up_down"], 0.0)
+        # Wait for the highlight to have moved rather than for a fixed time.
+        # With neither, the read above saw the screen from before the keypress,
+        # took it for the result and stepped again, overshooting the item.
+        seen = colours
+        wait_for_menu(
+            session,
+            lambda rows, colours: True if colours != seen else None,
+            f"the context menu highlight to move while looking for {label!r}")
+    raise Failure(f"{label!r} never became the selected context-menu item in "
+                  f"{OVERLAY_SELECT_STEPS} steps")
 
 
 def open_rename_editor(session: RestInputSession) -> None:
@@ -1745,21 +1955,25 @@ def open_rename_editor(session: RestInputSession) -> None:
     """
     session.post_events([{"kind": "release_all"}])
     open_menu(session)
-    # No F2 here: the menu opens on the file browser, which is what this wants.
+    # No F2 here: this wants the file browser, not the settings list. On a C64
+    # Ultimate the menu button opens a launcher above the browser, so getting
+    # there is a step of its own.
+    enter_file_browser(session)
+    go_to_browser_root(session)
+    select_menu_entry(session, RENAME_TARGET_DIR)
+    # RIGHT descends into the directory; RETURN there would open the drive's
+    # own context menu instead.
+    menu_keyboard_tap(session, ["cursor_left_right"], MENU_KEY_SETTLE_SECONDS)
+    wait_for_menu(
+        session,
+        lambda rows, colours: (True if rows[MENU_SCREEN_ROWS - 1].lstrip().startswith(
+            RENAME_TARGET_PATH) else None),
+        f"the browser to enter {RENAME_TARGET_PATH}")
+    select_menu_entry(session, RENAME_TARGET_FILE)
     menu_keyboard_tap(session, ["return"], 0.0)
     # "Enter" is the first item and starts selected, so its marking is what a
     # selected row in this overlay looks like on whatever machine this is.
-    marking = wait_for_menu(
-        session,
-        lambda rows, colours: (
-            sorted(set(colours[menu_row_with(rows, RENAME_MENU_FIRST_ITEM)]))
-            if menu_row_with(rows, RENAME_MENU_FIRST_ITEM) is not None else None),
-        f"the context menu, with {RENAME_MENU_FIRST_ITEM!r} selected")
-    menu_keyboard_tap(session, [RENAME_MENU_ITEM_KEY], MENU_TYPE_SETTLE_SECONDS)
-    wait_for_menu(
-        session,
-        lambda rows, colours: selected_row_with(rows, colours, RENAME_MENU_ITEM, marking),
-        f"{RENAME_MENU_ITEM!r} to become the selected context-menu item")
+    select_overlay_item(session, RENAME_MENU_ITEM)
     menu_keyboard_tap(session, ["return"], 0.0)
     wait_for_menu(session,
                   lambda rows, colours: (rename_dialog_title_row(rows) is not None) or None,
@@ -1844,6 +2058,7 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
     """
     session.post_events([{"kind": "release_all"}])
     assert_state_empty(session)
+    make_rename_fixture(session.host)
     opened = False
 
     def editor() -> None:
@@ -1934,6 +2149,10 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
             except Failure:
                 pass
         session.close_menu_from_anywhere()
+        try:
+            remove_rename_fixture(session.host)
+        except Exception:  # noqa: BLE001 - the verdict is already decided
+            pass
         session.post_events([{"kind": "release_all"}])
         assert_state_empty(session)
 
