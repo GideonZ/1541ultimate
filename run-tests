@@ -36,6 +36,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(ROOT, "tests", "lib"))
 
+import coverage  # noqa: E402  (needs tests/lib on sys.path first)
 import health  # noqa: E402  (needs tests/lib on sys.path first)
 import interactions  # noqa: E402
 import machine as machine_lib  # noqa: E402  (needs tests/lib first)
@@ -166,6 +167,18 @@ class Suite:
     args: str
     manual: bool = False
     profile: str = profiles.STANDARD
+
+    @property
+    def needs_device(self) -> bool:
+        """Whether this suite is handed a device at all.
+
+        A suite whose argument template names no host never contacts one, so
+        the health sweep and the UI-state gate in front of it can only cost
+        time: it cannot be affected by the device's state and cannot leave it
+        dirty. Eight of the e2e suites are in that position, four of them in
+        the smoke profile, where the gates were most of the run.
+        """
+        return "@HOST@" in self.args
 
 
 # Every executable test under tests/ is listed here; there is no exception.
@@ -1885,11 +1898,14 @@ def run_one_attempt(suite: Suite, device: Device, options: Options, mode: str,
                 open(transcript, "w").close()
         environment["E2E_JSONL"] = path
 
-    if suite.category == "e2e":
+    if suite.category == "e2e" and suite.needs_device:
         # E2E suites share one device and one UI object stack, so each starts
         # from the documented state rather than from whatever the last one
         # left. Reaching that state is part of health, not a check beside it:
         # a device can answer every request and still be impossible to drive.
+        #
+        # A suite that is handed no device is exempt, because there is nothing
+        # for it to share. See Suite.needs_device.
         if not device.ensure_healthy(f"{suite.name}:",
                                extra=lambda: ui_state_ready(options, suite.name)):
             report.suite_fail(suite.name, "precondition: the device is unhealthy", 0.0)
@@ -2313,6 +2329,24 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-l", "--list", action="store_true",
                       help="List every registered suite with its category "
                            "and path, then exit.")
+    selection.add_argument("--list-profiles", nargs="?", const="", metavar="NAMES",
+                      help="Show which suites each profile selects, as a "
+                           "matrix, then exit. Give a comma-separated list of "
+                           "profile names to compare only those. Scenario and "
+                           "check counts and durations are not shown, because "
+                           "the registry does not know them; add --measured "
+                           "to fold in what recorded runs did.")
+    selection.add_argument("--measured", action="append", metavar="PROFILE=DIR",
+                      default=[],
+                      help="A profile name and a `-o` output directory that "
+                           "profile produced. Repeatable. Adds a table per "
+                           "profile of what each suite actually ran on each "
+                           "machine, and how long it took.")
+    selection.add_argument("--format", choices=("text", "json", "markdown"),
+                      default="text",
+                      help="How --list-profiles writes its answer: aligned "
+                           "text, JSON for a script, or Markdown tables "
+                           "(default: text).")
 
     e2e = parser.add_argument_group(
         "e2e options",
@@ -2558,6 +2592,47 @@ def print_listing() -> None:
                          "manual" if suite.manual else "auto"))
 
 
+def print_profiles(names: str, measured: Sequence[str], fmt: str) -> None:
+    """Answer --list-profiles, optionally folding in recorded runs.
+
+    The static half is exact and comes from the registry. The measured half is
+    the only source for scenario counts, check counts and durations: a check is
+    a call made while a suite runs, and how many happen depends on the machine.
+    Nothing here estimates either, which is why a profile with no recorded run
+    shows structure and no numbers rather than a guess.
+    """
+    wanted = [n.strip() for n in names.split(",") if n.strip()] if names else []
+    for name in wanted:
+        try:
+            profiles.parse(name)
+        except profiles.UnknownProfile as exc:
+            die(str(exc))
+    cover = coverage.build(SUITES, CATEGORIES, wanted or profiles.ORDER)
+
+    runs = []
+    for pair in measured:
+        if "=" not in pair:
+            die(f"--measured wants PROFILE=DIR, got {pair!r}")
+        profile, directory = pair.split("=", 1)
+        if not os.path.isdir(directory):
+            die(f"--measured {profile}: {directory!r} is not a directory")
+        runs.append((profile, coverage.read_run(directory)))
+
+    if fmt == "json":
+        payload = coverage.static_payload(cover)
+        if runs:
+            payload["measured"] = coverage.measured_payload(runs)
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    print(coverage.render_static(cover))
+    if runs:
+        print()
+        print("Measured, from the recorded runs named with --measured.")
+        print("Each cell is checks (seconds) for that suite on that machine.")
+        print()
+        print(coverage.render_measured(runs, markdown=(fmt == "markdown")))
+
+
 def plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
@@ -2779,8 +2854,11 @@ CHILD_FORWARDED_NEGATIVE = (
 # assume_fix and validate_openapi reach every child through the environment
 # instead, because a suite started by hand has to be able to set them the same
 # way (see machine.ASSUME_ENV and openapi_contract.ENV_FLAG).
+# --list-profiles, --measured and --format answer a question and exit without
+# starting a suite at all, so there is no child to forward them to.
 CHILD_EXCLUDED_OPTIONS = ("host", "targets", "output_dir", "stop_on_fail", "list",
-                          "assume_fix", "validate_openapi")
+                          "assume_fix", "validate_openapi",
+                          "list_profiles", "measured", "format")
 
 
 def child_command(args: argparse.Namespace, target: targets_lib.Target,
@@ -3095,6 +3173,9 @@ def main(argv: List[str]) -> int:
         # calls. See tests/lib/openapi_contract.py.
         os.environ[openapi_contract.ENV_FLAG] = "1"
 
+    if args.list_profiles is not None:
+        print_profiles(args.list_profiles, args.measured, args.format)
+        raise SystemExit(EXIT_OK)
     if args.list:
         print_listing()
         return 0

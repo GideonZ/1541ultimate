@@ -21,6 +21,8 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
+import shutil
 import argparse
 import os
 import re
@@ -1020,6 +1022,71 @@ def run_move_rows_checks():
         expect("nothing was sent", stub.sent, ["stale"])
 
 
+def run_coverage_checks(runner):
+    """--list-profiles: exact where it can be, silent where it cannot.
+
+    The static half must agree with what the runner actually selects, because
+    two implementations of "which suites does this profile run" would drift.
+    The measured half must never invent a number: the registry does not know
+    how many checks a suite will make or how long it will take, and a
+    plausible wrong figure is worse than a blank.
+    """
+    import coverage
+
+    cover = coverage.build(runner.SUITES, runner.CATEGORIES)
+
+    with check("the matrix agrees with what the runner selects"):
+        for profile in profiles.ORDER:
+            for category in runner.CATEGORIES:
+                selected = [s.name for s in runner.selected_suites(
+                    category, [], profiles.includes_manual(profile), profile)]
+                expect(f"{profile}/{category}",
+                       cover.in_category(profile, category), selected)
+
+    with check("a suite run is counted once per transport swept"):
+        for profile in profiles.ORDER:
+            expect(f"{profile}", cover.passes(profile),
+                   len(cover.included[profile]) * len(profiles.modes_for(profile)))
+
+    with check("the static view names no duration and no check count"):
+        text = coverage.render_static(cover)
+        payload = coverage.static_payload(cover)
+        for banned in ("seconds", "duration", "checks", "scenarios"):
+            for profile in payload["profiles"].values():
+                if banned in profile:
+                    raise Failure(
+                        f"the static payload carries {banned!r}, which the "
+                        "registry cannot know")
+        expect("says where the numbers come from", "--measured" in text, True)
+
+    with check("measured counts come from the run records"):
+        directory = os.path.join(tempfile.mkdtemp(), "run")
+        target = os.path.join(directory, "u64")
+        os.makedirs(target)
+        with open(os.path.join(target, "run.jsonl"), "w") as handle:
+            for name, seconds, attempt in (("alpha", 1.5, 1), ("alpha", 2.5, 2),
+                                           ("beta", 4.0, 1)):
+                handle.write(json.dumps({
+                    "kind": "suite", "suite": "run-tests", "name": name,
+                    "seconds": seconds, "verdict": "OK", "attempt": attempt}) + "\n")
+        with open(os.path.join(target, "overlay-alpha.jsonl"), "w") as handle:
+            # Two attempts in one file: the second is the one the run kept.
+            for checks in (3, 7):
+                handle.write(json.dumps({"kind": "scenario", "suite": "alpha"}) + "\n")
+                handle.write(json.dumps({
+                    "kind": "suite", "suite": "alpha", "checks": checks}) + "\n")
+        data = coverage.read_run(directory)["u64"]
+        expect("every attempt is charged", round(data["alpha"].seconds, 1), 4.0)
+        expect("the last attempt's checks are kept", data["alpha"].checks, 7)
+        expect("scenarios restart with each attempt", data["alpha"].scenarios, 1)
+        expect("attempts are reported", data["alpha"].attempts, 2)
+        expect("a suite with no per-suite file still has its seconds",
+               data["beta"].seconds, 4.0)
+        expect("and no invented counts", (data["beta"].checks, data["beta"].scenarios),
+               (0, 0))
+        shutil.rmtree(directory, ignore_errors=True)
+
+
 def run_profile_checks(runner):
     """What each profile selects, and that the ladder is really a ladder."""
     with check("the profiles are ordered and cumulative"):
@@ -1604,6 +1671,7 @@ def main():
             run_settings_restore_checks()
             run_profile_checks(runner)
             run_move_rows_checks()
+            run_coverage_checks(runner)
             run_resource_conflict_checks(runner)
             run_multi_target_checks(runner)
             run_ui_state_routing_checks()
