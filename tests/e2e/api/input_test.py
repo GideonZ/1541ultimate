@@ -1959,6 +1959,11 @@ def open_rename_editor(session: RestInputSession) -> None:
     # Ultimate the menu button opens a launcher above the browser, so getting
     # there is a step of its own.
     enter_file_browser(session)
+    # Always from the root, and always entering the directory fresh. The
+    # browser holds a cached child list per directory, so one that was already
+    # sitting in this directory when the fixture was written over FTP can be
+    # showing a listing from before it existed. Backing out and descending
+    # again is what makes it read the directory rather than its cache.
     go_to_browser_root(session)
     select_menu_entry(session, RENAME_TARGET_DIR)
     # RIGHT descends into the directory; RETURN there would open the drive's
@@ -1969,6 +1974,11 @@ def open_rename_editor(session: RestInputSession) -> None:
         lambda rows, colours: (True if rows[MENU_SCREEN_ROWS - 1].lstrip().startswith(
             RENAME_TARGET_PATH) else None),
         f"the browser to enter {RENAME_TARGET_PATH}")
+    wait_for_menu(
+        session,
+        lambda rows, colours: (True if menu_row_with(rows, RENAME_TARGET_FILE)
+                               is not None else None),
+        f"{RENAME_TARGET_FILE!r} to appear in {RENAME_TARGET_PATH}")
     select_menu_entry(session, RENAME_TARGET_FILE)
     menu_keyboard_tap(session, ["return"], 0.0)
     # "Enter" is the first item and starts selected, so its marking is what a
@@ -2146,6 +2156,12 @@ def run_menu_keyboard_tests(session: RestInputSession, selected: Optional[List[s
         if opened:
             try:
                 close_rename_editor(session)
+                # Back to the root: this suite descends into the RAM disk, and
+                # the next one starts wherever this leaves the browser. Left
+                # inside it, ftp-client could not find "Remote FTP Servers",
+                # which lives at the root, and spent its cleanup budget
+                # looking.
+                go_to_browser_root(session)
             except Failure:
                 pass
         session.close_menu_from_anywhere()
