@@ -27,7 +27,9 @@ the calibration sweep itself uses:
 
 from __future__ import annotations
 
+import math
 import os
+from typing import Optional
 
 
 def _seconds(name: str, default: float) -> float:
@@ -199,15 +201,28 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 # the cursor on that entry until the rest of the prefix arrives, and the check
 # that reads it there concludes the search failed.
 #
-# 60ms, not the 100ms the hardware paragraph above describes, because the
-# figure that matters is the one the harness can be read at rather than the
-# one the firmware advertises. Bisected on u2@c64u with
-# browser-long-filename, which types a name into a field and reads it back:
-# 0.06 passed three times, 0.05 passed, 0.04 failed, 0.03 failed. 0.06 is one
-# step back from the boundary and is also what this tree's own firmware ticks
-# measure (REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS 2 plus REST_TAP_GAP_TICKS 1,
-# 60.7ms a key in tests/e2e/doc/key-injection-rate.md), so a computer flashed
-# from this tree and one still on the released 1.2.0 are both covered.
+# 60ms, not the 100ms the hardware paragraph above describes, because what this
+# constant sets is how long the harness waits before reading, not how fast the
+# firmware delivers. The whole batch is posted at once and drains at the rate
+# the firmware sets whatever is charged here; the settle in
+# RestBackend._settle spends real time of its own first, and this only tops it
+# up. 60.7ms a key is also what this tree's own firmware ticks measure
+# (REST_KEYBOARD_TAP_HOLD_QUEUE_TICKS 2 plus REST_TAP_GAP_TICKS 1, in
+# tests/e2e/doc/key-injection-rate.md), so a computer flashed from this tree
+# and one still on the released 1.2.0 are both covered.
+#
+# It is deliberately not tuned any finer, because a sweep says there is
+# nothing there to tune. Six settings from 30ms to 100ms a key were run on
+# u2@c64u through menu_navigation_soak_test, which reads back where a jump
+# landed and so fails on a lost key rather than on a slow one. The two
+# cleanest passes were the two fastest settings (30ms and 40ms, no wrong
+# landings at all) and the slowest setting lost two. A key goes missing a few
+# times in a thousand and the rate does not move with what is charged here.
+#
+# So the lever for both speed and reliability is how many keys a movement
+# takes, not what each one is charged. See Browser.move_rows, which spends
+# page keys on the bulk of a jump: on u2@c64u the same 38-row landing costs 8
+# keys instead of 38, and its median fell from 2173ms to 820ms.
 #
 # Measured end to end through the ordinary send path on u2@c64u: at 0.1 a
 # 12-key batch cost 120ms a key, at 0.06 it cost 84ms, and typing a 12
@@ -216,7 +231,7 @@ KEY_DRAIN_SECONDS = _seconds("U64_UI_KEY_DRAIN", 0.02)
 SPLIT_KEY_DRAIN_SECONDS = _seconds("U64_UI_SPLIT_KEY_DRAIN", 0.06)
 
 
-def key_drain_seconds(split: bool) -> float:
+def key_drain_seconds(split: bool, host: Optional[str] = None) -> float:
     """What one key of a batch costs on this target, in seconds.
 
     Named here rather than chosen at each call site, because the two constants
@@ -226,7 +241,51 @@ def key_drain_seconds(split: bool) -> float:
     character, because the RETURN that committed the field was sent while that
     character was still crossing the computer's keyboard matrix.
     """
+    measured = _measured.get(host)
+    if measured is not None:
+        return measured
     return SPLIT_KEY_DRAIN_SECONDS if split else KEY_DRAIN_SECONDS
+
+
+# What a machine was measured to need, by host, for this process only.
+#
+# The constants above are the rate a machine is charged when nothing has
+# measured it, and they are deliberately the slower of the machines this bench
+# has: 0.06 covers a computer on the released firmware as well as one flashed
+# from this tree. A machine that is faster than that is only found by asking
+# it, which is what remember_key_drain records.
+#
+# In-process and not persisted on purpose. A cached rate that outlived a
+# reflash would be a rate that is too fast for the machine now in front of it,
+# and too fast is the failure that loses keystrokes; a run pays the
+# measurement once and a wrong answer cannot outlive the run.
+_measured: dict = {}
+
+# Never charge less than this, whatever a measurement says. A batch that
+# measured faster than the firmware can deliver was measured while something
+# else was quiet, not while it was busy.
+MEASURED_FLOOR_SECONDS = _seconds("U64_UI_KEY_DRAIN_FLOOR", 0.02)
+
+
+def remember_key_drain(host: str, seconds: float) -> float:
+    """Record what `host` was measured to need, and answer what will be charged.
+
+    The measurement is taken as an upper bound on the truth rather than the
+    truth: it is rounded up to the next 10ms and floored, because the cost of
+    being slightly slow is a slightly longer run and the cost of being slightly
+    fast is a lost keystroke and a failure that names something else.
+    """
+    charged = max(MEASURED_FLOOR_SECONDS, math.ceil(seconds * 100) / 100)
+    _measured[host] = charged
+    return charged
+
+
+def forget_key_drain(host: Optional[str] = None) -> None:
+    """Drop what was measured, for a test that measures its own."""
+    if host is None:
+        _measured.clear()
+    else:
+        _measured.pop(host, None)
 
 # A fixed pause, used only where there is nothing observable to poll: the C64
 # screen behind the menu, a config write with no readback, a popup that draws

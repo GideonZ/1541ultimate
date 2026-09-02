@@ -11,6 +11,7 @@ are not registered in `run-tests`.
 | `network/connection_test.py` | Long-running soak and stress across ICMP, UDP/64 identity discovery, the TCP/64 DMA command channel, Telnet, FTP, REST, the optional modem listener, and audio/video UDP streams |
 | `network/listener_soak_test.py` | Short soak (about two minutes) that churns abandoned Telnet/FTP connections while REST stays in use, checking no session slot is lost and REST latency does not degrade |
 | `io/usb/usb_keyboard_repeat_soak_test.py` | Pico 2 W hardware regression soak for #797 / PR #796 USB keyboard repeat |
+| `filemanager/menu_navigation_soak_test.py` | The browser's page-key cursor movement and one-keystroke field clearing, against a listing of files named for their own index |
 
 `network/`'s `*_probe.py` modules, `stream_monitor.py` and
 `connection_runtime.py` are protocol drivers and shared runtime for
@@ -34,6 +35,25 @@ tests/soak/network/connection_test.py --profile stress -H u64
 
 # ~2 min: churns abandoned listener connections and checks REST does not degrade.
 tests/soak/network/listener_soak_test.py -H u64 -p PASSWORD
+
+# ~2 min: page-key jumps and field clears, checked against a known listing.
+tests/soak/filemanager/menu_navigation_soak_test.py -H u2@c64u
+```
+
+## Choosing the injected-key drain
+
+`menu_navigation_soak_test.py` takes `--key-drain`, which overrides
+`pacing.SPLIT_KEY_DRAIN_SECONDS` for one run. That is how the constant is
+chosen: its checks fail on a lost key rather than reporting a slow one, so
+sweeping the rate downwards finds the point where they start failing, and the
+constant is set one step back from it. The rates and what they cost are in
+[`../e2e/doc/key-injection-rate.md`](../e2e/doc/key-injection-rate.md).
+
+```sh
+for rate in 0.03 0.04 0.05 0.06 0.08 0.10; do
+  tests/soak/filemanager/menu_navigation_soak_test.py \
+    -H u2@c64u --iterations 8 --key-drain $rate
+done
 ```
 
 `--help` is authoritative for profiles, probes, protocol surfaces, correctness

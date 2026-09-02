@@ -1,17 +1,27 @@
 # Performance benchmarks
 
 Benchmarks that measure timing or throughput on a real device. The number they
-produce is the result, so they are not part of the release gate and are not
-registered in `run-tests`.
+produce is the result rather than a pass or a fail, so they are registered in
+`run-tests` under the `perf` category and never run as part of an ordinary run.
 
 | File | Scope |
 | --- | --- |
 | `temp_auto_cleanup_perf_test.py` | Managed `/Temp` upload latency and throughput, with the device's Temp Auto Cleanup and Temp Subfolders settings enabled, then disabled |
+| `typing_speed_perf_test.py` | The two ways the tree types into a menu field, compared on speed and on whether the characters survive |
+| `telnet_key_latency_perf_test.py` | What one Telnet keystroke costs, reported separately for a printable character, an arrow key and a lone ESC |
+
+`pacing.SPLIT_KEY_DRAIN_SECONDS` is not established here. Two instruments
+outside this directory already cover it, each with a better oracle than a
+benchmark could have: `tests/e2e/io/c64/key_injection_test.py` measures the
+rate keys arrive at by reading the machine's own memory, and
+`tests/soak/filemanager/menu_navigation_soak_test.py` measures how soon the
+result may be read back by driving a real field and reading it while it is
+still open. `tests/e2e/doc/key-injection-rate.md` carries the numbers.
 
 ## Running
 
-`./run-tests -H <host> --perf` includes this stage. To invoke a benchmark
-directly, use an explicit host.
+`./run-tests --perf <target>` runs this category; `-s <name>` picks one
+benchmark. To invoke a benchmark directly, use an explicit host.
 
 ```sh
 # Inspect the complete CLI without contacting a device.

@@ -389,6 +389,13 @@ SUITES: Sequence[Suite] = (
     Suite("soak", "prg-context-menu-leak",
           "tests/soak/filemanager/prg_context_menu_leak_test.py",
           "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
+    # The browser's two navigation shortcuts, against an oracle that knows
+    # where the cursor should have landed: files named for their own index.
+    # A page-key jump that lands one row out and a field that kept a tail of
+    # its old value both read as some other suite picking the wrong file.
+    Suite("soak", "menu-navigation",
+          "tests/soak/filemanager/menu_navigation_soak_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@ --mode @MODE@"),
     # Drives the Assembly 64 search browser, for the same reason: its query
     # path is not reachable over REST. Skips when the Assembly 64 service is
     # unreachable from the device, since the form cannot open without it.

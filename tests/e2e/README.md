@@ -257,6 +257,19 @@ fails the run.
      `lib/ui_backend.py` send a whole string or run of keys in one request;
      `Browser.select_entry` uses the browser's own quick-seek rather than
      walking the listing.
+   - Sending more keystrokes than the movement needs. On a cartridge target
+     every injected key costs a fixed 100ms crossing the host's keyboard
+     matrix, and that rate belongs to the host's own released firmware, so it
+     cannot be shortened from this tree. What can change is how many keys a
+     movement takes. `Browser.move_rows` spends page keys on the bulk of a
+     jump and single steps on the remainder, in one request, which takes a
+     22-row advance from 22 keys to 12; `Browser.fill_edit_field` empties a
+     string field with one KEY_CLEAR rather than a counted run of BACKSPACE
+     taps. Prefer both over `press_many` for anything in the file browser.
+   - Naming a fixture at length. A generated name is typed into a field one
+     key at a time, so `pm45535.prg` costs a third of what
+     `prgmenu45535.prg` did. Keep names short enough to be cheap and long
+     enough to be unmistakable in a listing.
    - Moving more data than the assertion needs. Size a fixture for what is
      being proved: if only the rendered size has to differ, a few kilobytes
      does that as well as a few hundred.
