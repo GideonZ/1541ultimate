@@ -1072,3 +1072,51 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
             f"cartridge in its port will not own the bus")
     return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} "
             f"{current!r} -> {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
+
+
+# The computer of a cartridge target has drives of its own, and they answer on
+# the same IEC bus and the same bus IDs as the cartridge's. Measured on an
+# Ultimate II+L in a C64 Ultimate with both machines' Drive A enabled on bus 8:
+# every action that goes through the bus failed - Run, Load, Mount & Run, Real
+# Run, and the printer suite's PRG, which timed out waiting for output - while
+# every action that goes through DMA passed. Two devices answering as drive 8
+# is not a defect in either of them.
+DRIVE_STORES = ("Drive A Settings", "Drive B Settings")
+DRIVE_ENABLE_ITEM = "Drive"
+DRIVE_DISABLED = "Disabled"
+
+
+def ensure_host_drives_off(target, password: Optional[str] = None,
+                           timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """Silence the computer's own drives, so the cartridge owns the IEC bus.
+
+    Answers what it did, or None when there was nothing to do: the target is
+    its own computer, or the computer's drives are already off.
+
+    Like the cartridge preference, the change is not saved to flash. A store
+    the computer does not serve is passed over rather than reported, because a
+    computer without drives is a computer with nothing to silence.
+    """
+    handle = targets.resolve(target)
+    if not handle.split:
+        return None
+    computer = UltimateApi(handle.computer, password, timeout)
+    silenced = []
+    for store in DRIVE_STORES:
+        try:
+            current = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        except Failure:
+            continue
+        if current == DRIVE_DISABLED:
+            continue
+        computer.configs.set(store, DRIVE_ENABLE_ITEM, DRIVE_DISABLED)
+        now = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        if now != DRIVE_DISABLED:
+            raise Failure(
+                f"{handle.computer} kept {store}/{DRIVE_ENABLE_ITEM} at "
+                f"{now!r} after it was set to {DRIVE_DISABLED!r}; it will "
+                f"answer on the IEC bus alongside the cartridge")
+        silenced.append(store)
+    if not silenced:
+        return None
+    return f"{handle.computer}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}"
