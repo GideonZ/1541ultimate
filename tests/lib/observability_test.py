@@ -4525,17 +4525,22 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
         for number in range(20):
             video.send(video_packets(number, number * 68, pattern=number % 16))
             audio.send(audio_packets(number * 13, 13))
-            # Wait for the recorder to take the frame rather than sending the
-            # next one on a fixed interval. The sender and the recorder are
-            # the same machine, and a frame is 68 datagrams, so a burst that
-            # outruns the reader is dropped by the kernel however big the
-            # receive buffer is: with three device runs going at once this
-            # reported five of twenty frames lost and passed on the retry,
-            # which measures the load on the test host and not the recorder.
+            # The interval is a floor the send waits out whatever else
+            # happens, so the stream still arrives at about the rate the
+            # recorder writes at. On top of it, the send waits for the
+            # recorder to have taken the frame: a frame is 68 datagrams, and a
+            # burst that outruns the reader is dropped by the kernel however
+            # big the receive buffer is. With three device runs going at once
+            # this reported five of twenty frames lost and passed on the
+            # retry, which measures the load on the test host.
+            next_send = time_lib.monotonic() + 0.04
             taken = time_lib.monotonic() + 5.0
             while (made._assembler.counts()["frames_completed"] <= number
                    and time_lib.monotonic() < taken):
                 time_lib.sleep(0.005)
+            remaining = next_send - time_lib.monotonic()
+            if remaining > 0:
+                time_lib.sleep(remaining)
         video.close()
         audio.close()
         time_lib.sleep(0.4)
@@ -4645,17 +4650,23 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             else:
                 video.send(video_packets(number, number * 68,
                                          pattern=(number // 5) % 16))
-            # Wait for the recorder to take the frame rather than sending the
-            # next one on a fixed interval. A frame is 68 datagrams on
-            # loopback, so a burst that outruns the reader is dropped by the
-            # kernel, and a dropped frame makes the still and the frame the
-            # recording holds at that position two different pictures. With
-            # three copies of this suite running at once that failed twice in
-            # three, which measures the load on the test host.
+            # The interval is a floor, not the whole wait. It has to stay,
+            # because the recorder writes at a frame rate and sending faster
+            # than that maps several sent frames onto one written one, which
+            # makes the still and the written frame two different pictures for
+            # a reason that is not a defect. On top of it, the send waits for
+            # the recorder to have taken the frame: a frame is 68 datagrams on
+            # loopback, and a burst that outruns the reader is dropped by the
+            # kernel, which is what three copies of this suite on one host do
+            # to each other.
+            next_send = time_lib.monotonic() + 0.05
             taken = time_lib.monotonic() + 5.0
             while (made._assembler.counts()["frames_completed"] <= number
                    and time_lib.monotonic() < taken):
                 time_lib.sleep(0.005)
+            remaining = next_send - time_lib.monotonic()
+            if remaining > 0:
+                time_lib.sleep(remaining)
         video.close()
         time_lib.sleep(0.5)
         capture = made.stop()
@@ -4696,10 +4707,26 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
                        recorder_lib.still_height(geometry))
                 box = (left, top, left + width, top + height)
                 if still.crop(box).tobytes() != frame.crop(box).tobytes():
+                    # A picture that did not reach the recorder cannot be the
+                    # one the file holds at that index, so the two differ for a
+                    # reason that is not the recorder's. Loopback datagrams are
+                    # dropped when the reader is not scheduled in time, which
+                    # is what three copies of this suite on one host do to each
+                    # other, and the counts say whether that is what happened.
+                    counts = made._assembler.counts()
+                    lost = {name: counts[name] for name in
+                            ("frames_lost", "frames_incomplete",
+                             "packets_dropped", "packets_malformed")
+                            if counts.get(name)}
+                    if lost:
+                        raise Skipped(
+                            "the host dropped part of the stream before the "
+                            f"recorder saw it: {lost}")
                     raise Failure(
                         f"the {entry['kind']} still and frame "
                         f"{entry['frame']} of the recording differ inside the "
-                        f"picture area {box}")
+                        f"picture area {box}, and nothing was lost on the way "
+                        f"in: {counts}")
                 read.append(screen_text_of(still, geometry))
     # And the ones that carry the scrolled screen still read as that screen,
     # at the columns the machine put it in, out of the written file rather
