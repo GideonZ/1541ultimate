@@ -12,7 +12,7 @@
 //   in your browser to apply changes.
 //
 // EXAMPLES:
-// var SCRIPT_TO_LOAD = "CBMprgStudio.js";   // Load CBM prg Studio mapping
+// var SCRIPT_TO_LOAD = "cbm_prg_studio.js";   // Load CBM prg Studio mapping
 // =========================================================================
 
-var SCRIPT_TO_LOAD = "CBMprgStudio.js";
+var SCRIPT_TO_LOAD = "cbm_prg_studio.js";

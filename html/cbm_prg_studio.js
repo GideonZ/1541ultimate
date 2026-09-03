@@ -51,8 +51,8 @@ BASIC_CODE = `!- Welcome to Ultimate BASIC Editor / Tokenizer
 !- comments.
 !-
 !- CONFIGURATION:
-!- Learn how to load custom profiles in 'SPECIAL.js' file.
-!- Path: /Flash/html/SPECIAL.js
+!- Learn how to load custom profiles in 'special.js' file.
+!- Path: /Flash/html/special.js
 !- ----------------------------------------------------------
 !-
 !- Short guide to using Basic Tokenizer.
