@@ -24,6 +24,7 @@ from PIL import Image
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import menu as menu_lib  # noqa: E402
 import cli  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
@@ -1336,11 +1337,14 @@ def set_config_value(session: RestInputSession, category: str, item: str, value:
 
 
 def open_menu(session: RestInputSession) -> None:
-    """Bring the menu up, unless it is already showing."""
-    if session.menu_screen_open():
-        return
-    session.put("menu_button")
-    wait_for_menu(session, lambda rows, colours: True, "the menu to open")
+    """Bring the menu up, unless it is already showing.
+
+    menu.toggle_menu is the shared press-then-poll: the press is a toggle, so
+    a transport failure is not retried and the state poll answers either way.
+    """
+    if not menu_lib.toggle_menu(lambda: session.put("menu_button"),
+                                session.menu_screen_open, want_open=True):
+        raise Failure("the menu did not open")
 
 
 def soak_special_key_edge_case(session: RestInputSession) -> None:

@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import menu as menu_lib  # noqa: E402
 import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
 
@@ -391,19 +392,18 @@ class MenuDriver:
     def menu_is_open(self):
         return self.s.get_menu_screen() is not None
 
+    # A device settling a failed FTP connection can be slow to render the
+    # menu, and menu_button is a toggle, so a re-press that came too soon
+    # would close the menu it was waiting for. Long waits, few presses.
+    MENU_OPEN_TIMEOUT_SECONDS = 6.0
+    MENU_OPEN_ATTEMPTS = 3
+
     def open_menu(self):
-        # menu_button is a toggle, and a device settling a failed FTP
-        # connection can be slow to render, so this waits long between few
-        # presses rather than re-pressing a menu that is about to appear.
-        for _ in range(3):
-            if self.menu_is_open():
+        for _ in range(self.MENU_OPEN_ATTEMPTS):
+            if menu_lib.toggle_menu(self.s.menu_button, self.menu_is_open,
+                                    want_open=True,
+                                    timeout=self.MENU_OPEN_TIMEOUT_SECONDS):
                 return
-            self.s.menu_button()
-            deadline = time.monotonic() + 6.0
-            while time.monotonic() < deadline:
-                if self.menu_is_open():
-                    return
-                time.sleep(MENU_SETTLE_SECONDS)
         raise Failure("menu did not open after repeated menu_button")
 
     def close_menu_from_anywhere(self):
