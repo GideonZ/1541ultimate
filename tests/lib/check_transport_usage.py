@@ -52,13 +52,27 @@ EXEMPT = {
     # rest.may_retry, which the check below verifies.
     os.path.join(TESTS, "e2e", "filesystem", "ftp_client_test.py"):
         "paces its own retries around the connection pool; uses rest.may_retry",
+    # Drives FTP itself to measure how the server behaves: it checks the 220
+    # and 230 codes by hand, quits after the greeting without logging in,
+    # abandons a session after login, and closes without QUIT. tests/lib/ftp.py
+    # logs in and raises on a bad code, so it cannot express any of that. The
+    # same reason http_probe.py is exempt above.
+    os.path.join(TESTS, "soak", "network", "ftp_probe.py"):
+        "drives FTP itself to measure how the server behaves under stress",
     # The one place the policy lives.
     LIBRARY: "defines the policy",
+    os.path.join(TESTS, "lib", "ftp.py"): "is the FTP transport",
 }
 
 BANNED = {
     ("urllib", "request", "urlopen"): "urllib.request.urlopen",
     ("http", "client", "HTTPConnection"): "http.client.HTTPConnection",
+    # The same rule for FTP, which had drifted the way HTTP did before this
+    # check existed: twelve private sessions, each with its own timeout (none
+    # at all in one soak) and its own login. The passive/active retry the
+    # health check gained reached none of them, so a device that refuses one
+    # mode failed them with a raw ftplib.error_perm instead of a named message.
+    ("ftplib", "FTP"): "ftplib.FTP",
 }
 
 
@@ -236,12 +250,22 @@ def main():
                 resets.append((os.path.relpath(path, ROOT), line, what))
 
     if problems:
-        suite_fail("check_transport_usage",
-                   f"{len(problems)} direct HTTP call(s) bypass tests/lib/rest.py")
+        ftp = [one for one in problems if "ftplib" in one[2]]
+        http = [one for one in problems if one not in ftp]
+        parts = []
+        if http:
+            parts.append(f"{len(http)} direct HTTP call(s) bypass tests/lib/rest.py")
+        if ftp:
+            parts.append(f"{len(ftp)} direct FTP session(s) bypass tests/lib/ftp.py")
+        suite_fail("check_transport_usage", "; ".join(parts))
         for path, line, what in problems:
             detail(f"{path}:{line} calls {what}")
-        detail("Use rest.RestClient, rest.retrying_urlopen or "
-               "rest.retrying_http_request; they share rest.may_retry.")
+        if http:
+            detail("For HTTP use rest.RestClient, rest.retrying_urlopen or "
+                   "rest.retrying_http_request; they share rest.may_retry.")
+        if ftp:
+            detail("For FTP use ftp.connect or ftp.session; they carry the "
+                   "login, the timeout and the passive/active choice.")
         return 1
 
     if resets:
