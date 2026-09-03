@@ -32,8 +32,10 @@ import json
 import os
 import sys
 import time
+import threading
 from contextlib import contextmanager
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass, field
 
 # One colour set for the whole tree, so that a suite run on its own and the same
 # suite run under a harness produce the same log, and harness lines and suite
@@ -164,9 +166,8 @@ def set_colour(enabled: bool) -> None:
 # the harness knows it by; run-tests does this for each suite it starts. A
 # suite started directly, which is how the perf and soak suites are normally
 # run, falls back to its own script name.
-SUITE_NAME = os.environ.get("E2E_SUITE") or os.path.splitext(
+_SUITE_NAME = os.environ.get("E2E_SUITE") or os.path.splitext(
     os.path.basename(sys.argv[0] or "test"))[0]
-JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 
 # Which device this process is testing, and which go at it this is. A harness
 # exports both beside E2E_SUITE, so every record joins to a target and to an
@@ -177,28 +178,87 @@ JSONL_PATH = os.environ.get("E2E_JSONL") or ""
 # The attempt matters because a retried suite repeats its check indices in one
 # file, which run_one_attempt truncates only on the first attempt. Two records
 # carrying index 26 are told apart by this field and by nothing else.
-TARGET_NAME = os.environ.get("E2E_TARGET") or ""
 _raw_attempt = os.environ.get("E2E_ATTEMPT") or ""
-ATTEMPT: int | None = int(_raw_attempt) if _raw_attempt.isdigit() else None
 
-_count = 0
-_depth = 0
-_last_label = ""
-# Detail lines produced while a check line is still open.
-_pending: list[str] = []
-# Whether those lines are being printed as they come rather than held back.
-# Set when a heading is printed under a check line that never got its verdict;
-# see _release_details.
-_details_live = False
-_check_started = 0.0
-# Whether a check or step line is open and still owes a verdict. A body that
-# reports its own verdict, `check_skip` inside a `with check(...)` being the
-# common one, closes the line itself, and the block's own closing call must
-# then do nothing rather than print a second line and write a second record.
-_line_open = False
-_suite_started = time.monotonic()
-# The open scenario: its title, start time, check count and worst verdict.
-_scenario: dict | None = None
+
+@dataclass
+class Reporter:
+    """Everything one reporting process is part-way through saying.
+
+    This was nine `global` statements over a dozen module variables: the check
+    count, the nesting depth, the open line, the held-back detail lines, the
+    open scenario, the JSONL path and the target name. The convention that kept
+    it working was that only the main thread reports, written in a docstring
+    and enforced by nothing, so a case calling `detail()` from a worker printed
+    under whichever check happened to be open.
+
+    The state is here instead, the free functions below delegate to `_default`,
+    and `reset()` replaces that instance rather than reassigning a dozen names.
+    `_lock` guards the console-line state, so two threads cannot interleave a
+    check line and its verdict.
+    """
+
+    # Which suite is reporting, which device it is aimed at, and which go this
+    # is. A harness exports all three beside E2E_SUITE, so every record joins
+    # to a target and an attempt without a correlation identifier of its own. A
+    # suite started by hand has neither target nor attempt, and records neither
+    # rather than a guessed value: a run's target is what the harness aimed it
+    # at, and a suite has no way to know.
+    #
+    # The attempt matters because a retried suite repeats its check indices in
+    # one file, which run_one_attempt truncates only on the first attempt. Two
+    # records carrying index 26 are told apart by this field and nothing else.
+    suite_name: str = _SUITE_NAME
+    jsonl_path: str = os.environ.get("E2E_JSONL") or ""
+    target_name: str = os.environ.get("E2E_TARGET") or ""
+    attempt: int | None = int(_raw_attempt) if _raw_attempt.isdigit() else None
+
+    count: int = 0
+    depth: int = 0
+    last_label: str = ""
+    # Detail lines produced while a check line is still open.
+    pending: list[str] = field(default_factory=list)
+    # Whether those lines are being printed as they come rather than held back.
+    # Set when a heading is printed under a check line that never got its
+    # verdict; see _release_details.
+    details_live: bool = False
+    check_started: float = 0.0
+    # Whether a check or step line is open and still owes a verdict. A body
+    # that reports its own verdict, `check_skip` inside a `with check(...)`
+    # being the common one, closes the line itself, and the block's own closing
+    # call must then do nothing rather than print a second line and write a
+    # second record.
+    line_open: bool = False
+    suite_started: float = field(default_factory=time.monotonic)
+    # The open scenario: its title, start time, check count and worst verdict.
+    scenario: dict | None = None
+    # Guards the console-line state above. Held only across the few statements
+    # that open or close a line, never across a caller's own work.
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    # Which thread opened the line that is currently open. One line is one
+    # check, and `depth` counts nesting rather than concurrency, so two threads
+    # reporting at once do not produce two lines: they produce one line with
+    # the other thread's verdict on it. The convention has always been that
+    # only the thread that opened a line writes to it; this is what says so.
+    owner: int | None = None
+
+
+_default = Reporter()
+
+
+# The names other modules read straight off this one - interactions.py,
+# screens.py, rest.py and the self-tests all do - now answer from the live
+# Reporter. PEP 562: this runs only for a name the module does not define, so
+# nothing else changes.
+_FORWARDED = {"SUITE_NAME": "suite_name", "JSONL_PATH": "jsonl_path",
+              "TARGET_NAME": "target_name", "ATTEMPT": "attempt"}
+
+
+def __getattr__(name: str):
+    field_name = _FORWARDED.get(name)
+    if field_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(_default, field_name)
 
 
 class Failure(RuntimeError):
@@ -283,17 +343,17 @@ def _record(**fields) -> None:
     separate processes writing one file, and a single short line under O_APPEND
     is not interleaved with another.
     """
-    if not JSONL_PATH:
+    if not _default.jsonl_path:
         return
     fields.setdefault("time", time.time())
-    fields.setdefault("suite", SUITE_NAME)
-    if TARGET_NAME:
-        fields.setdefault("target", TARGET_NAME)
-    if ATTEMPT is not None:
-        fields.setdefault("attempt", ATTEMPT)
+    fields.setdefault("suite", _default.suite_name)
+    if _default.target_name:
+        fields.setdefault("target", _default.target_name)
+    if _default.attempt is not None:
+        fields.setdefault("attempt", _default.attempt)
     try:
         line = json.dumps(_masked(fields), default=repr)
-        with open(JSONL_PATH, "a", encoding="utf-8") as handle:
+        with open(_default.jsonl_path, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
     except (OSError, TypeError, ValueError):
         # Reporting must never be the reason a run fails, and a caller that
@@ -305,7 +365,7 @@ def _record(**fields) -> None:
 
 def check_count() -> int:
     """How many checks have been reported, for a suite's closing line."""
-    return _count
+    return _default.count
 
 
 def current_check() -> int | None:
@@ -320,7 +380,7 @@ def current_check() -> int | None:
     without numbering it, so a zero there would name a check that does not
     exist and several steps would share it.
     """
-    return _count if _depth and _count else None
+    return _default.count if _default.depth and _default.count else None
 
 
 def current_scenario() -> str:
@@ -329,26 +389,48 @@ def current_scenario() -> str:
     For a record written by something other than the scenario itself, so that
     a device interaction joins to the group of checks it happened inside.
     """
-    return str(_scenario["title"]) if _scenario else ""
+    return str(_default.scenario["title"]) if _default.scenario else ""
 
 
 def last_label() -> str:
     """The label of the most recently started check, for crash reporting."""
-    return _last_label
+    return _default.last_label
+
+
+def _require_owner(what: str) -> None:
+    """Refuse a write to a line another thread opened.
+
+    A pool that reports from its workers used to interleave silently: the
+    second thread's `check_start` saw depth 1 and returned without printing,
+    and its `check_ok` closed the first thread's line. The rule is that a
+    check is opened, detailed and closed on one thread, and a harness running
+    cases concurrently reports them from the main thread once each future
+    resolves. See tests/lib/observability_test.py's `run_cases`.
+    """
+    owner = _default.owner
+    if owner is not None and owner != threading.get_ident():
+        raise Failure(
+            f"{what} from thread {threading.get_ident()} while thread {owner} "
+            f"has the line for {_default.last_label!r} open. A check is "
+            "opened, detailed and closed on one thread; report a case's "
+            "result from the thread that collects it.")
 
 
 def check_start(label: str) -> None:
     """Open a check line as `[NN] label ... `, leaving the verdict for later."""
-    global _count, _depth, _last_label, _check_started, _line_open, _details_live
-    _depth += 1
-    if _depth > 1:
-        return
-    _count += 1
-    _last_label = label
-    _check_started = time.monotonic()
-    _line_open = True
-    _details_live = False
-    print(f"[{_count:02d}] {label} ... ", end="", flush=True)
+    with _default.lock:
+        _require_owner(f"check_start({label!r})")
+        if _default.depth == 0:
+            _default.owner = threading.get_ident()
+        _default.depth += 1
+        if _default.depth > 1:
+            return
+        _default.count += 1
+        _default.last_label = label
+        _default.check_started = time.monotonic()
+        _default.line_open = True
+        _default.details_live = False
+        print(f"[{_default.count:02d}] {label} ... ", end="", flush=True)
 
 
 def step_start(label: str) -> None:
@@ -357,55 +439,60 @@ def step_start(label: str) -> None:
     A harness's precondition and teardown gates run around the suites rather
     than inside one, so numbering them would interleave two counters.
     """
-    global _depth, _check_started, _last_label, _line_open
-    _depth += 1
-    if _depth > 1:
-        return
-    _last_label = label
-    _check_started = time.monotonic()
-    _line_open = True
-    print(f"{label} ... ", end="", flush=True)
+    with _default.lock:
+        _require_owner(f"step_start({label!r})")
+        if _default.depth == 0:
+            _default.owner = threading.get_ident()
+        _default.depth += 1
+        if _default.depth > 1:
+            return
+        _default.last_label = label
+        _default.check_started = time.monotonic()
+        _default.line_open = True
+        print(f"{label} ... ", end="", flush=True)
 
 
 def _close(verdict: str, extra: str = "", *, elapsed: float | None = None) -> None:
-    global _depth, _line_open, _details_live
-    _depth = max(0, _depth - 1)
-    if _depth:
-        return
-    _details_live = False
-    if not _line_open:
-        # Already answered by the block itself. Closing again would print a
-        # second verdict for one check and record a second, contradictory one:
-        # a skipped check was written as SKIP and then as OK.
-        return
-    _line_open = False
-    # A caller that measured its own check's duration (a case run on a worker
-    # thread, reported afterwards on the main thread once the future resolves)
-    # passes it explicitly, because time.monotonic() - _check_started would
-    # otherwise measure from this call's check_start rather than from when the
-    # work actually started.
-    if elapsed is None:
-        elapsed = time.monotonic() - _check_started
-    parts = [extra] if extra else []
-    duration = format_duration(elapsed)
-    if elapsed >= SLOW_CHECK_SECONDS:
-        # The word as well as the colour: a captured log is read with less or
-        # grep, where colour is either absent or the reason the file is taken
-        # for a binary one, and the point of flagging a slow check is lost if
-        # it only survives on a live terminal.
-        duration = colour(duration + " SLOW", YELLOW)
-    parts.append(duration)
-    print(f"{colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})", flush=True)
-    if _pending:
-        _emit_detail(_pending)
-        _pending.clear()
-    if _scenario is not None:
-        _scenario["checks"] += 1
-        if _SEVERITY.index(verdict) < _SEVERITY.index(_scenario["verdict"]):
-            _scenario["verdict"] = verdict
-    _record(kind="check", index=_count, label=_last_label, verdict=verdict,
-            extra=extra, seconds=round(elapsed, 4),
-            scenario=_scenario["title"] if _scenario else None)
+    with _default.lock:
+        _require_owner(f"{verdict} for {_default.last_label!r}")
+        _default.depth = max(0, _default.depth - 1)
+        if _default.depth:
+            return
+        _default.owner = None
+        _default.details_live = False
+        if not _default.line_open:
+            # Already answered by the block itself. Closing again would print a
+            # second verdict for one check and record a second, contradictory one:
+            # a skipped check was written as SKIP and then as OK.
+            return
+        _default.line_open = False
+        # A caller that measured its own check's duration (a case run on a worker
+        # thread, reported afterwards on the main thread once the future resolves)
+        # passes it explicitly, because time.monotonic() - _default.check_started would
+        # otherwise measure from this call's check_start rather than from when the
+        # work actually started.
+        if elapsed is None:
+            elapsed = time.monotonic() - _default.check_started
+        parts = [extra] if extra else []
+        duration = format_duration(elapsed)
+        if elapsed >= SLOW_CHECK_SECONDS:
+            # The word as well as the colour: a captured log is read with less or
+            # grep, where colour is either absent or the reason the file is taken
+            # for a binary one, and the point of flagging a slow check is lost if
+            # it only survives on a live terminal.
+            duration = colour(duration + " SLOW", YELLOW)
+        parts.append(duration)
+        print(f"{colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})", flush=True)
+        if _default.pending:
+            _emit_detail(_default.pending)
+            _default.pending.clear()
+        if _default.scenario is not None:
+            _default.scenario["checks"] += 1
+            if _SEVERITY.index(verdict) < _SEVERITY.index(_default.scenario["verdict"]):
+                _default.scenario["verdict"] = verdict
+        _record(kind="check", index=_default.count, label=_default.last_label, verdict=verdict,
+                extra=extra, seconds=round(elapsed, 4),
+                scenario=_default.scenario["title"] if _default.scenario else None)
 
 
 def check_ok(extra: str = "", *, elapsed: float | None = None) -> None:
@@ -451,10 +538,12 @@ def detail(text: str) -> None:
     verdict onto the next line, which is the one-line rule broken from the other
     side: not a nested check, but a caller narrating mid-check.
     """
-    if _depth and not _details_live:
-        _pending.extend(str(text).splitlines() or [""])
-        return
-    _emit_detail(str(text).splitlines() or [""])
+    with _default.lock:
+        _require_owner("detail()")
+        if _default.depth and not _default.details_live:
+            _default.pending.extend(str(text).splitlines() or [""])
+            return
+        _emit_detail(str(text).splitlines() or [""])
 
 
 def _emit_detail(lines: Iterable[str]) -> None:
@@ -506,23 +595,21 @@ def _release_details() -> None:
     report its own verdict. See runner_policy_test, which runs `run_targets`
     inside a `check` block.
     """
-    global _details_live
-    if not _line_open:
+    if not _default.line_open:
         return
-    _details_live = True
+    _default.details_live = True
     print(flush=True)              # end the check line the verdict never closed
-    if _pending:
-        _emit_detail(_pending)
-        _pending.clear()
+    if _default.pending:
+        _emit_detail(_default.pending)
+        _default.pending.clear()
 
 
 def _close_scenario() -> None:
     """Print the open scenario's own verdict, so a group can be read at a glance."""
-    global _scenario
     _release_details()
-    if _scenario is None:
+    if _default.scenario is None:
         return
-    scenario, _scenario = _scenario, None
+    scenario, _default.scenario = _default.scenario, None
     if not scenario["checks"]:
         # A heading that grouped no checks is a heading, not a scenario, and a
         # verdict on nothing is noise.
@@ -543,9 +630,8 @@ def section(title: str) -> None:
     the next begins without counting lines.
     """
     _close_scenario()
-    global _scenario
     print(f"\n{colour('--- ' + title, BLUE)}", flush=True)
-    _scenario = {"title": title, "started": time.monotonic(), "checks": 0, "verdict": OK}
+    _default.scenario = {"title": title, "started": time.monotonic(), "checks": 0, "verdict": OK}
 
 
 def banner(title: str) -> None:
@@ -572,14 +658,14 @@ def _suite_line(name: str, verdict: str, extra: str, seconds: float | None,
     # process, so this process's own check counter describes nothing and is left
     # out. A suite closing its own line passes no seconds and gets the count.
     own_closing_line = seconds is None
-    elapsed = time.monotonic() - _suite_started if seconds is None else seconds
+    elapsed = time.monotonic() - _default.suite_started if seconds is None else seconds
     parts = [part for part in
-             (extra or (f"{_count} checks" if own_closing_line else ""),
+             (extra or (f"{_default.count} checks" if own_closing_line else ""),
               format_duration(elapsed)) if part]
     print(f"{name}: {colour(verdict, _VERDICT_COLOUR[verdict])} ({', '.join(parts)})",
           flush=True)
     _record(kind="suite", name=name, verdict=verdict, note=extra,
-            checks=_count, seconds=round(elapsed, 4), **(fields or {}))
+            checks=_default.count, seconds=round(elapsed, 4), **(fields or {}))
 
 
 def suite_ok(name: str, extra: str = "", seconds: float | None = None,
@@ -714,8 +800,7 @@ def set_jsonl_path(path: str) -> None:
     import. A harness parses its own arguments after importing this module, so
     it needs a way to say the same thing afterwards.
     """
-    global JSONL_PATH
-    JSONL_PATH = path
+    _default.jsonl_path = path
 
 
 def set_target(token: str) -> None:
@@ -723,10 +808,9 @@ def set_target(token: str) -> None:
 
     A harness resolves its target after importing this module, which is read
     at import for the suites it starts, so it says the same thing about itself
-    here. See TARGET_NAME.
+    here. See _default.target_name.
     """
-    global TARGET_NAME
-    TARGET_NAME = token
+    _default.target_name = token
 
 
 def run_result(verdict: str, suites: int | None = None,
@@ -848,14 +932,14 @@ def format_exception(exc: BaseException) -> str:
 
 def reset(count_from: int | None = None) -> None:
     """Start numbering again. Only for a harness that runs suites in-process."""
-    global _count, _depth, _last_label, _scenario, _suite_started, _details_live
-    _count = 0 if count_from is None else count_from
-    _depth = 0
-    _details_live = False
-    _last_label = ""
-    _scenario = None
-    _suite_started = time.monotonic()
-    _pending.clear()
+    _default.count = 0 if count_from is None else count_from
+    _default.depth = 0
+    _default.owner = None
+    _default.details_live = False
+    _default.last_label = ""
+    _default.scenario = None
+    _default.suite_started = time.monotonic()
+    _default.pending.clear()
 
 # written by a test, removed immediately
 

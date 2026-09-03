@@ -36,9 +36,16 @@ ignore = [
     # XC-1 removes the bootstrap and these comments together.
     "RUF100",
 
+    # PLW0603: report.py's dozen module variables are a Reporter object now
+    # (LIB-2), so the nine `global` statements there are one, for the colour
+    # flag. What is left across the tree is eighteen single well-scoped
+    # variables - a log path, two memo caches, a counter, four cleanup-
+    # registration flags - where a holder object would be churn rather than a
+    # clarification.
+    "PLW0603",
+
     # Each of these is removed by a named finding in
     # doc/research/tests-review/tests-review.md. Drop the entry with the fix.
-    "PLW0603", # global: report.py's module state (LIB-2)
     "SIM105",  # contextlib.suppress: 15 of these become best_effort (SUITE-1)
     "B905",    # zip strict: set where the row counts must match (E2ELIB-2)
 

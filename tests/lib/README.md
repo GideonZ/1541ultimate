@@ -10,7 +10,7 @@ repository-root `run-tests` all use it.
 | `cli.py` | `-H`, `-p`, `-t` and a duration, defined once |
 | `leak.py` | The steady-state heap slope the soak suites measure |
 | `selftest.py` | The assertions the device-free self-tests share |
-| `report.py` | Console and JSONL reporting for every suite and for the runner |
+| `report.py` | Console and JSONL reporting for every suite and for the runner, held in one `Reporter` |
 | `rest.py` | HTTP transport for the device: password header, JSON encoding, retry policy |
 | `api.py` | The device's REST API as typed calls, built on `rest.py` |
 | `ftp.py` | FTP sessions, listings, transfers, deletion and purging |
@@ -81,6 +81,20 @@ that is right as it stands, and it carries its reason beside the directive.
 
 The MicroPython under `tests/soak/io/usb/pico/` is excluded: it runs on the
 microcontroller rather than on the host, and keeps its own compact style.
+
+## Reporting from more than one thread
+
+`report.py`'s state is one `Reporter`, and the free functions delegate to a
+module-level `_default`. A check is opened, detailed and closed on one thread:
+`depth` counts nesting, not concurrency, so a second thread's `check_start`
+would return without printing and its `check_ok` would close the first
+thread's line. A write from another thread while a line is open is refused
+with a message naming the rule, rather than landing under the wrong check.
+
+A harness that runs cases concurrently reports each one from the thread that
+collects it; `observability_test.py`'s `run_cases` does that. A caller that
+genuinely needs its own numbering swaps in a `Reporter()` of its own, which is
+what the case covering this does.
 
 ## The registry check
 

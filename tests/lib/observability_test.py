@@ -40,6 +40,7 @@ import argparse
 import concurrent.futures
 import contextlib
 import fcntl
+import io
 import json
 import os
 import re
@@ -415,6 +416,86 @@ def a_reset_part_way_through_a_body_is_not_retried() -> str:
     expect("sent: a PUT may not be repeated", rest_lib.may_retry("PUT", True), False)
     expect("sent: a GET may", rest_lib.may_retry("GET", True), True)
     return f"1 attempt after a reset, {elapsed:.1f}s of retries after a refusal"
+
+
+@case(1, exclusive=True)
+def the_reporter_refuses_a_second_thread_writing_to_a_line() -> str:
+    """One Reporter, and a line only the thread that opened it may write to.
+
+    report.py used to be nine `global` statements over a dozen module
+    variables, and the rule that kept this file's own case pool working was a
+    docstring saying only the main thread reports. Nothing enforced it: a case
+    calling report.detail() from a worker printed under whichever check
+    happened to be open, and its check_ok closed another check's line, because
+    `depth` counts nesting rather than concurrency.
+
+    The state is one object now, a lock covers opening a line, closing it and
+    queueing a detail under it, and a write from another thread is refused
+    with a message naming the rule.
+    """
+    report_module = sys.modules["report"]
+
+    expect("one instance holds the state",
+           isinstance(report_module._default, report_module.Reporter), True)
+    # The names other modules read off this one - interactions.py, screens.py,
+    # rest.py - still answer, from the Reporter.
+    expect("SUITE_NAME still reads", report_module.SUITE_NAME,
+           report_module._default.suite_name)
+    expect("JSONL_PATH still reads", report_module.JSONL_PATH,
+           report_module._default.jsonl_path)
+    unknown = "NOT_A_NAME"  # not a literal, so this reads as a lookup
+    try:
+        getattr(report_module, unknown)
+    except AttributeError as exc:
+        expect("an unknown name is still an AttributeError",
+               unknown in str(exc), True)
+    else:
+        raise Failure("an unknown module attribute did not raise")
+
+    captured = io.StringIO()
+    refused: list[str] = []
+
+    def write_from_a_worker(action) -> None:
+        try:
+            action()
+        except Failure as exc:
+            refused.append(str(exc))
+
+    # A Reporter of its own, because this case runs inside a check of the
+    # harness's and would otherwise be opening a nested line rather than a
+    # line of its own. That the state can be swapped like this is the point of
+    # it being one object.
+    outer = report_module._default
+    report_module._default = report_module.Reporter()
+    try:
+        with contextlib.redirect_stdout(captured):
+            report_module.check_start("a check owned by this thread")
+            for action in (lambda: report_module.detail("from a worker"),
+                           lambda: report_module.check_start("a worker's check"),
+                           report_module.check_ok):
+                thread = threading.Thread(target=write_from_a_worker,
+                                          args=(action,))
+                thread.start()
+                thread.join()
+            report_module.check_ok("still ours")
+            owner_after = report_module._default.owner
+    finally:
+        report_module._default = outer
+
+    expect("every write from another thread was refused", len(refused), 3)
+    for message in refused:
+        if "one thread" not in message:
+            raise Failure(f"the message does not name the rule: {message!r}")
+    line = captured.getvalue().strip()
+    expect("the line is the one this thread opened and closed",
+           line.count("still ours"), 1)
+    if "a worker's check" in line:
+        raise Failure(f"a worker's label reached the console: {line!r}")
+
+    # The owner is cleared once the line closes, so the next check is free to
+    # be opened by whichever thread collects it.
+    expect("the line is released", owner_after, None)
+    return "3 writes refused, the owner's line intact"
 
 
 @case(1, "OBS-14.2")
