@@ -49,6 +49,14 @@ import sys
 import tempfile
 import threading
 import time
+# Imported here for its side effect, not for a name. dataclasses reads
+# sys.modules.get('typing') and then touches typing.ClassVar, so a worker
+# applying @dataclass while another worker is part-way through the first
+# `import typing` (tests/lib/wait.py has the only one left on the pure
+# tier's path) finds the module present but that name not yet bound, and
+# fails with "partially initialized module 'typing'". Loading it before
+# the pool starts leaves no first import for two threads to race on.
+import typing  # noqa: F401
 from contextlib import contextmanager
 from dataclasses import dataclass
 from collections.abc import Callable, Sequence
