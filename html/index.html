@@ -41,14 +41,16 @@ $(document).ready(async function () {
             }
             $("#bannertitle").html(product + " HTTP Server");
 
-            // show power button for supported boards only
-            const ProductsWithPwrCtrl = ["Ultimate 64-II", "C64 Ultimate"];
+            // Power off reaches hardware on the Ultimate 64 family only; a
+            // cartridge answers 501. These are the names /v1/info reports for
+            // that family, from product_name[] in software/system/product.cc.
+            const ProductsWithPwrCtrl = ["Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II"];
             if (ProductsWithPwrCtrl.includes(product))
                 $("#menu-power").show();
 
             // show firmware version in side panel
             if (ultimateInfo.firmware_version)
-                $("#firmware-version").html("firmware v"+ultimateInfo.firmware_version);
+                $("#firmware-version").text("firmware v" + ultimateInfo.firmware_version);
 
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
@@ -229,43 +231,45 @@ $(document).ready(async function () {
         }
     }
 
-    // PRG/CRT(/SID) loader
-    async function submitRunner(file, drive) {
-        if (drive === undefined) drive = "a";
-        if (file === undefined) file = $('#runnerfile')[0].files[0];
-        let extension = getFileExtension(file.name);
-        let params = {};
-        $("#runmsg").hide();
+    // PRG/CRT/SID loader, and disk-image mounter
+    const DISK_IMAGE_TYPES = ["D64", "G64", "D71", "G71", "D81"];
+    // This page offers no drive selection, so disk images go to drive A.
+    const MOUNT_DRIVE = "a";
 
+    async function submitRunner() {
+        let file = $('#runnerfile')[0].files[0];
+        let extension = getFileExtension(file.name);
+        let mounting = DISK_IMAGE_TYPES.includes(extension);
+        let params = {};
         let route = null;
-        if (extension === "PRG")
+        $("#runmsg").hide();
+        $("#runok").hide();
+
+        if (mounting) {
+            route = `/v1/drives/${MOUNT_DRIVE}:mount`;
+            // The upload carries no file name, so the device cannot take the
+            // image type from an extension and has to be told it here.
+            params = {"type": extension.toLowerCase()};
+        }
+        else if (extension === "PRG")
             route = "/v1/runners:run_prg";
         else if (extension === "CRT")
             route = "/v1/runners:run_crt";
         else if (extension === "SID")
             route = "/v1/runners:sidplay";
-        else if (extension === "D64") {
-            route = `/v1/drives/${drive}:mount`;
-            params = {"type":"d64"};
-        }
-        else if (extension === "D71") {
-            route = `/v1/drives/${drive}:mount`;
-            params = {"type":"d71"};
-        }
-        else if (extension === "D81") {
-            route = `/v1/drives/${drive}:mount`;
-            params = {"type":"d81"};
-        }
         else
             alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
 
-        if (route !== null) {
-            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
-            if(status_code !== 200)
-                $("#runmsg").show();
-            return status_code == 200;
-        }
-        return false;
+        if (route === null)
+            return false;
+
+        let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
+        if (status_code !== 200)
+            $("#runmsg").show();
+        else if (mounting)
+            // A mounted disk changes nothing on screen, unlike a program that runs.
+            $("#runok").show();
+        return status_code === 200;
     }
 
     // BASIC/tokenizer page event handlers
@@ -740,9 +744,7 @@ $(document).ready(async function () {
         },
         m: async function(start, end) {
 
-            if (typeof start !== 'undefined')
-                start = start.toString();
-            else
+            if (typeof start === 'undefined')
                 start = memViewAddress.toString(16); // no start given: continue from the end of previous range
 
             if (isHexadecimal(start)) {
@@ -842,9 +844,7 @@ $(document).ready(async function () {
         },
         d: async function(start, end) {
 
-            if (typeof start !== 'undefined')
-                start = start.toString();
-            else
+            if (typeof start === 'undefined')
                 start = disViewAddress.toString(16); // no start given: continue from the end of previous range
 
             if(isHexadecimal(start)) {
@@ -853,7 +853,7 @@ $(document).ready(async function () {
                     end = start+disViewRange; // no end given: use default range
                 else
                 {
-                    end = hexToInt(end.toString());
+                    end = hexToInt(end);
                     if (end > start)
                         disViewRange = end-start; // remember current range as new default
                 }
@@ -884,6 +884,8 @@ $(document).ready(async function () {
 
     }, {
         checkArity: false,
+        // Hand the commands their arguments as typed. Parsed, a hex address
+        // such as 1e00 arrives as the number 100, read as scientific notation.
         processArguments: false,
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
@@ -1565,6 +1567,15 @@ function disassembler(startInt, byteArray) {
         color: white;
         width: 400px;
     }
+    #runok {
+        flex-grow: 1;
+        margin-top: 20px;
+        padding: 20px;
+        display:none;
+        background-color: #4caf50;
+        color: white;
+        width: 400px;
+    }
     #uppercaseBASIC {
         margin-left: 20px;
     }
@@ -1612,6 +1623,8 @@ function disassembler(startInt, byteArray) {
     --size: 1.4;
     --background: black;
     --color: rgba(160, 182, 247, 0.877);
+    /* Opaque: the title sits over the bar header::before draws. */
+    --title-background: rgb(160, 182, 247);
     border: 2px solid var(--color);
     background: var(--background);
     width: 800px;
@@ -1628,18 +1641,19 @@ function disassembler(startInt, byteArray) {
     width: 100%;
     height: calc(100% - 28px);
 }
-.trinity-dialog, .trinity-dialog header .title {
+.trinity-dialog {
     position: relative;
     left: 420px;
     top: 200px;
     transform: translate(-50%, -50%);
 }
 .trinity-dialog header .title {
-    margin-top: -2px;
-    background: rgb(160, 182, 247);
-    padding: 1px 10px;
+    position: relative;
     top: -6px;
     left: -2px;
+    margin-top: -2px;
+    background: var(--title-background);
+    padding: 1px 10px;
 }
 .trinity-dialog header {
     background: var(--color);
@@ -1674,6 +1688,12 @@ function disassembler(startInt, byteArray) {
     width: 14px;
     height: 14px;
     border: 2px solid var(--background);
+}
+.trinity-dialog header li.title-item {
+    width: auto;
+    height: auto;
+    margin: 0;
+    border: none;
 }
 
 a.darkmode {
@@ -1731,7 +1751,7 @@ div#left-nav a.darkmode {
             <ul>
                 <li><a id="showwelcome" href="#">Home</a></li>
                 <li><a id="showsidplay" href="#">SID Player</a></li>
-                <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
+                <li><a id="showrunner" href="#">Run PRG / CRT / Disk</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
             </ul>
@@ -1792,22 +1812,23 @@ div#left-nav a.darkmode {
         </div>
 
         <div id="runner" class="page">
-            <h1>PRG / CRT Executor</h1>
-            <p>Remotely load a program or cartridge to your Ultimate!</p>
+            <h1>PRG / CRT / Disk Loader</h1>
+            <p>Remotely run a program or cartridge on your Ultimate, or mount a disk image in drive A.</p>
 
             <div id="runnerdropzone" class="dropzone" title="Drop file to be loaded here">
-                Drag & drop PRG or CRT file here
+                Drag & drop PRG, CRT, SID or disk image file here
                 <br />
                 <p style="font-size: 4em">&#x21EA;</p>
                 <br />
                 or press button to browse
                 <br /><br />
-                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.sid,.d64,.d71,.d81,.PRG,.CRT,.SID,.D64,.D71,.D81" title="Select PRG/CRT/SID file to be run">
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.sid,.d64,.g64,.d71,.g71,.d81,.PRG,.CRT,.SID,.D64,.G64,.D71,.G71,.D81" title="Select a PRG/CRT/SID file to run, or a D64/G64/D71/G71/D81 image to mount">
                 <br /><br />
-                <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
+                <input type="button" id="runnersubmit" value="Load Again!" title="Upload the selected file again: RUN a program, or mount a disk image">
             </div>
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
+            <div id="runok">The disk image has been mounted in drive A.</div>
         </div>
 
         <div id="livemon" class="page">
@@ -1817,7 +1838,7 @@ div#left-nav a.darkmode {
                 <header>
                     <ul>
                         <li><a href="#"></a></li>
-                        <span class="title">Ultimate 64 Monitor</span>
+                        <li class="title-item"><span class="title">Ultimate 64 Monitor</span></li>
                     </ul>
                 </header>
                 <div class="body"></div>
