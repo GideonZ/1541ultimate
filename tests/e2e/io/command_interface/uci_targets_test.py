@@ -9,7 +9,9 @@ every target until the machine was power-cycled.
 
 It also covers the transport state machine, the control target's rejection paths,
 and reply framing on the SoftIEC target, whose single-part replies were announced
-as "Data More" and left a client waiting for a block that is never sent.
+as "Data More" and left a client waiting for a block that is never sent. On
+Ultimate 64 hardware it verifies the runtime RGB palette commands and restores
+the palette before exiting.
 
 Every expected value here was taken from the firmware and confirmed against a
 real device. The manuals under doc/ ("Ultimate Command Interface - Register API",
@@ -110,6 +112,10 @@ CTRL_CMD_IDENTIFY = 0x01
 CTRL_CMD_LOAD_REU = 0x08
 CTRL_CMD_SAVE_REU = 0x09
 CTRL_CMD_GET_HWINFO = 0x28
+CTRL_CMD_GET_PALETTE = 0x51
+CTRL_CMD_SET_PALETTE = 0x52
+CTRL_CMD_SET_PALETTE_COLOR = 0x53
+CTRL_CMD_RESET_PALETTE = 0x54
 SOFTIEC_CMD_IDENTIFY = 0x01
 SOFTIEC_CMD_LOAD_SU = 0x10
 SOFTIEC_CMD_GET_FATNAME = 0x22
@@ -183,6 +189,7 @@ RESET_SETTLE_SECONDS = 3.0
 TESTS = [
     "transport",
     "control-target",
+    "palette",
     "issue-740-matrix",
     "save-reu-offset-past-end",
     "load-reu-disabled",
@@ -593,6 +600,80 @@ def run_control_target(uci: Uci) -> bool:
     return True
 
 
+def run_palette(uci: Uci) -> bool:
+    """Exercise the U64 runtime palette protocol without changing saved config."""
+    scenario = "palette"
+    product, status = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_HWINFO, 0x00]))
+    if status != STATUS_OK:
+        raise Failure(f"{scenario}: could not identify the product: {status!r}")
+    if not product.startswith(b"Ultimate 64"):
+        detail(f"{scenario}: {product.decode('latin-1')} has no U64 palette hardware; skipped")
+        return True
+
+    original = expect(
+        uci, f"{scenario}: GET_PALETTE returns 16 RGB colors",
+        bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]), STATUS_OK)
+    if len(original) != 48:
+        raise Failure(f"{scenario}: expected 48 palette bytes, got {len(original)}")
+
+    try:
+        with check(f"{scenario}: SET_PALETTE_COLOR changes only the requested color"):
+            changed = bytearray(original)
+            changed[-3:] = bytes(component ^ 0x5A for component in changed[-3:])
+            command = bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 15]) + changed[-3:]
+            reply, text = uci.transact(command)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: single-color set returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != bytes(changed):
+                raise Failure(f"{scenario}: single-color readback was {actual!r}, expected {bytes(changed)!r}")
+
+        expect(uci, f"{scenario}: color index 16 is rejected",
+               bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE_COLOR, 16, 0, 0, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+
+        with check(f"{scenario}: SET_PALETTE replaces all 16 RGB colors"):
+            replacement = bytes((i * 37 + 11) & 0xFF for i in range(48))
+            reply, text = uci.transact(
+                bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + replacement)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: full set returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != replacement:
+                raise Failure(f"{scenario}: full-palette readback was {actual!r}, expected {replacement!r}")
+
+        expect(uci, f"{scenario}: short SET_PALETTE payload is rejected",
+               bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original[:-1],
+               STATUS_INVALID_PARAMS, reply=b"")
+        expect(uci, f"{scenario}: GET_PALETTE rejects a payload",
+               bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+
+        with check(f"{scenario}: RESET_PALETTE restores the built-in C64 colors"):
+            default_palette = bytes.fromhex(
+                "000000 f7f7f7 8d2f34 6ad4cd 9835a4 4cb442 2c29b1 efef5d "
+                "984e20 5b3800 d1676d 4a4a4a 7b7b7b 9fef93 6d6aef b2b2b2")
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE]))
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: reset returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != default_palette:
+                raise Failure(f"{scenario}: reset palette readback was {actual!r}, expected {default_palette!r}")
+
+        expect(uci, f"{scenario}: RESET_PALETTE rejects a payload",
+               bytes([TARGET_CONTROL, CTRL_CMD_RESET_PALETTE, 0]),
+               STATUS_INVALID_PARAMS, reply=b"")
+    finally:
+        with check(f"{scenario}: restore the original runtime palette"):
+            reply, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_SET_PALETTE]) + original)
+            if text != STATUS_OK or reply:
+                raise Failure(f"{scenario}: restore returned data {reply!r}, status {text!r}")
+            actual, text = uci.transact(bytes([TARGET_CONTROL, CTRL_CMD_GET_PALETTE]))
+            if text != STATUS_OK or actual != original:
+                raise Failure(f"{scenario}: restored palette readback was {actual!r}")
+    return True
+
+
 def prime_reply_buffer(uci: Uci) -> None:
     """Leave a non-empty string in the control target's reply buffer.
 
@@ -890,6 +971,7 @@ def main() -> int:
 
         run("transport", run_transport, uci)
         run("control-target", run_control_target, uci)
+        run("palette", run_palette, uci)
         run("issue-740-matrix", run_issue_740_matrix, session, ftp, uci)
         run("save-reu-offset-past-end", run_save_reu_offset_past_end, session, uci)
         run("load-reu-disabled", run_reu_disabled, session, uci, CTRL_CMD_LOAD_REU, "load-reu-disabled")

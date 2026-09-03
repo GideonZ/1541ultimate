@@ -1,4 +1,5 @@
 #include "control_target.h"
+#include "palette_command.h"
 #include "disk_image.h"
 #include <string.h>
 #include <ctype.h>
@@ -252,6 +253,50 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply  = &c_message_empty;
             *status = &status_message;
             save_u64_memory(command);
+            break;
+
+        case CTRL_CMD_GET_PALETTE:
+            if (command->length != 2) {
+                *status = &c_status_invalid_params;
+            } else {
+                U64Config::get_palette_rgb((uint8_t (*)[3])data_message.message);
+                data_message.length = UCI_PALETTE_BYTES;
+                data_message.last_part = true;
+                *reply = &data_message;
+                *status = &c_status_ok;
+            }
+            break;
+
+        case CTRL_CMD_SET_PALETTE: {
+            uint8_t rgb[UCI_PALETTE_COLORS][3];
+            if (!decode_palette_set(command->message, command->length, rgb)) {
+                *status = &c_status_invalid_params;
+            } else {
+                U64Config::set_palette_rgb(rgb);
+                *status = &c_status_ok;
+            }
+            break;
+        }
+
+        case CTRL_CMD_SET_PALETTE_COLOR: {
+            uint8_t index;
+            uint8_t rgb[3];
+            if (!decode_palette_color_set(command->message, command->length, &index, rgb)) {
+                *status = &c_status_invalid_params;
+            } else {
+                U64Config::set_palette_color(index, rgb);
+                *status = &c_status_ok;
+            }
+            break;
+        }
+
+        case CTRL_CMD_RESET_PALETTE:
+            if (!valid_palette_reset(command->length)) {
+                *status = &c_status_invalid_params;
+            } else {
+                U64Config::reset_palette();
+                *status = &c_status_ok;
+            }
             break;
 #endif
         case CTRL_CMD_EASYFLASH:
