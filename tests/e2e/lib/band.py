@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from collections.abc import Sequence
 
 import glyphs
+from report import Failure
 
 ROWS = 7
 ACTIVITY_ROW = 0
@@ -113,11 +114,21 @@ def layout_for(width: int) -> Layout:
 
 
 def header(layout: Layout) -> str:
-    """The fixed row of column names, padded to the band's own width."""
+    """The fixed row of column names, padded to the band's own width.
+
+    A layout with a different number of fields than there are names would
+    otherwise render a header whose columns do not line up with the rows
+    under it, and nothing would say so, so the two lists are required to be
+    the same length.
+    """
     names = ("time", "type", "interaction", "stat", "dur", "sent", "rcvd",
              "body", "ref")
+    fields = layout.fields()
+    if len(fields) != len(names):
+        raise Failure(f"the band layout has {len(fields)} fields and "
+                      f"{len(names)} column names")
     line = [" "] * layout.columns
-    for (start, size), name in zip(layout.fields(), names):
+    for (start, size), name in zip(fields, names, strict=True):
         for offset, character in enumerate(name[:size]):
             if start + offset < layout.columns:
                 line[start + offset] = character

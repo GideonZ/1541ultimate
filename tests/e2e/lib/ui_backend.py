@@ -1820,11 +1820,11 @@ class TelnetBackend(Backend):
 
     @staticmethod
     def _connect_with_retry(host: str, port: int, timeout: float) -> socket.socket:
-        deadline = time.time() + max(timeout, 15.0)
+        deadline = time.monotonic() + max(timeout, 15.0)
         last_error: BaseException | None = None
         attempts = 0
         started = time.monotonic()
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             attempts += 1
             try:
                 sock = socket.create_connection((host, port), timeout=timeout)
@@ -2085,7 +2085,7 @@ class TelnetBackend(Backend):
         """
         received: list[bytes] = []
         try:
-            started = time.time()
+            started = time.monotonic()
             end = started + timeout
             expecting = self._expect_redraw
             expecting_settle = self._expect_settle
@@ -2095,10 +2095,10 @@ class TelnetBackend(Backend):
                           else pacing.TELNET_QUIET_CHECK_SECONDS)
             last_data: float | None = None
             drained = 0
-            while time.time() < end:
-                wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.time()))
+            while time.monotonic() < end:
+                wait = min(pacing.TELNET_IDLE_GAP_SECONDS, max(0.0, end - time.monotonic()))
                 ready, _, _ = select.select([self.sock], [], [], wait)
-                now = time.time()
+                now = time.monotonic()
                 if not ready:
                     if last_data is None:
                         if now - started >= first_wait:
@@ -2121,7 +2121,7 @@ class TelnetBackend(Backend):
                 drained += len(chunk)
                 self.screen.feed(chunk)
                 received.append(chunk)
-                last_data = time.time()
+                last_data = time.monotonic()
             # The caller's own timeout ran out. With no byte at all that is the
             # same answer the first-byte budget gives, and reporting it as a
             # failure would turn a key that legitimately drew nothing into a failed
@@ -2587,7 +2587,15 @@ class Browser:
         # column of the row behind it, and that extra entry shifted every
         # index so selecting "Developer" opened the entry two places past it.
         labels = []
-        for old, new in zip(before, rows):
+        # Required to be the same length: a transport that returned a
+        # different row count (a Telnet screen mid-resize, a truncated REST
+        # body) would otherwise have its tail ignored, and the short label
+        # list reads as a shorter menu, which is how an off-by-two
+        # selection got here once already.
+        if len(before) != len(rows):
+            raise Failure(f"the screen had {len(before)} rows before the "
+                          f"popup and {len(rows)} after it")
+        for old, new in zip(before, rows, strict=True):
             if old == new:
                 continue
             common = len(os.path.commonprefix([old, new]))
