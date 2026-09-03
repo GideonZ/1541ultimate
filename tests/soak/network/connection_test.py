@@ -30,12 +30,8 @@ import report  # noqa: E402
 
 import ftp_probe  # noqa: E402
 import http_probe  # noqa: E402
-import ident_probe  # noqa: E402
-import modem_probe  # noqa: E402
-import ping_probe  # noqa: E402
-import dma_probe  # noqa: E402
 import stream_monitor  # noqa: E402
-import telnet_probe  # noqa: E402
+import connection_runtime  # noqa: E402
 from connection_runtime import (  # noqa: E402
     ProbeCorrectness,
     ProbeExecutionContext,
@@ -142,15 +138,14 @@ HISTORICAL_CORRECTNESS_EVIDENCE = {
     },
 }
 
-PROBE_RUNNERS = {
-    "ping": ping_probe.run_probe,
-    "ident": ident_probe.run_probe,
-    "dma": dma_probe.run_probe,
-    "telnet": telnet_probe.run_probe,
-    "ftp": ftp_probe.run_probe,
-    "http": http_probe.run_probe,
-    "modem": modem_probe.run_probe,
-}
+def probe_runner(name: str):
+    """The entry point of one probe, from the registry in connection_runtime.
+
+    This was a dictionary of seven functions, which meant importing all seven
+    modules whatever the run asked for. Each of them opens sockets and reads
+    the environment at import.
+    """
+    return connection_runtime.probe(name).run_probe
 
 
 def default_probe_random_seed() -> int:
@@ -702,7 +697,8 @@ def execute_probe(
     runner_id: int = 1,
     iteration: int = 1,
 ) -> ProbeOutcome:
-    runners = PROBE_RUNNERS if probe_runners is None else probe_runners
+    # probe_runners is how a caller substitutes a probe, which the self-tests
+    # do; otherwise the registry is asked for the one this protocol names.
     context = ProbeExecutionContext(
         protocol=protocol,
         runner_id=runner_id,
@@ -710,7 +706,9 @@ def execute_probe(
         surface=config.probe_surfaces.get(protocol, ProbeSurface.SMOKE),
         state=state,
     )
-    return runners[protocol](settings, config.probe_correctness[protocol], context=context)
+    runner = (probe_runner(protocol) if probe_runners is None
+              else probe_runners[protocol])
+    return runner(settings, config.probe_correctness[protocol], context=context)
 
 
 def execute_probe_safely(

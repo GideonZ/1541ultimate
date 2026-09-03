@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import enum
+import importlib
 import ftplib
 import http.client
 import socket
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 from collections.abc import Callable
 
 
@@ -70,6 +71,38 @@ class ProbeExecutionContext:
 
 Operation = Callable[[RuntimeSettings], str]
 SURFACE_OPERATION_RETRY_DELAYS_S = (0.10, 0.25, 0.50, 1.00)
+
+
+class Probe(Protocol):
+    """What every probe module in this directory provides.
+
+    Seven modules implement the same entry point by hand - dma, ftp, http,
+    ident, modem, ping and telnet - and the shape was a convention rather than
+    anything a reader or a checker could see. It is stated here instead, and
+    `probe(name)` below is where connection_test.py finds one rather than
+    importing all seven by name and building a dictionary of their functions.
+
+    `surface_operations` is not part of it: a probe that has one uses it
+    internally to choose what to send, and ping has none at all.
+    """
+
+    def run_probe(self, settings: RuntimeSettings, correctness: ProbeCorrectness,
+                  *, context: ProbeExecutionContext | None = ...) -> ProbeOutcome:
+        """Drive one iteration against the device and say what happened."""
+
+
+# The probes this directory provides, by the name connection_test takes on its
+# command line. Imported on demand: a probe module opens sockets and reads the
+# environment at import, so a run naming two probes does not pay for the other
+# five.
+PROBE_NAMES = ("ping", "ident", "dma", "telnet", "ftp", "http", "modem")
+
+
+def probe(name: str) -> Probe:
+    """The probe module `name`, imported the first time it is asked for."""
+    if name not in PROBE_NAMES:
+        raise KeyError(f"no probe named {name!r}; have {', '.join(PROBE_NAMES)}")
+    return importlib.import_module(f"{name}_probe")
 
 
 def first_non_empty_line(text: str, fallback: str) -> str:
