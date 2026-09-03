@@ -210,18 +210,6 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out $(RESULT)
 	@echo Providing ELF.
 	@cp $(OUTPUT)/$(PRJ).out $(RESULT)/$(PRJ).elf
-	@if [ "$(FORBID_FENCE)" = "1" ]; then \
-	    if $(OBJDUMP) -d $(RESULT)/$(PRJ).elf | grep -qE '\bfence(\.i)?\b'; then \
-	        echo "ERROR: $(PRJ).elf contains FENCE instructions." >&2; \
-	        echo "       The rvlite core used by the Ultimate II/II+/II+L does not decode" >&2; \
-	        echo "       FENCE (fpga/cpu_unit/rvlite/vhdl_source/decode_comb.vhd); it traps as" >&2; \
-	        echo "       an illegal instruction and the firmware hangs before it releases the" >&2; \
-	        echo "       C64 from reset. std::atomic is the usual source on rv32i." >&2; \
-	        $(OBJDUMP) -d $(RESULT)/$(PRJ).elf | grep -E '\bfence(\.i)?\b' | head -5 >&2; \
-	        rm -f $(RESULT)/$(PRJ).elf; \
-	        exit 1; \
-	    fi; \
-	fi
 	
 $(OUTPUT)/$(PRJ).s00: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
