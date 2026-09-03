@@ -15,6 +15,9 @@
 #define ENABLE_PCAP  0
 #define NUM_BUFFERS  32
 
+// Ethernet's shortest legal frame on the wire, excluding the FCS.
+#define ETH_MIN_FRAME_LEN 60
+
 static uint8_t freemap[NUM_BUFFERS];
 static int freecnt;
 
@@ -47,11 +50,13 @@ extern "C" {
 RmiiInterface :: RmiiInterface()
 {
 	rmii_interface = this;
+	tx_pad_buffer = NULL;
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
     	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
 		link_up = false;
 		ram_buffer = new uint8_t[(NUM_BUFFERS * 1536) + 256];
 		ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
+		tx_pad_buffer = new uint8_t[ETH_MIN_FRAME_LEN];
 
 		RMII_FREE_BASE = (uint32_t)ram_base;
 
@@ -192,6 +197,9 @@ RmiiInterface :: ~RmiiInterface()
 	if(ram_buffer) {
 		delete ram_buffer;
 	}
+	if(tx_pad_buffer) {
+		delete[] tx_pad_buffer;
+	}
 	if(netstack) {
 		netstack->stop();
 		releaseNetworkStack(netstack);
@@ -315,8 +323,26 @@ err_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 #endif
 	//printf("Rmii Out Packet: %p %4x\n", buffer, pkt_len);
 	//dump_hex_relative(buffer, (pkt_len > 64)?64:pkt_len);
+	// The engine transmits as many bytes as the length register names, and
+	// Ethernet's minimum frame is 60. Padding only the length made it read past
+	// a short frame and put whatever follows it in memory on the wire; with
+	// MEM_LIBC_MALLOC the pbufs come from pvPortMalloc, so that is the
+	// neighbouring heap block. A 42 byte ARP request leaked 18 such bytes.
+	// Pad the data as well, in a buffer this driver owns. Transmission is
+	// asynchronous, but the RMII_TX_BUSY test above means the previous frame
+	// has left before this buffer is filled again.
+	if (pkt_len < ETH_MIN_FRAME_LEN) {
+		if (pkt_len < 0) {
+			return ERR_ARG;
+		}
+		memcpy(tx_pad_buffer, buffer, pkt_len);
+		memset(tx_pad_buffer + pkt_len, 0, ETH_MIN_FRAME_LEN - pkt_len);
+		buffer  = tx_pad_buffer;
+		pkt_len = ETH_MIN_FRAME_LEN;
+	}
+
 	RMII_TX_ADDRESS = (uint32_t)buffer;
-	RMII_TX_LENGTH  = (uint16_t)((pkt_len < 60)?60:pkt_len);
+	RMII_TX_LENGTH  = (uint16_t)pkt_len;
 	RMII_TX_START   = 1;
 
 	return ERR_OK;
