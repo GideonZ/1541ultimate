@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 #include <errno.h>
+#include "gcr_track_bounds.h"
 
 #include "itu.h"
 #include "dump_hex.h"
@@ -461,40 +462,30 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
 
     // side 0
-    uint32_t bit_time;
-    uint32_t track_len;
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
     for(int i=0; i < GCRIMAGE_FIRSTTRACKSIDE1; i++) {
         GcrTrack *tr = &image->tracks[i];
-        if (tr->track_address) {
-            bit_time = rotation_speed / tr->track_length;
-            track_len = tr->track_length;
-            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, track_len, bit_time);
-            *(param++) = (uint32_t)tr->track_address;
-            *(param++) = (track_len-1) | (bit_time << 16);
-        } else {
-            // printf("Side0: %2d %08x %08x %d\n", i, tr->track_address, track_len, bit_time);
-            *(param++) = (uint32_t)dummy_track;
-            *(param++) = (track_len-1) | (bit_time << 16);
-        }
+        uint32_t track_addr, track_param;
+        gcr_track_parameters((uint32_t)tr->track_address, tr->track_length,
+                             (uint32_t)dummy_track, GCRIMAGE_DUMMYTRACKLEN,
+                             rotation_speed, &track_addr, &track_param);
+        // printf("Side0: %2d %08x %08x\n", i, track_addr, track_param);
+        *(param++) = track_addr;
+        *(param++) = track_param;
         registers[C1541_DIRTYFLAGS + i/2] = 0;
-    }            
+    }
 
     // Side 1
     param = (volatile uint32_t *)&registers[C1541_PARAM_RAM + 0x400]; // side 1
     for(int i=GCRIMAGE_FIRSTTRACKSIDE1; i < GCRIMAGE_MAXHDRTRACKS; i++) {
         GcrTrack *tr = &image->tracks[i];
-        if (tr->track_address) {
-            bit_time = rotation_speed / tr->track_length;
-            track_len = tr->track_length;
-            // printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
-            *(param++) = (uint32_t)tr->track_address;
-            *(param++) = (track_len-1) | (bit_time << 16);
-        } else {
-            // printf("Side1: %2d %08x %08x %d\n", i, tr->track_address, tr->track_length, bit_time);
-            *(param++) = (uint32_t)dummy_track;
-            *(param++) = (track_len-1) | (bit_time << 16);
-        }
+        uint32_t track_addr, track_param;
+        gcr_track_parameters((uint32_t)tr->track_address, tr->track_length,
+                             (uint32_t)dummy_track, GCRIMAGE_DUMMYTRACKLEN,
+                             rotation_speed, &track_addr, &track_param);
+        // printf("Side1: %2d %08x %08x\n", i, track_addr, track_param);
+        *(param++) = track_addr;
+        *(param++) = track_param;
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }
 
@@ -615,7 +606,16 @@ void C1541 :: mount_g64(bool protect, File *file)
         return;
     }
 	printf("Loading...");
-	gcr_image->load(file);
+	if (!gcr_image->load(file)) {
+		// load() has already invalidated the image, so its track table holds
+		// nothing that may be programmed. remove_disk() ran above, so an empty
+		// drive is the state the machine is already in.
+		printf("Failed. Not a G64 image, or its track table does not fit.\n");
+		fm->fclose(mount_file);
+		mount_file = NULL;
+		drive_reset(0); // do not reset, but restore the freeze
+		return;
+	}
 	printf("Inserting...");
 	insert_disk(protect, gcr_image);
 	printf("Done\n");
