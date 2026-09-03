@@ -29,6 +29,7 @@ import cli  # noqa: E402
 import ftp as ftp_lib
 import machine as machine_lib
 import pacing
+import wait
 import rest as rest_lib
 import targets
 from api import UltimateApi
@@ -568,12 +569,50 @@ def assert_joystick_ports(session: RestInputSession, port1: int, port2: int) -> 
         )
 
 
+EMPTY_JOYSTICKS = [{"port": 1, "inputs": []}, {"port": 2, "inputs": []}]
+
+# A tap batch is accepted at once and drains through the C64's keyboard matrix
+# afterwards, so the state is not empty the instant the request answers. It is
+# not steadily non-empty either: each tap presses and releases, so between two
+# taps the state is momentarily empty. A poll for "empty" therefore returns
+# while the batch is still draining - measured here, it answered after 0.45s of
+# a train that takes about six seconds, and the next check then read the tap
+# that arrived after it. The condition is that the state has been empty for
+# longer than the gap between taps.
+BATCH_DRAIN_TIMEOUT_SECONDS = 12.0
+BATCH_DRAIN_QUIET_SECONDS = 0.75
+
+
+def state_is_empty(session: RestInputSession) -> bool:
+    state = session.get_state()
+    return (state.get("keyboard", {}).get("inputs") == []
+            and state.get("joysticks") == EMPTY_JOYSTICKS)
+
+
 def assert_state_empty(session: RestInputSession) -> None:
     state = session.get_state()
     if state.get("keyboard", {}).get("inputs") != []:
         raise Failure(f"Expected empty keyboard state, got {state}")
-    if state.get("joysticks") != [{"port": 1, "inputs": []}, {"port": 2, "inputs": []}]:
+    if state.get("joysticks") != EMPTY_JOYSTICKS:
         raise Failure(f"Expected empty joystick state, got {state}")
+
+
+def wait_state_empty(session: RestInputSession, what: str) -> None:
+    """Wait for an injected batch to finish draining, then require it empty.
+
+    "Empty" has to hold for BATCH_DRAIN_QUIET_SECONDS, not merely be true once:
+    see the constant. The two sleeps this replaced were a flat 1.2s for ten
+    taps and 6.0s for sixty, paid in full on every run whatever the device did.
+    """
+    def drained() -> bool:
+        quiet_until = time.monotonic() + BATCH_DRAIN_QUIET_SECONDS
+        while time.monotonic() < quiet_until:
+            if not state_is_empty(session):
+                return False
+        return True
+
+    wait.wait_until(drained, what, timeout=BATCH_DRAIN_TIMEOUT_SECONDS)
+    assert_state_empty(session)
 
 
 def assert_error_body_only(body: dict[str, Any]) -> None:
@@ -1658,8 +1697,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         response = session.json_request("POST", "/v1/machine:input", payload={"events": keyboard_tap_events_for_text("ABCDEFGHIJ")})
         if not response.get("keyboard", {}).get("inputs"):
             raise Failure(f"Expected a live tap snapshot while the batch was draining, got {response}")
-        time.sleep(1.2)
-        assert_state_empty(session)
+        wait_state_empty(session, "the ten-tap batch to drain")
         session.post_events([{"kind": "release_all"}])
 
     with check("keyboard long repeated tap train drains fully without sticky state"):
@@ -1668,8 +1706,7 @@ def run_keyboard_tests(session: RestInputSession) -> None:
         response = session.json_request("POST", "/v1/machine:input", payload={"events": repeated})
         if response.get("keyboard", {}).get("inputs") != ["a"]:
             raise Failure(f"Expected repeated tap train to expose the live a snapshot, got {response}")
-        time.sleep(6.0)
-        assert_state_empty(session)
+        wait_state_empty(session, "the sixty-tap train to drain")
         session.post_events([{"kind": "release_all"}])
 
     with check("invalid keyboard batch does not mutate state"):
