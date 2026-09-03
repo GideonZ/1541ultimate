@@ -19,7 +19,6 @@ import argparse
 import ftplib
 import http.client
 import io
-import json
 import os
 import sys
 import time
@@ -39,7 +38,6 @@ import png_lite  # noqa: E402  (local module, needs SCRIPT_DIR on sys.path first
 import ftp as ftp_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
-import rest as rest_lib
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 import wait  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
@@ -154,114 +152,63 @@ def full_page_bitmap_params(emulation, page_height):
 
 
 class U64Client:
-    """Minimal REST client mirroring temp_auto_cleanup_perf_test.py's style."""
+    """The device, as this suite talks to it.
+
+    A facade over `tests/lib/api.py` rather than a second REST client. It used
+    to hold both: its own `request`/`require_ok` re-implementing
+    `RestClient.expect` including the error-document parsing, its own
+    `get_config` re-implementing `ConfigsApi.get`, and a `UltimateApi` beside
+    them "for the calls this suite makes no assertion about", so two clients
+    addressed one device and only one of them was covered by the transport
+    rules. What is left here is the handful of things that are about this
+    suite: which key opens the task menu on this machine, and tapping one.
+    """
 
     def __init__(self, host, password, timeout=10):
         self.target = targets.parse(host)
         self.host = self.target.device
         self.password = password
         self.timeout = timeout
-        # For the calls this suite makes no assertion about, so that the menu
-        # teardown has one implementation across the tree.
         self.api = UltimateApi(host, password, timeout)
 
-    def _headers(self, body, extra_headers=None):
-        headers = {"Connection": "close"}
-        if self.password:
-            headers["X-Password"] = self.password
-        if body is not None:
-            headers["Content-Length"] = str(len(body))
-        if extra_headers:
-            headers.update(extra_headers)
-        return headers
-
-    def request(self, method, path, body=None, extra_headers=None, timeout=None):
-        # Transport and retry policy come from tests/lib/rest.py, the one place
-        # that decides them. A request without a payload carries its arguments
-        # in the query string, so applying it twice is the same as applying it
-        # once; one with a payload would run a PRG or upload a file again, and
-        # so is only resent when it never left the client.
-        return rest_lib.retrying_http_request(
-            self.target.host_for(path), method, path,
-            body=body,
-            headers=self._headers(body, extra_headers),
-            timeout=timeout or self.timeout,
-            idempotent=body is None,
-        )
-
-    def require_ok(self, method, path, body=None, description=None, extra_headers=None, timeout=None):
-        status, _headers, payload = self.request(method, path, body=body, extra_headers=extra_headers, timeout=timeout)
-        if status != 200:
-            message = f"{description or path} failed with HTTP {status}"
-            try:
-                document = json.loads(payload.decode("utf-8"))
-                if document.get("errors"):
-                    message += f": {document['errors']}"
-            except (ValueError, UnicodeDecodeError):
-                message += f": {payload[:160]!r}"
-            raise Failure(message)
-        return payload
-
     def is_alive(self, timeout=3.0):
+        """Whether the device still answers at all.
+
+        Its own call rather than health.probe: this asks the one question the
+        printer suite needs between pages, and a full sweep between pages
+        would cost more than the page does.
+        """
         try:
-            status, _headers, _payload = self.request("GET", "/v1/version", timeout=timeout)
+            status, _headers, _payload = self.api.rest.request(
+                "GET", "/v1/version", timeout=timeout)
             return status == 200
-        except (OSError, http.client.HTTPException):
+        except (Failure, OSError, http.client.HTTPException):
             return False
 
     def get_config(self, category, item):
-        path = f"/v1/configs/{urlquote(category)}/{urlquote(item)}"
-        payload = self.require_ok("GET", path, description=f"read {category}/{item}")
-        document = json.loads(payload.decode("utf-8"))
-        return document[category][item]["current"]
+        return self.api.configs.get(category, item)
 
     def set_config(self, category, item, value):
-        path = f"/v1/configs/{urlquote(category)}/{urlquote(item)}?value={urlquote(str(value))}"
-        self.require_ok("PUT", path, description=f"set {category}/{item}={value}")
+        self.api.configs.set(category, item, value)
 
     def writemem(self, address, data):
-        path = f"/v1/machine:writemem?address={address:04X}"
-        self.require_ok(
-            "POST",
-            path,
-            body=data,
-            description=f"writemem @{address:04X}",
-            extra_headers={"Content-Type": "application/octet-stream"},
-        )
+        self.api.machine.writemem(address, data)
 
     def readmem(self, address, length):
-        path = f"/v1/machine:readmem?address={address:04X}&length={length}"
-        return self.require_ok("GET", path, description=f"readmem @{address:04X}")
+        return self.api.machine.readmem(address, length)
 
     def run_prg(self, prg_bytes):
-        self.require_ok(
-            "POST",
-            "/v1/runners:run_prg",
-            body=prg_bytes,
-            description="run_prg",
-            extra_headers={"Content-Type": "application/octet-stream"},
-        )
+        self.api.rest.expect("POST", "/v1/runners:run_prg", body=prg_bytes,
+                             headers={"Content-Type": "application/octet-stream"})
 
     def menu_button(self):
-        self.require_ok("PUT", "/v1/machine:menu_button", description="menu_button")
+        self.api.machine.menu_button()
 
     def get_menu_screen(self):
-        status, _headers, payload = self.request("GET", "/v1/machine:menu_screen")
-        if status == 404:
-            return None
-        if status != 200:
-            raise Failure(f"menu_screen failed with HTTP {status}")
-        return payload
+        return self.api.machine.menu_screen()
 
     def post_input(self, events):
-        body = json.dumps({"events": events}).encode("utf-8")
-        self.require_ok(
-            "POST",
-            "/v1/machine:input",
-            body=body,
-            description="input",
-            extra_headers={"Content-Type": "application/json"},
-        )
+        self.api.machine.send_input(events)
 
     @property
     def launcher_browser_entry(self):
@@ -281,18 +228,14 @@ class U64Client:
         return device.task_menu_key.lower()
 
     def _fetch_product(self):
-        status, _, body = self.request("GET", "/v1/info")
-        if status != 200:
-            raise Failure(f"/v1/info returned HTTP {status}")
-        payload = json.loads(body.decode("utf-8"))
-        return (str(payload.get("product", "")),
-                str(payload.get("firmware_version", "")))
+        info = self.api.info()
+        return (info.product, info.firmware_version)
 
     def tap_key(self, key):
-        self.post_input([{"kind": "keyboard", "inputs": [key], "transition": "tap"}])
+        self.api.machine.press(key)
 
     def tap_keys(self, keys):
-        self.post_input([{"kind": "keyboard", "inputs": keys, "transition": "tap"}])
+        self.api.machine.press(*keys)
 
     def close_menu_from_anywhere(self):
         self.api.machine.close_menu_from_anywhere()
