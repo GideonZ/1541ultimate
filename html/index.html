@@ -372,10 +372,27 @@ $(document).ready(async function () {
     async function parseBASIC() {
         var textarea = $("#basiceditor").val();
 
+        // Without a profile there are no keyword or special character tables, and
+        // every keyword would be uploaded as its plain characters instead.
+        if (!window.TOKENS || window.TOKENS.length === 0 ||
+            !window.SPECIAL || window.SPECIAL.length === 0) {
+            showBASICerror("No tokenizer profile is loaded. "
+                           + "Check SCRIPT_TO_LOAD in /Flash/html/special.js.");
+            return false;
+        }
+
         // Split into lines, keep only those starting with a digit, and join back
         var lines = textarea.split('\n')
                 .map(line => line.trim())
                 .filter(line => /^\d/.test(line));
+
+        // The link pointer of the last line is written after the loop below, which
+        // has no last line to write to when the editor holds no numbered line.
+        if (lines.length === 0) {
+            showBASICerror("There is no BASIC line to upload. "
+                           + "A line has to start with a line number.");
+            return false;
+        }
 
         const tokenized_lines = [];
         let addr = 2049;
