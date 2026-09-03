@@ -43,7 +43,7 @@ UI-state gate around each one:
 | `input_batching_test.py` | A `machine:input` request never exceeds either of the device's two limits, the event count and the body size |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
 | `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
-| `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
+| `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise. The cases live in `observability/`, one module per tier, with `support.py` holding what they share |
 | `navigation_test.py` | Which keys the harness sends at a menu under each Navigation Style |
 | `lint_test.py` | The tree passes the lint rules in `tests/ruff.toml` |
 | `registry_test.py` | Every suite in the tree is registered in `run-tests`, and every registration names a path that exists and arguments the suite accepts |

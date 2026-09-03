@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from collections.abc import Callable
+from dataclasses import dataclass
 
 # tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
 # The search walks up rather than counting directories, so this is the same in
@@ -3792,9 +3793,47 @@ def monitor_banks_cpu(session: MonitorSession) -> bool:
     raise Failure(f"the monitor drew neither status footer:\n{text}")
 
 
-def run_tests(session: MonitorSession, rest_host: str, mode: str, is_u2: bool,
-              control: str, video_host: str, files_host: str, live_host: str,
-              frozen: bool, device_host: str) -> None:
+@dataclass(frozen=True)
+class MonitorContext:
+    """Where each surface of the machine under test is, and what it is.
+
+    These were ten positional parameters on run_tests, five of them host names
+    that differ only for a cartridge target: on a u2@c64u the monitor is the
+    cartridge's, the video and the files are the computer's, and which host
+    answers a memory read depends on whether the machine is frozen. Passing
+    them positionally meant a call site had to get five host names in the right
+    order with nothing to catch a swap.
+
+    `is_u2` is the product; `frozen` is the state the UI was found in. Both are
+    here because a check needs to know which it is reasoning about: see
+    monitor_banks_cpu for the difference between what the product is and what
+    this monitor's backend does.
+    """
+
+    session: "MonitorSession"
+    rest_host: str
+    mode: str
+    is_u2: bool
+    control: str
+    video_host: str
+    files_host: str
+    live_host: str
+    frozen: bool
+    device_host: str
+
+
+def run_tests(context: MonitorContext) -> None:
+    session = context.session
+    rest_host = context.rest_host
+    mode = context.mode
+    is_u2 = context.is_u2
+    control = context.control
+    video_host = context.video_host
+    files_host = context.files_host
+    live_host = context.live_host
+    frozen = context.frozen
+    device_host = context.device_host
+
     snapshots = load_snapshots()
     # Measured from the screen rather than taken from the product; see
     # monitor_banks_cpu. `is_u2` stays for the things that really are about
@@ -4894,8 +4933,11 @@ def main() -> int:
         session = MonitorSession(backend)  # opens the menu and enters the monitor
         frozen = ui_freezes_machine(device_host, args.mode, machine_was_running)
         memory_host = device_host if frozen else live_host
-        run_tests(session, memory_host, args.mode, is_u2, control,
-                  live_host, device_host, live_host, frozen, device_host)
+        run_tests(MonitorContext(
+            session=session, rest_host=memory_host, mode=args.mode,
+            is_u2=is_u2, control=control, video_host=live_host,
+            files_host=device_host, live_host=live_host, frozen=frozen,
+            device_host=device_host))
     except Failure as exc:
         report_first_attempt_losses()
         suite_fail("monitor_test", str(exc))

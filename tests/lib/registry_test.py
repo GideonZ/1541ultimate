@@ -61,7 +61,17 @@ TOKENS = {"@HOST@", "@PASS@", "@TIMEOUT@", "@MODE@", "@SOAKPROFILE@"}
 # registry, so that "not registered" always means "nobody can run it".
 # A file ending in _test.py that no profile should select, each with its
 # reason. Everything else under SEARCHED has to be in the registry.
-NOT_SUITES: dict[str, str] = {}
+NOT_SUITES: dict[str, str] = {
+    # The four tiers of the observability suite. Importing one registers its
+    # cases in support.CASES; tests/lib/observability_test.py imports all four
+    # and is the registered suite. A tier cannot be selected on its own,
+    # because run_cases takes them in order and the golden tier reads a
+    # fixture the pipeline tier builds.
+    "tests/lib/observability/pure_test.py": "tier 1 of the observability suite",
+    "tests/lib/observability/component_test.py": "tier 2 of the observability suite",
+    "tests/lib/observability/pipeline_test.py": "tier 3 of the observability suite",
+    "tests/lib/observability/golden_test.py": "tier 4 of the observability suite",
+}
 
 # tests/lib/bootstrap.py is the one place that may compute a path into the
 # tree. Everywhere else, a sys.path line has to be one of these two shapes.
