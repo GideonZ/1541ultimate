@@ -286,21 +286,27 @@ leave it dirty.
    rate, a drive reaping a session, a real 1541 load. Say so in a comment next
    to the wait, so the next reader does not have to rediscover it.
 
+11. Keep the suite passing `ruff check --config tests/ruff.toml tests run-tests`.
+    `lint_test.py` runs that at the front of every profile.
+    [`tests/lib/README.md`](../lib/README.md) says what belongs in that
+    configuration and what belongs in a `# noqa` comment at the site; both
+    need the reason written next to them.
+
 Before submitting a structural or test-only change:
 
 ```sh
-python3 -m py_compile $(find tests -name '*.py' -type f -not -path '*/__pycache__/*')
+# Syntax, unused imports, dead assignments and names that are only resolved
+# when the line runs. ruff's F rules are pyflakes, so this covers the check
+# that used to be a separate pyflakes invocation, and it reads every file
+# rather than only the ones a run reaches.
+python3 tests/lib/lint_test.py
 ./run-tests --list
 
-# Proves every suite's imports resolve, which py_compile alone does not.
+# The lint parses each file; this imports it, which is a stronger statement:
+# it proves the sys.path bootstrap resolves and the module-level code runs.
 for f in $(find tests -name '*_test.py' -not -path '*/__pycache__/*'); do
     python3 "$f" --help >/dev/null || echo "FAILED $f"
 done
-
-# Neither of the above sees a name that is only resolved when the line runs, so
-# a helper used on a branch the gate does not reach stays broken until someone
-# hits it. pyflakes finds those, and is worth installing for this one check.
-python3 -m pyflakes $(git ls-files tests | grep '\.py$') run-tests
 ```
 
 For behaviour changes, deploy the affected firmware and run the narrowest

@@ -24,8 +24,9 @@ repository-root `run-tests` all use it.
 | `device_double.py` | One fake Ultimate on loopback, for the observability tests and, handed `html/`, for the browser suites |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
+| `../ruff.toml` | Which lint rules this tree is held to, and for each one that is off, either the reason or the finding that removes it |
 
-Seven registered suites live here as well, because each checks the test tree
+Eight registered suites live here as well, because each checks the test tree
 or the build rather than the device and so needs no hardware. They run first,
 where a failure lands as a clear message instead of as a confusing one later.
 The runner is handed no device for them, so it skips the health sweep and the
@@ -40,10 +41,41 @@ UI-state gate around each one:
 | `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
 | `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
 | `navigation_test.py` | Which keys the harness sends at a menu under each Navigation Style |
+| `lint_test.py` | The tree passes the lint rules in `tests/ruff.toml` |
 
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
-no device and no network beyond loopback.
+no device and no network beyond loopback. `lint_test.py` is wired the same way,
+as `make lint_test` and as the `Check Tests Lint` step.
+
+## The lint
+
+`tests/ruff.toml` selects the `F`, `E`, `W`, `B`, `UP`, `SIM`, `RUF`, `PLW` and
+`PERF` rule families over `tests/` and `run-tests`, and `lint_test.py` runs
+exactly that command and reports the findings through `report.py`. Run it
+directly while working:
+
+```sh
+ruff check --config tests/ruff.toml tests run-tests
+ruff check --config tests/ruff.toml --fix tests run-tests   # the safe fixes
+```
+
+The version is pinned in `tests/requirements-lint.txt` so that a ruff release
+adding a rule to one of those families turns the build red when somebody moves
+the pin, rather than on an unrelated morning. A host without ruff makes the
+suite skip rather than fail, because a bench can still drive every device
+suite without it; the CI step installs the pinned version, so the check cannot
+be skipped there.
+
+Two things belong in the configuration rather than in a `# noqa` comment: a
+rule the tree does not want at all, and a rule a later change removes the need
+for. Both need the reason written next to them, as the entries there do; the
+second kind also names the finding in the tests review that closes it, so the
+entry can be deleted with the fix. A `# noqa` comment is for a single site
+that is right as it stands, and it carries its reason beside the directive.
+
+The MicroPython under `tests/soak/io/usb/pico/` is excluded: it runs on the
+microcontroller rather than on the host, and keeps its own compact style.
 
 The golden tier of `observability_test.py` builds its own `-j` tree by driving
 the runner against the device double, with stub suites scripted to fail, to be

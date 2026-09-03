@@ -186,8 +186,14 @@ class Suite:
 #   find tests -name '*_test.py' -not -path '*/__pycache__/*'
 SUITES: Sequence[Suite] = (
     # ---------------------------------------------------------------- e2e --
-    # Needs no device: it reads the tree and fails if a suite has grown its own
-    # HTTP client again. Seven had, each with the retry rule wrong in its own
+    # Needs no device: it runs ruff over tests/ and this file with the
+    # configuration in tests/ruff.toml. The tree had no lint configuration and
+    # had accumulated 2,804 findings, one of which was an "except Failure:"
+    # naming an exception its module never imported. First, because a syntax
+    # or import fault here would otherwise surface as a device suite failing.
+    Suite("e2e", "lint", "tests/lib/lint_test.py", "", profile=profiles.SMOKE),
+    # Needs no device either: it reads the tree and fails if a suite has grown
+    # its own HTTP client again. Seven had, each with the retry rule wrong in its own
     # way, and each was found only when a transient timeout failed a whole run.
     # First, so that lands as a clear message rather than as a flaky suite.
     Suite("e2e", "transport-usage", "tests/lib/check_transport_usage.py", "", profile=profiles.SMOKE),
