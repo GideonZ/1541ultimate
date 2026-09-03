@@ -186,6 +186,10 @@ _depth = 0
 _last_label = ""
 # Detail lines produced while a check line is still open.
 _pending: List[str] = []
+# Whether those lines are being printed as they come rather than held back.
+# Set when a heading is printed under a check line that never got its verdict;
+# see _release_details.
+_details_live = False
 _check_started = 0.0
 # Whether a check or step line is open and still owes a verdict. A body that
 # reports its own verdict, `check_skip` inside a `with check(...)` being the
@@ -335,7 +339,7 @@ def last_label() -> str:
 
 def check_start(label: str) -> None:
     """Open a check line as `[NN] label ... `, leaving the verdict for later."""
-    global _count, _depth, _last_label, _check_started, _line_open
+    global _count, _depth, _last_label, _check_started, _line_open, _details_live
     _depth += 1
     if _depth > 1:
         return
@@ -343,6 +347,7 @@ def check_start(label: str) -> None:
     _last_label = label
     _check_started = time.monotonic()
     _line_open = True
+    _details_live = False
     print(f"[{_count:02d}] {label} ... ", end="", flush=True)
 
 
@@ -363,10 +368,11 @@ def step_start(label: str) -> None:
 
 
 def _close(verdict: str, extra: str = "", *, elapsed: Optional[float] = None) -> None:
-    global _depth, _line_open
+    global _depth, _line_open, _details_live
     _depth = max(0, _depth - 1)
     if _depth:
         return
+    _details_live = False
     if not _line_open:
         # Already answered by the block itself. Closing again would print a
         # second verdict for one check and record a second, contradictory one:
@@ -445,7 +451,7 @@ def detail(text: str) -> None:
     verdict onto the next line, which is the one-line rule broken from the other
     side: not a nested check, but a caller narrating mid-check.
     """
-    if _depth:
+    if _depth and not _details_live:
         _pending.extend(str(text).splitlines() or [""])
         return
     _emit_detail(str(text).splitlines() or [""])
@@ -476,9 +482,44 @@ def progress_done() -> None:
         sys.stdout.flush()
 
 
+def _release_details() -> None:
+    """Stop holding detail lines back once a check line has been left behind.
+
+    `detail` holds its lines until the open check has printed its verdict, so
+    that a caller narrating mid-check cannot push the verdict onto the next
+    line. That is right while the check is still running, and wrong once it is
+    not: an exception raised between `check_start` and the verdict call unwinds
+    past the verdict, the line stays open for the rest of the process, and
+    every later `detail` is buffered and never printed.
+
+    That is where a suite prints its failure diagnostics. Measured on
+    ftp_client_test against a C64 Ultimate: the check that raised printed no
+    verdict, and the whole of `print_failure_diagnostics` -- the exception, the
+    last REST input, the last FTP command, the decoded menu screen, the server
+    log tail -- went into the buffer and was never seen, leaving "FAIL
+    (failed)" as the only evidence the run kept.
+
+    A heading is the signal that the check is behind us, so the pending lines
+    are emitted here and later ones go straight out. No verdict is invented for
+    the check: a heading printed while a check is open is also what an
+    in-process suite driving the runner produces, and that check does go on to
+    report its own verdict. See runner_policy_test, which runs `run_targets`
+    inside a `check` block.
+    """
+    global _details_live
+    if not _line_open:
+        return
+    _details_live = True
+    print(flush=True)              # end the check line the verdict never closed
+    if _pending:
+        _emit_detail(_pending)
+        _pending.clear()
+
+
 def _close_scenario() -> None:
     """Print the open scenario's own verdict, so a group can be read at a glance."""
     global _scenario
+    _release_details()
     if _scenario is None:
         return
     scenario, _scenario = _scenario, None
@@ -738,9 +779,10 @@ def format_exception(exc: BaseException) -> str:
 
 def reset(count_from: Optional[int] = None) -> None:
     """Start numbering again. Only for a harness that runs suites in-process."""
-    global _count, _depth, _last_label, _scenario, _suite_started
+    global _count, _depth, _last_label, _scenario, _suite_started, _details_live
     _count = 0 if count_from is None else count_from
     _depth = 0
+    _details_live = False
     _last_label = ""
     _scenario = None
     _suite_started = time.monotonic()

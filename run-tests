@@ -1291,6 +1291,29 @@ def die(message: str) -> None:
     raise SystemExit(EXIT_USAGE)
 
 
+def expand_recover_command(command: str, host: str, password: str,
+                           timeout: float) -> str:
+    """Fill in the target's own details, so one command serves every target.
+
+    A run naming several targets runs one of these processes per target, and
+    each is given the same `--recover-command` string. A recovery tool has to
+    be told which device to work on, and there is nothing else to tell it
+    with: the tool is started by the shell, not as a suite, so it sees none of
+    the E2E_* variables a suite is given.
+
+    The tokens are the ones a suite's arguments already use, so a recovery
+    command reads like the rest of the registry:
+
+        --recover-command 'tooling/recover_ultimate.py @HOST@'
+
+    @PASS@ is quoted, because unlike a suite's argument list this string is
+    handed to a shell.
+    """
+    command = command.replace("@HOST@", host)
+    command = command.replace("@PASS@", shlex.quote(password))
+    return command.replace("@TIMEOUT@", f"{timeout:g}")
+
+
 class Device:
     """The few device calls the harness itself makes, outside any suite."""
 
@@ -1304,7 +1327,8 @@ class Device:
         self.api = UltimateApi(host, password, timeout)
         self.probe = UltimateApi(host, password,
                                  DEVICE_RECOVERY_PROBE_TIMEOUT_SECONDS)
-        self.recover_command = recover_command
+        self.recover_command = expand_recover_command(recover_command, host,
+                                                      password, timeout)
         self.recover_max_per_suite = recover_max_per_suite if recover_command else 0
         self.recover_max_total = recover_max_total if recover_command else 0
         self.recover_timeout = recover_timeout
@@ -2463,7 +2487,10 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Run this shell command to bring an unhealthy "
                               "device back, for example 'build u64'. There is "
                               "no default: the mechanism is site-specific, so "
-                              "without it nothing is recovered. Its exit "
+                              "without it nothing is recovered. @HOST@, @PASS@ "
+                              "and @TIMEOUT@ are filled in with the target "
+                              "this recovery is for, which is how one command "
+                              "serves a run naming several targets. Its exit "
                               "status is advisory; the health check decides "
                               "whether the device came back."),
     health.add_argument("--recover-max-per-suite", type=int,
@@ -3325,8 +3352,11 @@ def main(argv: List[str]) -> int:
                   + (f", up to {options.attempts} attempts per suite"
                      if options.attempts > 1 else ", one attempt per suite"))
     if options.recover_command:
-        report.detail(f"recovery:   {options.recover_command} "
-                      f"(up to {options.recover_max_per_suite} per suite, "
+        report.detail("recovery:   "
+                      + expand_recover_command(options.recover_command,
+                                               options.host, options.password,
+                                               float(options.timeout))
+                      + f" (up to {options.recover_max_per_suite} per suite, "
                       f"{options.recover_max_total} in the run)")
     if options.output_dir:
         report.detail(f"jsonl:      {options.output_dir}/")
