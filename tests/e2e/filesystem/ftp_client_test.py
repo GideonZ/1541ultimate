@@ -576,6 +576,33 @@ class MenuDriver:
         self.select_context_action("Remove")
         time.sleep(MENU_SETTLE_SECONDS)
 
+    # How long a field is given to show what was typed into it before the
+    # commit is sent. Only reached when the batch is still draining, so a
+    # generous bound costs nothing on a machine that keeps up.
+    FIELD_ARRIVAL_TIMEOUT_SECONDS = 20.0
+
+    def _await_field(self, label, value):
+        """Wait until the open editor shows `value`.
+
+        The batch is accepted by REST at once and drains through the C64's
+        keyboard matrix afterwards, and on a cartridge it crosses the host's
+        matrix as well. Sleeping a computed time instead of reading the field
+        back charged that path a rate it does not keep: measured on an Ultimate
+        II+L in a C64 Ultimate, a 13-character host name was committed as
+        "192.168" every time at the charged 0.06s a key and whole at 0.25s.
+        Waiting for the characters to arrive needs no rate at all, and costs a
+        machine that keeps up nothing.
+        """
+        deadline = time.monotonic() + self.FIELD_ARRIVAL_TIMEOUT_SECONDS
+        while True:
+            screen = self.screen()
+            row = screen.find_row_containing(label + ":")
+            if row >= 0 and value[:16] in screen.rows[row]:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
+
     def _form_fill_current(self, label, value):
         # The form opens on Alias and each committed field advances by one, so
         # the "current" field matches our fixed order. Clear, edit, type, commit.
@@ -589,6 +616,7 @@ class MenuDriver:
                 self.tap(K_RETURN)              # enter string editor (empty)
                 if value:
                     self.type_text(value)
+                    self._await_field(label, value)
                 self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)  # commit + advance
             screen = self.screen()
             row = screen.find_row_containing(label + ":")
@@ -600,6 +628,7 @@ class MenuDriver:
                 self.tap(K_HOME)
                 self.tap(K_RETURN)
                 self.type_text(value)
+                self._await_field(label, value)
                 self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
                 continue
             self._dump_on_fail(screen, f"field {label} shows {screen.rows[row]!r}, expected {value!r}")
