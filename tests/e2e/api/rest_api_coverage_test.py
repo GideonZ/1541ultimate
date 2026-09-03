@@ -1266,7 +1266,7 @@ class SuiteRunner:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    cli.add_device_arguments(parser, password=None, colour=False, timeout=None)
+    cli.add_device_arguments(parser, password=None, colour=False)
     parser.add_argument("-r", "--repeat", type=int, default=DEFAULT_REPEAT,
                         help="how many times each case runs (default: %(default)s)")
     parser.add_argument("--order", choices=("concurrent", "sequential"),

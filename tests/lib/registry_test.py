@@ -204,7 +204,29 @@ def declared_options(path, helpers):
             func.id if isinstance(func, ast.Name) else None
         if name in helpers:
             options |= helpers[name]
+            options -= suppressed_by(node)
     return options
+
+
+# Keywords that turn one of the helper's arguments off, and what they remove.
+# Reading the helper's add_argument calls alone says a suite accepts every
+# option the helper can register, which is how two suites came to be
+# registered with a `-t` they refused: `add_device_arguments(timeout=None)`
+# registers none, and the runner still passed one.
+SUPPRESSING = {"timeout": {"-t", "--timeout"},
+               "colour": {"--color", "--colour"}}
+
+
+def suppressed_by(node):
+    """Options a helper call switched off with a keyword."""
+    off = set()
+    for keyword in node.keywords:
+        if keyword.arg not in SUPPRESSING:
+            continue
+        value = keyword.value
+        if isinstance(value, ast.Constant) and value.value in (None, False):
+            off |= SUPPRESSING[keyword.arg]
+    return off
 
 
 # Options a suite gets without registering them itself: argparse's own.
