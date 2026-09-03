@@ -99,7 +99,7 @@ PHASE_NAMES = {
 }
 
 FTP_USER_DEFAULT = "user"
-FTP_PASSWORD_DEFAULT = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 POLL_INTERVAL_SECONDS = 0.5
 # Shared with every suite; see tests/lib/pacing.py.
 MENU_SETTLE_SECONDS = pacing.MENU_TOGGLE_SETTLE_SECONDS
@@ -911,7 +911,7 @@ def parse_args():
     parser.add_argument("--issue-717-basic", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--host-output-dir", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
-    parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
+    parser.add_argument("--ftp-password", default=FTP_DEFAULT_PASSWORD)
     parser.add_argument("--verify-output", action="store_true",
                          help="Download and structurally validate the resulting PNG(s) via FTP")
     parser.add_argument("--keep-output", action="store_true", help=argparse.SUPPRESS)

@@ -36,7 +36,6 @@ from report import (  # noqa: E402  (needs tests/lib on sys.path first)
     Failure, check_fail, check_ok, check_start, section, suite_fail, suite_ok)
 
 FTP_USER_DEFAULT = ftp_lib.FTP_USER
-FTP_PASSWORD_DEFAULT = ftp_lib.FTP_DEFAULT_PASSWORD
 
 
 def download(host, user, password, path, timeout=15):
@@ -83,7 +82,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     cli.add_device_arguments(parser, colour=False)
     parser.add_argument("--ftp-user", default=FTP_USER_DEFAULT)
-    parser.add_argument("--ftp-password", default=FTP_PASSWORD_DEFAULT)
+    parser.add_argument("--ftp-password", default=ftp_lib.FTP_DEFAULT_PASSWORD)
     parser.add_argument("--output-base", help="Printer output file base, e.g. /Usb0/printer/e2e-abc")
     parser.add_argument("--pages", type=int, default=1, help="Expected page count for --output-base")
     parser.add_argument("--ascii", action="store_true", help="Treat --output-base as ASCII (<base>.txt)")

@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import ftplib
 import glob
+import io
 import json
 import os
 import random
@@ -74,6 +75,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
 from api import MachineApi  # noqa: E402
 from report import Failure, check, detail, format_exception, suite_fail, suite_ok  # noqa: E402
@@ -106,6 +108,10 @@ KEY_F13 = 183  # Linux input-event-codes.h
 DEEP_LIST_DIRECTORY = "usbsoak"
 DEEP_LIST_ENTRIES = 200
 ROW_NAME_WIDTH = len(str(DEEP_LIST_ENTRIES - 1))
+# The soak builds and removes this listing while the device is under load,
+# so the FTP session is given the same bounded wait as everything else
+# rather than the blocking default.
+FTP_TIMEOUT_SECONDS = 15.0
 ROW_INDEX_RE = re.compile(r"^row(\d+)\.txt\b")
 SCREEN_CELLS = 1000
 SELECTED_MIN = 12
@@ -479,10 +485,7 @@ def build_deep_list(host: str) -> int:
     storage.  Files that already exist are left alone, which makes a repeated
     run cheap.
     """
-    ftp = ftplib.FTP()
-    ftp.connect(host, 21, timeout=15)
-    ftp.login()
-    try:
+    with ftp_lib.session(host, timeout=FTP_TIMEOUT_SECONDS) as ftp:
         try:
             ftp.mkd("/Temp/" + DEEP_LIST_DIRECTORY)
         except ftplib.error_perm:
@@ -492,36 +495,20 @@ def build_deep_list(host: str) -> int:
         for index in range(DEEP_LIST_ENTRIES):
             name = f"row{index:0{ROW_NAME_WIDTH}d}.txt"
             if name not in existing:
-                ftp.storbinary("STOR " + name, __import__("io").BytesIO(b"soak\n"))
+                ftp.storbinary("STOR " + name, io.BytesIO(b"soak\n"))
         return len(ftp.nlst())
-    finally:
-        try:
-            ftp.quit()
-        except Exception:
-            ftp.close()
 
 
 def remove_deep_list(host: str):
-    ftp = ftplib.FTP()
-    ftp.connect(host, 21, timeout=15)
-    ftp.login()
-    try:
+    with ftp_lib.session(host, timeout=FTP_TIMEOUT_SECONDS) as ftp:
         ftp.cwd("/Temp/" + DEEP_LIST_DIRECTORY)
         for name in ftp.nlst():
-            try:
-                ftp.delete(name)
-            except ftplib.error_perm:
-                pass
+            ftp_lib.delete_quietly(ftp, name)
         ftp.cwd("/Temp")
         try:
             ftp.rmd(DEEP_LIST_DIRECTORY)
         except ftplib.error_perm:
             pass
-    finally:
-        try:
-            ftp.quit()
-        except Exception:
-            ftp.close()
 
 
 def enter_deep_list(u64: U64):

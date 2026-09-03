@@ -61,7 +61,7 @@ import ui_backend
 
 
 FTP_USER = "user"
-FTP_DEFAULT_PASSWORD = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 
 ROOT_PATH = "/"
 TEST_DIR_PREFIX = "zbfr"

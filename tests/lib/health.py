@@ -58,6 +58,7 @@ import time
 from dataclasses import dataclass
 from collections.abc import Sequence
 
+import ftp as ftp_lib
 import interactions
 import targets
 from api import UltimateApi
@@ -236,18 +237,21 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
 
 
 def _ftp_listing(host: str, port: int, password: str, passive: bool) -> None:
-    """One listing over a data connection, in the mode asked for."""
-    client = ftplib.FTP(timeout=SOCKET_TIMEOUT_SECONDS)
-    try:
-        client.connect(host, port)
-        client.login("ultimate", password or "ultimate")
-        client.set_pasv(passive)
+    """One listing over a data connection, in the mode asked for.
+
+    Through tests/lib/ftp.py, so the login, the timeout and the close are the
+    ones every suite uses. This used to log in as "ultimate"/"ultimate" while
+    the library used "user"/"password". Neither is observable today: the
+    firmware reads the user name only for the dirs/into/both listing-mode
+    selectors, and takes any password when none is configured
+    (software/network/ftpd.cc, cmd_user and cmd_pass). Two credential pairs
+    would have to be kept in step if that ever changed, so there is one.
+    """
+    with ftp_lib.session(targets.Target(token=host, device=host, computer=host,
+                                        ftp_port=port),
+                         password, timeout=SOCKET_TIMEOUT_SECONDS,
+                         passive=passive) as client:
         client.nlst("/")
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
 
 
 def _ftp(host: str, port: int, password: str = "") -> str:

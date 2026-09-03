@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+import ftp as ftp_lib  # noqa: E402
 import cli  # noqa: E402
 
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
@@ -880,10 +881,12 @@ class ControlledFtpServer:
 # verification only (never touches unrelated user files).
 # ---------------------------------------------------------------------------
 class DeviceFtpInspector:
-    def __init__(self, host, user="user", password="password", timeout=15):
-        # The device's own FTP server, so a cartridge target means the
-        # cartridge; see tests/lib/targets.py.
-        self.host = targets.device_of(host)
+    def __init__(self, host, user=ftp_lib.FTP_USER,
+                 password=ftp_lib.FTP_DEFAULT_PASSWORD, timeout=15):
+        # ftp_lib.connect resolves the target itself, and the device's own FTP
+        # server means the cartridge for a cartridge target; see
+        # tests/lib/targets.py.
+        self.host = host
         self.user = user
         self.password = password
         self.timeout = timeout
@@ -898,10 +901,8 @@ class DeviceFtpInspector:
             return False
 
     def _open(self):
-        ftp = ftplib.FTP()
-        ftp.connect(self.host, 21, timeout=self.timeout)
-        ftp.login(self.user, self.password)
-        return ftp
+        return ftp_lib.connect(self.host, self.password, timeout=self.timeout,
+                               user=self.user)
 
     def upload_bytes(self, path, data):
         ftp = self._open()

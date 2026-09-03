@@ -56,7 +56,7 @@ from ui_backend import Browser, TelnetBackend, add_mode_argument, make_browser, 
 
 
 FTP_USER = "user"
-FTP_DEFAULT_PASSWORD = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 
 TEMP_PATH = "/Temp/"
 FIXTURE_PREFIX = "pm"

@@ -39,7 +39,7 @@ from report import Failure, best_effort, check, format_exception, suite_fail, su
 from ui_backend import Browser, add_mode_argument, make_browser, strip_frame
 
 FTP_USER = "user"
-FTP_DEFAULT_PASSWORD = "password"
+FTP_DEFAULT_PASSWORD = ftp_lib.FTP_DEFAULT_PASSWORD
 ROOT_PATH = "/"
 TEMP_PATH = "/Temp/"
 TEST_DIR_PREFIX = "zlfn-"
