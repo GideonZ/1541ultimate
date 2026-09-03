@@ -195,7 +195,7 @@ void RmiiInterface :: rmiiTask(void)
 RmiiInterface :: ~RmiiInterface()
 {
 	if(ram_buffer) {
-		delete ram_buffer;
+		delete[] ram_buffer;
 	}
 	if(tx_pad_buffer) {
 		delete[] tx_pad_buffer;
