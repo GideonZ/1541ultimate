@@ -44,6 +44,7 @@ import json
 import os
 import re
 import socket
+import struct
 import sys
 import tempfile
 import threading
@@ -302,6 +303,110 @@ def a_failed_teardown_is_recorded_and_does_not_raise() -> str:
     if "550 no such file" not in teardowns[1]["error"]:
         raise Failure(f"the ftplib reason was lost: {teardowns[1]['error']!r}")
     return "2 teardown records, 1 caller bug re-raised"
+
+
+@case(1)
+def a_reset_part_way_through_a_body_is_not_retried() -> str:
+    """A PUT the device may already have seen is not sent a second time.
+
+    urllib wraps every OSError raised inside HTTPConnection.request in a
+    URLError, and that one call both connects and sends. Classifying by
+    exception type alone therefore read a reset part-way through a body as
+    "never left the client" and repeated a non-idempotent PUT: a files:* upload
+    or a machine:writemem applied twice, which the soak suites then see as a
+    false heap delta or a duplicate file.
+
+    Two servers, one per branch of the rule. One accepts the connection and
+    resets the socket while the body is arriving, which the device may have
+    acted on, so the PUT is sent once. The other refuses the connection, which
+    it cannot have acted on, so the PUT is repeated: three attempts, and the
+    pauses between them are what makes that observable without counting
+    connections nothing accepted.
+    """
+    import rest as rest_lib
+
+    # Larger than a socket buffer, so the reset lands with part of it sent.
+    body = b"x" * 200000
+    accepted = []
+
+    def reset_while_reading(listener: socket.socket) -> None:
+        """Accept, read a little, then send RST rather than FIN."""
+        while True:
+            try:
+                connection, _ = listener.accept()
+            except OSError:
+                return
+            accepted.append(1)
+            try:
+                connection.recv(4096)
+                # SO_LINGER with a zero timeout makes close() send RST, which
+                # is what a device that has gone away produces.
+                connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                      struct.pack("ii", 1, 0))
+            except OSError:
+                pass
+            finally:
+                connection.close()
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(8)
+    resetting_port = listener.getsockname()[1]
+    server = threading.Thread(target=reset_while_reading, args=(listener,),
+                              daemon=True)
+    server.start()
+
+    # A port nothing listens on: bound to find a free one, then closed.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    refused_port = probe.getsockname()[1]
+    probe.close()
+
+    def client(port: int):
+        return rest_lib.RestClient(
+            targets.Target(token="127.0.0.1", device="127.0.0.1",
+                           computer="127.0.0.1", rest_port=port),
+            timeout=5.0)
+
+    try:
+        with without_port_overrides():
+            try:
+                client(resetting_port).request("PUT", "/v1/machine:writemem",
+                                               body=body)
+            except Failure:
+                pass
+            expect("a body that was part-way out is sent once, not again",
+                   len(accepted), 1)
+
+            started = time.monotonic()
+            try:
+                client(refused_port).request("PUT", "/v1/machine:writemem",
+                                             body=b"small")
+            except Failure:
+                pass
+            else:
+                raise Failure("a PUT to a closed port should not have succeeded")
+            elapsed = time.monotonic() - started
+    finally:
+        listener.close()
+        server.join(timeout=5)
+
+    # Three attempts means two pauses, 0.5s then 1.5s. A refused connection
+    # that was not repeated would come back at once, so the time is what says
+    # the retry happened rather than a count of connections nothing accepted.
+    pauses = rest_lib.retry_pause(0) + rest_lib.retry_pause(1)
+    if elapsed < pauses * 0.9:
+        raise Failure(f"a refused PUT came back in {elapsed:.2f}s, too fast to "
+                      f"have waited the {pauses:.2f}s of retry pauses")
+
+    # The rule itself, stated directly, so both branches are readable without
+    # reconstructing them from the sockets above.
+    expect("not sent: repeat whatever the method",
+           rest_lib.may_retry("PUT", False), True)
+    expect("sent: a PUT may not be repeated", rest_lib.may_retry("PUT", True), False)
+    expect("sent: a GET may", rest_lib.may_retry("GET", True), True)
+    return f"1 attempt after a reset, {elapsed:.1f}s of retries after a refusal"
 
 
 @case(1, "OBS-14.2")

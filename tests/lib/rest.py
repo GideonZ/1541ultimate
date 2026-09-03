@@ -93,6 +93,46 @@ def note_mutation(method: str) -> None:
         _mutations += 1
 
 
+class _TrackedConnection(http.client.HTTPConnection):
+    """An HTTPConnection that remembers whether it put bytes on the wire.
+
+    urllib wraps every OSError raised inside `HTTPConnection.request` in a
+    `URLError`, and that one call both connects and sends the body. The retry
+    rule needs those apart: a refused connection cannot have applied anything,
+    while a reset part-way through a `files:*` upload or a multi-kilobyte
+    `machine:writemem` may already have. Nothing in the exception says which,
+    so the connection records it.
+    """
+
+    wrote = False
+
+    def send(self, data):
+        # Connecting is the part that can fail with nothing applied, and
+        # http.client does it lazily inside the first send, so it happens here
+        # before the flag is set. After it, a partial write counts as sent:
+        # sendall can raise having already delivered some of the body.
+        if self.sock is None:
+            self.connect()
+        self.wrote = True
+        super().send(data)
+
+
+class _TrackingHandler(urllib.request.HTTPHandler):
+    """An HTTP handler that hands back the connections it made."""
+
+    def __init__(self, made: list[_TrackedConnection]) -> None:
+        super().__init__()
+        self._made = made
+
+    def http_open(self, req):
+        def open_connection(*args, **kwargs) -> _TrackedConnection:
+            connection = _TrackedConnection(*args, **kwargs)
+            self._made.append(connection)
+            return connection
+
+        return self.do_open(open_connection, req)
+
+
 def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
     """Whether a failed attempt may be repeated. The only copy of this rule.
 
@@ -486,13 +526,19 @@ class RestClient:
         # still in flight already says how much it sent.
         outbound = message_bytes(f"{method.upper()} {target} HTTP/1.1",
                                  sent_headers, body)
+        # The connections this call makes, read after a failure to tell a
+        # refused connection from a body that was part-way out. One opener for
+        # every attempt; the list is emptied before each.
+        made: list[_TrackedConnection] = []
+        opener = urllib.request.build_opener(_TrackingHandler(made))
         for attempt in range(allowed):
+            made.clear()
             started = time.monotonic()
             call = interactions.begin("rest", f"{method.upper()} {path}",
                                       params=as_text(params) if params else None,
                                       sent=outbound, connection="new")
             try:
-                with urllib.request.urlopen(
+                with opener.open(
                         request, timeout=self.timeout if timeout is None else timeout) as response:
                     answer = (response.status, dict(response.headers.items()),
                               response.read())
@@ -500,7 +546,12 @@ class RestClient:
                 answer = (exc.code, dict(exc.headers.items()), exc.read())
             except (OSError, TimeoutError, urllib.error.URLError) as exc:
                 last_exc = exc
-                went = not isinstance(exc, urllib.error.URLError)
+                # Whether the device can have seen the request. A bare OSError
+                # comes from reading the response, so the request had gone; a
+                # URLError comes from connecting or sending, and only the
+                # connection knows which of the two it was.
+                went = (not isinstance(exc, urllib.error.URLError)
+                        or any(connection.wrote for connection in made))
                 if may_retry(method, went, idempotent) and attempt + 1 < allowed:
                     interactions.finish(call, ms=0.0,
                                         fault=interactions.fault_of(exc),
