@@ -231,6 +231,15 @@ class Collector:
         already cost 15 to 30 minutes. A collector that cannot start leaves the
         run exactly as it was.
         """
+        for step in (self._choose_addresses, self._open_socket,
+                     self._prepare_outputs):
+            if not step(wanted, ports):
+                return False
+        return self._start()
+
+    def _choose_addresses(self, wanted: Sequence[targets_lib.Target],
+                          ports: Mapping[str, int] | None) -> bool:
+        """Which machine each target's log belongs to, and which port it uses."""
         self.unmapped_path = os.path.join(self.directory, UNKNOWN_SENDER_NAME)
         wanted_ports = dict(ports or {})
         # Devices under test first, computers second. A machine can be both:
@@ -310,6 +319,11 @@ class Collector:
         # it, so a device that was never provisioned, or one whose setting
         # could not be read, is collected exactly as it was before ports were
         # read at all.
+        return True
+
+    def _open_socket(self, wanted: Sequence[targets_lib.Target],
+                     ports: Mapping[str, int] | None) -> bool:
+        """Bind the run's ports. False when the main one could not be opened."""
         opened = self._listen(self.port)
         if opened is None:
             return False
@@ -330,6 +344,11 @@ class Collector:
         # nothing, so it has no owner and its datagrams are attributed by
         # source address as before. Decided after the ports are bound, because
         # a port that could not be opened is not one anything arrives on.
+        return True
+
+    def _prepare_outputs(self, wanted: Sequence[targets_lib.Target],
+                         ports: Mapping[str, int] | None) -> bool:
+        """Which file each machine's lines go to, and what cannot be attributed."""
         users: dict[int, set[str]] = {}
         for machine, port in self.machine_ports.items():
             users.setdefault(port, set()).add(machine)
@@ -354,6 +373,10 @@ class Collector:
                     f"{machine} {why} and shares its syslog port, so its "
                     f"lines cannot be attributed and land in "
                     f"{UNKNOWN_SENDER_NAME}")
+        return True
+
+    def _start(self) -> bool:
+        """Open the output files and start the receiving thread."""
         self.started = self.clock()
         # Opened now rather than on the first datagram. A file that cannot be
         # written is a startup problem the operator can act on; discovered
