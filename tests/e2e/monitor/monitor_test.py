@@ -564,9 +564,9 @@ def write_rest_memory_confirmed(host: str, address: int, data: bytes,
 
 def wait_for_rest_data(host: str, address: int, expected: bytes,
                        timeout: float = 5.0) -> bytes:
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     actual = b""
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         actual = read_rest_memory(host, address, len(expected))
         if actual == expected:
             return actual
@@ -637,8 +637,8 @@ def reset_rest_machine(control: str, password: str | None) -> None:
 
 
 def wait_for_rest_byte(host: str, address: int, expected: int, timeout: float = 2.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         value = read_rest_memory(host, address, 1)[0]
         if value == expected:
             return
@@ -940,8 +940,8 @@ def goto_and_read_byte(
     if expected is None or value == expected:
         return value
 
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         time.sleep(0.05)
         screen = session.capture()
         try:
@@ -2561,9 +2561,9 @@ def clear_prompt_field(session: MonitorSession) -> None:
 
 def wait_for_screen_contains(session: MonitorSession, text: str,
                              timeout: float = 5.0) -> Snapshot:
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     snapshot = session.capture()
-    while time.time() < deadline:
+    while time.monotonic() < deadline:
         if text in snapshot.text():
             return snapshot
         time.sleep(0.05)
@@ -2747,10 +2747,10 @@ def wait_until(session: MonitorSession, ready, timeout: float = 5.0) -> Snapshot
     check, so polling is both faster than the settle gap when the screen is
     already right and more patient than it when the redraw is late.
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     snapshot = session.capture()
     while not ready(snapshot):
-        if time.time() >= deadline:
+        if time.monotonic() >= deadline:
             return snapshot
         time.sleep(0.05)
         snapshot = session.capture()
@@ -4251,9 +4251,9 @@ def assert_machine_is_running(live_host: str, context: str,
     reset fails the first; a machine that booted and then had its interrupts
     stopped fails the second.
     """
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
-    while time.time() < deadline and vector != KERNAL_IRQ_HANDLER:
+    while time.monotonic() < deadline and vector != KERNAL_IRQ_HANDLER:
         time.sleep(0.2)
         vector = read_rest_memory(live_host, KERNAL_IRQ_VECTOR, 2)
     if vector != KERNAL_IRQ_HANDLER:
@@ -4263,8 +4263,8 @@ def assert_machine_is_running(live_host: str, context: str,
             f"the 6510 restarted but never finished the KERNAL's boot")
 
     first = read_rest_memory(live_host, 0x00A0, 3)
-    deadline = time.time() + 3.0
-    while time.time() < deadline:
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
         time.sleep(0.2)
         if read_rest_memory(live_host, 0x00A0, 3) != first:
             return
@@ -4333,8 +4333,8 @@ def press_reset_shortcut(session: MonitorSession, rest_host: str,
     write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
     send_key_that_may_close_the_ui(session, "CBM_R")
 
-    deadline = time.time() + 5.0
-    while time.time() < deadline and not monitor_has_gone(session):
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not monitor_has_gone(session):
         time.sleep(0.2)
     if not monitor_has_gone(session):
         screen = session.capture()
@@ -4344,8 +4344,8 @@ def press_reset_shortcut(session: MonitorSession, rest_host: str,
         raise Failure(f"{context}: C=+R did not leave the monitor\n"
                       f"{screen.text()}")
 
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(
@@ -4463,9 +4463,9 @@ def read_interface_type(device_host: str) -> str | None:
 def wait_for_interface_type(device_host: str, unwanted: str | None,
                             timeout: float = 6.0) -> str | None:
     """Re-read the setting until it is no longer `unwanted`, or the budget ends."""
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     current = read_interface_type(device_host)
-    while time.time() < deadline and current == unwanted:
+    while time.monotonic() < deadline and current == unwanted:
         time.sleep(0.2)
         current = read_interface_type(device_host)
     return current
@@ -4604,9 +4604,9 @@ def assert_interface_swap_from_the_monitor_closes_the_ui(
                    "between the freeze menu and the HDMI overlay, neither of "
                    "which is this session")
         else:
-            deadline = time.time() + 5.0
+            deadline = time.monotonic() + 5.0
             closed = False
-            while time.time() < deadline and not closed:
+            while time.monotonic() < deadline and not closed:
                 try:
                     session.capture()
                 except Failure as exc:
@@ -4687,8 +4687,8 @@ def assert_reset_shortcuts_from_the_file_browser(
     # releases the user interface's hold on the machine before resetting it.
     write_rest_memory_confirmed(rest_host, RESET_SENTINEL_ADDRESS, RESET_SENTINEL)
     send_key_that_may_close_the_ui(session, "CBM_R")
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(
@@ -4792,8 +4792,8 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
                "backend owns the machine")
         return
 
-    deadline = time.time() + 5.0
-    while time.time() < deadline and not monitor_has_gone(session):
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline and not monitor_has_gone(session):
         time.sleep(0.2)
     if not monitor_has_gone(session):
         raise Failure(
@@ -4801,8 +4801,8 @@ def run_machine_reset_shortcut_test(session: MonitorSession, rest_host: str,
 
     # The machine reboots on its own clock, so this waits for the sentinel to
     # go rather than reading it once.
-    deadline = time.time() + 15.0
-    while time.time() < deadline and reset_sentinel_survives(rest_host):
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline and reset_sentinel_survives(rest_host):
         time.sleep(0.2)
     if reset_sentinel_survives(rest_host):
         raise Failure(

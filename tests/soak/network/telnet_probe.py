@@ -1168,13 +1168,13 @@ def run_vanish_probe(settings: RuntimeSettings) -> ProbeOutcome:
 
         # 5. Poll for recovery. GREEN = the device reaped the dead sessions and
         #    freed capacity; RED = it stays wedged past the reap window.
-        deadline = time.time() + reap_timeout
-        start = time.time()
+        deadline = time.monotonic() + reap_timeout
+        start = time.monotonic()
         last_state = _VANISH_BUSY
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             last_state = _vanish_probe_state(host, port)
             if last_state == _VANISH_FREE:
-                recovered = time.time() - start
+                recovered = time.monotonic() - start
                 return outcome("OK", f"reaped {slots} half-open slots in ~{recovered:.0f}s")
             time.sleep(3.0)
 

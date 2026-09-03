@@ -95,11 +95,11 @@ class NativeUci:
         status, _, body = self.runners.upload("run_prg", prg)
         if status != 200:
             raise Failure(f"runners:run_prg returned HTTP {status}: {body[:160]!r}")
-        deadline = time.time() + START_TIMEOUT_SECONDS
+        deadline = time.monotonic() + START_TIMEOUT_SECONDS
         while True:
             if self.machine.readmem(READY, 1)[0] == AGENT_READY:
                 break
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 raise Failure(
                     f"the 6502 agent did not report ready within "
                     f"{START_TIMEOUT_SECONDS:.0f}s; ${READY:04X} never became "
@@ -125,13 +125,13 @@ class NativeUci:
         self.machine.writemem(OPT_ABRT, bytes([0x01 if abort_first else 0x00]))
         self.machine.writemem(GO, bytes([0x01]))
 
-        deadline = time.time() + self.busy_timeout
+        deadline = time.monotonic() + self.busy_timeout
         while True:
             sequence = self.machine.readmem(SEQ, 1)[0]
             if sequence != self._sequence:
                 self._sequence = sequence
                 break
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 raise Failure(
                     f"the 6502 agent did not finish {command.hex(' ')} within "
                     f"{self.busy_timeout:.0f}s. It is either wedged in the command "
@@ -161,9 +161,9 @@ class NativeUci:
         Data More reply through its blocks, so this only unpacks what it
         recorded.
         """
-        started = time.time()
+        started = time.monotonic()
         block, payload = self._run(command, overrun_reads, DEFAULT_DRAIN_CAP)
-        elapsed = time.time() - started
+        elapsed = time.monotonic() - started
         flags = self._byte(block, R_FLAGS)
         if flags & FLAG_WAIT_TIMEOUT:
             raise Failure(f"command {command.hex(' ') or '<empty>'} never left Command Busy: "
