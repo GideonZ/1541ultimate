@@ -339,6 +339,10 @@ SUITES: Sequence[Suite] = (
     # under --mode telnet.
     Suite("e2e", "machine-code-monitor", "tests/e2e/monitor/monitor_test.py",
           "--host @HOST@ --password @PASS@ --timeout @TIMEOUT@ --mode @MODE@", profile=profiles.DEEP),
+    # Reproduces #783: service settings used to start listeners live but could
+    # not stop them again until reboot. Ident is the smallest protocol probe.
+    Suite("e2e", "ident-service-switch", "tests/e2e/network/ident_service_switch_test.py",
+          "-H @HOST@ -p @PASS@ -t @TIMEOUT@"),
     # The device's own FTP server: a name it reports in a listing has to be a
     # name it accepts back for SIZE and DELE.
     # In smoke because nothing else there touches a filesystem. The rest of

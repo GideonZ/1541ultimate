@@ -212,9 +212,17 @@ static int EndsWith(const char *str, const char *suffix)
 }
 FTPDaemon *ftpd = NULL; 
 
-FTPDaemon::FTPDaemon()
+FTPDaemon::FTPDaemon() : enabled(false)
 {
+    cfg = networkConfig.cfg;
+    cfg->addObject(this);
+    enabled = cfg->get_value(CFG_NETWORK_FTP_SERVICE) != 0;
     xTaskCreate(ftp_listen_task, "FTP Listener", configMINIMAL_STACK_SIZE, this, PRIO_NETSERVICE, &listenTaskHandle);
+}
+
+void FTPDaemon::effectuate_settings(void)
+{
+    enabled = cfg->get_value(CFG_NETWORK_FTP_SERVICE) != 0;
 }
 
 void FTPDaemon::ftp_listen_task(void *a)
@@ -227,71 +235,89 @@ void FTPDaemon::ftp_listen_task(void *a)
 
 int FTPDaemon::listen_task()
 {
-    while (networkConfig.cfg->get_value(CFG_NETWORK_FTP_SERVICE) == 0) {
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-    puts("FTP server starting");
-
     int sockfd, portno;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        puts("FTPD: ERROR opening socket");
-        return -1;
-    }
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 21;
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-    // Retry binding rather than exiting permanently: a transient failure (port
-    // briefly in use, stack not ready) would otherwise kill the FTP listener
-    // until reboot.
-    while (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        puts("FTPD: ERROR on binding; retrying in 2s");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-
-    listen(sockfd, 2);
-
     while (1) {
-        clilen = sizeof(cli_addr);
-        int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
-        if (actual_socket < 0) {
-            puts("FTPD: ERROR on accept");
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue;  // Remote probably closed, just wait for another connection
+        while (!enabled) {
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
         }
+        puts("FTP server starting");
 
-        ftp_set_control_socket_timeouts(actual_socket);
-        // A vanished client would hold its session slot forever.
-        net_enable_client_keepalive(actual_socket);
-
-        // Cap concurrent sessions: refuse politely rather than let abandoned
-        // connections accumulate and drain the shared netconn pool.
-        if (num_threads >= FTPD_MAX_SESSIONS) {
-            const char *busy = "421 Too many FTP connections, try again later.\r\n";
-            send(actual_socket, busy, strlen(busy), 0);
-            closesocket(actual_socket);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd < 0) {
+            puts("FTPD: ERROR opening socket");
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        int reuse = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
+        ftp_set_socket_timeout(sockfd, 0, 250000);
+        memset((char *) &serv_addr, 0, sizeof(serv_addr));
+        portno = 21;
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = INADDR_ANY;
+        serv_addr.sin_port = htons(portno);
+        // Retry binding rather than exiting permanently: a transient failure (port
+        // briefly in use, stack not ready) would otherwise kill the FTP listener
+        // until reboot.
+        while (enabled && bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+            puts("FTPD: ERROR on binding; retrying in 2s");
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+        }
+        if (!enabled) {
+            closesocket(sockfd);
             continue;
         }
 
-        FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
+        listen(sockfd, 2);
 
-        BaseType_t res = xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
-        if (res != pdPASS) {
-            puts("FTPD: xTaskCreate failed; dropping connection");
-            closesocket(actual_socket);
-            delete thread;
-            portENTER_CRITICAL();
-            num_threads--;
-            portEXIT_CRITICAL();
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue;
+        while (enabled) {
+            clilen = sizeof(cli_addr);
+            int actual_socket = accept(sockfd, (struct sockaddr * ) &cli_addr, &clilen);
+            if (!enabled) {
+                if (actual_socket >= 0) {
+                    closesocket(actual_socket);
+                }
+                break;
+            }
+            if (actual_socket < 0) {
+                if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                    puts("FTPD: ERROR on accept");
+                    vTaskDelay(100 / portTICK_PERIOD_MS);
+                }
+                continue;
+            }
+
+            ftp_set_control_socket_timeouts(actual_socket);
+            // A vanished client would hold its session slot forever.
+            net_enable_client_keepalive(actual_socket);
+
+            // Cap concurrent sessions: refuse politely rather than let abandoned
+            // connections accumulate and drain the shared netconn pool.
+            if (num_threads >= FTPD_MAX_SESSIONS) {
+                const char *busy = "421 Too many FTP connections, try again later.\r\n";
+                send(actual_socket, busy, strlen(busy), 0);
+                closesocket(actual_socket);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+                continue;
+            }
+
+            FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
+
+            BaseType_t res = xTaskCreate(FTPDaemonThread::run, "FTP Task", configMINIMAL_STACK_SIZE, thread, PRIO_NETSERVICE, NULL);
+            if (res != pdPASS) {
+                puts("FTPD: xTaskCreate failed; dropping connection");
+                closesocket(actual_socket);
+                delete thread;
+                portENTER_CRITICAL();
+                num_threads--;
+                portEXIT_CRITICAL();
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
         }
+        closesocket(sockfd);
     }
 }
 

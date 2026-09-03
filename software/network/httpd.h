@@ -8,19 +8,23 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include <atomic>
+#include "config.h"
 #include "indexed_list.h"
 
 #define ERR_OK 0
 
-class HTTPDaemon
+class HTTPDaemon : public ConfigurableObject
 {
 	static void http_listen_task(void *a);
+	std::atomic<bool> enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 
 	HTTPDaemon();
 	~HTTPDaemon() { }
 
+	void effectuate_settings(void);
 	int listen_task(void);
 };
 
