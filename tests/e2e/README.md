@@ -63,7 +63,7 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
-| `web/` | `html/`, `software/httpd/` | The two pages the device serves, driven in an installed Chrome and Firefox: their light/dark theme, and what `index.html` puts on the wire against a stub device that records every REST call |
+| `web/` | `html/`, `software/httpd/` | The two pages the device serves, driven in an installed Chrome and Firefox: their light/dark theme, and what `index.html` puts on the wire against the device double |
 | `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power, and waking the machine from off over Wi-Fi |
 | `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), the recorder that composes a run's video (`recorder.py`, with the stream, band, glyph and VIC-text modules beside it), the smoke test of the UI backend itself (`ui_backend_smoke_test.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 

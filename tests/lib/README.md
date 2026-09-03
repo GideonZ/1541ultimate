@@ -21,7 +21,7 @@ repository-root `run-tests` all use it.
 | `config_snapshot.py` | Every setting a machine serves, and putting the changed ones back |
 | `openapi_contract.py` | Checks the device's answers against the generated OpenAPI documents |
 | `interactions.py` | Every interaction the harness had with a device, written as it happens |
-| `device_double.py` | One fake Ultimate on loopback, for the observability tests |
+| `device_double.py` | One fake Ultimate on loopback, for the observability tests and, handed `html/`, for the browser suites |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 
