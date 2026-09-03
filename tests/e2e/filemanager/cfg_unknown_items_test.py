@@ -40,8 +40,8 @@ from report import (Failure, check, check_skip, check_start, detail,
 from ui_backend import add_mode_argument, make_browser
 
 # Named so a leftover from a failed run is obvious in /Temp.
-CFG_NAME = "cfg-unknown-e2e.cfg"
-LOG_NAME = "cfg-unknown-e2e.log"
+CFG_NAME = "cfg-unk.cfg"
+LOG_NAME = "cfg-unk.log"
 
 UNKNOWN_ITEM = "No Such Item"
 UNKNOWN_ITEM_VALUE = "12345"

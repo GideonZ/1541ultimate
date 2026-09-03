@@ -316,6 +316,19 @@ def main() -> int:
             suite.close_active_menu()
         except Failure:
             pass
+        # And a clean /Temp. This suite seeds ten 750K files there and mounts
+        # two images from it, which it purges on the way in but used to leave
+        # behind on the way out. Every later suite that works in /Temp then
+        # saw them: on u2@c64u that turned the short listing prg-context-menu
+        # builds into one longer than a screen, and nine of its actions failed
+        # having been unable to find the entry they had just created.
+        #
+        # After run_final_integrity, so the check that user files under /Temp
+        # were not modified still runs against the files this suite made.
+        try:
+            suite.run_purge()
+        except Failure:
+            pass
         suite.restore_initial_config()
 
 

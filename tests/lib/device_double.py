@@ -27,8 +27,12 @@ What it serves:
 
     REST      version, info, machine:menu_screen, machine:readmem,
               machine:heap, machine:input, machine:reset and the other machine
-              actions, the drives listing, a few configuration items, and
-              streams:start and streams:stop
+              actions, the drives listing, the PRG/CRT/SID runners, both forms
+              of drives:mount, a few configuration items, and streams:start
+              and streams:stop
+    Pages     what the device serves from html/, when a test hands the double
+              that directory. A browser proxied at the double then reaches the
+              real page and the real API on one address.
     FTP       the 220 banner the health sweep reads, and nothing else
     Telnet    an accepted connection, which is all the health sweep asks for
     DMA       the IDENTIFY exchange on the control port
@@ -43,6 +47,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import pathlib
 import socket
 import socketserver
 import struct
@@ -67,6 +72,11 @@ SCREEN_BYTES = SCREEN_CELLS * 2
 # answered by a length-prefixed title.
 DMA_CMD_IDENTIFY = 0xFF0E
 IDENTIFY_TITLE = b"ULTIMATE-DOUBLE"
+
+# What the device's own web server labels the files in html/ as.
+PAGE_TYPES = {".html": "text/html", ".css": "text/css",
+              ".js": "application/javascript", ".json": "application/json",
+              ".woff": "font/woff", ".svg": "image/svg+xml"}
 
 DEFAULT_PRODUCT = "Ultimate 64"
 DEFAULT_FIRMWARE = "3.15"
@@ -103,6 +113,9 @@ class Request:
     method: str
     path: str
     params: Dict[str, str] = field(default_factory=dict)
+    # What was uploaded, for a test asserting that a file reached the device
+    # rather than only that a request did.
+    body: bytes = b""
 
     @property
     def key(self) -> Tuple[str, str]:
@@ -134,10 +147,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
         length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
+        body = self.rfile.read(length) if length else b""
         double = self.double
-        double.record(Request(method, parsed.path, params))
+        double.record(Request(method, parsed.path, params, body))
 
         faults = double.faults
         if faults.offline or (double.offline_flag
@@ -145,6 +157,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             # No status line at all: the client sees the connection close,
             # which is what a device that has stopped answering produces.
             self.close_connection = True
+            return
+        if not parsed.path.startswith("/v1/"):
+            # The pages the device serves, and it serves them without a
+            # password: the page is where the password is entered.
+            self._send_page(parsed.path)
             return
         if double.password and \
                 self.headers.get("X-Password") != double.password:
@@ -157,6 +174,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         status, body, content_type = handler(params)
         self._send(status, body, content_type)
+
+    def _send_page(self, path: str) -> None:
+        """A file from `html/`, when the double was given that directory."""
+        root = self.double.pages
+        target = (root / ("index.html" if path == "/" else path.lstrip("/"))).resolve() \
+            if root else None
+        if target is None or root.resolve() not in target.parents or not target.is_file():
+            self._send(404, b"not found", "text/plain")
+            return
+        self._send(200, target.read_bytes(),
+                   PAGE_TYPES.get(target.suffix, "application/octet-stream"))
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -175,8 +203,11 @@ class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class DeviceDouble:
     """A fake device on loopback. Start it, point a handle at it, stop it."""
 
-    def __init__(self, password: str = "") -> None:
+    def __init__(self, password: str = "", pages: str = "") -> None:
         self.password = password
+        # The device's own html/ directory, when a test needs the pages served
+        # as well as the API. Left unset, every non-/v1/ path answers 404.
+        self.pages = pathlib.Path(pages) if pages else None
         self.faults = Faults()
         self.requests: List[Request] = []
         self.product = DEFAULT_PRODUCT
@@ -237,7 +268,7 @@ class DeviceDouble:
             target=self._http.serve_forever, kwargs={"poll_interval": 0.005},
             name="double-http", daemon=True)
         self._http_thread.start()
-        self._ftp = _BannerListener(b"220 Ultimate FTP\r\n")
+        self._ftp = _FtpListener()
         self._telnet = _BannerListener(b"")
         self._dma = _DmaListener()
 
@@ -315,6 +346,9 @@ class DeviceDouble:
             ("POST", "/v1/machine:input"): self._input,
             ("PUT", "/v1/machine:writemem"): self._ok_json,
             ("POST", "/v1/machine:writemem"): self._ok_json,
+            ("POST", "/v1/runners:run_prg"): self._ok_json,
+            ("POST", "/v1/runners:run_crt"): self._ok_json,
+            ("POST", "/v1/runners:sidplay"): self._ok_json,
         }
         found = table.get((method, path))
         if found is not None:
@@ -325,7 +359,9 @@ class DeviceDouble:
             return lambda params, path=path: self._config(path)
         if method == "PUT" and path.startswith("/v1/streams/"):
             return lambda params, path=path: self._stream(path, params)
-        if method == "PUT" and path.startswith("/v1/drives/"):
+        if method in ("PUT", "POST") and path.startswith("/v1/drives/"):
+            # POST is the upload-and-mount form, which carries the image in the
+            # body rather than naming one already on the device.
             return lambda params, path=path: self._drive_action(path, params)
         if method == "PUT" and path.startswith("/v1/configs"):
             return lambda params, path=path: self._set_config(path, params)
@@ -553,6 +589,85 @@ class _BannerListener:
             self.socket.close()
         except OSError:
             pass
+
+
+class _FtpListener(_BannerListener):
+    """Enough FTP for the health check: greet, log in, and list over PASV.
+
+    The sweep no longer proves FTP by its banner alone, because a device out of
+    data connections still sends one. It asks for a listing, so the double has
+    to be able to give it one or every sweep against the double fails.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(b"220 Ultimate FTP\r\n")
+
+    def _serve(self) -> None:
+        while self.running:
+            try:
+                connection, _ = self.socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            refusing = self.refuse or (self.refuse_flag
+                                       and os.path.exists(self.refuse_flag))
+            if refusing:
+                connection.close()
+                continue
+            threading.Thread(target=self._session, args=(connection,),
+                             daemon=True).start()
+
+    def _session(self, connection: "socket.socket") -> None:
+        data_socket = None
+        try:
+            connection.settimeout(2.0)
+            connection.sendall(self.banner)
+            while True:
+                line = connection.recv(512)
+                if not line:
+                    return
+                command = line.decode("ascii", "replace").strip().upper()
+                if command.startswith("USER"):
+                    connection.sendall(b"331 Password required\r\n")
+                elif command.startswith("PASS"):
+                    connection.sendall(b"230 Logged in\r\n")
+                elif command.startswith("TYPE"):
+                    connection.sendall(b"200 Type set\r\n")
+                elif command.startswith("PASV"):
+                    data_socket = socket.socket()
+                    data_socket.bind((LOOPBACK, 0))
+                    data_socket.listen(1)
+                    data_socket.settimeout(2.0)
+                    port = data_socket.getsockname()[1]
+                    connection.sendall(
+                        ("227 Entering Passive Mode (127,0,0,1,%d,%d)\r\n"
+                         % (port >> 8, port & 0xFF)).encode("ascii"))
+                elif command.startswith(("NLST", "LIST")):
+                    if data_socket is None:
+                        connection.sendall(b"425 Use PASV first\r\n")
+                        continue
+                    connection.sendall(b"150 Opening data connection\r\n")
+                    try:
+                        transfer, _ = data_socket.accept()
+                        transfer.sendall(b"Temp\r\n")
+                        transfer.close()
+                    except (socket.timeout, OSError):
+                        pass
+                    data_socket.close()
+                    data_socket = None
+                    connection.sendall(b"226 Transfer complete\r\n")
+                elif command.startswith("QUIT"):
+                    connection.sendall(b"221 Goodbye\r\n")
+                    return
+                else:
+                    connection.sendall(b"200 Ok\r\n")
+        except (OSError, socket.timeout):
+            return
+        finally:
+            if data_socket is not None:
+                data_socket.close()
+            connection.close()
 
 
 class _DmaListener(_BannerListener):

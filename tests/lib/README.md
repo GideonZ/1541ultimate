@@ -14,19 +14,32 @@ repository-root `run-tests` all use it.
 | `pacing.py` | How fast the suites drive the on-device UI, with the measurements behind each value |
 | `health.py` | One bounded sweep of every listener the suites need, plus proof the C64 is running |
 | `targets.py` | What a run is aimed at: which of a target's machines serves what, and where each surface is |
-| `device_double.py` | One fake Ultimate on loopback, for the observability tests |
+| `machine.py` | Which machine a target is, asked of `/v1/info`, and which firmware fixes it lacks |
+| `navigation.py` | What the on-device menu does with a typed letter, which is the Navigation Style setting |
+| `profiles.py` | How much of the suite tree a run covers: the profile ladder, and what a scenario tags itself with |
+| `coverage.py` | Which suites each profile selects, and what recorded runs measured; behind `--list-profiles` |
+| `config_snapshot.py` | Every setting a machine serves, and putting the changed ones back |
+| `openapi_contract.py` | Checks the device's answers against the generated OpenAPI documents |
+| `interactions.py` | Every interaction the harness had with a device, written as it happens |
+| `device_double.py` | One fake Ultimate on loopback, for the observability tests and, handed `html/`, for the browser suites |
 | `syslog_collector.py` | The devices' own log, collected off the network while a run happens |
 | `fixtures/e2e-run.expected.md` | The report generated from a fixture the tests build for themselves; see below |
 
-Two registered suites live here as well, because both check the test tree
-itself rather than the device and so need no hardware. They run first, where a
-failure lands as a clear message instead of as a confusing one later:
+Seven registered suites live here as well, because each checks the test tree
+or the build rather than the device and so needs no hardware. They run first,
+where a failure lands as a clear message instead of as a confusing one later.
+The runner is handed no device for them, so it skips the health sweep and the
+UI-state gate around each one:
 
 | Suite | Checks |
 | --- | --- |
 | `check_transport_usage.py` | No suite has grown its own HTTP client again |
+| `esp_depends_test.py` | Every ESP32 project CI caches is covered by the cache key, so a stale binary cannot be handed back forever |
+| `input_batching_test.py` | A `machine:input` request never exceeds either of the device's two limits, the event count and the body size |
 | `runner_policy_test.py` | When `run-tests` may run the recovery command, and what it exits with |
+| `openapi_contract_test.py` | The response validator agrees with the committed documents in `doc/api` |
 | `observability_test.py` | The harness that watches a run: the report generator, the console capture and everything else the gate's own verdicts cannot exercise |
+| `navigation_test.py` | Which keys the harness sends at a menu under each Navigation Style |
 
 `observability_test.py` also runs as `make observability_test` and as a step in
 `.github/workflows/build.yml`. One implementation, invoked three ways. It needs
@@ -226,12 +239,21 @@ DIR/
     capture/<label>-<suite>-<attempt>-screen.txt
     capture/<label>-<suite>-<attempt>-screen.bin
     capture/<label>-<suite>-<attempt>-state.json
+    attempt-<n>/               the console log and the capture of the second
+                               and every later attempt at a suite, in the same
+                               two shapes as above
 ```
 
-A `.log` holds what a suite printed, stderr merged in and ANSI stripped, and is
-appended to across attempts. A `capture/` set is written only for a suite that
-failed: the screen it left as text and as the device's own bytes, and the free
-heap and drive state beside it. `screens.jsonl` is every distinct screen any
+A `.log` holds what a suite printed, stderr merged in and ANSI stripped. The
+first attempt's is at the top of the target's directory and each later one is
+under `attempt-<n>/`, because a console log has no attempt field to join on and
+a second attempt writing to the same file would either overwrite the first or
+append to it with no boundary. The per-suite JSONL is deliberately not split
+that way: every record already carries `attempt`, and the file is truncated on
+the first attempt and appended to afterwards, so it holds every attempt in
+order. A `capture/` set is written only for a suite that failed: the screen it
+left as text and as the device's own bytes, and the free heap and drive state
+beside it. `screens.jsonl` is every distinct screen any
 suite read, from the fetches it was making anyway; `--no-screens` turns it off.
 It carries three kinds of its own: `menu` and `telnet` are the screens, one
 record per distinct screen, and `stream` is a suite starting, stopping or
@@ -267,7 +289,7 @@ them, `target` and `attempt`. The rest depends on the kind:
 | `run` | `verdict`, `suites`, `passed`, `failed`, `skipped`, `dirty`, `seconds`, `recoveries`, `retried`, `extra_attempts`, `harness_changed`, `exit_code`, plus the run identity below |
 
 A `suite` record written by `run-tests` carries what only the harness knows:
-the UI profile, which attempt it was, and how many times the device had to be
+the UI mode, which attempt it was, and how many times the device had to be
 recovered around it. A suite writing its own closing line has none of those, so
 they are absent rather than zero.
 

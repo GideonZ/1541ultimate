@@ -282,7 +282,7 @@ int C64 :: setCartPrefUI(ConfigItem *item)
 
 void C64 :: init(void)
 {
-    effectuate_settings();
+    effectuate_registered_settings();
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();

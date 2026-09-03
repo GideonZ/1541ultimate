@@ -63,8 +63,9 @@ to drive it.
 | `io/` | `software/io/` | Device-facing I/O subsystems, nested by production package (`c64/`, `command_interface/`, `printer/`) |
 | `monitor/` | `software/monitor/` | Machine-code monitor behaviour |
 | `network/` | `software/network/` | Network service and connection lifecycle |
+| `web/` | `html/`, `software/httpd/` | The two pages the device serves, driven in an installed Chrome and Firefox: their light/dark theme, and what `index.html` puts on the wire against the device double |
 | `u64ctrl/` | `software/u64ctrl/` | The ESP32 control module: what it does across a loss of input power, and waking the machine from off over Wi-Fi |
-| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
+| `lib/` | - | Support code shared by E2E suites only: the UI backend (`ui_backend.py`), its menu primitives (`menu.py`), the UI-state gate (`ui_state.py`), the spool of every screen the harness read (`screens.py`), the recorder that composes a run's video (`recorder.py`, with the stream, band, glyph and VIC-text modules beside it), the smoke test of the UI backend itself (`ui_backend_smoke_test.py`), and the device-free check of the Telnet drain state machine (`telnet_drain_test.py`) |
 
 Assets and narrowly scoped helpers stay beside the suite that owns them.
 Reporting is shared beyond E2E and lives in [`tests/lib/`](../lib/).
@@ -90,6 +91,29 @@ sharing a machine never run at the same time. `./run-tests u64 u2@c64u c64u`
 runs all three supported machines: `u64` proceeds throughout, while `u2@c64u`
 and `c64u` take turns because both need the C64 Ultimate.
 
+## How much runs
+
+`--profile` selects a named bundle: which suites and scenarios run, which UI
+transports are swept, and whether the manual suites are included. The ladder is
+`smoke`, `quick` (the default), `standard`, `deep`, `exhaustive`, and it is
+cumulative, so a suite names the shallowest profile that runs it and every
+deeper profile picks it up. `--list` prints the ladder and each suite's
+profile, `--list-profiles` prints the matrix of which profile selects which
+suite, and [tests/README.md](../README.md) has the measured durations and the
+same matrix.
+
+A suite declares its profile in the `SUITES` table in `run-tests`. A scenario
+inside a suite declares its own with one line, the same shape as a firmware-fix
+tag:
+
+```python
+if profiles.skip_below(profiles.STANDARD, LABEL):
+    return
+```
+
+An untagged suite is `standard`, so a new suite is covered by the merge gate
+without anyone having to remember to tag it.
+
 ## How the machines differ
 
 Suites do not test for product names. [`tests/lib/machine.py`](../lib/machine.py)
@@ -98,10 +122,23 @@ two separate axes.
 
 **Capability** is what a machine is. A C64 Ultimate opens its menu on a launcher
 above the file browser, reaches the task menu with `F1` rather than `F5`, needs
-two Back presses to close its menu, and reserves `W`, `A`, `S` and `D` for
-browser navigation, so a quick-seek on a name starting with one of those letters
-would move the cursor instead of seeking. Ask `machine` for the property rather
-than branching on the product.
+two Back presses to close its menu, and searches CommoServe from that launcher
+where the other two search Assembly 64 from the task menu. Ask `machine` for the
+property rather than branching on the product.
+
+**Configuration** is what a person has set, and is read from the device rather
+than derived from the product. "Navigation Style" is the one that changes how
+the menu reads a typed letter: under `WASD Cursors`, which a C64 Ultimate ships
+with, `w`, `a`, `s` and `d` are cursor keys and `A` to `Z` are folded back to
+lowercase, so the way to type a literal letter is to send it shifted.
+[`tests/lib/navigation.py`](../lib/navigation.py) reads the setting and
+`Browser.type_menu_char` applies it, which covers a quick-seek prefix, a
+context-menu prefix and a popup's button key. Text typed into a field is not
+touched, because the string editor never sees the key mapper.
+
+The runner also reads every setting each machine is running with before the
+first suite and writes the differing ones back when the run ends, so a suite
+that changes one does not decide what the next run starts from.
 
 **Firmware vintage** is what a release lacks. The C64 Ultimate runs a separate
 firmware line that lags the Ultimate 64, so a check can be correct and still be
@@ -129,8 +166,9 @@ a backport before editing the table, run the tagged checks anyway:
 ```
 
 `--help` is authoritative for options. `-m/--mode` selects the UI transport
-(`telnet`, `freeze`, `overlay`; default `overlay`) for suites that support
-switching. Use `-s` for isolation rather than invoking a suite directly, so
+(`telnet`, `freeze`, `overlay`) for suites that support switching. With no
+`-m`, the transports the profile sweeps are used, which is `overlay` up to
+`standard`. Use `-s` for isolation rather than invoking a suite directly, so
 selection, arguments and logs stay consistent.
 
 Preserve combined stdout and stderr, keeping the runner's exit status:
@@ -158,9 +196,12 @@ set -o pipefail
 - Suites marked `manual` need an operator decision, elevated host privileges or
   a long run. `--all` is not a routine smoke-test option.
 
-The runner establishes the documented UI state before each suite and performs
-one final release, menu close and reset afterwards. A failure in that teardown
-fails the run.
+The runner establishes the documented UI state before each suite that is
+handed a device, and performs one final release, menu close and reset
+afterwards. A failure in that teardown fails the run. A suite whose registry
+entry names no host is exempt from both the state gate and the health sweep:
+it is handed no device, so it can neither be affected by the device's state nor
+leave it dirty.
 
 ## Rules for adding or changing a suite
 
@@ -223,6 +264,19 @@ fails the run.
      `lib/ui_backend.py` send a whole string or run of keys in one request;
      `Browser.select_entry` uses the browser's own quick-seek rather than
      walking the listing.
+   - Sending more keystrokes than the movement needs. On a cartridge target
+     every injected key costs a fixed 100ms crossing the host's keyboard
+     matrix, and that rate belongs to the host's own released firmware, so it
+     cannot be shortened from this tree. What can change is how many keys a
+     movement takes. `Browser.move_rows` spends page keys on the bulk of a
+     jump and single steps on the remainder, in one request, which takes a
+     22-row advance from 22 keys to 12; `Browser.fill_edit_field` empties a
+     string field with one KEY_CLEAR rather than a counted run of BACKSPACE
+     taps. Prefer both over `press_many` for anything in the file browser.
+   - Naming a fixture at length. A generated name is typed into a field one
+     key at a time, so `pm45535.prg` costs a third of what
+     `prgmenu45535.prg` did. Keep names short enough to be cheap and long
+     enough to be unmistakable in a listing.
    - Moving more data than the assertion needs. Size a fixture for what is
      being proved: if only the rendered size has to differ, a few kilobytes
      does that as well as a few hundred.

@@ -1,7 +1,7 @@
 /*
  * configio_test_stubs.cc
  *
- * The three symbols configio.cc needs that only exist on the device. All of
+ * The four symbols configio.cc needs that only exist on the device. All of
  * them belong to menu handlers the tests do not drive: the debug-log actions
  * and "clear config flash".
  *
@@ -15,6 +15,7 @@
 
 #include "stream_textlog.h"
 #include "subsys.h"
+#include "userinterface.h"
 
 extern "C" void outbyte(int c)
 {
@@ -31,4 +32,8 @@ SubsysResultCode_t SubsysCommand::execute(void)
     SubsysResultCode_t result;
     result.status = SSRET_OK;
     return result;
+}
+
+void UserInterface::run_editor(const char *, int)
+{
 }

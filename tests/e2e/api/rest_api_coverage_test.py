@@ -160,7 +160,8 @@ HANDLER_PATHS: Dict[Tuple[str, str, str], List[str]] = {
     ("PUT", "files", "create_dnp"): ["/v1/files/{path}:create_dnp"],
     ("GET", "configs", "none"): ["/v1/configs", "/v1/configs/{category}",
                                  "/v1/configs/{category}/{item}"],
-    ("PUT", "configs", "none"): ["/v1/configs/{category}/{item}"],
+    ("PUT", "configs", "none"): ["/v1/configs/{category}/{item}",
+                                 "/v1/configs/{category}/{item}/{value}"],
     ("POST", "configs", "none"): ["/v1/configs"],
     ("PUT", "configs", "save_to_flash"): ["/v1/configs:save_to_flash",
                                           "/v1/configs/{category}:save_to_flash"],
@@ -302,6 +303,7 @@ def build_cases() -> List[Case]:
          _config_item)
 
     def _config_unknown(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_REFUSE_UNKNOWN_CATEGORY)
         ctx.refuse_status("GET", "/v1/configs/No%20Such%20Category", allow=(404,))
     case(("GET", "/v1/configs/{category}"), "refuses an unknown category",
          "negative", _config_unknown)
@@ -319,12 +321,13 @@ def build_cases() -> List[Case]:
 
     def _config_write_path(ctx: Ctx) -> None:
         # The other accepted form: the value as a third path element.
+        ctx.require_fix(machine_lib.CONFIGS_SET_VALUE_IN_PATH)
         category, item, value = ctx.suite.config_target(ctx)
         ctx.api.configs.set_by_path(category, item, value)
         after = ctx.api.configs.current(category, item)
         if after != value:
             raise Failure(f"wrote {value!r} through the path form, reads {after!r}")
-    case(("PUT", "/v1/configs/{category}/{item}"),
+    case(("PUT", "/v1/configs/{category}/{item}/{value}"),
          "the value-in-path form sets the same item", "happy", _config_write_path,
          exclusive=True)
 
@@ -353,6 +356,7 @@ def build_cases() -> List[Case]:
     # Saving writes what is already in force, because no case changes a setting
     # without putting it back first, so the store ends where it started.
     def _flash_roundtrip(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash()
@@ -367,6 +371,7 @@ def build_cases() -> List[Case]:
          "happy", _flash_roundtrip, exclusive=True)
 
     def _flash_roundtrip_category(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.CONFIGS_FLASH_ROUNDTRIP)
         category, item, _value = ctx.suite.config_target(ctx)
         before = ctx.api.configs.current(category, item)
         ctx.api.configs.save_to_flash(category)
@@ -426,6 +431,10 @@ def build_cases() -> List[Case]:
     for kind, extra in (("d64", {"tracks": 35}), ("d71", {}), ("d81", {}),
                         ("dnp", {"tracks": 1})):
         def _create(ctx: Ctx, kind=kind, extra=extra) -> None:
+            # Even the refusal reaches enforce_diskname, which is where the
+            # firmware without this fix stops answering, so the negative case
+            # takes the device down just as the happy one does.
+            ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
             create = getattr(ctx.api.files, f"create_{kind}")
             ctx.refused("PUT", f"/v1/files/{{path}}:create_{kind}",
                         lambda: create(f"{MISSING}.{kind}", **extra))
@@ -450,6 +459,7 @@ def build_cases() -> List[Case]:
          _readmem_bad)
 
     def _heap(ctx: Ctx) -> None:
+        ctx.require_fix(machine_lib.MACHINE_HEAP_READING)
         reading = ctx.api.machine.heap()
         if reading is None:
             raise Failure("machine:heap is not on this firmware")
@@ -819,6 +829,7 @@ class SuiteRunner:
             if self._image_ready:
                 return
             if ctx.api.files.info(MOUNT_IMAGE) is None:
+                ctx.require_fix(machine_lib.FILES_CREATE_IMAGE_SURVIVES)
                 ctx.api.files.create_d64(MOUNT_IMAGE, diskname="restapi")
             self._image_ready = True
 
@@ -954,6 +965,20 @@ class SuiteRunner:
 
     def alive(self) -> Optional[str]:
         return self.api.unreachable_reason(LIVENESS_TIMEOUT_SECONDS)
+
+    @property
+    def workers(self) -> int:
+        """Concurrent workers, capped by what the machine's link can take.
+
+        The default is what a machine on Ethernet answers comfortably. An
+        Ultimate II+ has only a wireless link, and three workers through this
+        sweep took one off the network for several minutes; see
+        machine.Machine.rest_workers. An explicit -w is obeyed as given,
+        because someone asking for a number is asking to measure that number.
+        """
+        if self.args.workers != DEFAULT_WORKERS:
+            return self.args.workers
+        return min(self.args.workers, self.machine.rest_workers)
 
     @property
     def machine(self) -> machine_lib.Machine:
@@ -1093,7 +1118,7 @@ class SuiteRunner:
                 for _ in range(self.args.repeat):
                     task(case)
         else:
-            with ThreadPoolExecutor(max_workers=self.args.workers) as pool:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 for _ in range(self.args.repeat):
                     if self.dead.is_set():
                         break
@@ -1151,7 +1176,7 @@ class SuiteRunner:
 
         section("operations")
         detail(f"{len(self.cases)} cases x{self.args.repeat}, {self.args.order}"
-               + (f", {self.args.workers} workers"
+               + (f", {self.workers} workers"
                   if self.args.order == "concurrent" else ""))
         return self.run_cases()
 

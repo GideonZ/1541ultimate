@@ -63,6 +63,7 @@ architecture gideon of usb_memory_ctrl is
     signal rdata_valid      : std_logic;
     signal first_req        : std_logic;
     signal last_req         : std_logic;
+    signal be_last          : std_logic_vector(3 downto 0);
     signal mem_rdata_le     : std_logic_vector(31 downto 0);
 begin
     assert g_tag(1 downto 0) = "00" report "Tag should be a multiple of 4" severity failure;
@@ -71,11 +72,20 @@ begin
     mem_req.tag(1)          <= last_req;
     mem_req.tag(0)          <= first_req;
     mem_req.request     <= mreq;
-    mem_req.address     <= mem_addr_i & mem_addr_r(1 downto 0);
+    mem_req.address     <= mem_addr_i & "00";
     mem_req.read_writen <= rwn;
     mem_req.data        <= ram_rdata;
-    mem_req.byte_en     <= "1111";
-    
+    mem_req.byte_en     <= "1111" when last_req = '0' else be_last;
+
+    -- For writes to memory, we know that the address is aligned. The
+    -- Size field is 3 higher than the actual number of bytes. Thus,
+    -- 1 becomes 4 (size_r = "00"), 2 becomes 5 (size_r = "01"), etc.
+    with size_r select be_last <=
+        "0001" when "00",
+        "0011" when "01",
+        "0111" when "10",
+        "1111" when others;
+
     -- pop from fifo when we process the access
     cmd_ack <= '1' when (state = idle) and (cmd_valid='1') else '0';
 
@@ -149,10 +159,8 @@ begin
                 if rwn='1' then
                     mreq <= '1';
                     state <= reading;
---                    sctb_trace("Reading buffer " & hstr(buffer_idx) & " from memory address " & hstr(mem_addr_r));
                 else
                     state <= prefetch;
---                    sctb_trace("Writing buffer " & hstr(buffer_idx) & " to memory address " & hstr(mem_addr_r));
                 end if;
             
             when reading =>

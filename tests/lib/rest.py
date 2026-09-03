@@ -47,6 +47,19 @@ DEFAULT_TIMEOUT = 10.0
 TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 
+
+def retry_pause(attempt: int) -> float:
+    """How long to wait before attempt `attempt` + 1, counting from zero.
+
+    The pause grows, because the two things it has to cover are not the same
+    length. A device that is busy answers again within a moment, and a flat
+    half second covers that. A wireless link that has dropped takes seconds to
+    come back, and an Ultimate II+L has no wired interface at all: measured
+    during a run, three attempts a half second apart all failed with
+    EHOSTUNREACH and the next check, a second later, passed.
+    """
+    return TRANSPORT_RETRY_PAUSE_SECONDS * (1 + 2 * attempt)
+
 # How much of what a request carried, or of what the device said back, is kept
 # in one action record. Enough for the firmware's own error sentence and for a
 # key batch, short enough that a suite hammering a refusing endpoint does not
@@ -55,6 +68,30 @@ TRANSPORT_RETRY_PAUSE_SECONDS = 0.5
 ACTION_TEXT_CHARS = 300
 
 Response = Tuple[int, Dict[str, str], bytes]
+
+
+# How many requests that could have moved the machine have gone out of this
+# process, by any route this module offers. Counted here rather than per client
+# because a suite that mutates through one object and resets through another
+# would otherwise reset against a counter that had seen nothing, and the reset
+# it needed would be skipped as a no-op. GETs do not count: reading memory, the
+# menu screen or a config value leaves the machine as it was.
+#
+# api.MachineApi.reset is the one place that acts on this. See its docstring
+# for why resetting twice in a row is worth avoiding at all.
+_mutations = 0
+
+
+def mutation_count() -> int:
+    """Requests so far that could have changed what a reset would clear."""
+    return _mutations
+
+
+def note_mutation(method: str) -> None:
+    """Count `method` if it could have moved the machine."""
+    global _mutations
+    if method.upper() != "GET":
+        _mutations += 1
 
 
 def may_retry(method: str, request_sent: bool, idempotent: bool = False) -> bool:
@@ -208,6 +245,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
     """
     method = request.get_method()
     path = path_of(request.full_url)
+    note_mutation(method)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
         started = time.monotonic()
@@ -220,7 +258,7 @@ def retrying_urlopen(request: "urllib.request.Request", timeout: float,
             last_exc = exc
             sent = not isinstance(exc, urllib.error.URLError)
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
-                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                time.sleep(retry_pause(attempt))
                 continue
             record_action(method, path, started, attempt + 1, None, None, exc)
             break
@@ -248,6 +286,7 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
     """
     target = targets.resolve(host)
     host = target.host_for(path)
+    note_mutation(method)
     last_exc: Optional[BaseException] = None
     for attempt in range(TRANSPORT_RETRIES):
         connection = http.client.HTTPConnection(host, target.rest_port, timeout=timeout)
@@ -263,7 +302,7 @@ def retrying_http_request(host: "str | targets.Target", method: str, path: str, 
         except (OSError, http.client.HTTPException) as exc:
             last_exc = exc
             if may_retry(method, sent, idempotent) and attempt + 1 < TRANSPORT_RETRIES:
-                time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                time.sleep(retry_pause(attempt))
                 continue
             record_action(method, path, started, attempt + 1, None, None, exc)
             raise
@@ -431,6 +470,7 @@ class RestClient:
         target = self.url(path, params)
         if method.upper() != "GET":
             self.mutations += 1
+        note_mutation(method)
         request = urllib.request.Request(target, data=body, headers=sent_headers,
                                          method=method)
         # `idempotent` lets a caller opt a non-GET call into the same retry,
@@ -467,7 +507,7 @@ class RestClient:
                                         fault=interactions.fault_of(exc),
                                         error=format_exception(exc),
                                         sent=outbound, connection="new")
-                    time.sleep(TRANSPORT_RETRY_PAUSE_SECONDS)
+                    time.sleep(retry_pause(attempt))
                     continue
                 record_action(method, path, started, attempt + 1, None, None, exc,
                               params=params, payload=payload, call=call,

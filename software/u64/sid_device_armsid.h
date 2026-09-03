@@ -32,8 +32,9 @@ class SidDeviceArmSid: public SidDevice {
         void at_open_config(void);
         void write(void);
 
+        void read(bool ignore) override { }
+
         // Not Implemented
-        //void read(void) { printf("ArmSidRead\n"); }
         //void at_close_config(void) { printf("ArmSidClose\n"); }
 
         static volatile uint8_t *pre(ConfigItem *it);

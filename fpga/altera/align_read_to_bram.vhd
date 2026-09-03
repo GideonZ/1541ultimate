@@ -27,16 +27,17 @@ entity align_read_to_bram is
 end align_read_to_bram;
 
 -- This unit implements data rotation. This is done to support streaming from memory.
-
--- Length that this unit gets is: actual length + offset + 3. This indicates the last byte that
--- is being read and thus valid for writing. 
--- int (size / 4) = number of words to be accessed.
--- (size and 3) = info about byte enables of last beat 0 = 0001, 1 = 0011, 2 = 0111, 3 = 1111.
--- for writing, these byte enables shall still be rotated to the right. 
+-- Length that this unit gets is: actual length + offset + 3. The maximum number of bytes
+-- per transfer is 512; with a maximum offset of 3 this leads to a size of 518.
+-- int (size / 4) = number of words to be accessed, so at most 129 word transfers.
+-- Word accesses *should* be word aligned, to provide compatibility with every memory subsystem.
 -- offset = info about byte enables of first beat, and rotation value
--- Note that for an offset of 0, it doesn't really matter if we write a few extra bytes in the BRAM,
--- because we're aligned. However, for an offset other than 0, it determines whether
--- we should write the last beat or not.
+
+-- Note that writing a few extra bytes to the BRAM is never a problem. As said, the maximum
+-- transfer is 512 bytes. With an offset of 0 this leads to (512 + 3) / 4 = 128 beats, any
+-- other offset leads to 129 beats. Then, the FIRST beat will be incomplete, so the LAST beat
+-- can always be written: 129 - 1 = 128, and always fits within the 512 byte block.
+
 
 architecture arch of align_read_to_bram is
     type t_state is (idle, stream, last);
@@ -49,21 +50,19 @@ begin
             wmask <= X"0";
             wnext <= '0';
 
-            -- we always get 3210, regardless of the offset.
-            -- If the offset is 0, we pass all data
-            -- If the offset is 1, we save 3 bytes (321x), and go to the next state
-            -- If the offset is 2, we save 2 bytes (32xx), and go to the next state
-            -- If the offset is 3, we save 1 byte  (3xxx), and go to the next state
+            if rdata_valid = '1' then -- we assume first word
+                remain <= rdata;
+            end if;
 
-            -- In case the offset was sent to the DRAM, we get:
-            -- If the offset is 1, we save 3 bytes (x321), and go to the next state
-            -- If the offset is 2, we save 2 bytes (xx32), and go to the next state
-            -- If the offset is 3, we save 1 byte  (xxx3), and go to the next state
+            -- Since the last two address bits are forced to zero, we always get 3210, regardless of the offset.
+            -- If the offset is 0, we pass all data (3210)
+            -- If the offset is 1, we save 3 bytes  (321x), and go to the next state
+            -- If the offset is 2, we save 2 bytes  (32xx), and go to the next state
+            -- If the offset is 3, we save 1 byte   (3xxx), and go to the next state
+
             case state is
             when idle =>
-                wdata <= rdata;
                 if rdata_valid = '1' then -- we assume first word
-                    remain <= rdata;
                     case offset is
                     when "00" => -- aligned
                         wmask <= X"F";
@@ -78,63 +77,47 @@ begin
                 end if;
             
             when stream =>
-                case offset is
-                when "01" =>
-                    -- We use 3 bytes from the previous word, and one from the current word
-                    wdata <= rdata(31 downto 24) & remain(23 downto 0);
-                when "10" =>
-                    -- We use 2 bytes from the previous word, and two from the current word
-                    wdata <= rdata(31 downto 16) & remain(15 downto 0);
-                when "11" =>
-                    -- We use 1 bytes from the previous word, and three from the current word
-                    wdata <= rdata(31 downto  8) & remain( 7 downto 0);
-                when others =>
-                    wdata <= rdata;
-                end case;
                 if rdata_valid = '1' then
-                    remain <= rdata;
                     wmask <= X"F";
                     wnext <= '1';
+                    -- it's possible that the last word will primarily end up in
+                    -- remain, and not in wmask. However, because the number of bytes
+                    -- read is always 3 more than necessary, the last word from
+                    -- memory is also the last word that needs to be written to BRAM:
+                    -- In other words we always write enough or too many, but never
+                    -- too few bytes. Hence, we can always simply jump to idle.
                     if last_word = '1' then
-                        if offset > last_bytes then
-                            state <= idle;
-                        else
-                            state <= last;
-                        end if;
+                        state <= idle;
                     end if;
                 end if;
             
             when last =>
-                case offset is
-                when "01" =>
-                    -- We use 3 bytes from the previous word, and one from the current word
-                    wdata <= rdata(31 downto 24) & remain(23 downto 0);
-                when "10" =>
-                    -- We use 2 bytes from the previous word, and two from the current word
-                    wdata <= rdata(31 downto 16) & remain(15 downto 0);
-                when "11" =>
-                    -- We use 1 bytes from the previous word, and three from the current word
-                    wdata <= rdata(31 downto  8) & remain( 7 downto 0);
-                when others =>
-                    wdata <= rdata;
-                end case;
-
+                -- This state is only needed when the first word is also the last.
+                -- Possibly this whole state machine can be eliminated when instead of
+                -- writing rdata, remain is written for aligned reads. In that case,
+                -- the write is simply the delayed version of rdata_valid. However,
+                -- this also requires 8 more flops for storing the otherwise unused
+                -- remain(7 downto 0). -> Which is smaller?!
                 wmask <= X"F";
+                wnext <= '1';
                 state <= idle;
 
---                case last_bytes is
---                when "01" =>
---                    wmask <= "0001";
---                when "10" =>
---                    wmask <= "0011";
---                when "11" =>
---                    wmask <= "0111";
---                when others =>
---                    wmask <= "0000";
---                end case;
-                
             when others =>
                 null;
+            end case;
+
+            case offset is
+            when "01" =>
+                -- We use 3 bytes from the previous word (321x), and one from the current word (xxx4) => 4321
+                wdata <= rdata(7 downto 0) & remain(31 downto 8);
+            when "10" =>
+                -- We use 2 bytes from the previous word (32xx), and two from the current word (xx54) => 5432
+                wdata <= rdata(15 downto 0) & remain(31 downto 16);
+            when "11" =>
+                -- We use 1 bytes from the previous word (3xxx), and three from the current word (x654) => 6543
+                wdata <= rdata(23 downto 0) & remain(31 downto 24);
+            when others =>
+                wdata <= rdata;
             end case;
             
             if reset = '1' then

@@ -546,7 +546,7 @@ def suite_ok(name: str, extra: str = "", seconds: Optional[float] = None,
     """The closing line of a passing suite.
 
     `fields` are added to the JSONL record only, for a harness that knows
-    things about the run the suite itself cannot: which UI profile it was, which
+    things about the run the suite itself cannot: which UI mode it was, which
     attempt this was, how many times the device had to be recovered around it.
     They are deliberately not printed: the console line is one line.
     """
@@ -745,3 +745,7 @@ def reset(count_from: Optional[int] = None) -> None:
     _scenario = None
     _suite_started = time.monotonic()
     _pending.clear()
+
+# written by a test, removed immediately
+
+# written by a test, removed immediately

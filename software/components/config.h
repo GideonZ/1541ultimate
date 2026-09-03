@@ -334,6 +334,15 @@ public:
 
     virtual void on_edit() { }
     virtual void effectuate_settings() { }
+
+    void effectuate_registered_settings()
+    {
+        if (cfg && cfg->need_effectuate()) {
+            cfg->effectuate();
+        } else {
+            effectuate_settings();
+        }
+    }
 };
 
 extern const char *en_dis[];

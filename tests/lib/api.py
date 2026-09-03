@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import pacing
 import targets
 from report import Failure
+import rest
 from rest import DEFAULT_TIMEOUT, RestClient, Response, multipart_body
 
 DRIVE_SLOTS = ("a", "b")
@@ -208,8 +209,9 @@ class MachineApi:
         # first suite in a fresh process does not reset a machine nothing has
         # touched since. Any mutating call clears the assumption by advancing
         # the counter past it.
-        self._reset_at: Optional[int] = (
-            rest.mutations if os.environ.get("U64_DEVICE_RESET") == "1" else None)
+        self._reset_at: Optional[Tuple[int, int]] = (
+            self._counts()
+            if os.environ.get("U64_DEVICE_RESET") == "1" else None)
 
     def _act(self, action: str) -> None:
         code, _, body = self._rest.request("PUT", f"/v1/machine:{action}")
@@ -233,6 +235,20 @@ class MachineApi:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(READY_POLL_SECONDS)
+
+    def _counts(self) -> Tuple[int, int]:
+        """What has moved the machine, seen from this client and the process.
+
+        Two counters, because either can be the one that saw it. This client's
+        own is what a caller injecting a transport gets, and it is what the
+        runner tests drive. The process-wide one in rest.py catches the case
+        the first cannot: a suite that mutates through one object and resets
+        through another, where a per-client count would be zero and a reset
+        that was needed would be skipped as a no-op.
+
+        A reset is a no-op only when neither has moved.
+        """
+        return (getattr(self._rest, "mutations", 0), rest.mutation_count())
 
     def reset(self, force: bool = False, wait: bool = True,
               timeout: float = READY_TIMEOUT_SECONDS) -> bool:
@@ -260,7 +276,7 @@ class MachineApi:
         another route entirely (FTP, Telnet, the DMA control port) should pass
         `force`, since those are invisible here.
         """
-        if not force and self._reset_at == self._rest.mutations:
+        if not force and self._reset_at == self._counts():
             return True
         # Blank the top of the screen first, so the READY left by the previous
         # boot cannot be mistaken for this one. Without it the wait returns
@@ -268,19 +284,19 @@ class MachineApi:
         if wait:
             self.writemem(SCREEN_RAM, bytes([0x20]) * len(READY_SCREEN_CODES))
         self._act("reset")
-        self._reset_at = self._rest.mutations
+        self._reset_at = self._counts()
         if not wait:
             return False
         ready = self.wait_until_ready(timeout)
         # The blanking write and the reset both counted as mutations, so the
         # bookkeeping is restored to "reset, and untouched since".
-        self._reset_at = self._rest.mutations
+        self._reset_at = self._counts()
         return ready
 
     @property
     def was_just_reset(self) -> bool:
         """Whether this client reset the device and nothing has moved it since."""
-        return self._reset_at is not None and self._reset_at == self._rest.mutations
+        return self._reset_at is not None and self._reset_at == self._counts()
 
     def reboot(self) -> None:
         self._act("reboot")
@@ -673,12 +689,7 @@ class ConfigsApi:
         Returns None when no store serves one, which is a reason for a suite
         to skip rather than to fail.
         """
-        names = self.categories().get("categories")
-        if not isinstance(names, list):
-            raise Failure(f"configs: no category list in the answer: {names!r}")
-        for category in names:
-            if not isinstance(category, str):
-                continue
+        for category in self.category_names():
             for item, value in self.category(category).items():
                 # The category listing carries every item's current value, so
                 # the candidates can be spotted without a request each. An item
@@ -1099,3 +1110,51 @@ def ensure_cartridge_preference(target, password: Optional[str] = None,
                  f"already {CARTRIDGE_PREFERENCE_EXTERNAL!r}")
     return (f"{handle.computer}: {CARTRIDGE_PREFERENCE_ITEM} {from_state}, "
             f"rebooted so the cartridge owns the bus ({reached})")
+
+
+# The computer of a cartridge target has drives of its own, and they answer on
+# the same IEC bus and the same bus IDs as the cartridge's. Measured on an
+# Ultimate II+L in a C64 Ultimate with both machines' Drive A enabled on bus 8:
+# every action that goes through the bus failed - Run, Load, Mount & Run, Real
+# Run, and the printer suite's PRG, which timed out waiting for output - while
+# every action that goes through DMA passed. Two devices answering as drive 8
+# is not a defect in either of them.
+DRIVE_STORES = ("Drive A Settings", "Drive B Settings")
+DRIVE_ENABLE_ITEM = "Drive"
+DRIVE_DISABLED = "Disabled"
+
+
+def ensure_host_drives_off(target, password: Optional[str] = None,
+                           timeout: float = DEFAULT_TIMEOUT) -> Optional[str]:
+    """Silence the computer's own drives, so the cartridge owns the IEC bus.
+
+    Answers what it did, or None when there was nothing to do: the target is
+    its own computer, or the computer's drives are already off.
+
+    Like the cartridge preference, the change is not saved to flash. A store
+    the computer does not serve is passed over rather than reported, because a
+    computer without drives is a computer with nothing to silence.
+    """
+    handle = targets.resolve(target)
+    if not handle.split:
+        return None
+    computer = UltimateApi(handle.computer, password, timeout)
+    silenced = []
+    for store in DRIVE_STORES:
+        try:
+            current = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        except Failure:
+            continue
+        if current == DRIVE_DISABLED:
+            continue
+        computer.configs.set(store, DRIVE_ENABLE_ITEM, DRIVE_DISABLED)
+        now = computer.configs.current(store, DRIVE_ENABLE_ITEM)
+        if now != DRIVE_DISABLED:
+            raise Failure(
+                f"{handle.computer} kept {store}/{DRIVE_ENABLE_ITEM} at "
+                f"{now!r} after it was set to {DRIVE_DISABLED!r}; it will "
+                f"answer on the IEC bus alongside the cartridge")
+        silenced.append(store)
+    if not silenced:
+        return None
+    return f"{handle.computer}: {', '.join(silenced)} -> {DRIVE_DISABLED!r}"

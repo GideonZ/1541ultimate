@@ -104,6 +104,7 @@ protected:
     static void lwip_free_callback(struct pbuf *p);
     static int dhcp_change(ConfigItem *it);
 public:
+    using ConfigurableObject::effectuate_registered_settings;
 
     NetworkInterface(void *driver,
                 driver_output_function_t out,

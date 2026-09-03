@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import machine as machine_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
+import profiles  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib  # noqa: E402  (needs tests/lib on sys.path first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from api import UltimateApi  # noqa: E402  (needs tests/lib on sys.path first)
@@ -192,13 +193,27 @@ class RestSession:
         status, _, body = self.request("PUT", MENU_BUTTON_PATH)
         if status != 200:
             raise Failure(f"menu_button failed with HTTP {status}: {body[:160]!r}")
-        time.sleep(MENU_TOGGLE_SETTLE_SECONDS)
 
     def set_menu_open(self, want_open: bool) -> None:
-        if self.menu_screen_open() != want_open:
-            self.press_menu_button()
-        if self.menu_screen_open() != want_open:
-            raise Failure(f"menu did not reach expected open={want_open} state after pressing the menu button")
+        """Put the menu in the wanted state, waiting only until it is there.
+
+        This used to sleep MENU_TOGGLE_SETTLE_SECONDS after the press and then
+        read the state once, which was wrong in both directions: it always paid
+        the full wait, and a toggle slower than it failed the suite outright.
+        A toggle becomes visible in 64 to 168ms depending on the machine and
+        its network path, with a 538ms tail on the slowest, all measured by
+        tests/perf/rest_latency_perf_test.py.
+        """
+        if self.menu_screen_open() == want_open:
+            return
+        self.press_menu_button()
+        deadline = time.monotonic() + pacing.MENU_TOGGLE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            if self.menu_screen_open() == want_open:
+                return
+            time.sleep(pacing.POLL_INTERVAL_SECONDS)
+        raise Failure(f"menu did not reach expected open={want_open} state after "
+                      f"pressing the menu button")
 
     def close_menu_from_anywhere(self) -> None:
         self.api.machine.close_menu_from_anywhere()
@@ -424,7 +439,14 @@ def run_selfcheck(
             # plugged into by running its own stub on that computer's CPU, and
             # that stub keeps using zero page and the stack. Measured rather
             # than assumed, so the same comparison holds on both.
-            frozen_noise = probe_live_noise(session, samples=3, interval=0.4)
+            # 0.1s between samples, not 0.4s. What this looks for is a byte
+            # the freeze stub is still touching, and that stub runs on the
+            # computer's own CPU: zero page and the stack move every few
+            # microseconds while it does. The gap only has to be longer than
+            # that, and three samples 0.4s apart spent 0.8s of every run
+            # sleeping to observe something that changes a hundred thousand
+            # times in the first tenth of a second.
+            frozen_noise = probe_live_noise(session, samples=3, interval=0.1)
             frozen_noise -= unreachable
             noise_addrs |= frozen_noise
             detail(f"{len(frozen_noise)} address(es) change on their own while frozen"
@@ -630,9 +652,18 @@ def run_bounds(session: RestSession) -> bool:
     # supports bus measurement, then returned 501 without freeing it. Bus timing
     # measurement is off by default on U2 builds (commit 8155daec), so on those
     # devices the leaking path is the only path this endpoint ever takes.
+    measure_label = (f"{MEASURE_LEAK_REPEATS} unsupported machine:measure "
+                     "calls leave readmem working")
+    if session.machine.skip_without_fix(
+            machine_lib.MEASURE_FREES_ITS_BUFFER, measure_label):
+        # Not a check this machine merely fails: without the fix the 25 calls
+        # leak 1.6MB, which exhausts a C64 Ultimate's heap and takes it off the
+        # network until someone power cycles it by hand.
+        return True
+
     status, _, _ = session.request("GET", MEASURE_PATH)
     if status == 501:
-        with check(f"{MEASURE_LEAK_REPEATS} unsupported machine:measure calls leave readmem working"):
+        with check(measure_label):
             for _ in range(MEASURE_LEAK_REPEATS):
                 session.request("GET", MEASURE_PATH)
             session.readmem(0, MEM_SIZE)
@@ -650,10 +681,28 @@ OVERLAY_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
                            "overlay-to-freeze", "freeze-to-overlay"]
 
 
+# What the smoke profile runs when no stage is named: one write-and-read round
+# trip in Freeze. It is the cheapest thing that proves both routes work at all,
+# and Freeze halts the CPU, so it is also the one stage that needs no
+# live-noise probe. The whole suite measured 28s on an Ultimate 64 and this
+# stage measured 1.5s of it, which is the difference between a smoke profile
+# that gets run after a reflash and one that does not.
+SMOKE_TESTS = ["selfcheck-freeze"]
+
+
+# The stages that read memory while the C64 is running, so an address that
+# changes on its own has to be known about first. Freeze halts the CPU, so
+# nothing in FREEZE_ONLY_TESTS needs the probe.
+NOISE_DEPENDENT_TESTS = ["selfcheck-overlay", "screen-round-trip",
+                         "overlay-to-freeze", "freeze-to-overlay"]
+
+
 def expand_tests(selected: Optional[List[str]]) -> List[str]:
     all_tests = ["bounds", "selfcheck-freeze", "selfcheck-overlay", "screen-round-trip",
                  "overlay-to-freeze", "freeze-to-overlay"]
     if not selected:
+        if not profiles.includes(profiles.QUICK):
+            return list(SMOKE_TESTS)
         return all_tests
     expanded: List[str] = []
     for name in selected:
@@ -709,8 +758,17 @@ def main() -> int:
 
     try:
         session.close_menu_from_anywhere()
-        if not args.no_reset:
+        # The reset costs a 5s settle plus a wait for zero page to stop
+        # moving, which was six of this suite's eleven seconds at smoke. It is
+        # there to give the six stages a machine in a known state to start
+        # from; the one stage smoke runs is a Freeze round trip, which halts
+        # the CPU and compares memory against what it just wrote, so nothing
+        # about it depends on what the machine was doing beforehand.
+        if not args.no_reset and profiles.includes(profiles.QUICK):
             run_reset(session)
+        elif not args.no_reset:
+            detail("skipping the reset: the Freeze round trip this profile "
+                   "runs does not depend on the machine's prior state")
 
         with check("read User Interface Settings config"):
             ui_config = session.get_config(CONFIG_CATEGORY)
@@ -745,7 +803,12 @@ def main() -> int:
             results["bounds"] = run_bounds(session)
 
         noise_addrs: Set[int] = set()
-        if interface_selectable:
+        # Eight full 64KB reads, so it is only worth paying where a stage
+        # actually reads memory with the CPU running.
+        if interface_selectable and not any(t in NOISE_DEPENDENT_TESTS for t in tests):
+            detail("skipping the live-noise probe: no selected stage reads "
+                   "memory while the C64 is running")
+        elif interface_selectable:
             with check("switch to Overlay on HDMI to probe live background activity"):
                 session.set_interface_type(INTERFACE_OVERLAY)
             with check("probe addresses that change on their own while the C64 runs"):
@@ -774,7 +837,8 @@ def main() -> int:
         try:
             if not args.no_reset:
                 session.set_menu_open(False)
-                session.api.machine.reset(force=True)
+                if profiles.includes(profiles.QUICK):
+                    session.api.machine.reset(force=True)
             if not args.keep_config and original_interface:
                 session.set_interface_type(original_interface)
                 detail(f"restored Interface Type to {original_interface!r}")

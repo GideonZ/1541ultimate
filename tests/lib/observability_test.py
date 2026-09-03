@@ -38,9 +38,12 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
+import fcntl
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -1409,6 +1412,42 @@ def a_harness_edited_mid_run_is_reported() -> str:
     import tempfile
 
     runner = load_runner()
+    # One target per process, three targets at once, one checkout between
+    # them, and every copy appends the same line to the same file. Without the
+    # lock a copy reads its "before" hash while another copy has the file
+    # edited, then makes the identical edit itself and hashes the same thing
+    # twice. The whole check is held, first hash included, because that first
+    # hash is what the rest is compared against. Taking turns costs
+    # milliseconds: each copy edits and restores at once.
+    with exclusive("harness-hash"):
+        return _harness_hash_edit(runner)
+
+
+@contextlib.contextmanager
+def exclusive(name: str):
+    """Hold a lock shared by every copy of this suite on this machine.
+
+    The runner gives each target its own process, so three targets run three
+    copies of this suite at the same time on one host. A case that measures
+    something about the host, rather than about the device, cannot share it:
+    the frame-exact recorder cases lose datagrams and drop frames under the
+    other two copies' load, and the harness-hash case has one checkout to edit
+    between them. Taking turns costs seconds and makes them mean something.
+    """
+    path = os.path.join(tempfile.gettempdir(), f"e2e-obs-{name}.lock")
+    with open(path, "w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _harness_hash_edit(runner) -> str:
+    """Hash, edit, hash, restore, hash. Called with the edit lock held."""
+    import shutil
+    import tempfile
+
     before = runner.harness_hash()
     if not before:
         raise Skipped("git does not answer in this checkout")
@@ -3249,6 +3288,7 @@ def the_capture_is_taken_before_the_state_gate() -> str:
     menu, so a capture taken after it shows the harness's own tidying rather
     than what the suite left. The order is a fact about one function, which is
     why it is checked as one.
+
     """
     with open(RUNNER_PATH, encoding="utf-8") as handle:
         text = handle.read()
@@ -4461,7 +4501,8 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
 
     if recorder_lib.encoder_available():
         raise Skipped(recorder_lib.encoder_available())
-    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+    with exclusive("recorder"), DeviceDouble() as double, \
+            tempfile.TemporaryDirectory() as directory:
         made = recorder_lib.Recorder(directory, "127.0.0.1",
                                      UltimateApi(double.target(), timeout=5.0),
                                      recorder_lib.Options(fps=5))
@@ -4473,12 +4514,33 @@ def the_recorder_writes_what_it_says_it_wrote() -> str:
             raise Failure(problem)
         video_port = made._sockets[0][1].getsockname()[1]
         audio_port = made._sockets[1][1].getsockname()[1]
+        # A frame is 68 datagrams and the kernel's receive buffer is capped by
+        # net.core.rmem_max whatever is asked for, so a bigger buffer alone
+        # does not stop a burst outrunning the reader. It is still asked for,
+        # because it costs nothing and covers one frame's worth of jitter.
+        for _, sock in made._sockets:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
         video = UdpSender("127.0.0.1", video_port)
         audio = UdpSender("127.0.0.1", audio_port)
         for number in range(20):
             video.send(video_packets(number, number * 68, pattern=number % 16))
             audio.send(audio_packets(number * 13, 13))
-            time_lib.sleep(0.04)
+            # The interval is a floor the send waits out whatever else
+            # happens, so the stream still arrives at about the rate the
+            # recorder writes at. On top of it, the send waits for the
+            # recorder to have taken the frame: a frame is 68 datagrams, and a
+            # burst that outruns the reader is dropped by the kernel however
+            # big the receive buffer is. With three device runs going at once
+            # this reported five of twenty frames lost and passed on the
+            # retry, which measures the load on the test host.
+            next_send = time_lib.monotonic() + 0.04
+            taken = time_lib.monotonic() + 5.0
+            while (made._assembler.counts()["frames_completed"] <= number
+                   and time_lib.monotonic() < taken):
+                time_lib.sleep(0.005)
+            remaining = next_send - time_lib.monotonic()
+            if remaining > 0:
+                time_lib.sleep(remaining)
         video.close()
         audio.close()
         time_lib.sleep(0.4)
@@ -4547,7 +4609,8 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
     except ImportError:
         raise Skipped("PIL is not installed, so no still image is written")
 
-    with DeviceDouble() as double, tempfile.TemporaryDirectory() as directory:
+    with exclusive("recorder"), DeviceDouble() as double, \
+            tempfile.TemporaryDirectory() as directory:
         # A suite record, so the recorder has an identity to file stills under.
         with open(os.path.join(directory, "overlay-fixture.jsonl"), "w",
                   encoding="utf-8") as handle:
@@ -4587,7 +4650,24 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
             else:
                 video.send(video_packets(number, number * 68,
                                          pattern=(number // 5) % 16))
-            time_lib.sleep(0.05)
+            # Sent at the rate the recorder writes at, so each frame sent is
+            # one frame written and which source frame lands at a given index
+            # is not a matter of timing. Sending faster maps several sent
+            # frames onto one written one, and which of them survives depends
+            # on how busy the host is: with three targets running this suite at
+            # once, the still and the frame at its own recorded position came
+            # back as two different pictures with nothing lost on the way in.
+            # On top of the interval, the send waits for the recorder to have
+            # taken the frame, because a frame is 68 datagrams on loopback and
+            # a burst that outruns the reader is dropped by the kernel.
+            next_send = time_lib.monotonic() + 1.0 / 5
+            taken = time_lib.monotonic() + 5.0
+            while (made._assembler.counts()["frames_completed"] <= number
+                   and time_lib.monotonic() < taken):
+                time_lib.sleep(0.005)
+            remaining = next_send - time_lib.monotonic()
+            if remaining > 0:
+                time_lib.sleep(remaining)
         video.close()
         time_lib.sleep(0.5)
         capture = made.stop()
@@ -4628,10 +4708,26 @@ def a_still_is_the_frame_the_recording_holds_at_that_position() -> str:
                        recorder_lib.still_height(geometry))
                 box = (left, top, left + width, top + height)
                 if still.crop(box).tobytes() != frame.crop(box).tobytes():
+                    # A picture that did not reach the recorder cannot be the
+                    # one the file holds at that index, so the two differ for a
+                    # reason that is not the recorder's. Loopback datagrams are
+                    # dropped when the reader is not scheduled in time, which
+                    # is what three copies of this suite on one host do to each
+                    # other, and the counts say whether that is what happened.
+                    counts = made._assembler.counts()
+                    lost = {name: counts[name] for name in
+                            ("frames_lost", "frames_incomplete",
+                             "packets_dropped", "packets_malformed")
+                            if counts.get(name)}
+                    if lost:
+                        raise Skipped(
+                            "the host dropped part of the stream before the "
+                            f"recorder saw it: {lost}")
                     raise Failure(
                         f"the {entry['kind']} still and frame "
                         f"{entry['frame']} of the recording differ inside the "
-                        f"picture area {box}")
+                        f"picture area {box}, and nothing was lost on the way "
+                        f"in: {counts}")
                 read.append(screen_text_of(still, geometry))
     # And the ones that carry the scrolled screen still read as that screen,
     # at the columns the machine put it in, out of the written file rather
@@ -4706,7 +4802,12 @@ runner = importlib.util.module_from_spec(spec)
 loader.exec_module(runner)
 
 with open(os.environ["OBS_REGISTRY"], encoding="utf-8") as handle:
-    runner.SUITES = tuple(runner.Suite(**entry) for entry in json.load(handle))
+    # The shallowest profile, so a scripted registry is never filtered by the
+    # profile the fixture happens to run under. These stubs stand in for the
+    # whole tree; which of them run is the fixture's business, not a bundle's.
+    runner.SUITES = tuple(
+        runner.Suite(**dict(entry, profile=runner.profiles.SMOKE))
+        for entry in json.load(handle))
 
 # The double serves REST, FTP, Telnet and the DMA control port. It does not
 # fake the on-device UI object stack, which is what this gate drives.
@@ -4959,8 +5060,15 @@ def a_suite_console_reaches_the_log_and_the_terminal() -> str:
         with open(made.path("127.0.0.1", "overlay-held.log"), "rb") as handle:
             saved = handle.read()
         expect("no escape bytes", b"\x1b" in saved, False)
-        expect("in order", saved,
-               b"[01] coloured ... OK (20 rows, 0.000s)\n"
+        # The check's duration is whatever the machine was doing at the time,
+        # so it is blanked rather than asserted. Comparing it byte for byte
+        # failed a whole run against a `0.002s` where a quiet machine had
+        # produced `0.000s`, which says nothing about what this case is for:
+        # that every line a suite printed reached its log, in order, with no
+        # escape bytes.
+        timed = re.sub(rb"\d+\.\d+s", b"Ns", saved)
+        expect("in order", timed,
+               b"[01] coloured ... OK (20 rows, Ns)\n"
                b"to stderr\nno trailing newline\n")
         for wanted in ("coloured", "to stderr", "no trailing newline"):
             if wanted not in made.stdout:

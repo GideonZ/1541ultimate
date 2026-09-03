@@ -105,6 +105,7 @@ void Rtc::init()
         ConfigManager::getConfigManager()->add_custom_store(cfg);
         cfg->set_sort_order(SORT_ORDER_CFG_CLOCK);
         get_time_from_chip();
+        cfg->set_effectuated();
 
         // Check and correct clock out setting
         if ((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)

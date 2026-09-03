@@ -59,6 +59,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "lib"))
 import menu as menu_lib  # noqa: E402  (needs tests/e2e/lib on sys.path first)
 import pacing  # noqa: E402  (needs tests/lib on sys.path first)
 import rest as rest_lib
+import machine as machine_lib  # noqa: E402  (needs tests/lib first)
 import targets  # noqa: E402  (needs tests/lib on sys.path first)
 from ui_backend import (  # noqa: E402  (needs tests/e2e/lib first)
     char_to_combo, find_selected_row_rest, measure_cursor_colour)
@@ -97,7 +98,6 @@ K_HOME = ["clr_home"]                 # KEY_HOME -> clear selected form field
 K_CLEAR = ["left_shift", "clr_home"]  # KEY_CLEAR -> reload all form fields
 K_DEL = ["inst_del"]
 K_F2 = ["left_shift", "f1"]
-K_F5 = ["f5"]
 
 # Printable char -> matrix key names. Letters/digits map directly (quick-type);
 def assert_or_warn(assertions_enabled, condition, message):
@@ -327,6 +327,21 @@ class MenuDriver:
         self.s = session
         self.verbose_menu = verbose_menu
         self.last_input = ""
+
+    @property
+    def task_menu_key(self):
+        """The matrix key that opens the task menu on this machine.
+
+        F5 on an Ultimate 64 and an Ultimate II+, F1 on a C64 Ultimate, where
+        F5 is Page Down and pressing it over a short listing does nothing at
+        all. A step that pressed F5 there read the browser it was still looking
+        at as a task menu with no Create category, and reported the node as
+        unsupported by the UI rather than failing. See tests/lib/machine.py.
+        """
+        info = self.s.api.info()
+        machine = machine_lib.identify(
+            self.s.host, lambda: (info.product, info.firmware_version))
+        return [machine.task_menu_key.lower()]
 
     # -- low level ---------------------------------------------------------
     def tap(self, inputs, settle=KEY_SETTLE_SECONDS):
@@ -561,6 +576,33 @@ class MenuDriver:
         self.select_context_action("Remove")
         time.sleep(MENU_SETTLE_SECONDS)
 
+    # How long a field is given to show what was typed into it before the
+    # commit is sent. Only reached when the batch is still draining, so a
+    # generous bound costs nothing on a machine that keeps up.
+    FIELD_ARRIVAL_TIMEOUT_SECONDS = 20.0
+
+    def _await_field(self, label, value):
+        """Wait until the open editor shows `value`.
+
+        The batch is accepted by REST at once and drains through the C64's
+        keyboard matrix afterwards, and on a cartridge it crosses the host's
+        matrix as well. Sleeping a computed time instead of reading the field
+        back charged that path a rate it does not keep: measured on an Ultimate
+        II+L in a C64 Ultimate, a 13-character host name was committed as
+        "192.168" every time at the charged 0.06s a key and whole at 0.25s.
+        Waiting for the characters to arrive needs no rate at all, and costs a
+        machine that keeps up nothing.
+        """
+        deadline = time.monotonic() + self.FIELD_ARRIVAL_TIMEOUT_SECONDS
+        while True:
+            screen = self.screen()
+            row = screen.find_row_containing(label + ":")
+            if row >= 0 and value[:16] in screen.rows[row]:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
+
     def _form_fill_current(self, label, value):
         # The form opens on Alias and each committed field advances by one, so
         # the "current" field matches our fixed order. Clear, edit, type, commit.
@@ -574,6 +616,7 @@ class MenuDriver:
                 self.tap(K_RETURN)              # enter string editor (empty)
                 if value:
                     self.type_text(value)
+                    self._await_field(label, value)
                 self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)  # commit + advance
             screen = self.screen()
             row = screen.find_row_containing(label + ":")
@@ -585,6 +628,7 @@ class MenuDriver:
                 self.tap(K_HOME)
                 self.tap(K_RETURN)
                 self.type_text(value)
+                self._await_field(label, value)
                 self.tap(K_RETURN, settle=MENU_SETTLE_SECONDS)
                 continue
             self._dump_on_fail(screen, f"field {label} shows {screen.rows[row]!r}, expected {value!r}")
@@ -1315,7 +1359,7 @@ def create_remote_dir(ctx, alias, dirname):
     d, server = ctx.d, ctx.server
     enter_host_root(ctx, alias)
     since = server.log_len()
-    d.tap(K_F5, settle=MENU_SETTLE_SECONDS)     # Tasks menu (right-side popup)
+    d.tap(d.task_menu_key, settle=MENU_SETTLE_SECONDS)  # Tasks menu (right-side popup)
     screen = d.screen()
     if not screen.contains("Create"):
         d.tap(K_RUNSTOP)
@@ -2180,7 +2224,8 @@ def main(argv=None):
         except Exception as exc:
             warn(f"cleanup error: {exc}")
         if args.reset_after_run and not crashed and session.is_alive(timeout=5.0):
-            session.require_ok("PUT", "/v1/machine:reset", description="reset")
+            # force: this suite drives FTP throughout, which REST cannot see.
+            session.api.machine.reset(force=True, wait=False)
         fails = print_summary(ctx, crashed)
         server.cleanup()
 

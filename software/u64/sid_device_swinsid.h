@@ -17,6 +17,8 @@ class SidDeviceSwinSid: public SidDevice {
         SidDeviceSwinSid *parent;
         static void S_effectuate(volatile uint8_t *base, ConfigStore *store);
     public:
+        using ConfigurableObject::effectuate_registered_settings;
+
         SwinSidConfig(SidDeviceSwinSid *parent);
         void effectuate_settings();
 

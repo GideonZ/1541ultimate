@@ -40,6 +40,18 @@ $(document).ready(async function () {
                 $("#logoutmenuitem").hide();
             }
             $("#bannertitle").html(product + " HTTP Server");
+
+            // Power off reaches hardware on the Ultimate 64 family only; a
+            // cartridge answers 501. These are the names /v1/info reports for
+            // that family, from product_name[] in software/system/product.cc.
+            const ProductsWithPwrCtrl = ["Ultimate 64", "Ultimate 64 Elite", "Ultimate 64-II"];
+            if (ProductsWithPwrCtrl.includes(product))
+                $("#menu-power").show();
+
+            // show firmware version in side panel
+            if (ultimateInfo.firmware_version)
+                $("#firmware-version").text("firmware v" + ultimateInfo.firmware_version);
+
             $("#left-nav").css("visibility", "visible");
             $(".page").hide();
             $("#welcome").show();
@@ -72,7 +84,19 @@ $(document).ready(async function () {
         let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:reset", params);
     };
 
-    $('#doreboot').click(function(event){
+    async function doPowerOff() {
+        let params = {};
+        if (confirm("Are you sure you want to power off your Ultimate?")) {
+            let [status_code, content] = await make_put_request("http://" + serverIP + "/v1/machine:poweroff", params);
+        }
+    };
+
+    $('#dopoweroff').click(function(event) {
+        event.preventDefault(); // Prevents the default action of the anchor tag
+        doPowerOff();
+    });
+
+    $('#doreboot').click(function(event) {
         event.preventDefault(); // Prevents the default action of the anchor tag
         doReboot();
     });
@@ -207,15 +231,27 @@ $(document).ready(async function () {
         }
     }
 
-    // PRG/CRT(/SID) loader
-    async function submitRunner() {
-        let body = $('#runnerfile')[0].files[0];
-        let extension = getFileExtension(body.name);
-        let params = {};
-        $("#runmsg").hide();
+    // PRG/CRT/SID loader, and disk-image mounter
+    const DISK_IMAGE_TYPES = ["D64", "G64", "D71", "G71", "D81"];
+    // This page offers no drive selection, so disk images go to drive A.
+    const MOUNT_DRIVE = "a";
 
+    async function submitRunner() {
+        let file = $('#runnerfile')[0].files[0];
+        let extension = getFileExtension(file.name);
+        let mounting = DISK_IMAGE_TYPES.includes(extension);
+        let params = {};
         let route = null;
-        if (extension === "PRG")
+        $("#runmsg").hide();
+        $("#runok").hide();
+
+        if (mounting) {
+            route = `/v1/drives/${MOUNT_DRIVE}:mount`;
+            // The upload carries no file name, so the device cannot take the
+            // image type from an extension and has to be told it here.
+            params = {"type": extension.toLowerCase()};
+        }
+        else if (extension === "PRG")
             route = "/v1/runners:run_prg";
         else if (extension === "CRT")
             route = "/v1/runners:run_crt";
@@ -224,11 +260,16 @@ $(document).ready(async function () {
         else
             alert("Unsupported file extension: '."+ extension.toLowerCase()+"'");
 
-        if (route !== null) {
-            let [status_code, content] = await make_post_request("http://" + serverIP + route, params, body);
-            if(status_code !== 200)
-                $("#runmsg").show();
-	}
+        if (route === null)
+            return false;
+
+        let [status_code, content] = await make_post_request("http://" + serverIP + route, params, file);
+        if (status_code !== 200)
+            $("#runmsg").show();
+        else if (mounting)
+            // A mounted disk changes nothing on screen, unlike a program that runs.
+            $("#runok").show();
+        return status_code === 200;
     }
 
     // BASIC/tokenizer page event handlers
@@ -270,6 +311,8 @@ $(document).ready(async function () {
     $('#uppercaseBASIC').on('change', async function (event) {
         $("#basiceditor").toggleClass("uppercase", this.checked);  // change upper/lowercase display
     });
+    // browser may have cached the checkbox state on a page reload: synchronize the initially displayed state
+    $("#basiceditor").toggleClass("uppercase", $('#uppercaseBASIC').prop('checked'));
 
     // convenience: write memory - show error message when access fails
     async function writeMemory(param, errorMsg) {
@@ -701,9 +744,7 @@ $(document).ready(async function () {
         },
         m: async function(start, end) {
 
-            if (typeof start !== 'undefined')
-                start = start.toString();
-            else
+            if (typeof start === 'undefined')
                 start = memViewAddress.toString(16); // no start given: continue from the end of previous range
 
             if (isHexadecimal(start)) {
@@ -803,9 +844,7 @@ $(document).ready(async function () {
         },
         d: async function(start, end) {
 
-            if (typeof start !== 'undefined')
-                start = start.toString();
-            else
+            if (typeof start === 'undefined')
                 start = disViewAddress.toString(16); // no start given: continue from the end of previous range
 
             if(isHexadecimal(start)) {
@@ -814,7 +853,7 @@ $(document).ready(async function () {
                     end = start+disViewRange; // no end given: use default range
                 else
                 {
-                    end = hexToInt(end.toString());
+                    end = hexToInt(end);
                     if (end > start)
                         disViewRange = end-start; // remember current range as new default
                 }
@@ -845,6 +884,9 @@ $(document).ready(async function () {
 
     }, {
         checkArity: false,
+        // Hand the commands their arguments as typed. Parsed, a hex address
+        // such as 1e00 arrives as the number 100, read as scientific notation.
+        processArguments: false,
         greetings: 'Ultimate 64 / II+ Remote Monitor\nhelp = list of commands\n'
     });
 
@@ -853,28 +895,65 @@ $(document).ready(async function () {
     const themes = (() =>  {
         const themeNames = ['lightmode', 'darkmode' /*, 'purple-theme' */ ];
 
-        const themedSelectors = [ 'body', '#left-nav', '#banner', 'a:-webkit-any-link', 'div#left-nav a', '#banner', 
-            '#left-nav', '#darkmode-button', '#lightmode-button'
+        const themedSelectors = [
+            'body',
+            '#left-nav',
+            '#banner',
+            'a',
+            '#darkmode-button',
+            '#lightmode-button'
         ];
+
+        // sessionStorage throws where the browser blocks site data, and the
+        // login screen is started after this, so both sides are guarded.
+        const readTheme = () => {
+            try {
+                return sessionStorage.getItem('theme');
+            } catch (e) {
+                return null;
+            }
+        };
+        const writeTheme = (themeName) => {
+            try {
+                sessionStorage.setItem('theme', themeName);
+            } catch (e) {
+            }
+        };
 
         // theme: darkmode, lightmode, ...purple-theme...etc.
         const removeThemes = () => themeNames.forEach(themeName => $(themedSelectors.join(',')).removeClass(themeName));
-        const setTheme = (themeName) => { removeThemes(); $(themedSelectors.join(',')).addClass(themeName); };
+        const setTheme = (themeName, save = true) => {
+            removeThemes();
+            $(themedSelectors.join(',')).addClass(themeName);
+            if (save) {
+                writeTheme(themeName);
+            }
+        };
         const setLightMode = () => { setTheme('lightmode'); };
         const setDarkMode = () => { setTheme('darkmode'); };
-        const initDisplayMode = () => { 
-            if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) { setDarkMode(); return; }
-            setLightMode();
+        // Only a picked theme is stored, so a later change of the browser
+        // setting applies.
+        const initDisplayMode = () => {
+            const savedTheme = readTheme();
+            if (savedTheme && themeNames.includes(savedTheme)) {
+                setTheme(savedTheme, false);
+                return;
+            }
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme('darkmode', false);
+                return;
+            }
+            setTheme('lightmode', false);
         };
-        
+
         return {
              initDisplayMode, setTheme, setLightMode, setDarkMode
-         };        
+         };
     })();
 
     $('#darkmode-button').on('click', () => themes.setDarkMode() );
     $('#lightmode-button').on('click', () => themes.setLightMode() );
-    
+
     themes.initDisplayMode();
 
     // Kick off login/welcome screen as needed
@@ -1394,25 +1473,25 @@ function disassembler(startInt, byteArray) {
         text-align: left;
         padding: 10px;
         font-size: 24px;
-        display: flex; 
+        display: flex;
         align-items: center;
     }
     #banner.darkmode {
         background: linear-gradient(to bottom, #222, #444)
     }
     #bannertitle {
-        flex-grow: 1; 
+        flex-grow: 1;
         text-align: left;
     }
     #bannerspacer
     {
-        flex-grow: 2; 
+        flex-grow: 2;
         text-align: center;
     }
     #bannertheme-selectors
     {
-        flex-grow: 0; 
-        margin-left: 40px; 
+        flex-grow: 0;
+        margin-left: 40px;
         text-align: right;
         width:24px;
         height:24px;
@@ -1437,9 +1516,17 @@ function disassembler(startInt, byteArray) {
     div#left-nav a:hover {
         background-color: #beffff;
     }
-    div#left-nav a:hover.darkmode {
-        color:burlywood;
+    div#left-nav a.darkmode:hover {
+        color: burlywood;
         background-color: dimgray;
+    }
+    #firmware-version {
+        font-size: 12px;
+        color: darkgray;
+        text-align: center;
+    }
+    #menu-power {
+        display: none;
     }
     #login {
         padding: 20px;
@@ -1451,12 +1538,7 @@ function disassembler(startInt, byteArray) {
         width: 800px;
         display: none;
     }
-    #livemon {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidplay {
+    div#livemon, div#sidplay, div#runner, div#tokenizer {
         flex-grow: 1;
         padding: 20px;
         display:none;
@@ -1476,17 +1558,7 @@ function disassembler(startInt, byteArray) {
         color: #4caf50;
         background-color: #f6fff6;
     }
-    #runner {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #tokenizer {
-        flex-grow: 1;
-        padding: 20px;
-        display:none;
-    }
-    #sidmsg {
+    #sidmsg, #runmsg, #basicmsg {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
@@ -1495,21 +1567,12 @@ function disassembler(startInt, byteArray) {
         color: white;
         width: 400px;
     }
-    #runmsg {
+    #runok {
         flex-grow: 1;
         margin-top: 20px;
         padding: 20px;
         display:none;
-        background-color: red;
-        color: white;
-        width: 400px;
-    }
-    #basicmsg {
-        flex-grow: 1;
-        margin-top: 20px;
-        padding: 20px;
-        display:none;
-        background-color: red;
+        background-color: #4caf50;
         color: white;
         width: 400px;
     }
@@ -1530,7 +1593,7 @@ function disassembler(startInt, byteArray) {
 	margin: 5px 0;
     }
 
-    @font-face {
+        @font-face {
             font-family: 'C64';
             src: url('C64_Pro-STYLE.woff') format('woff'); /* Path to your C64 font file */
         }
@@ -1553,13 +1616,15 @@ function disassembler(startInt, byteArray) {
             line-height: 1.5;
             width: 900px;
             height: 400px;
-            resize: none;
+            resize: both;
         }
 
 .trinity-dialog {
     --size: 1.4;
     --background: black;
     --color: rgba(160, 182, 247, 0.877);
+    /* Opaque: the title sits over the bar header::before draws. */
+    --title-background: rgb(160, 182, 247);
     border: 2px solid var(--color);
     background: var(--background);
     width: 800px;
@@ -1576,15 +1641,18 @@ function disassembler(startInt, byteArray) {
     width: 100%;
     height: calc(100% - 28px);
 }
-.trinity-dialog, .trinity-dialog header .title {
+.trinity-dialog {
     position: relative;
     left: 420px;
     top: 200px;
     transform: translate(-50%, -50%);
 }
 .trinity-dialog header .title {
+    position: relative;
+    top: -6px;
+    left: -2px;
     margin-top: -2px;
-    background: var(--color);
+    background: var(--title-background);
     padding: 1px 10px;
 }
 .trinity-dialog header {
@@ -1621,8 +1689,14 @@ function disassembler(startInt, byteArray) {
     height: 14px;
     border: 2px solid var(--background);
 }
+.trinity-dialog header li.title-item {
+    width: auto;
+    height: auto;
+    margin: 0;
+    border: none;
+}
 
-a:-webkit-any-link.darkmode {
+a.darkmode {
     color: yellow;
 }
 div#left-nav a.darkmode {
@@ -1677,14 +1751,15 @@ div#left-nav a.darkmode {
             <ul>
                 <li><a id="showwelcome" href="#">Home</a></li>
                 <li><a id="showsidplay" href="#">SID Player</a></li>
-                <li><a id="showrunner" href="#">Execute PRG / CRT</a></li>
+                <li><a id="showrunner" href="#">Run PRG / CRT / Disk</a></li>
                 <li><a id="showterminal"  href="#">Live Monitor</a></li>
                 <li><a id="showtokenizer"  href="#">BASIC Editor</a></li>
             </ul>
             <ul>
-                <li><a id="doreset" href="#">Reset Machine</a></li>
-                <li><a id="doreboot" href="#">Reboot Machine</a></li>
-                <li><a id="domenubutton" href="#">Menu Button</a></li>
+                <li><a id="doreset" href="#" title="Reset the C64...">Reset Machine</a></li>
+                <li><a id="doreboot" href="#" title="Reboot the C64...">Reboot Machine</a></li>
+                <li id="menu-power"><a id="dopoweroff" href="#" title="Standby/Switch off the Ultimate...">Power Off Machine</a></li>
+                <li><a id="domenubutton" href="#" title="Show menu...">Menu Button</a></li>
             </ul>
             <ul>
                 <li><a href="api.html">API Explorer</a></li>
@@ -1694,6 +1769,7 @@ div#left-nav a.darkmode {
             <ul id="logoutmenuitem">
                 <li><a id="logout" href="#">Logout</a></li>
             </ul>
+            <div id="firmware-version"></div>
         </div>
 
         <div id="login" class="page">
@@ -1736,34 +1812,34 @@ div#left-nav a.darkmode {
         </div>
 
         <div id="runner" class="page">
-            <h1>PRG / CRT Executor</h1>
-            <p>Remotely load a program or cartridge to your Ultimate!</p>
+            <h1>PRG / CRT / Disk Loader</h1>
+            <p>Remotely run a program or cartridge on your Ultimate, or mount a disk image in drive A.</p>
 
             <div id="runnerdropzone" class="dropzone" title="Drop file to be loaded here">
-                Drag & drop PRG or CRT file here
+                Drag & drop PRG, CRT, SID or disk image file here
                 <br />
                 <p style="font-size: 4em">&#x21EA;</p>
                 <br />
                 or press button to browse
                 <br /><br />
-                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.PRG,.CRT,.sid,.SID" title="Select PRG/CRT/SID file to be run">
+                <input type="file" id="runnerfile" name="file" accept=".prg,.crt,.sid,.d64,.g64,.d71,.g71,.d81,.PRG,.CRT,.SID,.D64,.G64,.D71,.G71,.D81" title="Select a PRG/CRT/SID file to run, or a D64/G64/D71/G71/D81 image to mount">
                 <br /><br />
-                <input type="button" id="runnersubmit" value="Run Again!" title="Upload and RUN the selected file again">
+                <input type="button" id="runnersubmit" value="Load Again!" title="Upload the selected file again: RUN a program, or mount a disk image">
             </div>
 
             <div id="runmsg">An error has occurred when loading the selected file.</div>
+            <div id="runok">The disk image has been mounted in drive A.</div>
         </div>
 
         <div id="livemon" class="page">
             <h1>Live Monitor</h1>
-            <p>Below is a simple 6510 monitor attached to your U64 or UII+.</p>
+            <p>Remotely inspect and debug the 6510 CPU of your U64 or UII+.</p>
             <div id="terminal" class="trinity-dialog">
                 <header>
                     <ul>
                         <li><a href="#"></a></li>
-                        <li><a href="#"></a></li>
+                        <li class="title-item"><span class="title">Ultimate 64 Monitor</span></li>
                     </ul>
-                    <span class="title">Ultimate 64</span>
                 </header>
                 <div class="body"></div>
             </div>

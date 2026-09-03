@@ -227,32 +227,32 @@ Binary view shows each byte as eight bits, using `.` for a cleared bit and `*` f
 
 Because C64 sprite data uses 3 bytes per row, binary view supports multiple `W`idth modes for viewing bytes in different groupings.
 
-The top status line shows the current byte address followed by the selected bit number, for example `$DC00/7`. Bit 7 is the most significant bit on the left, and bit 0 is the least significant bit on the right.
+The top status line shows the current byte address followed by the selected bit number, for example `$D00C/7`. Bit 7 is the most significant bit on the left, and bit 0 is the least significant bit on the right.
 
 Example:
 
 ```text
 +--------------------------------------+
-|MONITOR BIN $DC00/7                   |
-|DC00 ........ 00                      |
-|DC01 ******** FF                      |
-|DC02 ******** FF                      |
-|DC03 ........ 00                      |
-|DC04 *.*..*.* A5                      |
-|DC05 ...**.** 1B                      |
-|DC06 ******** FF                      |
-|DC07 ******** FF                      |
-|DC08 ........ 00                      |
-|DC09 ........ 00                      |
-|DC0A ........ 00                      |
-|DC0B *..*...* 91                      |
-|DC0C ........ 00                      |
-|DC0D *......* 81                      |
-|DC0E .......* 01                      |
-|DC0F ....*... 08                      |
-|DC10 ........ 00                      |
-|DC11 ******** FF                      |
-|CPU7 $A:BAS $D:I/O $E:KRN VIC0 $0000  |
+|MONITOR BIN $D00C/7                   |
+|D008 ...**... 18                      |
+|D009 ..****.. 3C                      |
+|D00A .**..**. 66                      |
+|D00B .******. 7E                      |
+|D00C .**..**. 66                      |
+|D00D .**..**. 66                      |
+|D00E .**..**. 66                      |
+|D00F ........ 00                      |
+|D010 .*****.. 7C                      |
+|D011 .**..**. 66                      |
+|D012 .**..**. 66                      |
+|D013 .*****.. 7C                      |
+|D014 .**..**. 66                      |
+|D015 .**..**. 66                      |
+|D016 .*****.. 7C                      |
+|D017 ........ 00                      |
+|D018 ..****.. 3C                      |
+|D019 .**..**. 66                      |
+|CPU1 $A:RAM $D:CHR $E:RAM VIC0 $0000  |
 +--------------------------------------+
 ```
 

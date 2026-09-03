@@ -264,7 +264,12 @@ class RestOracle:
 
 
 class FtpObserver:
-    """Pull observer: LIST on a session that never changes directory."""
+    """Pull observer: it LISTs the fixture directory on every look.
+
+    It holds a session that stays in the fixture directory, so a look costs a
+    LIST and nothing else. It is not created at all on a machine that cannot
+    afford the socket; see where it is built.
+    """
 
     name = "FTP"
 
@@ -411,8 +416,10 @@ class Context:
                                              self.timeout))
 
     def observers(self, exclude: Sequence[str] = ()) -> List[object]:
-        assert self.menu is not None and self.telnet is not None and self.ftp_observer is not None
-        every = [BrowserObserver(self.menu), BrowserObserver(self.telnet), self.ftp_observer]
+        assert self.menu is not None and self.telnet is not None
+        every = [BrowserObserver(self.menu), BrowserObserver(self.telnet)]
+        if self.ftp_observer is not None:
+            every.append(self.ftp_observer)
         return [observer for observer in every if observer.name not in exclude]
 
     def converge(
@@ -569,6 +576,12 @@ def row_rename_ftp(ctx: Context, old: str, new: str) -> None:
     drop_names(ctx, names)
 
 
+# Long enough for a browser to drain a queue's worth of events at its poll
+# rate, short enough that it is not a wait anyone notices. Only the two rows
+# that deliberately overflow the queue pay it.
+QUEUE_DRAIN_SECONDS = 0.6
+
+
 def row_rename_under_event_pressure(ctx: Context, browser: FilesystemRefreshBrowser, origin: str,
                                     old: str, new: str, noise: Sequence[str]) -> None:
     """Rename while the observer queue is being filled behind the context menu.
@@ -607,6 +620,13 @@ def row_rename_under_event_pressure(ctx: Context, browser: FilesystemRefreshBrow
     finally:
         for name in noise:
             ftp_try(lambda n=name: ctx.ftp_driver.delete(f"{ctx.source_path}/{n}"))
+        # Removing the noise raises one event per file, and the queue holds 8
+        # (observer.h:27), so the two deletions drop_names is about to make can
+        # be the ones putEvent() discards. A browser would then still show this
+        # row's file and the next row's baseline would fail on a name it had
+        # never heard of. Waiting lets the browsers drain what the noise
+        # raised, so the teardown's own deletions fit.
+        time.sleep(QUEUE_DRAIN_SECONDS)
     drop_names(ctx, names)
 
 
@@ -1014,6 +1034,18 @@ def row_short_write(ctx: Context, name: str) -> None:
 # The rows that cannot converge without a given firmware fix. Kept beside the
 # rows themselves so a label renamed below is renamed here too.
 ROWS_NEEDING_FIX = {
+    # These three hold the FTP data connection open on purpose and look through
+    # every observer while it is open, because the create notification fires
+    # when the file is opened and the size only when it is closed. That needs a
+    # fourth socket: the Telnet session, the FTP control, the FTP data
+    # connection, and then whatever the observer looks through. A C64 Ultimate
+    # serves three across Telnet and FTP, and the observer's own read is what
+    # the device resets. See machine.SERVES_FOUR_TELNET_FTP_SOCKETS.
+    machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS: (
+        "create from FTP",
+        "write from FTP",
+        "short write commits consistently",
+    ),
     machine_lib.BROWSER_REFRESH_AFTER_QUEUE_OVERFLOW: (
         "rename under observer-queue pressure from the Menu",
         "rename under observer-queue pressure from Telnet",
@@ -1031,6 +1063,11 @@ ROWS_NEEDING_FIX = {
         "write from Telnet",
         "copy over an existing file from Telnet",
         "paste into the watched directory from Telnet",
+    ),
+    machine_lib.BROWSER_REFRESH_FROM_MENU_WRITER: (
+        "write from the Menu",
+        "copy over an existing file from the Menu",
+        "paste into the watched directory from the Menu",
     ),
 }
 
@@ -1233,8 +1270,21 @@ def open_observers(ctx: Context) -> None:
     )
     ctx.telnet.go_to_directory(f"Temp/{ctx.test_dir}")
 
-    ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
     ctx.ftp_driver = ftp_connect(ctx.host, ctx.password)
+    if ctx.machine.missing_fix(machine_lib.SERVES_FOUR_TELNET_FTP_SOCKETS):
+        # Three sockets is exactly what a Telnet session and one FTP transfer
+        # need, so watching the directory over FTP as well leaves no margin:
+        # any socket the device has not finished releasing makes the next one
+        # the fourth, and it is reset. The rows still run and are still
+        # checked, by the Menu, by Telnet and by the REST oracle, which is the
+        # one that says what actually committed. What is lost on this machine
+        # is the FTP column of the matrix, not the rows.
+        ctx.ftp_observer = None
+        detail(f"not watching over FTP: {ctx.machine.kind} serves three "
+               "concurrent Telnet and FTP sockets, and a Telnet session plus "
+               "one transfer already needs all three")
+    else:
+        ctx.ftp_observer = FtpObserver(ctx.host, ctx.password, ctx.fixture_path)
 
 
 def close_observers(ctx: Context) -> None:
@@ -1263,7 +1313,13 @@ def main() -> int:
         "-t",
         "--timeout",
         type=float,
-        default=float(os.environ.get("U64_TIMEOUT", "5.0")),
+        # 30s, matching what run-tests passes. It was 5s, which is below
+        # pacing.TELNET_SETTLE_GAP_SECONDS: a committed Telnet prompt is
+        # settled by waiting six seconds of quiet, so every Telnet send_text
+        # in this suite timed out before it could succeed. That made the suite
+        # unrunnable by hand while passing under the runner, which is the worst
+        # way for a default to be wrong.
+        default=float(os.environ.get("U64_TIMEOUT", "30.0")),
     )
     parser.add_argument("--test-dir", default=default_test_dir())
     parser.add_argument(

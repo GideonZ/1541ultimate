@@ -88,6 +88,7 @@ void Rtc::init()
         i2c = new I2C_Driver();
     }
     get_time_from_chip();
+    cfg->set_effectuated();
 }
 
 Rtc::~Rtc()

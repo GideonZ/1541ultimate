@@ -232,10 +232,10 @@ ulticopy_again:
 ulticopy_close:
     ui_window->close();
 	if (c1541_A) {
-		c1541_A->effectuate_settings();
+		c1541_A->effectuate_registered_settings();
 	}
 	if (c1541_B) {
-		c1541_B->effectuate_settings();
+		c1541_B->effectuate_registered_settings();
 	}
     intf->configure();
     xSemaphoreGive(ulticopyMutex);

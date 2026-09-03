@@ -14,7 +14,10 @@ What it covers, and why each one is here:
 - `ping`   the device is on the network at all. Distinguishes a wedged service
            from a device that has gone.
 - `rest`   `/v1/version`. Nearly every suite drives the device through this.
-- `ftp`    port 21 answers with its `220` banner. The file suites need it.
+- `ftp`    port 21 answers, and a listing comes back over a data connection.
+           The banner alone is not enough: a device out of data connections
+           still answers `220` and still takes commands, and only the PASV
+           every transfer needs fails.
 - `telnet` port 23 accepts a connection. Proven harmless to the UI: measured at
            about 45ms, and the menu state and the running C64 are unchanged
            afterwards, because nothing is sent and the socket is closed at once.
@@ -46,6 +49,7 @@ moving raster is reported as an observation rather than a fault.
 from __future__ import annotations
 
 import http.client
+import ftplib
 import socket
 import struct
 import subprocess
@@ -89,6 +93,22 @@ PING_TIMEOUT_SECONDS = 2
 # the device was recovered over JTAG for it. The machine reaches the BASIC
 # prompt in about 2.4s, so the budget is comfortably past that.
 MOVEMENT_TIMEOUT_SECONDS = 4.0
+# The jiffy gets its own, much shorter budget, because of what its answer is
+# allowed to do. The raster decides whether the machine is alive and keeps the
+# full budget above. A static jiffy under a moving raster is an observation
+# that can never fail the sweep, so the only thing the long budget buys there
+# is the wording of that observation: "static" instead of "moving".
+#
+# It cost 4s of every sweep that ran while the KERNAL was not ticking, which is
+# the ordinary state straight after a suite resets or freezes the machine. In a
+# smoke run of eight suites that was two sweeps and five seconds, spent
+# re-deciding something already decided. The clock advances every 20ms and a
+# read costs about 15ms, so 0.3s is around eight attempts at a two-attempt
+# question.
+# Measured on an Ultimate 64 at the BASIC prompt: a ticking jiffy is seen to
+# move in 21 to 62ms, 15 times out of 15. 0.5s is eight times that worst case,
+# so a clock that is running is still reported as running.
+JIFFY_MOVEMENT_TIMEOUT_SECONDS = 0.5
 MOVEMENT_PAUSE_SECONDS = 0.02
 JIFFY_ADDRESS = 0x00A2
 RASTER_ADDRESS = 0xD012
@@ -215,6 +235,60 @@ def _banner(host: str, port: int, expect: bytes = b"") -> str:
         return ""
 
 
+def _ftp_listing(host: str, port: int, password: str, passive: bool) -> None:
+    """One listing over a data connection, in the mode asked for."""
+    client = ftplib.FTP(timeout=SOCKET_TIMEOUT_SECONDS)
+    try:
+        client.connect(host, port)
+        client.login("ultimate", password or "ultimate")
+        client.set_pasv(passive)
+        client.nlst("/")
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+def _ftp(host: str, port: int, password: str = "") -> str:
+    """Prove FTP can still carry a transfer, not just answer its banner.
+
+    The suites transfer in passive mode, which is ftplib's default, so that is
+    what the sweep proves. A device whose data path has stopped working still
+    answers `220` and still takes commands, and only the transfer fails.
+    Measured on a C64 Ultimate part-way through a standard run: every passive
+    transfer was reset from then on while the banner check called the device
+    healthy, so the runner kept feeding it suites and seven more failed for a
+    reason that had nothing to do with them.
+
+    When passive fails, active mode is tried as well, because which of the two
+    failed says what is wrong: both failing is a device that cannot transfer at
+    all, and passive alone failing is a device whose passive listener is gone
+    while its files are still readable. A listing is the cheapest thing that
+    opens a data connection either way.
+    """
+    started = time.monotonic()
+    try:
+        _ftp_listing(host, port, password, passive=True)
+    except (*ftplib.all_errors, EOFError) as exc:
+        # Every one of these has to leave the sweep as a failed check. An
+        # ftplib error that is not one _timed catches escapes the sweep
+        # instead, and the runner then dies part-way through a run rather than
+        # reporting a degraded device: a listener that closes without its
+        # banner raises EOFError, which killed the whole run.
+        detail = f"{type(exc).__name__}: {exc}".strip(": ")
+        try:
+            _ftp_listing(host, port, password, passive=False)
+        except (*ftplib.all_errors, EOFError):
+            raise RuntimeError(f"no data connection at all, {detail}") from exc
+        raise RuntimeError(
+            f"passive transfers are refused and active ones work, {detail}"
+        ) from exc
+    interactions.record("ftp", "nlst /", host=host,
+                        ms=round((time.monotonic() - started) * 1000.0, 1))
+    return ""
+
+
 def _dma_identify(host: str, port: int) -> str:
     started = time.monotonic()
     with socket.create_connection((host, port), timeout=SOCKET_TIMEOUT_SECONDS) as sock:
@@ -289,20 +363,22 @@ def _ident(api: UltimateApi) -> Check:
     return Check("ident", OK, ms, f"{info.product} {info.firmware_version}")
 
 
-def _moves(api: UltimateApi, address: int, means: str) -> str:
+def _moves(api: UltimateApi, address: int, means: str,
+           budget: float = MOVEMENT_TIMEOUT_SECONDS) -> str:
     """Read `address` until the value changes, or say it never did.
 
     Returns as soon as it moves, so this costs two round trips on a device
-    that is running and the whole budget only on one that is not.
+    that is running and the whole budget only on one that is not. `budget` is
+    per check rather than shared: see JIFFY_MOVEMENT_TIMEOUT_SECONDS.
     """
     first = api.machine.readmem(address, 1)[0]
-    deadline = time.monotonic() + MOVEMENT_TIMEOUT_SECONDS
+    deadline = time.monotonic() + budget
     while time.monotonic() < deadline:
         if api.machine.readmem(address, 1)[0] != first:
             return ""
         time.sleep(MOVEMENT_PAUSE_SECONDS)
     raise RuntimeError(f"${address:04X} stayed at ${first:02X} for "
-                       f"{MOVEMENT_TIMEOUT_SECONDS:g}s: {means}")
+                       f"{budget:g}s: {means}")
 
 
 def probe(host, password: str = "", api: Optional[UltimateApi] = None,
@@ -332,7 +408,7 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     if not skip("rest"):
         checks.append(_timed("rest", lambda: api.version() and ""))
     if not skip("ftp"):
-        checks.append(_timed("ftp", lambda: _banner(host, target.ftp_port, b"220")))
+        checks.append(_timed("ftp", lambda: _ftp(host, target.ftp_port, password)))
     if not skip("telnet"):
         checks.append(_timed("telnet", lambda: _banner(host, target.telnet_port)))
     if not skip("ident"):
@@ -349,17 +425,19 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
     # failure is only meaningful once the raster has said the machine is dead.
     machine_checks = (
         ("raster", RASTER_ADDRESS,
-         "the VIC is not scanning, so the C64 is not running at all"),
+         "the VIC is not scanning, so the C64 is not running at all",
+         MOVEMENT_TIMEOUT_SECONDS),
         ("jiffy", JIFFY_ADDRESS,
-         "the KERNAL interrupt is not ticking"),
+         "the KERNAL interrupt is not ticking",
+         JIFFY_MOVEMENT_TIMEOUT_SECONDS),
     )
-    if any(not skip(name) for name, _, _ in machine_checks):
+    if any(not skip(name) for name, _, _, _ in machine_checks):
         menu_open = None
         try:
             menu_open = api.machine.menu_open()
         except Failure:
             menu_open = None
-        for name, address, means in machine_checks:
+        for name, address, means, budget in machine_checks:
             if skip(name):
                 continue
             if menu_open:
@@ -368,7 +446,7 @@ def probe(host, password: str = "", api: Optional[UltimateApi] = None,
                 checks.append(Check(name, SKIP, 0.0, "menu state unknown"))
             else:
                 checks.append(_timed(
-                    name, lambda a=address, m=means: _moves(api, a, m)))
+                    name, lambda a=address, m=means, b=budget: _moves(api, a, m, b)))
 
         # A static jiffy under a moving raster is an ordinary state, not a
         # fault: the machine is running, its KERNAL interrupt is not ticking.

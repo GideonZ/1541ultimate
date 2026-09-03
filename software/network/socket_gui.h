@@ -10,13 +10,17 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include <atomic>
+#include "config.h"
 
-class SocketGui
+class SocketGui : public ConfigurableObject
 {
+	std::atomic<bool> enabled;
 public:
 	TaskHandle_t listenTaskHandle;
 
 	SocketGui();
+	void effectuate_settings(void);
 	int listenTask(void);
 };
 
