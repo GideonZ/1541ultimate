@@ -19,7 +19,9 @@ left to whoever next reads the registry. Three rules:
 - a registered suite's argument template only spells tokens the runner
   substitutes;
 - every argument in the template is one its own parser accepts, so a
-  registration cannot name `-p` for a suite that has no password argument.
+  registration cannot name `-p` for a suite that has no password argument;
+- every `sys.path` adjustment is the shared bootstrap, not a private one;
+- `-H`, `-p` and `-t` come from `tests/lib/cli.py`, not from a fourth copy.
 
 The third rule reads the suite's parser rather than running it, because
 importing 60 suites would cost more than the check is worth and several of them
@@ -34,8 +36,14 @@ import importlib.machinery
 import importlib.util
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# tests/lib holds the shared library; importing bootstrap adds tests/e2e/lib.
+# The search walks up rather than counting directories, so this is the same in
+# every entry point and a suite that moves needs no edit. See tests/lib/bootstrap.py.
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
+                            if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
+import bootstrap  # noqa: E402,F401
 from report import Failure, check, detail, suite_fail, suite_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -56,6 +64,39 @@ NOT_SUITES = {
     # here; they check the tree or the build, not the device.
     "tests/lib/lint_test.py": "registered from tests/lib",
     "tests/lib/registry_test.py": "this file",
+}
+
+# tests/lib/bootstrap.py is the one place that may compute a path into the
+# tree. Everywhere else, a sys.path line has to be one of these two shapes.
+BOOTSTRAP_OWNER = "tests/lib/bootstrap.py"
+BOOTSTRAP_SHAPES = ("Path(__file__).resolve().parents", "bootstrap.directory(")
+
+# Suites that still register their own -H, each with the reason. A suite whose
+# defaults are the shared ones belongs in cli.add_device_arguments; these are
+# the ones whose defaults are not, and adopting the helper would change what a
+# run does rather than only how the file reads.
+OWN_DEVICE_ARGUMENTS = {
+    "tests/lib/cli.py": "defines them",
+    "tests/e2e/api/openapi_contract_test.py": "-H is required, with no default",
+    "tests/e2e/lib/ui_state.py": "-H is required, with no default",
+    "tests/e2e/av/stream_test.py":
+        "addresses the stream source, so U64_C64_HOST comes first",
+    "tests/e2e/u64ctrl/power_cycle_test.py": "defaults to the computer, c64u",
+    "tests/e2e/u64ctrl/wake_on_wifi_test.py": "defaults to the computer, c64u",
+    "tests/soak/network/connection_test.py": "its own HOST constant",
+    # A fixed timeout rather than one U64_TIMEOUT can move: adopting the helper
+    # would make these honour that variable, which is a change to a run.
+    "tests/e2e/filesystem/ftp_client_test.py": "fixed timeout",
+    "tests/e2e/io/c64/assembly64_test.py": "fixed timeout",
+    "tests/e2e/io/c64/doom_release_test.py": "fixed timeout",
+    "tests/e2e/io/c64/reu_turbo_test.py": "fixed timeout",
+    "tests/perf/rest_latency_perf_test.py": "fixed timeout, a measured budget",
+    "tests/perf/telnet_key_latency_perf_test.py": "fixed timeout, a measured budget",
+    "tests/soak/filemanager/menu_navigation_soak_test.py": "fixed timeout",
+    "tests/soak/network/listener_soak_test.py": "timeout is REST_BUDGET_SECONDS",
+    # -t is how long the page has to become ready, not a device call budget.
+    "tests/e2e/web/index_test.py": "-t is READY_TIMEOUT, a page load",
+    "tests/e2e/web/theme_test.py": "-t is READY_TIMEOUT, a page load",
 }
 
 
@@ -88,8 +129,8 @@ def suites_on_disk():
 # Modules holding the shared "add_<something>_argument(parser)" helpers. A suite
 # that calls one of these registers the helper's flags without spelling them, so
 # the options each helper adds are read from here and credited to its callers.
-HELPER_SOURCES = ("tests/lib/report.py", "tests/e2e/lib/ui_backend.py",
-                  "tests/lib/targets.py")
+HELPER_SOURCES = ("tests/lib/cli.py", "tests/lib/report.py",
+                  "tests/e2e/lib/ui_backend.py", "tests/lib/targets.py")
 
 
 def parse_file(path):
@@ -170,6 +211,60 @@ def declared_options(path, helpers):
 INHERITED = {"-h", "--help"}
 
 
+def python_files():
+    """Every host-side Python file under tests/, repo-relative."""
+    for base, _dirs, files in os.walk(os.path.join(ROOT, "tests")):
+        if "__pycache__" in base or os.sep + "pico" in base:
+            continue
+        for name in sorted(files):
+            if name.endswith(".py"):
+                yield os.path.relpath(os.path.join(base, name), ROOT)
+
+
+def private_path_lines(relative):
+    """Module-level sys.path lines in this file that are not the bootstrap.
+
+    Module level only. A sys.path line inside a function is doing something
+    else: observability_test.py reaches tools/api for the generator it checks,
+    and openapi_contract_test.py puts a temporary workspace on the path.
+    """
+    if relative == BOOTSTRAP_OWNER:
+        return []
+    tree = parse_file(relative)
+    if tree is None:
+        return []
+    found = []
+    for node in tree.body:
+        if not isinstance(node, (ast.Expr, ast.Assign, ast.AugAssign)):
+            continue
+        try:
+            text = ast.unparse(node)
+        except Exception:  # noqa: BLE001 - unparsable is not this check's business
+            continue
+        if not text.startswith("sys.path"):
+            continue
+        if any(shape in text for shape in BOOTSTRAP_SHAPES):
+            continue
+        found.append((node.lineno, text.splitlines()[0]))
+    return found
+
+
+def own_device_arguments(relative):
+    """Device arguments this file registers instead of taking from cli.py."""
+    tree = parse_file(relative)
+    if tree is None:
+        return []
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument" and node.args):
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and first.value in ("-H", "-p", "-t"):
+            found.append((node.lineno, first.value))
+    return found
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0]
                                      if __doc__ else "")
@@ -247,8 +342,40 @@ def main():
     except Failure:
         failed += 1
 
+    try:
+        with check("every sys.path line is the shared bootstrap"):
+            private = [f"{relative}:{line} {text}"
+                       for relative in python_files()
+                       for line, text in private_path_lines(relative)]
+            if private:
+                private.append("Use the four-line stanza in tests/lib/bootstrap.py, "
+                               "and sys.path.insert(0, bootstrap.directory(...)) "
+                               "for a suite that imports another suite.")
+                report_all(private)
+            detail("one bootstrap, computed by walking up rather than by counting")
+    except Failure:
+        failed += 1
+
+    try:
+        with check("-H, -p and -t come from tests/lib/cli.py"):
+            private = []
+            for relative in python_files():
+                if relative in OWN_DEVICE_ARGUMENTS:
+                    continue
+                for line, flag in own_device_arguments(relative):
+                    private.append(
+                        f"{relative}:{line} registers {flag} itself; use "
+                        "cli.add_device_arguments(parser), or name the file in "
+                        "OWN_DEVICE_ARGUMENTS with the reason")
+            if private:
+                report_all(private)
+            detail(f"{len(OWN_DEVICE_ARGUMENTS)} files keep their own, each with "
+                   "a reason")
+    except Failure:
+        failed += 1
+
     if failed:
-        suite_fail(NAME, f"{failed} of 4 checks failed")
+        suite_fail(NAME, f"{failed} of 6 checks failed")
         return 1
     suite_ok(NAME, f"{len(registered)} suites")
     return 0
