@@ -112,6 +112,8 @@ class _TrackedConnection(http.client.HTTPConnection):
         # before the flag is set. After it, a partial write counts as sent:
         # sendall can raise having already delivered some of the body.
         if self.sock is None:
+            if not self.auto_open:
+                raise http.client.NotConnected()
             self.connect()
         self.wrote = True
         super().send(data)

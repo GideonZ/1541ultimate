@@ -29,6 +29,11 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+
+# cfg_fixture is beside this file, which is on the path when this runs as
+# a script but not when another suite imports it.
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
+import cfg_fixture  # noqa: E402
 import cli  # noqa: E402
 
 from api import UltimateApi
@@ -55,20 +60,14 @@ def alternate_value(api: UltimateApi, store: str, item: str, current: str) -> st
 
 
 def upload_fixture(host: str, password: str, store: str, item: str, value: str) -> None:
-    payload = f"[{store}]\n{item}={value}\n".encode("ascii")
-    with ftp_lib.session(host, password, timeout=20) as ftp:
-        ftp_lib.store(ftp, f"/Temp/{CFG_NAME}", payload)
+    """The one-group .cfg this suite loads: one store, one item, one value."""
+    cfg_fixture.upload(host, password, CFG_NAME,
+                       f"[{store}]\n{item}={value}\n")
 
 
 def load_fixture(browser) -> None:
-    browser.invoke_task_action("Developer", "Clear Debug Log")
-    browser.go_to_directory("Temp")
-    browser.select_entry(CFG_NAME)
-    browser.invoke_context_action("Load Settings")
-    browser.wait_for_text("Loading configuration successful!")
-    browser.press_popup_button("o")
-    browser.invoke_task_action("Developer", "Save Debug Log")
-    browser.fill_edit_field(LOG_NAME)
+    """Load it, and keep the debug log that says which stores were considered."""
+    cfg_fixture.load(browser, CFG_NAME, log_name=LOG_NAME)
 
 
 def loading_stores(host: str, password: str) -> list[str]:
@@ -82,12 +81,7 @@ def loading_stores(host: str, password: str) -> list[str]:
 
 
 def cleanup(host: str, password: str) -> None:
-    def remove() -> None:
-        with ftp_lib.session(host, password, timeout=20) as ftp:
-            ftp_lib.delete_quietly(ftp, f"/Temp/{CFG_NAME}")
-            ftp_lib.delete_quietly(ftp, f"/Temp/{LOG_NAME}")
-
-    best_effort("remove the fixtures this run uploaded", remove)
+    cfg_fixture.cleanup(host, password, CFG_NAME, LOG_NAME)
 
 
 def main() -> int:

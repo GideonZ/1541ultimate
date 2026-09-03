@@ -36,7 +36,13 @@ def host_default(fallback: str = FALLBACK_HOST) -> str:
     return os.environ.get(DEFAULT_HOST_ENV, fallback)
 
 
-def password_default(fallback: str = "") -> str:
+def password_default(fallback: str | None = "") -> str | None:
+    """`None` and `""` both mean "no password"; the fallback decides which.
+
+    Fourteen suites defaulted to None and nineteen to the empty string. Both
+    reach RestClient as no password, so the difference is only what a suite's
+    own code sees, and each keeps what it had.
+    """
     return os.environ.get(DEFAULT_PASSWORD_ENV, fallback)
 
 
@@ -95,8 +101,7 @@ def add_device_arguments(parser: argparse.ArgumentParser, *,
         help=f"Device, or a cartridge@computer target "
              f"(default: ${DEFAULT_HOST_ENV}, else {host or FALLBACK_HOST})")
     parser.add_argument(
-        "-p", "--password",
-        default=os.environ.get(DEFAULT_PASSWORD_ENV, password),
+        "-p", "--password", default=password_default(password),
         help=f"REST and FTP password (default: ${DEFAULT_PASSWORD_ENV}, else none)")
     parser.add_argument(
         "-t", "--timeout", type=float,

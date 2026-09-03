@@ -33,6 +33,11 @@ from pathlib import Path
 sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents
                             if (p / "tests" / "lib").is_dir()) / "tests" / "lib"))
 import bootstrap  # noqa: E402,F401
+
+# cfg_fixture is beside this file, which is on the path when this runs as
+# a script but not when another suite imports it.
+sys.path.insert(0, bootstrap.directory("e2e", "filemanager"))
+import cfg_fixture  # noqa: E402
 import cli  # noqa: E402
 
 from api import UltimateApi
@@ -66,8 +71,7 @@ def alternate_value(api: UltimateApi, store: str, item: str, current: str) -> st
 
 
 def upload(host: str, password: str, body: str) -> None:
-    with ftp_lib.session(host, password, timeout=20) as ftp:
-        ftp_lib.store(ftp, f"/Temp/{CFG_NAME}", body.encode("ascii"))
+    cfg_fixture.upload(host, password, CFG_NAME, body)
 
 
 def load_cfg(browser) -> None:
@@ -77,14 +81,7 @@ def load_cfg(browser) -> None:
     with an unknown item answered "There were errors." and put the log in an
     editor, so reaching the success popup at all is the behaviour under test.
     """
-    browser.invoke_task_action("Developer", "Clear Debug Log")
-    browser.go_to_directory("Temp")
-    browser.select_entry(CFG_NAME)
-    browser.invoke_context_action("Load Settings")
-    browser.wait_for_text("Loading configuration successful!")
-    browser.press_popup_button("o")
-    browser.invoke_task_action("Developer", "Save Debug Log")
-    browser.fill_edit_field(LOG_NAME)
+    cfg_fixture.load(browser, CFG_NAME, log_name=LOG_NAME)
 
 
 def debug_log(host: str, password: str) -> str:
@@ -99,12 +96,7 @@ def require_in_log(log: str, needles: list[str], what: str) -> None:
 
 
 def cleanup(host: str, password: str) -> None:
-    def remove() -> None:
-        with ftp_lib.session(host, password, timeout=20) as ftp:
-            ftp_lib.delete_quietly(ftp, f"/Temp/{CFG_NAME}")
-            ftp_lib.delete_quietly(ftp, f"/Temp/{LOG_NAME}")
-
-    best_effort("remove the fixtures this run uploaded", remove)
+    cfg_fixture.cleanup(host, password, CFG_NAME, LOG_NAME)
 
 
 def main() -> int:
