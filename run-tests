@@ -240,6 +240,12 @@ SUITES: Sequence[Suite] = (
     # address fails here rather than on somebody's desk. Manual for the same
     # reason web-theme is.
     Suite("e2e", "web-index", "tests/e2e/web/index_test.py", "", manual=True),
+    # Also needs no device: the BASIC editor turns typed text into the bytes of
+    # a program in C64 memory, and nothing on the page shows those bytes, so a
+    # keyword uploaded as plain characters or a wrong link pointer is invisible
+    # until the program is run. It reads the upload the page sends the stub.
+    # Manual for the same reason web-index is.
+    Suite("e2e", "web-tokenizer", "tests/e2e/web/tokenizer_test.py", "", manual=True),
     # Validates tests/e2e/lib/ui_backend.py itself (Telnet, REST/Freeze,
     # REST/Overlay) before any suite built on it runs, so a broken shared
     # facade fails here with a clear cause instead of as confusing failures
