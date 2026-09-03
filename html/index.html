@@ -803,7 +803,7 @@ $(document).ready(async function () {
                 $(window).scrollTop(scrollPos);
 
                 const newCursorPos = start + token.length;
-                $editor.setSelectionRange(newCursorPos, newCursorPos);
+                $editor[0].setSelectionRange(newCursorPos, newCursorPos);
             }
         });
     }
