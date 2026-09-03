@@ -7,6 +7,7 @@
 #include "network_interface.h"
 #include "product.h"
 #include "versions.h"
+#include "gitinfo.h"
 #include "u64.h"
 #include <string.h>
 #include <strings.h>
@@ -173,6 +174,10 @@ API_DOC(GET, info, none,
                 "core and is present on Ultimate 64 hardware only. `unique_id` is left out when "
                 "the device has none configured.\n"
                 "\n"
+                "`git_commit_hash` is the abbreviated hash of the commit the firmware was built "
+                "from, the same one the System Information screen shows. It tells two builds that "
+                "carry the same version number apart.\n"
+                "\n"
                 "`ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless "
                 "interface. Each is left out when the device has no such interface, or when that "
                 "interface has not started and its address is therefore not known yet. They are "
@@ -184,8 +189,8 @@ API_DOC(GET, info, none,
                 "device whose address is not known.")
     PATH("/v1/info", "getInfo", "")
     RESPONSE("200", "application/json", "InfoResponse", "What the device is and what it is running.", "")
-    RESPONSE_EXAMPLE("200", "Ultimate 64 Elite", "{\n  \"product\" : \"Ultimate 64 Elite (V1.49) 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"fpga_version\" : \"122\",\n  \"core_version\" : \"1.49\",\n  \"hostname\" : \"Ultimate-64-Elite-C89085\",\n  \"unique_id\" : \"D09B96\",\n  \"ethernet_mac\" : \"02:15:41:C8:90:85\",\n  \"wifi_mac\" : \"24:0A:C4:1A:2B:3C\",\n  \"errors\" : []\n}", "")
-    RESPONSE_EXAMPLE("200", "Ultimate II+", "{\n  \"product\" : \"1541 Ultimate II+ 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"fpga_version\" : \"11f\",\n  \"hostname\" : \"Ultimate-II-Plus\",\n  \"ethernet_mac\" : \"02:15:41:AA:BB:CC\",\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "Ultimate 64 Elite", "{\n  \"product\" : \"Ultimate 64 Elite (V1.49) 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"git_commit_hash\" : \"5ee21b65\",\n  \"fpga_version\" : \"122\",\n  \"core_version\" : \"1.49\",\n  \"hostname\" : \"Ultimate-64-Elite-C89085\",\n  \"unique_id\" : \"D09B96\",\n  \"ethernet_mac\" : \"02:15:41:C8:90:85\",\n  \"wifi_mac\" : \"24:0A:C4:1A:2B:3C\",\n  \"errors\" : []\n}", "")
+    RESPONSE_EXAMPLE("200", "Ultimate II+", "{\n  \"product\" : \"1541 Ultimate II+ 3.14d\",\n  \"firmware_version\" : \"3.14d\",\n  \"git_commit_hash\" : \"5ee21b65\",\n  \"fpga_version\" : \"11f\",\n  \"hostname\" : \"Ultimate-II-Plus\",\n  \"ethernet_mac\" : \"02:15:41:AA:BB:CC\",\n  \"errors\" : []\n}", "")
 )
 API_CALL(GET, info, none, NULL, ARRAY( { }))
 {
@@ -199,6 +204,7 @@ API_CALL(GET, info, none, NULL, ARRAY( { }))
 
     resp->json->add("product", getProductString())
         ->add("firmware_version", APPL_VERSION_ASCII)
+        ->add("git_commit_hash", APP_VERSION_HASH)
         ->add("fpga_version", fpga_version)
 #ifdef U64
         ->add("core_version", core_version)

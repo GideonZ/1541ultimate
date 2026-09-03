@@ -1812,6 +1812,8 @@ paths:
       description: |2-
         Identifies the device: product name, firmware version, FPGA build number, host name, unique id and hardware addresses. `core_version` is the version of the C64 core and is present on Ultimate 64 hardware only. `unique_id` is left out when the device has none configured.
 
+        `git_commit_hash` is the abbreviated hash of the commit the firmware was built from, the same one the System Information screen shows. It tells two builds that carry the same version number apart.
+
         `ethernet_mac` and `wifi_mac` are the addresses of the wired and the wireless interface. Each is left out when the device has no such interface, or when that interface has not started and its address is therefore not known yet. They are what a caller sends a Wake-on-LAN magic packet to, which carries a MAC and not an IP address.
 
         The same information is also available without HTTP, from the Ultimate Ident Service on UDP port 64, which answers a broadcast and so can be used to find a device whose address is not known.
@@ -1828,6 +1830,7 @@ paths:
                   value:
                     product: Ultimate 64 Elite (V1.49) 3.14d
                     firmware_version: '3.14d'
+                    git_commit_hash: '5ee21b65'
                     fpga_version: '122'
                     core_version: '1.49'
                     hostname: Ultimate-64-Elite-C89085
@@ -1839,6 +1842,7 @@ paths:
                   value:
                     product: '1541 Ultimate II+ 3.14d'
                     firmware_version: '3.14d'
+                    git_commit_hash: '5ee21b65'
                     fpga_version: '11f'
                     hostname: Ultimate-II-Plus
                     ethernet_mac: '02:15:41:AA:BB:CC'
@@ -3441,6 +3445,9 @@ components:
               description: Full product name, including the core version on Ultimate 64 hardware.
             firmware_version:
               type: string
+            git_commit_hash:
+              type: string
+              description: Abbreviated hash of the commit the firmware was built from. It tells two builds that carry the same version number apart.
             fpga_version:
               type: string
               description: FPGA build number in hexadecimal.

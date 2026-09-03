@@ -18,8 +18,8 @@ time, so one document cannot describe both families:
 
 | document | products | paths | operations | size |
 | --- | --- | --- | --- | --- |
-| `rest_api_openapi_u2.yaml` | Ultimate II, II+, II+L | 44 | 55 | 130,826 B |
-| `rest_api_openapi_u64.yaml` | Ultimate 64, 64 Elite, 64 Elite II | 47 | 59 | 141,412 B |
+| `rest_api_openapi_u2.yaml` | Ultimate II, II+, II+L | 44 | 55 | 131,333 B |
+| `rest_api_openapi_u64.yaml` | Ultimate 64, 64 Elite, 64 Elite II | 47 | 59 | 141,919 B |
 
 The Ultimate 64 document is larger because `route_streams.cc` is compiled only by
 its makefiles, and because `machine:debugreg` sits behind `#if U64`.

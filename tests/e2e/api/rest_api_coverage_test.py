@@ -286,6 +286,19 @@ def build_cases() -> List[Case]:
     case(("GET", "/v1/info"), "reports the interface MAC addresses", "happy",
          _info_macs)
 
+    def _info_git(ctx: Ctx) -> None:
+        info = ctx.api.info()
+        commit = info.extra.get("git_commit_hash")
+        if commit is None:
+            raise Failure(f"no git_commit_hash reported: {info}")
+        # An abbreviated hash, as `git rev-parse --short HEAD` prints it. An
+        # empty one means the firmware was built outside a git checkout, which
+        # leaves the field unable to answer what is running.
+        if not re.fullmatch(r"[0-9a-f]{7,40}", str(commit)):
+            raise Failure(f"git_commit_hash is not a commit hash: {commit!r}")
+    case(("GET", "/v1/info"), "names the commit it was built from", "happy",
+         _info_git)
+
     def _help(ctx: Ctx) -> None:
         if not ctx.api.help("version"):
             raise Failure("the help page was empty")

@@ -181,6 +181,13 @@ SCHEMAS = {
                         "description": "Full product name, including the core version on Ultimate 64 hardware.",
                     },
                     "firmware_version": {"type": "string"},
+                    "git_commit_hash": {
+                        "type": "string",
+                        "description": (
+                            "Abbreviated hash of the commit the firmware was built from. It "
+                            "tells two builds that carry the same version number apart."
+                        ),
+                    },
                     "fpga_version": {
                         "type": "string",
                         "description": "FPGA build number in hexadecimal.",
